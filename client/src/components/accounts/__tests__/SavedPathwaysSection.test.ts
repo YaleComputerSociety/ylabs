@@ -43,6 +43,7 @@ const plan = (overrides: Partial<PathwayPlan> = {}): PathwayPlan => ({
   stage: 'saved',
   note: '',
   checklist: {},
+  checklistHistory: [],
   ...overrides,
 });
 
@@ -142,7 +143,7 @@ describe('saved research plan hydration helpers', () => {
         checklist: {
           safe_key: true,
           unchecked_key: false,
-          '$unsafe': true,
+          $unsafe: true,
         },
       },
       '../bad': plan({ note: 'should be dropped' }),
@@ -288,6 +289,119 @@ describe('saved research planning helpers', () => {
 });
 
 describe('SavedPathwaysSection advising export', () => {
+  const mockSavedPlanLoad = (savedPlan: PathwayPlan) => {
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({
+          data: { savedResearchPlanDetails: { 'pathway-1': savedPlan } },
+        });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+  };
+
+  it('preserves hydrated intent and stage on the first checklist interaction', async () => {
+    const user = userEvent.setup();
+    mockSavedPlanLoad(plan({ intent: 'outreach', stage: 'ready' }));
+
+    render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
+    await user.click(await screen.findByRole('button', { name: 'Plan details' }));
+    await user.click(screen.getByLabelText('Review the official contact route or policy'));
+
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
+    expect(mockedAxios.put.mock.calls[0][1]).toEqual({
+      data: {
+        plan: plan({
+          intent: 'outreach',
+          stage: 'ready',
+          checklist: { 'outreach-route': true },
+        }),
+      },
+    });
+    expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Plan saved.');
+  });
+
+  it('never PUTs fallback plan state when plan hydration fails', async () => {
+    const user = userEvent.setup();
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanDetails') return Promise.reject(new Error('offline'));
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
+    await user.click(await screen.findByRole('button', { name: 'Plan details' }));
+
+    expect(screen.getByLabelText('Intent')).toBeDisabled();
+    expect(screen.getByLabelText('Review the official contact route or policy')).toBeDisabled();
+    expect(screen.getByRole('status').textContent).toBe('Plan details are loading.');
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+  });
+
+  it('requires confirmation before replacing progress and cancel preserves state and focus', async () => {
+    const user = userEvent.setup();
+    mockSavedPlanLoad(plan({ intent: 'outreach', checklist: { 'outreach-route': true } }));
+
+    render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
+    await user.click(await screen.findByRole('button', { name: 'Plan details' }));
+    const intent = screen.getByLabelText('Intent');
+    await user.selectOptions(intent, 'credit');
+
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText(/1 completed step will move to completed step history/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Update checklist' })).toHaveFocus();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(intent).toHaveFocus());
+    expect(intent).toHaveValue('outreach');
+    expect(screen.getByLabelText('Review the official contact route or policy')).toBeChecked();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+  });
+
+  it('archives completed labels once when an intent change is confirmed', async () => {
+    const user = userEvent.setup();
+    mockSavedPlanLoad(
+      plan({ intent: 'outreach', stage: 'researching', checklist: { 'outreach-route': true } }),
+    );
+
+    render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
+    await user.click(await screen.findByRole('button', { name: 'Plan details' }));
+    const intent = screen.getByLabelText('Intent');
+    await user.selectOptions(intent, 'credit');
+    await user.click(screen.getByRole('button', { name: 'Update checklist' }));
+
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
+    const savedPlan = mockedAxios.put.mock.calls[0][1].data.plan as PathwayPlan;
+    expect(savedPlan.intent).toBe('credit');
+    expect(savedPlan.stage).toBe('researching');
+    expect(savedPlan.checklist).toEqual({});
+    expect(savedPlan.checklistHistory).toEqual([
+      expect.objectContaining({
+        intent: 'outreach',
+        label: 'Review the official contact route or policy',
+      }),
+    ]);
+    expect(screen.getByText('Completed step history (1)')).toBeTruthy();
+    await waitFor(() => expect(intent).toHaveFocus());
+
+    await user.selectOptions(intent, 'funding');
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(2));
+    expect(mockedAxios.put.mock.calls[1][1].data.plan.checklistHistory).toHaveLength(1);
+  });
+
   it('keeps detailed planning controls collapsed until a saved plan is expanded', async () => {
     const user = userEvent.setup();
 
@@ -324,15 +438,11 @@ describe('SavedPathwaysSection advising export', () => {
       '/research/climate-archive',
     );
     expect(screen.getByRole('button', { name: 'Plan details' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open profile' }).className).toContain(
-      'min-h-[44px]',
-    );
+    expect(screen.getByRole('link', { name: 'Open profile' }).className).toContain('min-h-[44px]');
     expect(screen.getByRole('button', { name: 'Plan details' }).className).toContain(
       'min-h-[44px]',
     );
-    expect(screen.getByRole('button', { name: 'Remove' }).className).toContain(
-      'min-h-[44px]',
-    );
+    expect(screen.getByRole('button', { name: 'Remove' }).className).toContain('min-h-[44px]');
     expect(screen.getByText('Researching')).toBeTruthy();
     expect(screen.queryByLabelText('Note')).toBeNull();
     expect(screen.queryByText('Checklist')).toBeNull();
@@ -342,7 +452,7 @@ describe('SavedPathwaysSection advising export', () => {
     await user.click(screen.getByRole('button', { name: 'Plan details' }));
 
     expect(screen.getByLabelText('Note')).toBeTruthy();
-    expect(screen.getByText('Checklist')).toBeTruthy();
+    expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByText('Fellowship candidates')).toBeTruthy();
     expect(screen.getByText('Source 1')).toBeTruthy();
   });
@@ -378,11 +488,7 @@ describe('SavedPathwaysSection advising export', () => {
     });
 
     render(
-      createElement(
-        MemoryRouter,
-        null,
-        createElement(SavedPathwaysSection, { onSummaryChange }),
-      ),
+      createElement(MemoryRouter, null, createElement(SavedPathwaysSection, { onSummaryChange })),
     );
 
     await screen.findByText('Explore archival climate records');
