@@ -4,6 +4,7 @@
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { Department, DepartmentCategory } from '../models/department';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { replaceAsciiControls } from '../utils/asciiControl';
 
 let configCache: ConfigData | null = null;
 let cacheTimestamp: number = 0;
@@ -63,15 +64,15 @@ const publicConfigText = (
   value: unknown,
   maxLength: number = MAX_PUBLIC_CONFIG_TEXT_LENGTH,
 ): string => {
-  const text = typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);
-  return redactDirectContactInfo(text).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  const text =
+    typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value);
+  return replaceAsciiControls(redactDirectContactInfo(text), ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
 };
 
-const publicConfigTextArray = (
-  values: unknown,
-  maxItems: number,
-  maxLength: number,
-): string[] => {
+const publicConfigTextArray = (values: unknown, maxItems: number, maxLength: number): string[] => {
   if (!Array.isArray(values)) return [];
   return Array.from(
     new Set(
@@ -86,11 +87,20 @@ const publicConfigTextArray = (
 const publicDepartmentCategories = (values: unknown): string[] => {
   if (!Array.isArray(values)) return [];
   const allowed = new Set<string>(Object.values(DepartmentCategory));
-  return Array.from(new Set(values.filter((value): value is string => typeof value === 'string' && allowed.has(value))));
+  return Array.from(
+    new Set(
+      values.filter((value): value is string => typeof value === 'string' && allowed.has(value)),
+    ),
+  );
 };
 
 const publicDepartmentColorKey = (value: unknown): number => {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_PUBLIC_CONFIG_COLOR_KEY ? value : 0;
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= MAX_PUBLIC_CONFIG_COLOR_KEY
+    ? value
+    : 0;
 };
 
 const publicResearchAreaColorKey = (value: unknown, fallback: unknown): string => {
@@ -129,7 +139,10 @@ export const getConfig = async (
       areas: researchAreas.map((area: any) => ({
         name: publicConfigText(area.name),
         field: publicConfigText(area.field),
-        colorKey: publicResearchAreaColorKey(area.colorKey, fieldColorKeys[area.field as ResearchField]),
+        colorKey: publicResearchAreaColorKey(
+          area.colorKey,
+          fieldColorKeys[area.field as ResearchField],
+        ),
         isDefault: area.isDefault || false,
       })),
       fields,
@@ -146,7 +159,8 @@ export const getConfig = async (
           MAX_PUBLIC_CONFIG_ALIAS_LENGTH,
         ),
         categories: publicDepartmentCategories(dept.categories),
-        primaryCategory: publicDepartmentCategories([dept.primaryCategory])[0] || DepartmentCategory.COMPUTING_AI,
+        primaryCategory:
+          publicDepartmentCategories([dept.primaryCategory])[0] || DepartmentCategory.COMPUTING_AI,
         colorKey: publicDepartmentColorKey(dept.colorKey),
       })),
       categories: Object.values(DepartmentCategory),

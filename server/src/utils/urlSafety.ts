@@ -1,5 +1,11 @@
+import { isAsciiControlCode } from './asciiControl';
+
 export const MAX_PUBLIC_HTTP_URL_LENGTH = 2048;
-const UNSAFE_RAW_PUBLIC_URL_CHAR_RE = /[\u0000-\u0020\u007f\\]/;
+const hasUnsafeRawPublicUrlCharacter = (value: string): boolean =>
+  Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+  });
 const PRIVATE_IPV4_CIDRS: Array<[string, number]> = [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
@@ -58,7 +64,7 @@ export function isPublicHttpUrl(value: unknown): value is string {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (trimmed.length > MAX_PUBLIC_HTTP_URL_LENGTH) return false;
-  if (UNSAFE_RAW_PUBLIC_URL_CHAR_RE.test(trimmed)) return false;
+  if (hasUnsafeRawPublicUrlCharacter(trimmed)) return false;
 
   try {
     const url = new URL(trimmed);

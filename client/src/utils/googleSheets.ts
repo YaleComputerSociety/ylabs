@@ -11,7 +11,7 @@ const OAUTH_CHANNEL_NAME = 'google-oauth-token';
 const OAUTH_POPUP_NAME_PREFIX = 'google-auth';
 const OAUTH_POPUP_FEATURES = 'popup,width=500,height=600,noopener,noreferrer';
 const OAUTH_STATE_PATTERN = /^[A-Za-z0-9._~-]{1,128}$/;
-const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._~+\/-]+=*$/;
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9._~+/-]+=*$/;
 const MAX_ACCESS_TOKEN_LENGTH = 4096;
 const MAX_SHEET_TITLE_LENGTH = 120;
 const MAX_SHEET_HEADERS = 50;
@@ -38,7 +38,9 @@ function oauthChannelNameForState(state: string): string {
 }
 
 function oauthPopupNameForState(state: string): string {
-  return OAUTH_STATE_PATTERN.test(state) ? `${OAUTH_POPUP_NAME_PREFIX}-${state}` : OAUTH_POPUP_NAME_PREFIX;
+  return OAUTH_STATE_PATTERN.test(state)
+    ? `${OAUTH_POPUP_NAME_PREFIX}-${state}`
+    : OAUTH_POPUP_NAME_PREFIX;
 }
 
 function openOAuthPopup(state: string): Window | null {
@@ -54,7 +56,9 @@ export function safeSheetCell(value: string): string {
 }
 
 function safeSheetTitle(value: unknown): string {
-  const title = String(value || 'Yale Research Export').trim().slice(0, MAX_SHEET_TITLE_LENGTH);
+  const title = String(value || 'Yale Research Export')
+    .trim()
+    .slice(0, MAX_SHEET_TITLE_LENGTH);
   return title || 'Yale Research Export';
 }
 
@@ -111,7 +115,13 @@ function getAccessToken(clientId: string): Promise<string> {
     }
 
     let settled = false;
-    let checkClosed: ReturnType<typeof setInterval>;
+    const checkClosed = setInterval(() => {
+      if (popup.closed && !settled) {
+        settled = true;
+        cleanup();
+        reject(new Error('Google sign-in was cancelled'));
+      }
+    }, 500);
     const cleanup = () => {
       channel.close();
       clearInterval(checkClosed);
@@ -134,14 +144,6 @@ function getAccessToken(clientId: string): Promise<string> {
     channel.onmessage = (event) => handleMessage(event.data);
 
     popup.location.href = authUrl;
-
-    checkClosed = setInterval(() => {
-      if (popup.closed && !settled) {
-        settled = true;
-        cleanup();
-        reject(new Error('Google sign-in was cancelled'));
-      }
-    }, 500);
   });
 }
 
