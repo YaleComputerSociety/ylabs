@@ -118,12 +118,33 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   const [isFellowshipModalOpen, setIsFellowshipModalOpen] = useState(false);
   const [selectedFellowship, setSelectedFellowship] = useState<Fellowship | null>(null);
   const [showFellowshipExportMenu, setShowFellowshipExportMenu] = useState(false);
+  const [hydratedTrackingOwner, setHydratedTrackingOwner] = useState<string | undefined>(undefined);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
   const fellowshipExportMenuRef = useRef<HTMLDivElement>(null);
   const trackingRecordsRef = useRef<Record<string, ProgramTrackingRecord>>({});
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const saveSequenceRef = useRef<Record<string, number>>({});
   const saveQueueRef = useRef<Record<string, Promise<void>>>({});
+
+  useEffect(() => {
+    if (!trackingStorageOwner || hydratedTrackingOwner !== trackingStorageOwner) return;
+    persistAccountTrackingToStorage(
+      localStorage,
+      'fellowship-stages',
+      fellowshipStage,
+      trackingStorageOwner,
+    );
+  }, [fellowshipStage, hydratedTrackingOwner, trackingStorageOwner]);
+
+  useEffect(() => {
+    if (!trackingStorageOwner || hydratedTrackingOwner !== trackingStorageOwner) return;
+    persistAccountTrackingToStorage(
+      localStorage,
+      'fellowship-notes',
+      fellowshipNotes,
+      trackingStorageOwner,
+    );
+  }, [fellowshipNotes, hydratedTrackingOwner, trackingStorageOwner]);
 
   useEffect(() => {
     if (!showFellowshipExportMenu) return;
@@ -166,6 +187,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
         type: 'HYDRATE',
         payload: { fellowshipStage: mergedStage, fellowshipNotes: notes },
       });
+      setHydratedTrackingOwner(trackingStorageOwner);
       for (const fellowship of fellowships) {
         if (!serverTracking[fellowship.id] && cached.fellowshipStage[fellowship.id] === 'applied') {
           void saveProgramTracking(fellowship.id, '', 'applied');
@@ -197,8 +219,12 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
   };
 
   useEffect(() => {
+    if (!trackingStorageOwner) setHydratedTrackingOwner(undefined);
+    const noteTimers = noteTimersRef.current;
     reloadFavorites();
-    return () => Object.values(noteTimersRef.current).forEach(clearTimeout);
+    return () => Object.values(noteTimers).forEach(clearTimeout);
+    // reloadFavorites intentionally reruns only when the authenticated storage owner changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackingStorageOwner]);
 
   const nextProgramDeadline = useMemo(
@@ -631,6 +657,26 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                   </p>
                 </div>
               )}
+              {!isProfessorVariant &&
+                editingFellowshipNoteId !== fellowship.id &&
+                saveStatuses[fellowship.id] &&
+                saveStatuses[fellowship.id] !== 'idle' && (
+                  <p
+                    className={`mt-1 text-xs ${
+                      saveStatuses[fellowship.id] === 'error'
+                        ? 'text-red-700'
+                        : 'text-gray-500'
+                    }`}
+                    role={saveStatuses[fellowship.id] === 'error' ? 'alert' : 'status'}
+                    aria-live="polite"
+                  >
+                    {saveStatuses[fellowship.id] === 'saving'
+                      ? 'Saving...'
+                      : saveStatuses[fellowship.id] === 'saved'
+                        ? 'Saved'
+                        : 'Not saved. Check your connection or sign in again, then retry.'}
+                  </p>
+                )}
               {!isProfessorVariant &&
                 fellowshipNotes[fellowship.id] &&
                 editingFellowshipNoteId !== fellowship.id && (
