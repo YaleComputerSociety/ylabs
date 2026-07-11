@@ -6,7 +6,9 @@ This document captures the current Yale Research interface direction and the nex
 
 ## Graphify Grounding
 
-Read [`graphify-out/GRAPH_REPORT.md`](../graphify-out/GRAPH_REPORT.md) before changing this document. The current graph highlights these relevant communities and nodes:
+Start with the scoped Graphify checks below before changing this document.
+Use [`graphify-out/GRAPH_REPORT.md`](../graphify-out/GRAPH_REPORT.md) only when a broad architecture review is needed.
+The current graph highlights these relevant communities and nodes:
 
 - Community 5: app navigation and shared search/filter context, including `Navbar`, `SearchContext`, and quick filters.
 - Community 15: access materialization concepts, including derived access signals and contact routes.
