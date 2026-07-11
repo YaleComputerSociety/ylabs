@@ -170,19 +170,22 @@ test('PFR-3 pathway source queue is read-only and redacted', () => {
   assert.doesNotMatch(core, /destination|email|phone|excerpt/);
 });
 
-test('PFR-3 pathway evidence review keeps private data off stdout and forbids direct promotion', () => {
+test('PFR-3 pathway evidence review keeps private data off stdout and uses guarded materialization', () => {
   const workflow = fs.readFileSync(new URL('../server/src/scripts/pfr3PathwayEvidenceReview.ts', import.meta.url), 'utf8');
   const core = fs.readFileSync(new URL('../server/src/scripts/pfr3PathwayEvidenceReviewCore.ts', import.meta.url), 'utf8');
   assert.match(workflow, /mode: 0o600/);
-  assert.match(workflow, /appliedCount: 0/);
+  assert.match(workflow, /appliedCount: applied\.applied/);
   assert.doesNotMatch(workflow, /EntryPathway\.(update|findOneAndUpdate|bulkWrite)/);
+  assert.match(workflow, /appendObservations/);
+  assert.match(workflow, /materializeAccessForResearchGroup/);
+  assert.match(workflow, /decision artifact hash does not match/);
   const stdoutPayload = workflow.match(/console\.log\(JSON\.stringify\(\{([\s\S]*?)\}\)\);/);
   assert.ok(stdoutPayload, 'aggregate stdout serializer should exist');
   assert.doesNotMatch(
     stdoutPayload[1],
     /handle:|recordId:|researchEntityId:|sourceUrls:|sourceEvidenceIds:|sourceUrl:|evidence:|rationale:|privateOutput/,
   );
-  assert.match(core, /disposition: 'manual_only'/);
+  assert.match(core, /'apply_recency' \| 'manual_only'/);
   assert.doesNotMatch(core, /evidenceStrength:\s*['"](DIRECT|STRONG|MODERATE)['"]/);
 });
 
