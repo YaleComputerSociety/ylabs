@@ -29,6 +29,8 @@ const PLANNING_STAGES = new Set(['saved', 'researching', 'ready', 'acted', 'arch
 const MAX_ACCOUNT_MUTATION_IDS = 100;
 const MAX_SAVED_PATHWAY_CHECKLIST_ITEMS = 50;
 const MAX_SAVED_PATHWAY_CHECKLIST_KEY_LENGTH = 120;
+const MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_ITEMS = 50;
+const MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_LABEL_LENGTH = 240;
 const MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS = 100;
 const MAX_USER_UPDATE_VALUE_DEPTH = 20;
 const MAX_USER_UPDATE_VALUE_ARRAY_ITEMS = 200;
@@ -55,6 +57,13 @@ export interface SavedPathwayPlanInput {
   stage?: string;
   note?: string;
   checklist?: Record<string, unknown>;
+  checklistHistory?: SavedPathwayChecklistHistoryInput[];
+}
+
+export interface SavedPathwayChecklistHistoryInput {
+  intent?: string;
+  label?: string;
+  completedAt?: string;
 }
 
 export interface SavedPathwayPlansExportOptions {
@@ -116,6 +125,27 @@ export function sanitizeSavedPathwayPlanForStorage(
       ? candidate.checklist
       : {};
   let checklistCount = 0;
+  const checklistHistory = Array.isArray(candidate.checklistHistory)
+    ? candidate.checklistHistory
+        .slice(-MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_ITEMS)
+        .flatMap((item) => {
+          if (!item || typeof item !== 'object') return [];
+          const intent = item.intent && PLANNING_INTENTS.has(item.intent) ? item.intent : undefined;
+          const label = typeof item.label === 'string' ? item.label.trim() : '';
+          const completedAt =
+            typeof item.completedAt === 'string' && !Number.isNaN(Date.parse(item.completedAt))
+              ? new Date(item.completedAt).toISOString()
+              : undefined;
+          if (!intent || !label || !completedAt) return [];
+          return [
+            {
+              intent,
+              label: label.slice(0, MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_LABEL_LENGTH),
+              completedAt,
+            },
+          ];
+        })
+    : [];
 
   for (const key in rawChecklist) {
     if (checklistCount >= MAX_SAVED_PATHWAY_CHECKLIST_ITEMS) break;
@@ -136,6 +166,7 @@ export function sanitizeSavedPathwayPlanForStorage(
         ? candidate.note.slice(0, MAX_SAVED_PATHWAY_NOTE_LENGTH)
         : '',
     checklist,
+    checklistHistory,
   };
 }
 
