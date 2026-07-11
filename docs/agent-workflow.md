@@ -9,7 +9,7 @@ Detailed task procedures live in focused skills under [`skills/`](../skills/).
 For normal coding work:
 
 1. Read [`AGENTS.md`](../AGENTS.md).
-2. Read `graphify-out/GRAPH_REPORT.md` when it exists.
+2. Use a scoped Graphify query, path, or explanation before broad search; reserve `graphify-out/GRAPH_REPORT.md` for broad architecture review.
 3. Read the smallest relevant skill from [`skills/`](../skills/).
 4. Verify important claims against source files, tests, and durable docs.
 
@@ -24,14 +24,14 @@ For product, schema, or architecture decisions, also check the durable docs:
 
 | Skill | Use |
 |-------|-----|
-| [`graphify`](../skills/graphify/SKILL.md) | Repo navigation, graph queries, and refresh policy. |
+| [`graphify`](../skills/graphify/SKILL.md) | Repo navigation, graph queries, and maintenance policy. |
 | [`product-model`](../skills/product-model/SKILL.md) | Research discovery behavior, product vocabulary, Ways In, visibility, and entity pages. |
 | [`architecture`](../skills/architecture/SKILL.md) | Repo map, commands, stack, routes, services, environments, and integrations. |
 | [`search-data`](../skills/search-data/SKILL.md) | MongoDB, Meilisearch, browse ranking, migrations, and search rebuilds. |
 | [`auth-security`](../skills/auth-security/SKILL.md) | CAS auth, sessions, middleware, rate limits, CORS, CSRF, SSRF, and sensitive env vars. |
 | [`scrapers`](../skills/scrapers/SKILL.md) | Scraper sources, observations, materializers, confidence resolution, CLI, and write guards. |
 | [`contributing`](../skills/contributing/SKILL.md) | Endpoints, client pages or routes, and Mongoose schema changes. |
-| [`finishing-work`](../skills/finishing-work/SKILL.md) | Verification, diff review, docs maintenance, roadmap cleanup, and Graphify refresh. |
+| [`finishing-work`](../skills/finishing-work/SKILL.md) | Verification, diff review, docs maintenance, and roadmap cleanup. |
 
 ## Durable Notes
 

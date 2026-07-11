@@ -598,17 +598,10 @@ const Research = () => {
             result: { hits: [], estimatedTotalHits: 0, page: 1, pageSize: 12 },
             unavailable: true,
           })),
-        searchResearchEntities(
-          searchQuery.trim(),
-          24,
-          controller.signal,
-          filters,
-          1,
-          {
-            trustTierFilters: isAdmin ? trustTierFilters : [],
-            includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
-          },
-        ),
+        searchResearchEntities(searchQuery.trim(), 24, controller.signal, filters, 1, {
+          trustTierFilters: isAdmin ? trustTierFilters : [],
+          includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+        }),
       ]);
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
@@ -1095,73 +1088,77 @@ const Research = () => {
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid gap-5 sm:gap-6 2xl:grid-cols-[22rem_minmax(0,1fr)] 2xl:items-start 2xl:gap-8">
-        <header className="yr-panel rounded-md p-4 sm:p-6 2xl:sticky 2xl:top-6">
-          <p className="yr-kicker mb-3">Yale Research</p>
-          <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
-            Find a Yale lab that fits you.
-          </h1>
-          <p
-            id="research-search-context"
-            className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
-          >
-            Search by interest, professor, course topic, method, or question. We&apos;ll help you
-            find relevant research profiles and verified ways in when the source evidence is strong enough.
-          </p>
-
-          <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
-            <label htmlFor="research-search" className="mb-2 block text-sm font-semibold text-slate-950">
-              Search Yale research
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row 2xl:flex-col">
-              <input
-                id="research-search"
-                ref={searchInputRef}
-                type="search"
-                value={query}
-                onChange={(event) => {
-                  const nextQuery = event.target.value;
-                  setQuery(nextQuery);
-                  if (!nextQuery.trim() && hasSubmittedSearch) {
-                    resetSearch();
-                  }
-                }}
-                aria-describedby="research-search-context research-search-help"
-                placeholder="Type a topic, professor, lab, method, or research question"
-                className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
-              />
-              <button
-                type="submit"
-                className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
-                disabled={searchDisabled}
-              >
-                {searchLoading ? 'Searching...' : 'Search'}
-              </button>
-            </div>
-            <p id="research-search-help" className="mt-2 text-sm text-slate-600">
-              {searchHelpText}
-            </p>
-            <div
-              className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
-              aria-label="Suggested research searches"
+          <header className="yr-panel rounded-md p-4 sm:p-6 2xl:sticky 2xl:top-6">
+            <p className="yr-kicker mb-3">Yale Research</p>
+            <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
+              Find a Yale lab that fits you.
+            </h1>
+            <p
+              id="research-search-context"
+              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
             >
-              <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
-              <div className="flex flex-wrap gap-2">
-                {QUICK_START_PROMPTS.map((prompt) => (
-                  <button
-                    key={prompt.query}
-                    type="button"
-                    onClick={() => {
-                      setQuery(prompt.query);
-                      runSearch(prompt.query);
-                    }}
-                    className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                  >
-                    {prompt.label}
-                  </button>
-                ))}
+              Search by interest, professor, course topic, method, or question. We&apos;ll help you
+              find relevant research profiles and verified ways in when the source evidence is
+              strong enough.
+            </p>
+
+            <form onSubmit={onSubmit} className="mt-4 sm:mt-7">
+              <label
+                htmlFor="research-search"
+                className="mb-2 block text-sm font-semibold text-slate-950"
+              >
+                Search Yale research
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row 2xl:flex-col">
+                <input
+                  id="research-search"
+                  ref={searchInputRef}
+                  type="search"
+                  value={query}
+                  onChange={(event) => {
+                    const nextQuery = event.target.value;
+                    setQuery(nextQuery);
+                    if (!nextQuery.trim() && hasSubmittedSearch) {
+                      resetSearch();
+                    }
+                  }}
+                  aria-describedby="research-search-context research-search-help"
+                  placeholder="Type a topic, professor, lab, method, or research question"
+                  className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                />
+                <button
+                  type="submit"
+                  className="min-h-12 rounded-md bg-[var(--yr-blue)] px-6 text-sm font-semibold text-white hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:bg-slate-200 disabled:text-slate-700 sm:min-h-14"
+                  disabled={searchDisabled}
+                >
+                  {searchLoading ? 'Searching...' : 'Search'}
+                </button>
               </div>
-            </div>
-          </form>
+              <p id="research-search-help" className="mt-2 text-sm text-slate-600">
+                {searchHelpText}
+              </p>
+              <div
+                className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+                aria-label="Suggested research searches"
+              >
+                <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_START_PROMPTS.map((prompt) => (
+                    <button
+                      key={prompt.query}
+                      type="button"
+                      onClick={() => {
+                        setQuery(prompt.query);
+                        runSearch(prompt.query);
+                      }}
+                      className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      {prompt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </form>
           </header>
 
           <div className="min-w-0">
@@ -1281,103 +1278,32 @@ const Research = () => {
               </section>
             )}
 
-        {hasSubmittedSearch && (
-          <section aria-busy={searchLoading} aria-label="Search results">
-            <div className="yr-card rounded-md p-4 md:flex md:items-center md:justify-between md:gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">
-                  Showing research matches for &apos;{submittedQuery}&apos;
-                </h2>
-                <p
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className="mt-1 text-sm text-slate-600"
-                >
-                  {resultSummary(
-                    activeResults,
-                    submittedQuery,
-                    searchLoading,
-                    departmentSearch?.label,
-                  )}
-                </p>
-              </div>
-            </div>
-
-            {searchError && (
-              <div
-                role={searchError.startsWith('Verified ways in') ? 'status' : 'alert'}
-                className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-              >
-                {searchError}
-              </div>
-            )}
-
-            <section className="mt-5" aria-label="Verified ways in">
-              <SectionHeading>Verified ways in</SectionHeading>
-              {searchLoading && activeResults.pathways.length === 0 ? (
-                <ClusterLoadingCard />
-              ) : activeResults.pathways.length > 0 ? (
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {activeResults.pathways.map((pathway) => {
-                    const sourceUrl = safeHttpUrl(
-                      pathway.evidence?.[0]?.sourceUrl || pathway.sourceUrls?.[0],
-                    );
-                    const entityName =
-                      pathway.researchEntity.displayName || pathway.researchEntity.name;
-                    return (
-                      <article
-                        key={pathway._id}
-                        className="yr-card rounded-md p-4"
-                      >
-                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-                          <span>{pathway.evidenceStrength.toLowerCase()} evidence</span>
-                          {typeof pathway.confidence === 'number' && (
-                            <span>{Math.round(pathway.confidence * 100)}% confidence</span>
-                          )}
-                        </div>
-                        <h3 className="mt-2 text-base font-semibold text-slate-950">
-                          {pathway.studentFacingLabel}
-                        </h3>
-                        <p className="mt-1 text-sm text-slate-700">{entityName}</p>
-                        {pathway.explanation && (
-                          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                            {pathway.explanation}
-                          </p>
-                        )}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Link
-                            to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
-                            className="inline-flex min-h-11 items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white"
-                          >
-                            Open research profile
-                          </Link>
-                          {sourceUrl && (
-                            <a
-                              href={sourceUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm font-semibold text-slate-800"
-                            >
-                              Review evidence
-                            </a>
-                          )}
-                        </div>
-                      </article>
-                    );
-                  })}
+            {hasSubmittedSearch && (
+              <section aria-busy={searchLoading} aria-label="Search results">
+                <div className="yr-card rounded-md p-4 md:flex md:items-center md:justify-between md:gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-950">
+                      Showing research matches for &apos;{submittedQuery}&apos;
+                    </h2>
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                      className="mt-1 text-sm text-slate-600"
+                    >
+                      {resultSummary(
+                        activeResults,
+                        submittedQuery,
+                        searchLoading,
+                        departmentSearch?.label,
+                      )}
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <EmptyGroup>
-                  No pathways meet the current evidence and confidence standard for this search.
-                  Research profiles may still provide useful planning context.
-                </EmptyGroup>
-              )}
-            </section>
 
-            <fieldset className="mt-3 border-0 p-0">
-              <legend className="sr-only">Narrow research results</legend>
-              <div className="grid gap-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-end">
+                <fieldset className="mt-3 border-0 p-0">
+                  <legend className="sr-only">Narrow research results</legend>
+                  <div className="grid gap-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-end">
                     <label className="block text-sm font-medium text-slate-800">
                       School
                       <select
@@ -1447,56 +1373,124 @@ const Research = () => {
                         Clear filters
                       </button>
                     )}
-              </div>
-            </fieldset>
+                  </div>
+                </fieldset>
 
-            <section className="mt-5">
-              <SectionHeading>Research homes</SectionHeading>
-              {searchLoading && activeResults.clusters.length === 0 ? (
-                <div className="grid gap-3">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <ClusterLoadingCard key={index} />
-                  ))}
-                </div>
-              ) : activeResults.clusters.length > 0 ? (
-                <>
-                  <div className="grid gap-5">
-                    <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                      {activeResults.clusters.map((cluster) => (
-                        <ResearchHomeCard
-                          key={cluster.id}
-                          home={cluster}
-                          onSelect={exploreHome}
-                          variant="compact"
-                        />
+                {searchError && (
+                  <div
+                    role={searchError.startsWith('Verified ways in') ? 'status' : 'alert'}
+                    className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                  >
+                    {searchError}
+                  </div>
+                )}
+
+                <section className="mt-5" aria-label="Verified ways in">
+                  <SectionHeading>Verified ways in</SectionHeading>
+                  {searchLoading && activeResults.pathways.length === 0 ? (
+                    <ClusterLoadingCard />
+                  ) : activeResults.pathways.length > 0 ? (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {activeResults.pathways.map((pathway) => {
+                        const sourceUrl = safeHttpUrl(
+                          pathway.evidence?.[0]?.sourceUrl || pathway.sourceUrls?.[0],
+                        );
+                        const entityName =
+                          pathway.researchEntity.displayName || pathway.researchEntity.name;
+                        return (
+                          <article key={pathway._id} className="yr-card rounded-md p-4">
+                            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+                              <span>{pathway.evidenceStrength.toLowerCase()} evidence</span>
+                              {typeof pathway.confidence === 'number' && (
+                                <span>{Math.round(pathway.confidence * 100)}% confidence</span>
+                              )}
+                            </div>
+                            <h3 className="mt-2 text-base font-semibold text-slate-950">
+                              {pathway.studentFacingLabel}
+                            </h3>
+                            <p className="mt-1 text-sm text-slate-700">{entityName}</p>
+                            {pathway.explanation && (
+                              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                                {pathway.explanation}
+                              </p>
+                            )}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Link
+                                to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
+                                className="inline-flex min-h-11 items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white"
+                              >
+                                Open research profile
+                              </Link>
+                              {sourceUrl && (
+                                <a
+                                  href={sourceUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm font-semibold text-slate-800"
+                                >
+                                  Review evidence
+                                </a>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyGroup>
+                      No pathways meet the current evidence and confidence standard for this search.
+                      Research profiles may still provide useful planning context.
+                    </EmptyGroup>
+                  )}
+                </section>
+
+                <section className="mt-5">
+                  <SectionHeading>Research homes</SectionHeading>
+                  {searchLoading && activeResults.clusters.length === 0 ? (
+                    <div className="grid gap-3">
+                      {Array.from({ length: 3 }).map((_, index) => (
+                        <ClusterLoadingCard key={index} />
                       ))}
                     </div>
-                  </div>
-                  {searchLoading && activeResults.clusters.length > 0 && (
-                    <InfiniteScrollLoadingDots label="Loading more research homes" />
+                  ) : activeResults.clusters.length > 0 ? (
+                    <>
+                      <div className="grid gap-5">
+                        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
+                          {activeResults.clusters.map((cluster) => (
+                            <ResearchHomeCard
+                              key={cluster.id}
+                              home={cluster}
+                              onSelect={exploreHome}
+                              variant="compact"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {searchLoading && activeResults.clusters.length > 0 && (
+                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                      )}
+                      {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
+                    </>
+                  ) : (
+                    <EmptyGroup>
+                      {departmentSearch
+                        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
+                        : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
+                    </EmptyGroup>
                   )}
-                  {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
-                </>
-              ) : (
-                <EmptyGroup>
-                  {departmentSearch
-                    ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
-                    : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
-                </EmptyGroup>
-              )}
-            </section>
+                </section>
 
-            {activeResults.papers.length > 0 && (
-              <section className="mt-5">
-                <SectionHeading>Papers via profiles</SectionHeading>
-                <LabPapersList
-                  papers={activeResults.papers}
-                  emptyText="No related profile papers matched this search yet."
-                />
+                {activeResults.papers.length > 0 && (
+                  <section className="mt-5">
+                    <SectionHeading>Papers via profiles</SectionHeading>
+                    <LabPapersList
+                      papers={activeResults.papers}
+                      emptyText="No related profile papers matched this search yet."
+                    />
+                  </section>
+                )}
               </section>
             )}
-          </section>
-        )}
           </div>
         </div>
       </div>
