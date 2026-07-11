@@ -499,10 +499,8 @@ test('client dynamic internal route segments are encoded before rendering', () =
     new URL('../client/src/components/research/ResearchHomeCard.tsx', import.meta.url),
     'utf8',
   );
-  assert.match(urlSource, /const UNSAFE_RAW_URL_CHAR_RE = \/\[\\u0000-\\u0020\\u007f\\\\\]\//);
-  assert.match(urlSource, /if \(UNSAFE_RAW_URL_CHAR_RE\.test\(trimmed\)\) return ''/);
-  assert.match(serverUrlSafetySource, /const UNSAFE_RAW_PUBLIC_URL_CHAR_RE = \/\[\\u0000-\\u0020\\u007f\\\\\]\//);
-  assert.match(serverUrlSafetySource, /if \(UNSAFE_RAW_PUBLIC_URL_CHAR_RE\.test\(trimmed\)\) return false/);
+  assert.match(urlSource, /hasUnsafeRawUrlCharacter\(trimmed\)/);
+  assert.match(serverUrlSafetySource, /hasUnsafeRawPublicUrlCharacter\(trimmed\)/);
   assert.match(urlSource, /export const safeRouteSegment = \(raw: unknown\): string => \{/);
   assert.match(urlSource, /if \(trimmed === '\.' \|\| trimmed === '\.\.'\) return ''/);
   assert.match(urlSource, /\^%\(\?:2e\)\(\?:%\(\?:2e\)\)\?\$/i);
@@ -1654,16 +1652,15 @@ test('admin URL reachability helpers bound inputs before parsing or DNS work', (
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
 
   assert.match(source, /export const MAX_ADMIN_URL_CHECK_URL_LENGTH = 2048/);
-  assert.match(source, /const ADMIN_URL_CHECK_DISPLAY_CONTROL_RE = \/\[\\u0000-\\u001f\\u007f\]\/g/);
-  assert.match(source, /const ADMIN_URL_CHECK_UNSAFE_INPUT_RE = \/\[\\u0000-\\u001f\\u007f\\s\\\\\]\/;/);
+  assert.match(source, /containsAsciiControl\(value\) \|\| \/\[\\s\\\\\]\/\.test\(value\)/);
   assert.match(source, /const adminUrlCheckDisplayText = \(value: string\): string =>/);
-  assert.match(source, /\.replace\(ADMIN_URL_CHECK_DISPLAY_CONTROL_RE, ''\)/);
+  assert.match(source, /replaceAsciiControls\(value, ''\)/);
   assert.match(source, /\.slice\(0, MAX_ADMIN_URL_CHECK_URL_LENGTH\)/);
   assert.match(source, /trimmed\.length === 0 \|\| trimmed\.length > MAX_ADMIN_URL_CHECK_URL_LENGTH/);
   assert.match(source, /const trimmedUrl = url\.trim\(\)/);
   assert.match(source, /trimmedUrl\.length === 0 \|\| url\.length > MAX_ADMIN_URL_CHECK_URL_LENGTH/);
-  assert.match(source, /ADMIN_URL_CHECK_UNSAFE_INPUT_RE\.test\(trimmedUrl\)/);
-  assert.match(source, /ADMIN_URL_CHECK_UNSAFE_INPUT_RE\.test\(trimmed\)/);
+  assert.match(source, /hasUnsafeAdminUrlInput\(trimmedUrl\)/);
+  assert.match(source, /hasUnsafeAdminUrlInput\(trimmed\)/);
   assert.match(source, /Each URL must be a canonical HTTP\(S\) URL/);
   assert.match(source, /return \{ url: displayUrl, status: 0, reachable: false, error: 'URL too long' \}/);
   assert.doesNotMatch(source, /return url;\n\s*\}/);
@@ -1767,7 +1764,7 @@ test('admin taxonomy write routes bound labels and category arrays before persis
   assert.doesNotMatch(source, /res\.json\(\{ department: dept \}\)/);
   assert.doesNotMatch(researchAreaClientSource, /addedBy/);
   assert.match(source, /rawValues\.length === 0 \|\| rawValues\.length > MAX_ADMIN_DEPARTMENT_CATEGORIES/);
-  assert.match(source, /update\.name = normalizeAdminTaxonomyLabel\(name, 'research area name', MAX_RESEARCH_AREA_NAME_LENGTH\)/);
+  assert.match(source, /update\.name = normalizeAdminTaxonomyLabel\(\s*name,\s*'research area name',\s*MAX_RESEARCH_AREA_NAME_LENGTH,?\s*\)/);
   assert.match(source, /const normalizedAbbreviation = normalizeAdminTaxonomyLabel/);
   assert.match(source, /const normalizedCategories = normalizeAdminDepartmentCategories/);
   assert.match(source, /update\.categories = normalizeAdminDepartmentCategories\(categories\)/);
@@ -2727,9 +2724,9 @@ test('client API base URL builder rejects hostile backend origins', () => {
   assert.doesNotMatch(source, /window\.location\.host\.includes\('yalelabs\.io'\)/);
   assert.match(source, /export const normalizeBackendOrigin = \(/);
   assert.match(source, /const MAX_BACKEND_ORIGIN_LENGTH = 2048/);
-  assert.match(source, /const UNSAFE_BACKEND_ORIGIN_CHAR_RE = \/\[\\u0000-\\u0020\\u007f\\\\\]\//);
+  assert.match(source, /const hasUnsafeBackendOriginCharacter/);
   assert.match(source, /trimmed\.length > MAX_BACKEND_ORIGIN_LENGTH/);
-  assert.match(source, /UNSAFE_BACKEND_ORIGIN_CHAR_RE\.test\(trimmed\)/);
+  assert.match(source, /hasUnsafeBackendOriginCharacter\(trimmed\)/);
   assert.match(source, /parsed\.protocol !== 'http:' && parsed\.protocol !== 'https:'/);
   assert.match(source, /parsed\.username \|\| parsed\.password/);
   assert.match(source, /return `\$\{parsed\.origin\}\$\{pathPrefix === '\/' \? '' : pathPrefix\}`/);
@@ -3519,12 +3516,12 @@ test('shared SSRF guard bounds public URL shape before outbound fetches', () => 
   );
 
   assert.match(source, /const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048/);
-  assert.match(source, /const UNSAFE_SSRF_PUBLIC_HTTP_URL_RE = \/\[\\u0000-\\u001f\\u007f\\s\\\\\]\/;/);
+  assert.match(source, /const hasUnsafePublicHttpUrlCharacter/);
   assert.match(source, /const isAllowedPublicHttpPort = \(url: URL\): boolean =>/);
   assert.match(source, /if \(typeof rawUrl !== 'string'\)/);
   assert.match(source, /const trimmed = rawUrl\.trim\(\)/);
   assert.match(source, /if \(!trimmed \|\| trimmed\.length > MAX_SSRF_PUBLIC_HTTP_URL_LENGTH\)/);
-  assert.match(source, /UNSAFE_SSRF_PUBLIC_HTTP_URL_RE\.test\(trimmed\)/);
+  assert.match(source, /hasUnsafePublicHttpUrlCharacter\(trimmed\)/);
   assert.match(source, /parsed = new URL\(trimmed\)/);
   assert.match(source, /if \(!isAllowedPublicHttpPort\(parsed\)\)/);
   assert.match(source, /throw new SsrfBlockedError\('URL port is not allowed'\)/);
@@ -3598,7 +3595,7 @@ test('shared research-area creation normalizes labels and rejects direct contact
 
   assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
   assert.match(source, /const normalizeResearchAreaLabel = \(value: string\): string =>/);
-  assert.match(source, /replace\(\/\[\\u0000-\\u001f\\u007f\]\/g, ' '\)/);
+  assert.match(source, /replaceAsciiControls\(value, ' '\)/);
   assert.match(source, /const hasDirectContactInfo = \(value: string\): boolean => redactDirectContactInfo\(value\) !== value/);
   assert.match(source, /const trimmedName = normalizeResearchAreaLabel\(name\)/);
   assert.match(source, /Research area name cannot include contact information/);
@@ -4483,10 +4480,10 @@ test('public config serializes taxonomy through bounded contact-redacted fields'
   assert.match(source, /const publicDepartmentColorKey = \(value: unknown\): number =>/);
   assert.match(source, /const publicResearchAreaColorKey = \(value: unknown, fallback: unknown\): string =>/);
   assert.match(source, /name: publicConfigText\(area\.name\)/);
-  assert.match(source, /colorKey: publicResearchAreaColorKey\(area\.colorKey, fieldColorKeys\[area\.field as ResearchField\]\)/);
+  assert.match(source, /colorKey: publicResearchAreaColorKey\(\s*area\.colorKey,\s*fieldColorKeys\[area\.field as ResearchField\],?\s*\)/);
   assert.match(source, /aliases: publicConfigTextArray\(/);
   assert.match(source, /categories: publicDepartmentCategories\(dept\.categories\)/);
-  assert.match(source, /primaryCategory: publicDepartmentCategories\(\[dept\.primaryCategory\]\)\[0\]/);
+  assert.match(source, /primaryCategory:\s*publicDepartmentCategories\(\[dept\.primaryCategory\]\)\[0\]/);
   assert.doesNotMatch(source, /aliases: dept\.aliases \|\| \[\]/);
   assert.doesNotMatch(source, /categories: dept\.categories/);
 });
@@ -4729,7 +4726,7 @@ test('unsafe request origin headers are bounded before parsing', () => {
   assert.match(passportSource, /const MAX_AUTH_ORIGIN_HEADER_LENGTH = 2048/);
   assert.match(passportSource, /function originFromUrl\(value: string \| undefined\): string \{/);
   assert.match(passportSource, /value\.length > MAX_AUTH_ORIGIN_HEADER_LENGTH/);
-  assert.match(passportSource, /if \(\/\[\\u0000-\\u0020\\u007f\\\\\]\/\.test\(value\)\) return ''/);
+  assert.match(passportSource, /isAsciiControlCode\(code\) \|\| code === 0x20 \|\| character === '\\\\'/);
   assert.match(passportSource, /if \(parsed\.username \|\| parsed\.password\) return ''/);
   assert.match(csrfSource, /const MAX_CSRF_ORIGIN_HEADER_LENGTH = 2048/);
   assert.match(csrfSource, /const originFromUrl = \(value: string \| undefined\): string => \{/);
@@ -4738,7 +4735,7 @@ test('unsafe request origin headers are bounded before parsing', () => {
   assert.match(csrfSource, /args\.writeLikeSafeMethodPaths\?\.has\(args\.path\)/);
   assert.match(csrfSource, /if \(SAFE_METHODS\.has\(method\) && !isWriteLikeSafeMethodPath\) return true/);
   assert.match(csrfSource, /value\.length > MAX_CSRF_ORIGIN_HEADER_LENGTH/);
-  assert.match(csrfSource, /if \(\/\[\\u0000-\\u0020\\u007f\\\\\]\/\.test\(value\)\) return ''/);
+  assert.match(csrfSource, /isAsciiControlCode\(code\) \|\| code === 0x20 \|\| character === '\\\\'/);
   assert.match(csrfSource, /if \(parsed\.username \|\| parsed\.password\) return ''/);
   assert.match(csrfSource, /if \(args\.origin !== undefined\) \{/);
   assert.match(csrfSource, /return Boolean\(origin && args\.allowedOrigins\.has\(origin\)\)/);
@@ -4757,10 +4754,10 @@ test('CORS origin headers are bounded before allowlist comparison', () => {
   );
 
   assert.match(source, /const MAX_CORS_ORIGIN_LENGTH = 2048/);
-  assert.match(source, /const UNSAFE_CORS_ORIGIN_RE = \/\[\\u0000-\\u0020\\u007f\\\\\]\//);
+  assert.match(source, /const hasUnsafeCorsOriginCharacter/);
   assert.match(source, /const normalizeCorsOrigin = \(origin: string \| undefined\): string => \{/);
   assert.match(source, /origin\.length > MAX_CORS_ORIGIN_LENGTH/);
-  assert.match(source, /UNSAFE_CORS_ORIGIN_RE\.test\(origin\)/);
+  assert.match(source, /hasUnsafeCorsOriginCharacter\(origin\)/);
   assert.match(source, /parsed\.username \|\| parsed\.password/);
   assert.match(source, /parsed\.origin !== origin/);
   assert.match(source, /const normalizedOrigin = normalizeCorsOrigin\(origin\)/);
@@ -5534,7 +5531,7 @@ test('shared URL sanitizers bound values before parsing', () => {
   assert.match(clientUrlSource, /Array\.isArray\(values\) \? values\.slice\(0, MAX_SAFE_URL_LIST_ITEMS\) : \[\]/);
   assert.match(clientUrlSource, /trimmed\.length > MAX_SAFE_EMAIL_LENGTH/);
   assert.match(clientUrlSource, /withoutMailto\.length > MAX_SAFE_EMAIL_LENGTH/);
-  assert.match(clientUrlSource, /typeof params\.subject === 'string' && params\.subject\.length <= MAX_SAFE_MAILTO_SUBJECT_LENGTH/);
+  assert.match(clientUrlSource, /typeof params\.subject === 'string' &&\s*params\.subject\.length <= MAX_SAFE_MAILTO_SUBJECT_LENGTH/);
   assert.match(clientUrlSource, /typeof params\.body === 'string' && params\.body\.length <= MAX_SAFE_MAILTO_BODY_LENGTH/);
   assert.match(clientUrlSource, /rawDoi\.trim\(\)\.length > MAX_SAFE_DOI_LENGTH/);
   assert.match(serverUrlSource, /MAX_PUBLIC_HTTP_URL_LENGTH = 2048/);
@@ -5728,8 +5725,8 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
     'utf8',
   );
 
-  assert.match(spreadsheetSafetySource, /SPREADSHEET_FORMULA_PREFIX/);
-  assert.match(spreadsheetSafetySource, /\[\\s\\u0000-\\u001f\]\*\[=\+\\-@\]/);
+  assert.match(spreadsheetSafetySource, /startsWithSpreadsheetFormula/);
+  assert.match(spreadsheetSafetySource, /isAsciiControlCode\(code\)/);
   assert.match(googleSheetsSource, /safeSheetCell/);
   assert.match(googleSheetsSource, /normalizeOAuthAccessToken/);
   assert.match(googleSheetsSource, /ACCESS_TOKEN_PATTERN/);

@@ -1,6 +1,10 @@
 const CORS_ORIGIN_ERROR_MESSAGE = 'Not allowed by CORS';
 const MAX_CORS_ORIGIN_LENGTH = 2048;
-const UNSAFE_CORS_ORIGIN_RE = /[\u0000-\u0020\u007f\\]/;
+const hasUnsafeCorsOriginCharacter = (value: string): boolean =>
+  Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+  });
 
 export class CorsOriginError extends Error {
   status = 403;
@@ -17,7 +21,7 @@ type CorsOriginCallback = (error: Error | null, allow?: boolean) => void;
 const normalizeCorsOrigin = (origin: string | undefined): string => {
   if (origin === undefined) return '';
   if (origin.length > MAX_CORS_ORIGIN_LENGTH) return '';
-  if (UNSAFE_CORS_ORIGIN_RE.test(origin)) return '';
+  if (hasUnsafeCorsOriginCharacter(origin)) return '';
 
   try {
     const parsed = new URL(origin);
@@ -67,3 +71,4 @@ export const createCorsOriginHandler = (
     callback(new CorsOriginError());
   };
 };
+import { isAsciiControlCode } from '../utils/asciiControl';

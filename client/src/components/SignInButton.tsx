@@ -5,6 +5,7 @@ import Button from '@mui/material/Button';
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { buildApiUrl } from '../utils/apiBaseUrl';
+import { isAsciiControlCode } from '../utils/asciiControl';
 
 const MAX_CAS_RETURN_PATH_LENGTH = 2048;
 
@@ -12,7 +13,13 @@ const normalizeReturnPath = (value?: string | null): string => {
   if (!value) return '';
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > MAX_CAS_RETURN_PATH_LENGTH) return '';
-  if (/[\u0000-\u0020\u007f\\]/.test(trimmed)) return '';
+  if (
+    Array.from(trimmed).some((character) => {
+      const code = character.charCodeAt(0);
+      return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+    })
+  )
+    return '';
 
   try {
     const url = new URL(trimmed, window.location.origin);
