@@ -1158,8 +1158,7 @@ const Research = () => {
                   ))}
                 </div>
               </div>
-            </div>
-          </form>
+            </form>
           </header>
 
           <div className="min-w-0">
@@ -1453,32 +1452,45 @@ const Research = () => {
                         <ClusterLoadingCard key={index} />
                       ))}
                     </div>
-                  </div>
-                  {searchLoading && activeResults.clusters.length > 0 && (
-                    <InfiniteScrollLoadingDots label="Loading more research homes" />
+                  ) : activeResults.clusters.length > 0 ? (
+                    <>
+                      <div className="grid gap-5">
+                        <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
+                          {activeResults.clusters.map((cluster) => (
+                            <ResearchHomeCard
+                              key={cluster.id}
+                              home={cluster}
+                              onSelect={exploreHome}
+                              variant="compact"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {searchLoading && activeResults.clusters.length > 0 && (
+                        <InfiniteScrollLoadingDots label="Loading more research homes" />
+                      )}
+                      {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
+                    </>
+                  ) : (
+                    <EmptyGroup>
+                      {departmentSearch
+                        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
+                        : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
+                    </EmptyGroup>
                   )}
-                  {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
-                </>
-              ) : (
-                <EmptyGroup>
-                  {departmentSearch
-                    ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
-                    : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
-                </EmptyGroup>
-              )}
-            </section>
+                </section>
 
-            {activeResults.papers.length > 0 && (
-              <section className="mt-5">
-                <SectionHeading>Papers via profiles</SectionHeading>
-                <LabPapersList
-                  papers={activeResults.papers}
-                  emptyText="No related profile papers matched this search yet."
-                />
+                {activeResults.papers.length > 0 && (
+                  <section className="mt-5">
+                    <SectionHeading>Papers via profiles</SectionHeading>
+                    <LabPapersList
+                      papers={activeResults.papers}
+                      emptyText="No related profile papers matched this search yet."
+                    />
+                  </section>
+                )}
               </section>
             )}
-          </section>
-        )}
           </div>
         </div>
       </div>
