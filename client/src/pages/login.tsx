@@ -6,7 +6,7 @@ import { useContext } from 'react';
 
 import SignInButton from '../components/SignInButton';
 import UserContext from '../contexts/UserContext';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const Login = () => {
@@ -138,6 +138,14 @@ const Login = () => {
               !authError && <SignInButton />
             )}
           </div>
+          {!isLoading && !isAuthenticated && (
+            <Link
+              to="/research"
+              className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-md border border-[var(--yr-blue)] px-4 py-2 text-center text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+            >
+              Explore Yale research without signing in
+            </Link>
+          )}
         </section>
       </div>
     </div>

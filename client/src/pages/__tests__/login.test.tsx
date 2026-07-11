@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ContextType } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UserContext from '../../contexts/UserContext';
@@ -27,7 +27,10 @@ const renderLogin = (from?: string, context: Partial<UserContextValue> = {}) => 
         future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
         initialEntries={[{ pathname: '/login', state: from ? { from } : null }]}
       >
-        <Login />
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/research" element={<div>Public research directory</div>} />
+        </Routes>
       </MemoryRouter>
     </UserContext.Provider>,
   );
@@ -41,6 +44,16 @@ afterEach(() => {
 });
 
 describe('Login', () => {
+  it('offers visitors a public research path from the CAS gate', async () => {
+    const user = userEvent.setup();
+    renderLogin('/account');
+
+    await user.click(
+      screen.getByRole('link', { name: 'Explore Yale research without signing in' }),
+    );
+
+    expect(screen.getByText('Public research directory')).toBeTruthy();
+  });
   it('uses the default Yale Research context for unknown retired surfaces', () => {
     renderLogin('/old-research-entry');
 

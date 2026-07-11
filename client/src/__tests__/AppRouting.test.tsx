@@ -101,6 +101,17 @@ describe('App routing', () => {
     expect(getByTestId('research-page').textContent).toBe('Yale Research');
   });
 
+  it('makes the root URL a public entry to Yale Research', async () => {
+    window.history.pushState({}, '', '/');
+
+    const { getByTestId } = render(<App />);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/research');
+    });
+    expect(getByTestId('research-page').textContent).toBe('Yale Research');
+  });
+
   it('renders Programs & Fellowships at /programs', async () => {
     window.history.pushState({}, '', '/programs');
 

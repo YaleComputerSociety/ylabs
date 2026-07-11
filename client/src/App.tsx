@@ -48,7 +48,7 @@ const App = () => {
                     <Routes>
                       <Route
                         path="/"
-                        element={<PrivateRoute Component={RootRedirect} unknownBlocked={true} />}
+                        element={<RootRedirect />}
                       />
                       <Route
                         path="/listings"
