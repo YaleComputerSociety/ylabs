@@ -11,7 +11,7 @@ Temporary execution plans, worktree plans, screenshots, browser audit dumps, and
 - Start with `Current Focus`, then work down the active queue.
 - When work completes, record only stable outcomes and remaining work here.
 - Put durable product direction in `docs/product-context.md`, model decisions in `docs/research-model.md`, architecture decisions in `docs/decisions.md`, and scraper procedure in the scraper docs.
-- After durable code, schema, scraper, architecture, or doc changes, run `graphify update .`.
+- Refresh Graphify only in dedicated scheduled or manual maintenance after groups of Beta merges, not in feature PRs.
 
 ## Priority Scale
 
@@ -69,7 +69,6 @@ yarn --cwd server test
 yarn --cwd client test:ci
 npx tsc --noEmit -p server/tsconfig.json
 yarn build
-graphify update .
 ```
 
 Known caveat: client `tsc --noEmit` is not a clean CI gate unless the current task explicitly addresses that cleanup.

@@ -12,16 +12,16 @@ For day-to-day agent usage, read [`skills/graphify/SKILL.md`](../skills/graphify
 
 ## Setup Tasks
 
-1. Install the official package:
-   - Preferred: `uv tool install graphifyy`
-   - Alternative: `pipx install graphifyy`
+1. Install the official package version declared in `.graphify-version`:
+   - Preferred: `uv tool install "graphifyy==$(cat .graphify-version)"`
+   - Alternative: `pipx install "graphifyy==$(cat .graphify-version)"`
 2. Install the agent integration for your platform:
    - `graphify install --platform <codex|claude|...>`
 3. Build the no-cost code graph:
    - `graphify update .`
-4. Review:
+4. Run a scoped query and review the broad report only when needed:
+   - `graphify query "how does research discovery reach its search services?"`
    - `graphify-out/GRAPH_REPORT.md`
-   - `graphify-out/graph.html`
 5. Optional: run full semantic extraction when an LLM key is configured:
    - `graphify extract .`
 6. Enable always-on agent guidance after review (platform-specific):
@@ -29,30 +29,18 @@ For day-to-day agent usage, read [`skills/graphify/SKILL.md`](../skills/graphify
 
 ## Shared Output Policy
 
-Commit useful shared outputs:
+Commit only the canonical shared outputs:
 
 - `graphify-out/GRAPH_REPORT.md`
 - `graphify-out/graph.json`
-- `graphify-out/graph.html` if the visual graph is useful enough to share
-
-Do not commit local-only state:
-
-- `graphify-out/cache/`
-- `graphify-out/cost.json`
-- `graphify-out/manifest.json`
-- `graphify-out/.graphify_root`
-- `graphify-out/.graphify_analysis.json`
-- `graphify-out/.graphify_labels.json`
-- `graphify-out/.rebuild.lock`
-- `graphify-out/memory/`
+- Do not commit any other `graphify-out/` content, including `graph.html`, dated snapshots, caches, manifests, labels, locks, or memory.
 
 ## Refresh Policy
 
-Run `graphify update .` after durable changes to:
+Feature PRs do not refresh Graphify.
+After a group of changes lands on Beta, use a dedicated scheduled or manually triggered maintenance change to run `graphify update .` with the pinned version.
+Run the update twice and require the second run to produce no diff in `graphify-out/graph.json` or `graphify-out/GRAPH_REPORT.md`.
+Parse `graph.json`, verify it has nonempty `nodes` and `links`, and verify the report is nonempty before committing.
 
-- schema or model collections
-- scraper behavior or source-evidence handling
-- architecture or cross-surface flows
-- durable product docs or decisions
-
-If Graphify cannot be refreshed during a task, note that in the final response.
+The report records the source commit analyzed by Graphify.
+That source commit normally precedes the maintenance commit that records the outputs, so freshness means it matches the intended Beta source snapshot, not that it equals the output commit's `HEAD`.
