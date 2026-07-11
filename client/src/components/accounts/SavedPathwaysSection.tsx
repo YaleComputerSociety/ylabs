@@ -4,12 +4,7 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import type { PathwaySearchHit } from '../../types/pathway';
 import axios from '../../utils/axios';
 import UserContext from '../../contexts/UserContext';
-import {
-  EXTERNAL_LINK_REL,
-  safeHttpUrl,
-  safeHttpUrlList,
-  safeRouteSegment,
-} from '../../utils/url';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeRouteSegment } from '../../utils/url';
 
 type PlanningIntent = 'thesis' | 'outreach' | 'credit' | 'funding' | 'apply' | 'later';
 type PlanningStage = 'saved' | 'researching' | 'ready' | 'acted' | 'archived';
@@ -19,6 +14,13 @@ export interface PathwayPlan {
   stage: PlanningStage;
   note: string;
   checklist: Record<string, boolean>;
+  checklistHistory: ChecklistHistoryItem[];
+}
+
+export interface ChecklistHistoryItem {
+  intent: PlanningIntent;
+  label: string;
+  completedAt: string;
 }
 
 export type PathwayPlanMap = Record<string, PathwayPlan>;
@@ -169,6 +171,25 @@ const CHECKLIST_TEMPLATES: Record<PlanningIntent, Array<{ key: string; label: st
     { key: 'later-review', label: 'Choose when to review it again' },
     { key: 'later-keep-archive', label: 'Decide whether to keep or archive it' },
   ],
+};
+
+const intentLabel = (intent: PlanningIntent): string =>
+  INTENT_OPTIONS.find((option) => option.value === intent)?.label || intent;
+
+const normalizeChecklistHistory = (value: unknown): ChecklistHistoryItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is ChecklistHistoryItem => {
+      if (!item || typeof item !== 'object') return false;
+      const candidate = item as Partial<ChecklistHistoryItem>;
+      return (
+        isPlanningIntent(candidate.intent) &&
+        typeof candidate.label === 'string' &&
+        candidate.label.trim().length > 0 &&
+        typeof candidate.completedAt === 'string'
+      );
+    })
+    .slice(-50);
 };
 
 const labelize = (value?: string): string =>
@@ -404,6 +425,7 @@ const normalizeStoredPlan = (value: unknown): PathwayPlan | null => {
     stage: isPlanningStage(candidate.stage) ? candidate.stage : 'saved',
     note: normalizePlanNote(candidate.note),
     checklist: normalizePlanChecklist(candidate.checklist),
+    checklistHistory: normalizeChecklistHistory(candidate.checklistHistory),
   };
 };
 
@@ -428,6 +450,7 @@ const localStoragePlanMap = (plans: PathwayPlanMap): PathwayPlanMap =>
         stage: plan.stage,
         note: '',
         checklist: {},
+        checklistHistory: [],
       },
     ]),
   );
@@ -586,6 +609,13 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const [showExportControls, setShowExportControls] = useState(false);
   const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
   const [hydratedPlanStorageOwner, setHydratedPlanStorageOwner] = useState<string | undefined>();
+  const [planSaveStatus, setPlanSaveStatus] = useState<Record<string, string>>({});
+  const [pendingIntentChange, setPendingIntentChange] = useState<{
+    pathwayId: string;
+    nextIntent: PlanningIntent;
+    returnFocus: HTMLSelectElement;
+  } | null>(null);
+  const confirmIntentButtonRef = useRef<HTMLButtonElement>(null);
   const activePlanStorageOwnerRef = useRef<string | undefined>(undefined);
 
   const loadPathways = useCallback(async () => {
@@ -693,6 +723,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         stage: isPlanningStage(storedPlan.stage) ? storedPlan.stage : 'saved',
         note: normalizePlanNote(storedPlan.note),
         checklist: normalizePlanChecklist(storedPlan.checklist),
+        checklistHistory: normalizeChecklistHistory(storedPlan.checklistHistory),
       };
     }
 
@@ -701,22 +732,31 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       stage: 'saved',
       note: '',
       checklist: {},
+      checklistHistory: [],
     };
   };
 
   const updatePlan = (pathwayId: string, patch: Partial<PathwayPlan>) => {
+    if (hydratedPlanStorageOwner !== planStorageOwner || !plans[pathwayId]) return;
     setPlans((current) => {
-      const nextPlan = {
-        ...(current[pathwayId] || { intent: 'later', stage: 'saved', note: '', checklist: {} }),
-        ...patch,
-      };
+      const currentPlan = current[pathwayId];
+      if (!currentPlan) return current;
+      const nextPlan = { ...currentPlan, ...patch };
+      setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Saving plan...' }));
       axios
         .put(
           `/users/savedResearchPlanDetails/${pathwayId}`,
           { data: { plan: nextPlan } },
           { withCredentials: true },
         )
-        .catch(() => console.error('Error saving research plan.'));
+        .then(() => setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Plan saved.' })))
+        .catch(() => {
+          console.error('Error saving research plan.');
+          setPlanSaveStatus((statuses) => ({
+            ...statuses,
+            [pathwayId]: 'Plan could not be saved.',
+          }));
+        });
       return {
         ...current,
         [pathwayId]: nextPlan,
@@ -725,12 +765,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   };
 
   const toggleChecklistItem = (pathwayId: string, itemKey: string, checked: boolean) => {
-    const currentPlan = plans[pathwayId] || {
-      intent: 'later' as PlanningIntent,
-      stage: 'saved' as PlanningStage,
-      note: '',
-      checklist: {},
-    };
+    const currentPlan = plans[pathwayId];
+    if (!currentPlan || hydratedPlanStorageOwner !== planStorageOwner) return;
 
     updatePlan(pathwayId, {
       checklist: {
@@ -739,6 +775,52 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       },
     });
   };
+
+  const requestIntentChange = (
+    pathwayId: string,
+    nextIntent: PlanningIntent,
+    control: HTMLSelectElement,
+  ) => {
+    const currentPlan = plans[pathwayId];
+    if (!currentPlan || currentPlan.intent === nextIntent) return;
+    const completed = CHECKLIST_TEMPLATES[currentPlan.intent].filter(
+      (item) => currentPlan.checklist[item.key],
+    );
+    if (completed.length === 0) {
+      updatePlan(pathwayId, { intent: nextIntent, checklist: {} });
+      return;
+    }
+    setPendingIntentChange({ pathwayId, nextIntent, returnFocus: control });
+  };
+
+  const closeIntentConfirmation = () => {
+    const returnFocus = pendingIntentChange?.returnFocus;
+    setPendingIntentChange(null);
+    window.setTimeout(() => returnFocus?.focus(), 0);
+  };
+
+  const confirmIntentChange = () => {
+    if (!pendingIntentChange) return;
+    const { pathwayId, nextIntent, returnFocus } = pendingIntentChange;
+    const currentPlan = plans[pathwayId];
+    if (currentPlan) {
+      const completedAt = new Date().toISOString();
+      const archived = CHECKLIST_TEMPLATES[currentPlan.intent]
+        .filter((item) => currentPlan.checklist[item.key])
+        .map((item) => ({ intent: currentPlan.intent, label: item.label, completedAt }));
+      updatePlan(pathwayId, {
+        intent: nextIntent,
+        checklist: {},
+        checklistHistory: [...currentPlan.checklistHistory, ...archived].slice(-50),
+      });
+    }
+    setPendingIntentChange(null);
+    window.setTimeout(() => returnFocus.focus(), 0);
+  };
+
+  useEffect(() => {
+    if (pendingIntentChange) confirmIntentButtonRef.current?.focus();
+  }, [pendingIntentChange]);
 
   const removePathway = async (pathwayId: string) => {
     const previous = pathways;
@@ -854,6 +936,55 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           </button>
         </div>
       )}
+      {pendingIntentChange &&
+        (() => {
+          const currentPlan = plans[pendingIntentChange.pathwayId];
+          const completedCount = currentPlan
+            ? CHECKLIST_TEMPLATES[currentPlan.intent].filter(
+                (item) => currentPlan.checklist[item.key],
+              ).length
+            : 0;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="intent-change-title"
+                aria-describedby="intent-change-description"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') closeIntentConfirmation();
+                }}
+                className="w-full max-w-md rounded-md bg-white p-5 shadow-xl"
+              >
+                <h2 id="intent-change-title" className="text-lg font-semibold text-gray-950">
+                  Update this checklist?
+                </h2>
+                <p id="intent-change-description" className="mt-2 text-sm text-gray-700">
+                  Switching to {intentLabel(pendingIntentChange.nextIntent)} creates a new
+                  checklist. Your {completedCount} completed{' '}
+                  {completedCount === 1 ? 'step' : 'steps'} will move to completed step history.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeIntentConfirmation}
+                    className="rounded-md border px-3 py-2 text-sm font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    ref={confirmIntentButtonRef}
+                    type="button"
+                    onClick={confirmIntentChange}
+                    className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white"
+                  >
+                    Update checklist
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {exportError && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -913,6 +1044,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             const isExpanded = Boolean(expandedPlanIds[pathway._id]);
             const profileName = pathway.researchEntity.displayName || pathway.researchEntity.name;
             const stage = labelForOption(STAGE_OPTIONS, plan.stage);
+            const planIsHydrated =
+              hydratedPlanStorageOwner === planStorageOwner && !!plans[pathway._id];
 
             return (
               <article key={pathway._id} className="rounded-md border border-[var(--yr-line)] p-4">
@@ -936,17 +1069,17 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                   </div>
 
                   <div className="flex flex-wrap gap-2 md:justify-end">
-	                    <Link
-	                      to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
-	                      className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    <Link
+                      to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
+                      className="inline-flex min-h-[44px] items-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       Open profile
                     </Link>
                     <button
                       type="button"
-	                      aria-expanded={isExpanded}
-	                      onClick={() => toggleExpandedPlan(pathway._id)}
-	                      className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleExpandedPlan(pathway._id)}
+                      className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                     >
                       {isExpanded ? 'Hide details' : 'Plan details'}
                     </button>
@@ -1062,10 +1195,15 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                         Intent
                         <select
                           value={plan.intent}
+                          disabled={!planIsHydrated}
+                          aria-busy={!planIsHydrated}
+                          onWheel={(event) => event.currentTarget.blur()}
                           onChange={(event) =>
-                            updatePlan(pathway._id, {
-                              intent: event.target.value as PlanningIntent,
-                            })
+                            requestIntentChange(
+                              pathway._id,
+                              event.target.value as PlanningIntent,
+                              event.currentTarget,
+                            )
                           }
                           className="mt-1 block w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
@@ -1081,6 +1219,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                         Stage
                         <select
                           value={plan.stage}
+                          disabled={!planIsHydrated}
+                          aria-busy={!planIsHydrated}
+                          onWheel={(event) => event.currentTarget.blur()}
                           onChange={(event) =>
                             updatePlan(pathway._id, {
                               stage: event.target.value as PlanningStage,
@@ -1101,6 +1242,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                       Note
                       <textarea
                         value={plan.note}
+                        disabled={!planIsHydrated}
+                        aria-busy={!planIsHydrated}
                         onChange={(event) =>
                           updatePlan(pathway._id, { note: normalizePlanNote(event.target.value) })
                         }
@@ -1113,7 +1256,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                     <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
                       <div className="mb-2 flex items-center justify-between gap-3">
                         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          Checklist
+                          Checklist for: {intentLabel(plan.intent)}
                         </h4>
                         <span className="text-xs font-medium text-gray-500">
                           {completedChecklistItems}/{checklistItems.length}
@@ -1127,6 +1270,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                           >
                             <input
                               type="checkbox"
+                              disabled={!planIsHydrated}
+                              aria-busy={!planIsHydrated}
                               checked={!!plan.checklist?.[item.key]}
                               onChange={(event) =>
                                 toggleChecklistItem(pathway._id, item.key, event.target.checked)
@@ -1137,7 +1282,26 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                           </label>
                         ))}
                       </div>
+                      {plan.checklistHistory.length > 0 && (
+                        <details className="mt-3 border-t border-[var(--yr-line)] pt-2 text-sm text-gray-600">
+                          <summary className="cursor-pointer font-semibold">
+                            Completed step history ({plan.checklistHistory.length})
+                          </summary>
+                          <ul className="mt-2 list-disc space-y-1 pl-5">
+                            {plan.checklistHistory.map((item, index) => (
+                              <li key={`${item.completedAt}-${index}`}>
+                                {item.label} ({intentLabel(item.intent)})
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                     </div>
+
+                    <p className="sr-only" role="status" aria-live="polite">
+                      {planSaveStatus[pathway._id] ||
+                        (!planIsHydrated ? 'Plan details are loading.' : '')}
+                    </p>
 
                     {pathway.explanation && (
                       <p className="line-clamp-3 text-sm text-gray-600">{pathway.explanation}</p>
@@ -1161,9 +1325,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
 
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button
-	                    type="button"
-	                    onClick={() => removePathway(pathway._id)}
-	                    className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
+                    type="button"
+                    onClick={() => removePathway(pathway._id)}
+                    className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-semibold text-gray-500 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
                   >
                     Remove
                   </button>

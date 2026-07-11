@@ -187,7 +187,7 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
     const result = sanitizeSavedPathwayPlanForStorage({
       checklist: {
         ' review.evidence ': true,
-        '$set': true,
+        $set: true,
         constructor: true,
         prototype: true,
       },
@@ -200,15 +200,35 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
     expect(Object.prototype.hasOwnProperty.call(result.checklist, 'constructor')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(result.checklist, 'prototype')).toBe(false);
   });
+
+  it('sanitizes and bounds completed checklist history for durable storage', () => {
+    const result = sanitizeSavedPathwayPlanForStorage({
+      intent: 'credit',
+      checklistHistory: [
+        {
+          intent: 'outreach',
+          label: '  Contact the program office  ',
+          completedAt: '2026-07-11T12:00:00Z',
+        },
+        { intent: 'invalid', label: 'Dropped', completedAt: '2026-07-11T12:00:00Z' },
+        { intent: 'thesis', label: 'Bad date', completedAt: 'not-a-date' },
+      ],
+    });
+
+    expect(result.checklistHistory).toEqual([
+      {
+        intent: 'outreach',
+        label: 'Contact the program office',
+        completedAt: '2026-07-11T12:00:00.000Z',
+      },
+    ]);
+  });
 });
 
 describe('buildSavedPathwayPlanUnsetForIds', () => {
   it('builds update paths used when saved pathways or plans are deleted', () => {
     expect(
-      buildSavedPathwayPlanUnsetForIds([
-        '665f0b0c0b0c0b0c0b0c0b0c',
-        '665f0b0c0b0c0b0c0b0c0b0d',
-      ]),
+      buildSavedPathwayPlanUnsetForIds(['665f0b0c0b0c0b0c0b0c0b0c', '665f0b0c0b0c0b0c0b0c0b0d']),
     ).toEqual({
       'savedPathwayPlans.665f0b0c0b0c0b0c0b0c0b0c': '',
       'savedPathwayPlans.665f0b0c0b0c0b0c0b0c0b0d': '',
@@ -245,9 +265,9 @@ describe('normalizeObjectIdsForUserMutation', () => {
   });
 
   it('rejects non-array account mutation batches before per-id work', () => {
-    expect(() => normalizeObjectIdsForUserMutation({ 0: '665f0b0c0b0c0b0c0b0c0b0c' } as any, 'favListings')).toThrow(
-      /Invalid favListings ids/,
-    );
+    expect(() =>
+      normalizeObjectIdsForUserMutation({ 0: '665f0b0c0b0c0b0c0b0c0b0c' } as any, 'favListings'),
+    ).toThrow(/Invalid favListings ids/);
   });
 
   it('rejects malformed ids before they reach Mongo update paths', () => {
@@ -262,9 +282,7 @@ describe('normalizeObjectIdsForUserMutation', () => {
   });
 
   it('rejects oversized account mutation batches before per-id work', () => {
-    const ids = Array.from({ length: 101 }, (_, index) =>
-      index.toString(16).padStart(24, '0'),
-    );
+    const ids = Array.from({ length: 101 }, (_, index) => index.toString(16).padStart(24, '0'));
 
     expect(() => normalizeObjectIdsForUserMutation(ids, 'favPathways')).toThrow(
       /Too many favPathways ids/,
