@@ -16,7 +16,7 @@ PFR3_QUEUE_HANDLE_SALT='<environment-specific secret, at least 16 characters>' \
 The default report is aggregate-only. Its mutually exclusive buckets are worked in order:
 
 1. `status_recency_review`: evidence, confidence, and a safe public source already qualify; a human must verify whether the pathway is currently active or recurring.
-2. `source_repair`: the pathway lacks a safe public HTTP(S) source or an evidence reference; an operator must locate and validate an authoritative public source.
+2. `source_repair`: the pathway lacks a safe public HTTP(S) source; an operator must locate and validate an authoritative public source.
 3. `new_source_acquisition`: weak evidence is also below the `0.70` confidence threshold; acquire new authoritative evidence through the normal scraper/observation workflow.
 
 For bounded assignment samples, add `--sample-limit=N` where `N` is at most 100. Samples contain only salted, non-reversible handles and coarse quality labels. Keep the environment-specific salt stable for one review cycle, store it outside reports, and rotate it between cycles. The command never prints URLs, evidence IDs, database IDs, excerpts, names, or contact details.

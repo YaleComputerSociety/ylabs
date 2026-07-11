@@ -65,7 +65,6 @@ function bucketFor(candidate: PathwaySourceQueueCandidate): PathwaySourceQueueBu
   const evidence = typeof candidate.evidenceStrength === 'string' ? candidate.evidenceStrength : '';
   const confidence = typeof candidate.confidence === 'number' ? candidate.confidence : undefined;
   const safeSource = hasSafePublicSource(candidate);
-  const hasEvidenceReference = strings(candidate.sourceEvidenceIds).length > 0;
 
   const statusIsOnlyBlocker =
     !ACTIVE_STATUSES.has(status) &&
@@ -74,7 +73,7 @@ function bucketFor(candidate: PathwaySourceQueueCandidate): PathwaySourceQueueBu
     confidence >= 0.7 &&
     safeSource;
   if (statusIsOnlyBlocker) return 'status_recency_review';
-  if (!safeSource || !hasEvidenceReference) return 'source_repair';
+  if (!safeSource) return 'source_repair';
   if (evidence === 'WEAK' && (confidence === undefined || confidence < 0.7)) {
     return 'new_source_acquisition';
   }
