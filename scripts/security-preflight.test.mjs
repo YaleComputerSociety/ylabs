@@ -160,6 +160,16 @@ test('PFR-3 rollout tooling stays aggregate-only and fail-closed', () => {
   assert.match(rebuild, /assertPathwayIndexRolloutTarget/);
 });
 
+test('PFR-3 pathway source queue is read-only and redacted', () => {
+  const queue = fs.readFileSync(new URL('../server/src/scripts/pfr3PathwaySourceQueue.ts', import.meta.url), 'utf8');
+  const core = fs.readFileSync(new URL('../server/src/scripts/pfr3PathwaySourceQueueCore.ts', import.meta.url), 'utf8');
+  assert.match(queue, /assertScriptApplyAllowed/);
+  assert.match(queue, /\.select\('_id status evidenceStrength confidence sourceUrls sourceEvidenceIds archived'\)/);
+  assert.doesNotMatch(queue, /\.update|\.save|findOneAnd|bulkWrite|insertMany|deleteMany/);
+  assert.match(core, /createHash\('sha256'\)/);
+  assert.doesNotMatch(core, /destination|email|phone|excerpt/);
+});
+
 
 test('admin access-review validation responses use fixed public copy', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
