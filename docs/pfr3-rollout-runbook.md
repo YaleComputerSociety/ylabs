@@ -7,7 +7,7 @@ The pathway rebuild remains the only write operation and requires a verified res
 ## 1. Admin contact-route review
 
 Run `yarn --cwd server pfr3:contact-route-review` against Beta.
-The queue contains only structurally eligible public HTTP(S) destinations and sources, policy, evidence strength, confidence, priority, and current review state.
+The queue contains only structurally eligible public HTTP(S) destinations and sources, policy, evidence-reference count, priority, and current review state.
 It excludes approved, archived, direct-email, unknown-policy, and no-direct-contact routes.
 It never changes review status and contains no database identifiers, names, email addresses, or evidence excerpts.
 
