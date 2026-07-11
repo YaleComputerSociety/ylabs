@@ -23,6 +23,7 @@ export interface FellowshipSearchState {
   selectedStudentFacingCategory: string[];
   selectedTermOfAward: string[];
   selectedPurpose: string[];
+  selectedSubjects: string[];
   selectedRegions: string[];
   selectedCitizenship: string[];
   selectedStudentVisibilityTier: StudentVisibilityTier[];
@@ -55,11 +56,14 @@ export type FellowshipSearchAction =
   | { type: 'SET_SELECTED_YEAR_OF_STUDY'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_TERM_OF_AWARD'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_PURPOSE'; payload: string[] | ((prev: string[]) => string[]) }
+  | { type: 'SET_SELECTED_SUBJECTS'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_REGIONS'; payload: string[] | ((prev: string[]) => string[]) }
   | { type: 'SET_SELECTED_CITIZENSHIP'; payload: string[] | ((prev: string[]) => string[]) }
   | {
       type: 'SET_SELECTED_STUDENT_VISIBILITY_TIER';
-      payload: StudentVisibilityTier[] | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
+      payload:
+        | StudentVisibilityTier[]
+        | ((prev: StudentVisibilityTier[]) => StudentVisibilityTier[]);
     }
   | { type: 'SET_SORT_BY'; payload: string }
   | { type: 'SET_SORT_ORDER'; payload: number }
@@ -96,6 +100,7 @@ export const createInitialFellowshipSearchState = (
   selectedYearOfStudy: [],
   selectedTermOfAward: [],
   selectedPurpose: [],
+  selectedSubjects: [],
   selectedRegions: [],
   selectedCitizenship: [],
   selectedStudentVisibilityTier: [],
@@ -117,6 +122,7 @@ export const createInitialFellowshipSearchState = (
     purpose: [],
     globalRegions: [],
     citizenshipStatus: [],
+    subjects: [],
   },
   quickFilter: null,
   filterBarHeight: 0,
@@ -159,10 +165,7 @@ export function fellowshipSearchReducer(
     case 'SET_SELECTED_STUDENT_FACING_CATEGORY':
       return {
         ...state,
-        selectedStudentFacingCategory: resolve(
-          action.payload,
-          state.selectedStudentFacingCategory,
-        ),
+        selectedStudentFacingCategory: resolve(action.payload, state.selectedStudentFacingCategory),
       };
 
     case 'SET_SELECTED_YEAR_OF_STUDY':
@@ -174,6 +177,9 @@ export function fellowshipSearchReducer(
     case 'SET_SELECTED_PURPOSE':
       return { ...state, selectedPurpose: resolve(action.payload, state.selectedPurpose) };
 
+    case 'SET_SELECTED_SUBJECTS':
+      return { ...state, selectedSubjects: resolve(action.payload, state.selectedSubjects) };
+
     case 'SET_SELECTED_REGIONS':
       return { ...state, selectedRegions: resolve(action.payload, state.selectedRegions) };
 
@@ -183,10 +189,7 @@ export function fellowshipSearchReducer(
     case 'SET_SELECTED_STUDENT_VISIBILITY_TIER':
       return {
         ...state,
-        selectedStudentVisibilityTier: resolve(
-          action.payload,
-          state.selectedStudentVisibilityTier,
-        ),
+        selectedStudentVisibilityTier: resolve(action.payload, state.selectedStudentVisibilityTier),
       };
 
     case 'SET_SORT_BY':

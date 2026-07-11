@@ -23,6 +23,8 @@ export interface FellowshipSearchContextType {
   setSelectedTermOfAward: React.Dispatch<React.SetStateAction<string[]>>;
   selectedPurpose: string[];
   setSelectedPurpose: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedSubjects: string[];
+  setSelectedSubjects: React.Dispatch<React.SetStateAction<string[]>>;
   selectedRegions: string[];
   setSelectedRegions: React.Dispatch<React.SetStateAction<string[]>>;
   selectedCitizenship: string[];
@@ -76,6 +78,8 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   setSelectedTermOfAward: () => {},
   selectedPurpose: [],
   setSelectedPurpose: () => {},
+  selectedSubjects: [],
+  setSelectedSubjects: () => {},
   selectedRegions: [],
   setSelectedRegions: () => {},
   selectedCitizenship: [],
@@ -105,6 +109,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
     purpose: [],
     globalRegions: [],
     citizenshipStatus: [],
+    subjects: [],
   },
   sortableKeys: [],
   refreshFellowships: () => {},

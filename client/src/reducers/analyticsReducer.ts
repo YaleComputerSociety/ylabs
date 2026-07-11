@@ -255,6 +255,10 @@ export interface AnalyticsSearchQualityResponse {
   avgResults?: number;
   avgResultsPerSearch?: number;
   avgLatencyMs?: number;
+  engagedSearches?: number;
+  returnedButIgnoredSearches?: number;
+  engagementRate?: number;
+  attributionWindowMinutes?: number;
   topQueries?: AnalyticsSearchQualityQuery[];
   zeroResultQueries?: AnalyticsSearchQualityQuery[];
   topZeroResultQueries?: AnalyticsSearchQualityQuery[];
