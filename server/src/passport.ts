@@ -546,7 +546,7 @@ const casLogin = function (
     function (
       err: Error | null,
       user: AuthenticatedSessionUser | false | null | undefined,
-      info: PassportAuthInfo = {},
+      _info: PassportAuthInfo = {},
     ) {
       if (err) {
         console.log('Error in authenticate function');

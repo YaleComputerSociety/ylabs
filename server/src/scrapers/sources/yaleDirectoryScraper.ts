@@ -291,7 +291,6 @@ export class YaleDirectoryScraper implements IScraper {
       try {
         records = await fetchYaliesPage(pageNum, undefined, ctx.options.useCache);
       } catch (err: unknown) {
-        const errAny = err as { message?: string; response?: { status?: number } };
         if (axios.isAxiosError(err) && err.response?.status === 401) {
           ctx.log(`Yalies API returned 401 (auth failed); aborting after page ${pageNum}.`);
           break;

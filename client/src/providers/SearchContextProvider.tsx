@@ -29,9 +29,11 @@ interface SearchContextProviderProps {
   children: ReactNode;
 }
 
+const LISTING_SORTABLE_KEYS = ['default', 'title'];
+
 const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => {
   const pageSize = 20;
-  const sortableKeys = ['default', 'title'];
+  const sortableKeys = LISTING_SORTABLE_KEYS;
 
   const { isAuthenticated, isLoading: authLoading } = useContext(UserContext);
   const isListingsRoute = false;
@@ -122,7 +124,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
 
   const setSortBy = useCallback((value: string) => {
     dispatch({ type: 'SET_SORT_BY', payload: sortableKeys.includes(value) ? value : sortableKeys[0] });
-  }, []);
+  }, [sortableKeys]);
 
   const setSortOrder = useCallback((value: number) => {
     dispatch({ type: 'SET_SORT_ORDER', payload: value });
@@ -266,7 +268,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, configLoaded, isListingsRoute]);
+  }, [queryString, queryStringLoaded, configLoaded, isListingsRoute, handleSearch]);
 
   useEffect(() => {
     if (!isListingsRoute || !configLoaded) return;
@@ -287,13 +289,15 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     sortOrder,
     configLoaded,
     isListingsRoute,
+    departmentsLoaded,
+    handleSearch,
   ]);
 
   useEffect(() => {
     if (isListingsRoute && page > 1 && configLoaded) {
       handleSearch(page);
     }
-  }, [page, configLoaded, isListingsRoute]);
+  }, [page, configLoaded, isListingsRoute, handleSearch]);
 
   return (
     <SearchContext.Provider

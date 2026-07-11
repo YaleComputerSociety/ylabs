@@ -385,7 +385,7 @@ describe('OpenAlexPaperScraper.run', () => {
   });
 
   it('keeps successful name lookup review-only and does not create authorship', async () => {
-    const fetcher: HttpFetcher = vi.fn(async (url, params) => {
+    const fetcher: HttpFetcher = vi.fn(async (url, _params) => {
       if (url === 'https://api.openalex.org/authors') {
         // Name search returns one exact match.
         return {

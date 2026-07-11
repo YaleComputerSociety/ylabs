@@ -43,7 +43,7 @@ const CourseTableSection = ({ netid, onAvailabilityChange }: CourseTableSectionP
         onAvailabilityChange?.(false);
       })
       .finally(() => setLoading(false));
-  }, [netid]);
+  }, [netid, onAvailabilityChange]);
 
   if (loading) {
     return (

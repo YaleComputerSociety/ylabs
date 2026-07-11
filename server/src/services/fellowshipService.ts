@@ -2,7 +2,6 @@
  * Service layer for fellowship CRUD, search, and filter operations.
  */
 import { NotFoundError, ObjectIdError } from '../utils/errors';
-import mongoose from 'mongoose';
 import {
   Fellowship,
   programCategories,

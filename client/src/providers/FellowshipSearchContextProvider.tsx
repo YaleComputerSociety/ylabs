@@ -129,7 +129,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       type: 'SET_SORT_BY',
       payload: sortableKeys.includes(value) ? value : sortableKeys[0],
     });
-  }, []);
+  }, [sortableKeys]);
 
   const setSortOrder = useCallback((value: number) => {
     dispatch({ type: 'SET_SORT_ORDER', payload: value });
@@ -334,7 +334,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, filterOptionsLoaded, isActive]);
+  }, [queryString, queryStringLoaded, filterOptionsLoaded, isActive, handleSearch]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -361,6 +361,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     sortOrder,
     filterOptionsLoaded,
     isActive,
+    filtersLoaded,
+    handleSearch,
   ]);
 
   useEffect(() => {
@@ -368,7 +370,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     if (page > 1 && filterOptionsLoaded) {
       handleSearch(page);
     }
-  }, [page, filterOptionsLoaded, isActive]);
+  }, [page, filterOptionsLoaded, isActive, handleSearch]);
 
   return (
     <FellowshipSearchContext.Provider

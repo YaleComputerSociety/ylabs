@@ -50,14 +50,6 @@ function asciiTokens(input: string): string[] {
     .filter((token) => token && !/^\d+$/.test(token));
 }
 
-function givenNameCompatible(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.length === 1 && b.startsWith(a)) return true;
-  if (b.length === 1 && a.startsWith(b)) return true;
-  return a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a));
-}
-
 /**
  * Return true only when a Yale email is plausibly owned by the supplied person.
  *

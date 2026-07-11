@@ -193,7 +193,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
 
   useEffect(() => {
     reloadFavorites();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   const nextProgramDeadline = useMemo(

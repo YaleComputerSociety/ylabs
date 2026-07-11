@@ -17,7 +17,6 @@ import {
   buildCoverageAuditRow,
   extractSuspiciousConstraintQuotes,
   summarizeIssueCounts,
-  type CoverageAuditCounts,
   type CoverageAuditFacts,
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
@@ -158,20 +157,6 @@ export function buildResearchEntityCoverageAuditOutput<T extends object>(
 
 function stringId(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
-}
-
-function makeEmptyCounts(): CoverageAuditCounts {
-  return {
-    researchAreas: 0,
-    sourceUrls: 0,
-    members: 0,
-    pathways: 0,
-    publicContactRoutes: 0,
-    totalContactRoutes: 0,
-    accessSignals: 0,
-    postedOpportunities: 0,
-    activeListings: 0,
-  };
 }
 
 function buildObservationFlags(observations: ObservationHint[]): CoverageObservationFlags {
