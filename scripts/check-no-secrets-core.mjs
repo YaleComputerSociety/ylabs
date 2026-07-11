@@ -48,8 +48,7 @@ export function candidateSecretScanPaths(paths) {
       paths
         .map((file) => String(file || '').trim())
         .filter(Boolean)
-        .filter((file) => !file.endsWith('.lock'))
-        .filter((file) => file !== 'graphify-out/graph.json'),
+        .filter((file) => !file.endsWith('.lock')),
     ),
   );
 }

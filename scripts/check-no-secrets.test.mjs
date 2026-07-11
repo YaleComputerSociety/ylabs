@@ -85,5 +85,9 @@ test('selects tracked and untracked non-ignored files for scanning', () => {
     '',
   ]);
 
-  assert.deepEqual(paths, ['server/src/app.ts', 'new-admin-note.md']);
+  assert.deepEqual(paths, [
+    'server/src/app.ts',
+    'new-admin-note.md',
+    'graphify-out/graph.json',
+  ]);
 });
