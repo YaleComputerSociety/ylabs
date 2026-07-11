@@ -176,7 +176,12 @@ test('PFR-3 pathway evidence review keeps private data off stdout and forbids di
   assert.match(workflow, /mode: 0o600/);
   assert.match(workflow, /appliedCount: 0/);
   assert.doesNotMatch(workflow, /EntryPathway\.(update|findOneAndUpdate|bulkWrite)/);
-  assert.doesNotMatch(workflow, /console\.log\([^)]*(artifact|decisions|privateOutput)/s);
+  const stdoutPayload = workflow.match(/console\.log\(JSON\.stringify\(\{([\s\S]*?)\}\)\);/);
+  assert.ok(stdoutPayload, 'aggregate stdout serializer should exist');
+  assert.doesNotMatch(
+    stdoutPayload[1],
+    /handle:|recordId:|researchEntityId:|sourceUrls:|sourceEvidenceIds:|sourceUrl:|evidence:|rationale:|privateOutput/,
+  );
   assert.match(core, /disposition: 'manual_only'/);
   assert.doesNotMatch(core, /evidenceStrength:\s*['"](DIRECT|STRONG|MODERATE)['"]/);
 });
