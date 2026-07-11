@@ -40,6 +40,7 @@ const buildProgramSearchFilters = (query: Request['query']) => ({
   programKind: parseFilterParam(query.programKind),
   entryMode: parseFilterParam(query.entryMode),
   studentFacingCategory: parseFilterParam(query.studentFacingCategory),
+  subjects: parseFilterParam(query.subjects),
   studentVisibilityTier: parseFilterParam(query.studentVisibilityTier),
 });
 
@@ -53,6 +54,7 @@ const hasProgramSearchFilters = (filters: ReturnType<typeof buildProgramSearchFi
   filters.programKind.length > 0 ||
   filters.entryMode.length > 0 ||
   filters.studentFacingCategory.length > 0 ||
+  filters.subjects.length > 0 ||
   filters.studentVisibilityTier.length > 0;
 
 const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunction) => {
@@ -88,7 +90,9 @@ const logProgramSearchEvent = async (req: Request, res: Response, next: NextFunc
             pageSize: data?.pageSize,
             totalPages: data?.totalPages,
           },
-        }).catch((err) => console.error('Error logging program search event:', sanitizeLogValue(err)));
+        }).catch((err) =>
+          console.error('Error logging program search event:', sanitizeLogValue(err)),
+        );
       }
     }
 
@@ -119,7 +123,9 @@ const logProgramEvent = (eventType: AnalyticsEventType) => {
               entityType: 'program',
               programId,
             },
-          }).catch((err: unknown) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
+          }).catch((err: unknown) =>
+            console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)),
+          );
         }
       }
 

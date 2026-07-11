@@ -259,6 +259,7 @@ export type FellowshipFilterOptions = {
   purpose: string[];
   globalRegions: string[];
   citizenshipStatus: string[];
+  subjects?: string[];
 };
 
 export type User = {
