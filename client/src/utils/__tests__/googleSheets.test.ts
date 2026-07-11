@@ -1,6 +1,6 @@
-// @ts-ignore - Vitest executes this browser-oriented test in Node.
+// @ts-expect-error - Vitest executes this browser-oriented test in Node.
 import { readFileSync } from 'fs';
-// @ts-ignore - The client tsconfig does not include Node ambient types.
+// @ts-expect-error - The client tsconfig does not include Node ambient types.
 import { resolve } from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -255,7 +255,12 @@ describe('Google Sheets OAuth popup', () => {
       close: vi.fn(),
     };
 
-    const runCallback = new Function('window', 'URLSearchParams', 'BroadcastChannel', callbackScript);
+    const runCallback = new Function(
+      'window',
+      'URLSearchParams',
+      'BroadcastChannel',
+      callbackScript,
+    );
     runCallback(fakeWindow, URLSearchParams, MockBroadcastChannel);
 
     expect(MockBroadcastChannel.channels[0].messages).toContainEqual({
@@ -264,11 +269,7 @@ describe('Google Sheets OAuth popup', () => {
       state: 'callback-state',
     });
     expect(MockBroadcastChannel.channels[0].name).toBe('google-oauth-token:callback-state');
-    expect(fakeWindow.history.replaceState).toHaveBeenCalledWith(
-      null,
-      '',
-      '/oauth-callback.html',
-    );
+    expect(fakeWindow.history.replaceState).toHaveBeenCalledWith(null, '', '/oauth-callback.html');
     expect(fakeWindow.close).toHaveBeenCalled();
   });
 
@@ -290,18 +291,18 @@ describe('Google Sheets OAuth popup', () => {
       close: vi.fn(),
     };
 
-    const runCallback = new Function('window', 'URLSearchParams', 'BroadcastChannel', callbackScript);
+    const runCallback = new Function(
+      'window',
+      'URLSearchParams',
+      'BroadcastChannel',
+      callbackScript,
+    );
     runCallback(fakeWindow, URLSearchParams, MockBroadcastChannel);
 
     expect(MockBroadcastChannel.channels).toEqual([]);
-    expect(fakeWindow.history.replaceState).toHaveBeenCalledWith(
-      null,
-      '',
-      '/oauth-callback.html',
-    );
+    expect(fakeWindow.history.replaceState).toHaveBeenCalledWith(null, '', '/oauth-callback.html');
     expect(fakeWindow.close).toHaveBeenCalled();
   });
-
 
   it('neutralizes formula-like headers and cells before writing to Google Sheets', async () => {
     vi.useFakeTimers();

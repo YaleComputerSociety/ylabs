@@ -13,6 +13,7 @@ import {
 import { normalizeName, splitName } from '../scrapers/utils/scraperHelpers';
 import { normalizeOrcid } from '../utils/orcid';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
+import { containsAsciiControl } from '../utils/asciiControl';
 
 export const DEFAULT_ACCEPTED_INPUT_ROOT = '/tmp/ylabs-accepted-inputs';
 export const FELLOWSHIP_REVIEW_DIR = 'fellowship-review';
@@ -95,7 +96,7 @@ function assertSafeAcceptedInputPathText(value: string, flag: string): string {
   if (!trimmed || trimmed.startsWith('--')) {
     throw new Error(`${flag} requires a path`);
   }
-  if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
+  if (containsAsciiControl(trimmed)) {
     throw new Error(`${flag} path contains invalid characters`);
   }
   return trimmed;
@@ -117,7 +118,10 @@ export function resolveSafeAcceptedInputRoot(value = DEFAULT_ACCEPTED_INPUT_ROOT
   );
 }
 
-export function resolveSafeAcceptedInputPath(filePath: string, flag = 'accepted input path'): string {
+export function resolveSafeAcceptedInputPath(
+  filePath: string,
+  flag = 'accepted input path',
+): string {
   const resolved = assertAcceptedInputPathRoot(
     path.resolve(assertSafeAcceptedInputPathText(filePath, flag)),
     flag,
@@ -260,18 +264,27 @@ function coerceReviewRow(row: Record<string, string>, config?: ProgramConfig): F
   };
 }
 
-async function readReviewRows(filePath: string, config?: ProgramConfig): Promise<FellowshipReviewRow[]> {
+async function readReviewRows(
+  filePath: string,
+  config?: ProgramConfig,
+): Promise<FellowshipReviewRow[]> {
   const body = await fs.readFile(resolveSafeAcceptedInputPath(filePath), 'utf8');
   return parseCsv(body).map((row) => coerceReviewRow(row, config));
 }
 
-async function writeRows(filePath: string, rows: FellowshipReviewRow[], headers: readonly string[]) {
+async function writeRows(
+  filePath: string,
+  rows: FellowshipReviewRow[],
+  headers: readonly string[],
+) {
   const safePath = resolveSafeAcceptedInputPath(filePath);
   await fs.mkdir(path.dirname(safePath), { recursive: true });
   await fs.writeFile(safePath, `${stringifyCsv(rows, headers)}\n`, 'utf8');
 }
 
-export async function defaultFetchUrl(url: string): Promise<{ body: Buffer; contentType?: string }> {
+export async function defaultFetchUrl(
+  url: string,
+): Promise<{ body: Buffer; contentType?: string }> {
   const parsedUrl = await assertPublicHttpUrl(url);
   const { httpAgent, httpsAgent } = ssrfSafeAgents();
   const response = await axios.get<ArrayBuffer>(parsedUrl.toString(), {
@@ -418,7 +431,10 @@ function htmlCandidateRows(
   return candidateRowsFromText(text, config, sourceUrl, defaultYear);
 }
 
-function manualRequiredRow(config: ProgramConfig, sourceUrl = config.urls[0] || ''): FellowshipReviewRow {
+function manualRequiredRow(
+  config: ProgramConfig,
+  sourceUrl = config.urls[0] || '',
+): FellowshipReviewRow {
   return {
     reviewStatus: 'manual-required',
     programKey: config.programKey,
@@ -446,7 +462,12 @@ export async function generateFellowshipCandidates(
   const configs = deps.configs || DEFAULT_PROGRAM_CONFIGS;
   const fetchUrl = deps.fetchUrl || defaultFetchUrl;
   const pdfTextExtractor = deps.pdfTextExtractor || extractPdfText;
-  const summaries: Array<{ programKey: string; status: string; candidateCount: number; path: string }> = [];
+  const summaries: Array<{
+    programKey: string;
+    status: string;
+    candidateCount: number;
+    path: string;
+  }> = [];
 
   for (const config of configs) {
     const rows: FellowshipReviewRow[] = [];
@@ -458,12 +479,7 @@ export async function generateFellowshipCandidates(
           ? fetched.body
           : Buffer.from(String(fetched.body), 'utf8');
         const sourceRows = isPdfSource(sourceUrl, fetched.contentType)
-          ? candidateRowsFromText(
-              await pdfTextExtractor(body),
-              config,
-              sourceUrl,
-              defaultYear,
-            )
+          ? candidateRowsFromText(await pdfTextExtractor(body), config, sourceUrl, defaultYear)
           : htmlCandidateRows(body.toString('utf8'), config, sourceUrl, defaultYear);
         rows.push(...sourceRows);
       } catch (error: any) {
@@ -549,7 +565,9 @@ export async function exportAcceptedFellowshipRows(
   programKey: string,
   deps: FellowshipInputDeps = {},
 ) {
-  const config = (deps.configs || DEFAULT_PROGRAM_CONFIGS).find((item) => item.programKey === programKey);
+  const config = (deps.configs || DEFAULT_PROGRAM_CONFIGS).find(
+    (item) => item.programKey === programKey,
+  );
   if (!config) throw new Error(`Unknown fellowship program "${programKey}"`);
   const inputPath = reviewPath(root, programKey);
   const rows = (await readReviewRows(inputPath, config)).filter(
@@ -670,15 +688,21 @@ async function findUserByName(advisorName: string): Promise<AdvisorResolution> {
 
   const queries: Record<string, unknown>[] = [];
   if (first) {
-    queries.push({ lname, fname: new RegExp(`^${escapeRegex(first)}$`, 'i'), userType: facultyTypes });
-    queries.push({ lname, fname: new RegExp(`^${escapeRegex(first.charAt(0))}`, 'i'), userType: facultyTypes });
+    queries.push({
+      lname,
+      fname: new RegExp(`^${escapeRegex(first)}$`, 'i'),
+      userType: facultyTypes,
+    });
+    queries.push({
+      lname,
+      fname: new RegExp(`^${escapeRegex(first.charAt(0))}`, 'i'),
+      userType: facultyTypes,
+    });
   }
   queries.push({ lname, userType: facultyTypes });
 
   for (const query of queries) {
-    const matches = await User.find(query, { fname: 1, lname: 1, netid: 1 })
-      .limit(2)
-      .lean();
+    const matches = await User.find(query, { fname: 1, lname: 1, netid: 1 }).limit(2).lean();
     if (matches.length === 1) {
       const match = matches[0] as any;
       return {
@@ -698,7 +722,10 @@ export async function defaultAdvisorResolver(row: FellowshipReviewRow): Promise<
   const advisorOrcid = normalizeOrcid(row.advisorOrcid);
   const facultyTypes = { $in: ['professor', 'faculty', 'admin'] };
   if (advisorOrcid) {
-    const matches = await User.find({ orcid: advisorOrcid, userType: facultyTypes }, { fname: 1, lname: 1, netid: 1 })
+    const matches = await User.find(
+      { orcid: advisorOrcid, userType: facultyTypes },
+      { fname: 1, lname: 1, netid: 1 },
+    )
       .limit(2)
       .lean();
     if (matches.length === 1) {

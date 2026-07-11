@@ -14,10 +14,7 @@ import {
   requiresDeployedRuntimeSecurity,
 } from './utils/environment';
 import { isPrivateOrLocalHostname } from './utils/urlSafety';
-import {
-  allowsLegacyAdminUserType,
-  hasActiveAdminGrant,
-} from './services/adminGrantService';
+import { allowsLegacyAdminUserType, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect } from './db/connections';
 
@@ -101,7 +98,13 @@ function safeRedirectTarget(raw: unknown): string | null {
 function originFromUrl(value: string | undefined): string {
   if (!value) return '';
   if (value.length > MAX_AUTH_ORIGIN_HEADER_LENGTH) return '';
-  if (/[\u0000-\u0020\u007f\\]/.test(value)) return '';
+  if (
+    Array.from(value).some((character) => {
+      const code = character.charCodeAt(0);
+      return isAsciiControlCode(code) || code === 0x20 || character === '\\';
+    })
+  )
+    return '';
   try {
     const parsed = new URL(value);
     if (parsed.username || parsed.password) return '';
@@ -218,7 +221,9 @@ function normalizedHeaderValue(value: string | string[] | undefined): string | u
 // dev/local-bypass tooling defaults to 'undergraduate' to match reality.
 function normalizeDevUserType(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return ['admin', 'undergraduate', 'graduate', 'professor', 'faculty', 'unknown'].includes(normalized)
+  return ['admin', 'undergraduate', 'graduate', 'professor', 'faculty', 'unknown'].includes(
+    normalized,
+  )
     ? normalized
     : 'undergraduate';
 }
@@ -536,73 +541,81 @@ const casLogin = function (
   next: express.NextFunction,
 ) {
   setPrivateAuthResponseHeaders(res);
-  passport.authenticate('cas', function (
-    err: Error | null,
-    user: AuthenticatedSessionUser | false | null | undefined,
-    info: PassportAuthInfo = {},
-  ) {
-    if (err) {
-      console.log('Error in authenticate function');
-      console.error('Authentication error details:', sanitizeLogValue(err));
-
-      const errorRedirect = safeRedirectTarget(req.query?.error);
-      if (errorRedirect) {
-        return res.redirect(errorRedirect);
-      }
-
-      // VError 1.x exposes cause as .cause() method, not a property.
-      // Walk the chain via both APIs to catch the wrapped MongoNotConnectedError.
-      const isInfraError = (function checkInfra(e: any): boolean {
-        if (!e) return false;
-        if (e.name === 'MongoNotConnectedError') return true;
-        if (typeof e.message === 'string' && e.message.includes('Client must be connected before running operations')) return true;
-        const cause = typeof e.cause === 'function' ? e.cause() : e.cause;
-        return checkInfra(cause);
-      })(err);
-      if (isInfraError) {
-        triggerReconnect();
-        return res.status(503).json({ error: 'Service temporarily unavailable, please try again' });
-      }
-
-      return res.status(401).json({ error: 'Error in authentication' });
-    }
-
-    if (!user) {
-      console.log('CAS auth but no user');
-      return res.status(401).json({ error: 'CAS auth but no user' });
-    }
-
-    req.logIn(user, async function (err) {
+  passport.authenticate(
+    'cas',
+    function (
+      err: Error | null,
+      user: AuthenticatedSessionUser | false | null | undefined,
+      info: PassportAuthInfo = {},
+    ) {
       if (err) {
-        console.error('CAS login failed during session creation');
-        return next(err);
+        console.log('Error in authenticate function');
+        console.error('Authentication error details:', sanitizeLogValue(err));
+
+        const errorRedirect = safeRedirectTarget(req.query?.error);
+        if (errorRedirect) {
+          return res.redirect(errorRedirect);
+        }
+
+        // VError 1.x exposes cause as .cause() method, not a property.
+        // Walk the chain via both APIs to catch the wrapped MongoNotConnectedError.
+        const isInfraError = (function checkInfra(e: any): boolean {
+          if (!e) return false;
+          if (e.name === 'MongoNotConnectedError') return true;
+          if (
+            typeof e.message === 'string' &&
+            e.message.includes('Client must be connected before running operations')
+          )
+            return true;
+          const cause = typeof e.cause === 'function' ? e.cause() : e.cause;
+          return checkInfra(cause);
+        })(err);
+        if (isInfraError) {
+          triggerReconnect();
+          return res
+            .status(503)
+            .json({ error: 'Service temporarily unavailable, please try again' });
+        }
+
+        return res.status(401).json({ error: 'Error in authentication' });
       }
 
-      try {
-        await logEvent({
-          eventType: AnalyticsEventType.LOGIN,
-          netid: user.netId,
-          userType: user.userType || 'unknown',
-          metadata: {
-            timestamp: new Date(),
-            loginMethod: 'CAS',
-          },
-        });
-        authDebug('Login event logged to analytics');
-      } catch (analyticsError) {
-        console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+      if (!user) {
+        console.log('CAS auth but no user');
+        return res.status(401).json({ error: 'CAS auth but no user' });
       }
 
-      const safeTarget = safeRedirectTarget(req.query?.redirect);
-      if (safeTarget) {
-        return res.redirect(safeTarget);
-      }
+      req.logIn(user, async function (err) {
+        if (err) {
+          console.error('CAS login failed during session creation');
+          return next(err);
+        }
 
-      const defaultRedirect =
-        isLocalDevelopmentRuntime() ? 'http://localhost:3000' : '/';
-      return res.redirect(defaultRedirect);
-    });
-  })(req, res, next);
+        try {
+          await logEvent({
+            eventType: AnalyticsEventType.LOGIN,
+            netid: user.netId,
+            userType: user.userType || 'unknown',
+            metadata: {
+              timestamp: new Date(),
+              loginMethod: 'CAS',
+            },
+          });
+          authDebug('Login event logged to analytics');
+        } catch (analyticsError) {
+          console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+        }
+
+        const safeTarget = safeRedirectTarget(req.query?.redirect);
+        if (safeTarget) {
+          return res.redirect(safeTarget);
+        }
+
+        const defaultRedirect = isLocalDevelopmentRuntime() ? 'http://localhost:3000' : '/';
+        return res.redirect(defaultRedirect);
+      });
+    },
+  )(req, res, next);
 };
 
 const router = express.Router();
@@ -648,7 +661,11 @@ router.get('/check', (req, res) => {
 
 router.get('/cas', casLogin);
 
-const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
+const logoutRouteHandler = async (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): Promise<void | express.Response> => {
   setPrivateAuthResponseHeaders(res);
 
   if (req.method !== 'GET') {
@@ -664,19 +681,19 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
 
   if (req.user) {
     const user = req.user as any;
-      try {
-        await logEvent({
+    try {
+      await logEvent({
         eventType: AnalyticsEventType.LOGOUT,
         netid: user.netId,
         userType: user.userType || 'unknown',
         metadata: {
           timestamp: new Date(),
         },
-        });
-        authDebug('Logout event logged to analytics');
-      } catch (analyticsError) {
-        console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
-      }
+      });
+      authDebug('Logout event logged to analytics');
+    } catch (analyticsError) {
+      console.error('Error logging analytics event:', sanitizeLogValue(analyticsError));
+    }
   }
 
   const casLogoutUrl = `${authConfig.ssoBaseURL}/logout`;
@@ -700,7 +717,9 @@ const logoutRouteHandler: express.RequestHandler = async (req, res, next) => {
   });
 };
 
-router.get('/logout', logoutRouteHandler);
+router.get('/logout', (req, res, next) => {
+  void logoutRouteHandler(req, res, next).catch(next);
+});
 
 if (isDevLoginAllowed()) {
   router.get('/dev-login', async (req, res) => {
@@ -731,7 +750,10 @@ if (isDevLoginAllowed()) {
           });
           authDebug('Dev login event logged to analytics');
         } catch (analyticsError) {
-          console.error('Error logging dev login analytics event:', sanitizeLogValue(analyticsError));
+          console.error(
+            'Error logging dev login analytics event:',
+            sanitizeLogValue(analyticsError),
+          );
         }
 
         const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? 'http://localhost:3000';
@@ -757,3 +779,4 @@ export {
 };
 export { router as passportRoutes };
 export default passport;
+import { isAsciiControlCode } from './utils/asciiControl';

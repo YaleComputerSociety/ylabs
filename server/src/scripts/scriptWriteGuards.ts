@@ -48,7 +48,7 @@ export function resolveSafeJsonReportOutputPath(
   if (!output || output.startsWith('--')) {
     throw new Error(`${flag} requires a path`);
   }
-  if (/[\u0000-\u001f\u007f]/.test(output)) {
+  if (containsAsciiControl(output)) {
     throw new Error(`${flag} path contains invalid characters`);
   }
 
@@ -65,3 +65,4 @@ export function resolveSafeJsonReportOutputPath(
 
   return resolved;
 }
+import { containsAsciiControl } from '../utils/asciiControl';
