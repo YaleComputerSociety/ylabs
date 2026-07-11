@@ -30,7 +30,7 @@ export interface ValidatedDecision {
   sourceUrl: string;
   evidence: string;
   rationale: string;
-  disposition: 'manual_only';
+  disposition: 'apply_recency' | 'manual_only';
   reason: string;
   scraperSource?: string;
 }
@@ -89,18 +89,29 @@ export function validateReviewDecisions(
       decision.scraperSource === undefined
         ? undefined
         : requiredText(decision.scraperSource, 'scraperSource', 120);
+    const kind = decision.kind as ReviewKind;
     return {
       handle,
-      kind: decision.kind as ReviewKind,
+      kind,
       sourceUrl,
       evidence,
       rationale,
       scraperSource,
-      disposition: 'manual_only',
-      reason:
-        'Validated evidence must enter through an existing source observation and access materialization; this workflow never edits pathways directly.',
+      disposition: kind === 'recency' ? 'apply_recency' : 'manual_only',
+      reason: kind === 'recency'
+        ? 'Recency may be applied only by re-recording matching existing source evidence and invoking normal access materialization.'
+        : kind === 'source_repair'
+          ? 'No authoritative field-level source-repair service exists; repair remains manual until one can preserve provenance safely.'
+          : 'No durable bounded scraper-job queue exists; acquisition remains manual and must use the existing scraper CLI.',
     };
   });
+}
+
+export function pathwayReviewArtifactHash(input: unknown, salt: string): string {
+  if (salt.trim().length < 16) throw new Error('handle salt must contain at least 16 characters');
+  return createHash('sha256')
+    .update(`pfr3-pathway-review-v1:${salt}:${JSON.stringify(input)}`)
+    .digest('hex');
 }
 
 export function assertExecutionGuards(options: {
