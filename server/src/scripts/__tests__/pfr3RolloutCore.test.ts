@@ -13,7 +13,7 @@ describe('PFR-3 rollout core', () => {
         url: 'https://example.edu/apply',
         sourceUrl: 'https://example.edu/source',
         contactPolicy: 'OFFICIAL_ROUTE',
-        confidence: 0.8,
+        sourceEvidenceIds: ['evidence-b'],
         priority: 20,
         review: { status: 'pending' },
       },
@@ -22,14 +22,14 @@ describe('PFR-3 rollout core', () => {
         url: 'mailto:person@example.edu',
         sourceUrl: 'https://example.edu/source',
         contactPolicy: 'FACULTY_CONTACT',
-        confidence: 0.99,
+        sourceEvidenceIds: ['evidence-c'],
       },
       {
         routeType: 'OFFICIAL_APPLICATION',
         url: 'https://example.edu/approved',
         sourceUrl: 'https://example.edu/source',
         contactPolicy: 'OFFICIAL_ROUTE',
-        confidence: 1,
+        sourceEvidenceIds: ['evidence-d'],
         review: { status: 'approved' },
       },
       {
@@ -37,7 +37,7 @@ describe('PFR-3 rollout core', () => {
         url: 'https://example.edu/apply-2',
         sourceUrl: 'https://example.edu/source-2',
         contactPolicy: 'OFFICIAL_ROUTE',
-        confidence: 0.9,
+        sourceEvidenceIds: ['evidence-a', 'evidence-b'],
         priority: 50,
       },
     ]);
@@ -46,6 +46,7 @@ describe('PFR-3 rollout core', () => {
       'https://example.edu/apply-2',
       'https://example.edu/apply',
     ]);
+    expect(queue.map((item) => item.evidenceReferenceCount)).toEqual([2, 1]);
     expect(JSON.stringify(queue)).not.toMatch(/email|personName|researchEntityId|approved/i);
   });
 

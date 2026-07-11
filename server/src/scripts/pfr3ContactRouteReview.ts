@@ -15,7 +15,7 @@ async function main() {
     'review.status': { $ne: 'approved' },
   })
     .select(
-      'routeType url sourceUrl contactPolicy evidenceStrength confidence priority review.status archived',
+      'routeType url sourceUrl contactPolicy sourceEvidenceId sourceEvidenceIds priority review.status archived',
     )
     .lean();
   const queue = buildContactRouteReviewQueue(candidates);
