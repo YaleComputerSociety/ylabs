@@ -2070,16 +2070,9 @@ describe('profileService admin profile update persistence', () => {
 });
 
 describe('updateOwnProfile', () => {
-  it('sanitizes self-edit URL fields before persisting a faculty profile', async () => {
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        netid: 'prof123',
-        website: 'https://faculty.example.test/',
-        profileUrls: { yale: 'https://faculty.example.test/profile' },
-      }),
-    });
-
-    await updateOwnProfile('prof123', {
+  it('rejects an unsafe self-edit image URL instead of silently dropping it', async () => {
+    const callsBefore = userModelMock.findOneAndUpdate.mock.calls.length;
+    await expect(updateOwnProfile('prof123', {
       bio: 'I study secure systems.',
       website: 'javascript:alert(document.cookie)',
       imageUrl: 'data:text/html,<script>alert(1)</script>',
@@ -2088,21 +2081,8 @@ describe('updateOwnProfile', () => {
         mail: 'mailto:prof123@yale.edu',
         script: 'javascript:alert(document.cookie)',
       },
-    });
-
-    expect(userModelMock.findOneAndUpdate).toHaveBeenCalledWith(
-      { netid: 'prof123' },
-      {
-        bio: 'I study secure systems.',
-        profileUrls: {
-          yale: 'https://faculty.example.test/profile',
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
+    })).rejects.toThrow('Profile image URL must be a public HTTPS URL');
+    expect(userModelMock.findOneAndUpdate.mock.calls).toHaveLength(callsBefore);
   });
 
   it('sanitizes admin profile URL fields before persisting a faculty profile', async () => {
@@ -2259,5 +2239,66 @@ describe('updateOwnProfile', () => {
     expect(Object.keys(persisted.profileUrls)).toHaveLength(20);
     expect(Object.keys(persisted.profileUrls).every((key) => key.length <= 80)).toBe(true);
     expect(persisted.departments).toHaveLength(51);
+  });
+
+  it('persists all editable fields and requests verification once when completion transitions', async () => {
+    userModelMock.findOne.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ netid: 'prof123', profileVerified: false }),
+    });
+    userModelMock.findOneAndUpdate
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue({ netid: 'prof123' }) })
+      .mockReturnValueOnce({
+        lean: vi.fn().mockResolvedValue({
+          netid: 'prof123',
+          profileVerificationRequestedAt: new Date(),
+        }),
+      });
+
+    await updateOwnProfile('prof123', {
+      bio: 'Secure systems research.',
+      primaryDepartment: 'Computer Science',
+      secondaryDepartments: ['Statistics and Data Science'],
+      researchInterests: ['Security'],
+      imageUrl: 'https://faculty.yale.edu/profile.jpg',
+    });
+
+    const update = userModelMock.findOneAndUpdate.mock.calls.at(-2)![1];
+    expect(update).toMatchObject({
+      bio: 'Secure systems research.',
+      primaryDepartment: 'Computer Science',
+      secondaryDepartments: ['Statistics and Data Science'],
+      researchInterests: ['Security'],
+      imageUrl: 'https://faculty.yale.edu/profile.jpg',
+    });
+    expect(update).not.toHaveProperty('profileVerificationRequestedAt');
+    expect(userModelMock.findOneAndUpdate.mock.lastCall![0]).toMatchObject({
+      netid: 'prof123',
+      profileVerified: { $ne: true },
+      profileVerificationRequestedAt: { $exists: false },
+    });
+  });
+
+  it('does not replace an existing verification request timestamp on repeated saves', async () => {
+    const requestedAt = new Date('2026-07-01T12:00:00.000Z');
+    userModelMock.findOne.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({
+        netid: 'prof123',
+        profileVerified: false,
+        profileVerificationRequestedAt: requestedAt,
+        primaryDepartment: 'Computer Science',
+        researchInterests: ['Security'],
+        bio: 'Existing bio',
+        imageUrl: 'https://faculty.yale.edu/profile.jpg',
+      }),
+    });
+    userModelMock.findOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ netid: 'prof123' }),
+    });
+
+    await updateOwnProfile('prof123', { bio: 'Updated bio' });
+
+    expect(userModelMock.findOneAndUpdate.mock.lastCall![1]).not.toHaveProperty(
+      'profileVerificationRequestedAt',
+    );
   });
 });

@@ -219,6 +219,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    profileVerificationRequestedAt: {
+      type: Date,
+      required: false,
+    },
     dataSources: {
       type: [String],
       default: [],
