@@ -742,17 +742,7 @@ const sourceReviewDecisionHandoffs = (board: OperatorBoard) => {
           ),
         }
       : undefined,
-  ].filter(
-    (
-      item,
-    ): item is {
-      label: string;
-      sourceName: string;
-      templatePath?: string;
-      validationPath?: string;
-      validationStatus?: string;
-    } => Boolean(item),
-  );
+  ].filter((item): item is NonNullable<typeof item> => item !== undefined);
 };
 
 const sourceDecisionValidationStatusText = (

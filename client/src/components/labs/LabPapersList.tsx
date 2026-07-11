@@ -125,7 +125,8 @@ const LabPapersList = ({
       <div className="divide-y divide-slate-200">
         {papers.map((paper, index) => {
           const link = resolvePaperLink(paper);
-          const freeFullTextHref = isScholarlyLink(paper) ? safeHttpUrl(paper.freeFullTextUrl) : '';
+          const scholarlyLink = isScholarlyLink(paper) ? paper : undefined;
+          const freeFullTextHref = scholarlyLink ? safeHttpUrl(scholarlyLink.freeFullTextUrl) : '';
           const pdfHref = showPreprintMeta && !isScholarlyLink(paper) ? safeHttpUrl(paper.pdfUrl) : '';
           const year = resolveYear(paper);
           const displayDate = resolveDisplayDate(paper);
@@ -199,7 +200,7 @@ const LabPapersList = ({
                     rel="noopener noreferrer"
                     className="yr-link"
                   >
-                    {paper.freeFullTextLabel || 'Free full text'}
+                    {scholarlyLink?.freeFullTextLabel || 'Free full text'}
                   </a>
                 )}
                 {pdfHref && (
@@ -233,7 +234,7 @@ const LabPapersList = ({
                     rel="noopener noreferrer"
                     className="yr-link rounded-sm"
                   >
-                    {paper.freeFullTextLabel || 'Free full text'}
+                    {scholarlyLink?.freeFullTextLabel || 'Free full text'}
                   </a>
                 )}
                 {pdfHref && (
