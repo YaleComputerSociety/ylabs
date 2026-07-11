@@ -55,6 +55,7 @@ import {
   combineAnalyticsUserTypeCounts,
   getUserAnalytics,
   getUserAnalyticsDrilldown,
+  getSearchQualityAnalytics,
   logEvent,
   normalizeAnalyticsUserTypeBucket,
   shouldSuppressBetaAnalyticsEvent,
@@ -65,14 +66,55 @@ describe('analytics user type normalization', () => {
   it('combines professor and faculty into the canonical professor bucket', () => {
     expect(normalizeAnalyticsUserTypeBucket('professor')).toBe('professor');
     expect(normalizeAnalyticsUserTypeBucket('faculty')).toBe('professor');
-    expect(combineAnalyticsUserTypeCounts([
-      { userType: 'professor', count: 10755 },
-      { userType: 'faculty', count: 6701 },
-      { userType: 'undergraduate', count: 1340 },
-    ])).toEqual([
+    expect(
+      combineAnalyticsUserTypeCounts([
+        { userType: 'professor', count: 10755 },
+        { userType: 'faculty', count: 6701 },
+        { userType: 'undergraduate', count: 1340 },
+      ]),
+    ).toEqual([
       { userType: 'professor', count: 17456 },
       { userType: 'undergraduate', count: 1340 },
     ]);
+  });
+});
+
+describe('search engagement attribution', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reports action-aware success and uses a bounded same-user attribution lookup', async () => {
+    mocks.analyticsAggregate.mockResolvedValueOnce([
+      {
+        overall: [
+          {
+            totalSearches: 10,
+            zeroResultSearches: 2,
+            uniqueSearchers: 4,
+            engagedSearches: 3,
+            returnedButIgnoredSearches: 5,
+          },
+        ],
+        byQueryAndEntityType: [],
+      },
+    ]);
+
+    await expect(getSearchQualityAnalytics()).resolves.toMatchObject({
+      totalSearches: 10,
+      engagedSearches: 3,
+      returnedButIgnoredSearches: 5,
+      engagementRate: 0.3,
+      attributionWindowMinutes: 30,
+    });
+
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+    const lookup = pipeline.find((stage: any) => stage.$lookup)?.$lookup;
+    expect(lookup.from).toBe('analytics_events');
+    expect(JSON.stringify(lookup)).toContain('$$searchNetid');
+    expect(JSON.stringify(lookup)).toContain('amount":30');
+    expect(JSON.stringify(pipeline)).toContain('nextSearchAt');
+    expect(JSON.stringify(pipeline)).toContain('$resultCount');
   });
 });
 
@@ -84,7 +126,9 @@ describe('shouldSuppressBetaAnalyticsEvent', () => {
   it('suppresses real student analytics in Beta', () => {
     vi.stubEnv('SCRAPER_ENV', 'beta');
 
-    expect(shouldSuppressBetaAnalyticsEvent({ netid: 'aa3246', userType: 'undergraduate' })).toBe(true);
+    expect(shouldSuppressBetaAnalyticsEvent({ netid: 'aa3246', userType: 'undergraduate' })).toBe(
+      true,
+    );
     expect(shouldSuppressBetaAnalyticsEvent({ netid: 'aa3246', userType: 'student' })).toBe(true);
     expect(shouldSuppressBetaAnalyticsEvent({ netid: 'aa3246', userType: 'graduate' })).toBe(true);
   });
@@ -93,14 +137,18 @@ describe('shouldSuppressBetaAnalyticsEvent', () => {
     vi.stubEnv('SCRAPER_ENV', 'beta');
 
     expect(shouldSuppressBetaAnalyticsEvent({ netid: 'qz285', userType: 'admin' })).toBe(false);
-    expect(shouldSuppressBetaAnalyticsEvent({ netid: 'devadmin', userType: 'undergraduate' })).toBe(false);
+    expect(shouldSuppressBetaAnalyticsEvent({ netid: 'devadmin', userType: 'undergraduate' })).toBe(
+      false,
+    );
     expect(shouldSuppressBetaAnalyticsEvent({ netid: 'test123', userType: 'student' })).toBe(false);
   });
 
   it('does not suppress production analytics', () => {
     vi.stubEnv('SCRAPER_ENV', 'production');
 
-    expect(shouldSuppressBetaAnalyticsEvent({ netid: 'aa3246', userType: 'undergraduate' })).toBe(false);
+    expect(shouldSuppressBetaAnalyticsEvent({ netid: 'aa3246', userType: 'undergraduate' })).toBe(
+      false,
+    );
   });
 });
 
@@ -167,7 +215,9 @@ describe('logEvent', () => {
       }),
     );
     expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain('ada@example.edu');
-    expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain('hidden@example.edu');
+    expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain(
+      'hidden@example.edu',
+    );
     expect(JSON.stringify(mocks.analyticsCreate.mock.calls[0][0])).not.toContain('203-555');
   });
 

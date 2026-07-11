@@ -27,16 +27,20 @@ const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit =>
 
 describe('fellowshipMatchingService', () => {
   it('scores source-backed fellowship project matches with reasons and caveats', () => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: 'fellowship-1',
-      title: 'Summer RNA Research Fellowship',
-      summary: 'Supports undergraduate research projects in RNA biology.',
-      purpose: ['Research'],
-      isAcceptingApplications: true,
-      deadline: '2026-06-01T00:00:00.000Z',
-      applicationLink: 'https://example.edu/apply',
-      contactEmail: 'fellowships@example.edu',
-    }, new Date('2026-05-12T00:00:00.000Z'));
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'fellowship-1',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'Supports undergraduate research projects in RNA biology.',
+        purpose: ['Research'],
+        isAcceptingApplications: true,
+        deadline: '2026-06-01T00:00:00.000Z',
+        applicationLink: 'https://example.edu/apply',
+        contactEmail: 'fellowships@example.edu',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
 
     expect(match).toMatchObject({
       fellowshipId: 'fellowship-1',
@@ -67,16 +71,20 @@ describe('fellowshipMatchingService', () => {
   });
 
   it('redacts direct contact text from public fellowship funding matches', () => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: 'fellowship-contact',
-      title: 'Summer RNA Research Fellowship',
-      summary: 'Supports undergraduate research projects in RNA biology.',
-      purpose: ['Research'],
-      applicationLink: 'https://example.edu/apply',
-      contactOffice: 'Office contact: fellowships@example.edu or 203-555-1212.',
-      isAcceptingApplications: true,
-      deadline: '2026-06-01T00:00:00.000Z',
-    }, new Date('2026-05-12T00:00:00.000Z'));
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'fellowship-contact',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'Supports undergraduate research projects in RNA biology.',
+        purpose: ['Research'],
+        applicationLink: 'https://example.edu/apply',
+        contactOffice: 'Office contact: fellowships@example.edu or 203-555-1212.',
+        isAcceptingApplications: true,
+        deadline: '2026-06-01T00:00:00.000Z',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
 
     expect(match?.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
     expect(match?.applicationCycle.contactOffice).toBe(
@@ -85,14 +93,18 @@ describe('fellowshipMatchingService', () => {
   });
 
   it('does not mark high-scoring matches as source-confirmed without a source URL', () => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: 'fellowship-no-source',
-      title: 'Summer RNA Research Fellowship',
-      summary: 'Supports undergraduate research projects in RNA biology.',
-      purpose: ['Research'],
-      isAcceptingApplications: true,
-      deadline: '2026-06-01T00:00:00.000Z',
-    }, new Date('2026-05-12T00:00:00.000Z'));
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'fellowship-no-source',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'Supports undergraduate research projects in RNA biology.',
+        purpose: ['Research'],
+        isAcceptingApplications: true,
+        deadline: '2026-06-01T00:00:00.000Z',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
 
     expect(match).toMatchObject({
       fellowshipId: 'fellowship-no-source',
@@ -109,18 +121,22 @@ describe('fellowshipMatchingService', () => {
   });
 
   it('uses official link rows as fellowship source URLs', () => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: 'fellowship-links',
-      title: 'Summer RNA Research Fellowship',
-      summary: 'Supports undergraduate research projects in RNA biology.',
-      purpose: ['Research'],
-      links: [
-        { label: 'Program page', url: 'https://example.edu/program' },
-        { label: 'Duplicate', url: 'https://example.edu/program' },
-      ],
-      isAcceptingApplications: true,
-      deadline: '2026-06-01T00:00:00.000Z',
-    }, new Date('2026-05-12T00:00:00.000Z'));
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'fellowship-links',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'Supports undergraduate research projects in RNA biology.',
+        purpose: ['Research'],
+        links: [
+          { label: 'Program page', url: 'https://example.edu/program' },
+          { label: 'Duplicate', url: 'https://example.edu/program' },
+        ],
+        isAcceptingApplications: true,
+        deadline: '2026-06-01T00:00:00.000Z',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
 
     expect(match?.sourceUrls).toEqual(['https://example.edu/program']);
     expect(match?.applicationCycle.sourceUrls).toEqual(['https://example.edu/program']);
@@ -128,16 +144,20 @@ describe('fellowshipMatchingService', () => {
   });
 
   it('does not return unsafe raw fellowship application links in matches', () => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: 'fellowship-unsafe-application',
-      title: 'Summer RNA Research Fellowship',
-      summary: 'Supports undergraduate research projects in RNA biology.',
-      purpose: ['Research'],
-      applicationLink: 'javascript:alert(document.cookie)',
-      links: [{ label: 'Program page', url: 'https://example.edu/program' }],
-      isAcceptingApplications: true,
-      deadline: '2026-06-01T00:00:00.000Z',
-    }, new Date('2026-05-12T00:00:00.000Z'));
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'fellowship-unsafe-application',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'Supports undergraduate research projects in RNA biology.',
+        purpose: ['Research'],
+        applicationLink: 'javascript:alert(document.cookie)',
+        links: [{ label: 'Program page', url: 'https://example.edu/program' }],
+        isAcceptingApplications: true,
+        deadline: '2026-06-01T00:00:00.000Z',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
 
     expect(match?.sourceUrls).toEqual(['https://example.edu/program']);
     expect(match?.applicationCycle.applicationLink).toBeUndefined();
@@ -210,15 +230,19 @@ describe('fellowshipMatchingService', () => {
   });
 
   it('keeps expired official cycles as next-cycle planning candidates', () => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: 'fellowship-expired',
-      title: 'Summer RNA Research Fellowship',
-      summary: 'Supports undergraduate research projects in RNA biology.',
-      purpose: ['Research'],
-      applicationLink: 'https://example.edu/apply',
-      isAcceptingApplications: true,
-      deadline: '2026-05-01T00:00:00.000Z',
-    }, new Date('2026-05-12T00:00:00.000Z'));
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'fellowship-expired',
+        title: 'Summer RNA Research Fellowship',
+        summary: 'Supports undergraduate research projects in RNA biology.',
+        purpose: ['Research'],
+        applicationLink: 'https://example.edu/apply',
+        isAcceptingApplications: true,
+        deadline: '2026-05-01T00:00:00.000Z',
+      },
+      new Date('2026-05-12T00:00:00.000Z'),
+    );
 
     expect(match).toMatchObject({
       fellowshipId: 'fellowship-expired',
@@ -254,6 +278,33 @@ describe('fellowshipMatchingService', () => {
     );
 
     expect(match).toBeNull();
+  });
+
+  it('uses canonical topic aliases to match an AI plan to an AI award', () => {
+    const match = scoreFellowshipForPathway(
+      pathway({
+        compensation: 'VOLUNTEER',
+        researchEntity: {
+          _id: 'entity-ai',
+          slug: 'intelligent-systems',
+          name: 'Intelligent Systems Lab',
+          departments: ['Computer Science'],
+          researchAreas: ['Machine learning systems'],
+        },
+      }),
+      {
+        _id: 'schmidt-ai',
+        title: 'Schmidt Artificial Intelligence Award',
+        summary: 'Funding for AI projects across disciplines.',
+        applicationLink: 'https://example.edu/schmidt-ai',
+        isAcceptingApplications: true,
+        deadline: '2026-09-01T00:00:00.000Z',
+      },
+      new Date('2026-07-01T00:00:00.000Z'),
+    );
+
+    expect(match?.reasons).toContain('Topic match: Artificial Intelligence.');
+    expect(match?.score).toBeGreaterThanOrEqual(45);
   });
 
   it('returns top matches grouped by pathway id', async () => {

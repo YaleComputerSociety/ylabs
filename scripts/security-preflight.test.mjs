@@ -3017,10 +3017,15 @@ test('program and fellowship search bound query and filter inputs before search 
   assert.match(fellowshipService, /PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS/);
   assert.match(fellowshipService, /const safeQuery = boundedSearchQuery\(query\)/);
   assert.match(fellowshipService, /const safeYearOfStudy = boundedSearchFilterValues\(yearOfStudy\)/);
-  assert.match(fellowshipService, /filter\.\$text = \{ \$search: safeQuery \}/);
+  assert.match(fellowshipService, /const querySubjects = resolveTopicSubjects\(\[safeQuery\]\)/);
+  assert.match(fellowshipService, /const searchTerms = \[safeQuery, \.\.\.queryTopicAliases\]\.filter\(Boolean\)/);
+  assert.match(fellowshipService, /filter\.\$text = \{ \$search: searchTerms\.join\(' '\) \}/);
   assert.match(fellowshipService, /const adminFellowshipText = \(value: unknown\): string \| undefined =>/);
   assert.match(fellowshipService, /const adminFellowshipStringArray = \(value: unknown\): string\[\] \| undefined => \{/);
-  assert.match(fellowshipService, /const adminFellowshipLinks = \(value: unknown\): Array<\{ label\?: string; url: string \}> \| undefined =>/);
+  assert.match(
+    fellowshipService,
+    /const adminFellowshipLinks = \(\s*value: unknown,?\s*\): Array<\{ label\?: string; url: string \}> \| undefined =>/,
+  );
   assert.match(fellowshipService, /if \('links' in update\) \{/);
   assert.match(fellowshipService, /if \('hoursPerWeek' in update\) \{/);
   assert.match(fellowshipService, /!isStudentVisibilityTier\(update\[field\]\)/);
