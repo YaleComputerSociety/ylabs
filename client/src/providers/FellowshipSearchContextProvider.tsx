@@ -52,6 +52,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -102,6 +103,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const setSelectedPurpose = useCallback((value: React.SetStateAction<string[]>) => {
     dispatch({ type: 'SET_SELECTED_PURPOSE', payload: value });
+  }, []) as React.Dispatch<React.SetStateAction<string[]>>;
+
+  const setSelectedSubjects = useCallback((value: React.SetStateAction<string[]>) => {
+    dispatch({ type: 'SET_SELECTED_SUBJECTS', payload: value });
   }, []) as React.Dispatch<React.SetStateAction<string[]>>;
 
   const setSelectedRegions = useCallback((value: React.SetStateAction<string[]>) => {
@@ -155,6 +160,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -170,6 +176,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedYearOfStudy,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -202,6 +209,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             purpose: response.data.purpose || [],
             globalRegions: response.data.globalRegions || [],
             citizenshipStatus: response.data.citizenshipStatus || [],
+            subjects: response.data.subjects || [],
           },
         });
         dispatch({ type: 'MARK_FILTER_OPTIONS_LOADED' });
@@ -243,6 +251,9 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       }
       if (f.selectedPurpose.length > 0) {
         url += `&purpose=${encodeURIComponent(f.selectedPurpose.join(','))}`;
+      }
+      if (f.selectedSubjects.length > 0) {
+        url += `&subjects=${encodeURIComponent(f.selectedSubjects.join(','))}`;
       }
       if (f.selectedRegions.length > 0) {
         url += `&globalRegions=${encodeURIComponent(f.selectedRegions.join(','))}`;
@@ -342,6 +353,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     selectedStudentFacingCategory,
     selectedTermOfAward,
     selectedPurpose,
+    selectedSubjects,
     selectedRegions,
     selectedCitizenship,
     selectedStudentVisibilityTier,
@@ -377,6 +389,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setSelectedTermOfAward,
         selectedPurpose,
         setSelectedPurpose,
+        selectedSubjects,
+        setSelectedSubjects,
         selectedRegions,
         setSelectedRegions,
         selectedCitizenship,

@@ -237,6 +237,10 @@ describe('Analytics page', () => {
             searchesWithResults: 16,
             zeroResultSearches: 4,
             zeroResultRate: 0.2,
+            engagedSearches: 6,
+            returnedButIgnoredSearches: 10,
+            engagementRate: 0.3,
+            attributionWindowMinutes: 30,
             avgResults: 7.5,
             lowResultQueries: [{ query: 'quantum materials', count: 2 }],
           },
@@ -308,6 +312,12 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Review zero-result searches').length).toBeGreaterThan(0);
       expect(screen.getAllByText('quantum materials').length).toBeGreaterThan(0);
+      expect(
+        screen.getByText(/6 of 20 searches led to a view or save within 30 minutes/),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/10 searches returned results but led to no view or save/),
+      ).toBeTruthy();
     });
   });
 
@@ -383,7 +393,7 @@ describe('Analytics page', () => {
     expect(screen.getByText('Fixture Admin')).toBeTruthy();
     expect(screen.getByText('manual')).toBeTruthy();
     expect(
-      screen.getByText(/legacy admin profile row without active grants: fixture-legacy-admin/i)
+      screen.getByText(/legacy admin profile row without active grants: fixture-legacy-admin/i),
     ).toBeTruthy();
   });
 
