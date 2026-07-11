@@ -22,6 +22,7 @@ describe('buildPathwayQualityAudit', () => {
           derivationKey: 'visibility-repair:official-profile-outreach:entity-1',
           sourceUrls: ['https://medicine.yale.edu/profile/example/'],
           sourceEvidenceIds: [],
+          confidence: 0.5,
         },
         {
           id: 'pathway-2',
@@ -32,6 +33,7 @@ describe('buildPathwayQualityAudit', () => {
           derivationKey: 'listing:listing-1:POSTED_ROLE',
           sourceUrls: ['https://example.test/listing'],
           sourceEvidenceIds: ['obs-1'],
+          confidence: 0.9,
         },
       ],
       routes: [
@@ -62,6 +64,7 @@ describe('buildPathwayQualityAudit', () => {
       activeListingsWithoutPostedOpportunity: 1,
       weakPathwaysNeedingEvidence: 1,
       missingSourceEvidenceIds: 1,
+      studentPublishablePathways: 1,
     });
     expect(report.byType).toMatchObject({
       EXPLORATORY_CONTACT: 1,
@@ -70,6 +73,15 @@ describe('buildPathwayQualityAudit', () => {
     expect(report.byDerivationPrefix).toMatchObject({
       'visibility-repair': 1,
       listing: 1,
+    });
+    expect(report.publicationBlockers).toEqual({
+      status: 1,
+      evidence_strength: 1,
+      confidence: 1,
+    });
+    expect(report.publicationBlockerCombinations).toEqual({
+      'status+evidence_strength+confidence': 1,
+      publishable: 1,
     });
     expect(report.samples.weakPathwaysNeedingEvidence[0].missingContext).toEqual([
       'source_evidence',
@@ -111,6 +123,19 @@ describe('buildPathwayQualityAudit', () => {
     expect(() =>
       parsePathwayQualityAuditArgs(['--output', '/tmp/pathway-quality.txt']),
     ).toThrow(/--output must point to a \.json report file/);
+  });
+
+  it('rejects unsafe evidence URLs from the publication funnel', () => {
+    const report = buildPathwayQualityAudit({
+      pathways: [{
+        id: 'pathway-1', researchEntityId: 'entity-1', status: 'ACTIVE',
+        evidenceStrength: 'DIRECT', confidence: 0.9,
+        sourceUrls: ['http://127.0.0.1/private'], sourceEvidenceIds: ['obs-1'],
+      }],
+      routes: [], listings: [], entityContexts: [], sampleLimit: 0,
+    });
+    expect(report.summary.studentPublishablePathways).toBe(0);
+    expect(report.publicationBlockers).toEqual({ source_url: 1 });
   });
 
   it('writes the pathway quality artifact when output is provided', () => {
