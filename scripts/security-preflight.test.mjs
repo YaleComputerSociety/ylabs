@@ -170,6 +170,17 @@ test('PFR-3 pathway source queue is read-only and redacted', () => {
   assert.doesNotMatch(core, /destination|email|phone|excerpt/);
 });
 
+test('PFR-3 pathway evidence review keeps private data off stdout and forbids direct promotion', () => {
+  const workflow = fs.readFileSync(new URL('../server/src/scripts/pfr3PathwayEvidenceReview.ts', import.meta.url), 'utf8');
+  const core = fs.readFileSync(new URL('../server/src/scripts/pfr3PathwayEvidenceReviewCore.ts', import.meta.url), 'utf8');
+  assert.match(workflow, /mode: 0o600/);
+  assert.match(workflow, /appliedCount: 0/);
+  assert.doesNotMatch(workflow, /EntryPathway\.(update|findOneAndUpdate|bulkWrite)/);
+  assert.doesNotMatch(workflow, /console\.log\([^)]*(artifact|decisions|privateOutput)/s);
+  assert.match(core, /disposition: 'manual_only'/);
+  assert.doesNotMatch(core, /evidenceStrength:\s*['"](DIRECT|STRONG|MODERATE)['"]/);
+});
+
 
 test('admin access-review validation responses use fixed public copy', () => {
   const source = fs.readFileSync(new URL('../server/src/routes/admin.ts', import.meta.url), 'utf8');
