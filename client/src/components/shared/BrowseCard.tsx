@@ -101,7 +101,7 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
   return (
     <div
       className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col ${isArchived ? 'opacity-75' : ''}`}
-      onClick={handleClick}
+      onClick={item.type === 'fellowship' ? undefined : handleClick}
     >
       {showUrgentBanner && daysUntil !== null && (
         <UrgentBadge daysUntil={daysUntil} variant="banner" />
@@ -265,8 +265,15 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
               </div>
             )}
 
-            <h3 className="text-base font-bold text-gray-900 mb-1 line-clamp-2 leading-tight">
-              {item.data.title}
+            <h3 className="mb-1 text-base font-bold leading-tight text-gray-900">
+              <button
+                type="button"
+                onClick={handleClick}
+                className="line-clamp-2 text-left hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                aria-label={`View details for ${item.data.title}`}
+              >
+                {item.data.title}
+              </button>
             </h3>
 
             <p className={`text-sm mb-1 ${subtitleColor}`}>
