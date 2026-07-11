@@ -68,6 +68,7 @@
     "scholarly-links:quality-audit": "tsx src/scripts/paperQualityAudit.ts",
     "scholarly-links:suppression-audit": "tsx src/scripts/scholarlyLinkSuppressionAudit.ts",
     "scholarly-links:provenance-audit": "tsx src/scripts/scholarlyLinkProvenanceAudit.ts",
+    "scholarly-links:integrity-audit": "tsx src/scripts/researchActivityIntegrityAudit.ts",
     "scholarly-links:repair-official-profile-pointers": "tsx src/scripts/repairOfficialProfilePublicationPointers.ts",
     "scraper:integrity-gate": "tsx src/scripts/scraperIntegrityGate.ts",
     "scraper:integrity-duplicates-review": "tsx src/scripts/scraperIntegrityDuplicateReview.ts",

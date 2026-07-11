@@ -1399,6 +1399,75 @@ describe('listResearchEntityRelationshipPayload', () => {
 });
 
 describe('buildResearchActivityLinkPayload', () => {
+  it('keeps one canonical work when entity and member sources repeat the same DOI', () => {
+    const result = buildResearchActivityLinkPayload({
+      researchEntityId: 'entity-1',
+      entityScholarlyLinks: [
+        {
+          _id: 'entity-link',
+          title: 'Canonical paper',
+          url: 'https://doi.org/10.1000/SAME',
+          externalIds: { DOI: '10.1000/SAME' },
+        },
+      ],
+      memberScholarlyLinkPairs: [
+        {
+          memberDisplayId: 'member-1',
+          link: {
+            _id: 'member-link',
+            title: 'Canonical paper duplicate',
+            url: 'https://doi.org/10.1000/same',
+            externalIds: { doi: '10.1000/same' },
+          },
+        },
+      ],
+    });
+
+    expect(result.researchActivityLinks).toHaveLength(1);
+    expect(result.researchActivityLinks[0]).toEqual(
+      expect.objectContaining({ relationshipBasis: 'explicit_entity_link' }),
+    );
+  });
+
+  it('keeps earlier work separate and excludes an unsupported identity collision', () => {
+    const result = buildResearchActivityLinkPayload({
+      researchEntityId: 'entity-1',
+      entityTopicEvidence: ['Immunology and T cell signaling'],
+      memberScholarlyLinkPairs: [
+        {
+          memberDisplayId: 'member-1',
+          appointmentStartedAt: '2020-01-01',
+          link: {
+            _id: 'earlier',
+            title: 'Immune cell signaling',
+            url: 'https://doi.org/10.1000/earlier',
+            externalIds: { doi: '10.1000/earlier' },
+            year: 2018,
+          },
+        },
+        {
+          memberDisplayId: 'member-1',
+          link: {
+            _id: 'collision',
+            title: 'LGBT military personnel and veteran homelessness',
+            url: 'https://doi.org/10.1000/collision',
+            externalIds: { doi: '10.1000/collision' },
+            year: 2025,
+          },
+        },
+      ],
+    });
+
+    expect(result.researchActivityLinks).toEqual([]);
+    expect(result.earlierResearchActivityLinks).toEqual([
+      expect.objectContaining({
+        title: 'Immune cell signaling',
+        evidenceLabel:
+          'Earlier work by a listed professor, before the documented current appointment',
+      }),
+    ]);
+  });
+
   it('uses research scholarly links for entity and member research activity', () => {
     const result = buildResearchActivityLinkPayload({
       researchEntityId: 'entity-1',

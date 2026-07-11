@@ -174,6 +174,7 @@ export interface LabDetailPayload {
   researchEntity?: ResearchEntity;
   members: LabMember[];
   researchActivityLinks?: LabResearchActivityLink[];
+  earlierResearchActivityLinks?: LabResearchActivityLink[];
   scholarlyLinks?: LabScholarlyLink[];
   memberScholarlyLinks?: LabScholarlyLink[];
   recentPapers: LabPaper[];
