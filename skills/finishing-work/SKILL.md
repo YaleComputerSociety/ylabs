@@ -41,10 +41,6 @@ Keep entries concise, preserve existing structure, link implementation files whe
 
 Use `docs/tasks/priority-roadmap.md` as the single task source of truth. Do not create new durable task files under `docs/tasks/` unless the user explicitly asks for one; consolidate outstanding tasks and completion notes back into the roadmap before finishing. Delete or fold back temporary execution trackers during cleanup.
 
-## Refresh Graphify
-
-After durable code/schema/scraper/architecture/doc changes, run `graphify update .` (AST-only, no API cost) so the graph records the finished state, or note that it needs a refresh.
-
 ## Rule evolution
 
 Treat agent rules as living workflow documentation. When the same mistake recurs, or the user gives feedback that should apply beyond the current task, add a concise durable rule to `AGENTS.md` or `docs/agent-workflow.md`. Keep rules practical and compact; prefer links to focused docs over long inline checklists.
