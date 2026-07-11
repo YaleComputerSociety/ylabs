@@ -7,8 +7,8 @@ export interface ContactRouteReviewCandidate {
   url?: unknown;
   sourceUrl?: unknown;
   contactPolicy?: unknown;
-  evidenceStrength?: unknown;
-  confidence?: unknown;
+  sourceEvidenceId?: unknown;
+  sourceEvidenceIds?: unknown;
   priority?: unknown;
   review?: { status?: unknown };
   archived?: unknown;
@@ -19,8 +19,7 @@ export interface ContactRouteReviewQueueItem {
   destination: string;
   source: string;
   contactPolicy: string;
-  evidenceStrength: string;
-  confidence: number;
+  evidenceReferenceCount: number;
   priority: number;
   reviewStatus: string;
 }
@@ -53,15 +52,22 @@ export function buildContactRouteReviewQueue(
       ) {
         return [];
       }
+      const evidenceReferenceCount = new Set(
+        [
+          ...(Array.isArray(candidate.sourceEvidenceIds) ? candidate.sourceEvidenceIds : []),
+          ...(candidate.sourceEvidenceId ? [candidate.sourceEvidenceId] : []),
+        ]
+          .map(String)
+          .filter(Boolean),
+      ).size;
+      if (evidenceReferenceCount === 0) return [];
       return [
         {
           routeType: typeof candidate.routeType === 'string' ? candidate.routeType : 'UNKNOWN',
           destination,
           source,
           contactPolicy,
-          evidenceStrength:
-            typeof candidate.evidenceStrength === 'string' ? candidate.evidenceStrength : 'UNKNOWN',
-          confidence: typeof candidate.confidence === 'number' ? candidate.confidence : 0,
+          evidenceReferenceCount,
           priority: typeof candidate.priority === 'number' ? candidate.priority : 100,
           reviewStatus:
             typeof candidate.review?.status === 'string' ? candidate.review.status : 'unreviewed',
@@ -70,7 +76,9 @@ export function buildContactRouteReviewQueue(
     })
     .sort(
       (left, right) =>
-        right.confidence - left.confidence ||
+        (left.routeType === 'OFFICIAL_APPLICATION' ? 0 : 1) -
+          (right.routeType === 'OFFICIAL_APPLICATION' ? 0 : 1) ||
+        right.evidenceReferenceCount - left.evidenceReferenceCount ||
         left.priority - right.priority ||
         left.source.localeCompare(right.source) ||
         left.destination.localeCompare(right.destination),
