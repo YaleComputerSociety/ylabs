@@ -536,6 +536,7 @@ const PUBLIC_PROFILE_BASE_FIELDS = [
   'lname',
   'userType',
   'profileVerified',
+  'profileVerificationRequestedAt',
   'title',
   'bio',
   // Direct contact/location fields are intentionally excluded from public
@@ -625,6 +626,9 @@ const publicProfileBase = (user: Record<string, any>): Record<string, any> => {
       profile[field] = publicProfileTextArray(value);
     } else if (field === 'profileVerified') {
       profile[field] = value === true;
+    } else if (field === 'profileVerificationRequestedAt') {
+      const requestedAt = new Date(value);
+      if (!Number.isNaN(requestedAt.getTime())) profile[field] = requestedAt.toISOString();
     } else if (field === 'hIndex') {
       const hIndex = typeof value === 'number' ? value : Number(value);
       if (Number.isFinite(hIndex) && hIndex >= 0) profile[field] = Math.trunc(hIndex);
@@ -2058,6 +2062,16 @@ const boundedPublicProfileUrl = (value: unknown): string | undefined => {
   return url && url.length <= MAX_SELF_PROFILE_URL_LENGTH ? url : undefined;
 };
 
+const boundedHttpsProfileImageUrl = (value: unknown): string | undefined => {
+  const url = boundedPublicProfileUrl(value);
+  if (!url) return undefined;
+  try {
+    return new URL(url).protocol === 'https:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const boundedPublicationText = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const text = redactDirectContactInfo(value).trim().slice(0, MAX_ADMIN_PROFILE_PUBLICATION_TEXT_LENGTH);
@@ -2132,9 +2146,16 @@ const sanitizeSelfEditableProfileUrlFields = (update: Record<string, any>) => {
   }
 
   if ('imageUrl' in update) {
-    const imageUrl = boundedPublicProfileUrl(update.imageUrl);
-    if (imageUrl) update.imageUrl = imageUrl;
-    else delete update.imageUrl;
+    if (update.imageUrl === '') {
+      update.imageUrl = '';
+    } else {
+      const imageUrl = boundedPublicProfileUrl(update.imageUrl);
+      if (!imageUrl) {
+        delete update.imageUrl;
+      } else {
+        update.imageUrl = imageUrl;
+      }
+    }
   }
 
   if ('profileUrls' in update) {
@@ -2174,20 +2195,53 @@ export const updateOwnProfile = async (netid: string, data: any) => {
       update[field] = value;
     }
   }
+  if (
+    update.imageUrl !== undefined &&
+    update.imageUrl !== '' &&
+    !boundedHttpsProfileImageUrl(update.imageUrl)
+  ) {
+    throw selfProfileValidationError('Profile image URL must be a public HTTPS URL');
+  }
   sanitizeSelfEditableProfileTextFields(update);
   sanitizeSelfEditableProfileUrlFields(update);
 
+  const current = await User.findOne({ netid }).lean();
   if (update.primaryDepartment !== undefined || update.secondaryDepartments !== undefined) {
-    const current = await User.findOne({ netid }).lean();
     const primary = update.primaryDepartment ?? (current as any)?.primaryDepartment ?? '';
     const secondary = update.secondaryDepartments ?? (current as any)?.secondaryDepartments ?? [];
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 
+  const completedProfile = {
+    ...(current as any),
+    ...update,
+  };
+  const shouldRequestVerification =
+    !completedProfile.profileVerified &&
+    !completedProfile.profileVerificationRequestedAt &&
+    String(completedProfile.primaryDepartment || '').trim() &&
+    Array.isArray(completedProfile.researchInterests) &&
+    completedProfile.researchInterests.length > 0 &&
+    String(completedProfile.bio || '').trim() &&
+    String(completedProfile.imageUrl || '').trim();
+
   const user = await User.findOneAndUpdate({ netid }, update, {
     new: true,
     runValidators: true,
   }).lean();
+
+  if (shouldRequestVerification) {
+    const requested = await User.findOneAndUpdate(
+      {
+        netid,
+        profileVerified: { $ne: true },
+        profileVerificationRequestedAt: { $exists: false },
+      },
+      { $set: { profileVerificationRequestedAt: new Date() } },
+      { new: true, runValidators: true },
+    ).lean();
+    return requested || user;
+  }
 
   return user;
 };
