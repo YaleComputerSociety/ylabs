@@ -186,6 +186,7 @@ export type FacultyProfile = {
   research_interest_summary?: string;
   topics: string[];
   profileVerified: boolean;
+  profileVerificationRequestedAt?: string;
   ownListings: string[];
 };
 
