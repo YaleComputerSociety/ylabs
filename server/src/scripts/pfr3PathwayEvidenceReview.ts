@@ -6,22 +6,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { EntryPathway } from '../models/entryPathway';
-import { Observation } from '../models/observation';
-import { ScrapeRun } from '../models/scrapeRun';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
-import { materializeAccessForResearchGroup } from '../scrapers/accessMaterializer';
-import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   assertExecutionGuards,
   pathwayReviewHandle,
-  pathwayReviewArtifactHash,
   resolveReviewCandidates,
   type ValidatedDecision,
   validateReviewDecisions,
 } from './pfr3PathwayEvidenceReviewCore';
-import { applyValidatedPathwayDecisions } from './pfr3PathwayEvidenceApplyCore';
 
 type Flags = Record<string, string | boolean>;
 function flags(argv: string[]): Flags {
@@ -83,49 +76,12 @@ async function main(): Promise<void> {
     sourceEvidenceIds: Array.isArray(item.sourceEvidenceIds) ? item.sourceEvidenceIds.map(String) : [],
     lastObservedAt: item.lastObservedAt,
   }));
-  const artifactHash = pathwayReviewArtifactHash({ target, records: artifact }, salt);
-  fs.writeFileSync(privateOutput, JSON.stringify({ classification: 'PRIVATE', target, artifactHash, records: artifact }, null, 2), { mode: 0o600, flag: 'w' });
+  fs.writeFileSync(privateOutput, JSON.stringify({ classification: 'PRIVATE', target, records: artifact }, null, 2), { mode: 0o600, flag: 'w' });
   fs.chmodSync(privateOutput, 0o600);
 
   let decisions: ValidatedDecision[] = [];
-  let decisionArtifactHash: string | undefined;
   if (value(args, 'decisions')) {
-    const raw = readJson(value(args, 'decisions')!);
-    const envelope = raw as { artifactHash?: unknown; decisions?: unknown };
-    decisionArtifactHash = typeof envelope?.artifactHash === 'string' ? envelope.artifactHash : undefined;
-    decisions = validateReviewDecisions(envelope?.decisions ?? raw, new Set(artifact.map((item) => item.handle)));
-    if (decisionArtifactHash && decisionArtifactHash !== artifactHash) throw new Error('decision artifact hash does not match the selected salted artifact');
-    if (execute && !decisionArtifactHash) throw new Error('execute requires the decision artifact hash');
-  }
-  let applied = { applied: 0, idempotent: 0, manualOnly: decisions.filter((item) => item.disposition === 'manual_only').length, rejected: 0 };
-  if (execute && decisions.length) {
-    const audit = mongoose.connection.db!.collection('pathway_evidence_review_audits');
-    applied = await applyValidatedPathwayDecisions({
-      decisions,
-      candidates: new Map(artifact.map((item) => [item.handle, { recordId: item.recordId, researchEntityId: item.researchEntityId, sourceEvidenceIds: item.sourceEvidenceIds }])),
-      target,
-      artifactHash,
-      restoreToken: value(args, 'restore-token')!,
-      deps: {
-        findEvidence: async (ids) => (await Observation.find({ _id: { $in: ids } }).lean()).map((item: any) => ({
-          id: serializedDocumentId(item._id) || '', entityType: item.entityType, entityId: serializedDocumentId(item.entityId), entityKey: item.entityKey,
-          field: item.field, value: item.value, sourceId: serializedDocumentId(item.sourceId) || '', sourceName: item.sourceName,
-          sourceUrl: item.sourceUrl, confidence: item.confidence,
-        })),
-        alreadyApplied: async (key) => Boolean(await audit.findOne({ key }, { projection: { _id: 1 } })),
-        appendEvidence: async (evidence, sourceUrl) => {
-          const source = await getSourceByName(evidence.sourceName);
-          if (!source || source._id !== evidence.sourceId) throw new Error('source evidence provenance no longer matches');
-          const run = await ScrapeRun.create({ sourceId: source._id, sourceName: source.name, triggeredBy: 'admin', options: { workflow: 'pfr3-pathway-evidence-review' } });
-          const result = await appendObservations([{ entityType: evidence.entityType, entityId: evidence.entityId, entityKey: evidence.entityKey, field: evidence.field, value: evidence.value, sourceUrl, confidenceOverride: evidence.confidence }], {
-            sourceId: source._id, sourceName: source.name, sourceWeight: source.defaultWeight, dryRun: false, scrapeRunId: serializedDocumentId(run._id) || '',
-          });
-          await ScrapeRun.updateOne({ _id: run._id }, { $set: { status: 'success', finishedAt: new Date(), observationCount: result.inserted, entitiesObserved: 1 } });
-        },
-        materialize: async (researchEntityId) => { await materializeAccessForResearchGroup({ researchEntityId }); },
-        writeAudit: async (row) => { await audit.insertOne({ ...row, createdAt: new Date() }); },
-      },
-    });
+    decisions = validateReviewDecisions(readJson(value(args, 'decisions')!), new Set(artifact.map((item) => item.handle)));
   }
   // Deliberately aggregate-only: handles, record ids, URLs, evidence, and paths never reach stdout.
   console.log(JSON.stringify({
@@ -133,10 +89,8 @@ async function main(): Promise<void> {
     mode: execute ? 'execute' : 'dry-run',
     selectedCount: artifact.length,
     decisionCount: decisions.length,
-    manualOnlyCount: applied.manualOnly,
-    appliedCount: applied.applied,
-    idempotentCount: applied.idempotent,
-    rejectedCount: applied.rejected,
+    manualOnlyCount: decisions.filter((item) => item.disposition === 'manual_only').length,
+    appliedCount: 0,
     idempotent: true,
     privateArtifactWritten: true,
   }));

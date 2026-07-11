@@ -21,5 +21,5 @@ describe('PFR-3 pathway evidence review', () => {
   });
   it('defaults safely when execute is false', () => expect(() => assertExecutionGuards({ target: 'beta', execute: false })).not.toThrow());
   it('rejects target mismatch', () => expect(() => assertExecutionGuards({ target: 'beta', runtimeTarget: 'prod', execute: false })).toThrow(/does not match/));
-  it('routes recency through guarded application without direct promotion', () => expect(validateReviewDecisions([{ ...valid, kind: 'recency' }], new Set([handle]))[0]).toMatchObject({ disposition: 'apply_recency' }));
+  it('never directly promotes pathways', () => expect(validateReviewDecisions([valid], new Set([handle]))[0]).toMatchObject({ disposition: 'manual_only' }));
 });
