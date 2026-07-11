@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -91,6 +91,23 @@ const renderAdmin = (children: ReactNode) =>
   );
 
 describe('Browse admin controls', () => {
+  it('opens program card details from a semantic keyboard action', () => {
+    const onOpenModal = vi.fn();
+    renderAdmin(
+      <BrowseCard item={item} isFavorite={false} onOpenModal={onOpenModal} onAdminEdit={vi.fn()} />,
+    );
+
+    const titleAction = screen.getByRole('button', {
+      name: 'View details for Summer Research Fellowship',
+    });
+    titleAction.focus();
+    fireEvent.keyDown(titleAction, { key: 'Enter' });
+    fireEvent.click(titleAction);
+
+    expect(onOpenModal).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Admin edit' })).not.toBe(titleAction);
+  });
+
   it('keeps card admin edit controls large enough for touch input', () => {
     renderAdmin(
       <BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} onAdminEdit={vi.fn()} />,

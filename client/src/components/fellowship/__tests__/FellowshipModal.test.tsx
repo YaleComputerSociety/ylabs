@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -86,6 +86,61 @@ const renderModal = (override: Partial<Fellowship> = {}) =>
   );
 
 describe('FellowshipModal', () => {
+  it('contains keyboard focus, closes on Escape, and returns focus to the exact trigger', () => {
+    const trigger = document.createElement('button');
+    trigger.textContent = 'Open program';
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const onClose = vi.fn();
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={fellowship}
+            isOpen
+            isFavorite={false}
+            onClose={onClose}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: fellowship.title });
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: fellowship.title }));
+    expect(trigger.inert).toBe(true);
+    expect(trigger).toHaveAttribute('aria-hidden', 'true');
+
+    const lastAction = screen.getByRole('link', { name: /Apply Now/i });
+    lastAction.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Apply' }));
+
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(lastAction);
+
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    rerender(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={fellowship}
+            isOpen={false}
+            isFavorite={false}
+            onClose={onClose}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.inert).not.toBe(true);
+    expect(trigger).not.toHaveAttribute('aria-hidden');
+    trigger.remove();
+  });
+
   it('keeps detail actions and filter chips large enough for touch input', () => {
     renderModal();
 

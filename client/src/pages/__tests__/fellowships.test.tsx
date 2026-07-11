@@ -385,12 +385,18 @@ describe('Programs page', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Year' }));
-    await userEvent.click(screen.getByRole('option', { name: 'Senior' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Senior' }));
 
     expect(setSelectedYearOfStudy).toHaveBeenCalled();
     const update = setSelectedYearOfStudy.mock.calls[0][0];
     expect(typeof update).toBe('function');
     expect(update([])).toEqual(['Senior']);
+    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open Only' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('1 result');
   });
 
   it('sorts visible program cards inside their cycle section from local sort controls', async () => {
