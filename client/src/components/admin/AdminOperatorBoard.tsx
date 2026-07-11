@@ -777,12 +777,6 @@ const sourceDecisionValidationStatusText = (
 
 const total = (rows: TierCount[]) => rows.reduce((sum, row) => sum + row.count, 0);
 
-const queueKindLabel: Record<QueueKind, string> = {
-  blocking: 'Repair queue',
-  evidence: 'Evidence signal',
-  review: 'Review signal',
-};
-
 const queueKindStyles: Record<QueueKind, string> = {
   blocking: 'border-red-200 bg-red-50 text-red-700',
   evidence: 'border-emerald-200 bg-emerald-50 text-emerald-700',

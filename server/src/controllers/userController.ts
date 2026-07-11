@@ -890,7 +890,7 @@ const UNKNOWN_BOOTSTRAP_FIELDS = ['fname', 'lname', 'email'] as const;
 export const updateCurrentUser = async (
   request: Request,
   response: Response,
-  next: NextFunction,
+  _next: NextFunction,
 ) => {
   try {
     const currentUser = request.user as {

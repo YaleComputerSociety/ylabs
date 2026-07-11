@@ -698,6 +698,13 @@ const Research = () => {
     }
   };
 
+  const runSearchRef = useRef(runSearch);
+  const runDefaultResearchHomeSearchRef = useRef(runDefaultResearchHomeSearch);
+  const runSearchResultsPageRef = useRef(runSearchResultsPage);
+  runSearchRef.current = runSearch;
+  runDefaultResearchHomeSearchRef.current = runDefaultResearchHomeSearch;
+  runSearchResultsPageRef.current = runSearchResultsPage;
+
   const studentSearchFilters = (
     school = selectedSchool,
     department = selectedDepartment,
@@ -820,7 +827,7 @@ const Research = () => {
       if (departmentSearch?.label === urlDepartmentSearch.label && hasSubmittedSearch) {
         return;
       }
-      runSearch(urlDepartmentSearch.label, {
+      void runSearchRef.current(urlDepartmentSearch.label, {
         searchQuery: '',
         filters: { departments: urlDepartmentSearch.filters.departments },
         hasFilterSelections: true,
@@ -838,7 +845,7 @@ const Research = () => {
       ) {
         return;
       }
-      runSearch(urlQuery, { filters: studentFilters, syncUrl: false });
+      void runSearchRef.current(urlQuery, { filters: studentFilters, syncUrl: false });
       return;
     }
 
@@ -849,7 +856,7 @@ const Research = () => {
       ) {
         return;
       }
-      runSearch('', {
+      void runSearchRef.current('', {
         filters: studentFilters,
         hasFilterSelections: true,
         syncUrl: false,
@@ -872,7 +879,7 @@ const Research = () => {
     setDefaultSearchTotal(0);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
-    runDefaultResearchHomeSearch(1);
+    void runDefaultResearchHomeSearchRef.current(1);
   }, [
     searchParams,
     pageSnapshotKey,
@@ -919,6 +926,7 @@ const Research = () => {
     };
   }, [
     pageSnapshotKey,
+    isAdmin,
     query,
     submittedQuery,
     departmentSearch,
@@ -945,12 +953,12 @@ const Research = () => {
 
   useEffect(() => {
     if (hasSubmittedSearch || defaultSearchPage <= 1) return;
-    runDefaultResearchHomeSearch(defaultSearchPage);
+    void runDefaultResearchHomeSearchRef.current(defaultSearchPage);
   }, [defaultSearchPage, hasSubmittedSearch]);
 
   useEffect(() => {
     if (!hasSubmittedSearch || searchPage <= 1 || !activeSearchRequest) return;
-    runSearchResultsPage(searchPage);
+    void runSearchResultsPageRef.current(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);

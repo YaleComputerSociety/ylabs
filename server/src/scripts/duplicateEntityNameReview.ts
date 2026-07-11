@@ -32,8 +32,6 @@ const DEFAULT_MAX_APPLY = 10;
 const MAX_ENTITIES_PER_CLUSTER = 10;
 const REVIEW_DECISION_APPLY_STATUS =
   'Accepted duplicate-name decisions can drive apply mode for shared-website, zero-reference cross-department, or specific-website cross-department merge_into_canonical plans; ambiguous manual disambiguation decisions remain review-only.';
-const APPLY_BLOCKED_REASON =
-  'Apply requires reviewed duplicate-name decisions and is limited to shared-website, zero-reference cross-department, or specific-website cross-department merge_into_canonical plans.';
 const DUPLICATE_ENTITY_NAME_REVIEW_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const EMPTY_REFERENCE_IMPACT_COUNTS: DuplicateEntityReferenceImpactCounts = {

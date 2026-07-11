@@ -59,7 +59,7 @@ const Home = () => {
 
   useEffect(() => {
     setQueryString('');
-  }, []);
+  }, [setQueryString]);
 
   const reloadFavorites = async () => {
     axios
@@ -77,7 +77,7 @@ const Home = () => {
   useEffect(() => {
     refreshListings();
     reloadFavorites();
-  }, []);
+  }, [refreshListings]);
 
   useEffect(() => {
     const listingId = searchParams.get('listing');
