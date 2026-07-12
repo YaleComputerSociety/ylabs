@@ -470,15 +470,44 @@ Use separate Render Cron jobs per source or per source group and stagger start t
 
 Do not enable recurring cron for a source until its row is accepted. A source may be accepted for manual guarded runs while remaining unaccepted for unattended cron.
 
-| Source                            | Cron acceptance prerequisites                                                                                                                                                           | First cron posture                                                                           | Hold if                                                                                                                                 |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.                                | Weekly, one source-specific cron, report saved with run ID.                                  | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                                        |
-| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed.                            | Manual or low-frequency cron after one accepted guarded run.                                 | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access.                      |
-| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                                                      | Monthly or term-bound cron, aligned to public deadline cycles.                               | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.                       |
-| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested.                                          | Weekly after WorkPlanner, with saved report and sampled public UI smoke.                     | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained.                                  |
-| `student-decision-llm`            | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible.       | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained.        |
-| `openalex`                        | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed.                                          | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
-| `arxiv`                           | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links.                                        | Weekly with `--since` or bounded accepted targets.                                           | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links.                                     |
+| Source                            | Cron acceptance prerequisites                                                                                                                                | First cron posture                                             | Hold if                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.     | Weekly, one source-specific cron, report saved with run ID.    | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                   |
+| `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed. | Manual or low-frequency cron after one accepted guarded run.   | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access. |
+| `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                           | Monthly or term-bound cron, aligned to public deadline cycles. | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.  |
+
+### Recurring fellowship refresh
+
+`yarn --cwd server fellowships:refresh` is the deployable scheduler entrypoint for the official Yale fellowship catalog.
+No recurring job is configured in the repository, so it is disabled by default.
+Configure it as a separate monthly scheduled job, with additional runs six weeks before the usual fall and spring application cycles, only after the target-specific database name and restore workflow have been verified.
+
+The command is dry-run by default and prints only aggregate, redacted counts.
+It requires an explicit `--target=beta|prod`, a matching `SCRAPER_ENV`, and a connected database whose name exactly matches `FELLOWSHIP_REFRESH_BETA_DB` or `FELLOWSHIP_REFRESH_PROD_DB`.
+Use an uncached bounded Beta dry-run first:
+
+```bash
+SCRAPER_ENV=beta \
+FELLOWSHIP_REFRESH_BETA_DB=<beta-db-name> \
+MONGODBURL=<beta-url> \
+yarn --cwd server fellowships:refresh --target=beta --limit=50
+```
+
+Review the aggregate created, updated, unchanged, review-required, and reopened counts plus the private review queue before execute mode.
+Execute mode additionally requires `--execute --confirm=execute-fellowship-refresh-beta --restore-token=<restore-id>`.
+Production requires the corresponding `prod` target and confirmation, plus `--confirm-prod=confirm-production-fellowship-refresh`.
+Never put a restore token in scheduler configuration committed to this repository.
+Use the secret manager provided by the deployment platform and rotate the token after the verified rollback window closes.
+
+Each run is bounded to at most 100 records, uses the existing distributed scraper lease, retries official page fetches with exponential backoff, and upserts by the authoritative source key.
+Missing or invalid deadlines, duplicate source identities, junk titles, and non-authoritative URLs go to `fellowship_refresh_review_queue` instead of changing a fellowship.
+Validated past-to-future transitions emit one idempotent `program_reopened` row in `program_watch_events` for downstream watchlist delivery.
+No future deadline is synthesized.
+Successful execute runs write aggregate freshness state to `fellowship_refresh_runs`; alert when no successful run exists within 45 days or when every discovered row requires review.
+| `lab-microsite-undergrad-llm` | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
+| `student-decision-llm` | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
+| `openalex` | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed. | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
+| `arxiv` | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links. | Weekly with `--since` or bounded accepted targets. | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links. |
 
 ### Compact Observation Retention
 
