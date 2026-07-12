@@ -177,6 +177,7 @@ export function normalizeResearchEntityDetailPayload(
     group: normalizedGroup,
     members: payload.members ?? [],
     researchActivityLinks: payload.researchActivityLinks ?? [],
+    earlierResearchActivityLinks: payload.earlierResearchActivityLinks ?? [],
     scholarlyLinks: payload.scholarlyLinks ?? [],
     memberScholarlyLinks: payload.memberScholarlyLinks ?? [],
     recentPapers: payload.recentPapers ?? [],
