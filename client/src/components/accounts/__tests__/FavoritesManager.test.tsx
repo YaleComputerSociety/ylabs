@@ -39,6 +39,7 @@ vi.mock('../../shared/FellowshipKanbanBoard', () => ({
 
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
+  put: ReturnType<typeof vi.fn>;
 };
 
 afterEach(() => {
@@ -48,6 +49,108 @@ afterEach(() => {
 });
 
 describe('FavoritesManager', () => {
+  const programId = '665f0b0c0b0c0b0c0b0c0b0c';
+
+  it('hydrates server-backed stage and note after reload', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedPrograms') {
+        return Promise.resolve({
+          data: { savedPrograms: [{ _id: programId, id: programId, title: 'Tracked Program' }] },
+        });
+      }
+      return Promise.resolve({
+        data: {
+          savedProgramTracking: {
+            [programId]: {
+              note: 'Ask about the faculty mentor.',
+              stage: 'applied',
+              revision: 3,
+              updatedAt: '2026-07-11T12:00:00.000Z',
+            },
+          },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter>
+        <FavoritesManager />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Tracked Program');
+    expect(screen.getByTitle('Mark as not applied')).toBeTruthy();
+    expect(screen.getByText('Note: Ask about the faculty mentor.')).toBeTruthy();
+  });
+
+  it('flushes a note on blur and announces success only after the server responds', async () => {
+    let resolveSave: (value: unknown) => void = () => {};
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/users/savedPrograms'
+          ? { data: { savedPrograms: [{ _id: programId, id: programId, title: 'Blur Program' }] } }
+          : { data: { savedProgramTracking: {} } },
+      ),
+    );
+    mockedAxios.put.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <FavoritesManager />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Blur Program');
+    fireEvent.click(screen.getByTitle('Add note'));
+    const note = screen.getByRole('textbox', { name: 'Note for Blur Program' });
+    fireEvent.change(note, { target: { value: 'Draft application question' } });
+    fireEvent.blur(note);
+
+    expect(await screen.findByText('Saving...')).toBeTruthy();
+    expect(screen.queryByText('Saved')).toBeNull();
+    resolveSave({
+      data: {
+        tracking: {
+          note: 'Draft application question',
+          stage: 'not_applied',
+          revision: 1,
+          updatedAt: '2026-07-11T12:00:00.000Z',
+        },
+      },
+    });
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(mockedAxios.put).toHaveBeenCalledWith(`/users/savedProgramTracking/${programId}`, {
+      data: {
+        tracking: { note: 'Draft application question', stage: 'not_applied', revision: 0 },
+      },
+    });
+  });
+
+  it('announces an honest error when a tracking save fails', async () => {
+    mockedAxios.get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/users/savedPrograms'
+          ? { data: { savedPrograms: [{ _id: programId, id: programId, title: 'Error Program' }] } }
+          : { data: { savedProgramTracking: {} } },
+      ),
+    );
+    mockedAxios.put.mockRejectedValue({ response: { status: 401 } });
+
+    render(
+      <MemoryRouter>
+        <FavoritesManager />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Error Program');
+    fireEvent.click(screen.getByTitle('Mark as applied'));
+    expect(
+      await screen.findByText('Not saved. Check your connection or sign in again, then retry.'),
+    ).toBeTruthy();
+  });
+
   it('keeps date-only saved program deadlines visible through the due date', () => {
     expect(
       savedProgramDeadlineSummary(
