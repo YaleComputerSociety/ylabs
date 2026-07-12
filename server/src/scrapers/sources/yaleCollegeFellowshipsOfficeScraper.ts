@@ -86,6 +86,7 @@ type FetchPage = (url: string, useCache: boolean) => Promise<string>;
 interface YaleCollegeFellowshipsOfficeScraperDeps {
   pageUrls?: string[];
   fetchPage?: FetchPage;
+  retryDelay?: (attempt: number) => Promise<void>;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -122,9 +123,7 @@ function normalizeLinkUrl(url: string): string {
     if (parsed.hostname.endsWith('communityforce.com')) parsed.protocol = 'https:';
     if (parsed.hostname === 'yalecollege.yale.edu') {
       const movedUrl =
-        MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS[
-          parsed.pathname.toLowerCase().replace(/\/$/, '')
-        ];
+        MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS[parsed.pathname.toLowerCase().replace(/\/$/, '')];
       if (movedUrl) return movedUrl;
     }
     return parsed.toString();
@@ -174,15 +173,11 @@ function isHtmlLikeUrl(url: string): boolean {
 function isGenericCatalogTitle(title: string): boolean {
   const normalized = normalizeWhitespace(title);
   return (
-    /^(?:about|advising|administering|contact|connect|find|prepare|search)\b/i.test(
-      normalized,
-    ) ||
+    /^(?:about|advising|administering|contact|connect|find|prepare|search)\b/i.test(normalized) ||
     /\b(?:alternative funding|funding options|funding sources|student grants database)\b/i.test(
       normalized,
     ) ||
-    /\b(?:faculty|staff|advisers?|advisors?|resources|directory|subjects?)\b/i.test(
-      normalized,
-    ) ||
+    /\b(?:faculty|staff|advisers?|advisors?|resources|directory|subjects?)\b/i.test(normalized) ||
     /^(?:fellowships?(?: and funding)?|fellowships and funding directory)$/i.test(normalized) ||
     /offered through|opportunities at yale|fellowships and funding$/i.test(normalized)
   );
@@ -225,9 +220,7 @@ function isEligibleCandidateHref(url: string): boolean {
   return isCommunityForceUrl(url) || isLikelyPublicFellowshipDetailUrl(url);
 }
 
-function isInExcludedPageRegion(
-  $link: cheerio.Cheerio<any>,
-): boolean {
+function isInExcludedPageRegion($link: cheerio.Cheerio<any>): boolean {
   return (
     $link.closest(
       'header, nav, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .menu, .sidebar',
@@ -235,10 +228,7 @@ function isInExcludedPageRegion(
   );
 }
 
-function isInPrimaryContent(
-  $: cheerio.CheerioAPI,
-  $link: cheerio.Cheerio<any>,
-): boolean {
+function isInPrimaryContent($: cheerio.CheerioAPI, $link: cheerio.Cheerio<any>): boolean {
   const primaryScopes = $('main, [role="main"], article');
   if (primaryScopes.length === 0) return true;
   return $link.closest('main, [role="main"], article').length > 0;
@@ -267,7 +257,9 @@ function extractEmail(text: string): string | undefined {
 }
 
 function hasExplicitActiveApplicationLanguage(text: string): boolean {
-  return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b/i.test(text);
+  return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b/i.test(
+    text,
+  );
 }
 
 function bestDeadlineText(text: string): string {
@@ -297,17 +289,15 @@ export function parseDeadlineToUtcEndOfDay(
     year += 1;
     date = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
   }
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month ||
-    date.getUTCDate() !== day
-  ) {
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
     return undefined;
   }
   return date;
 }
 
-function fingerprintCandidate(candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>): string {
+function fingerprintCandidate(
+  candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>,
+): string {
   const stable = {
     title: candidate.title,
     summary: candidate.summary || '',
@@ -356,10 +346,7 @@ function existingKeyForCandidate(
     : undefined;
   if (applicationLink) {
     for (const [key, existing] of byKey) {
-      const existingUrls = [
-        existing.applicationLink,
-        ...existing.links.map((link) => link.url),
-      ]
+      const existingUrls = [existing.applicationLink, ...existing.links.map((link) => link.url)]
         .filter((url): url is string => !!url)
         .map(normalizeLinkUrl);
       if (existingUrls.includes(applicationLink)) return key;
@@ -569,7 +556,11 @@ export function parseFellowshipCatalogPage(
   return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-function observation(field: string, value: unknown, candidate: FellowshipCatalogCandidate): ObservationInput | null {
+function observation(
+  field: string,
+  value: unknown,
+  candidate: FellowshipCatalogCandidate,
+): ObservationInput | null {
   if (value === undefined || value === null || value === '') return null;
   if (Array.isArray(value) && value.length === 0) return null;
   return {
@@ -658,10 +649,14 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
 
   private readonly pageUrls: string[];
   private readonly fetchPage: FetchPage;
+  private readonly retryDelay: (attempt: number) => Promise<void>;
 
   constructor(deps: YaleCollegeFellowshipsOfficeScraperDeps = {}) {
     this.pageUrls = deps.pageUrls || DEFAULT_PAGE_URLS;
     this.fetchPage = deps.fetchPage || fetchHtml;
+    this.retryDelay =
+      deps.retryDelay ||
+      ((attempt) => new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt)));
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -685,17 +680,24 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       }
     };
     const tryParseAndMerge = async (url: string): Promise<boolean> => {
-      try {
-        await parseAndMerge(url);
-        return true;
-      } catch (error) {
-        failedUrls.push(url);
-        ctx.log('Skipping fellowship catalog page after fetch/parse failure', {
-          url,
-          error: sanitizeLogValue(error),
-        });
-        return false;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          // A failed fetch must be retryable rather than treated as already fetched.
+          fetched.delete(url);
+          await parseAndMerge(url);
+          return true;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await this.retryDelay(attempt);
+        }
       }
+      failedUrls.push(url);
+      ctx.log('Skipping fellowship catalog page after fetch/parse failure', {
+        url,
+        error: sanitizeLogValue(lastError),
+      });
+      return false;
     };
 
     let seedPageSuccesses = 0;
@@ -729,9 +731,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
       a.title.localeCompare(b.title),
     );
     const selected =
-      limitOption !== undefined
-        ? allCandidates.slice(0, limitOption)
-        : allCandidates;
+      limitOption !== undefined ? allCandidates.slice(0, limitOption) : allCandidates;
     const observations = selected.flatMap(candidateToObservations);
     if (observations.length > 0) await ctx.emit(observations);
 
