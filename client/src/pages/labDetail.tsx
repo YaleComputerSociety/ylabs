@@ -1050,6 +1050,7 @@ const LabDetail = () => {
     researchEntity,
     members,
     researchActivityLinks: payloadResearchActivityLinks = [],
+    earlierResearchActivityLinks = [],
     scholarlyLinks = [],
     memberScholarlyLinks = [],
     recentPapers = [],
@@ -1237,6 +1238,16 @@ const LabDetail = () => {
                   emptyText="No professor research activity is attached yet."
                 />
               </div>
+            </section>
+          )}
+
+          {earlierResearchActivityLinks.length > 0 && (
+            <section>
+              <SectionHeading>Earlier work by listed professors</SectionHeading>
+              <LabPapersList
+                papers={earlierResearchActivityLinks.slice(0, 3)}
+                emptyText="No earlier work is attached."
+              />
             </section>
           )}
 
