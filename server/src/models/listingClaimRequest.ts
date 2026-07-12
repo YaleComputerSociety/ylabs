@@ -4,7 +4,12 @@
 import mongoose from 'mongoose';
 
 export const ListingClaimRequestType = ['claim', 'correction'] as const;
-export const ListingClaimRequestStatus = ['pending', 'approved', 'rejected'] as const;
+export const ListingClaimRequestStatus = [
+  'pending',
+  'changes_requested',
+  'approved',
+  'rejected',
+] as const;
 
 const requesterSnapshotSchema = new mongoose.Schema(
   {
@@ -80,6 +85,20 @@ const listingClaimRequestSchema = new mongoose.Schema(
       default: '',
       maxlength: 4000,
     },
+    reviewHistory: {
+      type: [
+        new mongoose.Schema(
+          {
+            status: { type: String, enum: ListingClaimRequestStatus, required: true },
+            rationale: { type: String, required: true, maxlength: 4000 },
+            reviewedBy: { type: String, required: true },
+            reviewedAt: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -88,6 +107,10 @@ const listingClaimRequestSchema = new mongoose.Schema(
 
 listingClaimRequestSchema.index({ listingId: 1, status: 1, createdAt: -1 });
 listingClaimRequestSchema.index({ 'requester.netId': 1, createdAt: -1 });
+listingClaimRequestSchema.index(
+  { listingId: 1, requestType: 1, 'requester.netId': 1 },
+  { unique: true, partialFilterExpression: { status: 'pending' } },
+);
 
 export const ListingClaimRequest = mongoose.model(
   'listingClaimRequests',
