@@ -421,7 +421,6 @@ const Research = () => {
   const searchAbortRef = useRef<AbortController | null>(null);
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
-  const activeDefaultSearchKeyRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
@@ -489,14 +488,6 @@ const Research = () => {
   }, [isAdmin, showWeakestProfilesFirst, qualityFilters.length, trustTierFilters.length]);
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
-    const requestKey = JSON.stringify({
-      page,
-      weak: isAdmin && showWeakestProfilesFirst,
-      quality: isAdmin && showWeakestProfilesFirst ? qualityFilters : [],
-      tiers: isAdmin ? trustTierFilters : [],
-    });
-    if (activeDefaultSearchKeyRef.current === requestKey) return;
-    activeDefaultSearchKeyRef.current = requestKey;
     const requestId = ++defaultSearchRequestIdRef.current;
     const controller = new AbortController();
     defaultSearchAbortRef.current?.abort();
@@ -542,9 +533,6 @@ const Research = () => {
         setDefaultSearchError('Research homes are temporarily unavailable.');
       }
     } finally {
-      if (activeDefaultSearchKeyRef.current === requestKey) {
-        activeDefaultSearchKeyRef.current = null;
-      }
       if (requestId === defaultSearchRequestIdRef.current && !controller.signal.aborted) {
         setDefaultSearchLoading(false);
       }
