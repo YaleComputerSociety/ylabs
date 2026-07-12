@@ -67,6 +67,11 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { studentPathwayMongoMatch } from './studentAccessPublicationPolicy';
 import { isApprovedPublicContactRoute } from './studentAccessPublicationPolicy';
+import {
+  canonicalScholarlyWorkKey,
+  evaluateResearchActivityIntegrity,
+  type ResearchActivityCandidate,
+} from './researchActivityIntegrity';
 
 const NON_LAB_CATEGORIES = new Set<string>([
   DepartmentCategory.SOCIAL_SCIENCES,
@@ -1678,12 +1683,14 @@ export function dedupeSameNameLeadMembers<T extends { user: any; role: string; r
 
 export function buildResearchActivityLinkPayload({
   researchEntityId,
+  entityTopicEvidence = [],
   entityLinkedPapers = [],
   memberPaperPairs = [],
   entityScholarlyLinks = [],
   memberScholarlyLinkPairs = [],
 }: {
   researchEntityId: unknown;
+  entityTopicEvidence?: unknown;
   entityLinkedPapers?: Array<Record<string, any>>;
   memberPaperPairs?: Array<{ paper: Record<string, any>; memberDisplayId?: unknown }>;
   entityScholarlyLinks?: Array<Record<string, any>>;
@@ -1696,9 +1703,12 @@ export function buildResearchActivityLinkPayload({
     observedAt?: unknown;
     sourceName?: string;
     sourceUrl?: string;
+    appointmentStartedAt?: unknown;
+    appointmentEndedAt?: unknown;
   }>;
 }) {
   const seen = new Set<string>();
+  const seenCanonicalWorks = new Set<string>();
   const uniqueKey = (basis: string, id: unknown, owner?: unknown) =>
     [basis, researchGroupDocumentId(id), researchGroupDocumentId(owner)].join(':');
 
@@ -1724,27 +1734,38 @@ export function buildResearchActivityLinkPayload({
     })),
   ].filter((link) => {
     const key = uniqueKey(link.relationshipBasis || '', link._id);
-    if (seen.has(key) || !isPublicResearchPaperLink(link)) return false;
+    const canonicalKey = canonicalScholarlyWorkKey(link);
+    if (seen.has(key) || seenCanonicalWorks.has(canonicalKey) || !isPublicResearchPaperLink(link))
+      return false;
     seen.add(key);
+    seenCanonicalWorks.add(canonicalKey);
     return true;
   });
 
+  const integrityDecisions = evaluateResearchActivityIntegrity(
+    memberScholarlyLinkPairs.filter((pair) => pair.memberDisplayId) as ResearchActivityCandidate[],
+    entityTopicEvidence,
+  );
+  const publicMemberLink = (pair: ResearchActivityCandidate, earlier = false) => ({
+    ...withoutInternalResearchActivityIds(
+      scholarlyLinkToPublicLink(pair.link, {
+        relationshipBasis: pair.relationshipBasis || 'identity_authorship',
+        evidenceLabel: earlier
+          ? 'Earlier work by a listed professor, before the documented current appointment'
+          : pair.evidenceLabel || 'Authored by a verified Yale faculty identity',
+        confidence: pair.confidence,
+        observedAt: pair.observedAt,
+        sourceName: pair.sourceName,
+        sourceUrl: pair.sourceUrl,
+      }),
+    ),
+    memberKey: pair.memberDisplayId,
+  });
+
   const memberScholarlyLinks = [
-    ...memberScholarlyLinkPairs
-      .filter((pair) => pair.memberDisplayId)
-      .map((pair) => ({
-        ...withoutInternalResearchActivityIds(
-          scholarlyLinkToPublicLink(pair.link, {
-            relationshipBasis: pair.relationshipBasis || 'identity_authorship',
-            evidenceLabel: pair.evidenceLabel || 'Authored by a verified Yale faculty identity',
-            confidence: pair.confidence,
-            observedAt: pair.observedAt,
-            sourceName: pair.sourceName,
-            sourceUrl: pair.sourceUrl,
-          }),
-        ),
-        memberKey: pair.memberDisplayId,
-      })),
+    ...integrityDecisions
+      .filter((decision) => decision.disposition === 'current')
+      .map((pair) => publicMemberLink(pair.candidate)),
     ...memberPaperPairs
       .filter((pair) => pair.memberDisplayId)
       .map((pair) => ({
@@ -1755,15 +1776,29 @@ export function buildResearchActivityLinkPayload({
       })),
   ].filter((link: any) => {
     const key = uniqueKey(link.relationshipBasis || '', link._id, link.memberKey);
-    if (seen.has(key) || !isPublicResearchPaperLink(link)) return false;
+    const canonicalKey = canonicalScholarlyWorkKey(link);
+    if (seen.has(key) || seenCanonicalWorks.has(canonicalKey) || !isPublicResearchPaperLink(link))
+      return false;
     seen.add(key);
+    seenCanonicalWorks.add(canonicalKey);
     return true;
   });
+
+  const earlierMemberScholarlyLinks = integrityDecisions
+    .filter((decision) => decision.disposition === 'earlier')
+    .map((decision) => publicMemberLink(decision.candidate, true))
+    .filter((link) => {
+      const canonicalKey = canonicalScholarlyWorkKey(link);
+      if (seenCanonicalWorks.has(canonicalKey) || !isPublicResearchPaperLink(link)) return false;
+      seenCanonicalWorks.add(canonicalKey);
+      return true;
+    });
 
   return {
     scholarlyLinks,
     memberScholarlyLinks,
     researchActivityLinks: [...scholarlyLinks, ...memberScholarlyLinks],
+    earlierResearchActivityLinks: earlierMemberScholarlyLinks,
   };
 }
 
@@ -2016,6 +2051,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   recentPapers: any[];
   recentArxivPreprints: any[];
   researchActivityLinks: any[];
+  earlierResearchActivityLinks: any[];
   scholarlyLinks: any[];
   memberScholarlyLinks: any[];
   activeListings: any[];
@@ -2146,6 +2182,14 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         return id ? [id, publicMemberKeyForResearchDetail(member.user, member.role)] : undefined;
       })
       .filter((entry): entry is [string, string] => Boolean(entry)),
+  );
+  const memberAppointmentsByInternalId = new Map(
+    dedupedMembersWithRows.flatMap((member) => {
+      const id = normalizeResearchGroupObjectId(member.user?._id);
+      return id
+        ? [[id, { startedAt: member.row?.startedAt, endedAt: member.row?.endedAt }] as const]
+        : [];
+    }),
   );
   const members = dedupedMembersWithRows.map(({ row: _row, ...member }) => {
     return {
@@ -2278,6 +2322,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const memberScholarlyLinkPairs = (attributionRows as any[]).flatMap((row) => {
     const link = scholarlyLinksById.get(researchGroupDocumentId(row.scholarlyLinkId));
     if (!link) return [];
+    const appointment = memberAppointmentsByInternalId.get(
+      researchGroupDocumentId(row.targetUserId),
+    );
     return [
       {
         link,
@@ -2290,11 +2337,20 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         observedAt: row.observedAt,
         sourceName: row.sourceName,
         sourceUrl: row.sourceUrl,
+        appointmentStartedAt: appointment?.startedAt,
+        appointmentEndedAt: appointment?.endedAt,
       },
     ];
   });
   const researchActivity = buildResearchActivityLinkPayload({
     researchEntityId: (group as any)._id,
+    entityTopicEvidence: [
+      (group as any).researchAreas,
+      (group as any).methods,
+      (group as any).shortDescription,
+      (group as any).fullDescription,
+      (group as any).name,
+    ],
     entityScholarlyLinks: entityScholarlyLinks as any[],
     memberScholarlyLinkPairs,
   });
