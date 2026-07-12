@@ -2386,6 +2386,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   return addResearchEntityDetailAlias({
     group: {
       ...publicGroupForResponse,
+      leadIdentityStatus: Array.isArray((publicGroupForResponse as any).qualitySummary?.repairFlags) &&
+        (publicGroupForResponse as any).qualitySummary.repairFlags.includes('pi_identity_conflict')
+        ? 'under_review'
+        : 'verified',
       accessSummary,
       studentDecisionExplanation: studentDecisionExplanation || undefined,
     },

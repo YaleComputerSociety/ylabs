@@ -359,6 +359,7 @@ const resolveDecisionProfileUrl = (
   contactRoutes: LabContactRoute[],
   group?: any,
 ): string | undefined => {
+  if (group?.leadIdentityStatus === 'under_review') return undefined;
   const labWebsiteDestinations = new Set(
     [group?.websiteUrl, group?.website]
       .filter((url) => url && !isProfileLikeWebsiteUrl(url))
@@ -1120,6 +1121,7 @@ const LabDetail = () => {
     (route) => route.reviewStatus === 'approved' && Boolean(safeHttpUrl(route.url)),
   );
   const principalInvestigators = dedupeLeadMembers(members);
+  const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const membersById = new Map(members.map((member) => [memberId(member), member]));
   const primaryRecentWorkMember =
     memberRecentWorkLinks
@@ -1211,7 +1213,14 @@ const LabDetail = () => {
 
           <section>
             <SectionHeading>Principal Investigator</SectionHeading>
-            <LabMembersList members={principalInvestigators} />
+            {leadIdentityUnderReview ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+                <p className="font-semibold">Lead identity under review</p>
+                <p className="mt-1">The research information remains available, but this lead and profile link are not shown until their sources agree.</p>
+              </div>
+            ) : (
+              <LabMembersList members={principalInvestigators} />
+            )}
           </section>
 
           {hasDirectRelatedResearch && (
