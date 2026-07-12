@@ -46,7 +46,9 @@ import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
+  toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
+  type PublicResearchEntitySummaryDto,
 } from './researchEntityDto';
 import {
   isPublicResearchPaperLink,
@@ -1198,11 +1200,18 @@ const MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS = 50;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_CONTACT_ROUTES = 50;
 const MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES = 50;
-const MAX_PUBLIC_DETAIL_RELATIONSHIPS = 100;
+const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
+const PUBLIC_RELATED_ENTITY_PROJECTION =
+  '_id slug name displayName kind entityType departments shortDescription description fullDescription studentVisibilityTier';
+
+export interface PublicRelationshipCollectionMeta {
+  returned: number;
+  truncated: boolean;
+}
 
 const publicRelationshipForResearchDetail = (
   relationship: any,
-  relatedResearchEntity?: PublicResearchEntityDto,
+  relatedResearchEntity?: PublicResearchEntitySummaryDto,
 ) => ({
   relatedResearchEntityId: relatedResearchEntity?.id || relatedResearchEntity?.slug,
   relatedResearchEntitySlug: relatedResearchEntity?.slug,
@@ -1216,33 +1225,48 @@ const publicRelationshipForResearchDetail = (
 
 export async function listResearchEntityRelationshipPayload(entityId: unknown): Promise<{
   entityRelationships: any[];
-  relatedResearchEntities: PublicResearchEntityDto[];
+  relatedResearchEntities: PublicResearchEntitySummaryDto[];
+  relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   affiliatedRelationships: any[];
-  affiliatedResearchEntities: PublicResearchEntityDto[];
+  affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
+  affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
 }> {
   const safeEntityId = normalizeResearchGroupObjectId(entityId);
   if (!safeEntityId) {
     return {
       entityRelationships: [],
       relatedResearchEntities: [],
+      relatedResearchEntitiesMeta: { returned: 0, truncated: false },
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
+      affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
     };
   }
 
-  const relationships = await ResearchEntityRelationship.find({
-    archived: { $ne: true },
-    $or: [{ sourceResearchEntityId: safeEntityId }, { targetResearchEntityId: safeEntityId }],
-  })
-    .sort({ confidence: -1, updatedAt: -1 })
-    .limit(MAX_PUBLIC_DETAIL_RELATIONSHIPS)
-    .lean();
-
-  const relatedRelationships = (relationships as any[]).filter((relationship) =>
-    idEquals(relationship.sourceResearchEntityId, safeEntityId),
+  const relationshipLimit = MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + 1;
+  const [relatedRelationshipsAll, affiliatedRelationshipsAll] = (await Promise.all([
+    ResearchEntityRelationship.find({
+      archived: { $ne: true },
+      sourceResearchEntityId: safeEntityId,
+    })
+      .sort({ confidence: -1, updatedAt: -1 })
+      .limit(relationshipLimit)
+      .lean(),
+    ResearchEntityRelationship.find({
+      archived: { $ne: true },
+      targetResearchEntityId: safeEntityId,
+    })
+      .sort({ confidence: -1, updatedAt: -1 })
+      .limit(relationshipLimit)
+      .lean(),
+  ])) as [any[], any[]];
+  const relatedRelationships = relatedRelationshipsAll.slice(
+    0,
+    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
   );
-  const affiliatedRelationships = (relationships as any[]).filter((relationship) =>
-    idEquals(relationship.targetResearchEntityId, safeEntityId),
+  const affiliatedRelationships = affiliatedRelationshipsAll.slice(
+    0,
+    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
   );
   const relatedEntityIds = relatedRelationships.map(
     (relationship) => relationship.targetResearchEntityId,
@@ -1264,7 +1288,9 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
           _id: { $in: entityIds },
           archived: { $ne: true },
           studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-        }).lean()
+        })
+          .select(PUBLIC_RELATED_ENTITY_PROJECTION)
+          .lean()
       : [];
   const publicRelatedEntities = (relatedEntities as any[]).filter((entity) =>
     publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
@@ -1273,7 +1299,7 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
   const publicEntitiesByInternalId = new Map(
     publicRelatedEntities.map((entity) => [
       researchGroupDocumentId(entity._id),
-      toPublicResearchEntityDto(sanitizeResearchEntityPublicDescriptionFields(entity)),
+      toPublicResearchEntitySummaryDto(sanitizeResearchEntityPublicDescriptionFields(entity)),
     ]),
   );
 
@@ -1291,7 +1317,13 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       ),
     relatedResearchEntities: relatedEntityIds
       .map((id) => publicEntitiesByInternalId.get(researchGroupDocumentId(id)))
-      .filter((entity): entity is PublicResearchEntityDto => Boolean(entity)),
+      .filter((entity): entity is PublicResearchEntitySummaryDto => Boolean(entity)),
+    relatedResearchEntitiesMeta: {
+      returned: relatedEntityIds.filter((id) =>
+        publicEntitiesByInternalId.has(researchGroupDocumentId(id)),
+      ).length,
+      truncated: relatedRelationshipsAll.length > relatedRelationships.length,
+    },
     affiliatedRelationships: affiliatedRelationships
       .map((relationship) => ({
         relationship,
@@ -1305,7 +1337,13 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       ),
     affiliatedResearchEntities: affiliatedEntityIds
       .map((id) => publicEntitiesByInternalId.get(researchGroupDocumentId(id)))
-      .filter((entity): entity is PublicResearchEntityDto => Boolean(entity)),
+      .filter((entity): entity is PublicResearchEntitySummaryDto => Boolean(entity)),
+    affiliatedResearchEntitiesMeta: {
+      returned: affiliatedEntityIds.filter((id) =>
+        publicEntitiesByInternalId.has(researchGroupDocumentId(id)),
+      ).length,
+      truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
+    },
   };
 }
 
@@ -2060,9 +2098,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   contactRoutes: any[];
   postedOpportunities: any[];
   entityRelationships: any[];
-  relatedResearchEntities: PublicResearchEntityDto[];
+  relatedResearchEntities: PublicResearchEntitySummaryDto[];
+  relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   affiliatedRelationships: any[];
-  affiliatedResearchEntities: PublicResearchEntityDto[];
+  affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
+  affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
 } | null> {
   const normalizedSlug = normalizeResearchDetailSlug(slug);
   if (!normalizedSlug) return null;
