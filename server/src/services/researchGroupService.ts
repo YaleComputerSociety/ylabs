@@ -1201,6 +1201,7 @@ const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_CONTACT_ROUTES = 50;
 const MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
+const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 const PUBLIC_RELATED_ENTITY_PROJECTION =
   '_id slug name displayName kind entityType departments shortDescription description fullDescription studentVisibilityTier';
 
@@ -1243,21 +1244,20 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     };
   }
 
-  const relationshipLimit = MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + 1;
   const [relatedRelationshipsAll, affiliatedRelationshipsAll] = (await Promise.all([
     ResearchEntityRelationship.find({
       archived: { $ne: true },
       sourceResearchEntityId: safeEntityId,
     })
       .sort({ confidence: -1, updatedAt: -1 })
-      .limit(relationshipLimit)
+      .limit(MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT)
       .lean(),
     ResearchEntityRelationship.find({
       archived: { $ne: true },
       targetResearchEntityId: safeEntityId,
     })
       .sort({ confidence: -1, updatedAt: -1 })
-      .limit(relationshipLimit)
+      .limit(MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT)
       .lean(),
   ])) as [any[], any[]];
   const relatedRelationships = relatedRelationshipsAll.slice(

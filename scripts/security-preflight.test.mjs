@@ -612,7 +612,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
     'MAX_PUBLIC_DETAIL_ACCESS_SIGNALS',
     'MAX_PUBLIC_DETAIL_CONTACT_ROUTES',
     'MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES',
-    'MAX_PUBLIC_DETAIL_RELATIONSHIPS',
+    'MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT',
   ]) {
     assert.match(source, new RegExp(`const ${constant} = \\d+`));
     assert.match(source, new RegExp(`\\.limit\\(${constant}\\)`));
