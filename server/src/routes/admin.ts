@@ -613,6 +613,8 @@ router.get('/access-review', async (req: Request, res: Response) => {
       search: typeof req.query.search === 'string' ? req.query.search : undefined,
       page: req.query.page,
       pageSize: req.query.pageSize,
+      hasUnreviewed: req.query.hasUnreviewed,
+      sort: req.query.sort,
     });
     res.json(result);
   } catch (error) {
