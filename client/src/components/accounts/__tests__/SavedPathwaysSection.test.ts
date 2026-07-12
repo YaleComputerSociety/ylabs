@@ -503,7 +503,7 @@ describe('SavedPathwaysSection advising export', () => {
     });
   });
 
-  it('requires an explicit opt-in before private notes are requested for export', async () => {
+  it('requires finalist selection and keeps each note private by default', async () => {
     const user = userEvent.setup();
 
     mockedAxios.get.mockImplementation((url) => {
@@ -525,78 +525,24 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      if (url === '/users/savedResearchPlanDetails/export') {
-        return Promise.resolve({
-          data: {
-            exportedAt: '2026-05-13T12:00:00.000Z',
-            itemCount: 1,
-            privacy: {
-              includesPrivateNotes: false,
-            },
-            items: [
-              {
-                title: 'Explore archival climate records',
-                researchEntity: { name: 'Climate Archive' },
-                intent: 'outreach',
-                stage: 'researching',
-                checklist: { 'outreach-route': true },
-                sourceLinks: ['https://example.edu/pathway'],
-                bestNextStepCategory: 'plan-outreach',
-              },
-            ],
-          },
-        });
-      }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
-    });
-    mockedAxios.post.mockImplementation((url, data) => {
-      if (url === '/users/savedResearchPlanDetails/export') {
-        return Promise.resolve({
-          data: {
-            exportedAt: '2026-05-13T12:00:00.000Z',
-            itemCount: 1,
-            privacy: {
-              includesPrivateNotes: data?.includePrivateNotes === true,
-            },
-            items: [
-              {
-                title: 'Explore archival climate records',
-                researchEntity: { name: 'Climate Archive' },
-                intent: 'outreach',
-                stage: 'researching',
-                checklist: { 'outreach-route': true },
-                sourceLinks: ['https://example.edu/pathway'],
-                bestNextStepCategory: 'plan-outreach',
-                privateNote: data?.includePrivateNotes ? 'Discuss with my advisor.' : undefined,
-              },
-            ],
-          },
-        });
-      }
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
 
     render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
 
     await screen.findByText('Explore archival climate records');
-
     await user.click(screen.getByRole('button', { name: 'Advising export' }));
-    await user.click(screen.getByLabelText('Include private notes'));
-    await user.click(screen.getByRole('button', { name: 'Export for advising' }));
-
-    await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/users/savedResearchPlanDetails/export',
-        { includePrivateNotes: true },
-        expect.objectContaining({
-          withCredentials: true,
-        }),
-      );
-    });
-    expect(screen.getByText('Advising export downloaded.')).toBeTruthy();
+    expect(screen.getByText('0 of 1 finalists selected')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Preview advising export' }));
+    expect(screen.getByText('Select at least one finalist to preview.')).toBeTruthy();
+    await user.click(screen.getByLabelText('Explore archival climate records'));
+    await user.click(screen.getByRole('button', { name: 'Preview advising export' }));
+    expect(screen.getByRole('dialog')).toHaveFocus();
+    expect(screen.queryByText('Discuss with my advisor.')).toBeNull();
+    expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
-  it('downloads a readable advising markdown export instead of raw JSON', async () => {
+  it('previews translated labels, unknown professor, opted-in note, and prints', async () => {
     const user = userEvent.setup();
     let exportedBlob: Blob | null = null;
     vi.mocked(window.URL.createObjectURL).mockImplementation((blob) => {
@@ -608,40 +554,41 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlans') {
         return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
       }
-      if (url === '/users/savedResearchPlanDetails') {
-        return Promise.resolve({ data: { savedResearchPlanDetails: {} } });
-      }
+      if (url === '/users/savedResearchPlanDetails')
+        return Promise.resolve({
+          data: {
+            savedResearchPlanDetails: {
+              'pathway-1': plan({
+                intent: 'outreach',
+                stage: 'ready',
+                note: 'Advisor-only context',
+                checklist: { 'outreach-route': true },
+              }),
+            },
+          },
+        });
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      if (url === '/users/savedResearchPlanDetails/export') {
-        return Promise.resolve({
-          data: {
-            exportedAt: '2026-05-13T12:00:00.000Z',
-            itemCount: 1,
-            privacy: { includesPrivateNotes: false },
-            items: [
-              {
-                title: 'Explore archival climate records',
-                researchEntity: { name: 'Climate Archive' },
-                intent: 'outreach',
-                stage: 'researching',
-                checklist: { 'outreach-route': true },
-                sourceLinks: ['https://example.edu/pathway'],
-                bestNextStepCategory: 'plan-outreach',
-              },
-            ],
-          },
-        });
-      }
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {});
 
     render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
 
     await screen.findByText('Explore archival climate records');
     await user.click(screen.getByRole('button', { name: 'Advising export' }));
-    await user.click(screen.getByRole('button', { name: 'Export for advising' }));
+    await user.click(screen.getByLabelText('Explore archival climate records'));
+    await user.click(screen.getByLabelText('Include this plan note'));
+    await user.click(screen.getByRole('button', { name: 'Preview advising export' }));
+    const preview = screen.getByTestId('advising-export-preview');
+    expect(preview.textContent).toContain('Lead professor unavailable');
+    expect(preview.textContent).toContain('Ready to act');
+    expect(preview.textContent).toContain('Review the official contact route or policy');
+    expect(preview.textContent).toContain('Advisor-only context');
+    await user.click(screen.getByRole('button', { name: 'Print or save PDF' }));
+    expect(print).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Download Markdown' }));
 
     await waitFor(() => expect(exportedBlob).not.toBeNull());
     const text = await exportedBlob!.text();
