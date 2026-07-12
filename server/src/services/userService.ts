@@ -26,6 +26,8 @@ import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
 
 const PLANNING_INTENTS = new Set(['thesis', 'outreach', 'credit', 'funding', 'apply', 'later']);
 const PLANNING_STAGES = new Set(['saved', 'researching', 'ready', 'acted', 'archived']);
+const FOLLOW_UP_INTERVAL_DAYS = new Set([7, 14, 30, 60, 90]);
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_ACCOUNT_MUTATION_IDS = 100;
 const MAX_SAVED_PATHWAY_CHECKLIST_ITEMS = 50;
 const MAX_SAVED_PATHWAY_CHECKLIST_KEY_LENGTH = 120;
@@ -58,6 +60,9 @@ export interface SavedPathwayPlanInput {
   note?: string;
   checklist?: Record<string, unknown>;
   checklistHistory?: SavedPathwayChecklistHistoryInput[];
+  targetDeadline?: string | null;
+  actedOnDate?: string | null;
+  followUpIntervalDays?: number | null;
 }
 
 export interface SavedPathwayChecklistHistoryInput {
@@ -119,6 +124,16 @@ export function sanitizeSavedPathwayPlanForStorage(
 ): Required<SavedPathwayPlanInput> {
   const candidate =
     plan && typeof plan === 'object' ? (plan as SavedPathwayPlanInput) : {};
+  const dateOnly = (value: unknown): string | null => {
+    if (typeof value !== 'string' || !DATE_ONLY_RE.test(value)) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day
+      ? value
+      : null;
+  };
   const checklist: Record<string, boolean> = {};
   const rawChecklist =
     candidate.checklist && typeof candidate.checklist === 'object' && !Array.isArray(candidate.checklist)
@@ -167,6 +182,13 @@ export function sanitizeSavedPathwayPlanForStorage(
         : '',
     checklist,
     checklistHistory,
+    targetDeadline: dateOnly(candidate.targetDeadline),
+    actedOnDate: dateOnly(candidate.actedOnDate),
+    followUpIntervalDays:
+      typeof candidate.followUpIntervalDays === 'number' &&
+      FOLLOW_UP_INTERVAL_DAYS.has(candidate.followUpIntervalDays)
+        ? candidate.followUpIntervalDays
+        : null,
   };
 }
 

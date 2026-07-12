@@ -11,6 +11,7 @@ import SavedPathwaysSection, {
   deadlineReminderForPathway,
   defaultIntentForPathway,
   fundingCueForPathway,
+  planningCueForPlan,
   readStoredPlans,
   type FellowshipFundingMatch,
   writeStoredPlans,
@@ -44,6 +45,9 @@ const plan = (overrides: Partial<PathwayPlan> = {}): PathwayPlan => ({
   note: '',
   checklist: {},
   checklistHistory: [],
+  targetDeadline: null,
+  actedOnDate: null,
+  followUpIntervalDays: null,
   ...overrides,
 });
 
@@ -114,6 +118,20 @@ afterEach(() => {
 });
 
 describe('saved research plan hydration helpers', () => {
+  it('uses local calendar dates for upcoming deadlines and overdue follow-ups', () => {
+    const now = new Date(2026, 6, 12, 23, 30);
+    expect(planningCueForPlan(pathway(), plan({ targetDeadline: '2026-07-13' }), now)).toMatchObject({
+      date: '2026-07-13',
+      priority: 1,
+    });
+    expect(planningCueForPlan(pathway(), plan({
+      actedOnDate: '2026-06-01', followUpIntervalDays: 30,
+    }), now)).toMatchObject({
+      date: '2026-07-01',
+      priority: 0,
+    });
+  });
+
   it('lets server plans win over local drafts when both exist', () => {
     expect(
       mergeSavedPathwayPlansForHydration(
