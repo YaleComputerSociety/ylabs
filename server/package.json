@@ -48,6 +48,7 @@
     "programs:backfill-official-sources": "tsx src/scripts/backfillProgramOfficialSources.ts",
     "programs:accept-formalization-exceptions": "tsx src/scripts/acceptFormalizationReviewExceptions.ts",
     "programs:audit-research-relevance": "tsx src/scripts/auditProgramResearchRelevance.ts",
+    "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",
     "student-visibility:backfill": "tsx src/scripts/backfillStudentVisibilityTiers.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
     "launch:trust-contract": "tsx src/scripts/launchTrustContract.ts",
