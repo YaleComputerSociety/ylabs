@@ -7,7 +7,7 @@ import { getListingModel } from '../db/connections';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
 
 const REQUEST_TYPES = new Set(['claim', 'correction']);
-const REQUEST_STATUSES = new Set(['pending', 'approved', 'rejected']);
+const REQUEST_STATUSES = new Set(['pending', 'changes_requested', 'approved', 'rejected']);
 
 const PROPOSED_CHANGE_FIELDS = [
   'title',
@@ -167,6 +167,20 @@ export const createListingClaimRequest = async (
     throw new NotFoundError(`Listing not found with ObjectId: ${listingId}`);
   }
 
+  const existingPending = await ListingClaimRequest.findOne({
+    listingId,
+    requestType,
+    'requester.netId': requester.netId,
+    status: 'pending',
+  })
+    .select('_id')
+    .lean();
+  if (existingPending) {
+    const error: any = new Error('A pending request of this type already exists for this listing');
+    error.status = 409;
+    throw error;
+  }
+
   const request = await ListingClaimRequest.create({
     listingId,
     requestType,
@@ -202,6 +216,7 @@ export const listListingClaimRequests = async (params: {
   listingId?: string;
   page?: string;
   pageSize?: string;
+  requesterNetId?: string;
 }) => {
   const filter: Record<string, unknown> = {};
 
@@ -215,6 +230,7 @@ export const listListingClaimRequests = async (params: {
     }
     filter.listingId = params.listingId;
   }
+  if (params.requesterNetId) filter['requester.netId'] = params.requesterNetId;
 
   const page = Math.max(1, parseInt(params.page || '1', 10) || 1);
   const pageSize = Math.min(100, Math.max(1, parseInt(params.pageSize || '25', 10) || 25));
@@ -262,22 +278,27 @@ export const reviewListingClaimRequest = async (
   const body = normalizeRequestBody(input);
   const status = body.status;
   if (typeof status !== 'string' || !REQUEST_STATUSES.has(status) || status === 'pending') {
-    throw new BadRequestError('Status must be approved or rejected');
+    throw new BadRequestError('Status must be approved, rejected, or changes_requested');
   }
 
+  const rationale = trimString(body.adminNotes);
+  if (!rationale) throw new BadRequestError('Reviewer rationale is required');
+  const reviewedAt = new Date();
+
   const request = await ListingClaimRequest.findByIdAndUpdate(
-    id,
+    { _id: id, status: { $in: ['pending', 'changes_requested'] } },
     {
       status,
-      adminNotes: trimString(body.adminNotes) || '',
+      adminNotes: rationale,
       reviewedBy: reviewerNetId,
-      reviewedAt: new Date(),
+      reviewedAt,
+      $push: { reviewHistory: { status, rationale, reviewedBy: reviewerNetId, reviewedAt } },
     },
     { new: true, runValidators: true },
   ).lean();
 
   if (!request) {
-    throw new NotFoundError(`Listing claim request not found with ObjectId: ${id}`);
+    throw new NotFoundError(`Open listing claim request not found with ObjectId: ${id}`);
   }
 
   return request;
