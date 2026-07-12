@@ -99,6 +99,7 @@ accessSignalSchema.index({ observedAt: -1 });
 accessSignalSchema.index({ sourceEvidenceId: 1 });
 accessSignalSchema.index({ archived: 1 });
 accessSignalSchema.index({ 'review.status': 1 });
+accessSignalSchema.index({ researchEntityId: 1, 'review.status': 1, 'review.reviewedAt': -1 });
 accessSignalSchema.index(
   { researchEntityId: 1, signalType: 1, derivationKey: 1 },
   {

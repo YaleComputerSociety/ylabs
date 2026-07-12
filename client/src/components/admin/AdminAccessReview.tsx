@@ -1,7 +1,7 @@
 /**
  * Admin review surface for derived research-access records.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from '../../utils/axios';
 import swal from 'sweetalert';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeRouteSegment } from '../../utils/url';
@@ -23,6 +23,9 @@ interface AccessReviewEntitySummary {
   researchAreas?: string[];
   manuallyLockedFields?: string[];
   counts: AccessReviewCounts;
+  unreviewedCounts: AccessReviewCounts;
+  totalUnreviewed: number;
+  hasOfficialApplication: boolean;
 }
 
 type ReviewStatus = 'unreviewed' | 'approved' | 'needs_source' | 'disputed' | 'archived_by_review';
@@ -342,6 +345,7 @@ const RecordReviewControls = ({
   const [lockedFields, setLockedFields] = useState((record.review?.lockedFields || []).join(', '));
   const [note, setNote] = useState(record.review?.note || '');
   const [isSaving, setIsSaving] = useState(false);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
 
   const save = async () => {
     if (status !== 'unreviewed' && !note.trim()) {
@@ -370,6 +374,10 @@ const RecordReviewControls = ({
         },
       );
       onSaved(response.data.record);
+      const currentCard = saveButtonRef.current?.closest<HTMLElement>('[data-review-record]');
+      const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-review-record]'));
+      const nextCard = cards[cards.indexOf(currentCard as HTMLElement) + 1];
+      nextCard?.focus();
       swal({ text: 'Review saved', icon: 'success', timer: 1200 });
     } catch {
       console.error('Error saving record review.');
@@ -381,6 +389,12 @@ const RecordReviewControls = ({
 
   return (
     <div className="mt-3 rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+      <a
+        href={`#${recordType}-${record._id}`}
+        className="mb-2 inline-block text-xs font-medium text-blue-700 underline underline-offset-2"
+      >
+        Link to record
+      </a>
       <div className="grid gap-2 md:grid-cols-[180px_1fr_auto]">
         <select
           aria-label="Review status"
@@ -403,6 +417,7 @@ const RecordReviewControls = ({
           className="min-h-[44px] rounded border border-[var(--yr-line-strong)] px-2 py-1.5 text-xs"
         />
         <button
+          ref={saveButtonRef}
           onClick={save}
           disabled={isSaving}
           className="min-h-[44px] rounded bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
@@ -454,6 +469,9 @@ const AdminAccessReview = () => {
   const [manualLocksText, setManualLocksText] = useState('');
   const [isSavingLocks, setIsSavingLocks] = useState(false);
   const [recordFilter, setRecordFilter] = useState<RecordFilter>('all');
+  const [hasUnreviewed, setHasUnreviewed] = useState(true);
+  const [queueSort, setQueueSort] = useState('unreviewed');
+  const [queueProgress, setQueueProgress] = useState({ reviewedToday: 0, remaining: 0 });
 
   const fetchEntities = useCallback(async () => {
     setIsLoadingList(true);
@@ -463,11 +481,14 @@ const AdminAccessReview = () => {
           search: search.trim() || undefined,
           page,
           pageSize,
+          hasUnreviewed,
+          sort: queueSort,
         },
       });
       setEntities(response.data.entities || []);
       setTotal(response.data.total || 0);
       setTotalPages(response.data.totalPages || 1);
+      setQueueProgress(response.data.progress || { reviewedToday: 0, remaining: 0 });
       if (!selectedId && response.data.entities?.[0]?._id) {
         setSelectedId(response.data.entities[0]._id);
       }
@@ -477,7 +498,7 @@ const AdminAccessReview = () => {
     } finally {
       setIsLoadingList(false);
     }
-  }, [page, pageSize, search, selectedId]);
+  }, [hasUnreviewed, page, pageSize, queueSort, search, selectedId]);
 
   const fetchDetail = useCallback(async (id: string) => {
     setIsLoadingDetail(true);
@@ -658,6 +679,27 @@ const AdminAccessReview = () => {
               ))}
             </select>
           </div>
+          <label className="inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-gray-700">
+            <input
+              type="checkbox"
+              checked={hasUnreviewed}
+              onChange={(event) => { setHasUnreviewed(event.target.checked); setPage(1); }}
+            />
+            Has unreviewed
+          </label>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Order</label>
+            <select
+              aria-label="Queue order"
+              value={queueSort}
+              onChange={(event) => { setQueueSort(event.target.value); setPage(1); }}
+              className="min-h-[44px] border border-[var(--yr-line-strong)] rounded-md px-3 py-2 text-sm"
+            >
+              <option value="unreviewed">Most unreviewed</option>
+              <option value="official_application">Official application first</option>
+              <option value="updated">Recently updated</option>
+            </select>
+          </div>
           <button
             onClick={fetchEntities}
             className="min-h-[44px] px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
@@ -676,6 +718,9 @@ const AdminAccessReview = () => {
             <p className="text-xs text-gray-500">
               Page {page} of {totalPages}
             </p>
+          </div>
+          <div className="px-4 py-2 border-b border-[var(--yr-line)] text-xs text-gray-600" role="status">
+            <strong>{queueProgress.reviewedToday}</strong> reviewed today · <strong>{queueProgress.remaining}</strong> remaining
           </div>
 
           {isLoadingList && entities.length === 0 ? (
@@ -712,11 +757,14 @@ const AdminAccessReview = () => {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-3">
-                    <CountPill label="pathways" value={entity.counts.entryPathways} />
-                    <CountPill label="signals" value={entity.counts.accessSignals} />
-                    <CountPill label="routes" value={entity.counts.contactRoutes} />
-                    <CountPill label="posts" value={entity.counts.postedOpportunities} />
+                    <CountPill label={`pathways (${entity.unreviewedCounts.entryPathways} new)`} value={entity.counts.entryPathways} />
+                    <CountPill label={`signals (${entity.unreviewedCounts.accessSignals} new)`} value={entity.counts.accessSignals} />
+                    <CountPill label={`routes (${entity.unreviewedCounts.contactRoutes} new)`} value={entity.counts.contactRoutes} />
+                    <CountPill label={`posts (${entity.unreviewedCounts.postedOpportunities} new)`} value={entity.counts.postedOpportunities} />
                   </div>
+                  <p className="mt-2 text-xs font-semibold text-gray-700">
+                    {entity.totalUnreviewed} unreviewed{entity.hasOfficialApplication ? ' · official application' : ''}
+                  </p>
                   {(entity.manuallyLockedFields || []).length > 0 && (
                     <p className="text-xs text-amber-700 mt-2">
                       {entity.manuallyLockedFields?.length} manual lock
@@ -910,6 +958,9 @@ const AdminAccessReview = () => {
                   {filteredRecords.entryPathways.map((pathway) => (
                     <div
                       key={pathway._id}
+                      id={`entryPathway-${pathway._id}`}
+                      data-review-record
+                      tabIndex={-1}
                       className="border border-[var(--yr-line)] rounded-lg p-4"
                     >
                       <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -966,7 +1017,7 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Access Signals</h4>
                 <div className="space-y-3">
                   {filteredRecords.accessSignals.map((signal) => (
-                    <div key={signal._id} className="border border-[var(--yr-line)] rounded-lg p-4">
+                    <div key={signal._id} id={`accessSignal-${signal._id}`} data-review-record tabIndex={-1} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">
                           {formatToken(signal.signalType)}
@@ -1014,7 +1065,7 @@ const AdminAccessReview = () => {
                 <h4 className="text-lg font-bold text-gray-900 mb-3">Contact Routes</h4>
                 <div className="space-y-3">
                   {filteredRecords.contactRoutes.map((route) => (
-                    <div key={route._id} className="border border-[var(--yr-line)] rounded-lg p-4">
+                    <div key={route._id} id={`contactRoute-${route._id}`} data-review-record tabIndex={-1} className="border border-[var(--yr-line)] rounded-lg p-4">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="font-semibold text-gray-900">
                           {route.label ||
@@ -1069,6 +1120,9 @@ const AdminAccessReview = () => {
                     return (
                       <div
                         key={opportunity._id}
+                        id={`postedOpportunity-${opportunity._id}`}
+                        data-review-record
+                        tabIndex={-1}
                         className="border border-[var(--yr-line)] rounded-lg p-4"
                       >
                         <div className="flex flex-wrap items-center gap-2 mb-2">
