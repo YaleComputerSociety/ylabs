@@ -142,6 +142,10 @@ const userSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    savedProgramTracking: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     publications: {
       type: [publicationSchema],
       default: [],
