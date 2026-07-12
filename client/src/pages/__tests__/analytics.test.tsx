@@ -541,7 +541,7 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         '/admin/admin-grants/fixture-admin/revoke',
-        { note: '' },
+        { note: 'Revoked through the Admin Access panel.' },
         { withCredentials: true },
       );
     });
