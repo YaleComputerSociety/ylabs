@@ -57,6 +57,32 @@ export interface FellowshipFundingMatch {
 
 type FundingMatchesByPathway = Record<string, FellowshipFundingMatch[]>;
 
+type DashboardResponse = Awaited<ReturnType<typeof axios.get>>;
+type OptionalDashboardResponse =
+  | { value: DashboardResponse; error: false }
+  | { value: null; error: true };
+type SavedPlanDashboardLoad = [DashboardResponse, OptionalDashboardResponse, OptionalDashboardResponse];
+const savedPlanDashboardLoads = new Map<string, Promise<SavedPlanDashboardLoad>>();
+
+const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> => {
+  const existing = savedPlanDashboardLoads.get(owner);
+  if (existing) return existing;
+  const request = Promise.all([
+    axios.get('/users/savedResearchPlans', { withCredentials: true }),
+    axios.get('/users/savedResearchPlanDetails', { withCredentials: true }).then(
+      (value) => ({ value, error: false as const }),
+      () => ({ value: null, error: true as const }),
+    ),
+    axios.get('/users/savedResearchPlanFundingMatches', { withCredentials: true }).then(
+      (value) => ({ value, error: false as const }),
+      () => ({ value: null, error: true as const }),
+    ),
+  ]) as Promise<SavedPlanDashboardLoad>;
+  savedPlanDashboardLoads.set(owner, request);
+  void request.finally(() => window.setTimeout(() => savedPlanDashboardLoads.delete(owner), 0));
+  return request;
+};
+
 interface SavedPlanExportItem {
   title?: string;
   researchEntity?: {
@@ -629,14 +655,14 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     setHydratedPlanStorageOwner(undefined);
     setPlans({});
     try {
-      const response = await axios.get('/users/savedResearchPlans', { withCredentials: true });
+      const [response, plansResult, matchesResult] = await loadSavedPlanDashboard(
+        ownerAtLoad || 'authenticated-account',
+      );
       if (!isCurrentOwnerLoad()) return;
       const savedPathways = response.data.savedResearchPlans || [];
       setPathways(savedPathways);
-      try {
-        const plansResponse = await axios.get('/users/savedResearchPlanDetails', {
-          withCredentials: true,
-        });
+      if (!plansResult.error && plansResult.value) {
+        const plansResponse = plansResult.value;
         if (!isCurrentOwnerLoad()) return;
         const serverPlans = plansResponse.data.savedResearchPlanDetails || {};
         const localPlans = readStoredPlans(ownerAtLoad);
@@ -665,16 +691,14 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             ),
           ),
         );
-      } catch {
+      } else {
         console.error('Error loading saved research plan details.');
       }
-      try {
-        const matchesResponse = await axios.get('/users/savedResearchPlanFundingMatches', {
-          withCredentials: true,
-        });
+      if (!matchesResult.error && matchesResult.value) {
+        const matchesResponse = matchesResult.value;
         if (!isCurrentOwnerLoad()) return;
         setFundingMatches(matchesResponse.data.matchesByPathwayId || {});
-      } catch {
+      } else {
         console.error('Error loading saved research-plan funding matches.');
         if (!isCurrentOwnerLoad()) return;
         setFundingMatches({});
