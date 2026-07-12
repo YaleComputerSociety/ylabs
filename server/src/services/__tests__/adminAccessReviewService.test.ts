@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
   researchEntityFind: vi.fn(),
   researchEntityCountDocuments: vi.fn(),
   researchEntityFindByIdAndUpdate: vi.fn(),
+  researchEntityAggregate: vi.fn(),
   entryPathwayFindByIdAndUpdate: vi.fn(),
+  countDocuments: vi.fn(),
 }));
 
 vi.mock('../../models/researchEntity', () => ({
@@ -13,6 +15,7 @@ vi.mock('../../models/researchEntity', () => ({
     find: mocks.researchEntityFind,
     countDocuments: mocks.researchEntityCountDocuments,
     findByIdAndUpdate: mocks.researchEntityFindByIdAndUpdate,
+    aggregate: mocks.researchEntityAggregate,
   },
 }));
 
@@ -20,24 +23,28 @@ vi.mock('../../models/entryPathway', () => ({
   EntryPathway: {
     aggregate: vi.fn(),
     findByIdAndUpdate: mocks.entryPathwayFindByIdAndUpdate,
+    countDocuments: mocks.countDocuments,
   },
 }));
 
 vi.mock('../../models/accessSignal', () => ({
   AccessSignal: {
     aggregate: vi.fn(),
+    countDocuments: mocks.countDocuments,
   },
 }));
 
 vi.mock('../../models/contactRoute', () => ({
   ContactRoute: {
     aggregate: vi.fn(),
+    countDocuments: mocks.countDocuments,
   },
 }));
 
 vi.mock('../../models/postedOpportunity', () => ({
   PostedOpportunity: {
     aggregate: vi.fn(),
+    countDocuments: mocks.countDocuments,
   },
 }));
 
@@ -53,19 +60,8 @@ import {
   updateAccessReviewManualLocks,
   updateAccessReviewRecordReview,
   listAccessReviewEntities,
+  redactAccessReviewContactRoute,
 } from '../adminAccessReviewService';
-
-const findChain = () => {
-  const chain = {
-    select: vi.fn().mockReturnThis(),
-    sort: vi.fn().mockReturnThis(),
-    skip: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockReturnThis(),
-    lean: vi.fn().mockResolvedValue([]),
-  };
-  mocks.researchEntityFind.mockReturnValue(chain);
-  return chain;
-};
 
 describe('adminAccessReviewService', () => {
   beforeEach(() => {
@@ -73,16 +69,16 @@ describe('adminAccessReviewService', () => {
   });
 
   it('caps access review page before building Mongo skip and limit values', async () => {
-    const chain = findChain();
-    mocks.researchEntityCountDocuments.mockResolvedValue(0);
+    mocks.researchEntityAggregate.mockReturnValue({ exec: vi.fn().mockResolvedValue([{ rows: [], meta: [] }]) });
+    mocks.countDocuments.mockResolvedValue(0);
 
     const result = await listAccessReviewEntities({
       page: 999_999_999,
       pageSize: 500,
     });
 
-    expect(chain.skip).toHaveBeenCalledWith(99_900);
-    expect(chain.limit).toHaveBeenCalledWith(100);
+    const pipeline = mocks.researchEntityAggregate.mock.calls[0][0];
+    expect(pipeline.at(-1).$facet.rows).toEqual([{ $skip: 99_900 }, { $limit: 100 }]);
     expect(result).toMatchObject({
       entities: [],
       total: 0,
@@ -99,8 +95,32 @@ describe('adminAccessReviewService', () => {
       }),
     ).rejects.toThrow('Search query is too long');
 
-    expect(mocks.researchEntityFind).not.toHaveBeenCalled();
+    expect(mocks.researchEntityAggregate).not.toHaveBeenCalled();
     expect(mocks.researchEntityCountDocuments).not.toHaveBeenCalled();
+  });
+
+  it('filters and sorts the queue by aggregate unreviewed work without returning record data', async () => {
+    mocks.researchEntityAggregate.mockReturnValue({
+      exec: vi.fn().mockResolvedValue([{ rows: [{
+        _id: new mongoose.Types.ObjectId('64f111111111111111111111'),
+        name: 'Example Lab', slug: 'example', _pathways: [{ status: 'unreviewed' }],
+        _signals: [], _routes: [], _opportunities: [{ status: 'approved', applicationUrl: 'https://example.edu/apply' }],
+        totalUnreviewed: 1, hasOfficialApplication: true,
+      }], meta: [{ total: 1 }] }]),
+    });
+    mocks.countDocuments.mockResolvedValue(2);
+
+    const result = await listAccessReviewEntities({ hasUnreviewed: 'true', sort: 'official_application' });
+    const pipeline = mocks.researchEntityAggregate.mock.calls[0][0];
+
+    expect(pipeline).toContainEqual({ $match: { totalUnreviewed: { $gt: 0 } } });
+    expect(result.entities[0]).toMatchObject({
+      totalUnreviewed: 1,
+      hasOfficialApplication: true,
+      unreviewedCounts: { entryPathways: 1, postedOpportunities: 0 },
+    });
+    expect(result.entities[0]).not.toHaveProperty('_pathways');
+    expect(result.progress).toEqual({ remaining: 8, reviewedToday: 8 });
   });
 
   it('normalizes access review locked fields as bounded identifiers', () => {
@@ -116,6 +136,16 @@ describe('adminAccessReviewService', () => {
     ]);
 
     expect(normalized).toEqual(['summary', 'review.lockedFields', 'field-name:ok_1']);
+  });
+
+  it('redacts raw contact destinations from access-review responses', () => {
+    expect(redactAccessReviewContactRoute({
+      _id: 'route-1',
+      email: 'private@example.edu',
+      url: 'mailto:private@example.edu',
+      destination: 'private@example.edu',
+      sourceUrl: 'https://example.edu/evidence',
+    })).toEqual({ _id: 'route-1', sourceUrl: 'https://example.edu/evidence' });
   });
 
   it('normalizes access review ObjectIds without arbitrary object coercion', () => {
