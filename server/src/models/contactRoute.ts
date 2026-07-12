@@ -130,6 +130,7 @@ contactRouteSchema.index({ visibility: 1 });
 contactRouteSchema.index({ contactPolicy: 1 });
 contactRouteSchema.index({ archived: 1 });
 contactRouteSchema.index({ 'review.status': 1 });
+contactRouteSchema.index({ researchEntityId: 1, 'review.status': 1, 'review.reviewedAt': -1 });
 contactRouteSchema.index(
   { researchEntityId: 1, derivationKey: 1 },
   {
