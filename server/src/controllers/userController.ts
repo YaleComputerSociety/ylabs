@@ -23,6 +23,8 @@ import {
   pruneSavedPathwayPlansForExistingPathways,
   updateSavedPathwayPlan as updateSavedPathwayPlanService,
   deleteSavedPathwayPlan as deleteSavedPathwayPlanService,
+  getSavedProgramTracking as getSavedProgramTrackingService,
+  updateSavedProgramTracking as updateSavedProgramTrackingService,
 } from '../services/userService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -518,6 +520,39 @@ export const removeSavedPrograms = async (request: Request, response: Response) 
   } catch (error: any) {
     console.error('Saved program removal failed:', sanitizeLogValue(error));
     sendAccountMutationError(response, error, 'Failed to remove saved programs');
+  }
+};
+
+export const getSavedProgramTracking = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const savedProgramTracking = await getSavedProgramTrackingService(currentUser.netId);
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({ savedProgramTracking });
+  } catch (error: any) {
+    console.error('Saved program tracking fetch failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to fetch saved program tracking');
+  }
+};
+
+export const updateSavedProgramTracking = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const tracking = await updateSavedProgramTrackingService(
+      currentUser.netId,
+      request.params.programId,
+      request.body?.data?.tracking || request.body?.tracking || {},
+    );
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({ tracking });
+  } catch (error: any) {
+    console.error('Saved program tracking update failed:', sanitizeLogValue(error));
+    if (error?.status === 409 && error.current) {
+      setPrivateAccountResponseHeaders(response);
+      response.status(409).json({ error: error.message, current: error.current });
+      return;
+    }
+    sendPrivateAccountError(response, error, 'Failed to update saved program tracking');
   }
 };
 
