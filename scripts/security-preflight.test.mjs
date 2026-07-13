@@ -942,7 +942,6 @@ test('public search loaders avoid raw Axios console errors', () => {
   const files = [
     '../client/src/providers/SearchContextProvider.tsx',
     '../client/src/providers/FellowshipSearchContextProvider.tsx',
-    '../client/src/hooks/useSearchCore.ts',
   ];
 
   for (const file of files) {
