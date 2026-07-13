@@ -432,6 +432,26 @@ Measurement must not add UI, delay navigation, expose private data, or redefine 
 4. **Deployment topology:** Render web-service settings are managed outside `render.yaml`; compression, durable scorecard storage, and deployment fingerprints require control-plane verification.
 5. **Authenticated browser evidence:** CAS-preserving end-to-end checks require a valid test session and supported browser runner; never bypass CAS to manufacture evidence.
 
+## Validation Support And Dispute Matrix
+
+This matrix separates current Beta evidence from older persona observations and unresolved product choices.
+The 2026-07-13 validation lane could not retrieve the referenced historical Claude transcript and could not start the Chrome bridge.
+Its evidence is therefore current Beta source, routes, tests, and merged history rather than a fresh authenticated browser replay.
+
+| Claim | Current support | Delivery interpretation |
+| --- | --- | --- |
+| Entity-first discovery is the correct current baseline. | **Supported.** PR `#171` removes the parallel pathway request and stream and keeps research profiles primary. | Keep EF-01 Complete and protect it with regression tests. |
+| Discovery filters are fully adaptive and progressively disclosed. | **Disputed as complete.** Current controls are inline, have no shared mobile disclosure pattern, and missing facet counts may fall back to the total. | Keep EF-02 Active and CP-08 / FR-37 Not started on Beta. |
+| A server-qualified sparse planning summary exists. | **Not supported.** No bounded claim-specific summary or useful-state distribution exists. | Keep EF-03 Not started and dependent on QA-01. |
+| Research homes can be saved independently of pathways. | **Not supported.** Current saves are pathway favorites, details are keyed by pathway ID, and detail chooses an entry pathway. | Keep CP-05 / FR-45 Not started and ahead of FR-17 and FR-24. |
+| Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Not supported.** The current taxonomy is broader and canonical browse/detail lacks the complete invisible journey emissions. | Keep IM-01 Not started and IM-02 Active until QA-01 stabilizes conversion meaning. |
+| Publishing a target number of pathways establishes trustworthy access coverage. | **Disputed.** Quantity does not establish claim or route quality and can reward false positives. | The evidence and route review rollout uses claim precision, false-positive rate, rejection reasons, and reviewed-action quality instead. |
+| Historical persona findings describe current Beta behavior. | **Validation pending.** Several cited defects were changed by merged PRs, while the referenced transcript and fresh browser replay were unavailable. | Use historical observations as discovery inputs only; require current code, test, data, or CAS-preserving browser evidence before changing status or rationale. |
+
+Unresolved UX choices remain validation-pending even when engineering dependencies are known.
+These include the anonymous-save policy, final qualified-action enum and thresholds, exact material-use threshold for a documented-way-in filter, comparison layout, and the shared mobile filter-sheet presentation.
+An implementing PR must resolve only the choice in its accepted scope and update the corresponding requirement and decision evidence.
+
 ## Maintenance Protocol
 
 Every PR that implements or changes a requirement in this document must update this file in the same PR.
