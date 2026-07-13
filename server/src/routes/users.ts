@@ -58,14 +58,14 @@ const parseFavoriteAnalyticsResponse = (data: unknown): Record<string, any> | un
     try {
       const parsed = JSON.parse(data);
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? parsed as Record<string, any>
+        ? (parsed as Record<string, any>)
         : undefined;
     } catch {
       return undefined;
     }
   }
   return typeof data === 'object' && !Array.isArray(data)
-    ? data as Record<string, any>
+    ? (data as Record<string, any>)
     : undefined;
 };
 
@@ -118,7 +118,10 @@ const logFavoriteEvent = (
           ? visibleFavoriteAnalyticsIdsFromResponse(data, kind, requestedIds)
           : [];
 
-        if (currentUser?.netId && (visibleIds.length > 0 || (!isFavorite && requestedIds.length > 0))) {
+        if (
+          currentUser?.netId &&
+          (visibleIds.length > 0 || (!isFavorite && requestedIds.length > 0))
+        ) {
           const eventType =
             kind === 'listing'
               ? isFavorite
@@ -134,7 +137,9 @@ const logFavoriteEvent = (
               netid: currentUser.netId!,
               userType: currentUser.userType,
               metadata: { entityType: kind, itemIdsRedacted: true },
-            }).catch((err) => console.error('Error logging favorite event:', sanitizeLogValue(err)));
+            }).catch((err) =>
+              console.error('Error logging favorite event:', sanitizeLogValue(err)),
+            );
           }
 
           const researchEntityType = kind === 'listing' ? 'listing' : 'fellowship';
@@ -159,7 +164,9 @@ const logFavoriteEvent = (
               listingId: kind === 'listing' ? itemId : undefined,
               fellowshipId: kind !== 'listing' ? itemId : undefined,
               metadata: { entityType: kind },
-            }).catch((err) => console.error('Error logging favorite event:', sanitizeLogValue(err)));
+            }).catch((err) =>
+              console.error('Error logging favorite event:', sanitizeLogValue(err)),
+            );
           });
         }
       }
@@ -192,7 +199,9 @@ const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunc
           metadata: {
             fields,
           },
-        }).catch((err) => console.error('Error logging profile update event:', sanitizeLogValue(err)));
+        }).catch((err) =>
+          console.error('Error logging profile update event:', sanitizeLogValue(err)),
+        );
       }
     }
 
@@ -273,12 +282,51 @@ router.get('/savedResearchPlanIds', isAuthenticated, userController.getSavedRese
 router.get('/savedResearchPlans', isAuthenticated, userController.getSavedResearchPlans);
 router.put('/savedResearchPlans', isAuthenticated, userController.addSavedResearchPlans);
 router.delete('/savedResearchPlans', isAuthenticated, userController.removeSavedResearchPlans);
+router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
+router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);
+router.put('/savedResearchEntities', isAuthenticated, userController.addSavedResearchEntities);
+router.delete(
+  '/savedResearchEntities',
+  isAuthenticated,
+  userController.removeSavedResearchEntities,
+);
+router.get(
+  '/savedResearchEntityPlans',
+  isAuthenticated,
+  userController.getSavedResearchEntityPlans,
+);
+router.get(
+  '/savedResearchEntityPlans/export',
+  isAuthenticated,
+  userController.exportSavedResearchEntities,
+);
+router.post(
+  '/savedResearchEntityPlans/export',
+  isAuthenticated,
+  userController.exportSavedResearchEntities,
+);
+router.put(
+  '/savedResearchEntityPlans/:entityId',
+  isAuthenticated,
+  validateObjectId('entityId'),
+  userController.updateSavedResearchEntityPlan,
+);
+router.delete(
+  '/savedResearchEntityPlans/:entityId',
+  isAuthenticated,
+  validateObjectId('entityId'),
+  userController.deleteSavedResearchEntityPlan,
+);
 router.get(
   '/savedResearchPlanFundingMatches',
   isAuthenticated,
   userController.getSavedResearchPlanFundingMatches,
 );
-router.get('/savedResearchPlanDetails', isAuthenticated, userController.getSavedResearchPlanDetails);
+router.get(
+  '/savedResearchPlanDetails',
+  isAuthenticated,
+  userController.getSavedResearchPlanDetails,
+);
 router.get(
   '/savedResearchPlanDetails/export',
   isAuthenticated,
@@ -302,16 +350,8 @@ router.delete(
   userController.deleteSavedResearchPlanDetail,
 );
 router.get('/favPathwayPlans', isAuthenticated, userController.getSavedPathwayPlans);
-router.get(
-  '/favPathwayPlans/export',
-  isAuthenticated,
-  userController.exportSavedPathwayPlans,
-);
-router.post(
-  '/favPathwayPlans/export',
-  isAuthenticated,
-  userController.exportSavedPathwayPlans,
-);
+router.get('/favPathwayPlans/export', isAuthenticated, userController.exportSavedPathwayPlans);
+router.post('/favPathwayPlans/export', isAuthenticated, userController.exportSavedPathwayPlans);
 router.put(
   '/favPathwayPlans/:pathwayId',
   isAuthenticated,

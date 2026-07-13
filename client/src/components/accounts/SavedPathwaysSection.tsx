@@ -60,22 +60,67 @@ export interface FellowshipFundingMatch {
 
 type FundingMatchesByPathway = Record<string, FellowshipFundingMatch[]>;
 
+interface SavedResearchEntitySummary {
+  _id: string;
+  slug: string;
+  name: string;
+  displayName?: string;
+  kind?: string;
+  entityType?: string;
+  departments?: string[];
+  school?: string;
+  shortDescription?: string;
+  description?: string;
+}
+
+const savedEntityAsPlanningItem = (entity: SavedResearchEntitySummary): PathwaySearchHit => ({
+  _id: entity._id,
+  pathwayType: 'RESEARCH_ENTITY',
+  status: 'SAVED',
+  evidenceStrength: 'UNKNOWN',
+  studentFacingLabel: entity.displayName || entity.name,
+  explanation: entity.shortDescription || entity.description,
+  bestNextStepCategory: 'save-for-later',
+  sourceUrls: [],
+  evidence: [],
+  researchEntity: {
+    _id: entity._id,
+    slug: entity.slug,
+    name: entity.name,
+    displayName: entity.displayName,
+    kind: entity.kind,
+    entityType: entity.entityType,
+    departments: entity.departments || [],
+    researchAreas: [],
+    school: entity.school,
+  },
+});
+
 type DashboardResponse = Awaited<ReturnType<typeof axios.get>>;
 type OptionalDashboardResponse =
   | { value: DashboardResponse; error: false }
   | { value: null; error: true };
-type SavedPlanDashboardLoad = [DashboardResponse, OptionalDashboardResponse, OptionalDashboardResponse];
+type SavedPlanDashboardLoad = [
+  DashboardResponse,
+  OptionalDashboardResponse,
+  OptionalDashboardResponse,
+];
 const savedPlanDashboardLoads = new Map<string, Promise<SavedPlanDashboardLoad>>();
 
 const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> => {
   const existing = savedPlanDashboardLoads.get(owner);
   if (existing) return existing;
   const request = Promise.all([
-    axios.get('/users/savedResearchPlans', { withCredentials: true }),
-    axios.get('/users/savedResearchPlanDetails', { withCredentials: true }).then(
-      (value) => ({ value, error: false as const }),
-      () => ({ value: null, error: true as const }),
-    ),
+    axios
+      .get('/users/savedResearchEntities', { withCredentials: true })
+      .catch(() => axios.get('/users/savedResearchPlans', { withCredentials: true })),
+    axios
+      .get('/users/savedResearchEntityPlans', { withCredentials: true })
+      .catch(() => axios.get('/users/savedResearchPlanDetails', { withCredentials: true }))
+      .then(
+        (value) => ({ value, error: false as const }),
+        () => ({ value: null, error: true as const }),
+      ),
     axios.get('/users/savedResearchPlanFundingMatches', { withCredentials: true }).then(
       (value) => ({ value, error: false as const }),
       () => ({ value: null, error: true as const }),
@@ -161,12 +206,15 @@ const normalizeDateOnly = (value: unknown): string | null => {
   if (typeof value !== 'string' || !DATE_ONLY_RE.test(value)) return null;
   const [year, month, day] = value.split('-').map(Number);
   const parsed = new Date(year, month - 1, day);
-  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day
+  return parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
     ? value
     : null;
 };
 const normalizeFollowUpInterval = (value: unknown): number | null =>
-  typeof value === 'number' && FOLLOW_UP_INTERVALS.includes(value as (typeof FOLLOW_UP_INTERVALS)[number])
+  typeof value === 'number' &&
+  FOLLOW_UP_INTERVALS.includes(value as (typeof FOLLOW_UP_INTERVALS)[number])
     ? value
     : null;
 const localToday = (now = new Date()): string =>
@@ -197,15 +245,20 @@ export const planningCueForPlan = (
       priority: 1,
     });
   }
-  return cues.sort((a, b) =>
-    a.date.localeCompare(b.date) || a.priority - b.priority || a.detail.localeCompare(b.detail),
-  )[0] || null;
+  return (
+    cues.sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) || a.priority - b.priority || a.detail.localeCompare(b.detail),
+    )[0] || null
+  );
 };
 
 const formatDateOnly = (value: string): string => {
   const [year, month, day] = value.split('-').map(Number);
   return new Date(year, month - 1, day).toLocaleDateString(undefined, {
-    month: 'short', day: 'numeric', year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 };
 
@@ -747,12 +800,20 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         ownerAtLoad || 'authenticated-account',
       );
       if (!isCurrentOwnerLoad()) return;
-      const savedPathways = response.data.savedResearchPlans || [];
+      const responseData = (response as any).data;
+      const savedPathways: PathwaySearchHit[] = responseData.savedResearchEntities
+        ? (responseData.savedResearchEntities as SavedResearchEntitySummary[]).map(
+            savedEntityAsPlanningItem,
+          )
+        : responseData.savedResearchPlans || [];
       setPathways(savedPathways);
       if (!plansResult.error && plansResult.value) {
-        const plansResponse = plansResult.value;
+        const plansResponse: any = plansResult.value;
         if (!isCurrentOwnerLoad()) return;
-        const serverPlans = plansResponse.data.savedResearchPlanDetails || {};
+        const serverPlans =
+          plansResponse.data.savedResearchEntityPlans ||
+          plansResponse.data.savedResearchPlanDetails ||
+          {};
         const localPlans = readStoredPlans(ownerAtLoad);
         const savedPathwayIds = savedPathways.map((pathway: PathwaySearchHit) => pathway._id);
         const localPlansForSavedPathways = filterStoredPlansForSavedPathways(
@@ -773,7 +834,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         await Promise.all(
           localOnlyPlanIds.map((id) =>
             axios.put(
-              `/users/savedResearchPlanDetails/${id}`,
+              `/users/savedResearchEntityPlans/${id}`,
               { data: { plan: localPlansForSavedPathways[id] } },
               { withCredentials: true },
             ),
@@ -783,12 +844,8 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         console.error('Error loading saved research plan details.');
       }
       if (!matchesResult.error && matchesResult.value) {
-        const matchesResponse = matchesResult.value;
-        if (!isCurrentOwnerLoad()) return;
-        setFundingMatches(matchesResponse.data.matchesByPathwayId || {});
+        setFundingMatches((matchesResult.value as any).data.matchesByPathwayId || {});
       } else {
-        console.error('Error loading saved research-plan funding matches.');
-        if (!isCurrentOwnerLoad()) return;
         setFundingMatches({});
       }
     } catch {
@@ -836,9 +893,11 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         priority: 2,
         tie: reminder.title,
       })),
-    ].sort((a, b) =>
-      new Date(a.date).getTime() - new Date(b.date).getTime() ||
-      a.priority - b.priority || a.tie.localeCompare(b.tie),
+    ].sort(
+      (a, b) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime() ||
+        a.priority - b.priority ||
+        a.tie.localeCompare(b.tie),
     );
 
     onSummaryChange?.({
@@ -886,7 +945,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Saving plan...' }));
       axios
         .put(
-          `/users/savedResearchPlanDetails/${pathwayId}`,
+          `/users/savedResearchEntityPlans/${pathwayId}`,
           { data: { plan: nextPlan } },
           { withCredentials: true },
         )
@@ -972,16 +1031,16 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       return next;
     });
     try {
-      await axios.delete('/users/savedResearchPlans', {
+      await axios.delete('/users/savedResearchEntities', {
         withCredentials: true,
-        data: { savedResearchPlans: [pathwayId] },
+        data: { savedResearchEntities: [pathwayId] },
       });
       setPlans((current) => {
         const next = { ...current };
         delete next[pathwayId];
         return next;
       });
-      await axios.delete(`/users/savedResearchPlanDetails/${pathwayId}`, { withCredentials: true });
+      await axios.delete(`/users/savedResearchEntityPlans/${pathwayId}`, { withCredentials: true });
     } catch {
       console.error('Error removing saved research plan.');
       setPathways(previous);
@@ -1324,7 +1383,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           <h3 className="text-base font-semibold text-gray-950">No saved research plans yet</h3>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-600">
             Start with Yale Research, open profiles that look promising, then save a plan when you
-            find a route worth tracking for outreach, credit, funding, or an application.
+            find a profile worth tracking for outreach, credit, funding, or an application.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
@@ -1365,12 +1424,6 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0">
                     <div className="mb-2 flex flex-wrap gap-1.5">
-                      <span className="rounded bg-[var(--yr-blue-soft)] px-2 py-0.5 text-xs font-semibold text-blue-700">
-                        {labelize(pathway.pathwayType)}
-                      </span>
-                      <span className="rounded bg-[var(--yr-panel-muted)] px-2 py-0.5 text-xs font-semibold text-gray-700">
-                        {labelize(pathway.evidenceStrength)} evidence
-                      </span>
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
                         {stage}
                       </span>
@@ -1566,29 +1619,72 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <label className="text-xs font-semibold text-gray-600">
                           Target deadline
-                          <input type="date" value={plan.targetDeadline || ''} disabled={!planIsHydrated}
-                            onChange={(event) => updatePlan(pathway._id, { targetDeadline: normalizeDateOnly(event.target.value) })}
-                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500" />
-                          {plan.targetDeadline && <button type="button" disabled={!planIsHydrated}
-                            onClick={() => updatePlan(pathway._id, { targetDeadline: null })}
-                            className="mt-1 text-xs font-medium text-blue-700 underline underline-offset-2">Clear deadline</button>}
+                          <input
+                            type="date"
+                            value={plan.targetDeadline || ''}
+                            disabled={!planIsHydrated}
+                            onChange={(event) =>
+                              updatePlan(pathway._id, {
+                                targetDeadline: normalizeDateOnly(event.target.value),
+                              })
+                            }
+                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500"
+                          />
+                          {plan.targetDeadline && (
+                            <button
+                              type="button"
+                              disabled={!planIsHydrated}
+                              onClick={() => updatePlan(pathway._id, { targetDeadline: null })}
+                              className="mt-1 text-xs font-medium text-blue-700 underline underline-offset-2"
+                            >
+                              Clear deadline
+                            </button>
+                          )}
                         </label>
                         <label className="text-xs font-semibold text-gray-600">
                           Acted on
-                          <input type="date" value={plan.actedOnDate || ''} disabled={!planIsHydrated}
-                            onChange={(event) => updatePlan(pathway._id, { actedOnDate: normalizeDateOnly(event.target.value) })}
-                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500" />
-                          {plan.actedOnDate && <button type="button" disabled={!planIsHydrated}
-                            onClick={() => updatePlan(pathway._id, { actedOnDate: null })}
-                            className="mt-1 text-xs font-medium text-blue-700 underline underline-offset-2">Clear acted date</button>}
+                          <input
+                            type="date"
+                            value={plan.actedOnDate || ''}
+                            disabled={!planIsHydrated}
+                            onChange={(event) =>
+                              updatePlan(pathway._id, {
+                                actedOnDate: normalizeDateOnly(event.target.value),
+                              })
+                            }
+                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500"
+                          />
+                          {plan.actedOnDate && (
+                            <button
+                              type="button"
+                              disabled={!planIsHydrated}
+                              onClick={() => updatePlan(pathway._id, { actedOnDate: null })}
+                              className="mt-1 text-xs font-medium text-blue-700 underline underline-offset-2"
+                            >
+                              Clear acted date
+                            </button>
+                          )}
                         </label>
                         <label className="text-xs font-semibold text-gray-600">
                           Follow up after
-                          <select value={plan.followUpIntervalDays || ''} disabled={!planIsHydrated}
-                            onChange={(event) => updatePlan(pathway._id, { followUpIntervalDays: event.target.value ? Number(event.target.value) : null })}
-                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500">
+                          <select
+                            value={plan.followUpIntervalDays || ''}
+                            disabled={!planIsHydrated}
+                            onChange={(event) =>
+                              updatePlan(pathway._id, {
+                                followUpIntervalDays: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              })
+                            }
+                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500"
+                          >
                             <option value="">No reminder</option>
-                            {FOLLOW_UP_INTERVALS.map((days) => <option key={days} value={days}>{days} days</option>)}
+                            {FOLLOW_UP_INTERVALS.map((days) => (
+                              <option key={days} value={days}>
+                                {days} days
+                              </option>
+                            ))}
                           </select>
                         </label>
                       </div>

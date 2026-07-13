@@ -20,4 +20,29 @@ describe('user routes', () => {
       expect(route.stack.length).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it('keeps entity-owned planning routes authenticated and validates entity ids', () => {
+    for (const [path, method] of [
+      ['/savedResearchEntityPlans/:entityId', 'put'],
+      ['/savedResearchEntityPlans/:entityId', 'delete'],
+    ]) {
+      const route = routeByPathAndMethod(path, method);
+      expect(route).toBeTruthy();
+      expect(route.stack.length).toBeGreaterThanOrEqual(3);
+    }
+
+    for (const [path, method] of [
+      ['/savedResearchEntityIds', 'get'],
+      ['/savedResearchEntities', 'get'],
+      ['/savedResearchEntities', 'put'],
+      ['/savedResearchEntities', 'delete'],
+      ['/savedResearchEntityPlans', 'get'],
+      ['/savedResearchEntityPlans/export', 'get'],
+      ['/savedResearchEntityPlans/export', 'post'],
+    ]) {
+      const route = routeByPathAndMethod(path, method);
+      expect(route).toBeTruthy();
+      expect(route.stack.length).toBeGreaterThanOrEqual(2);
+    }
+  });
 });
