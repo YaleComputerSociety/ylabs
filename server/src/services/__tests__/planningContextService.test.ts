@@ -1,12 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import { Types } from 'mongoose';
-import { selectPlanningContexts } from '../planningContextService';
+import { actionablePlanningUrl, selectPlanningContexts } from '../planningContextService';
 
 const approved = { status: 'approved' };
 const entityId = new Types.ObjectId();
 const pathwayId = new Types.ObjectId();
 
 describe('planningContextService qualification policy', () => {
+  it.each([
+    'https://research.yale.edu/apply',
+    'https://research.yale.edu/programs/summer-fellowship',
+    'https://research.yale.edu/opportunities/undergraduate-research',
+    'https://research.yale.edu/get-involved/participation?registration=open',
+  ])('accepts actionable planning destination %s', (url) => {
+    expect(actionablePlanningUrl(url)).toBe(url);
+  });
+
+  it.each([
+    'https://medicine.yale.edu/profile/person',
+    'https://research.yale.edu/labs/neuroscience',
+    'https://research.yale.edu/publications/applications-of-ai',
+    'https://research.yale.edu/grants/program-evaluation',
+    'https://research.yale.edu/team/members',
+    'https://research.yale.edu/faculty-directory',
+    'https://research.yale.edu/about',
+  ])('rejects provenance-only planning destination %s', (url) => {
+    expect(actionablePlanningUrl(url)).toBeUndefined();
+  });
+
+  it('requires a positive actionable cue', () => {
+    expect(actionablePlanningUrl('https://research.yale.edu/undergraduate')).toBeUndefined();
+  });
+
   it('selects one deterministic signal with open-position precedence', () => {
     const contexts = selectPlanningContexts({
       pathways: [
@@ -166,5 +191,42 @@ describe('planningContextService qualification policy', () => {
     expect(
       selectPlanningContexts({ pathways: [validPathway], opportunities, routes: [] }).size,
     ).toBe(0);
+  });
+
+  it('rejects generic opportunity destinations and skips generic pathway sources', () => {
+    const recurringPathway = {
+      _id: pathwayId,
+      researchEntityId: entityId,
+      pathwayType: 'RECURRING_PROGRAM',
+      status: 'RECURRING',
+      bestNextStep: 'Register for the summer program.',
+      sourceUrls: [
+        'https://research.yale.edu/labs/neuroscience',
+        'https://research.yale.edu/programs/summer-research',
+      ],
+      evidenceStrength: 'DIRECT',
+      confidence: 0.9,
+      review: approved,
+    };
+    const contexts = selectPlanningContexts({
+      pathways: [recurringPathway],
+      opportunities: [
+        {
+          _id: new Types.ObjectId(),
+          researchEntityId: entityId,
+          entryPathwayId: pathwayId,
+          status: 'OPEN',
+          applicationUrl: 'https://research.yale.edu/labs/neuroscience',
+          review: approved,
+        },
+      ],
+      routes: [],
+    });
+
+    expect(contexts.get(entityId.toString())).toEqual({
+      category: 'qualified_participation',
+      label: 'Participation instructions',
+      url: 'https://research.yale.edu/programs/summer-research',
+    });
   });
 });

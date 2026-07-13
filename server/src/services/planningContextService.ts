@@ -32,6 +32,10 @@ const MAX_ENTITY_IDS = 100;
 const APPLICATION_PATHWAY_TYPES = new Set(['POSTED_ROLE', 'CENTER_INTERNSHIP', 'STUDENT_JOB']);
 const PARTICIPATION_PATHWAY_TYPES = new Set(['RECURRING_PROGRAM']);
 const DISALLOWED_ROUTE_TYPES = new Set(['FACULTY_PI', 'UNKNOWN']);
+const ACTIONABLE_URL_CUE_RE =
+  /(?:^|[^a-z0-9])(?:apply|application|applications|career|careers|internship|internships|job|jobs|opportunities|opportunity|participate|participation|program|programs|register|registration|submit)(?:[^a-z0-9]|$)/i;
+const PROVENANCE_ONLY_URL_CUE_RE =
+  /(?:^|[^a-z0-9])(?:about|article|articles|bio|bios|directory|directories|faculty|grant|grants|lab|labs|laboratory|laboratories|member|members|news|people|person|persons|profile|profiles|publication|publications|roster|rosters|staff|team|teams)(?:[^a-z0-9]|$)/i;
 
 const entityId = (value: unknown): string | undefined => {
   const id = serializedDocumentId(value);
@@ -43,6 +47,23 @@ const approved = (record: any): boolean => record?.review?.status === 'approved'
 const usableUrl = (...values: unknown[]): string | undefined => {
   for (const value of values) {
     const url = publicHttpUrl(value);
+    if (url) return url;
+  }
+  return undefined;
+};
+
+export const actionablePlanningUrl = (value: unknown): string | undefined => {
+  const url = publicHttpUrl(value);
+  if (!url) return undefined;
+  const parsed = new URL(url);
+  const destination = `${parsed.pathname} ${parsed.searchParams.toString()}`;
+  if (PROVENANCE_ONLY_URL_CUE_RE.test(destination)) return undefined;
+  return ACTIONABLE_URL_CUE_RE.test(destination) ? url : undefined;
+};
+
+const usableActionableUrl = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    const url = actionablePlanningUrl(value);
     if (url) return url;
   }
   return undefined;
@@ -76,7 +97,7 @@ export function selectPlanningContexts(input: {
   for (const opportunity of input.opportunities) {
     const pathway = pathwaysById.get(serializedDocumentId(opportunity.entryPathwayId));
     const id = entityId(opportunity.researchEntityId) || entityId(pathway?.researchEntityId);
-    const url = usableUrl(opportunity.applicationUrl);
+    const url = usableActionableUrl(opportunity.applicationUrl);
     if (
       !id ||
       !url ||
@@ -102,7 +123,9 @@ export function selectPlanningContexts(input: {
 
   for (const pathway of input.pathways) {
     const id = entityId(pathway.researchEntityId);
-    const url = usableUrl(...(Array.isArray(pathway.sourceUrls) ? pathway.sourceUrls : []));
+    const url = usableActionableUrl(
+      ...(Array.isArray(pathway.sourceUrls) ? pathway.sourceUrls : []),
+    );
     if (
       !id ||
       !url ||
