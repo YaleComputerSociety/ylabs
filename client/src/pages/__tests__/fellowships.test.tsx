@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -428,6 +428,45 @@ describe('Programs page', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Program filters' })).toBeNull();
     await waitFor(() => expect(trigger).toHaveFocus());
+
+    const searchInput = screen.getByLabelText('Search programs and fellowships');
+    searchInput.focus();
+    expect(searchInput).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(searchInput).toHaveFocus();
+  });
+
+  it('starts desktop filter focus on the first visible tab', async () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    try {
+      renderPage(
+        [baseFellowship({ id: 'open', title: 'Open Fellowship', isAcceptingApplications: true })],
+        {
+          filterOptions: {
+            programCategory: [],
+            programKind: ['STRUCTURED_PROGRAM'],
+            entryMode: [],
+            studentFacingCategory: [],
+            yearOfStudy: [],
+            termOfAward: [],
+            purpose: [],
+            globalRegions: [],
+            citizenshipStatus: [],
+          },
+        },
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+      const dialog = screen.getByRole('dialog', { name: 'Program filters' });
+      await waitFor(() =>
+        expect(within(dialog).getByRole('button', { name: 'Journey' })).toHaveFocus(),
+      );
+      expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
   });
 
   it('sorts visible program cards inside their cycle section from local sort controls', async () => {
