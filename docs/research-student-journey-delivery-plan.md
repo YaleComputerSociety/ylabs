@@ -105,6 +105,15 @@ No replacement summary is present yet.
 - **Validation evidence:** research and dashboard request-deduplication tests merged with PR `#165`.
 - **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165).
 
+#### EF-05 - Quiet Research-Activity Ranking Input - FR-44
+
+- **Status:** Blocked.
+- **Depends on:** EP-06 / FR-42.2 activity rollups.
+- **Acceptance criteria:** a bounded, freshness-aware activity signal may order otherwise comparable entity matches or choose quiet signal precedence; relevance remains primary; no publication count, activity score, or separate activity cluster competes with the entity result; missing activity is neutral rather than negative.
+- **Validation evidence:** current Beta has attribution guards but does not have the required cached entity rollups.
+- **PRs:** none.
+- **Blocker:** FR-42.2 must define trustworthy cached activity before ranking consumes it.
+
 ### Evidence-Backed Profile
 
 #### EP-01 - Trustworthy Entity And Lead Identity
@@ -131,6 +140,33 @@ Action-specific provenance still depends on QA-01.
 - **Acceptance criteria:** related and affiliated entities use a strict summary allowlist; each direction is bounded with truncation metadata; private/operator fields and direct contact information are absent; navigation fetches the full profile only when opened.
 - **Validation evidence:** representative 99-related-hub regression reduced the bounded payload from 1,938,003 bytes to 22,049 bytes, with projection and redaction tests.
 - **PRs:** [#167](https://github.com/YaleComputerSociety/ylabs/pull/167).
+
+#### EP-04 - Source-Backed Undergraduate Logistics - FR-16
+
+- **Status:** Blocked.
+- **Depends on:** new evidence acquisition and reviewed observation/materialization contracts.
+- **Acceptance criteria:** profiles may show student level, compensation/formalization mode, research modality, or current availability only when a source supports that exact claim; unknown values remain absent or neutrally disclosed on detail, never inferred from department, methods, or a generic undergrad signal; any future facet uses the same claim-specific evidence.
+- **Validation evidence:** model fields exist, but current corpus coverage is not sufficient to support a trustworthy student surface.
+- **PRs:** none.
+- **Blocker:** source acquisition and false-positive review are required before UI delivery.
+
+#### EP-05 - Research-Home Member Roster Beyond The Lead - FR-18
+
+- **Status:** Blocked.
+- **Depends on:** official roster acquisition, identity matching, current-role evidence, and public-person policy.
+- **Acceptance criteria:** detail pages may list graduate students, postdocs, staff, or other current members only from official, current, attributable roster evidence; roles and source context are explicit; stale or ambiguous people are withheld; the section does not turn names into unsolicited-contact recommendations.
+- **Validation evidence:** the detail/member rendering path exists, but acquisition coverage is lead-heavy and does not satisfy the roster requirement.
+- **PRs:** none.
+- **Blocker:** new roster scraping and identity-quality review.
+
+#### EP-06 - Trustworthy Activity Ordering And Rollups - FR-19 / FR-42.2
+
+- **Status:** Active.
+- **Depends on:** canonical scholarly identifiers, current membership attribution, and cache refresh ownership.
+- **Acceptance criteria:** detail activity is newest-first; current and earlier work remain separate; duplicate and identity-conflicting work is excluded; entity rollups expose bounded recency/count facts with deterministic refresh and invalidation; missing activity is unknown, not inactive; rollups can support EF-05 without exposing generic scores.
+- **Validation evidence:** PR `#158` completed contamination, duplicate, and current-versus-earlier guards.
+Cached rollups and their refresh path are not implemented on Beta.
+- **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158) covers the completed portion only.
 
 ### Comparison And Planning
 
@@ -166,6 +202,50 @@ Action-specific provenance still depends on QA-01.
 - **Validation evidence:** persistence and matcher behavior are merged; refresh CLI is merged but recurring production scheduling remains deliberately disabled pending rollout acceptance.
 - **PRs:** [#156](https://github.com/YaleComputerSociety/ylabs/pull/156), [#157](https://github.com/YaleComputerSociety/ylabs/pull/157), [#162](https://github.com/YaleComputerSociety/ylabs/pull/162).
 
+#### CP-05 - Entity-Level Saving - FR-45
+
+- **Status:** Not started.
+- **Depends on:** canonical ResearchEntity identity and CAS-authenticated owner-scoped persistence.
+- **Acceptance criteria:** a student can save a research entity even when it has no indexed pathway; save identity is the entity, not `entryPathways[0]`; existing pathway plans migrate or coexist without duplication; detail and search cards show server-confirmed state; authorization and privacy remain unchanged.
+- **Validation evidence:** current saves are `favPathways`, saved details are keyed by `pathwayId`, and `labDetail.tsx` selects the first entry pathway.
+That contract cannot represent a research home with no pathway and is not a safe comparison identity.
+- **PRs:** none.
+- **Dependency note:** CP-06 / FR-17 and CP-07 / FR-24 must not ship on pathway identity.
+
+#### CP-06 - Compare Shortlisted Research Homes - FR-17
+
+- **Status:** Blocked.
+- **Depends on:** CP-05 / FR-45.
+- **Acceptance criteria:** an authenticated student can choose two to four saved entities and compare existing claim-specific fields without inventing missing facts; private notes remain private unless explicitly included; rows preserve unknown rather than unavailable; comparison links return to canonical entity profiles; no pathway identity or duplicate home columns.
+- **Validation evidence:** advising selection/preview patterns exist in PR `#163`, but there is no entity-level shortlist to compare.
+- **PRs:** none; FR-17 is actively assigned, but unmerged work is not Beta evidence.
+- **CAS boundary:** the logged-in comparison can ship after FR-45; any logged-out variant remains blocked by CP-09 / FR-14 policy.
+
+#### CP-07 - Dashboard Entity Names And Live Counts - FR-24
+
+- **Status:** Active.
+- **Depends on:** CP-05 / FR-45 for correct entity identity.
+- **Acceptance criteria:** dashboard cards lead with canonical research-home names; section and selected counts reflect hydrated server state; stale pathway aliases do not masquerade as entity names; loading, empty, and failure counts are honest; entity saves without pathways remain visible.
+- **Validation evidence:** current dashboard planning and server hydration are useful, but the identity contract remains pathway-first.
+- **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165) improved load behavior but did not complete FR-24.
+
+#### CP-08 - Shared Mobile Filter-Sheet Pattern - FR-37
+
+- **Status:** Not started on Beta.
+- **Depends on:** surface-specific facet contracts and accessible focus management.
+- **Acceptance criteria:** Research and Programs use one shared filter-sheet interaction pattern on small viewports while retaining their own facets; opening moves focus into a labelled modal/sheet; Escape, close, apply, and focus return work by keyboard and screen reader; selected-count and clear behavior are honest; desktop remains quiet; no horizontal overflow.
+- **Validation evidence:** FR-37 exists as local-only implemented work but is not merged into Beta.
+PR `#171` only simplified Research filters and must not be credited with FR-37.
+- **PRs:** none on Beta.
+
+#### CP-09 - Honest Logged-Out Saving - FR-14
+
+- **Status:** Active.
+- **Depends on:** a human decision between sign-in gating and a real guest shortlist; CP-05 if guest entity saving is chosen.
+- **Acceptance criteria:** an anonymous visitor never sees save success without a retrievable saved entity; the product either requests CAS before saving or persists and later migrates a bounded guest shortlist; copy does not promise dashboard, comparison, or funding behavior that did not occur.
+- **Validation evidence:** CAS-authenticated saved planning is complete, but the anonymous save policy remains unresolved.
+- **PRs:** none for the remaining anonymous scope.
+
 ### Qualified Action
 
 #### QA-01 - Defensible Application, Program, Or Contact Action
@@ -177,6 +257,9 @@ Action-specific provenance still depends on QA-01.
 PR `#171` removed the misleading student-facing stream while the replacement policy is designed.
 - **PRs:** [#161](https://github.com/YaleComputerSociety/ylabs/pull/161), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
 - **Blocker:** a human must accept the qualifying-action enum and evidence threshold, then operators must review routes that will be represented as actionable.
+The operational program is named the **evidence and route review rollout**.
+Its acceptance measures are claim quality, reviewed-action precision, false-positive rate, and explainable rejection reasons, not a minimum number of published pathways.
+PI-profile provenance can never qualify as an action.
 
 #### QA-02 - Accessible And Honest Account Onboarding
 
@@ -185,6 +268,15 @@ PR `#171` removed the misleading student-facing stream while the replacement pol
 - **Acceptance criteria:** validation errors are announced and associated with fields; focus moves to the first invalid field; the role control has native keyboard and screen-reader semantics; loading and failure states are honest; completion renders only after the server returns the persisted submitted identity and allowed role; client input cannot elevate confirmation or authorization.
 - **Validation evidence:** focused onboarding accessibility/persistence tests plus full client/server and security suites.
 - **PRs:** [#169](https://github.com/YaleComputerSociety/ylabs/pull/169).
+
+#### QA-03 - Cross-Surface Accessibility Hygiene - FR-41
+
+- **Status:** Active.
+- **Depends on:** route-by-route keyboard, focus, error-association, landmark, and responsive validation.
+- **Acceptance criteria:** canonical student flows have labelled controls, programmatically associated errors, announced async states, logical focus movement, unique landmarks/headings, 44-pixel primary targets, and no 320/375-pixel overflow; fixes use shared primitives where behavior is shared.
+- **Validation evidence:** PRs `#154` and `#169` completed major Programs and onboarding slices, and `#171` simplified Research.
+The cross-surface audit remains incomplete.
+- **PRs:** [#154](https://github.com/YaleComputerSociety/ylabs/pull/154), [#169](https://github.com/YaleComputerSociety/ylabs/pull/169), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
 
 ### Supply And Moderation
 
@@ -229,6 +321,31 @@ Entity-wide correction coverage beyond linked listings remains future work.
 - **Validation evidence:** server/client grant tests and security preflight merged in PR `#166`.
 - **PRs:** [#166](https://github.com/YaleComputerSociety/ylabs/pull/166).
 
+#### SM-06 - Close The Admin Curation Loop - FR-29
+
+- **Status:** Not started.
+- **Depends on:** explicit mutation ownership, current review queues, and post-write re-gating.
+- **Acceptance criteria:** an accepted review decision can invoke a separately authorized, audited, idempotent mutation or repair handoff; success and failure are visible; the record is re-gated and search synchronization is explicit; review approval alone never silently mutates canonical data.
+- **Validation evidence:** PRs `#160` and `#161` provide reviewed handoff and queue throughput, intentionally without canonical mutation.
+- **PRs:** [#160](https://github.com/YaleComputerSociety/ylabs/pull/160), [#161](https://github.com/YaleComputerSociety/ylabs/pull/161) are dependencies, not completion.
+
+#### SM-07 - Faculty Posts A Real Opportunity - FR-32
+
+- **Status:** Not started.
+- **Depends on:** confirmed professor/faculty authorization, verified profile readiness, canonical entity ownership/claim resolution, and PostedOpportunity validation.
+- **Acceptance criteria:** a CAS-authenticated, confirmed, authorized faculty user can create a bounded real posting linked to a canonical entity; students, unknown users, unconfirmed accounts, and unverified owners are denied server-side; preview, deadline/status, application route, archive, audit, and public visibility behavior are explicit; creation does not bypass evidence or moderation policy.
+- **Validation evidence:** PR `#153` repaired faculty profile editing and PR `#160` added claim/correction handoff, but no canonical faculty opportunity-creation journey is complete.
+- **PRs:** [#153](https://github.com/YaleComputerSociety/ylabs/pull/153), [#160](https://github.com/YaleComputerSociety/ylabs/pull/160) are dependencies only.
+- **CAS boundary:** this is never an anonymous capability.
+
+#### SM-08 - Pending-Confirmation Path Forward - FR-35
+
+- **Status:** Not started.
+- **Depends on:** a human-owned verification process, status source, and escalation/support route.
+- **Acceptance criteria:** an authenticated pending user sees their actual status, permitted read-only capabilities, what evidence or human action is outstanding, and a safe support/escalation route; the UI does not imply automatic approval or grant premature authority; state changes come from server-confirmed verification.
+- **Validation evidence:** PR `#169` makes unknown-user onboarding completion honest, but it does not provide the subsequent human confirmation workflow.
+- **PRs:** [#169](https://github.com/YaleComputerSociety/ylabs/pull/169) is a prerequisite only.
+
 ### Invisible Measurement
 
 #### IM-01 - Claim-Specific Journey Analytics
@@ -261,6 +378,8 @@ One existing program filter-navigation event is still classified too broadly as 
 - Resolve the QA-01 human decision.
 - Implement one server-owned qualifier and enum used by detail, search summary, filters, and analytics.
 - Audit existing exploratory and PI-profile-derived records before any action signal is public.
+- Run the evidence and route review rollout with sampled claim-quality and false-positive metrics.
+- Do not use a target such as `>=25 pathways` as evidence that the action contract is trustworthy.
 
 ### Phase 3 - Add Sparse Planning Context
 
@@ -308,7 +427,7 @@ Measurement must not add UI, delay navigation, expose private data, or redefine 
 ## Human And External Blockers
 
 1. **Qualified-action contract:** product and trust owners must accept the positive signal enum, required proof, and confidence/evidence threshold for QA-01.
-2. **Route review:** operators must review application and contact routes before those records become a public positive action signal.
+2. **Evidence and route review rollout:** operators must review application and contact-route claims before those records become a public positive action signal, record false-positive and rejection-reason metrics, and explicitly exclude PI-profile provenance.
 3. **Production refresh:** fellowship refresh remains disabled until Atlas restore evidence, rollback ownership, database target checks, and smoke acceptance are complete.
 4. **Deployment topology:** Render web-service settings are managed outside `render.yaml`; compression, durable scorecard storage, and deployment fingerprints require control-plane verification.
 5. **Authenticated browser evidence:** CAS-preserving end-to-end checks require a valid test session and supported browser runner; never bypass CAS to manufacture evidence.
