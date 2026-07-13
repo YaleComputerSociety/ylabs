@@ -29,6 +29,8 @@ export interface UnknownUserState {
   focusedUserTypeIndex: number;
 
   errors: UnknownUserErrors;
+  submissionStatus: 'idle' | 'submitting' | 'error' | 'success';
+  submissionError?: string;
 }
 
 export type UnknownUserAction =
@@ -40,7 +42,10 @@ export type UnknownUserAction =
   | { type: 'CLOSE_DROPDOWN' }
   | { type: 'SELECT_USER_TYPE'; payload: string }
   | { type: 'SET_FOCUSED_INDEX'; payload: number | ((prev: number) => number) }
-  | { type: 'SET_ERRORS'; payload: UnknownUserErrors | ((prev: UnknownUserErrors) => UnknownUserErrors) };
+  | { type: 'SET_ERRORS'; payload: UnknownUserErrors | ((prev: UnknownUserErrors) => UnknownUserErrors) }
+  | { type: 'SUBMIT_START' }
+  | { type: 'SUBMIT_ERROR'; payload: string }
+  | { type: 'SUBMIT_SUCCESS' };
 
 const resolve = <T>(payload: T | ((prev: T) => T), prev: T): T =>
   typeof payload === 'function' ? (payload as (prev: T) => T)(prev) : payload;
@@ -55,6 +60,7 @@ export const createInitialUnknownUserState = (
   isUserTypeDropdownOpen: false,
   focusedUserTypeIndex: -1,
   errors: {},
+  submissionStatus: 'idle',
   ...overrides,
 });
 
@@ -98,6 +104,13 @@ export function unknownUserReducer(
 
     case 'SET_ERRORS':
       return { ...state, errors: resolve(action.payload, state.errors) };
+
+    case 'SUBMIT_START':
+      return { ...state, submissionStatus: 'submitting', submissionError: undefined };
+    case 'SUBMIT_ERROR':
+      return { ...state, submissionStatus: 'error', submissionError: action.payload };
+    case 'SUBMIT_SUCCESS':
+      return { ...state, submissionStatus: 'success', submissionError: undefined };
 
     default:
       return state;
