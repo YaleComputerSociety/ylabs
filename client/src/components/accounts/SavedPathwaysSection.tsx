@@ -15,6 +15,9 @@ export interface PathwayPlan {
   note: string;
   checklist: Record<string, boolean>;
   checklistHistory: ChecklistHistoryItem[];
+  targetDeadline: string | null;
+  actedOnDate: string | null;
+  followUpIntervalDays: number | null;
 }
 
 export interface ChecklistHistoryItem {
@@ -125,6 +128,60 @@ const isPlanningIntent = (value: unknown): value is PlanningIntent =>
 
 const isPlanningStage = (value: unknown): value is PlanningStage =>
   STAGE_OPTIONS.some((option) => option.value === value);
+
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const FOLLOW_UP_INTERVALS = [7, 14, 30, 60, 90] as const;
+const normalizeDateOnly = (value: unknown): string | null => {
+  if (typeof value !== 'string' || !DATE_ONLY_RE.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day
+    ? value
+    : null;
+};
+const normalizeFollowUpInterval = (value: unknown): number | null =>
+  typeof value === 'number' && FOLLOW_UP_INTERVALS.includes(value as (typeof FOLLOW_UP_INTERVALS)[number])
+    ? value
+    : null;
+const localToday = (now = new Date()): string =>
+  `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+const addLocalDays = (dateOnly: string, days: number): string => {
+  const [year, month, day] = dateOnly.split('-').map(Number);
+  const date = new Date(year, month - 1, day + days);
+  return localToday(date);
+};
+
+export const planningCueForPlan = (
+  pathway: PathwaySearchHit,
+  plan: PathwayPlan,
+  now = new Date(),
+): { detail: string; date: string; priority: number } | null => {
+  const today = localToday(now);
+  const cues: Array<{ detail: string; date: string; priority: number }> = [];
+  if (plan.actedOnDate && plan.followUpIntervalDays) {
+    const due = addLocalDays(plan.actedOnDate, plan.followUpIntervalDays);
+    if (due <= today) {
+      cues.push({ detail: `Follow up on ${pathway.studentFacingLabel}`, date: due, priority: 0 });
+    }
+  }
+  if (plan.targetDeadline && plan.targetDeadline >= today) {
+    cues.push({
+      detail: `${pathway.studentFacingLabel}: Due ${formatDateOnly(plan.targetDeadline)}`,
+      date: plan.targetDeadline,
+      priority: 1,
+    });
+  }
+  return cues.sort((a, b) =>
+    a.date.localeCompare(b.date) || a.priority - b.priority || a.detail.localeCompare(b.detail),
+  )[0] || null;
+};
+
+const formatDateOnly = (value: string): string => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+};
 
 const CHECKLIST_TEMPLATES: Record<PlanningIntent, Array<{ key: string; label: string }>> = {
   thesis: [
@@ -448,6 +505,9 @@ const normalizeStoredPlan = (value: unknown): PathwayPlan | null => {
     note: normalizePlanNote(candidate.note),
     checklist: normalizePlanChecklist(candidate.checklist),
     checklistHistory: normalizeChecklistHistory(candidate.checklistHistory),
+    targetDeadline: normalizeDateOnly(candidate.targetDeadline),
+    actedOnDate: normalizeDateOnly(candidate.actedOnDate),
+    followUpIntervalDays: normalizeFollowUpInterval(candidate.followUpIntervalDays),
   };
 };
 
@@ -473,6 +533,9 @@ const localStoragePlanMap = (plans: PathwayPlanMap): PathwayPlanMap =>
         note: '',
         checklist: {},
         checklistHistory: [],
+        targetDeadline: null,
+        actedOnDate: null,
+        followUpIntervalDays: null,
       },
     ]),
   );
@@ -726,17 +789,40 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   }, [hydratedPlanStorageOwner, planStorageOwner, plans]);
 
   useEffect(() => {
-    const reminders = pathways
+    const watchedReminders = pathways
       .map((pathway) => deadlineReminderForPathway(pathway, fundingMatches[pathway._id] || []))
       .filter((reminder): reminder is DeadlineReminder => !!reminder)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    const planCues = pathways.flatMap((pathway) => {
+      const plan = plans[pathway._id];
+      const cue = plan ? planningCueForPlan(pathway, plan) : null;
+      return cue ? [{ ...cue, pathwayId: pathway._id }] : [];
+    });
+    const candidates = [
+      ...planCues.map((cue) => ({
+        label: cue.detail,
+        date: `${cue.date}T12:00:00`,
+        priority: cue.priority,
+        tie: cue.pathwayId,
+      })),
+      ...watchedReminders.map((reminder) => ({
+        label: reminder.detail,
+        date: reminder.date,
+        priority: 2,
+        tie: reminder.title,
+      })),
+    ].sort((a, b) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime() ||
+      a.priority - b.priority || a.tie.localeCompare(b.tie),
+    );
+
     onSummaryChange?.({
       count: pathways.length,
-      nextDeadlineLabel: reminders[0]?.detail,
-      nextDeadlineDate: reminders[0]?.date,
+      nextDeadlineLabel: candidates[0]?.label,
+      nextDeadlineDate: candidates[0]?.date,
     });
-  }, [fundingMatches, onSummaryChange, pathways]);
+  }, [fundingMatches, onSummaryChange, pathways, plans]);
 
   const getPlan = (pathway: PathwaySearchHit): PathwayPlan => {
     const storedPlan = plans[pathway._id];
@@ -749,6 +835,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         note: normalizePlanNote(storedPlan.note),
         checklist: normalizePlanChecklist(storedPlan.checklist),
         checklistHistory: normalizeChecklistHistory(storedPlan.checklistHistory),
+        targetDeadline: normalizeDateOnly(storedPlan.targetDeadline),
+        actedOnDate: normalizeDateOnly(storedPlan.actedOnDate),
+        followUpIntervalDays: normalizeFollowUpInterval(storedPlan.followUpIntervalDays),
       };
     }
 
@@ -758,6 +847,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       note: '',
       checklist: {},
       checklistHistory: [],
+      targetDeadline: null,
+      actedOnDate: null,
+      followUpIntervalDays: null,
     };
   };
 
@@ -1419,11 +1511,16 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                           disabled={!planIsHydrated}
                           aria-busy={!planIsHydrated}
                           onWheel={(event) => event.currentTarget.blur()}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const stage = event.target.value as PlanningStage;
                             updatePlan(pathway._id, {
-                              stage: event.target.value as PlanningStage,
-                            })
-                          }
+                              stage,
+                              actedOnDate:
+                                stage === 'acted' && !plan.actedOnDate
+                                  ? localToday()
+                                  : plan.actedOnDate,
+                            });
+                          }}
                           className="mt-1 block w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2 py-2 text-sm font-normal normal-case tracking-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                           {STAGE_OPTIONS.map((option) => (
@@ -1434,6 +1531,44 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
                         </select>
                       </label>
                     </div>
+
+                    <fieldset className="rounded-md border border-[var(--yr-line)] p-3">
+                      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Dates and follow-up
+                      </legend>
+                      <p className="mb-3 text-xs text-gray-500">
+                        Dates use your local calendar and are saved without a time zone.
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <label className="text-xs font-semibold text-gray-600">
+                          Target deadline
+                          <input type="date" value={plan.targetDeadline || ''} disabled={!planIsHydrated}
+                            onChange={(event) => updatePlan(pathway._id, { targetDeadline: normalizeDateOnly(event.target.value) })}
+                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500" />
+                          {plan.targetDeadline && <button type="button" disabled={!planIsHydrated}
+                            onClick={() => updatePlan(pathway._id, { targetDeadline: null })}
+                            className="mt-1 text-xs font-medium text-blue-700 underline underline-offset-2">Clear deadline</button>}
+                        </label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Acted on
+                          <input type="date" value={plan.actedOnDate || ''} disabled={!planIsHydrated}
+                            onChange={(event) => updatePlan(pathway._id, { actedOnDate: normalizeDateOnly(event.target.value) })}
+                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500" />
+                          {plan.actedOnDate && <button type="button" disabled={!planIsHydrated}
+                            onClick={() => updatePlan(pathway._id, { actedOnDate: null })}
+                            className="mt-1 text-xs font-medium text-blue-700 underline underline-offset-2">Clear acted date</button>}
+                        </label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Follow up after
+                          <select value={plan.followUpIntervalDays || ''} disabled={!planIsHydrated}
+                            onChange={(event) => updatePlan(pathway._id, { followUpIntervalDays: event.target.value ? Number(event.target.value) : null })}
+                            className="mt-1 block min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-2 text-sm font-normal text-gray-900 focus:ring-2 focus:ring-blue-500">
+                            <option value="">No reminder</option>
+                            {FOLLOW_UP_INTERVALS.map((days) => <option key={days} value={days}>{days} days</option>)}
+                          </select>
+                        </label>
+                      </div>
+                    </fieldset>
 
                     <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
                       Note
