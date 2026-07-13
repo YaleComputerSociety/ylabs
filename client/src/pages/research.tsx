@@ -851,7 +851,15 @@ const Research = () => {
       return;
     }
 
-    setQuery('');
+    // A search submission updates component state and the URL in the same
+    // transition. Do not let an effect that still observes the previous empty
+    // URL overwrite that active search with the default browse state.
+    if (activeSearchKeyRef.current !== null) return;
+
+    // Preserve an in-progress draft while startup context (for example config or
+    // user state) settles. Only clear the input when an existing URL-backed
+    // search is actually being reset.
+    if (hasSubmittedSearch) setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
     setGroupedResults(emptyGroupedResults(''));

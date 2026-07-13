@@ -1181,6 +1181,61 @@ describe('Research page', () => {
     );
   });
 
+  it('preserves a draft query when startup config settles before submission', async () => {
+    const searchResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q === 'machine learning') {
+        return searchResponse.promise;
+      }
+      if (url === '/research/search' && body.q === '')
+        return Promise.resolve(researchSearchResponse());
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    const researchTree = (departmentList: typeof departments) => (
+      <MemoryRouter initialEntries={['/research']}>
+        <UserContext.Provider
+          value={{
+            ...defaultUserContext,
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+          }}
+        >
+          <ConfigContext.Provider
+            value={{
+              ...defaultConfigContext,
+              isLoading: false,
+              isLoaded: true,
+              departments: departmentList,
+              departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+            }}
+          >
+            <Research />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>
+    );
+
+    const view = render(researchTree([]));
+    const input = screen.getByLabelText('Search Yale research') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'machine learning' } });
+
+    view.rerender(researchTree(departments));
+
+    expect(input.value).toBe('machine learning');
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    view.rerender(researchTree([...departments]));
+
+    expect(screen.getByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(input.value).toBe('machine learning');
+
+    searchResponse.resolve(researchSearchResponse([researchEntity]));
+
+    expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+  });
+
   it('keeps initial q searches alive under StrictMode effect cleanup', async () => {
     mockSearchResponses((url) =>
       url === '/research/search'
