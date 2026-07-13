@@ -257,8 +257,9 @@ Student workflow depth starts with saved research plans. User accounts can now s
 
 First-slice behavior:
 
-- `/api/users/favPathwayIds` returns saved ids for optimistic UI state.
-- `/api/users/favPathways` returns hydrated saved pathways and prunes archived or otherwise hidden pathways from the saved list.
+- `/api/users/savedResearchPlanIds` returns saved ids for optimistic UI state.
+- `/api/users/savedResearchPlans` returns hydrated saved pathways and prunes archived or otherwise hidden pathways from the saved list.
+- `/api/users/savedResearchPlanDetails` stores the authenticated student's sanitized planning details.
 - Saved pathway cards link back to `/research/:slug` rather than introducing a dedicated pathway detail route.
 - User-owned saved pathway plans store intent, stage, notes, and checklist state.
 - Saved pathway fellowship matches expose cautious source-backed reasons, caveats, public source links, and deadline/application context.
@@ -280,7 +281,7 @@ Scrapers should not directly assert product conclusions as final truth. They sho
 
 Operational retention note: observations remain append-only within a scraper run, but old superseded observations may be pruned by the compact-retention command after reports are captured. Active observations, recent observations, and observations from the latest retained runs per source should remain available for audit and materialization.
 
-Initial implementation note: `accessMaterializer.ts` derives first-class access rows from legacy `Observation`s while preserving the old scalar `ResearchGroup` fields for `/labs` compatibility. It intentionally ignores YSM/YSE index-only `acceptingUndergrads=true` observations as undergraduate-access evidence unless a source provides explicit undergrad participation evidence.
+`accessMaterializer.ts` derives first-class access rows from legacy `Observation`s. It intentionally ignores YSM/YSE index-only `acceptingUndergrads=true` observations as undergraduate-access evidence unless a source provides explicit undergrad participation evidence.
 
 Signal examples:
 
