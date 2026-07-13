@@ -1,9 +1,6 @@
-/**
- * Fallback page for unknown user types.
- */
+/** Accessible account setup for authenticated users whose Yale role is unknown. */
 import React, { useReducer, useRef } from 'react';
 import axios from '../utils/axios';
-import swal from 'sweetalert';
 import {
   createInitialUnknownUserState,
   unknownUserReducer,
@@ -11,339 +8,196 @@ import {
 } from '../reducers/unknownUserReducer';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
+const USER_TYPES = [
+  { value: 'undergraduate', label: 'Undergraduate Student' },
+  { value: 'graduate', label: 'Graduate Student' },
+  { value: 'professor', label: 'Professor' },
+  { value: 'faculty', label: 'Faculty' },
+] as const;
+
+type FieldName = keyof UnknownUserErrors;
+
 const Unknown = () => {
   useDocumentTitle('Set up account');
   const [state, dispatch] = useReducer(unknownUserReducer, undefined, () =>
     createInitialUnknownUserState(),
   );
-  const { firstName, lastName, email, userType, isUserTypeDropdownOpen, focusedUserTypeIndex, errors } =
+  const { firstName, lastName, email, userType, errors, submissionStatus, submissionError } =
     state;
-
-  const userTypeRef = useRef<HTMLDivElement>(null);
-  const userTypeInputRef = useRef<HTMLInputElement>(null);
-
-  const userTypeOptions = [
-    { value: 'undergraduate', label: 'Undergraduate Student' },
-    { value: 'graduate', label: 'Graduate Student' },
-    { value: 'professor', label: 'Professor' },
-    { value: 'faculty', label: 'Faculty' },
-  ];
-
-  const validateFirstName = (value: string): string | undefined => {
-    return value.trim() ? undefined : 'First name is required';
+  const fieldRefs = {
+    firstName: useRef<HTMLInputElement>(null),
+    lastName: useRef<HTMLInputElement>(null),
+    email: useRef<HTMLInputElement>(null),
+    userType: useRef<HTMLSelectElement>(null),
   };
 
-  const validateLastName = (value: string): string | undefined => {
-    return value.trim() ? undefined : 'Last name is required';
-  };
+  const validate = (): UnknownUserErrors => ({
+    ...(!firstName.trim() ? { firstName: 'First name is required' } : {}),
+    ...(!lastName.trim() ? { lastName: 'Last name is required' } : {}),
+    ...(!email.trim()
+      ? { email: 'Email is required' }
+      : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+        ? { email: 'Enter a valid email address' }
+        : {}),
+    ...(!userType ? { userType: 'Role at Yale is required' } : {}),
+  });
 
-  const validateEmail = (value: string): string | undefined => {
-    if (!value.trim()) {
-      return 'Email is required';
-    }
-    if (!value.includes('@') || !value.includes('.') || value.includes(' ')) {
-      return 'Invalid email format';
-    }
-    return undefined;
-  };
-
-  const validateUserType = (value: string): string | undefined => {
-    return value.trim() ? undefined : 'Role at Yale is required';
-  };
-
-  const handleUserTypeSelect = (value: string) => {
-    dispatch({ type: 'SELECT_USER_TYPE', payload: value });
-    if (userTypeInputRef.current) {
-      userTypeInputRef.current.blur();
-    }
+  const clearFieldError = (field: FieldName) => {
+    if (!errors[field]) return;
     dispatch({
       type: 'SET_ERRORS',
-      payload: (prev) => ({ ...prev, userType: validateUserType(value) }),
+      payload: (previous) => ({ ...previous, [field]: undefined }),
     });
   };
 
-  const handleUserTypeInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        dispatch({
-          type: 'SET_FOCUSED_INDEX',
-          payload: (prev) => (prev < userTypeOptions.length - 1 ? prev + 1 : prev),
-        });
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        dispatch({
-          type: 'SET_FOCUSED_INDEX',
-          payload: (prev) => (prev > 0 ? prev - 1 : 0),
-        });
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (focusedUserTypeIndex >= 0 && focusedUserTypeIndex < userTypeOptions.length) {
-          handleUserTypeSelect(userTypeOptions[focusedUserTypeIndex].value);
-        }
-        break;
-      case 'Escape':
-        e.preventDefault();
-        dispatch({ type: 'CLOSE_DROPDOWN' });
-        if (userTypeInputRef.current) {
-          userTypeInputRef.current.blur();
-        }
-        break;
-      case 'Tab':
-        dispatch({ type: 'CLOSE_DROPDOWN' });
-        break;
-    }
-  };
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (submissionStatus === 'submitting') return;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const validationErrors = {
-      firstName: validateFirstName(firstName),
-      lastName: validateLastName(lastName),
-      email: validateEmail(email),
-      userType: validateUserType(userType),
-    };
-
-    const filteredErrors: UnknownUserErrors = Object.fromEntries(
-      Object.entries(validationErrors).filter(([_, value]) => value !== undefined),
+    const validationErrors = validate();
+    dispatch({ type: 'SET_ERRORS', payload: validationErrors });
+    const firstInvalidField = (['firstName', 'lastName', 'email', 'userType'] as FieldName[]).find(
+      (field) => validationErrors[field],
     );
+    if (firstInvalidField) {
+      requestAnimationFrame(() => fieldRefs[firstInvalidField].current?.focus());
+      return;
+    }
 
-    dispatch({ type: 'SET_ERRORS', payload: filteredErrors });
-
-    if (Object.keys(filteredErrors).length === 0) {
-      axios
-        .put('/users', {
-          withCredentials: true,
-          data: {
-            fname: firstName,
-            lname: lastName,
-            email: email,
-            userType: userType,
-            userConfirmed: false,
-          },
-        })
-        .then((_response) => {
-          swal(
-            'Success!',
-            'Your information has been updated! You can now access the site. We will verify your information shortly.',
-            'success',
-          ).then(() => {
-            window.location.href = '/';
-          });
-        })
-        .catch(() => {
-          console.error('Failed to update user information.');
-          swal(
-            'Error!',
-            'An error occurred while updating your information. Please try again.',
-            'error',
-          );
-        });
+    dispatch({ type: 'SUBMIT_START' });
+    try {
+      const response = await axios.put('/users', {
+        withCredentials: true,
+        data: {
+          fname: firstName.trim(),
+          lname: lastName.trim(),
+          email: email.trim(),
+          userType,
+          userConfirmed: false,
+        },
+      });
+      const persistedUser = response.data?.user;
+      if (
+        !persistedUser ||
+        persistedUser.fname !== firstName.trim() ||
+        persistedUser.lname !== lastName.trim() ||
+        persistedUser.userType !== userType
+      ) {
+        throw new Error('The saved account response did not match the submitted account.');
+      }
+      dispatch({ type: 'SUBMIT_SUCCESS' });
+    } catch {
+      dispatch({
+        type: 'SUBMIT_ERROR',
+        payload: 'We could not save your account setup. Your information was not confirmed. Try again.',
+      });
     }
   };
 
-  const ErrorMessage = ({ error }: { error?: string }) => {
-    return error ? <p className="text-red-500 text-xs italic mt-1">{error}</p> : null;
-  };
+  if (submissionStatus === 'success') {
+    return (
+      <main className="yr-page flex min-h-full items-center justify-center p-4">
+        <section
+          className="yr-panel w-full max-w-md rounded-md p-6"
+          aria-labelledby="setup-complete"
+          aria-live="polite"
+          role="status"
+        >
+          <p className="yr-kicker">Account setup saved</p>
+          <h1 id="setup-complete" className="mt-1 text-2xl font-semibold text-slate-950" tabIndex={-1}>
+            Your account setup is complete
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-slate-600">
+            Your information was saved. You can now continue to Yale Research while your account
+            details remain subject to the existing verification process.
+          </p>
+          <a
+            href="/"
+            className="mt-6 inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-blue-200"
+          >
+            Continue to Yale Research
+          </a>
+        </section>
+      </main>
+    );
+  }
+
+  const ErrorMessage = ({ field }: { field: FieldName }) =>
+    errors[field] ? (
+      <p id={`${field}-error`} className="mt-1 text-xs text-red-700">
+        {errors[field]}
+      </p>
+    ) : null;
+  const errorFields = (Object.keys(errors) as FieldName[]).filter((field) => errors[field]);
+  const inputClass = (field: FieldName) =>
+    `min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+      errors[field] ? 'border-red-500' : 'border-[var(--yr-line-strong)]'
+    }`;
 
   return (
-    <div className="yr-page flex min-h-full items-center justify-center p-4">
-      <div className="yr-panel w-full max-w-md rounded-md p-6">
+    <main className="yr-page flex min-h-full items-center justify-center p-4">
+      <section className="yr-panel w-full max-w-md rounded-md p-6" aria-labelledby="setup-heading">
         <div className="mb-6">
-          <p className="yr-kicker">
-            One-minute setup
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-950">
+          <p className="yr-kicker">One-minute setup</p>
+          <h1 id="setup-heading" className="mt-1 text-2xl font-semibold text-slate-950">
             Tell us how you use Yale Research
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-slate-600">
             This keeps the app pointed at the right research planning experience. You can start
-            searching as soon as this is saved.
+            searching after your information is saved.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="firstName">
-              First name
-            </label>
-            <input
-              id="firstName"
-              type="text"
-              value={firstName}
-              onChange={(e) => {
-                dispatch({ type: 'SET_FIRST_NAME', payload: e.target.value });
-                if (errors.firstName) {
-                  dispatch({
-                    type: 'SET_ERRORS',
-                    payload: (prev) => ({ ...prev, firstName: validateFirstName(e.target.value) }),
-                  });
-                }
-              }}
-              className={`min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
-            />
-            <ErrorMessage error={errors.firstName} />
-          </div>
-
-          <div className="mb-4">
-            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="lastName">
-              Last name
-            </label>
-            <input
-              id="lastName"
-              type="text"
-              value={lastName}
-              onChange={(e) => {
-                dispatch({ type: 'SET_LAST_NAME', payload: e.target.value });
-                if (errors.lastName) {
-                  dispatch({
-                    type: 'SET_ERRORS',
-                    payload: (prev) => ({ ...prev, lastName: validateLastName(e.target.value) }),
-                  });
-                }
-              }}
-              className={`min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
-            />
-            <ErrorMessage error={errors.lastName} />
-          </div>
-
-          <div className="mb-4">
-            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="email">
-              Email
-            </label>
-            <input
-              id="email"
-              type="text"
-              value={email}
-              onChange={(e) => {
-                dispatch({ type: 'SET_EMAIL', payload: e.target.value });
-                if (errors.email) {
-                  dispatch({
-                    type: 'SET_ERRORS',
-                    payload: (prev) => ({ ...prev, email: validateEmail(e.target.value) }),
-                  });
-                }
-              }}
-              className={`min-h-[44px] w-full rounded-md border bg-[var(--yr-panel)] px-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.email ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
-            />
-            <ErrorMessage error={errors.email} />
-          </div>
-
-          <div className="mb-6" ref={userTypeRef}>
-            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="userType">
-              Role at Yale
-            </label>
-            <div className="relative">
-              <div className="relative">
-                <input
-                  ref={userTypeInputRef}
-                  id="userType"
-                  type="text"
-                  readOnly
-                  value={
-                    userType
-                      ? userTypeOptions.find((option) => option.value === userType)?.label || ''
-                      : ''
-                  }
-                  onClick={() => {
-                    dispatch({ type: 'OPEN_DROPDOWN' });
-                  }}
-                  onKeyDown={handleUserTypeInputKeyDown}
-                  onFocus={() => dispatch({ type: 'OPEN_DROPDOWN' })}
-                  onBlur={() => {
-                    setTimeout(() => {
-                      if (!userTypeRef.current?.contains(document.activeElement)) {
-                        dispatch({ type: 'CLOSE_DROPDOWN' });
-                      }
-                    }, 100);
-                  }}
-                  className={`min-h-[44px] w-full cursor-pointer rounded-md border bg-[var(--yr-panel)] px-3 pr-10 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.userType ? 'border-red-500' : 'border-[var(--yr-line-strong)]'}`}
-                />
-                <button
-                  type="button"
-                  aria-label={isUserTypeDropdownOpen ? 'Close role options' : 'Open role options'}
-                  className="absolute inset-y-0 right-0 inline-flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center rounded-r-md text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  onClick={() => {
-                    if (isUserTypeDropdownOpen) {
-                      dispatch({ type: 'CLOSE_DROPDOWN' });
-                    } else {
-                      dispatch({ type: 'OPEN_DROPDOWN' });
-                      if (userTypeInputRef.current) {
-                        userTypeInputRef.current.focus();
-                      }
-                    }
-                  }}
-                >
-                  <svg
-                    className="fill-current h-4 w-4"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-                  </svg>
-                </button>
-              </div>
-
-              {isUserTypeDropdownOpen && (
-                <div
-                  className="mt-2 max-h-[200px] overflow-hidden rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-lg"
-                  role="listbox"
-                  aria-label="Role at Yale options"
-                  tabIndex={-1}
-                >
-                  <ul className="max-h-[200px] overflow-y-auto" tabIndex={-1}>
-                    {userTypeOptions.map((option, index) => (
-                      <li
-                        key={index}
-                        role="option"
-                        aria-selected={userType === option.value}
-                        onClick={() => handleUserTypeSelect(option.value)}
-                        className={`flex min-h-[44px] cursor-pointer items-center justify-between p-2 ${
-                          focusedUserTypeIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
-                        }`}
-                        tabIndex={-1}
-                        onMouseDown={(e) => e.preventDefault()}
-                      >
-                        <span>{option.label}</span>
-                        {userType === option.value && (
-                          <svg
-                            className="h-4 w-4 text-blue-500"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth="2"
-                              d="M5 13l4 4L19 7"
-                            ></path>
-                          </svg>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+        <form onSubmit={handleSubmit} noValidate aria-busy={submissionStatus === 'submitting'}>
+          {errorFields.length > 0 && (
+            <div role="alert" aria-labelledby="setup-errors-heading" className="mb-5 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+              <p id="setup-errors-heading" className="font-semibold">
+                Check {errorFields.length === 1 ? 'this field' : 'the highlighted fields'}
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {errorFields.map((field) => <li key={field}>{errors[field]}</li>)}
+              </ul>
             </div>
-            <ErrorMessage error={errors.userType} />
+          )}
+          {submissionError && (
+            <p role="alert" className="mb-5 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+              {submissionError}
+            </p>
+          )}
+
+          <div className="mb-4">
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="firstName">First name</label>
+            <input ref={fieldRefs.firstName} id="firstName" name="firstName" autoComplete="given-name" value={firstName} aria-invalid={Boolean(errors.firstName)} aria-describedby={errors.firstName ? 'firstName-error' : undefined} onChange={(event) => { dispatch({ type: 'SET_FIRST_NAME', payload: event.target.value }); clearFieldError('firstName'); }} className={inputClass('firstName')} />
+            <ErrorMessage field="firstName" />
+          </div>
+          <div className="mb-4">
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="lastName">Last name</label>
+            <input ref={fieldRefs.lastName} id="lastName" name="lastName" autoComplete="family-name" value={lastName} aria-invalid={Boolean(errors.lastName)} aria-describedby={errors.lastName ? 'lastName-error' : undefined} onChange={(event) => { dispatch({ type: 'SET_LAST_NAME', payload: event.target.value }); clearFieldError('lastName'); }} className={inputClass('lastName')} />
+            <ErrorMessage field="lastName" />
+          </div>
+          <div className="mb-4">
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="email">Email</label>
+            <input ref={fieldRefs.email} id="email" name="email" type="email" autoComplete="email" value={email} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'email-error' : undefined} onChange={(event) => { dispatch({ type: 'SET_EMAIL', payload: event.target.value }); clearFieldError('email'); }} className={inputClass('email')} />
+            <ErrorMessage field="email" />
+          </div>
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-semibold text-slate-900" htmlFor="userType">Role at Yale</label>
+            <select ref={fieldRefs.userType} id="userType" name="userType" value={userType} aria-invalid={Boolean(errors.userType)} aria-describedby={errors.userType ? 'userType-error' : undefined} onChange={(event) => { dispatch({ type: 'SET_USER_TYPE', payload: event.target.value }); clearFieldError('userType'); }} className={inputClass('userType')}>
+              <option value="">Select your role</option>
+              {USER_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <ErrorMessage field="userType" />
           </div>
 
           <div className="flex justify-end">
-            <button
-              type="submit"
-              className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:w-auto"
-            >
-              Continue to Yale Research
+            <button type="submit" disabled={submissionStatus === 'submitting'} className="inline-flex min-h-[44px] w-full items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-2 text-sm font-semibold text-white hover:bg-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-wait disabled:opacity-70 sm:w-auto">
+              {submissionStatus === 'submitting' ? 'Saving account setup...' : 'Save and continue'}
             </button>
           </div>
+          <p className="sr-only" aria-live="polite">{submissionStatus === 'submitting' ? 'Saving account setup.' : ''}</p>
         </form>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 };
 
