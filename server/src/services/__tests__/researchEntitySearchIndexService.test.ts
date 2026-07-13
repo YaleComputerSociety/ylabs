@@ -6,9 +6,28 @@ import {
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
   rebuildResearchEntitySearchIndex,
+  trustedMemberDisplayName,
 } from '../researchEntitySearchIndexService';
 
 describe('researchEntitySearchIndexService', () => {
+  it('indexes only linked person identities and suppresses linked identity collisions', () => {
+    const users = new Map([['user-1', { fname: 'Grace', lname: 'Hopper' }]]);
+    const faculty = new Map([['faculty-1', { name: 'Grace Hopper' }]]);
+
+    expect(trustedMemberDisplayName({ name: 'Unverified Name' }, users, faculty)).toBe('');
+    expect(trustedMemberDisplayName({ userId: 'user-1' }, users, faculty)).toBe('Grace Hopper');
+    expect(
+      trustedMemberDisplayName({ userId: 'user-1', facultyMemberId: 'faculty-1' }, users, faculty),
+    ).toBe('Grace Hopper');
+    expect(
+      trustedMemberDisplayName(
+        { userId: 'user-1', facultyMemberId: 'faculty-1' },
+        users,
+        new Map([['faculty-1', { name: 'Different Person' }]]),
+      ),
+    ).toBe('');
+  });
+
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-1',
