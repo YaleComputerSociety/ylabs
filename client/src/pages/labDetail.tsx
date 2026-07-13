@@ -32,6 +32,7 @@ import {
   LabEntryPathway,
   LabMember,
   LabPostedOpportunity,
+  LabRelatedResearchEntitySummary,
   LabResearchActivityLink,
 } from '../types/labDetail';
 import type { ResearchEntity, ResearchEntityRepairFlag } from '../types/researchEntity';
@@ -76,7 +77,7 @@ const RelatedResearchEntitiesSection = ({
   relatedResearchEntities,
 }: {
   relationships: LabEntityRelationship[];
-  relatedResearchEntities: ResearchEntity[];
+  relatedResearchEntities: LabRelatedResearchEntitySummary[];
 }) => {
   const relationshipByEntityKey = new Map(
     relationships.flatMap((relationship) =>
@@ -91,9 +92,9 @@ const RelatedResearchEntitiesSection = ({
       <SectionHeading>Related labs and groups</SectionHeading>
       <div className="grid gap-3 sm:grid-cols-2">
         {relatedResearchEntities.map((entity) => {
-          const relationship = relationshipByEntityKey.get(entity.slug || entity.id || entity._id);
+          const relationship = relationshipByEntityKey.get(entity.slug || entity.id);
           const description =
-            entity.shortDescription || entity.fullDescription || entity.description || '';
+            entity.blurb || '';
           const tags = uniqueCompact(
             [
               relationship?.label || relationshipTypeLabel(relationship?.relationshipType),
@@ -104,7 +105,7 @@ const RelatedResearchEntitiesSection = ({
           );
           return (
             <Link
-              key={entity.id || entity._id || entity.slug}
+              key={entity.id || entity.slug}
               to={`/research/${safeRouteSegment(entity.slug)}`}
               className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
             >
@@ -135,7 +136,7 @@ const RelatedResearchEntitiesSection = ({
 const AffiliatedResearchEntitiesSection = ({
   affiliatedResearchEntities,
 }: {
-  affiliatedResearchEntities: ResearchEntity[];
+  affiliatedResearchEntities: LabRelatedResearchEntitySummary[];
 }) => (
   <section>
     <SectionHeading>Affiliated with</SectionHeading>
@@ -162,17 +163,17 @@ const AffiliatedResearchEntitiesSection = ({
         const className =
           'block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition';
         const canOpenDetail =
-          !entity.studentVisibilityTier || entity.studentVisibilityTier === 'student_ready';
+          Boolean(entity.slug);
         return canOpenDetail ? (
           <Link
-            key={entity.id || entity._id || entity.slug}
+            key={entity.id || entity.slug}
             to={`/research/${safeRouteSegment(entity.slug)}`}
             className={`${className} hover:border-blue-300 hover:shadow-sm`}
           >
             {content}
           </Link>
         ) : (
-          <div key={entity.id || entity._id || entity.slug} className={className}>
+          <div key={entity.id || entity.slug} className={className}>
             {content}
           </div>
         );
