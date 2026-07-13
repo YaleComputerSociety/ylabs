@@ -2875,7 +2875,7 @@ test('saved pathway-plan routes validate pathway ids before controller work', ()
   assert.match(source, /'\/favPathwayPlans\/:pathwayId'[\s\S]*isAuthenticated,[\s\S]*validateObjectId\('pathwayId'\),[\s\S]*userController\.deleteSavedPathwayPlan/);
 });
 
-test('saved pathway-plan private-note export requires POST body opt-in', () => {
+test('saved pathway-plan advising export remains client-only with per-plan note opt-in', () => {
   const routeSource = fs.readFileSync(
     new URL('../server/src/routes/users.ts', import.meta.url),
     'utf8',
@@ -2894,8 +2894,9 @@ test('saved pathway-plan private-note export requires POST body opt-in', () => {
   assert.match(routeSource, /router\.post\(\s*'\/favPathwayPlans\/export'[\s\S]*?userController\.exportSavedPathwayPlans/);
   assert.match(controllerSource, /request\.method === 'POST'[\s\S]*request\.body\.includePrivateNotes === true/);
   assert.doesNotMatch(controllerSource, /request\.query\.includePrivateNotes/);
-  assert.match(clientSource, /axios\.post\(\s*'\/users\/savedResearchPlanDetails\/export',\s*\{ includePrivateNotes: true \}/);
-  assert.doesNotMatch(clientSource, /params: includePrivateNotesInExport \? \{ includePrivateNotes: 'true' \}/);
+  assert.match(clientSource, /includeNote && plan\.note\.trim\(\)/);
+  assert.match(clientSource, /includedNoteIds\[pathway\._id\]/);
+  assert.doesNotMatch(clientSource, /axios\.(?:get|post)\(\s*'\/users\/savedResearchPlanDetails\/export'/);
 });
 
 test('public opportunity detail rejects malformed path ids before service work', () => {
