@@ -169,6 +169,21 @@ export interface LabEntityRelationship {
   confidence?: number;
 }
 
+export interface LabRelatedResearchEntitySummary {
+  id: string;
+  slug: string;
+  name: string;
+  kind?: string;
+  entityType?: string;
+  departments: string[];
+  blurb?: string;
+}
+
+export interface LabRelationshipCollectionMeta {
+  returned: number;
+  truncated: boolean;
+}
+
 export interface LabDetailPayload {
   group: ResearchGroup;
   researchEntity?: ResearchEntity;
@@ -185,7 +200,9 @@ export interface LabDetailPayload {
   contactRoutes?: LabContactRoute[];
   postedOpportunities?: LabPostedOpportunity[];
   entityRelationships?: LabEntityRelationship[];
-  relatedResearchEntities?: ResearchEntity[];
+  relatedResearchEntities?: LabRelatedResearchEntitySummary[];
+  relatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
   affiliatedRelationships?: LabEntityRelationship[];
-  affiliatedResearchEntities?: ResearchEntity[];
+  affiliatedResearchEntities?: LabRelatedResearchEntitySummary[];
+  affiliatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
 }

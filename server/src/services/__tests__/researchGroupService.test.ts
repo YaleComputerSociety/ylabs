@@ -1302,8 +1302,10 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(result).toEqual({
       entityRelationships: [],
       relatedResearchEntities: [],
+      relatedResearchEntitiesMeta: { returned: 0, truncated: false },
       affiliatedRelationships: [],
       affiliatedResearchEntities: [],
+      affiliatedResearchEntitiesMeta: { returned: 0, truncated: false },
     });
     expect(mocks.researchEntityRelationshipFind).not.toHaveBeenCalled();
   });
@@ -1313,8 +1315,9 @@ describe('listResearchEntityRelationshipPayload', () => {
     const publicInstituteId = '67d8928150621bcef434a1d6';
     const reviewInstituteId = '67d8928150621bcef434a1d7';
 
-    mocks.researchEntityRelationshipFind.mockReturnValue(
-      queryResult([
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(queryResult([]))
+      .mockReturnValueOnce(queryResult([
         {
           _id: 'rel-yqi',
           sourceResearchEntityId: publicInstituteId,
@@ -1335,8 +1338,7 @@ describe('listResearchEntityRelationshipPayload', () => {
           evidenceStrength: 'MODERATE',
           evidenceQuote: 'Held private operator note',
         },
-      ]),
-    );
+      ]));
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
         {
@@ -1362,12 +1364,13 @@ describe('listResearchEntityRelationshipPayload', () => {
 
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
-    expect(mocks.researchEntityRelationshipFind).toHaveBeenCalledWith({
+    expect(mocks.researchEntityRelationshipFind).toHaveBeenNthCalledWith(1, {
       archived: { $ne: true },
-      $or: [
-        { sourceResearchEntityId: currentEntityId },
-        { targetResearchEntityId: currentEntityId },
-      ],
+      sourceResearchEntityId: currentEntityId,
+    });
+    expect(mocks.researchEntityRelationshipFind).toHaveBeenNthCalledWith(2, {
+      archived: { $ne: true },
+      targetResearchEntityId: currentEntityId,
     });
     expect(mocks.researchEntityFind).toHaveBeenCalledWith({
       _id: { $in: [publicInstituteId, reviewInstituteId] },
@@ -1377,6 +1380,7 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(result).toEqual({
       entityRelationships: [],
       relatedResearchEntities: [],
+      relatedResearchEntitiesMeta: { returned: 0, truncated: false },
       affiliatedRelationships: [
         expect.objectContaining({
           relationshipType: 'MEMBER_RESEARCH_AREA',
@@ -1385,16 +1389,68 @@ describe('listResearchEntityRelationshipPayload', () => {
       ],
       affiliatedResearchEntities: [
         expect.objectContaining({
-          _id: 'center-yale-quantum-institute',
+          id: 'center-yale-quantum-institute',
           slug: 'center-yale-quantum-institute',
           name: 'Yale Quantum Institute',
         }),
       ],
+      affiliatedResearchEntitiesMeta: { returned: 1, truncated: false },
     });
     expect(result.affiliatedRelationships[0].sourceUrl).toBeUndefined();
     expect(result.affiliatedRelationships[0]).not.toHaveProperty('evidenceQuote');
     expect(result.affiliatedRelationships[0]).not.toHaveProperty('createdAt');
     expect(JSON.stringify(result)).not.toContain('hidden@example.edu');
+  });
+
+  it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const select = vi.fn();
+    const relatedIds = Array.from({ length: 99 }, (_, index) =>
+      `67d8928150621bcef434${String(index).padStart(4, '0')}`,
+    );
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(queryResult(
+        relatedIds.map((id) => ({
+          sourceResearchEntityId: currentEntityId,
+          targetResearchEntityId: id,
+          relationshipType: 'MEMBER_RESEARCH_AREA',
+          label: 'Related',
+        })),
+      ))
+      .mockReturnValueOnce(queryResult([]));
+    const entityQuery = queryResult(
+      relatedIds.slice(0, 50).map((id, index) => ({
+        _id: id,
+        slug: `entity-${index}`,
+        name: `Entity ${index}`,
+        kind: 'center',
+        departments: ['Physics'],
+        shortDescription: `Safe summary ${index} hidden${index}@example.edu`,
+        studentVisibilityTier: 'student_ready',
+        privateNotes: 'operator only',
+        sourceUrls: ['https://example.edu/private'],
+      })),
+    );
+    entityQuery.select = (value: string) => {
+      select(value);
+      return entityQuery;
+    };
+    mocks.researchEntityFind.mockReturnValue(entityQuery);
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(select).toHaveBeenCalledWith(
+      '_id slug name displayName kind entityType departments shortDescription description fullDescription studentVisibilityTier',
+    );
+    expect(result.relatedResearchEntities).toHaveLength(50);
+    expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 50, truncated: true });
+    expect(Object.keys(result.relatedResearchEntities[0]).sort()).toEqual(
+      ['blurb', 'departments', 'entityType', 'id', 'kind', 'name', 'slug'].sort(),
+    );
+    const encoded = JSON.stringify(result);
+    expect(encoded).not.toContain('operator only');
+    expect(encoded).not.toContain('@example.edu');
+    expect(Buffer.byteLength(encoded)).toBeLessThan(25_000);
   });
 });
 
