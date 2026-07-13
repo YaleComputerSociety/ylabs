@@ -17,6 +17,7 @@ vi.mock('../../db/connections', () => ({
 vi.mock('../../models/listingClaimRequest', () => ({
   ListingClaimRequest: {
     create: vi.fn(),
+    findOne: vi.fn(),
     findByIdAndUpdate: vi.fn(),
   },
 }));
@@ -37,6 +38,9 @@ const mockListingFindById = (listing: Record<string, unknown> | null) => {
 describe('listingClaimRequestService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(ListingClaimRequest.findOne).mockReturnValue({
+      select: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue(null) }),
+    } as any);
   });
 
   it('sanitizes proposed changes to known listing fields only', () => {
@@ -202,11 +206,18 @@ describe('listingClaimRequestService', () => {
 
     expect(request).toMatchObject({ _id: requestId, status: 'approved', reviewedBy: 'admin1' });
     expect(ListingClaimRequest.findByIdAndUpdate).toHaveBeenCalledWith(
-      requestId,
+      { _id: requestId, status: { $in: ['pending', 'changes_requested'] } },
       expect.objectContaining({
         status: 'approved',
         adminNotes: 'Verified by email.',
         reviewedBy: 'admin1',
+        $push: {
+          reviewHistory: expect.objectContaining({
+            status: 'approved',
+            rationale: 'Verified by email.',
+            reviewedBy: 'admin1',
+          }),
+        },
       }),
       { new: true, runValidators: true },
     );
@@ -219,7 +230,7 @@ describe('listingClaimRequestService', () => {
         adminNotes: 'Cannot move back to pending.',
       }),
     ).rejects.toMatchObject({
-      message: 'Status must be approved or rejected',
+      message: 'Status must be approved, rejected, or changes_requested',
       status: 400,
     });
 
@@ -236,11 +247,34 @@ describe('listingClaimRequestService', () => {
     'rejects malformed review request bodies with a 400-level error',
     async (body) => {
       await expect(reviewListingClaimRequest(requestId, 'admin1', body)).rejects.toMatchObject({
-        message: 'Status must be approved or rejected',
+        message: 'Status must be approved, rejected, or changes_requested',
         status: 400,
       });
 
       expect(ListingClaimRequest.findByIdAndUpdate).not.toHaveBeenCalled();
     },
   );
+
+  it('rejects a duplicate pending request before creating another record', async () => {
+    mockListingFindById({ _id: listingId, title: 'Existing listing' });
+    vi.mocked(ListingClaimRequest.findOne).mockReturnValue({
+      select: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue({ _id: requestId }) }),
+    } as any);
+
+    await expect(
+      createListingClaimRequest(
+        listingId,
+        { requestType: 'claim', message: 'Please review ownership.' },
+        { netId: 'fac1' },
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(ListingClaimRequest.create).not.toHaveBeenCalled();
+  });
+
+  it('requires a reviewer rationale', async () => {
+    await expect(
+      reviewListingClaimRequest(requestId, 'admin1', { status: 'changes_requested' }),
+    ).rejects.toMatchObject({ message: 'Reviewer rationale is required', status: 400 });
+    expect(ListingClaimRequest.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
 });

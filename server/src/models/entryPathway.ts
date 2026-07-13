@@ -98,6 +98,7 @@ entryPathwaySchema.index({ evidenceStrength: 1 });
 entryPathwaySchema.index({ compensation: 1 });
 entryPathwaySchema.index({ archived: 1 });
 entryPathwaySchema.index({ 'review.status': 1 });
+entryPathwaySchema.index({ researchEntityId: 1, 'review.status': 1, 'review.reviewedAt': -1 });
 entryPathwaySchema.index(
   { researchEntityId: 1, derivationKey: 1 },
   {

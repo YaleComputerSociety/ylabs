@@ -58,6 +58,26 @@ export const listAdminListingClaimRequests = async (
   }
 };
 
+export const listMyListingClaimRequests = async (
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    if (!currentUser.netId) return response.status(401).json({ error: 'Unauthorized' });
+    const result = await listListingClaimRequests({
+      requesterNetId: currentUser.netId,
+      status: request.query.status as string | undefined,
+      page: request.query.page as string | undefined,
+      pageSize: request.query.pageSize as string | undefined,
+    });
+    response.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getAdminListingClaimRequest = async (
   request: Request,
   response: Response,

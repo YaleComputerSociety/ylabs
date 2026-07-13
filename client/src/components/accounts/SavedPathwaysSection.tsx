@@ -61,25 +61,23 @@ export interface FellowshipFundingMatch {
 type FundingMatchesByPathway = Record<string, FellowshipFundingMatch[]>;
 
 interface SavedPlanExportItem {
-  title?: string;
-  researchEntity?: {
-    name?: string;
-  };
-  intent?: string;
-  stage?: string;
-  checklist?: Record<string, boolean>;
-  sourceLinks?: string[];
-  bestNextStepCategory?: string;
-  privateNote?: string;
+  id: string;
+  title: string;
+  researchHome: string;
+  leadProfessor: string;
+  topic: string;
+  intent: string;
+  stage: string;
+  completedChecklist: string[];
+  nextStep: string;
+  date: string;
+  sources: string[];
+  note?: string;
 }
 
 interface SavedPlanExportPayload {
-  exportedAt?: string;
-  itemCount?: number;
-  privacy?: {
-    includesPrivateNotes?: boolean;
-  };
-  items?: SavedPlanExportItem[];
+  exportedAt: string;
+  items: SavedPlanExportItem[];
 }
 
 export interface DeadlineReminder {
@@ -429,43 +427,42 @@ const normalizePlanChecklist = (value: unknown): Record<string, boolean> => {
   return checklist;
 };
 
-const labelizeExportValue = (value?: string): string =>
-  labelize(value || '').replace(/\b\w/g, (letter) => letter.toUpperCase());
-
 const readableSavedPlanExport = (payload: SavedPlanExportPayload): string => {
   const lines = [
     '# Saved Research Plans',
     '',
     `Exported: ${payload.exportedAt ? formatDeadline(payload.exportedAt) : formatDeadline(new Date().toISOString())}`,
-    `Private notes: ${payload.privacy?.includesPrivateNotes ? 'included' : 'not included'}`,
-    `Plans: ${payload.itemCount ?? payload.items?.length ?? 0}`,
+    `Plans: ${payload.items.length}`,
     '',
   ];
 
-  for (const [index, item] of (payload.items || []).entries()) {
-    const checkedItems = Object.entries(item.checklist || {})
-      .filter(([, checked]) => checked)
-      .map(([key]) => labelizeExportValue(key));
-
+  for (const [index, item] of payload.items.entries()) {
     lines.push(
-      `## ${index + 1}. ${item.title || 'Saved research plan'}`,
+      `## ${index + 1}. ${item.title}`,
       '',
-      `Research home: ${item.researchEntity?.name || 'Unknown'}`,
-      `Intent: ${labelizeExportValue(item.intent)}`,
-      `Stage: ${labelizeExportValue(item.stage)}`,
-      `Next step: ${labelizeExportValue(item.bestNextStepCategory)}`,
+      `Research home: ${item.researchHome}`,
+      `Lead professor: ${item.leadProfessor}`,
+      `Topic: ${item.topic}`,
+      `Intent: ${item.intent}`,
+      `Stage: ${item.stage}`,
+      `Next step: ${item.nextStep}`,
+      `Information checked: ${item.date}`,
     );
 
-    if (item.privateNote) {
-      lines.push('', 'Private note:', item.privateNote);
+    if (item.note) {
+      lines.push('', 'Included plan note:', item.note);
     }
 
-    if (checkedItems.length > 0) {
-      lines.push('', 'Completed checklist:', ...checkedItems.map((label) => `- ${label}`));
+    if (item.completedChecklist.length > 0) {
+      lines.push(
+        '',
+        'Completed checklist:',
+        ...item.completedChecklist.map((label) => `- ${label}`),
+      );
     }
 
-    if ((item.sourceLinks || []).length > 0) {
-      lines.push('', 'Sources:', ...(item.sourceLinks || []).map((source) => `- ${source}`));
+    if (item.sources.length > 0) {
+      lines.push('', 'Sources:', ...item.sources.map((source) => `- ${source}`));
     }
 
     lines.push('');
@@ -473,6 +470,31 @@ const readableSavedPlanExport = (payload: SavedPlanExportPayload): string => {
 
   return lines.join('\n');
 };
+
+export const advisingExportItem = (
+  pathway: PathwaySearchHit,
+  plan: PathwayPlan,
+  includeNote = false,
+): SavedPlanExportItem => ({
+  id: pathway._id,
+  title: pathway.studentFacingLabel || 'Saved research plan',
+  researchHome:
+    pathway.researchEntity.displayName ||
+    pathway.researchEntity.name ||
+    'Research home unavailable',
+  leadProfessor: 'Lead professor unavailable',
+  topic:
+    pathway.explanation || pathway.researchEntity.researchAreas?.join(', ') || 'Topic unavailable',
+  intent: labelForOption(INTENT_OPTIONS, plan.intent),
+  stage: labelForOption(STAGE_OPTIONS, plan.stage),
+  completedChecklist: CHECKLIST_TEMPLATES[plan.intent]
+    .filter((entry) => plan.checklist[entry.key])
+    .map((entry) => entry.label),
+  nextStep: pathway.bestNextStep || nextStepLabel(pathway.bestNextStepCategory),
+  date: pathway.lastObservedAt ? formatDeadline(pathway.lastObservedAt) : 'Date unavailable',
+  sources: safeHttpUrlList(pathway.sourceUrls),
+  note: includeNote && plan.note.trim() ? plan.note.trim() : undefined,
+});
 
 const normalizeStoredPlan = (value: unknown): PathwayPlan | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -665,11 +687,14 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const [plans, setPlans] = useState<PathwayPlanMap>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [exportNotice, setExportNotice] = useState('');
-  const [includePrivateNotesInExport, setIncludePrivateNotesInExport] = useState(false);
   const [showExportControls, setShowExportControls] = useState(false);
+  const [selectedExportIds, setSelectedExportIds] = useState<Record<string, boolean>>({});
+  const [includedNoteIds, setIncludedNoteIds] = useState<Record<string, boolean>>({});
+  const [showExportPreview, setShowExportPreview] = useState(false);
+  const exportPreviewRef = useRef<HTMLDivElement>(null);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
   const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
   const [hydratedPlanStorageOwner, setHydratedPlanStorageOwner] = useState<string | undefined>();
   const [planSaveStatus, setPlanSaveStatus] = useState<Record<string, string>>({});
@@ -947,40 +972,50 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     }));
   };
 
-  const exportSavedPathways = async () => {
-    setExporting(true);
-    setExportError('');
+  const selectedExportItems = pathways
+    .filter((pathway) => selectedExportIds[pathway._id] && plans[pathway._id])
+    .map((pathway) =>
+      advisingExportItem(pathway, plans[pathway._id], includedNoteIds[pathway._id]),
+    );
+  const exportPayload = (): SavedPlanExportPayload => ({
+    exportedAt: new Date().toISOString(),
+    items: selectedExportItems,
+  });
+
+  const openExportPreview = () => {
     setExportNotice('');
+    if (selectedExportItems.length === 0) {
+      setExportError('Select at least one finalist to preview.');
+      return;
+    }
+    setExportError('');
+    setShowExportPreview(true);
+    window.setTimeout(() => exportPreviewRef.current?.focus(), 0);
+  };
+
+  const closeExportPreview = () => {
+    setShowExportPreview(false);
+    window.setTimeout(() => exportTriggerRef.current?.focus(), 0);
+  };
+
+  const downloadExportMarkdown = () => {
     try {
-      const response = includePrivateNotesInExport
-        ? await axios.post(
-            '/users/savedResearchPlanDetails/export',
-            { includePrivateNotes: true },
-            { withCredentials: true },
-          )
-        : await axios.get('/users/savedResearchPlanDetails/export', {
-            withCredentials: true,
-          });
-      const payload = response.data as SavedPlanExportPayload;
+      const payload = exportPayload();
       const blob = new Blob([readableSavedPlanExport(payload)], {
         type: 'text/markdown;charset=utf-8',
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = includePrivateNotesInExport
-        ? 'saved-research-plan-advising-share.md'
-        : 'saved-research-plans.md';
+      link.download = 'advising-finalists.md';
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      setExportNotice('Advising export downloaded.');
+      setExportNotice('Advising Markdown downloaded.');
     } catch {
       console.error('Error exporting saved research plans.');
       setExportError('Saved research plans could not be exported.');
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -996,6 +1031,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
           {pathways.length > 0 && (
             <button
+              ref={exportTriggerRef}
               type="button"
               onClick={() => setShowExportControls((current) => !current)}
               aria-expanded={showExportControls}
@@ -1008,24 +1044,185 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       </div>
 
       {showExportControls && pathways.length > 0 && (
-        <div className="mb-4 flex flex-col gap-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-600">
-            <input
-              type="checkbox"
-              checked={includePrivateNotesInExport}
-              onChange={(event) => setIncludePrivateNotesInExport(event.target.checked)}
-              className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-600 focus:ring-blue-500"
-            />
-            <span>Include private notes</span>
-          </label>
+        <div className="mb-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-800" aria-live="polite">
+              {selectedExportItems.length} of {pathways.length} finalists selected
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedExportIds(Object.fromEntries(pathways.map(({ _id }) => [_id, true])))
+                }
+                className="min-h-[44px] rounded-md border bg-white px-3 py-2 text-sm font-semibold"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedExportIds({});
+                  setIncludedNoteIds({});
+                }}
+                className="min-h-[44px] rounded-md border bg-white px-3 py-2 text-sm font-semibold"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <fieldset className="mt-3 space-y-2">
+            <legend className="sr-only">Choose advising finalists</legend>
+            {pathways.map((pathway) => (
+              <div
+                key={pathway._id}
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--yr-line)] pt-2"
+              >
+                <label className="flex min-h-[44px] items-center gap-2 text-sm font-medium text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={!!selectedExportIds[pathway._id]}
+                    onChange={(event) =>
+                      setSelectedExportIds((current) => ({
+                        ...current,
+                        [pathway._id]: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>{pathway.studentFacingLabel}</span>
+                </label>
+                <label className="flex min-h-[44px] items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    disabled={!selectedExportIds[pathway._id] || !plans[pathway._id]?.note.trim()}
+                    checked={!!includedNoteIds[pathway._id]}
+                    onChange={(event) =>
+                      setIncludedNoteIds((current) => ({
+                        ...current,
+                        [pathway._id]: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Include this plan note</span>
+                </label>
+              </div>
+            ))}
+          </fieldset>
           <button
             type="button"
-            onClick={exportSavedPathways}
-            disabled={exporting || loading}
-            className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400 hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={openExportPreview}
+            disabled={loading}
+            className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {exporting ? 'Exporting...' : 'Export for advising'}
+            Preview advising export
           </button>
+        </div>
+      )}
+      {showExportPreview && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 print:static print:bg-white print:p-0">
+          <div
+            ref={exportPreviewRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="advising-preview-title"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') closeExportPreview();
+            }}
+            className="mx-auto max-w-3xl rounded-md bg-white p-6 shadow-xl outline-none print:max-w-none print:shadow-none"
+          >
+            <div className="flex items-start justify-between gap-4 print:hidden">
+              <div>
+                <h2 id="advising-preview-title" className="text-xl font-bold">
+                  Advising export preview
+                </h2>
+                <p className="text-sm text-gray-600">{selectedExportItems.length} finalists</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeExportPreview}
+                aria-label="Close preview"
+                className="min-h-[44px] min-w-[44px] rounded-md border text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-5 space-y-8" data-testid="advising-export-preview">
+              <header>
+                <h1 className="text-2xl font-bold">Saved Research Plans</h1>
+                <p className="text-sm text-gray-600">
+                  Prepared {formatDeadline(new Date().toISOString())}
+                </p>
+              </header>
+              {selectedExportItems.map((item) => (
+                <article key={item.id} className="break-inside-avoid border-t pt-4">
+                  <h2 className="text-lg font-bold">{item.title}</h2>
+                  <dl className="mt-2 grid gap-1 text-sm">
+                    <div>
+                      <dt className="inline font-semibold">Research home: </dt>
+                      <dd className="inline">{item.researchHome}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-semibold">Lead professor: </dt>
+                      <dd className="inline">{item.leadProfessor}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-semibold">Topic: </dt>
+                      <dd className="inline">{item.topic}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-semibold">Intent: </dt>
+                      <dd className="inline">{item.intent}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-semibold">Stage: </dt>
+                      <dd className="inline">{item.stage}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-semibold">Next step: </dt>
+                      <dd className="inline">{item.nextStep}</dd>
+                    </div>
+                    <div>
+                      <dt className="inline font-semibold">Information checked: </dt>
+                      <dd className="inline">{item.date}</dd>
+                    </div>
+                  </dl>
+                  {item.completedChecklist.length > 0 && (
+                    <div className="mt-3">
+                      <h3 className="font-semibold">Completed checklist</h3>
+                      <ul className="list-disc pl-5 text-sm">
+                        {item.completedChecklist.map((label) => (
+                          <li key={label}>{label}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {item.note && (
+                    <div className="mt-3">
+                      <h3 className="font-semibold">Included plan note</h3>
+                      <p className="whitespace-pre-wrap text-sm">{item.note}</p>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+            <div className="mt-6 flex flex-wrap justify-end gap-2 print:hidden">
+              <button
+                type="button"
+                onClick={downloadExportMarkdown}
+                className="min-h-[44px] rounded-md border px-3 py-2 text-sm font-semibold"
+              >
+                Download Markdown
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="min-h-[44px] rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white"
+              >
+                Print or save PDF
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {pendingIntentChange &&

@@ -14,6 +14,8 @@ export interface AccessReviewListInput {
   search?: string;
   page?: unknown;
   pageSize?: unknown;
+  hasUnreviewed?: unknown;
+  sort?: unknown;
 }
 
 export interface AccessReviewCountSummary {
@@ -33,6 +35,14 @@ export interface AccessReviewEntitySummary {
   researchAreas: string[];
   manuallyLockedFields: string[];
   counts: AccessReviewCountSummary;
+  unreviewedCounts: AccessReviewCountSummary;
+  totalUnreviewed: number;
+  hasOfficialApplication: boolean;
+}
+
+export interface AccessReviewProgressSummary {
+  reviewedToday: number;
+  remaining: number;
 }
 
 export type AccessReviewRecordType =
@@ -49,6 +59,7 @@ const MAX_ACCESS_REVIEW_LOCKED_FIELDS = 100;
 const MAX_ACCESS_REVIEW_EVIDENCE_IDS = 100;
 export const MAX_ACCESS_REVIEW_LOCK_FIELD_LENGTH = 120;
 const ACCESS_REVIEW_LOCK_FIELD_PATTERN = /^[A-Za-z0-9_.:-]+$/;
+const ACCESS_REVIEW_SORTS = new Set(['unreviewed', 'official_application', 'updated']);
 
 export class AccessReviewRequestError extends Error {}
 
@@ -114,29 +125,6 @@ export function normalizeAccessReviewLockedFields(input: unknown): string[] | nu
   }
 
   return normalized;
-}
-
-async function countByEntity(
-  model: mongoose.Model<any>,
-  ids: mongoose.Types.ObjectId[],
-): Promise<Map<string, number>> {
-  if (ids.length === 0) return new Map();
-  const rows = await model
-    .aggregate([
-      { $match: { researchEntityId: { $in: ids } } },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ])
-    .exec();
-  return new Map(rows.map((row: any) => [accessReviewDocumentId(row._id), Number(row.count) || 0]));
-}
-
-function zeroCounts(): AccessReviewCountSummary {
-  return {
-    entryPathways: 0,
-    accessSignals: 0,
-    contactRoutes: 0,
-    postedOpportunities: 0,
-  };
 }
 
 function hasEvidence(record: any): boolean {
@@ -236,6 +224,11 @@ async function attachEvidenceItems(records: any[]): Promise<any[]> {
   }));
 }
 
+export function redactAccessReviewContactRoute(record: any): any {
+  const { email: _email, url: _url, destination: _destination, ...safeRecord } = record;
+  return safeRecord;
+}
+
 function buildReviewSummary(input: {
   group: any;
   entryPathways: any[];
@@ -268,10 +261,15 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
   page: number;
   pageSize: number;
   totalPages: number;
+  progress: AccessReviewProgressSummary;
 }> {
   const page = normalizePage(input.page);
   const pageSize = normalizePageSize(input.pageSize);
   const filter: Record<string, unknown> = {};
+  const hasUnreviewed = input.hasUnreviewed === true || input.hasUnreviewed === 'true';
+  const sort = typeof input.sort === 'string' && ACCESS_REVIEW_SORTS.has(input.sort)
+    ? input.sort
+    : 'unreviewed';
 
   const searchTerm = normalizeAccessReviewSearchTerm(input.search);
 
@@ -286,33 +284,70 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
     ];
   }
 
-  const [groups, total] = await Promise.all([
-    ResearchEntity.find(filter)
-      .select('name displayName slug entityType kind departments researchAreas manuallyLockedFields updatedAt')
-      .sort({ updatedAt: -1, _id: 1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .lean(),
-    ResearchEntity.countDocuments(filter),
-  ]);
+  const lookup = (from: string, as: string, includeApplication = false) => ({
+    $lookup: {
+      from,
+      let: { entityId: '$_id' },
+      pipeline: [
+        { $match: { $expr: { $eq: ['$researchEntityId', '$$entityId'] } } },
+        { $project: { _id: 0, status: '$review.status', ...(includeApplication ? { applicationUrl: 1 } : {}) } },
+      ],
+      as,
+    },
+  });
+  const pipeline: any[] = [
+    { $match: filter },
+    lookup('entry_pathways', '_pathways'),
+    lookup('access_signals', '_signals'),
+    lookup('contact_routes', '_routes'),
+    lookup('posted_opportunities', '_opportunities', true),
+    { $set: {
+      totalUnreviewed: { $add: [
+        { $size: { $filter: { input: '$_pathways', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
+        { $size: { $filter: { input: '$_signals', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
+        { $size: { $filter: { input: '$_routes', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
+        { $size: { $filter: { input: '$_opportunities', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
+      ] },
+      hasOfficialApplication: { $anyElementTrue: { $map: { input: '$_opportunities', as: 'r', in: { $gt: [{ $strLenCP: { $ifNull: ['$$r.applicationUrl', ''] } }, 0] } } } },
+    } },
+    ...(hasUnreviewed ? [{ $match: { totalUnreviewed: { $gt: 0 } } }] : []),
+    { $sort: sort === 'updated' ? { updatedAt: -1, _id: 1 } : sort === 'official_application' ? { hasOfficialApplication: -1, totalUnreviewed: -1, updatedAt: -1, _id: 1 } : { totalUnreviewed: -1, hasOfficialApplication: -1, updatedAt: -1, _id: 1 } },
+    { $facet: {
+      rows: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
+      meta: [{ $count: 'total' }],
+    } },
+  ];
 
-  const ids = groups
-    .map((group: any) => toObjectId(group._id))
-    .filter((id): id is mongoose.Types.ObjectId => !!id);
-  const [pathwayCounts, signalCounts, routeCounts, opportunityCounts] = await Promise.all([
-    countByEntity(EntryPathway, ids),
-    countByEntity(AccessSignal, ids),
-    countByEntity(ContactRoute, ids),
-    countByEntity(PostedOpportunity, ids),
+  const [aggregateResult, progressCounts] = await Promise.all([
+    ResearchEntity.aggregate(pipeline).exec(),
+    Promise.all([EntryPathway, AccessSignal, ContactRoute, PostedOpportunity].map(async (model) => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const [remaining, reviewedToday] = await Promise.all([
+        model.countDocuments({ $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }] }),
+        model.countDocuments({ 'review.status': { $ne: 'unreviewed' }, 'review.reviewedAt': { $gte: start } }),
+      ]);
+      return { remaining, reviewedToday };
+    })),
   ]);
+  const groups = aggregateResult[0]?.rows || [];
+  const total = Number(aggregateResult[0]?.meta?.[0]?.total || 0);
 
   const entities = groups.map((group: any) => {
     const id = accessReviewDocumentId(group._id);
-    const counts = zeroCounts();
-    counts.entryPathways = pathwayCounts.get(id) || 0;
-    counts.accessSignals = signalCounts.get(id) || 0;
-    counts.contactRoutes = routeCounts.get(id) || 0;
-    counts.postedOpportunities = opportunityCounts.get(id) || 0;
+    const records = [group._pathways || [], group._signals || [], group._routes || [], group._opportunities || []];
+    const counts = {
+      entryPathways: records[0].length,
+      accessSignals: records[1].length,
+      contactRoutes: records[2].length,
+      postedOpportunities: records[3].length,
+    };
+    const unreviewedCounts = {
+      entryPathways: records[0].filter((r: any) => !r.status || r.status === 'unreviewed').length,
+      accessSignals: records[1].filter((r: any) => !r.status || r.status === 'unreviewed').length,
+      contactRoutes: records[2].filter((r: any) => !r.status || r.status === 'unreviewed').length,
+      postedOpportunities: records[3].filter((r: any) => !r.status || r.status === 'unreviewed').length,
+    };
 
     return {
       _id: id,
@@ -324,6 +359,9 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
       researchAreas: group.researchAreas || [],
       manuallyLockedFields: group.manuallyLockedFields || [],
       counts,
+      unreviewedCounts,
+      totalUnreviewed: Number(group.totalUnreviewed) || 0,
+      hasOfficialApplication: group.hasOfficialApplication === true,
     };
   });
 
@@ -333,6 +371,10 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
+    progress: progressCounts.reduce((summary, row) => ({
+      remaining: summary.remaining + row.remaining,
+      reviewedToday: summary.reviewedToday + row.reviewedToday,
+    }), { remaining: 0, reviewedToday: 0 }),
   };
 }
 
@@ -357,7 +399,7 @@ export async function getAccessReviewEntity(researchEntityId: string): Promise<a
     group,
     entryPathways: await attachEvidenceItems(entryPathways),
     accessSignals: await attachEvidenceItems(accessSignals),
-    contactRoutes: await attachEvidenceItems(contactRoutes),
+    contactRoutes: (await attachEvidenceItems(contactRoutes)).map(redactAccessReviewContactRoute),
     postedOpportunities: await attachEvidenceItems(postedOpportunities),
     reviewSummary: buildReviewSummary({
       group,

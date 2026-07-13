@@ -110,7 +110,9 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
             netid: currentUser.netId,
             userType: currentUser.userType,
             listingId: listingId,
-          }).catch((err) => console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)));
+          }).catch((err) =>
+            console.error(`Error logging ${eventType} event:`, sanitizeLogValue(err)),
+          );
         }
       }
 
@@ -134,7 +136,9 @@ const logListingCreateEvent = async (req: Request, res: Response, next: NextFunc
           netid: currentUser.netId,
           userType: currentUser.userType,
           listingId: data.listing._id,
-        }).catch((err) => console.error('Error logging listing create event:', sanitizeLogValue(err)));
+        }).catch((err) =>
+          console.error('Error logging listing create event:', sanitizeLogValue(err)),
+        );
       }
     }
 
@@ -158,6 +162,13 @@ router.post(
   canCreateListing,
   logListingCreateEvent,
   listingController.createListingForCurrentUser,
+);
+
+router.get(
+  '/claims/mine',
+  isAuthenticated,
+  canSubmitListingClaimRequest,
+  listingClaimRequestController.listMyListingClaimRequests,
 );
 
 router.get('/:id', isAuthenticated, validateObjectId('id'), listingController.getListingById);

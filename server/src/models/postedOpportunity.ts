@@ -103,6 +103,7 @@ postedOpportunitySchema.index({ term: 1 });
 postedOpportunitySchema.index({ applicationUrl: 1 });
 postedOpportunitySchema.index({ archived: 1 });
 postedOpportunitySchema.index({ 'review.status': 1 });
+postedOpportunitySchema.index({ researchEntityId: 1, 'review.status': 1, 'review.reviewedAt': -1 });
 postedOpportunitySchema.index(
   { entryPathwayId: 1, derivationKey: 1 },
   {

@@ -38,10 +38,59 @@ const MAX_USER_UPDATE_VALUE_DEPTH = 20;
 const MAX_USER_UPDATE_VALUE_ARRAY_ITEMS = 200;
 const MAX_USER_UPDATE_VALUE_OBJECT_KEYS = 200;
 export const MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000;
+export const MAX_SAVED_PROGRAM_NOTE_LENGTH = 2000;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
 const USER_UPDATE_OPERATORS = new Set(['$set', '$unset', '$addToSet']);
 const USER_UPDATE_PATH_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
 type FavoriteObjectIdArrayField = 'favListings' | 'favFellowships' | 'favPathways';
+
+export interface SavedProgramTrackingInput {
+  note?: unknown;
+  stage?: unknown;
+  revision?: unknown;
+}
+
+export interface SavedProgramTrackingItem {
+  note: string;
+  stage: 'not_applied' | 'applied';
+  revision: number;
+  updatedAt: string;
+}
+
+const sanitizeSavedProgramTrackingItem = (value: unknown): SavedProgramTrackingItem | undefined => {
+  if (!isPlainRecord(value)) return undefined;
+  const revision =
+    Number.isSafeInteger(value.revision) && Number(value.revision) >= 0
+      ? Number(value.revision)
+      : 0;
+  const updatedAt =
+    typeof value.updatedAt === 'string' && !Number.isNaN(Date.parse(value.updatedAt))
+      ? new Date(value.updatedAt).toISOString()
+      : new Date(0).toISOString();
+  return {
+    note: typeof value.note === 'string' ? value.note.slice(0, MAX_SAVED_PROGRAM_NOTE_LENGTH) : '',
+    stage: value.stage === 'applied' ? 'applied' : 'not_applied',
+    revision,
+    updatedAt,
+  };
+};
+
+export const sanitizeSavedProgramTrackingForResponse = (
+  value: unknown,
+): Record<string, SavedProgramTrackingItem> => {
+  if (!isPlainRecord(value)) return {};
+  const result: Record<string, SavedProgramTrackingItem> = {};
+  for (const [programId, item] of Object.entries(value).slice(0, MAX_ACCOUNT_MUTATION_IDS)) {
+    try {
+      const key = normalizeObjectIdStringForUserMutation(programId, 'program');
+      const sanitized = sanitizeSavedProgramTrackingItem(item);
+      if (sanitized) result[key] = sanitized;
+    } catch {
+      continue;
+    }
+  }
+  return result;
+};
 
 const recordFavoriteCounterSideEffect = async (
   label: string,
@@ -136,7 +185,9 @@ export function sanitizeSavedPathwayPlanForStorage(
   };
   const checklist: Record<string, boolean> = {};
   const rawChecklist =
-    candidate.checklist && typeof candidate.checklist === 'object' && !Array.isArray(candidate.checklist)
+    candidate.checklist &&
+    typeof candidate.checklist === 'object' &&
+    !Array.isArray(candidate.checklist)
       ? candidate.checklist
       : {};
   let checklistCount = 0;
@@ -173,8 +224,7 @@ export function sanitizeSavedPathwayPlanForStorage(
   }
 
   return {
-    intent:
-      candidate.intent && PLANNING_INTENTS.has(candidate.intent) ? candidate.intent : 'later',
+    intent: candidate.intent && PLANNING_INTENTS.has(candidate.intent) ? candidate.intent : 'later',
     stage: candidate.stage && PLANNING_STAGES.has(candidate.stage) ? candidate.stage : 'saved',
     note:
       typeof candidate.note === 'string'
@@ -195,7 +245,11 @@ export function sanitizeSavedPathwayPlanForStorage(
 export function sanitizeSavedPathwayPlansForResponse(
   savedPathwayPlans: unknown,
 ): Record<string, Required<SavedPathwayPlanInput>> {
-  if (!savedPathwayPlans || typeof savedPathwayPlans !== 'object' || Array.isArray(savedPathwayPlans)) {
+  if (
+    !savedPathwayPlans ||
+    typeof savedPathwayPlans !== 'object' ||
+    Array.isArray(savedPathwayPlans)
+  ) {
     return {};
   }
 
@@ -252,10 +306,7 @@ const exportUserTextForSpreadsheet = (value: unknown): string =>
 
 const exportChecklistForSpreadsheet = (checklist: Record<string, boolean>): Record<string, boolean> =>
   Object.fromEntries(
-    Object.entries(checklist).map(([key, value]) => [
-      exportUserTextForSpreadsheet(key),
-      value,
-    ]),
+    Object.entries(checklist).map(([key, value]) => [exportUserTextForSpreadsheet(key), value]),
   );
 
 export const buildSavedPathwayPlansExport = (
@@ -313,9 +364,7 @@ export function pruneSavedPathwayPlansForExistingPathways(
   pathwayIds: Array<string | mongoose.Types.ObjectId>,
 ): Record<string, SavedPathwayPlanInput | undefined> {
   const validIds = new Set(
-    pathwayIds
-      .map((id) => normalizeObjectIdStringForUserMutation(id, 'pathway'))
-      .filter(Boolean),
+    pathwayIds.map((id) => normalizeObjectIdStringForUserMutation(id, 'pathway')).filter(Boolean),
   );
   return Object.fromEntries(
     Object.entries(savedPathwayPlans).filter(([pathwayId]) => validIds.has(pathwayId)),
@@ -418,10 +467,7 @@ const assertSafeUserUpdateDocument = (data: unknown): Record<string, unknown> =>
   return data;
 };
 
-export function normalizeObjectIdStringForUserMutation(
-  value: unknown,
-  fieldName: string,
-): string {
+export function normalizeObjectIdStringForUserMutation(value: unknown, fieldName: string): string {
   const id =
     typeof value === 'string'
       ? value.trim()
@@ -682,14 +728,20 @@ export const updateUser = async (id: any, data: any) => {
   const safeData = assertSafeUserUpdateDocument(data);
   const objectId = normalizeUserLookupObjectId(id);
   if (objectId) {
-    const user = await User.findByIdAndUpdate(objectId, safeData, { new: true, runValidators: true });
+    const user = await User.findByIdAndUpdate(objectId, safeData, {
+      new: true,
+      runValidators: true,
+    });
     if (!user) {
       throw new NotFoundError('User not found');
     }
     return user.toObject();
   } else {
     const netidFilter = buildCaseInsensitiveNetidFilter(id);
-    const user = await User.findOneAndUpdate(netidFilter, safeData, { new: true, runValidators: true });
+    const user = await User.findOneAndUpdate(netidFilter, safeData, {
+      new: true,
+      runValidators: true,
+    });
     if (!user) {
       throw new NotFoundError('User not found');
     }
@@ -818,9 +870,8 @@ export const addFavListings = async (id: any, Listings: [mongoose.Types.ObjectId
     const result = await addFavoriteObjectIdIfMissing(id, 'favListings', listingId);
     newUser = result.user;
     if (!result.added) continue;
-    await recordFavoriteCounterSideEffect(
-      'Listing favorite counter increment',
-      () => addFavorite(listingId.toHexString(), id),
+    await recordFavoriteCounterSideEffect('Listing favorite counter increment', () =>
+      addFavorite(listingId.toHexString(), id),
     );
   }
 
@@ -840,9 +891,8 @@ export const deleteFavListings = async (id: any, removedListings: [mongoose.Type
     const result = await removeFavoriteObjectIdIfPresent(id, 'favListings', listingId);
     newUser = result.user;
     if (!result.removed) continue;
-    await recordFavoriteCounterSideEffect(
-      'Listing favorite counter decrement',
-      () => removeFavorite(listingId.toHexString(), id),
+    await recordFavoriteCounterSideEffect('Listing favorite counter decrement', () =>
+      removeFavorite(listingId.toHexString(), id),
     );
   }
 
@@ -870,9 +920,8 @@ export const addFavFellowships = async (id: any, fellowships: mongoose.Types.Obj
     const result = await addFavoriteObjectIdIfMissing(id, 'favFellowships', fellowshipId);
     newUser = result.user;
     if (!result.added) continue;
-    await recordFavoriteCounterSideEffect(
-      'Fellowship favorite counter increment',
-      () => addFellowshipFavorite(fellowshipId.toHexString()),
+    await recordFavoriteCounterSideEffect('Fellowship favorite counter increment', () =>
+      addFellowshipFavorite(fellowshipId.toHexString()),
     );
   }
 
@@ -895,21 +944,94 @@ export const deleteFavFellowships = async (
     const result = await removeFavoriteObjectIdIfPresent(id, 'favFellowships', fellowshipId);
     newUser = result.user;
     if (!result.removed) continue;
-    await recordFavoriteCounterSideEffect(
-      'Fellowship favorite counter decrement',
-      () => removeFellowshipFavorite(fellowshipId.toHexString()),
+    await recordFavoriteCounterSideEffect('Fellowship favorite counter decrement', () =>
+      removeFellowshipFavorite(fellowshipId.toHexString()),
     );
   }
 
   newUser = await removeFavoriteObjectIdsWithoutCounters(id, 'favFellowships', fellowshipIds);
+  if (fellowshipIds.length > 0) {
+    await updateUser(id, {
+      $unset: Object.fromEntries(
+        fellowshipIds.map((programId) => [`savedProgramTracking.${programId.toHexString()}`, '']),
+      ),
+    });
+  }
 
   return newUser;
 };
 
 export const clearFavFellowships = async (id: any) => {
-  const newUser = await updateUser(id, { favFellowships: [] });
+  const newUser = await updateUser(id, { favFellowships: [], savedProgramTracking: {} });
 
   return newUser;
+};
+
+export const getSavedProgramTracking = async (id: any) => {
+  const user = await readUser(id);
+  const savedIds = new Set(
+    storedObjectIdStringsForUserMutation(user.favFellowships, 'favFellowships'),
+  );
+  return Object.fromEntries(
+    Object.entries(sanitizeSavedProgramTrackingForResponse(user.savedProgramTracking)).filter(
+      ([programId]) => savedIds.has(programId),
+    ),
+  );
+};
+
+export const updateSavedProgramTracking = async (
+  id: any,
+  programId: string,
+  input: SavedProgramTrackingInput,
+): Promise<SavedProgramTrackingItem> => {
+  const programKey = normalizeObjectIdStringForUserMutation(programId, 'program');
+  if (!isPlainRecord(input)) throw badRequestError('Invalid program tracking payload');
+  if (typeof input.note !== 'string' || input.note.length > MAX_SAVED_PROGRAM_NOTE_LENGTH) {
+    throw badRequestError(
+      `Program note must be at most ${MAX_SAVED_PROGRAM_NOTE_LENGTH} characters`,
+    );
+  }
+  if (input.stage !== 'not_applied' && input.stage !== 'applied') {
+    throw badRequestError('Invalid program tracking stage');
+  }
+  if (!Number.isSafeInteger(input.revision) || Number(input.revision) < 0) {
+    throw badRequestError('Invalid program tracking revision');
+  }
+
+  const expectedRevision = Number(input.revision);
+  const next: SavedProgramTrackingItem = {
+    note: input.note,
+    stage: input.stage,
+    revision: expectedRevision + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  const revisionPath = `savedProgramTracking.${programKey}.revision`;
+  const filter: Record<string, unknown> = {
+    ...userLookupFilterForMutation(id),
+    favFellowships: new mongoose.Types.ObjectId(programKey),
+    ...(expectedRevision === 0
+      ? { $or: [{ [revisionPath]: 0 }, { [revisionPath]: { $exists: false } }] }
+      : { [revisionPath]: expectedRevision }),
+  };
+  const user = await User.findOneAndUpdate(
+    filter,
+    { $set: { [`savedProgramTracking.${programKey}`]: next } },
+    { new: true, runValidators: true },
+  );
+  if (user) return next;
+
+  const existing = await User.findOne(userLookupFilterForMutation(id)).lean();
+  if (!existing) throw new NotFoundError('User not found');
+  const savedIds = new Set(
+    storedObjectIdStringsForUserMutation(existing.favFellowships, 'favFellowships'),
+  );
+  if (!savedIds.has(programKey)) throw new NotFoundError('Saved program not found');
+  const error: any = new Error('Program tracking changed in another session');
+  error.status = 409;
+  error.current = sanitizeSavedProgramTrackingForResponse(existing.savedProgramTracking)[
+    programKey
+  ];
+  throw error;
 };
 
 export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
@@ -929,10 +1051,7 @@ export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId
   return newUser;
 };
 
-export const deleteFavPathways = async (
-  id: any,
-  removedPathways: [mongoose.Types.ObjectId],
-) => {
+export const deleteFavPathways = async (id: any, removedPathways: [mongoose.Types.ObjectId]) => {
   const pathwayIds = normalizeObjectIdsForUserMutation(removedPathways, 'favPathways');
   const newUser = await removeSavedPathwayIdsAndPlans(id, pathwayIds);
 
