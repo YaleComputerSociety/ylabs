@@ -1207,6 +1207,12 @@ describe('Research page', () => {
 
     expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    expect(
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search'),
+    ).toHaveLength(1);
+    expect(
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/pathways/search'),
+    ).toHaveLength(1);
   });
 
   it('reveals one research-home result stream with inline ways-in context after a search', async () => {
