@@ -1,6 +1,6 @@
 import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
@@ -21,12 +21,7 @@ import {
 } from '../types/researchEntity';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import useDocumentTitle from '../hooks/useDocumentTitle';
-import type {
-  PathwaySearchFilters,
-  PathwaySearchHit,
-  PathwaySearchResponse,
-} from '../types/pathway';
-import { safeHttpUrl, safeRouteSegment } from '../utils/url';
+import type { PathwaySearchFilters } from '../types/pathway';
 
 interface DepartmentResearchHomeConfig {
   abbreviation?: string;
@@ -181,22 +176,6 @@ const searchResearchEntities = async (
     facetDistribution: normalized.facetDistribution || {},
   };
 };
-
-const searchStudentPathways = async (
-  q: string,
-  signal?: AbortSignal,
-  filters: ResearchSearchFilters = {},
-): Promise<PathwaySearchResponse> => {
-  const response = await axios.post<PathwaySearchResponse>(
-    '/pathways/search',
-    { q, page: 1, pageSize: 12, filters },
-    { signal },
-  );
-  return response.data;
-};
-
-const waysInFromResearchEntities = (researchEntities: ResearchEntity[]): PathwaySearchHit[] =>
-  researchEntities.flatMap((entity) => (Array.isArray(entity.waysIn) ? entity.waysIn : []));
 
 const isResearchEntitySearchExhausted = (page: ResearchEntitySearchPage) =>
   page.researchEntities.length === 0 ||
@@ -605,29 +584,22 @@ const Research = () => {
     }
 
     try {
-      const [pathwayResult, researchEntitiesPage] = await Promise.all([
-        searchStudentPathways(searchQuery.trim(), controller.signal, filters)
-          .then((result) => ({ result, unavailable: false }))
-          .catch(() => ({
-            result: { hits: [], estimatedTotalHits: 0, page: 1, pageSize: 12 },
-            unavailable: true,
-          })),
-        searchResearchEntities(searchQuery.trim(), 24, controller.signal, filters, 1, {
+      const researchEntitiesPage = await searchResearchEntities(
+        searchQuery.trim(),
+        24,
+        controller.signal,
+        filters,
+        1,
+        {
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
-        }),
-      ]);
+        },
+      );
 
       if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
 
       const researchEntities = researchEntitiesPage.researchEntities;
-      const pathways = pathwayResult.result.hits;
-
-      setSearchError(
-        pathwayResult.unavailable
-          ? 'Verified ways in are temporarily unavailable. Research profile results are still current.'
-          : '',
-      );
+      setSearchError('');
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setFacetDistribution(researchEntitiesPage.facetDistribution);
@@ -637,7 +609,7 @@ const Research = () => {
         buildGroupedSearchResults({
           query: resultQueryLabel,
           researchEntities,
-          pathways,
+          pathways: [],
           papers: [],
         }),
       );
@@ -982,7 +954,7 @@ const Research = () => {
       buildGroupedSearchResults({
         query: DEFAULT_RESEARCH_HOME_LABEL,
         researchEntities: defaultResearchEntities,
-        pathways: waysInFromResearchEntities(defaultResearchEntities),
+        pathways: [],
         papers: [],
       }),
     [defaultResearchEntities],
@@ -1324,151 +1296,147 @@ const Research = () => {
                   </div>
                 </div>
 
-                <fieldset className="mt-3 border-0 p-0">
-                  <legend className="sr-only">Narrow research results</legend>
-                  <div className="grid gap-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-end">
-                    <label className="block text-sm font-medium text-slate-800">
-                      School
-                      <select
-                        aria-label="Filter by school"
-                        value={selectedSchool}
-                        onChange={(event) =>
-                          applyStudentFacets(
-                            event.target.value,
-                            selectedDepartment,
-                            requireUndergradEvidence,
-                          )
-                        }
-                        className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                      >
-                        <option value="">All schools</option>
-                        {schoolOptions.map((school) => (
-                          <option key={school} value={school}>
-                            {school} ({facetDistribution.school?.[school] ?? searchTotal})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block text-sm font-medium text-slate-800">
-                      Department
-                      <select
-                        aria-label="Filter by department"
-                        value={selectedDepartment}
-                        onChange={(event) =>
-                          applyStudentFacets(
-                            selectedSchool,
-                            event.target.value,
-                            requireUndergradEvidence,
-                          )
-                        }
-                        className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                      >
-                        <option value="">All departments</option>
-                        {departmentOptions.map((department) => (
-                          <option key={department} value={department}>
-                            {getUniqueDepartmentLabels([department], departments)[0] || department}{' '}
-                            ({facetDistribution.departments?.[department] ?? searchTotal})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-white px-3 py-2 text-sm font-medium text-slate-800">
-                      <input
-                        type="checkbox"
-                        checked={requireUndergradEvidence}
-                        onChange={(event) =>
-                          applyStudentFacets(
-                            selectedSchool,
-                            selectedDepartment,
-                            event.target.checked,
-                          )
-                        }
-                        className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-                      />
-                      Has undergraduate evidence
-                    </label>
-                    {hasStudentFacetSelection && (
+                {(schoolOptions.length > 1 ||
+                  departmentOptions.length > 1 ||
+                  hasStudentFacetSelection) && (
+                  <fieldset className="mt-3 border-0 p-0">
+                    <legend className="sr-only">Narrow research results</legend>
+                    <div className="grid gap-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-end">
+                      {(schoolOptions.length > 1 || selectedSchool) && (
+                        <label className="block text-sm font-medium text-slate-800">
+                          School
+                          <select
+                            aria-label="Filter by school"
+                            value={selectedSchool}
+                            onChange={(event) =>
+                              applyStudentFacets(
+                                event.target.value,
+                                selectedDepartment,
+                                requireUndergradEvidence,
+                              )
+                            }
+                            className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          >
+                            <option value="">All schools</option>
+                            {schoolOptions.map((school) => (
+                              <option key={school} value={school}>
+                                {school} ({facetDistribution.school?.[school] ?? searchTotal})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {(departmentOptions.length > 1 || selectedDepartment) && (
+                        <label className="block text-sm font-medium text-slate-800">
+                          Department
+                          <select
+                            aria-label="Filter by department"
+                            value={selectedDepartment}
+                            onChange={(event) =>
+                              applyStudentFacets(
+                                selectedSchool,
+                                event.target.value,
+                                requireUndergradEvidence,
+                              )
+                            }
+                            className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                          >
+                            <option value="">All departments</option>
+                            {departmentOptions.map((department) => (
+                              <option key={department} value={department}>
+                                {getUniqueDepartmentLabels([department], departments)[0] ||
+                                  department}{' '}
+                                ({facetDistribution.departments?.[department] ?? searchTotal})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {requireUndergradEvidence && (
+                        <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-white px-3 py-2 text-sm font-medium text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={requireUndergradEvidence}
+                            onChange={(event) =>
+                              applyStudentFacets(
+                                selectedSchool,
+                                selectedDepartment,
+                                event.target.checked,
+                              )
+                            }
+                            className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                          />
+                          Undergraduate participation documented
+                        </label>
+                      )}
+                      {hasStudentFacetSelection && (
+                        <button
+                          type="button"
+                          onClick={() => applyStudentFacets('', '', false)}
+                          className="min-h-11 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
+                  </fieldset>
+                )}
+
+                {hasStudentFacetSelection && (
+                  <div className="mt-3 flex flex-wrap gap-2" aria-label="Active research filters">
+                    {selectedSchool && (
                       <button
                         type="button"
-                        onClick={() => applyStudentFacets('', '', false)}
-                        className="min-h-11 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        onClick={() =>
+                          applyStudentFacets('', selectedDepartment, requireUndergradEvidence)
+                        }
+                        aria-label={`Remove School: ${selectedSchool}`}
+                        className="rounded-md border px-3 py-2 text-sm"
                       >
-                        Clear filters
+                        School: {selectedSchool} ×
+                      </button>
+                    )}
+                    {selectedDepartment && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          applyStudentFacets(selectedSchool, '', requireUndergradEvidence)
+                        }
+                        aria-label={`Remove Department: ${selectedDepartment}`}
+                        className="rounded-md border px-3 py-2 text-sm"
+                      >
+                        Department:{' '}
+                        {getUniqueDepartmentLabels([selectedDepartment], departments)[0] ||
+                          selectedDepartment}{' '}
+                        ×
+                      </button>
+                    )}
+                    {requireUndergradEvidence && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          applyStudentFacets(selectedSchool, selectedDepartment, false)
+                        }
+                        aria-label="Remove Undergraduate participation documented"
+                        className="rounded-md border px-3 py-2 text-sm"
+                      >
+                        Undergraduate participation documented ×
                       </button>
                     )}
                   </div>
-                </fieldset>
+                )}
 
                 {searchError && (
                   <div
-                    role={searchError.startsWith('Verified ways in') ? 'status' : 'alert'}
+                    role="alert"
                     className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                   >
                     {searchError}
                   </div>
                 )}
 
-                <section className="mt-5" aria-label="Verified ways in">
-                  <SectionHeading>Verified ways in</SectionHeading>
-                  {searchLoading && activeResults.pathways.length === 0 ? (
-                    <ClusterLoadingCard />
-                  ) : activeResults.pathways.length > 0 ? (
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      {activeResults.pathways.map((pathway) => {
-                        const sourceUrl = safeHttpUrl(
-                          pathway.evidence?.[0]?.sourceUrl || pathway.sourceUrls?.[0],
-                        );
-                        const entityName =
-                          pathway.researchEntity.displayName || pathway.researchEntity.name;
-                        return (
-                          <article key={pathway._id} className="yr-card rounded-md p-4">
-                            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-                              <span>{pathway.evidenceStrength.toLowerCase()} evidence</span>
-                              {typeof pathway.confidence === 'number' && (
-                                <span>{Math.round(pathway.confidence * 100)}% confidence</span>
-                              )}
-                            </div>
-                            <h3 className="mt-2 text-base font-semibold text-slate-950">
-                              {pathway.studentFacingLabel}
-                            </h3>
-                            <p className="mt-1 text-sm text-slate-700">{entityName}</p>
-                            {pathway.explanation && (
-                              <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                                {pathway.explanation}
-                              </p>
-                            )}
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <Link
-                                to={`/research/${safeRouteSegment(pathway.researchEntity.slug)}`}
-                                className="inline-flex min-h-11 items-center rounded-md bg-[var(--yr-blue)] px-3 py-2 text-sm font-semibold text-white"
-                              >
-                                Open research profile
-                              </Link>
-                              {sourceUrl && (
-                                <a
-                                  href={sourceUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex min-h-11 items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm font-semibold text-slate-800"
-                                >
-                                  Review evidence
-                                </a>
-                              )}
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <EmptyGroup>
-                      No pathways meet the current evidence and confidence standard for this search.
-                      Research profiles may still provide useful planning context.
-                    </EmptyGroup>
-                  )}
-                </section>
-
                 <section className="mt-5">
-                  <SectionHeading>Research homes</SectionHeading>
+                  <SectionHeading>Research profiles</SectionHeading>
                   {searchLoading && activeResults.clusters.length === 0 ? (
                     <div className="grid gap-3">
                       {Array.from({ length: 3 }).map((_, index) => (
