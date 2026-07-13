@@ -1,7 +1,6 @@
 import type { Fellowship } from '../types/types';
 
 export const CLOSING_SOON_DAYS = 30;
-export const URGENT_DEADLINE_DAYS = 14;
 
 export type FellowshipApplicationStatusKind =
   | 'open'

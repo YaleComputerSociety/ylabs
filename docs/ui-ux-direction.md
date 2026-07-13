@@ -46,13 +46,12 @@ The current app uses a quiet, operational UI: white backgrounds, gray text, Yale
 
 Current implementation anchors:
 
-- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` as a redirect to `/research`, plus `/research`, `/research/:slug`, `/opportunities/:id`, `/fellowships`, and temporary legacy `/listings`.
-- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Find Fellowships, and Dashboard.
+- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` to `/research`, exposes `/research`, `/research/:slug`, `/opportunities/:id`, and `/programs`, and redirects retired `/listings` and `/fellowships` URLs.
+- [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Programs & Fellowships, and Dashboard.
 - [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx): `/research/:slug` detail page.
-- [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): temporary `/listings` legacy board for posted roles, not the primary app home.
+- [`client/src/pages/home.tsx`](../client/src/pages/home.tsx): retained implementation module that is no longer reachable from the retired `/listings` route.
 - [`client/src/components/shared/BrowseCard.tsx`](../client/src/components/shared/BrowseCard.tsx): shared card treatment for listings, fellowships, and research groups.
-- [`client/src/components/labs/LabHeader.tsx`](../client/src/components/labs/LabHeader.tsx): research detail header and access verdict.
 - [`client/src/components/labs/LabHeader.tsx`](../client/src/components/labs/LabHeader.tsx): research detail header and primary profile/status actions.
 - [`client/src/utils/undergradAcceptance.ts`](../client/src/utils/undergradAcceptance.ts): compatibility adapter translating access evidence into current verdict labels.
 
