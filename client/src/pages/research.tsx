@@ -1,6 +1,6 @@
 import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
@@ -297,6 +297,7 @@ const scrollResearchViewportToTop = () => {
 };
 
 const Research = () => {
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(UserContext);
   const { departments } = useConfig();
@@ -402,6 +403,7 @@ const Research = () => {
   const activeSearchKeyRef = useRef<string | null>(null);
   const pendingSearchParamsRef = useRef<string | null>(null);
   const pendingSearchSourceParamsRef = useRef<string | null>(null);
+  const pendingSearchSourceLocationKeyRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
@@ -450,6 +452,7 @@ const Research = () => {
     if (options.markPending) {
       pendingSearchParamsRef.current = params.toString();
       pendingSearchSourceParamsRef.current = searchParams.toString();
+      pendingSearchSourceLocationKeyRef.current = location.key;
     }
     setSearchParams(params, { replace: Boolean(options.replace) });
   };
@@ -761,12 +764,15 @@ const Research = () => {
     if (pendingSearchParamsRef.current === observedSearchParams) {
       pendingSearchParamsRef.current = null;
       pendingSearchSourceParamsRef.current = null;
+      pendingSearchSourceLocationKeyRef.current = null;
     } else if (
       pendingSearchParamsRef.current !== null &&
-      pendingSearchSourceParamsRef.current !== observedSearchParams
+      (pendingSearchSourceParamsRef.current !== observedSearchParams ||
+        pendingSearchSourceLocationKeyRef.current !== location.key)
     ) {
       pendingSearchParamsRef.current = null;
       pendingSearchSourceParamsRef.current = null;
+      pendingSearchSourceLocationKeyRef.current = null;
     }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
@@ -901,6 +907,7 @@ const Research = () => {
     void runDefaultResearchHomeSearchRef.current(1);
   }, [
     searchParams,
+    location.key,
     pageSnapshotKey,
     isAdmin,
     showWeakestProfilesFirst,

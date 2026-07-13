@@ -1345,6 +1345,45 @@ describe('Research page', () => {
     expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
   });
 
+  it('resets when navigation returns to the pending search source location', async () => {
+    const searchResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q === 'machine learning') {
+        return searchResponse.promise;
+      }
+      if (url === '/research/search' && body.q === '') {
+        return Promise.resolve(researchSearchResponse());
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ClearResearchLocation />
+        <LocationDisplay />
+        <Research />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'machine learning' },
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
+      expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
+    });
+
+    searchResponse.resolve(researchSearchResponse([researchEntity]));
+    await act(async () => searchResponse.promise);
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+  });
+
   it('keeps initial q searches alive under StrictMode effect cleanup', async () => {
     mockSearchResponses((url) =>
       url === '/research/search'
