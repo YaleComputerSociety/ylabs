@@ -114,7 +114,8 @@ Student-facing labels should use warmer language than internal model names:
 
 ## Saved Planning And Advising
 
-Saved research plans are private student planning space by default. They may include thesis ideas, planning notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
+Saved research plans are private student planning space owned by a `ResearchEntity`, independent of whether that research home has an `EntryPathway`.
+They may include thesis ideas, planning notes, optional pathway or funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
 
 Advising-oriented sharing should use source-backed pathway context and explicit visibility choices. It should help a student discuss options with an advisor, not create mass-email or broad outreach behavior.
 

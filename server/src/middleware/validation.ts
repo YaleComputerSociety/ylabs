@@ -50,21 +50,6 @@ export const validateNetid = (paramName: string = 'netid') => {
   };
 };
 
-const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
-
-/**
- * Middleware to validate a Yale-style netid path parameter.
- */
-export const validateNetid = (paramName: string = 'netid') => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const value = req.params[paramName];
-    if (!value || !NETID_RE.test(value)) {
-      return res.status(400).json({ error: `Invalid ${paramName}` });
-    }
-    next();
-  };
-};
-
 /**
  * Middleware to validate request body exists
  */

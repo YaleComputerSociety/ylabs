@@ -4,6 +4,12 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-07-12: Saved Plans Belong To Research Entities
+
+Students save canonical `ResearchEntity` profiles independently of `EntryPathway`, including entities with no pathway.
+Legacy pathway saves migrate lazily and idempotently, deduplicate to one entity save, preserve conflicting private plans as rollback data, and never re-import after migration completes.
+Account reads prune entities that are no longer student-visible, return bounded summaries, and keep plans and exports private with notes excluded unless explicitly requested.
+
 ## 2026-07-12: Bound Embedded Research Entity Summaries
 
 Public research detail responses embed related entities as strict card summaries rather than full public profile DTOs.

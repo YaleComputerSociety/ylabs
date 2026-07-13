@@ -1,7 +1,8 @@
 import React, { useState, useRef, KeyboardEvent, useEffect, useContext } from 'react';
-import { departmentCategories } from '../../utils/departmentNames';
 import SortDropdown from './SortDropdown';
 import SearchContext from '../../contexts/SearchContext';
+
+const departmentCategories: Record<string, number> = {};
 
 interface SearchHubProps {
   allDepartments: string[];
