@@ -400,6 +400,7 @@ const Research = () => {
   const searchAbortRef = useRef<AbortController | null>(null);
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
+  const pendingSearchParamsRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
@@ -428,7 +429,7 @@ const Research = () => {
       department?: string;
       requireUndergradEvidence?: boolean;
     },
-    options: { replace?: boolean } = {},
+    options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
     const params = new URLSearchParams();
     const nextQuery = (nextState.query || '').trim();
@@ -445,6 +446,7 @@ const Research = () => {
       if (nextState.trustTiers?.length) params.set('tier', nextState.trustTiers.join(','));
     }
 
+    if (options.markPending) pendingSearchParamsRef.current = params.toString();
     setSearchParams(params, { replace: Boolean(options.replace) });
   };
 
@@ -571,16 +573,19 @@ const Research = () => {
     setSearchError('');
     setGroupedResults(emptyGroupedResults(resultQueryLabel));
     if (options.syncUrl !== false) {
-      writeResearchSearchParams({
-        query: trimmed,
-        departmentLabel: options.departmentSearch?.label,
-        school: filters.school?.[0],
-        department: filters.departments?.[0],
-        requireUndergradEvidence: filters.acceptanceLevel === 'verified-or-likely',
-        showWeakest: showWeakestProfilesFirst,
-        quality: qualityFilters,
-        trustTiers: trustTierFilters,
-      });
+      writeResearchSearchParams(
+        {
+          query: trimmed,
+          departmentLabel: options.departmentSearch?.label,
+          school: filters.school?.[0],
+          department: filters.departments?.[0],
+          requireUndergradEvidence: filters.acceptanceLevel === 'verified-or-likely',
+          showWeakest: showWeakestProfilesFirst,
+          quality: qualityFilters,
+          trustTiers: trustTierFilters,
+        },
+        { markPending: true },
+      );
     }
 
     try {
@@ -748,6 +753,9 @@ const Research = () => {
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
 
   useEffect(() => {
+    if (pendingSearchParamsRef.current === searchParams.toString()) {
+      pendingSearchParamsRef.current = null;
+    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlSchool = searchParams.get('school') || '';
@@ -852,9 +860,13 @@ const Research = () => {
     }
 
     // A search submission updates component state and the URL in the same
-    // transition. Do not let an effect that still observes the previous empty
-    // URL overwrite that active search with the default browse state.
-    if (activeSearchKeyRef.current !== null) return;
+    // transition. Do not let an effect that still observes the previous URL
+    // overwrite that active search before its pending URL write is observed.
+    if (activeSearchKeyRef.current !== null && pendingSearchParamsRef.current !== null) return;
+
+    searchAbortRef.current?.abort();
+    searchRequestIdRef.current += 1;
+    activeSearchKeyRef.current = null;
 
     // Preserve an in-progress draft while startup context (for example config or
     // user state) settles. Only clear the input when an existing URL-backed
