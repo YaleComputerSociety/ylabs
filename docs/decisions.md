@@ -4,6 +4,16 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-07-12: Bound Embedded Research Entity Summaries
+
+Public research detail responses embed related entities as strict card summaries rather than full public profile DTOs.
+The server projects only card fields, caps each relationship direction, reports truncation, and leaves full-profile retrieval to navigation.
+
+Do not add application-level response compression without verifying the deployed web-service topology first.
+The Render web service is managed outside `render.yaml`, so this repository cannot guarantee or configure its edge compression.
+Blanket compression around cookie-backed API responses would also increase BREACH, caching, buffering, and streaming review scope while potentially duplicating the platform edge.
+Prefer bounded public JSON DTOs, and configure compression at the deployment edge when its control-plane settings can be verified.
+
 ## 2026-07-04: Keep Durable Docs Compact
 
 Stale execution plans, worktree plans, UX screenshots, scratch reports, and proposal docs should not live in durable documentation.
