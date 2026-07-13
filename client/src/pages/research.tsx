@@ -420,6 +420,8 @@ const Research = () => {
   const defaultSearchRequestIdRef = useRef(0);
   const searchAbortRef = useRef<AbortController | null>(null);
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
+  const activeSearchKeyRef = useRef<string | null>(null);
+  const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
@@ -467,13 +469,16 @@ const Research = () => {
     setSearchParams(params, { replace: Boolean(options.replace) });
   };
 
-  useEffect(
-    () => () => {
-      searchAbortRef.current?.abort();
-      defaultSearchAbortRef.current?.abort();
-    },
-    [],
-  );
+  useEffect(() => {
+    const generation = ++effectGenerationRef.current;
+    return () => {
+      queueMicrotask(() => {
+        if (effectGenerationRef.current !== generation) return;
+        searchAbortRef.current?.abort();
+        defaultSearchAbortRef.current?.abort();
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (isAdmin) return;
@@ -552,6 +557,15 @@ const Research = () => {
     if (!trimmed && !hasFilters) return;
     if (!searchQuery.trim() && !hasFilters) return;
     const resultQueryLabel = trimmed || 'filtered research';
+
+    const requestKey = JSON.stringify({
+      query: searchQuery.trim(),
+      filters,
+      trustTierFilters: isAdmin ? trustTierFilters : [],
+      includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+    });
+    if (activeSearchKeyRef.current === requestKey) return;
+    activeSearchKeyRef.current = requestKey;
 
     const requestId = ++searchRequestIdRef.current;
     const controller = new AbortController();
@@ -639,6 +653,7 @@ const Research = () => {
         setSearchExhausted(true);
       }
     } finally {
+      if (activeSearchKeyRef.current === requestKey) activeSearchKeyRef.current = null;
       if (requestId === searchRequestIdRef.current && !controller.signal.aborted) {
         setSearchLoading(false);
       }
