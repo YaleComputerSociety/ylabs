@@ -996,7 +996,7 @@ describe('LabDetail page', () => {
     );
   });
 
-  it('renders non-public umbrella affiliations without linking to a hidden detail page', async () => {
+  it('does not link an affiliation summary without a navigable slug', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -1011,11 +1011,10 @@ describe('LabDetail page', () => {
           ...basePayload.group,
           _id: 'entity-umbrella',
           id: 'entity-umbrella',
-          slug: 'center-yale-quantum-institute',
+          slug: '',
           name: 'Yale Quantum Institute',
           kind: 'institute',
           entityType: 'INSTITUTE',
-          studentVisibilityTier: 'operator_review',
           departments: ['Physics'],
           researchAreas: [],
           sourceUrls: [],

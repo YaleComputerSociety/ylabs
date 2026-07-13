@@ -21,6 +21,16 @@ export interface PublicResearchEntityDto extends Record<string, unknown> {
   sourceUrls: string[];
 }
 
+export interface PublicResearchEntitySummaryDto {
+  id: string;
+  slug: string;
+  name: string;
+  kind?: string;
+  entityType?: string;
+  departments: string[];
+  blurb?: string;
+}
+
 function publicResearchEntityId(group: Record<string, any>): string {
   const slug = publicTextString(group.slug || '');
   if (slug) return slug;
@@ -92,6 +102,28 @@ function publicDepartmentArray(value: unknown): string[] {
     labels.push(label);
   }
   return labels;
+}
+
+/** Strict card-only DTO used when embedding related entities in a detail response. */
+export function toPublicResearchEntitySummaryDto(
+  group: Record<string, any>,
+): PublicResearchEntitySummaryDto {
+  const blurb = publicTextString(
+    group.shortDescription || group.description || group.fullDescription || '',
+  ).slice(0, 280);
+
+  return {
+    id: publicResearchEntityId(group),
+    slug: publicTextString(group.slug || ''),
+    name: publicTextString(group.name || group.displayName || ''),
+    kind: group.kind === undefined ? undefined : publicTextString(group.kind),
+    entityType:
+      group.entityType === undefined
+        ? mapResearchGroupKindToEntityType(group.kind)
+        : publicTextString(group.entityType),
+    departments: publicDepartmentArray(group.departments),
+    ...(blurb ? { blurb } : {}),
+  };
 }
 
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
