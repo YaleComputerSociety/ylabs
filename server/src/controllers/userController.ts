@@ -655,6 +655,12 @@ export const getFavPathwayFundingMatches = async (request: Request, response: Re
     await updateUser(currentUser.netId, { favPathways: validIds, savedPathwayPlans });
     const matchesByPathwayId = await matchFellowshipsForPathways(
       validIds.map((pathwayId) => pathwayId.toHexString()),
+      {},
+      {
+        userType: (user as any).userType,
+        classYear: (user as any).year,
+        plansByPathwayId: savedPathwayPlans,
+      },
     );
     response.status(200).json({ matchesByPathwayId });
   } catch (error: any) {
