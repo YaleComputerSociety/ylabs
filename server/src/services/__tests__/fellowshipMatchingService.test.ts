@@ -27,22 +27,50 @@ const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit =>
 
 describe('fellowshipMatchingService', () => {
   it('rejects graduate-only awards for an undergraduate', () => {
-    expect(scoreFellowshipForPathway(pathway(), {
-      _id: 'graduate-only', title: 'Graduate Research Award', yearOfStudy: ['Graduate students'],
-      summary: 'RNA biology research project', applicationLink: 'https://example.edu/apply',
-    }, new Date('2026-01-01'), { userType: 'undergraduate', classYear: 2029 })).toBeNull();
+    expect(
+      scoreFellowshipForPathway(
+        pathway(),
+        {
+          _id: 'graduate-only',
+          title: 'Graduate Research Award',
+          yearOfStudy: ['Graduate students'],
+          summary: 'RNA biology research project',
+          applicationLink: 'https://example.edu/apply',
+        },
+        new Date('2026-01-01'),
+        { userType: 'undergraduate', classYear: 2029 },
+      ),
+    ).toBeNull();
   });
 
   it('uses class year and term metadata without treating missing metadata as ineligible', () => {
-    const firstYear = scoreFellowshipForPathway(pathway(), {
-      _id: 'first-year', title: 'RNA Summer Research Award', yearOfStudy: ['First-year'],
-      termOfAward: ['Summer'], summary: 'RNA biology research', applicationLink: 'https://example.edu/apply',
-    }, new Date('2026-01-01'), { userType: 'undergraduate', classYear: 2030 });
-    const unknown = scoreFellowshipForPathway(pathway(), {
-      _id: 'unknown-level', title: 'RNA Research Award', summary: 'RNA biology research',
-      applicationLink: 'https://example.edu/apply',
-    }, new Date('2026-01-01'), { userType: 'undergraduate', classYear: 2029 });
-    expect(firstYear?.reasons).toContain('This program lists first-year students among the years it considers.');
+    const firstYear = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'first-year',
+        title: 'RNA Summer Research Award',
+        yearOfStudy: ['First-year'],
+        termOfAward: ['Summer'],
+        summary: 'RNA biology research',
+        applicationLink: 'https://example.edu/apply',
+      },
+      new Date('2026-01-01'),
+      { userType: 'undergraduate', classYear: 2030 },
+    );
+    const unknown = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: 'unknown-level',
+        title: 'RNA Research Award',
+        summary: 'RNA biology research',
+        applicationLink: 'https://example.edu/apply',
+      },
+      new Date('2026-01-01'),
+      { userType: 'undergraduate', classYear: 2029 },
+    );
+    expect(firstYear?.reasons).toContain(
+      'This program lists first-year students among the years it considers.',
+    );
     expect(unknown).not.toBeNull();
   });
 
@@ -50,26 +78,58 @@ describe('fellowshipMatchingService', () => {
     [2029, 'sophomore'],
     [2027, 'senior'],
   ])('explains a matching class year for %s', (classYear, label) => {
-    const match = scoreFellowshipForPathway(pathway(), {
-      _id: `level-${label}`, title: 'RNA Research Award', yearOfStudy: [label],
-      summary: 'RNA biology research', applicationLink: 'https://example.edu/apply',
-    }, new Date('2026-01-01'), { userType: 'undergraduate', classYear });
-    expect(match?.reasons).toContain(`This program lists ${label} students among the years it considers.`);
+    const match = scoreFellowshipForPathway(
+      pathway(),
+      {
+        _id: `level-${label}`,
+        title: 'RNA Research Award',
+        yearOfStudy: [label],
+        summary: 'RNA biology research',
+        applicationLink: 'https://example.edu/apply',
+      },
+      new Date('2026-01-01'),
+      { userType: 'undergraduate', classYear },
+    );
+    expect(match?.reasons).toContain(
+      `This program lists ${label} students among the years it considers.`,
+    );
   });
 
   it('prefers academic-year awards for thesis plans and demotes summer-only awards', () => {
-    const base = { summary: 'RNA biology research project', applicationLink: 'https://example.edu/apply' };
-    const academic = scoreFellowshipForPathway(pathway({ pathwayType: 'SENIOR_THESIS' }),
-      { ...base, _id: 'academic', title: 'Academic Year RNA Award', termOfAward: ['Academic year'] });
-    const summer = scoreFellowshipForPathway(pathway({ pathwayType: 'SENIOR_THESIS' }),
-      { ...base, _id: 'summer', title: 'Summer RNA Award', termOfAward: ['Summer'] });
+    const base = {
+      summary: 'RNA biology research project',
+      applicationLink: 'https://example.edu/apply',
+    };
+    const academic = scoreFellowshipForPathway(pathway({ pathwayType: 'SENIOR_THESIS' }), {
+      ...base,
+      _id: 'academic',
+      title: 'Academic Year RNA Award',
+      termOfAward: ['Academic year'],
+    });
+    const summer = scoreFellowshipForPathway(pathway({ pathwayType: 'SENIOR_THESIS' }), {
+      ...base,
+      _id: 'summer',
+      title: 'Summer RNA Award',
+      termOfAward: ['Summer'],
+    });
     expect(academic!.score).toBeGreaterThan(summer!.score);
-    expect(summer?.caveats).toContain('This is listed as a summer award, which may not fit an academic-year thesis plan.');
+    expect(summer?.caveats).toContain(
+      'This is listed as a summer award, which may not fit an academic-year thesis plan.',
+    );
   });
 
-  it.each(['', 'Menu', 'AAAAAAA!!!!!!!!', 'x'.repeat(241)])('never surfaces a garbage title: %s', (title) => {
-    expect(scoreFellowshipForPathway(pathway(), { _id: 'junk', title, summary: 'RNA biology research project' })).toBeNull();
-  });
+  it.each(['', 'Menu', 'AAAAAAA!!!!!!!!', 'x'.repeat(241)])(
+    'never surfaces a garbage title: %s',
+    (title) => {
+      expect(
+        scoreFellowshipForPathway(pathway(), {
+          _id: 'junk',
+          title,
+          summary: 'RNA biology research project',
+        }),
+      ).toBeNull();
+    },
+  );
   it('scores source-backed fellowship project matches with reasons and caveats', () => {
     const match = scoreFellowshipForPathway(
       pathway(),

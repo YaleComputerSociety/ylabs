@@ -141,11 +141,7 @@ export function canonicalPiName(raw: string | undefined | null): string {
     const first_t = titleCaseToken(firstChunk);
     return [first_t, last_t].filter(Boolean).join(' ');
   }
-  return trimmed
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(titleCaseToken)
-    .join(' ');
+  return trimmed.split(/\s+/).filter(Boolean).map(titleCaseToken).join(' ');
 }
 
 function titleCaseToken(token: string): string {
@@ -223,7 +219,9 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
   const dollarAmount = typeof grant.award_amount === 'number' ? grant.award_amount : 0;
   const url =
     grant.project_detail_url ||
-    (grant.appl_id ? `https://reporter.nih.gov/project-details/${grant.appl_id}` : REPORTER_ENDPOINT);
+    (grant.appl_id
+      ? `https://reporter.nih.gov/project-details/${grant.appl_id}`
+      : REPORTER_ENDPOINT);
   return {
     id,
     agency,
@@ -273,9 +271,7 @@ export async function findUserForPi(
     .lean();
   if (!first) return null;
   // Exact first name match wins.
-  const exact = candidates.filter(
-    (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
-  );
+  const exact = candidates.filter((c) => (c.fname || '').toLowerCase() === first.toLowerCase());
   if (exact.length === 1) {
     return userPiMatchResult(exact[0]);
   }
@@ -355,9 +351,7 @@ export function piGrantsToObservations(
     .filter((t): t is number => typeof t === 'number')
     .reduce((max, t) => (t > max ? t : max), 0);
 
-  const sourceUrls = sorted
-    .map((g) => g.project_detail_url)
-    .filter((u): u is string => !!u);
+  const sourceUrls = sorted.map((g) => g.project_detail_url).filter((u): u is string => !!u);
 
   // Determine school/department hint from organization.dept_type when present.
   // We only use it as a soft signal; the resolver will dedupe against other sources.
@@ -401,7 +395,11 @@ export function piGrantsToObservations(
     out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
   if (sourceUrls.length > 0) {
-    out.push({ ...groupBase, field: 'sourceUrls', value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI) });
+    out.push({
+      ...groupBase,
+      field: 'sourceUrls',
+      value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI),
+    });
   }
   if (matchedUser) {
     out.push({
@@ -479,9 +477,7 @@ async function fetchPage({
     results: (res.data?.results as NihGrant[]) || [],
   };
   if (useCache) await setCached('nih-reporter', cacheKey, payload);
-  ctx.log(
-    `fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`,
-  );
+  ctx.log(`fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`);
   return payload;
 }
 

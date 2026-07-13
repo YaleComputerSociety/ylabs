@@ -1315,9 +1315,8 @@ describe('listResearchEntityRelationshipPayload', () => {
     const publicInstituteId = '67d8928150621bcef434a1d6';
     const reviewInstituteId = '67d8928150621bcef434a1d7';
 
-    mocks.researchEntityRelationshipFind
-      .mockReturnValueOnce(queryResult([]))
-      .mockReturnValueOnce(queryResult([
+    mocks.researchEntityRelationshipFind.mockReturnValueOnce(queryResult([])).mockReturnValueOnce(
+      queryResult([
         {
           _id: 'rel-yqi',
           sourceResearchEntityId: publicInstituteId,
@@ -1338,7 +1337,8 @@ describe('listResearchEntityRelationshipPayload', () => {
           evidenceStrength: 'MODERATE',
           evidenceQuote: 'Held private operator note',
         },
-      ]));
+      ]),
+    );
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
         {
@@ -1405,18 +1405,21 @@ describe('listResearchEntityRelationshipPayload', () => {
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
     const currentEntityId = '67d8928150621bcef434a1d5';
     const select = vi.fn();
-    const relatedIds = Array.from({ length: 99 }, (_, index) =>
-      `67d8928150621bcef434${String(index).padStart(4, '0')}`,
+    const relatedIds = Array.from(
+      { length: 99 },
+      (_, index) => `67d8928150621bcef434${String(index).padStart(4, '0')}`,
     );
     mocks.researchEntityRelationshipFind
-      .mockReturnValueOnce(queryResult(
-        relatedIds.map((id) => ({
-          sourceResearchEntityId: currentEntityId,
-          targetResearchEntityId: id,
-          relationshipType: 'MEMBER_RESEARCH_AREA',
-          label: 'Related',
-        })),
-      ))
+      .mockReturnValueOnce(
+        queryResult(
+          relatedIds.map((id) => ({
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: id,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            label: 'Related',
+          })),
+        ),
+      )
       .mockReturnValueOnce(queryResult([]));
     const entityQuery = queryResult(
       relatedIds.slice(0, 50).map((id, index) => ({

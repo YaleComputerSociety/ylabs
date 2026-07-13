@@ -6,10 +6,7 @@
  */
 import mongoose from 'mongoose';
 import { recordReviewSchema } from './modelPrimitives';
-import {
-  compensationTypes,
-  postedOpportunityStatuses,
-} from './researchAccessTypes';
+import { compensationTypes, postedOpportunityStatuses } from './researchAccessTypes';
 
 const postedOpportunitySchema = new mongoose.Schema(
   {

@@ -91,8 +91,7 @@ export const buildResearchSeoMetadata = (params: {
         researchEntity.fullDescription,
         researchEntity.profileSynthesisDescription,
         fallbackDescription,
-      ) ||
-        DEFAULT_RESEARCH_DESCRIPTION,
+      ) || DEFAULT_RESEARCH_DESCRIPTION,
       160,
     ),
     canonicalUrl,

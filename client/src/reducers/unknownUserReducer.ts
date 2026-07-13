@@ -42,7 +42,10 @@ export type UnknownUserAction =
   | { type: 'CLOSE_DROPDOWN' }
   | { type: 'SELECT_USER_TYPE'; payload: string }
   | { type: 'SET_FOCUSED_INDEX'; payload: number | ((prev: number) => number) }
-  | { type: 'SET_ERRORS'; payload: UnknownUserErrors | ((prev: UnknownUserErrors) => UnknownUserErrors) }
+  | {
+      type: 'SET_ERRORS';
+      payload: UnknownUserErrors | ((prev: UnknownUserErrors) => UnknownUserErrors);
+    }
   | { type: 'SUBMIT_START' }
   | { type: 'SUBMIT_ERROR'; payload: string }
   | { type: 'SUBMIT_SUCCESS' };

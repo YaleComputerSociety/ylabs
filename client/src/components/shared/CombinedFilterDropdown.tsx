@@ -180,7 +180,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                   <label
                     key={option}
                     className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
-                      isSelected ? 'bg-[var(--yr-blue-soft)] text-blue-900' : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
+                      isSelected
+                        ? 'bg-[var(--yr-blue-soft)] text-blue-900'
+                        : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
                     }`}
                   >
                     <input
@@ -195,7 +197,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                     />
                     <span
                       className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected ? 'bg-blue-500 border-blue-500' : 'border-[var(--yr-line-strong)]'
+                        isSelected
+                          ? 'bg-blue-500 border-blue-500'
+                          : 'border-[var(--yr-line-strong)]'
                       } peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2`}
                       aria-hidden="true"
                     >

@@ -71,19 +71,19 @@ async function syncResearchEntityProfileFromListing(listing: any): Promise<void>
     if (Object.keys(patch).length === 0) return;
     await ResearchEntity.updateOne({ _id: safeResearchEntityId }, { $set: patch });
   } catch (error) {
-    console.error('Failed to sync listing profile fields to ResearchEntity:', sanitizeLogValue(error));
+    console.error(
+      'Failed to sync listing profile fields to ResearchEntity:',
+      sanitizeLogValue(error),
+    );
   }
 }
 
-const LISTING_ENTITY_AUTHOR_ROLES = [
-  'pi',
-  'co-pi',
-  'director',
-  'co-director',
-  'core-faculty',
-];
+const LISTING_ENTITY_AUTHOR_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
 
-const hasListingEntityAuthority = async (researchEntityId: unknown, owner: any): Promise<boolean> => {
+const hasListingEntityAuthority = async (
+  researchEntityId: unknown,
+  owner: any,
+): Promise<boolean> => {
   const safeResearchEntityId = normalizeListingObjectId(researchEntityId);
   if (!safeResearchEntityId) {
     return false;
@@ -117,7 +117,9 @@ const hasListingEntityAuthority = async (researchEntityId: unknown, owner: any):
 };
 
 const resolveListingResearchEntityId = async (data: any, owner: any): Promise<any> => {
-  const suppliedResearchEntityId = normalizeListingObjectId(data?.researchEntityId || data?.researchGroupId);
+  const suppliedResearchEntityId = normalizeListingObjectId(
+    data?.researchEntityId || data?.researchGroupId,
+  );
   if (await hasListingEntityAuthority(suppliedResearchEntityId, owner)) {
     return suppliedResearchEntityId;
   }
@@ -167,29 +169,26 @@ const boundedListingString = (value: unknown, maxLength: number): string | undef
 
 const boundedListingStringArray = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) return undefined;
-  return value
-    .slice(0, MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS)
-    .flatMap((item) => {
-      const normalized = boundedListingString(item, MAX_SELF_SERVICE_LISTING_ARRAY_VALUE_LENGTH);
-      return normalized ? [normalized] : [];
-    });
+  return value.slice(0, MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS).flatMap((item) => {
+    const normalized = boundedListingString(item, MAX_SELF_SERVICE_LISTING_ARRAY_VALUE_LENGTH);
+    return normalized ? [normalized] : [];
+  });
 };
 
 const boundedListingWebsiteArray = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) return undefined;
-  return value
-    .slice(0, MAX_SELF_SERVICE_LISTING_WEBSITES)
-    .flatMap((item) => {
-      const url = publicHttpUrl(item);
-      return url && url.length <= MAX_SELF_SERVICE_LISTING_URL_LENGTH ? [url] : [];
-    });
+  return value.slice(0, MAX_SELF_SERVICE_LISTING_WEBSITES).flatMap((item) => {
+    const url = publicHttpUrl(item);
+    return url && url.length <= MAX_SELF_SERVICE_LISTING_URL_LENGTH ? [url] : [];
+  });
 };
 
 const boundedListingNumber = (
   value: unknown,
   { min = 0, max = MAX_ADMIN_LISTING_NUMBER }: { min?: number; max?: number } = {},
 ): number | undefined => {
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  const number =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(number) || number < min || number > max) return undefined;
   return Math.trunc(number);
 };
@@ -207,12 +206,10 @@ const boundedListingNetid = (value: unknown): string | undefined => {
 
 const boundedListingNetidArray = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) return undefined;
-  return value
-    .slice(0, MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS)
-    .flatMap((item) => {
-      const netid = boundedListingNetid(item);
-      return netid ? [netid] : [];
-    });
+  return value.slice(0, MAX_SELF_SERVICE_LISTING_ARRAY_ITEMS).flatMap((item) => {
+    const netid = boundedListingNetid(item);
+    return netid ? [netid] : [];
+  });
 };
 
 const sanitizeSelfServiceListingPayload = (safeData: Record<string, any>) => {
@@ -343,7 +340,13 @@ const filterAdminListingUpdateData = (data: any): Record<string, any> => {
     }
   }
 
-  for (const field of ['ownerFirstName', 'ownerLastName', 'ownerEmail', 'ownerTitle', 'ownerPrimaryDepartment']) {
+  for (const field of [
+    'ownerFirstName',
+    'ownerLastName',
+    'ownerEmail',
+    'ownerTitle',
+    'ownerPrimaryDepartment',
+  ]) {
     if (data[field] !== undefined) {
       const value = boundedListingString(data[field], MAX_SELF_SERVICE_LISTING_TEXT_LENGTH);
       if (value !== undefined) safeData[field] = value;

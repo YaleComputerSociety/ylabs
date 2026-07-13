@@ -113,12 +113,7 @@ describe('useInfiniteScroll', () => {
     const onAdvance = vi.fn();
 
     render(
-      <TestScroller
-        onAdvance={onAdvance}
-        filteredCount={0}
-        totalRawCount={60}
-        quickFilterActive
-      />,
+      <TestScroller onAdvance={onAdvance} filteredCount={0} totalRawCount={60} quickFilterActive />,
     );
 
     await waitFor(() => {

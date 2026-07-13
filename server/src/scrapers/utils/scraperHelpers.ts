@@ -35,7 +35,10 @@ export function slugify(input: string): string {
  */
 export function netidFromEmail(email: string | undefined | null): string | null {
   if (!email) return null;
-  const cleaned = String(email).trim().toLowerCase().replace(/^mailto:/, '');
+  const cleaned = String(email)
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return null;
   return match[1].toLowerCase();
@@ -61,7 +64,10 @@ export function isLikelyPersonSpecificYaleEmail(
   email: string | undefined | null,
   personName: string | undefined | null,
 ): boolean {
-  const cleaned = String(email || '').trim().toLowerCase().replace(/^mailto:/, '');
+  const cleaned = String(email || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return false;
 
@@ -135,7 +141,10 @@ export function normalizeName(name: string | undefined | null): string {
     '',
   );
   // strip trailing parenthetical/credential-like trailing tokens
-  n = n.trim().replace(/[,;]+$/, '').trim();
+  n = n
+    .trim()
+    .replace(/[,;]+$/, '')
+    .trim();
   return n;
 }
 

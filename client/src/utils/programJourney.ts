@@ -73,7 +73,8 @@ export function getProgramJourneyStatus(
     return {
       category: 'fundingAfterMentor',
       label: 'Funding After You Have a Mentor',
-      description: 'Funding records that usually require a research plan, adviser, or lab fit first.',
+      description:
+        'Funding records that usually require a research plan, adviser, or lab fit first.',
     };
   }
 

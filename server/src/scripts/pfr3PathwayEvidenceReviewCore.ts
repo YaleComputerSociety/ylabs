@@ -37,7 +37,10 @@ export interface ValidatedDecision {
 
 export function pathwayReviewHandle(id: unknown, salt: string): string {
   if (salt.trim().length < 16) throw new Error('handle salt must contain at least 16 characters');
-  return `pathway-${createHash('sha256').update(`${salt}:${String(id)}`).digest('hex').slice(0, 12)}`;
+  return `pathway-${createHash('sha256')
+    .update(`${salt}:${String(id)}`)
+    .digest('hex')
+    .slice(0, 12)}`;
 }
 
 export function resolveReviewCandidates(
@@ -49,12 +52,19 @@ export function resolveReviewCandidates(
   if (!Number.isSafeInteger(maxBatch) || maxBatch < 1 || maxBatch > PFR3_REVIEW_MAX_BATCH) {
     throw new Error(`max batch must be an integer from 1 through ${PFR3_REVIEW_MAX_BATCH}`);
   }
-  if (handles.length === 0 || handles.length > maxBatch || new Set(handles).size !== handles.length) {
+  if (
+    handles.length === 0 ||
+    handles.length > maxBatch ||
+    new Set(handles).size !== handles.length
+  ) {
     throw new Error('handles must be unique, non-empty, and no larger than max batch');
   }
-  const byHandle = new Map(candidates.map((candidate) => [pathwayReviewHandle(candidate.id, salt), candidate]));
+  const byHandle = new Map(
+    candidates.map((candidate) => [pathwayReviewHandle(candidate.id, salt), candidate]),
+  );
   const resolved = handles.map((handle) => byHandle.get(handle));
-  if (resolved.some((candidate) => !candidate)) throw new Error('one or more handles do not match this salt or queue');
+  if (resolved.some((candidate) => !candidate))
+    throw new Error('one or more handles do not match this salt or queue');
   return resolved as ReviewCandidate[];
 }
 
@@ -76,7 +86,8 @@ export function validateReviewDecisions(
   return input.map((raw) => {
     const decision = (raw || {}) as ReviewDecision;
     const handle = requiredText(decision.handle, 'handle', 64);
-    if (!allowedHandles.has(handle) || seen.has(handle)) throw new Error('decision handle is unknown or duplicated');
+    if (!allowedHandles.has(handle) || seen.has(handle))
+      throw new Error('decision handle is unknown or duplicated');
     seen.add(handle);
     if (!['recency', 'source_repair', 'new_source'].includes(String(decision.kind))) {
       throw new Error('kind must be recency, source_repair, or new_source');
@@ -98,11 +109,12 @@ export function validateReviewDecisions(
       rationale,
       scraperSource,
       disposition: kind === 'recency' ? 'apply_recency' : 'manual_only',
-      reason: kind === 'recency'
-        ? 'Recency may be applied only by re-recording matching existing source evidence and invoking normal access materialization.'
-        : kind === 'source_repair'
-          ? 'No authoritative field-level source-repair service exists; repair remains manual until one can preserve provenance safely.'
-          : 'No durable bounded scraper-job queue exists; acquisition remains manual and must use the existing scraper CLI.',
+      reason:
+        kind === 'recency'
+          ? 'Recency may be applied only by re-recording matching existing source evidence and invoking normal access materialization.'
+          : kind === 'source_repair'
+            ? 'No authoritative field-level source-repair service exists; repair remains manual until one can preserve provenance safely.'
+            : 'No durable bounded scraper-job queue exists; acquisition remains manual and must use the existing scraper CLI.',
     };
   });
 }
@@ -123,11 +135,16 @@ export function assertExecutionGuards(options: {
   runtimeTarget?: string;
 }): void {
   if (!['beta', 'prod'].includes(options.target)) throw new Error('target must be beta or prod');
-  if (options.runtimeTarget && options.runtimeTarget !== options.target) throw new Error('target does not match runtime environment');
+  if (options.runtimeTarget && options.runtimeTarget !== options.target)
+    throw new Error('target does not match runtime environment');
   if (!options.execute) return;
-  if (options.confirmation !== `execute-${options.target}`) throw new Error('execute confirmation does not match target');
+  if (options.confirmation !== `execute-${options.target}`)
+    throw new Error('execute confirmation does not match target');
   if (!options.restoreToken?.trim()) throw new Error('execute requires a backup/restore token');
-  if (options.target === 'prod' && options.prodConfirmation !== 'confirm-production-pathway-review') {
+  if (
+    options.target === 'prod' &&
+    options.prodConfirmation !== 'confirm-production-pathway-review'
+  ) {
     throw new Error('production execute requires the production confirmation');
   }
 }

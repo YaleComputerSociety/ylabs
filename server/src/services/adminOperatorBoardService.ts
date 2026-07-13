@@ -24,9 +24,9 @@ export const DEFAULT_SCRAPER_INTEGRITY_SCORECARD_PATH = '/tmp/ylabs-scraper-inte
 export const DEFAULT_LAUNCH_TRUST_SCORECARD_PATH = '/tmp/ylabs-launch-trust-contract.json';
 export const DEFAULT_LAUNCH_REVIEW_EXCEPTIONS_REPORT_PATH =
   '/tmp/ylabs-launch-review-exceptions.json';
-export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH =
-  '/tmp/ylabs-launch-acquisition-report.json';
-export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH = '/tmp/ylabs-beta-repair-source-description.json';
+export const DEFAULT_LAUNCH_ACQUISITION_REPORT_PATH = '/tmp/ylabs-launch-acquisition-report.json';
+export const DEFAULT_BETA_REPAIR_QUEUE_REPORT_PATH =
+  '/tmp/ylabs-beta-repair-source-description.json';
 export const DEFAULT_PROMOTION_COPY_DRY_RUN_REPORT_PATH =
   '/tmp/ylabs-lane-a-promotion-dry-run.json';
 /**
@@ -529,8 +529,7 @@ export function deriveDataQualityGate(input?: {
   if (input.promotionReady === false) {
     const count = input.promotionBlockerCount || 0;
     const hardErrorCount = input.hardErrors?.length || 0;
-    const hardErrorText =
-      hardErrorCount === 1 ? '1 hard error' : `${hardErrorCount} hard errors`;
+    const hardErrorText = hardErrorCount === 1 ? '1 hard error' : `${hardErrorCount} hard errors`;
     const blockerText =
       count === 1 ? '1 must-fix promotion blocker' : `${count} must-fix promotion blockers`;
     const note =
@@ -565,10 +564,7 @@ export function deriveDataQualityGate(input?: {
   };
 }
 
-export function deriveRepairQueueGate(
-  openCount: number,
-  input?: BetaRepairQueueGateArtifact,
-) {
+export function deriveRepairQueueGate(openCount: number, input?: BetaRepairQueueGateArtifact) {
   const command = betaTargetCommand(
     'yarn --cwd server beta:repair-queue --collection=all --stage=source_description --mode=dry-run --retry-blocked --limit=500',
   );
@@ -689,8 +685,7 @@ export function derivePromotionCopyGate(input?: PromotionCopyDryRunArtifact) {
   return {
     status: 'review_required' as const,
     command,
-    note:
-      'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
+    note: 'Latest Lane A dry-run artifact has no apply blockers; operator review, restore point, rollback test, and smoke gates are still required.',
     applyBlockerCount: input.applyBlockerCount,
     excludedSyntheticUsers: input.excludedSyntheticUsers,
     collectionCategoryCount: input.collectionCategoryCount,
@@ -843,9 +838,9 @@ function normalizeRepairArtifactOptions(value: unknown): { options?: Record<stri
   return Object.keys(options).length > 0 ? { options } : {};
 }
 
-function summarizePatchSummaries(
-  attempts: unknown,
-): { patchSummaryCounts?: Array<{ summary: string; count: number }> } {
+function summarizePatchSummaries(attempts: unknown): {
+  patchSummaryCounts?: Array<{ summary: string; count: number }>;
+} {
   if (!Array.isArray(attempts)) return {};
   const counts = new Map<string, number>();
   for (const attempt of attempts) {
@@ -865,9 +860,9 @@ function summarizePatchSummaries(
   return rows.length > 0 ? { patchSummaryCounts: rows } : {};
 }
 
-function summarizeRepairSourceHosts(
-  attempts: unknown,
-): { repairSourceHosts?: Array<{ host: string; count: number }> } {
+function summarizeRepairSourceHosts(attempts: unknown): {
+  repairSourceHosts?: Array<{ host: string; count: number }>;
+} {
   if (!Array.isArray(attempts)) return {};
   const counts = new Map<string, number>();
   for (const attempt of attempts) {
@@ -889,9 +884,9 @@ function summarizeRepairSourceHosts(
   return rows.length > 0 ? { repairSourceHosts: rows } : {};
 }
 
-function normalizeBlockedReasonCounts(
-  value: unknown,
-): { blockedReasonCounts?: Array<{ reason: string; count: number }> } {
+function normalizeBlockedReasonCounts(value: unknown): {
+  blockedReasonCounts?: Array<{ reason: string; count: number }>;
+} {
   if (!Array.isArray(value)) return {};
 
   const counts = value.flatMap((item): Array<{ reason: string; count: number }> => {
@@ -963,7 +958,9 @@ function normalizeRecommendedCommands(value: unknown, preferredKeys: string[] = 
   }
 
   return candidates
-    .filter((command): command is string => typeof command === 'string' && command.trim().length > 0)
+    .filter(
+      (command): command is string => typeof command === 'string' && command.trim().length > 0,
+    )
     .map(betaTargetCommand);
 }
 
@@ -1025,11 +1022,11 @@ export function readDataQualityGateArtifact(
         'strictAudit',
         'retentionDryRun',
       ]),
-      ...normalizeDuplicateNamePreflight(parsed?.duplicateEntityNames?.planReview?.preflightGuidance),
-      ...normalizeSamePiDedupeReview(parsed?.samePiDedupeReview),
-      ...normalizeSuspiciousUserEmailCopy(
-        parsed?.hygiene?.emails?.suspiciousUserEmails,
+      ...normalizeDuplicateNamePreflight(
+        parsed?.duplicateEntityNames?.planReview?.preflightGuidance,
       ),
+      ...normalizeSamePiDedupeReview(parsed?.samePiDedupeReview),
+      ...normalizeSuspiciousUserEmailCopy(parsed?.hygiene?.emails?.suspiciousUserEmails),
     };
   } catch {
     return {
@@ -1040,9 +1037,9 @@ export function readDataQualityGateArtifact(
   }
 }
 
-function normalizeSuspiciousUserEmailCopy(
-  value: unknown,
-): { suspiciousUserEmailCopy?: DataQualitySuspiciousUserEmailCopySummary } {
+function normalizeSuspiciousUserEmailCopy(value: unknown): {
+  suspiciousUserEmailCopy?: DataQualitySuspiciousUserEmailCopySummary;
+} {
   if (!value || typeof value !== 'object') {
     return {};
   }
@@ -1083,9 +1080,9 @@ function normalizeSuspiciousUserEmailCopy(
   };
 }
 
-function normalizeDuplicateNamePreflight(
-  value: unknown,
-): { duplicateNamePreflight?: DataQualityDuplicateNamePreflightSummary } {
+function normalizeDuplicateNamePreflight(value: unknown): {
+  duplicateNamePreflight?: DataQualityDuplicateNamePreflightSummary;
+} {
   if (!value || typeof value !== 'object') {
     return {};
   }
@@ -1111,9 +1108,7 @@ function normalizeDuplicateNamePreflight(
         },
       )
     : [];
-  const requiredReviewerDecisions = Array.isArray(
-    sharedWebsiteReview?.requiredReviewerDecisions,
-  )
+  const requiredReviewerDecisions = Array.isArray(sharedWebsiteReview?.requiredReviewerDecisions)
     ? sharedWebsiteReview.requiredReviewerDecisions.filter(
         (item): item is string => typeof item === 'string' && item.trim().length > 0,
       )
@@ -1129,8 +1124,7 @@ function normalizeDuplicateNamePreflight(
     record.acceptedDecisionValidation,
   );
   const preflight: DataQualityDuplicateNamePreflightSummary = {
-    ...(typeof sharedWebsiteClusterCount === 'number' &&
-    Number.isFinite(sharedWebsiteClusterCount)
+    ...(typeof sharedWebsiteClusterCount === 'number' && Number.isFinite(sharedWebsiteClusterCount)
       ? { sharedWebsiteClusterCount }
       : {}),
     ...(typeof sharedWebsiteArtifactPath === 'string' && sharedWebsiteArtifactPath.trim()
@@ -1150,9 +1144,9 @@ function normalizeDuplicateNamePreflight(
     : {};
 }
 
-function normalizeSamePiDedupeReview(
-  value: unknown,
-): { samePiDedupeReview?: DataQualitySamePiDedupeReviewSummary } {
+function normalizeSamePiDedupeReview(value: unknown): {
+  samePiDedupeReview?: DataQualitySamePiDedupeReviewSummary;
+} {
   if (!value || typeof value !== 'object') {
     return {};
   }
@@ -1201,9 +1195,9 @@ function normalizeSamePiDedupeReview(
     : {};
 }
 
-function normalizeSamePiDedupeReviewBreakdown(
-  value: unknown,
-): { reviewBreakdown?: DataQualitySamePiDedupeReviewBreakdown } {
+function normalizeSamePiDedupeReviewBreakdown(value: unknown): {
+  reviewBreakdown?: DataQualitySamePiDedupeReviewBreakdown;
+} {
   if (!value || typeof value !== 'object') {
     return {};
   }
@@ -1277,10 +1271,7 @@ function normalizeAcceptedDecisionValidation(
   }
 }
 
-function copyFiniteNumber(
-  value: Record<string, unknown>,
-  field: string,
-): Record<string, number> {
+function copyFiniteNumber(value: Record<string, unknown>, field: string): Record<string, number> {
   const raw = value[field];
   return typeof raw === 'number' && Number.isFinite(raw) ? { [field]: raw } : {};
 }
@@ -1392,9 +1383,9 @@ export function readScraperIntegrityGateArtifact(
         : [],
       warningCount: Array.isArray(parsed.warnings) ? parsed.warnings.length : 0,
       recommendedCommands: Array.isArray(parsed.recommendedCommands)
-        ? parsed.recommendedCommands.filter(
-            (command: unknown): command is string => typeof command === 'string',
-          ).map(betaTargetCommand)
+        ? parsed.recommendedCommands
+            .filter((command: unknown): command is string => typeof command === 'string')
+            .map(betaTargetCommand)
         : [],
     };
   } catch {
@@ -1406,9 +1397,7 @@ export function readScraperIntegrityGateArtifact(
   }
 }
 
-function launchReviewExceptionDecisionValidationForGate(
-  artifact?: LaunchReviewExceptionsArtifact,
-) {
+function launchReviewExceptionDecisionValidationForGate(artifact?: LaunchReviewExceptionsArtifact) {
   if (!artifact) return undefined;
   if (artifact.artifactStatus === 'loaded') {
     return {
@@ -1708,8 +1697,7 @@ export function deriveLaunchAcquisitionGate(input?: LaunchAcquisitionGateArtifac
 
   return {
     status: 'blocked' as const,
-    note:
-      'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
+    note: 'Launch acquisition report has no deterministic PI/action repair candidates; remaining rows need new source evidence, materializer logic, or manual disambiguation.',
     ...base,
   };
 }
@@ -1765,7 +1753,10 @@ export function readLaunchAcquisitionGateArtifact(
       piBlockers: Number(parsed.piIdentity?.total || 0),
       actionBlockers: Number(parsed.actionEvidence?.total || 0),
       exactPiMatches: groupCount(piGroups, 'exactSingleUserMatch'),
-      sourceBackedRouteCandidates: groupCount(actionGroups, 'sourceBackedRouteNotLaunchMaterialized'),
+      sourceBackedRouteCandidates: groupCount(
+        actionGroups,
+        'sourceBackedRouteNotLaunchMaterialized',
+      ),
       missingOfficialProfileUrl: groupCount(piGroups, 'missingOfficialProfileUrl'),
       ambiguousOrMismatchedUserMatch: groupCount(piGroups, 'ambiguousOrMismatchedUserMatch'),
       sourceObservationsWithoutUndergradAccess: groupCount(
@@ -2229,10 +2220,7 @@ export function buildGateArtifactFreshness(now = new Date()): GateArtifactFreshn
         ageMinutes,
         // Audits write `db` inconsistently (some "Beta", some the full mongo URI); show just the
         // database name so the badge reads uniformly.
-        db:
-          typeof parsed.db === 'string'
-            ? parsed.db.split('/').pop() || parsed.db
-            : undefined,
+        db: typeof parsed.db === 'string' ? parsed.db.split('/').pop() || parsed.db : undefined,
         environment: typeof parsed.environment === 'string' ? parsed.environment : undefined,
       };
     } catch {
@@ -2271,15 +2259,14 @@ export async function buildAdminOperatorBoard() {
     queueSummaries,
     releaseQueue,
     repairQueue,
-  ] =
-    await Promise.all([
-      buildSourceFreshness(),
-      countByTier(ResearchEntity, { archived: { $ne: true } }),
-      countByTier(Fellowship, { archived: false }),
-      buildQueueSummaries(),
-      buildReleaseQueueSummary(),
-      buildRepairQueueSummary(),
-    ]);
+  ] = await Promise.all([
+    buildSourceFreshness(),
+    countByTier(ResearchEntity, { archived: { $ne: true } }),
+    countByTier(Fellowship, { archived: false }),
+    buildQueueSummaries(),
+    buildReleaseQueueSummary(),
+    buildRepairQueueSummary(),
+  ]);
   const integrityStatus =
     scraperIntegrityArtifact?.artifactStatus === 'loaded'
       ? scraperIntegrityArtifact.integrityStatus
@@ -2319,11 +2306,12 @@ export async function buildAdminOperatorBoard() {
           : undefined,
       samePiDedupeUnreviewedPlanCount:
         dataQualityArtifact?.artifactStatus === 'loaded'
-          ? dataQualityArtifact.samePiDedupeReview?.acceptedDecisionValidation
-              .unreviewedPlanCount
+          ? dataQualityArtifact.samePiDedupeReview?.acceptedDecisionValidation.unreviewedPlanCount
           : undefined,
       launchHeldCount:
-        launchTrustArtifact?.artifactStatus === 'loaded' ? launchTrustArtifact.heldCount : undefined,
+        launchTrustArtifact?.artifactStatus === 'loaded'
+          ? launchTrustArtifact.heldCount
+          : undefined,
       launchReviewExceptionUnreviewedCount:
         launchReviewExceptionsArtifact?.artifactStatus === 'loaded'
           ? launchReviewExceptionsArtifact.unreviewedPlanCount

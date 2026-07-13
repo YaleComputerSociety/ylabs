@@ -158,7 +158,8 @@ export function personToObservations(
   const base = { entityType: 'user' as const, entityKey: netid, sourceUrl };
   const out: ObservationInput[] = [];
 
-  const fname = (person.preferred_name && String(person.preferred_name).trim()) ||
+  const fname =
+    (person.preferred_name && String(person.preferred_name).trim()) ||
     (person.first_name && String(person.first_name).trim()) ||
     '';
   const lname = (person.last_name && String(person.last_name).trim()) || '';
@@ -166,7 +167,8 @@ export function personToObservations(
   const title = (person.title && String(person.title).trim()) || '';
   const phone = (person.phone && String(person.phone).trim()) || '';
   const college = (person.college && String(person.college).trim()) || '';
-  const school = (person.school_name && String(person.school_name).trim()) ||
+  const school =
+    (person.school_name && String(person.school_name).trim()) ||
     (person.school && String(person.school).trim()) ||
     '';
   const imageUrl = (person.image && String(person.image).trim()) || '';

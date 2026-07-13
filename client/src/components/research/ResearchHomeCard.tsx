@@ -94,13 +94,11 @@ const ResearchHomeCard = ({
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
   const isCompact = variant === 'compact';
-  const homeEntities = home.entities
-    .slice(0, 3)
-    .map((entity) => ({
-      id: entity._id || entity.slug,
-      slug: entity.slug,
-      label: entity.displayName || entity.name || 'Untitled research profile',
-    }));
+  const homeEntities = home.entities.slice(0, 3).map((entity) => ({
+    id: entity._id || entity.slug,
+    slug: entity.slug,
+    label: entity.displayName || entity.name || 'Untitled research profile',
+  }));
   const primaryLinkedEntity = homeEntities.find((entity) => Boolean(entity.slug));
   const singleLinkedEntity =
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
@@ -136,7 +134,9 @@ const ResearchHomeCard = ({
         pathway.activePostedOpportunity &&
         pathway.activePostedOpportunity.provenance !== 'LISTING_BRIDGED',
     )?.activePostedOpportunity;
-  const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
+  const primaryProfileUrl = primaryLinkedEntity
+    ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}`
+    : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
@@ -231,26 +231,17 @@ const ResearchHomeCard = ({
 
         <div className="flex flex-wrap gap-1.5">
           {metadataBadges.map((label) => (
-            <span
-              key={label}
-              className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5"
-            >
+            <span key={label} className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {alwaysVisibleTopicBadges.map((label) => (
-            <span
-              key={label}
-              className="yr-pill min-h-0 rounded px-2 py-0.5"
-            >
+            <span key={label} className="yr-pill min-h-0 rounded px-2 py-0.5">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
           {desktopOnlyTopicBadges.map((label) => (
-            <span
-              key={label}
-              className="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
-            >
+            <span key={label} className="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex">
               {formatTitleCaseLabel(label)}
             </span>
           ))}
@@ -330,10 +321,7 @@ const ResearchHomeCard = ({
       {wayInBadges.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Planning context">
           {wayInBadges.slice(0, isCompact ? 3 : undefined).map((badge) => (
-            <span
-              key={badge}
-              className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5"
-            >
+            <span key={badge} className="yr-pill yr-pill-green min-h-0 rounded px-2 py-0.5">
               {directoryFirstBadgeLabel(badge)}
             </span>
           ))}
@@ -342,9 +330,7 @@ const ResearchHomeCard = ({
 
       {home.entities.length > 0 && !singleLinkedEntity && !isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">
-            Research homes
-          </p>
+          <p className="yr-kicker mb-2 text-[0.68rem]">Research homes</p>
           <div className="flex flex-col gap-1">
             {homeEntities.map((entity) => {
               if (!entity.slug) {
@@ -376,9 +362,7 @@ const ResearchHomeCard = ({
 
       {!isCompact && (
         <div className="mt-4 border-t border-[var(--yr-line)] pt-3">
-          <p className="yr-kicker mb-2 text-[0.68rem]">
-            Evidence
-          </p>
+          <p className="yr-kicker mb-2 text-[0.68rem]">Evidence</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
             <span>{home.evidenceStatus?.label || 'Evidence limited'}</span>
             {primaryEvidenceUrl && (

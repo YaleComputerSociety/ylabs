@@ -54,10 +54,7 @@ const toStringArray = (value: unknown): string[] | undefined => {
   return undefined;
 };
 
-const PUBLIC_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
-  'lastObservedAt',
-  'name',
-];
+const PUBLIC_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = ['lastObservedAt', 'name'];
 
 const OPERATOR_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
   ...PUBLIC_ALLOWED_SORT_FIELDS,
@@ -107,8 +104,9 @@ const parseStudentVisibilityTiers = (value: unknown): StudentVisibilityTier[] =>
 
 const parseQualityFilters = (value: unknown): ResearchGroupQualityFilter[] => {
   const values = toStringArray(value) || [];
-  return values.filter((filter): filter is ResearchGroupQualityFilter =>
-    filter === 'description-issue' || filter === 'missing-lead' || filter === 'profile-fallback',
+  return values.filter(
+    (filter): filter is ResearchGroupQualityFilter =>
+      filter === 'description-issue' || filter === 'missing-lead' || filter === 'profile-fallback',
   );
 };
 

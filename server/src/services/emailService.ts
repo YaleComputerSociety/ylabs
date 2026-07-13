@@ -22,7 +22,7 @@ export async function sendRelayEmail({
   message,
   cc = [],
   bcc = [],
-  attachments = []
+  attachments = [],
 }: SendRelayEmailParams): Promise<void> {
   const transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
@@ -30,14 +30,14 @@ export async function sendRelayEmail({
     secure: false,
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD
-    }
+      pass: process.env.EMAIL_PASSWORD,
+    },
   });
 
   // Format attachments for nodemailer
-  const formattedAttachments = attachments.map(file => ({
+  const formattedAttachments = attachments.map((file) => ({
     filename: file.originalname,
-    content: file.buffer
+    content: file.buffer,
   }));
 
   await transporter.sendMail({
@@ -49,6 +49,6 @@ export async function sendRelayEmail({
     subject: subject,
     text: message,
     html: `<p>${message.replace(/\n/g, '<br>')}</p>`,
-    attachments: formattedAttachments
+    attachments: formattedAttachments,
   });
 }

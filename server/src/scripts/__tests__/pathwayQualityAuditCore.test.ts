@@ -120,19 +120,28 @@ describe('buildPathwayQualityAudit', () => {
     expect(() =>
       parsePathwayQualityAuditArgs(['--output', '/var/tmp/pathway-quality.json']),
     ).toThrow(/--output must write under/);
-    expect(() =>
-      parsePathwayQualityAuditArgs(['--output', '/tmp/pathway-quality.txt']),
-    ).toThrow(/--output must point to a \.json report file/);
+    expect(() => parsePathwayQualityAuditArgs(['--output', '/tmp/pathway-quality.txt'])).toThrow(
+      /--output must point to a \.json report file/,
+    );
   });
 
   it('rejects unsafe evidence URLs from the publication funnel', () => {
     const report = buildPathwayQualityAudit({
-      pathways: [{
-        id: 'pathway-1', researchEntityId: 'entity-1', status: 'ACTIVE',
-        evidenceStrength: 'DIRECT', confidence: 0.9,
-        sourceUrls: ['http://127.0.0.1/private'], sourceEvidenceIds: ['obs-1'],
-      }],
-      routes: [], listings: [], entityContexts: [], sampleLimit: 0,
+      pathways: [
+        {
+          id: 'pathway-1',
+          researchEntityId: 'entity-1',
+          status: 'ACTIVE',
+          evidenceStrength: 'DIRECT',
+          confidence: 0.9,
+          sourceUrls: ['http://127.0.0.1/private'],
+          sourceEvidenceIds: ['obs-1'],
+        },
+      ],
+      routes: [],
+      listings: [],
+      entityContexts: [],
+      sampleLimit: 0,
     });
     expect(report.summary.studentPublishablePathways).toBe(0);
     expect(report.publicationBlockers).toEqual({ source_url: 1 });

@@ -308,7 +308,9 @@ const exportTextWithoutDirectContact = (value: unknown): string =>
 const exportUserTextForSpreadsheet = (value: unknown): string =>
   safeSpreadsheetCell(String(value || ''));
 
-const exportChecklistForSpreadsheet = (checklist: Record<string, boolean>): Record<string, boolean> =>
+const exportChecklistForSpreadsheet = (
+  checklist: Record<string, boolean>,
+): Record<string, boolean> =>
   Object.fromEntries(
     Object.entries(checklist).map(([key, value]) => [exportUserTextForSpreadsheet(key), value]),
   );
@@ -1040,7 +1042,9 @@ export const updateSavedProgramTracking = async (
 
 export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
   const pathwayIds = normalizeObjectIdsForUserMutation(pathways, 'favPathways');
-  const visiblePathways = await getPathwaysByIds(pathwayIds.map((pathwayId) => pathwayId.toHexString()));
+  const visiblePathways = await getPathwaysByIds(
+    pathwayIds.map((pathwayId) => pathwayId.toHexString()),
+  );
   const visiblePathwayIds = normalizeObjectIdsForUserMutation(
     visiblePathways.map((pathway) => pathway._id),
     'favPathways',

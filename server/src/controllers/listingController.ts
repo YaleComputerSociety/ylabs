@@ -157,10 +157,7 @@ const buildRobustFilterMatch = async (params: {
   return filters.join(' AND ');
 };
 
-const LISTING_SEARCH_SORT_FIELDS = new Set([
-  'title',
-  'expiresAt',
-]);
+const LISTING_SEARCH_SORT_FIELDS = new Set(['title', 'expiresAt']);
 const DEFAULT_PUBLIC_LISTING_SORT_FIELD = 'expiresAt';
 const MAX_LISTING_SEARCH_PAGE = 1000;
 const MAX_LISTING_SEARCH_PAGE_SIZE = 100;
@@ -196,7 +193,9 @@ const splitBoundedListingSearchParam = (value: unknown, separator = ','): string
 };
 
 const listingSearchSortField = (value: unknown): string =>
-  typeof value === 'string' && LISTING_SEARCH_SORT_FIELDS.has(value) ? value : DEFAULT_PUBLIC_LISTING_SORT_FIELD;
+  typeof value === 'string' && LISTING_SEARCH_SORT_FIELDS.has(value)
+    ? value
+    : DEFAULT_PUBLIC_LISTING_SORT_FIELD;
 
 const listingSearchSortOrder = (value: unknown): 'asc' | 'desc' => (value === '1' ? 'asc' : 'desc');
 
@@ -807,7 +806,11 @@ export const updateListingForCurrentUser = async (
 
 export const archiveListingForCurrentUser = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     const listing = await archiveListing(request.params.id, currentUser.netId!);
     response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
@@ -819,7 +822,11 @@ export const archiveListingForCurrentUser = async (request: Request, response: R
 
 export const unarchiveListingForCurrentUser = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     const listing = await unarchiveListing(request.params.id, currentUser.netId!);
     response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
@@ -831,7 +838,11 @@ export const unarchiveListingForCurrentUser = async (request: Request, response:
 
 export const addViewToListing = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     const listing = await addView(request.params.id, currentUser.netId!);
     response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
@@ -842,7 +853,11 @@ export const addViewToListing = async (request: Request, response: Response) => 
 
 export const deleteListingForCurrentUser = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     const currentListing = await readListing(request.params.id);
     if (currentUser.netId !== currentListing.ownerId) {
@@ -850,7 +865,9 @@ export const deleteListingForCurrentUser = async (request: Request, response: Re
     }
 
     const deletedListing = await deleteListing(request.params.id);
-    response.status(200).json({ deletedListing: publicListingForAuthenticatedReader(deletedListing) });
+    response
+      .status(200)
+      .json({ deletedListing: publicListingForAuthenticatedReader(deletedListing) });
   } catch (error: any) {
     console.error('Listing delete failed:', sanitizeLogValue(error));
     sendListingError(response, error, 'Failed to delete listing');

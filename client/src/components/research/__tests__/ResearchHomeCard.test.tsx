@@ -278,9 +278,7 @@ describe('ResearchHomeCard', () => {
     );
 
     const link = screen.getByRole('link', { name: 'Fixture Scholar' });
-    expect(link.getAttribute('href')).toBe(
-      'https://medicine.yale.edu/profile/fixture-scholar/',
-    );
+    expect(link.getAttribute('href')).toBe('https://medicine.yale.edu/profile/fixture-scholar/');
   });
 
   it('shows ways-in badges from pathway and access-summary data inline', () => {
@@ -376,7 +374,9 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const description = screen.getByText(/Studies how synthetic signals move through fixture workflows/);
+    const description = screen.getByText(
+      /Studies how synthetic signals move through fixture workflows/,
+    );
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
     expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
@@ -390,7 +390,7 @@ describe('ResearchHomeCard', () => {
             entities: [
               ...(researchHome().entities || []),
               {
-                ...(researchHome().entities[0]),
+                ...researchHome().entities[0],
                 _id: 'entity-2',
                 slug: 'related-research-home',
                 name: 'Related Research Home',
@@ -433,9 +433,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Summary limited');
     expect(container.textContent).toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
-    expect(container.textContent).toContain(
-      'Review evidence and official source links',
-    );
+    expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
   });
 

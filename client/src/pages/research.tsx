@@ -449,10 +449,11 @@ const Research = () => {
   };
 
   useEffect(() => {
-    const generation = ++effectGenerationRef.current;
+    const effectGeneration = effectGenerationRef;
+    const generation = ++effectGeneration.current;
     return () => {
       queueMicrotask(() => {
-        if (effectGenerationRef.current !== generation) return;
+        if (effectGeneration.current !== generation) return;
         searchAbortRef.current?.abort();
         defaultSearchAbortRef.current?.abort();
       });

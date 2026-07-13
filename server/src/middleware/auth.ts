@@ -2,10 +2,7 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
-import {
-  allowsLegacyAdminUserType,
-  hasActiveAdminGrant,
-} from '../services/adminGrantService';
+import { allowsLegacyAdminUserType, hasActiveAdminGrant } from '../services/adminGrantService';
 
 const AUTH_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
@@ -37,9 +34,7 @@ const sendAuthRequired = (res: express.Response) =>
 const hasAdminAuthority = async (user: AuthenticatedUser): Promise<boolean> => {
   const netid = requestNetid(user);
   if (user.userType !== 'admin' || !netid) return false;
-  return hasActiveAdminGrant(netid).then(
-    (hasGrant) => hasGrant || allowsLegacyAdminUserType(),
-  );
+  return hasActiveAdminGrant(netid).then((hasGrant) => hasGrant || allowsLegacyAdminUserType());
 };
 
 /**

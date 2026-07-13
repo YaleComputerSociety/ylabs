@@ -81,10 +81,7 @@ function normalizePage(input?: unknown): number {
 }
 
 function normalizePageSize(input?: unknown): number {
-  return Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(1, Math.floor(Number(input) || DEFAULT_PAGE_SIZE)),
-  );
+  return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(Number(input) || DEFAULT_PAGE_SIZE)));
 }
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | null => {
@@ -142,7 +139,10 @@ function sourceNames(records: any[]): string[] {
     new Set(
       records
         .map((record) => record.sourceName)
-        .filter((sourceName): sourceName is string => typeof sourceName === 'string' && sourceName.length > 0),
+        .filter(
+          (sourceName): sourceName is string =>
+            typeof sourceName === 'string' && sourceName.length > 0,
+        ),
     ),
   ).sort();
 }
@@ -150,7 +150,9 @@ function sourceNames(records: any[]): string[] {
 function evidenceIdsForRecord(record: any): mongoose.Types.ObjectId[] {
   const rawIds = [
     ...(Array.isArray(record.sourceEvidenceIds) ? record.sourceEvidenceIds : []),
-    ...(Array.isArray(record.sourceEvidenceId) ? record.sourceEvidenceId : [record.sourceEvidenceId]),
+    ...(Array.isArray(record.sourceEvidenceId)
+      ? record.sourceEvidenceId
+      : [record.sourceEvidenceId]),
     ...(Array.isArray(record.observationId) ? record.observationId : [record.observationId]),
   ];
   const ids: mongoose.Types.ObjectId[] = [];
@@ -249,7 +251,8 @@ function buildReviewSummary(input: {
     guardedContactRoutes: input.contactRoutes.filter(
       (route) => route.visibility !== 'PUBLIC' || route.contactPolicy === 'NO_DIRECT_CONTACT',
     ).length,
-    publicContactRoutes: input.contactRoutes.filter((route) => route.visibility === 'PUBLIC').length,
+    publicContactRoutes: input.contactRoutes.filter((route) => route.visibility === 'PUBLIC')
+      .length,
     manualLocks: input.group.manuallyLockedFields || [],
     sourceNames: sourceNames(allRecords),
   };
@@ -267,9 +270,10 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
   const pageSize = normalizePageSize(input.pageSize);
   const filter: Record<string, unknown> = {};
   const hasUnreviewed = input.hasUnreviewed === true || input.hasUnreviewed === 'true';
-  const sort = typeof input.sort === 'string' && ACCESS_REVIEW_SORTS.has(input.sort)
-    ? input.sort
-    : 'unreviewed';
+  const sort =
+    typeof input.sort === 'string' && ACCESS_REVIEW_SORTS.has(input.sort)
+      ? input.sort
+      : 'unreviewed';
 
   const searchTerm = normalizeAccessReviewSearchTerm(input.search);
 
@@ -290,7 +294,13 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
       let: { entityId: '$_id' },
       pipeline: [
         { $match: { $expr: { $eq: ['$researchEntityId', '$$entityId'] } } },
-        { $project: { _id: 0, status: '$review.status', ...(includeApplication ? { applicationUrl: 1 } : {}) } },
+        {
+          $project: {
+            _id: 0,
+            status: '$review.status',
+            ...(includeApplication ? { applicationUrl: 1 } : {}),
+          },
+        },
       ],
       as,
     },
@@ -301,41 +311,106 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
     lookup('access_signals', '_signals'),
     lookup('contact_routes', '_routes'),
     lookup('posted_opportunities', '_opportunities', true),
-    { $set: {
-      totalUnreviewed: { $add: [
-        { $size: { $filter: { input: '$_pathways', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
-        { $size: { $filter: { input: '$_signals', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
-        { $size: { $filter: { input: '$_routes', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
-        { $size: { $filter: { input: '$_opportunities', as: 'r', cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] } } } },
-      ] },
-      hasOfficialApplication: { $anyElementTrue: { $map: { input: '$_opportunities', as: 'r', in: { $gt: [{ $strLenCP: { $ifNull: ['$$r.applicationUrl', ''] } }, 0] } } } },
-    } },
+    {
+      $set: {
+        totalUnreviewed: {
+          $add: [
+            {
+              $size: {
+                $filter: {
+                  input: '$_pathways',
+                  as: 'r',
+                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
+                },
+              },
+            },
+            {
+              $size: {
+                $filter: {
+                  input: '$_signals',
+                  as: 'r',
+                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
+                },
+              },
+            },
+            {
+              $size: {
+                $filter: {
+                  input: '$_routes',
+                  as: 'r',
+                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
+                },
+              },
+            },
+            {
+              $size: {
+                $filter: {
+                  input: '$_opportunities',
+                  as: 'r',
+                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
+                },
+              },
+            },
+          ],
+        },
+        hasOfficialApplication: {
+          $anyElementTrue: {
+            $map: {
+              input: '$_opportunities',
+              as: 'r',
+              in: { $gt: [{ $strLenCP: { $ifNull: ['$$r.applicationUrl', ''] } }, 0] },
+            },
+          },
+        },
+      },
+    },
     ...(hasUnreviewed ? [{ $match: { totalUnreviewed: { $gt: 0 } } }] : []),
-    { $sort: sort === 'updated' ? { updatedAt: -1, _id: 1 } : sort === 'official_application' ? { hasOfficialApplication: -1, totalUnreviewed: -1, updatedAt: -1, _id: 1 } : { totalUnreviewed: -1, hasOfficialApplication: -1, updatedAt: -1, _id: 1 } },
-    { $facet: {
-      rows: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
-      meta: [{ $count: 'total' }],
-    } },
+    {
+      $sort:
+        sort === 'updated'
+          ? { updatedAt: -1, _id: 1 }
+          : sort === 'official_application'
+            ? { hasOfficialApplication: -1, totalUnreviewed: -1, updatedAt: -1, _id: 1 }
+            : { totalUnreviewed: -1, hasOfficialApplication: -1, updatedAt: -1, _id: 1 },
+    },
+    {
+      $facet: {
+        rows: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
+        meta: [{ $count: 'total' }],
+      },
+    },
   ];
 
   const [aggregateResult, progressCounts] = await Promise.all([
     ResearchEntity.aggregate(pipeline).exec(),
-    Promise.all([EntryPathway, AccessSignal, ContactRoute, PostedOpportunity].map(async (model) => {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const [remaining, reviewedToday] = await Promise.all([
-        model.countDocuments({ $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }] }),
-        model.countDocuments({ 'review.status': { $ne: 'unreviewed' }, 'review.reviewedAt': { $gte: start } }),
-      ]);
-      return { remaining, reviewedToday };
-    })),
+    Promise.all(
+      [EntryPathway, AccessSignal, ContactRoute, PostedOpportunity].map(async (model) => {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const [remaining, reviewedToday] = await Promise.all([
+          model.countDocuments({
+            $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }],
+          }),
+          model.countDocuments({
+            'review.status': { $ne: 'unreviewed' },
+            'review.reviewedAt': { $gte: start },
+          }),
+        ]);
+        return { remaining, reviewedToday };
+      }),
+    ),
   ]);
   const groups = aggregateResult[0]?.rows || [];
   const total = Number(aggregateResult[0]?.meta?.[0]?.total || 0);
 
   const entities = groups.map((group: any) => {
     const id = accessReviewDocumentId(group._id);
-    const records = [group._pathways || [], group._signals || [], group._routes || [], group._opportunities || []];
+    const records = [
+      group._pathways || [],
+      group._signals || [],
+      group._routes || [],
+      group._opportunities || [],
+    ];
     const counts = {
       entryPathways: records[0].length,
       accessSignals: records[1].length,
@@ -346,7 +421,8 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
       entryPathways: records[0].filter((r: any) => !r.status || r.status === 'unreviewed').length,
       accessSignals: records[1].filter((r: any) => !r.status || r.status === 'unreviewed').length,
       contactRoutes: records[2].filter((r: any) => !r.status || r.status === 'unreviewed').length,
-      postedOpportunities: records[3].filter((r: any) => !r.status || r.status === 'unreviewed').length,
+      postedOpportunities: records[3].filter((r: any) => !r.status || r.status === 'unreviewed')
+        .length,
     };
 
     return {
@@ -371,10 +447,13 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
     page,
     pageSize,
     totalPages: Math.ceil(total / pageSize),
-    progress: progressCounts.reduce((summary, row) => ({
-      remaining: summary.remaining + row.remaining,
-      reviewedToday: summary.reviewedToday + row.reviewedToday,
-    }), { remaining: 0, reviewedToday: 0 }),
+    progress: progressCounts.reduce(
+      (summary, row) => ({
+        remaining: summary.remaining + row.remaining,
+        reviewedToday: summary.reviewedToday + row.reviewedToday,
+      }),
+      { remaining: 0, reviewedToday: 0 },
+    ),
   };
 }
 
@@ -384,9 +463,7 @@ export async function getAccessReviewEntity(researchEntityId: string): Promise<a
 
   const [group, entryPathways, accessSignals, contactRoutes, postedOpportunities] =
     await Promise.all([
-      ResearchEntity.findById(id)
-        .select('-embedding')
-        .lean(),
+      ResearchEntity.findById(id).select('-embedding').lean(),
       EntryPathway.find({ researchEntityId: id }).sort({ archived: 1, updatedAt: -1 }).lean(),
       AccessSignal.find({ researchEntityId: id }).sort({ archived: 1, observedAt: -1 }).lean(),
       ContactRoute.find({ researchEntityId: id }).sort({ archived: 1, priority: 1 }).lean(),
@@ -484,7 +561,5 @@ export async function updateAccessReviewRecordReview(input: {
     update.archived = true;
   }
 
-  return model
-    .findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true })
-    .lean();
+  return model.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true }).lean();
 }

@@ -61,7 +61,7 @@ const SearchHub = ({ allDepartments }: SearchHubProps) => {
       case 'ArrowDown':
         e.preventDefault();
         setFocusedDepartmentIndex((prev) =>
-          prev < filteredDepartments.length - 1 ? prev + 1 : prev
+          prev < filteredDepartments.length - 1 ? prev + 1 : prev,
         );
         break;
       case 'ArrowUp':
@@ -70,10 +70,7 @@ const SearchHub = ({ allDepartments }: SearchHubProps) => {
         break;
       case 'Enter':
         e.preventDefault();
-        if (
-          focusedDepartmentIndex >= 0 &&
-          focusedDepartmentIndex < filteredDepartments.length
-        ) {
+        if (focusedDepartmentIndex >= 0 && focusedDepartmentIndex < filteredDepartments.length) {
           handleDepartmentSelect(filteredDepartments[focusedDepartmentIndex]);
           setSearchTerm('');
           setFocusedDepartmentIndex(-1);
@@ -120,16 +117,12 @@ const SearchHub = ({ allDepartments }: SearchHubProps) => {
   const filteredDepartments = allDepartments.filter(
     (department) =>
       department.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      selectedDepartments.indexOf(department) < 0
+      selectedDepartments.indexOf(department) < 0,
   );
 
   const toggleDropdown = () => {
     setIsDropdownOpen(!isDropdownOpen);
     setSearchTerm('');
-  };
-
-  const openDropdown = () => {
-    setIsDropdownOpen(true);
   };
 
   const closeDropdown = () => {
@@ -143,8 +136,7 @@ const SearchHub = ({ allDepartments }: SearchHubProps) => {
 
   const getDepartmentColor = (department: string) => {
     if (Object.keys(departmentCategories).includes(department)) {
-      const category =
-        departmentCategories[department as keyof typeof departmentCategories];
+      const category = departmentCategories[department as keyof typeof departmentCategories];
       switch (category) {
         case 0:
           return 'bg-blue-200 text-gray-900';
@@ -234,9 +226,7 @@ const SearchHub = ({ allDepartments }: SearchHubProps) => {
                         setSearchTerm('');
                       }}
                       className={`p-2 cursor-pointer ${
-                        focusedDepartmentIndex === index
-                          ? 'bg-blue-100'
-                          : 'hover:bg-gray-100'
+                        focusedDepartmentIndex === index ? 'bg-blue-100' : 'hover:bg-gray-100'
                       }`}
                       onMouseDown={(e) => e.preventDefault()}
                     >
@@ -285,18 +275,14 @@ const SearchHub = ({ allDepartments }: SearchHubProps) => {
 
       {selectedDepartments.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-4 w-full">
-          <span
-            className={
-              'border text-gray-700 px-2 py-1 rounded text-sm flex items-center'
-            }
-          >
+          <span className={'border text-gray-700 px-2 py-1 rounded text-sm flex items-center'}>
             Filters:
           </span>
           {selectedDepartments.map((department, index) => (
             <span
               key={index}
               className={`${getDepartmentColor(
-                department
+                department,
               )} px-2 py-1 rounded text-sm flex items-center`}
             >
               <span className="whitespace-nowrap">{department}</span>

@@ -45,9 +45,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
       getUniqueDepartmentLabels(
         departments.map((d) => d.name || d.displayName),
         departments,
-      ).sort((a, b) =>
-        a.localeCompare(b),
-      ),
+      ).sort((a, b) => a.localeCompare(b)),
     [departments],
   );
 
@@ -122,9 +120,15 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
     [],
   ) as React.Dispatch<React.SetStateAction<FilterMode>>;
 
-  const setSortBy = useCallback((value: string) => {
-    dispatch({ type: 'SET_SORT_BY', payload: sortableKeys.includes(value) ? value : sortableKeys[0] });
-  }, [sortableKeys]);
+  const setSortBy = useCallback(
+    (value: string) => {
+      dispatch({
+        type: 'SET_SORT_BY',
+        payload: sortableKeys.includes(value) ? value : sortableKeys[0],
+      });
+    },
+    [sortableKeys],
+  );
 
   const setSortOrder = useCallback((value: number) => {
     dispatch({ type: 'SET_SORT_ORDER', payload: value });
@@ -234,13 +238,7 @@ const SearchContextProvider: FC<SearchContextProviderProps> = ({ children }) => 
   }, [handleSearch]);
 
   useEffect(() => {
-    if (
-      isListingsRoute &&
-      configLoaded &&
-      !authLoading &&
-      isAuthenticated &&
-      !initialSearchDone
-    ) {
+    if (isListingsRoute && configLoaded && !authLoading && isAuthenticated && !initialSearchDone) {
       dispatch({ type: 'SET_PAGE', payload: 1 });
       handleSearch(1);
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });

@@ -70,14 +70,6 @@ const listingSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
-    ownerTitle: {
-        type: String,
-        required: false,
-    },
-    ownerPrimaryDepartment: {
-        type: String,
-        required: false,
-    },
     professorIds: {
       type: [String],
       default: [],
@@ -157,10 +149,6 @@ const listingSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    audited: {
-      type: Boolean,
-      default: false,
-    },
     evidence: {
       status: {
         type: String,
@@ -201,8 +189,8 @@ const listingSchema = new mongoose.Schema(
       required: false,
     },
     audited: {
-        type: Boolean,
-        default: false,
+      type: Boolean,
+      default: false,
     },
     embedding: {
       type: [Number],

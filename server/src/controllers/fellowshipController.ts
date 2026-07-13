@@ -50,7 +50,8 @@ const numericSearchParam = (value: unknown): number | undefined => {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 };
 
-const publicFellowshipSortOrder = (value: unknown): 1 | -1 => (numericSearchParam(value) === 1 ? 1 : -1);
+const publicFellowshipSortOrder = (value: unknown): 1 | -1 =>
+  numericSearchParam(value) === 1 ? 1 : -1;
 const publicFellowshipPage = (value: unknown): number =>
   Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(numericSearchParam(value) || 1)));
 const publicFellowshipPageSize = (value: unknown): number =>
@@ -139,8 +140,7 @@ export const getFellowshipById = async (request: Request, response: Response) =>
       includeNonPublic: hasAdminAuthority,
     });
     response.status(200).json({
-      fellowship:
-        hasAdminAuthority ? fellowship : publicProgramForReader(fellowship),
+      fellowship: hasAdminAuthority ? fellowship : publicProgramForReader(fellowship),
     });
   } catch (error: any) {
     sendFellowshipError(response, error, 'Failed to fetch fellowship');

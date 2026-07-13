@@ -103,6 +103,8 @@
     "express-rate-limit": "^8.5.2",
     "meilisearch": "^0.57.0",
     "mongoose": "^8.9.5",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.3",
     "passport": "^0.7.0",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",
     "pdfjs-dist": "^5.4.54"
@@ -128,7 +130,9 @@
     "@types/cookie-session": "^2.0.48",
     "@types/cors": "^2.8.12",
     "@types/express": "4.17.13",
+    "@types/multer": "^2.2.0",
     "@types/node": "20",
+    "@types/nodemailer": "^8.0.1",
     "@types/passport": "^1.0.17",
     "ts-node": "^10.9.2",
     "tsup": "^8.5.1",
