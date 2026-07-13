@@ -583,22 +583,7 @@ describe('Research page', () => {
       );
     });
 
-    fireEvent.click(screen.getByLabelText('Has undergraduate evidence'));
-    await waitFor(() => {
-      expect(mockedAxios.post.mock.calls.at(-1)?.[1]).toEqual(
-        expect.objectContaining({
-          filters: {
-            school: ['Yale College'],
-            departments: ['Computer Science'],
-            acceptanceLevel: 'verified-or-likely',
-          },
-          page: 1,
-        }),
-      );
-      expect(screen.getByTestId('location').textContent).toBe(
-        '/research?q=machine+learning&school=Yale+College&department=Computer+Science&undergrad=1',
-      );
-    });
+    expect(screen.queryByLabelText('Undergraduate participation documented')).toBeNull();
   });
 
   it('returns to default research homes when clearing a quick-start search', async () => {
@@ -664,7 +649,7 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
 
-    expect(container.textContent).toContain('Best next step: Review source context');
+    expect(container.textContent).not.toContain('Best next step: Review source context');
   });
 
   it('lets admins put weakest profiles first only for the default browse', async () => {
@@ -1207,12 +1192,12 @@ describe('Research page', () => {
 
     expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
-    expect(
-      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search'),
-    ).toHaveLength(1);
-    expect(
-      mockedAxios.post.mock.calls.filter(([url]) => url === '/pathways/search'),
-    ).toHaveLength(1);
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      1,
+    );
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/pathways/search')).toHaveLength(
+      0,
+    );
   });
 
   it('reveals one research-home result stream with inline ways-in context after a search', async () => {
@@ -1240,9 +1225,9 @@ describe('Research page', () => {
     await waitFor(() => {
       expect(screen.getByRole('status').textContent).toContain('1 research home, 1 contact');
     });
-    expect(screen.getAllByRole('status')[0].textContent).toContain('1 verified way in');
+    expect(screen.getAllByRole('status')[0].textContent).not.toContain('verified way in');
     expect(screen.queryByRole('link', { name: /Compare .*pathway/i })).toBeNull();
-    expect(container.textContent).toContain('Research homes');
+    expect(container.textContent).toContain('Research profiles');
     expect(container.textContent).not.toContain('How to use this');
     expect(container.textContent).not.toContain('Popular starting points');
     expect(container.textContent).not.toContain('Topic term: protein');
@@ -1260,7 +1245,7 @@ describe('Research page', () => {
     expect(container.textContent).not.toContain('Why it might fit');
     expect(container.textContent).not.toContain('Official Yale source found');
     const researchHomesSection = screen
-      .getByRole('heading', { name: 'Research homes' })
+      .getByRole('heading', { name: 'Research profiles' })
       .closest('section');
     const searchGrid = researchHomesSection?.querySelector('.grid.gap-3');
     expect(searchGrid?.className).toContain('lg:grid-cols-2');
@@ -1272,8 +1257,9 @@ describe('Research page', () => {
         .getAllByRole('link', { name: 'AI Safety Lab' })
         .some((link) => link.getAttribute('href') === '/research/ai-safety-lab'),
     ).toBe(true);
-    expect(container.textContent).toContain('Verified ways in');
-    expect(screen.getByRole('link', { name: 'Review evidence' })).toBeTruthy();
+    expect(container.textContent).not.toContain('Verified ways in');
+    expect(container.textContent).not.toContain('72% confidence');
+    expect(container.textContent).not.toContain('moderate evidence');
     expect(container.textContent).not.toContain('Contact the program manager.');
 
     await waitFor(() => {
@@ -1363,11 +1349,11 @@ describe('Research page', () => {
     expect(screen.queryByRole('button', { name: 'Thesis possible' })).toBeNull();
     expect(container.textContent).toContain('AI Safety Lab');
     expect(container.textContent).toContain('Archives Lab');
-    expect(container.textContent).toContain('Verified ways in');
+    expect(container.textContent).not.toContain('Verified ways in');
     expect(container.textContent).not.toContain('Open role');
     expect(container.textContent).not.toContain('Paid/funded');
     expect(container.textContent).not.toContain('Thesis fit');
-    expect(screen.getByRole('link', { name: 'Review evidence' })).toBeTruthy();
+    expect(mockedAxios.post.mock.calls.some(([url]) => url === '/pathways/search')).toBe(false);
     expect(container.textContent).not.toContain('Pathway Preview');
     expect(container.textContent).not.toContain('Compare pathways');
   });
