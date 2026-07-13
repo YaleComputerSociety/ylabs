@@ -1,7 +1,8 @@
 /**
  * Service layer for user account CRUD and favorites management.
  */
-import { User } from '../models/index';
+import { ResearchEntity, User } from '../models/index';
+import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { NotFoundError } from '../utils/errors';
 import {
   readListing,
@@ -42,7 +43,11 @@ export const MAX_SAVED_PROGRAM_NOTE_LENGTH = 2000;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
 const USER_UPDATE_OPERATORS = new Set(['$set', '$unset', '$addToSet']);
 const USER_UPDATE_PATH_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
-type FavoriteObjectIdArrayField = 'favListings' | 'favFellowships' | 'favPathways';
+type FavoriteObjectIdArrayField =
+  | 'favListings'
+  | 'favFellowships'
+  | 'favPathways'
+  | 'savedResearchEntities';
 
 export interface SavedProgramTrackingInput {
   note?: unknown;
@@ -168,11 +173,8 @@ const sanitizeSavedPathwayChecklistKey = (key: unknown): string | undefined => {
   return trimmed.replace(/^\$+/, '_').replace(/\./g, '_');
 };
 
-export function sanitizeSavedPathwayPlanForStorage(
-  plan: unknown,
-): Required<SavedPathwayPlanInput> {
-  const candidate =
-    plan && typeof plan === 'object' ? (plan as SavedPathwayPlanInput) : {};
+export function sanitizeSavedPathwayPlanForStorage(plan: unknown): Required<SavedPathwayPlanInput> {
+  const candidate = plan && typeof plan === 'object' ? (plan as SavedPathwayPlanInput) : {};
   const dateOnly = (value: unknown): string | null => {
     if (typeof value !== 'string' || !DATE_ONLY_RE.test(value)) return null;
     const [year, month, day] = value.split('-').map(Number);
@@ -304,7 +306,9 @@ const exportTextWithoutDirectContact = (value: unknown): string =>
 const exportUserTextForSpreadsheet = (value: unknown): string =>
   safeSpreadsheetCell(String(value || ''));
 
-const exportChecklistForSpreadsheet = (checklist: Record<string, boolean>): Record<string, boolean> =>
+const exportChecklistForSpreadsheet = (
+  checklist: Record<string, boolean>,
+): Record<string, boolean> =>
   Object.fromEntries(
     Object.entries(checklist).map(([key, value]) => [exportUserTextForSpreadsheet(key), value]),
   );
@@ -1036,7 +1040,9 @@ export const updateSavedProgramTracking = async (
 
 export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
   const pathwayIds = normalizeObjectIdsForUserMutation(pathways, 'favPathways');
-  const visiblePathways = await getPathwaysByIds(pathwayIds.map((pathwayId) => pathwayId.toHexString()));
+  const visiblePathways = await getPathwaysByIds(
+    pathwayIds.map((pathwayId) => pathwayId.toHexString()),
+  );
   const visiblePathwayIds = normalizeObjectIdsForUserMutation(
     visiblePathways.map((pathway) => pathway._id),
     'favPathways',
@@ -1114,4 +1120,239 @@ export const deleteSavedPathwayPlan = async (id: any, pathwayId: string) => {
     },
   });
   return sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
+};
+
+export interface SavedResearchEntitySummary {
+  _id: string;
+  slug: string;
+  name: string;
+  displayName?: string;
+  kind: string;
+  entityType?: string;
+  departments: string[];
+  school?: string;
+  shortDescription?: string;
+  description?: string;
+}
+
+const savedResearchEntityProjection =
+  '_id slug name displayName kind entityType departments school shortDescription description';
+
+const sanitizeEntityPlanMap = (value: unknown): Record<string, Required<SavedPathwayPlanInput>> => {
+  if (!isPlainRecord(value)) return {};
+  const result: Record<string, Required<SavedPathwayPlanInput>> = {};
+  for (const [id, plan] of Object.entries(value).slice(0, MAX_ACCOUNT_MUTATION_IDS)) {
+    try {
+      const key = normalizeObjectIdStringForUserMutation(id, 'researchEntity');
+      result[key] = sanitizeSavedPathwayPlanForStorage(plan);
+    } catch {
+      continue;
+    }
+  }
+  return result;
+};
+
+const visibleSavedResearchEntities = async (
+  ids: Array<string | mongoose.Types.ObjectId>,
+): Promise<SavedResearchEntitySummary[]> => {
+  const normalized = normalizeObjectIdsForUserMutation(ids, 'savedResearchEntities');
+  if (!normalized.length) return [];
+  const entities = await ResearchEntity.find({
+    _id: { $in: normalized },
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select(savedResearchEntityProjection)
+    .lean();
+  const byId = new Map(entities.map((entity: any) => [String(entity._id), entity]));
+  return normalized.flatMap((id) => {
+    const entity: any = byId.get(String(id));
+    if (!entity) return [];
+    return [
+      {
+        _id: String(entity._id),
+        slug: String(entity.slug || ''),
+        name: String(entity.name || entity.displayName || 'Research profile'),
+        ...(entity.displayName ? { displayName: String(entity.displayName) } : {}),
+        kind: String(entity.kind || 'group'),
+        ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
+        departments: Array.isArray(entity.departments)
+          ? entity.departments.slice(0, 20).map(String)
+          : [],
+        ...(entity.school ? { school: String(entity.school) } : {}),
+        ...(entity.shortDescription ? { shortDescription: String(entity.shortDescription) } : {}),
+        ...(entity.description ? { description: String(entity.description) } : {}),
+      },
+    ];
+  });
+};
+
+export const buildSavedResearchEntityMigration = (
+  pathways: PathwaySearchHit[],
+  legacyPlans: Record<string, Required<SavedPathwayPlanInput>>,
+  existingIds: string[] = [],
+  existingPlans: Record<string, Required<SavedPathwayPlanInput>> = {},
+) => {
+  const entityIds = new Set(existingIds);
+  const plans = { ...existingPlans };
+  const conflicts: Record<string, Record<string, Required<SavedPathwayPlanInput>>> = {};
+  const grouped = new Map<string, PathwaySearchHit[]>();
+  for (const pathway of pathways) {
+    const entityId = normalizeObjectIdStringForUserMutation(
+      pathway.researchEntity?._id,
+      'researchEntity',
+    );
+    grouped.set(entityId, [...(grouped.get(entityId) || []), pathway]);
+  }
+  for (const [entityId, entityPathways] of grouped) {
+    entityIds.add(entityId);
+    const legacy = [...entityPathways]
+      .sort((a, b) => a._id.localeCompare(b._id))
+      .flatMap((pathway) =>
+        legacyPlans[pathway._id]
+          ? [{ pathwayId: pathway._id, plan: legacyPlans[pathway._id] }]
+          : [],
+      );
+    if (!plans[entityId] && legacy[0]) plans[entityId] = legacy[0].plan;
+    if (legacy.length > 1) {
+      conflicts[entityId] = Object.fromEntries(
+        legacy.map(({ pathwayId, plan }) => [pathwayId, plan]),
+      );
+    }
+  }
+  return { entityIds: [...entityIds], plans, conflicts };
+};
+
+/** Lazily moves pathway-owned saves to entity ownership without deleting rollback data. */
+export const migrateSavedResearchEntitiesForUser = async (id: any) => {
+  const user = await readUser(id);
+  const existingIds = storedObjectIdStringsForUserMutation(
+    user.savedResearchEntities || [],
+    'savedResearchEntities',
+  );
+  const entityPlans = sanitizeEntityPlanMap(user.savedResearchEntityPlans);
+  const pathwayIds = storedObjectIdStringsForUserMutation(user.favPathways, 'favPathways');
+  const pathways = await getPathwaysByIds(pathwayIds);
+  const legacyPlans = sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
+  const migration = buildSavedResearchEntityMigration(
+    pathways,
+    legacyPlans,
+    existingIds,
+    entityPlans,
+  );
+  const visible = await visibleSavedResearchEntities(migration.entityIds);
+  const visibleIds = visible.map((entity) => entity._id);
+  const visibleSet = new Set(visibleIds);
+  const prunedPlans = Object.fromEntries(
+    Object.entries(migration.plans).filter(([entityId]) => visibleSet.has(entityId)),
+  );
+  const currentIds = existingIds.join(',');
+  const nextIds = visibleIds.join(',');
+  if (
+    currentIds !== nextIds ||
+    JSON.stringify(sanitizeEntityPlanMap(user.savedResearchEntityPlans)) !==
+      JSON.stringify(prunedPlans) ||
+    Object.keys(migration.conflicts).length
+  ) {
+    await updateUser(id, {
+      $set: {
+        savedResearchEntities: visibleIds,
+        savedResearchEntityPlans: prunedPlans,
+        ...(Object.keys(migration.conflicts).length
+          ? { savedResearchEntityPlanMigrationConflicts: migration.conflicts }
+          : {}),
+      },
+    });
+  }
+  return { entities: visible, plans: prunedPlans };
+};
+
+export const getSavedResearchEntities = async (id: any) =>
+  (await migrateSavedResearchEntitiesForUser(id)).entities;
+
+export const getSavedResearchEntityIds = async (id: any) =>
+  (await migrateSavedResearchEntitiesForUser(id)).entities.map((entity) => entity._id);
+
+export const getSavedResearchEntityPlans = async (id: any) =>
+  (await migrateSavedResearchEntitiesForUser(id)).plans;
+
+export const addSavedResearchEntities = async (id: any, values: unknown[]) => {
+  const ids = normalizeObjectIdsForUserMutation(values, 'savedResearchEntities');
+  const visible = await visibleSavedResearchEntities(ids);
+  for (const entity of visible) {
+    await addFavoriteObjectIdIfMissing(
+      id,
+      'savedResearchEntities',
+      new mongoose.Types.ObjectId(entity._id),
+    );
+  }
+  return getSavedResearchEntityIds(id);
+};
+
+export const removeSavedResearchEntities = async (id: any, values: unknown[]) => {
+  const ids = normalizeObjectIdsForUserMutation(values, 'savedResearchEntities');
+  const unset = Object.fromEntries(
+    ids.map((entityId) => [`savedResearchEntityPlans.${entityId}`, '']),
+  );
+  const user = await User.findOneAndUpdate(
+    userLookupFilterForMutation(id),
+    { $pull: { savedResearchEntities: { $in: ids } }, ...(ids.length ? { $unset: unset } : {}) },
+    { new: true, runValidators: true },
+  );
+  if (!user) throw new NotFoundError('User not found');
+  return getSavedResearchEntityIds(id);
+};
+
+export const updateSavedResearchEntityPlan = async (
+  id: any,
+  entityId: string,
+  plan: SavedPathwayPlanInput,
+) => {
+  const key = normalizeObjectIdStringForUserMutation(entityId, 'researchEntity');
+  const savedIds = new Set(await getSavedResearchEntityIds(id));
+  if (!savedIds.has(key)) throw new NotFoundError('Saved research entity not found');
+  const user = await updateUser(id, {
+    $set: { [`savedResearchEntityPlans.${key}`]: sanitizeSavedPathwayPlanForStorage(plan) },
+  });
+  return sanitizeEntityPlanMap(user.savedResearchEntityPlans);
+};
+
+export const deleteSavedResearchEntityPlan = async (id: any, entityId: string) => {
+  const key = normalizeObjectIdStringForUserMutation(entityId, 'researchEntity');
+  const user = await updateUser(id, { $unset: { [`savedResearchEntityPlans.${key}`]: '' } });
+  return sanitizeEntityPlanMap(user.savedResearchEntityPlans);
+};
+
+export const exportSavedResearchEntities = async (
+  id: any,
+  options: SavedPathwayPlansExportOptions = {},
+) => {
+  const { entities, plans } = await migrateSavedResearchEntitiesForUser(id);
+  const includePrivateNotes = options.includePrivateNotes === true;
+  return {
+    schemaVersion: 2 as const,
+    exportedAt: (options.exportedAt || new Date()).toISOString(),
+    itemCount: entities.length,
+    privacy: {
+      includesPrivateNotes: includePrivateNotes,
+      includesContactRoutes: false as const,
+      includesNonPublicContactEmails: false as const,
+    },
+    items: entities.map((entity) => {
+      const plan = plans[entity._id] || sanitizeSavedPathwayPlanForStorage({});
+      return {
+        researchEntity: {
+          id: entity._id,
+          slug: entity.slug,
+          name: exportTextWithoutDirectContact(entity.displayName || entity.name),
+        },
+        intent: plan.intent,
+        stage: plan.stage,
+        checklist: exportChecklistForSpreadsheet(plan.checklist as Record<string, boolean>),
+        ...(includePrivateNotes && plan.note
+          ? { privateNote: exportUserTextForSpreadsheet(plan.note) }
+          : {}),
+      };
+    }),
+  };
 };
