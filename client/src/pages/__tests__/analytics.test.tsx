@@ -392,9 +392,8 @@ describe('Analytics page', () => {
     expect(screen.getByText('fixture-admin')).toBeTruthy();
     expect(screen.getByText('Fixture Admin')).toBeTruthy();
     expect(screen.getByText('manual')).toBeTruthy();
-    expect(
-      screen.getByText(/legacy admin profile row without active grants: fixture-legacy-admin/i),
-    ).toBeTruthy();
+    expect(screen.getByText(/profile-derived admin authority is present without/i)).toBeTruthy();
+    expect(screen.queryByText('fixture-legacy-admin')).toBeNull();
   });
 
   it('grants admin access from the analytics admin access section', async () => {
@@ -449,7 +448,12 @@ describe('Analytics page', () => {
     fireEvent.change(screen.getByLabelText('Admin grant note'), {
       target: { value: 'Temporary coverage' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Grant Admin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Grant' }));
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Confirm target NetID'), {
+      target: { value: 'fixture-new-admin' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Grant' }));
 
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -537,7 +541,7 @@ describe('Analytics page', () => {
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         '/admin/admin-grants/fixture-admin/revoke',
-        { note: '' },
+        { note: 'Revoked through the Admin Access panel.' },
         { withCredentials: true },
       );
     });

@@ -39,6 +39,7 @@ import {
 } from '../services/adminAccessReviewService';
 import {
   AdminGrantValidationError,
+  AdminGrantConflictError,
   grantAdminAccess,
   listAdminGrants,
   revokeAdminAccess,
@@ -532,8 +533,13 @@ export const normalizeAdminDepartmentCategories = (
 
 const sendAdminGrantError = (res: Response, error: unknown, fallbackMessage: string) => {
   const isValidationFailure = error instanceof AdminGrantValidationError;
-  res.status(isValidationFailure ? 400 : 500).json({
-    error: isValidationFailure ? 'Invalid admin grant request' : fallbackMessage,
+  const isConflict = error instanceof AdminGrantConflictError;
+  res.status(isValidationFailure ? 400 : isConflict ? 409 : 500).json({
+    error: isValidationFailure
+      ? 'Invalid admin grant request'
+      : isConflict
+        ? 'Admin access is already active'
+        : fallbackMessage,
   });
 };
 
