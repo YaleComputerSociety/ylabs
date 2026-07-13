@@ -38,6 +38,8 @@ const MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS = 100;
 const MAX_USER_UPDATE_VALUE_DEPTH = 20;
 const MAX_USER_UPDATE_VALUE_ARRAY_ITEMS = 200;
 const MAX_USER_UPDATE_VALUE_OBJECT_KEYS = 200;
+export const MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH = 300;
+export const MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH = 1000;
 export const MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000;
 export const MAX_SAVED_PROGRAM_NOTE_LENGTH = 2000;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -1131,6 +1133,14 @@ export interface SavedResearchEntitySummary {
   description?: string;
 }
 
+export const boundSavedResearchEntitySummaryText = (
+  value: unknown,
+  maxLength: number,
+): string | undefined => {
+  if (typeof value !== 'string' || !value) return undefined;
+  return value.slice(0, maxLength);
+};
+
 const savedResearchEntityProjection =
   '_id slug name displayName kind entityType departments school shortDescription description';
 
@@ -1164,6 +1174,14 @@ const visibleSavedResearchEntities = async (
   return normalized.flatMap((id) => {
     const entity: any = byId.get(String(id));
     if (!entity) return [];
+    const shortDescription = boundSavedResearchEntitySummaryText(
+      entity.shortDescription,
+      MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
+    );
+    const description = boundSavedResearchEntitySummaryText(
+      entity.description,
+      MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH,
+    );
     return [
       {
         _id: String(entity._id),
@@ -1176,8 +1194,8 @@ const visibleSavedResearchEntities = async (
           ? entity.departments.slice(0, 20).map(String)
           : [],
         ...(entity.school ? { school: String(entity.school) } : {}),
-        ...(entity.shortDescription ? { shortDescription: String(entity.shortDescription) } : {}),
-        ...(entity.description ? { description: String(entity.description) } : {}),
+        ...(shortDescription ? { shortDescription } : {}),
+        ...(description ? { description } : {}),
       },
     ];
   });
@@ -1227,9 +1245,14 @@ export const migrateSavedResearchEntitiesForUser = async (id: any) => {
     'savedResearchEntities',
   );
   const entityPlans = sanitizeEntityPlanMap(user.savedResearchEntityPlans);
-  const pathwayIds = storedObjectIdStringsForUserMutation(user.favPathways, 'favPathways');
-  const pathways = await getPathwaysByIds(pathwayIds);
-  const legacyPlans = sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
+  const migrationCompleted = user.savedResearchEntityMigrationCompleted === true;
+  const pathwayIds = migrationCompleted
+    ? []
+    : storedObjectIdStringsForUserMutation(user.favPathways, 'favPathways');
+  const pathways = migrationCompleted ? [] : await getPathwaysByIds(pathwayIds);
+  const legacyPlans = migrationCompleted
+    ? {}
+    : sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
   const migration = buildSavedResearchEntityMigration(
     pathways,
     legacyPlans,
@@ -1246,14 +1269,15 @@ export const migrateSavedResearchEntitiesForUser = async (id: any) => {
   const nextIds = visibleIds.join(',');
   if (
     currentIds !== nextIds ||
+    !migrationCompleted ||
     JSON.stringify(sanitizeEntityPlanMap(user.savedResearchEntityPlans)) !==
-      JSON.stringify(prunedPlans) ||
-    Object.keys(migration.conflicts).length
+      JSON.stringify(prunedPlans)
   ) {
     await updateUser(id, {
       $set: {
         savedResearchEntities: visibleIds,
         savedResearchEntityPlans: prunedPlans,
+        savedResearchEntityMigrationCompleted: true,
         ...(Object.keys(migration.conflicts).length
           ? { savedResearchEntityPlanMigrationConflicts: migration.conflicts }
           : {}),
@@ -1286,6 +1310,7 @@ export const addSavedResearchEntities = async (id: any, values: unknown[]) => {
 };
 
 export const removeSavedResearchEntities = async (id: any, values: unknown[]) => {
+  await migrateSavedResearchEntitiesForUser(id);
   const ids = normalizeObjectIdsForUserMutation(values, 'savedResearchEntities');
   const unset = Object.fromEntries(
     ids.map((entityId) => [`savedResearchEntityPlans.${entityId}`, '']),
@@ -1314,6 +1339,7 @@ export const updateSavedResearchEntityPlan = async (
 };
 
 export const deleteSavedResearchEntityPlan = async (id: any, entityId: string) => {
+  await migrateSavedResearchEntitiesForUser(id);
   const key = normalizeObjectIdStringForUserMutation(entityId, 'researchEntity');
   const user = await updateUser(id, { $unset: { [`savedResearchEntityPlans.${key}`]: '' } });
   return sanitizeEntityPlanMap(user.savedResearchEntityPlans);

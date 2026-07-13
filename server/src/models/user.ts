@@ -174,6 +174,10 @@ const userSchema = new mongoose.Schema(
       default: {},
       select: false,
     },
+    savedResearchEntityMigrationCompleted: {
+      type: Boolean,
+      default: false,
+    },
     savedPathwayPlans: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
