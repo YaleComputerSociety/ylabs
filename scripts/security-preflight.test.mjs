@@ -4272,7 +4272,7 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   );
   assert.match(
     controller,
-    /const matchesByPathwayId = await matchFellowshipsForPathways\(\s*validIds\.map\(\(pathwayId\) => pathwayId\.toHexString\(\)\),\s*\)/,
+    /const matchesByPathwayId = await matchFellowshipsForPathways\(\s*validIds\.map\(\(pathwayId\) => pathwayId\.toHexString\(\)\),\s*\{\},\s*\{\s*userType: \(user as any\)\.userType,\s*classYear: \(user as any\)\.year,\s*plansByPathwayId: savedPathwayPlans,\s*\},\s*\)/,
   );
   assert.doesNotMatch(controller, /matchFellowshipsForPathways\(favPathwayIds\)/);
   assert.doesNotMatch(controller, /new mongoose\.Types\.ObjectId\(pathway\._id\)/);

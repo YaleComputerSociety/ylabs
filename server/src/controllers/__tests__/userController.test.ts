@@ -1354,6 +1354,40 @@ describe('userController', () => {
     expect(res.body).toEqual({ error: 'Failed to fetch pathway funding matches' });
   });
 
+  it('passes profile year and saved plan intent into funding matching', async () => {
+    mocks.normalizeObjectIdsForUserMutation.mockReturnValueOnce([
+      { toHexString: () => '64a000000000000000000030' } as any,
+    ]).mockReturnValueOnce([
+      { toHexString: () => '64a000000000000000000030' } as any,
+    ]);
+    mocks.readUser.mockResolvedValue({
+      userType: 'undergraduate',
+      year: 2027,
+      favPathways: ['64a000000000000000000030'],
+      savedPathwayPlans: {
+        '64a000000000000000000030': { intent: 'thesis' },
+      },
+    });
+    mocks.getPathwaysByIds.mockResolvedValue([{ _id: '64a000000000000000000030' }]);
+    mocks.matchFellowshipsForPathways.mockResolvedValue({});
+
+    const req = { user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true } } as any;
+    const res = privateResponseDouble();
+    await getFavPathwayFundingMatches(req, res);
+
+    expect(mocks.matchFellowshipsForPathways).toHaveBeenCalledWith(
+      ['64a000000000000000000030'],
+      {},
+      {
+        userType: 'undergraduate',
+        classYear: 2027,
+        plansByPathwayId: {
+          '64a000000000000000000030': expect.objectContaining({ intent: 'thesis' }),
+        },
+      },
+    );
+  });
+
   it('bounds stored favorite pathway ids before funding-match fan-out', async () => {
     mocks.readUser.mockResolvedValue({
       favPathways: Array.from({ length: 101 }, (_, index) =>

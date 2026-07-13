@@ -422,7 +422,10 @@ describe('SavedPathwaysSection advising export', () => {
         return Promise.resolve({
           data: {
             matchesByPathwayId: {
-              'pathway-1': [fellowshipMatch()],
+              'pathway-1': [fellowshipMatch({
+                reasons: ['The award timing aligns with an academic-year or thesis plan.'],
+                caveats: ['The listed years do not include your current senior standing.'],
+              })],
             },
           },
         });
@@ -455,6 +458,8 @@ describe('SavedPathwaysSection advising export', () => {
     expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByText('Fellowship candidates')).toBeTruthy();
     expect(screen.getByText('Source 1')).toBeTruthy();
+    expect(screen.getByText('The award timing aligns with an academic-year or thesis plan.')).toBeTruthy();
+    expect(screen.getByText('Caveat: The listed years do not include your current senior standing.')).toBeTruthy();
   });
 
   it('reports saved research plan count and next deadline summary', async () => {
