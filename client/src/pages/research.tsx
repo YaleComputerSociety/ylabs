@@ -401,6 +401,7 @@ const Research = () => {
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
   const pendingSearchParamsRef = useRef<string | null>(null);
+  const pendingSearchSourceParamsRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
@@ -446,7 +447,10 @@ const Research = () => {
       if (nextState.trustTiers?.length) params.set('tier', nextState.trustTiers.join(','));
     }
 
-    if (options.markPending) pendingSearchParamsRef.current = params.toString();
+    if (options.markPending) {
+      pendingSearchParamsRef.current = params.toString();
+      pendingSearchSourceParamsRef.current = searchParams.toString();
+    }
     setSearchParams(params, { replace: Boolean(options.replace) });
   };
 
@@ -753,8 +757,16 @@ const Research = () => {
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
 
   useEffect(() => {
-    if (pendingSearchParamsRef.current === searchParams.toString()) {
+    const observedSearchParams = searchParams.toString();
+    if (pendingSearchParamsRef.current === observedSearchParams) {
       pendingSearchParamsRef.current = null;
+      pendingSearchSourceParamsRef.current = null;
+    } else if (
+      pendingSearchParamsRef.current !== null &&
+      pendingSearchSourceParamsRef.current !== observedSearchParams
+    ) {
+      pendingSearchParamsRef.current = null;
+      pendingSearchSourceParamsRef.current = null;
     }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';

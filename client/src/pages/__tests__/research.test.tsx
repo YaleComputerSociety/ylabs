@@ -195,6 +195,15 @@ const ClearResearchLocation = () => {
   );
 };
 
+const NavigateToResearchQuery = ({ query }: { query: string }) => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(`/research?q=${encodeURIComponent(query)}`)}>
+      Navigate to {query}
+    </button>
+  );
+};
+
 const renderResearchWithDetailRoute = () =>
   render(
     <StrictMode>
@@ -1286,6 +1295,53 @@ describe('Research page', () => {
 
     searchResponse.resolve(researchSearchResponse([researchEntity]));
     await act(async () => searchResponse.promise);
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+  });
+
+  it('resets after another URL query supersedes a pending search navigation', async () => {
+    const responses = new Map([
+      ['first query', createDeferred<ReturnType<typeof researchSearchResponse>>()],
+      ['second query', createDeferred<ReturnType<typeof researchSearchResponse>>()],
+    ]);
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q && responses.has(body.q)) {
+        return responses.get(body.q)!.promise;
+      }
+      if (url === '/research/search' && body.q === '') {
+        return Promise.resolve(researchSearchResponse());
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <NavigateToResearchQuery query="second query" />
+        <ClearResearchLocation />
+        <LocationDisplay />
+        <Research />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'first query' },
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Navigate to second query' }));
+    });
+
+    expect(await screen.findByText("Showing research matches for 'second query'")).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.queryByText("Showing research matches for 'second query'")).toBeNull();
+      expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
+    });
+
+    responses.get('first query')!.resolve(researchSearchResponse([researchEntity]));
+    responses.get('second query')!.resolve(researchSearchResponse([researchEntity]));
+    await act(async () => Promise.all([...responses.values()].map(({ promise }) => promise)));
     expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
   });
 
