@@ -222,20 +222,33 @@ const userDisplayName = (user: any): string =>
 const facultyDisplayName = (faculty: any): string =>
   cleanPersonName(faculty?.name) || personNameFromParts(faculty?.firstName, faculty?.lastName);
 
-const memberDisplayName = (
+const normalizedPersonNameKey = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const trustedMemberDisplayName = (
   member: any,
   usersById: Map<string, any>,
   facultyMembersById: Map<string, any>,
 ): string => {
-  const rowName = cleanPersonName(member?.name);
-  if (rowName) return rowName;
-
   const userId = serializedDocumentId(member?.userId);
   const userName = userId ? userDisplayName(usersById.get(userId)) : '';
-  if (userName) return userName;
-
   const facultyMemberId = serializedDocumentId(member?.facultyMemberId);
-  return facultyMemberId ? facultyDisplayName(facultyMembersById.get(facultyMemberId)) : '';
+  const facultyName = facultyMemberId
+    ? facultyDisplayName(facultyMembersById.get(facultyMemberId))
+    : '';
+
+  if (
+    userName &&
+    facultyName &&
+    normalizedPersonNameKey(userName) !== normalizedPersonNameKey(facultyName)
+  ) {
+    return '';
+  }
+  return userName || facultyName;
 };
 
 const normalizedAliasHaystack = (values: unknown[]): string =>
@@ -341,7 +354,7 @@ export async function fetchResearchEntitySearchMemberNames(
       serializedDocumentId(member.researchEntityId) || serializedDocumentId(member.researchGroupId);
     if (!entityId) continue;
 
-    const name = memberDisplayName(member, usersById, facultyMembersById);
+    const name = trustedMemberDisplayName(member, usersById, facultyMembersById);
     if (!name) continue;
 
     const fields = byEntityId.get(entityId) || emptyMemberNameFields();
