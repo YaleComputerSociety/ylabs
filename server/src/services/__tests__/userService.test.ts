@@ -157,6 +157,23 @@ describe('pruneSavedPathwayPlansForExistingPathways', () => {
 });
 
 describe('sanitizeSavedPathwayPlanForStorage', () => {
+  it('keeps valid date-only reminders and rejects invalid dates and intervals', () => {
+    expect(sanitizeSavedPathwayPlanForStorage({
+      targetDeadline: '2026-09-30',
+      actedOnDate: '2026-02-29',
+      followUpIntervalDays: 14,
+    })).toMatchObject({
+      targetDeadline: '2026-09-30',
+      actedOnDate: null,
+      followUpIntervalDays: 14,
+    });
+    expect(sanitizeSavedPathwayPlanForStorage({
+      targetDeadline: '09/30/2026',
+      actedOnDate: '2026-07-12T00:00:00Z',
+      followUpIntervalDays: 15,
+    })).toMatchObject({ targetDeadline: null, actedOnDate: null, followUpIntervalDays: null });
+  });
+
   it('normalizes create/update payloads before persisting a saved pathway plan', () => {
     const result = sanitizeSavedPathwayPlanForStorage({
       intent: 'mass-email',
