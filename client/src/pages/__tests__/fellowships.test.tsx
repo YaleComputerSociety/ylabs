@@ -399,6 +399,37 @@ describe('Programs page', () => {
     expect(screen.getByRole('status')).toHaveTextContent('1 result');
   });
 
+  it('contains mobile filter focus and restores the trigger on Escape', async () => {
+    renderPage(
+      [baseFellowship({ id: 'open', title: 'Open Fellowship', isAcceptingApplications: true })],
+      {
+        filterOptions: {
+          programCategory: [],
+          programKind: ['STRUCTURED_PROGRAM'],
+          entryMode: [],
+          studentFacingCategory: [],
+          yearOfStudy: [],
+          termOfAward: [],
+          purpose: [],
+          globalRegions: [],
+          citizenshipStatus: [],
+        },
+      },
+    );
+
+    const trigger = screen.getByRole('button', { name: /filters/i });
+    await userEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Program filters' });
+    expect(dialog.className).toContain('fixed');
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Close filters' })).toHaveFocus(),
+    );
+
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Program filters' })).toBeNull();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it('sorts visible program cards inside their cycle section from local sort controls', async () => {
     renderStatefulPage([
       baseFellowship({

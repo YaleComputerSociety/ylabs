@@ -28,16 +28,23 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
   const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  const closeFilters = (restoreFocus = true) => {
+    setIsOpen(false);
+    if (restoreFocus) window.setTimeout(() => triggerRef.current?.focus(), 0);
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+        closeFilters(false);
       }
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsOpen(false);
+        closeFilters();
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -47,6 +54,15 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    window.setTimeout(() => {
+      dialogRef.current
+        ?.querySelector<HTMLElement>('button:not([disabled]), input:not([disabled])')
+        ?.focus();
+    }, 0);
+  }, [isOpen]);
 
   const totalFilters = tabs.reduce((sum, tab) => sum + tab.selected.length, 0);
   const activeTab = tabs.find((t) => t.key === activeTabKey) || tabs[0];
@@ -76,10 +92,11 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => (isOpen ? closeFilters() : setIsOpen(true))}
         className="flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm transition-colors hover:bg-[var(--yr-panel-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 whitespace-nowrap"
         style={{ color: '#374151' }}
       >
@@ -113,7 +130,43 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg">
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Program filters"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key !== 'Tab') return;
+            const focusable = Array.from(
+              dialogRef.current?.querySelectorAll<HTMLElement>(
+                'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+              ) || [],
+            );
+            if (focusable.length === 0) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }}
+          className="fixed inset-x-0 bottom-0 z-50 max-h-[85dvh] w-full overflow-hidden rounded-t-md border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[340px] sm:max-w-[calc(100vw-2rem)] sm:rounded-md"
+        >
+          <div className="flex items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
+            <h2 className="text-base font-semibold text-slate-900">Filters</h2>
+            <button
+              type="button"
+              aria-label="Close filters"
+              onClick={() => closeFilters()}
+              className="flex h-11 w-11 items-center justify-center rounded-md text-2xl text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
           <div className="flex border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)] overflow-x-auto">
             {tabs.map((tab) => (
               <button
@@ -143,7 +196,7 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
             ))}
           </div>
 
-          <div className="p-3">
+          <div className="max-h-[calc(85dvh-7rem)] overflow-y-auto p-3 sm:max-h-none sm:overflow-visible">
             {activeTab.filterMode && activeTab.setFilterMode && activeTab.selected.length >= 2 && (
               <div className="mb-3">
                 <VennDiagramToggle mode={activeTab.filterMode} setMode={activeTab.setFilterMode} />
@@ -180,7 +233,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                   <label
                     key={option}
                     className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
-                      isSelected ? 'bg-[var(--yr-blue-soft)] text-blue-900' : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
+                      isSelected
+                        ? 'bg-[var(--yr-blue-soft)] text-blue-900'
+                        : 'hover:bg-[var(--yr-panel-muted)] text-gray-700'
                     }`}
                   >
                     <input
@@ -195,7 +250,9 @@ const CombinedFilterDropdown = ({ tabs }: CombinedFilterDropdownProps) => {
                     />
                     <span
                       className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                        isSelected ? 'bg-blue-500 border-blue-500' : 'border-[var(--yr-line-strong)]'
+                        isSelected
+                          ? 'bg-blue-500 border-blue-500'
+                          : 'border-[var(--yr-line-strong)]'
                       } peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2`}
                       aria-hidden="true"
                     >
