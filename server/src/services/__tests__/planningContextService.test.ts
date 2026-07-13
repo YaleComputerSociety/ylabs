@@ -32,6 +32,12 @@ describe('planningContextService qualification policy', () => {
     expect(actionablePlanningUrl('https://research.yale.edu/undergraduate')).toBeUndefined();
   });
 
+  it('ignores positive cues in tracking parameters', () => {
+    expect(
+      actionablePlanningUrl('https://research.yale.edu/?utm_campaign=summer-program'),
+    ).toBeUndefined();
+  });
+
   it('selects one deterministic signal with open-position precedence', () => {
     const contexts = selectPlanningContexts({
       pathways: [

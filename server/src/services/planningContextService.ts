@@ -56,7 +56,12 @@ export const actionablePlanningUrl = (value: unknown): string | undefined => {
   const url = publicHttpUrl(value);
   if (!url) return undefined;
   const parsed = new URL(url);
-  const destination = `${parsed.pathname} ${parsed.searchParams.toString()}`;
+  let destination: string;
+  try {
+    destination = decodeURIComponent(parsed.pathname);
+  } catch {
+    return undefined;
+  }
   if (PROVENANCE_ONLY_URL_CUE_RE.test(destination)) return undefined;
   return ACTIONABLE_URL_CUE_RE.test(destination) ? url : undefined;
 };
