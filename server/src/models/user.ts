@@ -4,7 +4,9 @@
 import mongoose from 'mongoose';
 
 export const normalizeUserType = (value: unknown): string => {
-  const normalized = String(value || 'unknown').trim().toLowerCase();
+  const normalized = String(value || 'unknown')
+    .trim()
+    .toLowerCase();
   return normalized === 'faculty' ? 'professor' : normalized || 'unknown';
 };
 
@@ -35,15 +37,7 @@ const userSchema = new mongoose.Schema(
     userType: {
       type: String,
       set: normalizeUserType,
-      enum: [
-        'undergraduate',
-        'graduate',
-        'student',
-        'professor',
-        'staff',
-        'unknown',
-        'admin',
-      ],
+      enum: ['undergraduate', 'graduate', 'student', 'professor', 'staff', 'unknown', 'admin'],
       default: 'unknown',
     },
     facultyMemberId: {
@@ -137,6 +131,20 @@ const userSchema = new mongoose.Schema(
     favPathways: {
       type: [mongoose.Schema.ObjectId],
       default: [],
+    },
+    savedResearchEntities: {
+      type: [mongoose.Schema.ObjectId],
+      ref: 'ResearchEntity',
+      default: [],
+    },
+    savedResearchEntityPlans: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    savedResearchEntityPlanMigrationConflicts: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+      select: false,
     },
     savedPathwayPlans: {
       type: mongoose.Schema.Types.Mixed,

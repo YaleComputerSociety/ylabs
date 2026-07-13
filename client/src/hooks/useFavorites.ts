@@ -35,10 +35,10 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
     warnOnMutationError: false,
   },
   researchPlans: {
-    load: '/users/savedResearchPlanIds',
-    responseKey: 'savedResearchPlanIds',
-    collectionPath: '/users/savedResearchPlans',
-    payloadKey: 'savedResearchPlans',
+    load: '/users/savedResearchEntityIds',
+    responseKey: 'savedResearchEntityIds',
+    collectionPath: '/users/savedResearchEntities',
+    payloadKey: 'savedResearchEntities',
     warnOnLoadError: false,
     warnOnMutationError: false,
   },
@@ -65,29 +65,46 @@ export const useFavorites = (kind: FavoritesKind) => {
     reload();
   }, [reload]);
 
-  const setFavorite = useCallback(async (id: string, favorite: boolean) => {
-    const previous = favIds;
-    setFavIds((prev) => (favorite ? [id, ...prev.filter((x) => x !== id)] : prev.filter((x) => x !== id)));
-    try {
-      if (favorite) {
-        await axios.put(config.collectionPath, { withCredentials: true, data: { [config.payloadKey]: [id] } });
-      } else {
-        await axios.delete(config.collectionPath, { withCredentials: true, data: { [config.payloadKey]: [id] } });
+  const setFavorite = useCallback(
+    async (id: string, favorite: boolean) => {
+      const previous = favIds;
+      setFavIds((prev) =>
+        favorite ? [id, ...prev.filter((x) => x !== id)] : prev.filter((x) => x !== id),
+      );
+      try {
+        if (favorite) {
+          await axios.put(config.collectionPath, {
+            withCredentials: true,
+            data: { [config.payloadKey]: [id] },
+          });
+        } else {
+          await axios.delete(config.collectionPath, {
+            withCredentials: true,
+            data: { [config.payloadKey]: [id] },
+          });
+        }
+      } catch {
+        console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
+        setFavIds(previous);
+        if (config.warnOnMutationError) {
+          swal({
+            text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`,
+            icon: 'warning',
+          });
+        }
+        reload();
       }
-    } catch {
-      console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
-      setFavIds(previous);
-      if (config.warnOnMutationError) {
-        swal({ text: `Unable to ${favorite ? 'favorite' : 'unfavorite'} ${kind.slice(0, -1)}`, icon: 'warning' });
-      }
-      reload();
-    }
-  }, [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnMutationError, reload]);
+    },
+    [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnMutationError, reload],
+  );
 
-  const toggleFavorite = useCallback((id: string, e?: MouseEvent) => {
-    e?.stopPropagation();
-    setFavorite(id, !favIds.includes(id));
-  }, [favIds, setFavorite]);
+  const toggleFavorite = useCallback(
+    (id: string, e?: MouseEvent) => {
+      e?.stopPropagation();
+      setFavorite(id, !favIds.includes(id));
+    },
+    [favIds, setFavorite],
+  );
 
   return { favIds, setFavorite, toggleFavorite, reloadFavorites: reload };
 };
