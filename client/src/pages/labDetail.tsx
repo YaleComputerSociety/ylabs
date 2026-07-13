@@ -35,7 +35,7 @@ import {
   LabRelatedResearchEntitySummary,
   LabResearchActivityLink,
 } from '../types/labDetail';
-import type { ResearchEntity, ResearchEntityRepairFlag } from '../types/researchEntity';
+import type { ResearchEntityRepairFlag } from '../types/researchEntity';
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
@@ -93,8 +93,7 @@ const RelatedResearchEntitiesSection = ({
       <div className="grid gap-3 sm:grid-cols-2">
         {relatedResearchEntities.map((entity) => {
           const relationship = relationshipByEntityKey.get(entity.slug || entity.id);
-          const description =
-            entity.blurb || '';
+          const description = entity.blurb || '';
           const tags = uniqueCompact(
             [
               relationship?.label || relationshipTypeLabel(relationship?.relationshipType),
@@ -162,8 +161,7 @@ const AffiliatedResearchEntitiesSection = ({
         );
         const className =
           'block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition';
-        const canOpenDetail =
-          Boolean(entity.slug);
+        const canOpenDetail = Boolean(entity.slug);
         return canOpenDetail ? (
           <Link
             key={entity.id || entity.slug}
@@ -1116,17 +1114,14 @@ const LabDetail = () => {
   const primaryRecentWorkMemberName = primaryRecentWorkMember
     ? memberDisplayName(primaryRecentWorkMember)
     : 'the lead professor';
-  const primaryPathway = entryPathways[0];
-  const isPrimaryPathwaySaved = primaryPathway
-    ? savedResearchPlanIds.includes(primaryPathway._id)
-    : false;
+  const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
   const canRequestListingReview =
     Boolean(user?.userConfirmed) &&
     ['professor', 'faculty', 'staff'].includes(user?.userType || '') &&
     activeListings.length > 0;
 
-  const handleToggleSavedResearchPlan = (pathwayId: string, shouldSave: boolean) => {
-    setSavedResearchPlanFavorite(pathwayId, shouldSave);
+  const handleToggleSavedResearchPlan = (entityId: string, shouldSave: boolean) => {
+    setSavedResearchPlanFavorite(entityId, shouldSave);
     if (shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
@@ -1149,15 +1144,13 @@ const LabDetail = () => {
             dedupeWebsiteUrls={[decisionProfileUrl, decisionOfficialRoute?.url]}
             hasActivePostedOpportunity={hasActivePostedOpportunity}
             actions={
-              primaryPathway ? (
-                <ResearchPlanSaveButton
-                  isSaved={isPrimaryPathwaySaved}
-                  onToggle={(e) => {
-                    e.stopPropagation();
-                    handleToggleSavedResearchPlan(primaryPathway._id, !isPrimaryPathwaySaved);
-                  }}
-                />
-              ) : undefined
+              <ResearchPlanSaveButton
+                isSaved={isResearchEntitySaved}
+                onToggle={(e) => {
+                  e.stopPropagation();
+                  handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
+                }}
+              />
             }
           />
 
@@ -1206,9 +1199,15 @@ const LabDetail = () => {
           <section>
             <SectionHeading>Principal Investigator</SectionHeading>
             {leadIdentityUnderReview ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+              <div
+                className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                role="status"
+              >
                 <p className="font-semibold">Lead identity under review</p>
-                <p className="mt-1">The research information remains available, but this lead and profile link are not shown until their sources agree.</p>
+                <p className="mt-1">
+                  The research information remains available, but this lead and profile link are not
+                  shown until their sources agree.
+                </p>
               </div>
             ) : (
               <LabMembersList members={principalInvestigators} />

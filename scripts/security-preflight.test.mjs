@@ -4171,7 +4171,10 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
   assert.match(source, /const recordFavoriteCounterSideEffect = async \(/);
   assert.match(source, /console\.error\(`\$\{label\} failed:`, sanitizeLogValue\(error\)\)/);
-  assert.match(source, /type FavoriteObjectIdArrayField = 'favListings' \| 'favFellowships' \| 'favPathways'/);
+  assert.match(
+    source,
+    /type FavoriteObjectIdArrayField =[\s\S]*'favListings'[\s\S]*'favFellowships'[\s\S]*'favPathways'[\s\S]*'savedResearchEntities'/,
+  );
   assert.match(source, /const addFavoriteObjectIdIfMissing = async \(/);
   assert.match(source, /User\.findOneAndUpdate\(\s*\{ \.\.\.baseFilter, \[fieldName\]: \{ \$ne: value \} \},\s*\{ \$addToSet: \{ \[fieldName\]: value \} \}/);
   assert.match(source, /const removeFavoriteObjectIdIfPresent = async \(/);

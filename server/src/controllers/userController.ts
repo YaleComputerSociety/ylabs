@@ -25,6 +25,14 @@ import {
   deleteSavedPathwayPlan as deleteSavedPathwayPlanService,
   getSavedProgramTracking as getSavedProgramTrackingService,
   updateSavedProgramTracking as updateSavedProgramTrackingService,
+  getSavedResearchEntities as getSavedResearchEntitiesService,
+  getSavedResearchEntityIds as getSavedResearchEntityIdsService,
+  getSavedResearchEntityPlans as getSavedResearchEntityPlansService,
+  addSavedResearchEntities as addSavedResearchEntitiesService,
+  removeSavedResearchEntities as removeSavedResearchEntitiesService,
+  updateSavedResearchEntityPlan as updateSavedResearchEntityPlanService,
+  deleteSavedResearchEntityPlan as deleteSavedResearchEntityPlanService,
+  exportSavedResearchEntities as exportSavedResearchEntitiesService,
 } from '../services/userService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -96,9 +104,7 @@ const publicAccountListingText = (value: unknown): string | undefined =>
   typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
 
 const publicAccountListingTextArray = (values: unknown): string[] =>
-  Array.isArray(values)
-    ? values.flatMap((value) => publicAccountListingText(value) ?? [])
-    : [];
+  Array.isArray(values) ? values.flatMap((value) => publicAccountListingText(value) ?? []) : [];
 
 const publicAccountListing = (listing: any) => {
   const id = serializedDocumentId(listing._id) || serializedDocumentId(listing.id) || '';
@@ -160,13 +166,15 @@ const CURRENT_USER_RESPONSE_FIELDS = [
 
 const publicProfileUrlMap = (value: unknown): Record<string, string> | undefined => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value as Record<string, unknown>).flatMap(([key, rawUrl]) => {
-    const normalizedKey = publicProfileUrlKey(key);
-    const url = publicHttpUrl(rawUrl);
-    return normalizedKey && url && url.length <= MAX_CURRENT_USER_PROFILE_URL_LENGTH
-      ? [[normalizedKey, url] as const]
-      : [];
-  }).slice(0, MAX_CURRENT_USER_PROFILE_URLS);
+  const entries = Object.entries(value as Record<string, unknown>)
+    .flatMap(([key, rawUrl]) => {
+      const normalizedKey = publicProfileUrlKey(key);
+      const url = publicHttpUrl(rawUrl);
+      return normalizedKey && url && url.length <= MAX_CURRENT_USER_PROFILE_URL_LENGTH
+        ? [[normalizedKey, url] as const]
+        : [];
+    })
+    .slice(0, MAX_CURRENT_USER_PROFILE_URLS);
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 };
 
@@ -193,7 +201,13 @@ const sanitizeSelfEditableTextFields = (update: Record<string, any>) => {
     }
   }
 
-  for (const field of ['major', 'departments', 'secondaryDepartments', 'researchInterests', 'topics']) {
+  for (const field of [
+    'major',
+    'departments',
+    'secondaryDepartments',
+    'researchInterests',
+    'topics',
+  ]) {
     if (field in update) {
       const values = boundedAccountStringArray(update[field]);
       if (values !== undefined) update[field] = values;
@@ -205,7 +219,10 @@ const sanitizeSelfEditableTextFields = (update: Record<string, any>) => {
 const sanitizeUnknownBootstrapFields = (update: Record<string, any>) => {
   for (const field of UNKNOWN_BOOTSTRAP_FIELDS) {
     if (field in update) {
-      const value = boundedAccountString(update[field], field === 'email' ? 254 : MAX_CURRENT_USER_SHORT_TEXT_LENGTH);
+      const value = boundedAccountString(
+        update[field],
+        field === 'email' ? 254 : MAX_CURRENT_USER_SHORT_TEXT_LENGTH,
+      );
       if (value !== undefined) update[field] = value;
       else delete update[field];
     }
@@ -291,7 +308,11 @@ const sendPrivateAccountError = (response: Response, error: any, fallbackMessage
 
 export const getFavListingsIds = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const favListingIds = normalizeStoredObjectIdsForAccountRead(user.favListings, 'favListings');
     const favListings = await readPublicListings(favListingIds);
@@ -309,7 +330,11 @@ export const getFavListingsIds = async (request: Request, response: Response) =>
 
 export const addFavListings = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.data?.favListings) {
       const error: any = new Error('No favListings provided');
@@ -331,7 +356,11 @@ export const addFavListings = async (request: Request, response: Response) => {
 
 export const removeFavListings = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.favListings) {
       const error: any = new Error('No favListings provided');
@@ -353,7 +382,11 @@ export const removeFavListings = async (request: Request, response: Response) =>
 
 export const getFavFellowshipIds = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const favFellowshipIds = normalizeStoredObjectIdsForAccountRead(
       user.favFellowships,
@@ -374,7 +407,11 @@ export const getFavFellowshipIds = async (request: Request, response: Response) 
 
 export const getSavedProgramIds = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const savedProgramIds = normalizeStoredObjectIdsForAccountRead(
       user.favFellowships,
@@ -395,7 +432,11 @@ export const getSavedProgramIds = async (request: Request, response: Response) =
 
 export const getFavFellowships = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const favFellowshipIds = normalizeStoredObjectIdsForAccountRead(
       user.favFellowships,
@@ -418,7 +459,11 @@ export const getFavFellowships = async (request: Request, response: Response) =>
 
 export const getSavedPrograms = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const savedProgramIds = normalizeStoredObjectIdsForAccountRead(
       user.favFellowships,
@@ -441,7 +486,11 @@ export const getSavedPrograms = async (request: Request, response: Response) => 
 
 export const addFavFellowships = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.data?.favFellowships) {
       const error: any = new Error('No favFellowships provided');
@@ -463,7 +512,11 @@ export const addFavFellowships = async (request: Request, response: Response) =>
 
 export const addSavedPrograms = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const ids = request.body.data?.savedPrograms ?? request.body.data?.favFellowships;
 
     if (!ids) {
@@ -483,7 +536,11 @@ export const addSavedPrograms = async (request: Request, response: Response) => 
 
 export const removeFavFellowships = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.favFellowships) {
       const error: any = new Error('No favFellowships provided');
@@ -505,7 +562,11 @@ export const removeFavFellowships = async (request: Request, response: Response)
 
 export const removeSavedPrograms = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const ids = request.body.savedPrograms ?? request.body.favFellowships;
 
     if (!ids) {
@@ -558,7 +619,11 @@ export const updateSavedProgramTracking = async (request: Request, response: Res
 
 export const getFavPathwayIds = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const favPathwayIds = normalizeStoredPathwayIdsForAccountRead(user.favPathways);
     const favPathways = await getPathwaysByIds(favPathwayIds);
@@ -576,7 +641,11 @@ export const getFavPathwayIds = async (request: Request, response: Response) => 
 
 export const getSavedResearchPlanIds = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const savedResearchPlanIds = normalizeStoredPathwayIdsForAccountRead(user.favPathways);
     const savedResearchPlans = await getPathwaysByIds(savedResearchPlanIds);
@@ -594,7 +663,11 @@ export const getSavedResearchPlanIds = async (request: Request, response: Respon
 
 export const getFavPathways = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const favPathwayIds = normalizeStoredPathwayIdsForAccountRead(user.favPathways);
     const favPathways = await getPathwaysByIds(favPathwayIds);
@@ -617,7 +690,11 @@ export const getFavPathways = async (request: Request, response: Response) => {
 
 export const getSavedResearchPlans = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const savedResearchPlanIds = normalizeStoredPathwayIdsForAccountRead(user.favPathways);
     const savedResearchPlans = await getPathwaysByIds(savedResearchPlanIds);
@@ -640,7 +717,11 @@ export const getSavedResearchPlans = async (request: Request, response: Response
 
 export const getFavPathwayFundingMatches = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const favPathwayIds = normalizeStoredPathwayIdsForAccountRead(user.favPathways);
     const favPathways = await getPathwaysByIds(favPathwayIds);
@@ -673,7 +754,11 @@ export const getSavedResearchPlanFundingMatches = getFavPathwayFundingMatches;
 
 export const addFavPathways = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.data?.favPathways) {
       const error: any = new Error('No favPathways provided');
@@ -695,7 +780,11 @@ export const addFavPathways = async (request: Request, response: Response) => {
 
 export const addSavedResearchPlans = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.data?.savedResearchPlans) {
       const error: any = new Error('No savedResearchPlans provided');
@@ -717,7 +806,11 @@ export const addSavedResearchPlans = async (request: Request, response: Response
 
 export const removeFavPathways = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.favPathways) {
       const error: any = new Error('No favPathways provided');
@@ -739,7 +832,11 @@ export const removeFavPathways = async (request: Request, response: Response) =>
 
 export const removeSavedResearchPlans = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
 
     if (!request.body.savedResearchPlans) {
       const error: any = new Error('No savedResearchPlans provided');
@@ -761,7 +858,11 @@ export const removeSavedResearchPlans = async (request: Request, response: Respo
 
 export const getSavedPathwayPlans = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const savedPathwayPlans = await getSavedPathwayPlansService(currentUser.netId);
     setPrivateAccountResponseHeaders(response);
     response.status(200).json({ savedPathwayPlans });
@@ -773,7 +874,11 @@ export const getSavedPathwayPlans = async (request: Request, response: Response)
 
 export const getSavedResearchPlanDetails = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const savedResearchPlanDetails = await getSavedPathwayPlansService(currentUser.netId);
     setPrivateAccountResponseHeaders(response);
     response.status(200).json({ savedResearchPlanDetails });
@@ -785,7 +890,11 @@ export const getSavedResearchPlanDetails = async (request: Request, response: Re
 
 export const exportSavedPathwayPlans = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const includePrivateNotes =
       request.method === 'POST' &&
       request.body &&
@@ -808,7 +917,11 @@ export const exportSavedResearchPlanDetails = exportSavedPathwayPlans;
 
 export const updateSavedPathwayPlan = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const savedPathwayPlans = await updateSavedPathwayPlanService(
       currentUser.netId,
       request.params.pathwayId,
@@ -824,7 +937,11 @@ export const updateSavedPathwayPlan = async (request: Request, response: Respons
 
 export const updateSavedResearchPlanDetail = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const savedResearchPlanDetails = await updateSavedPathwayPlanService(
       currentUser.netId,
       request.params.pathwayId,
@@ -840,7 +957,11 @@ export const updateSavedResearchPlanDetail = async (request: Request, response: 
 
 export const deleteSavedPathwayPlan = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const savedPathwayPlans = await deleteSavedPathwayPlanService(
       currentUser.netId,
       request.params.pathwayId,
@@ -855,7 +976,11 @@ export const deleteSavedPathwayPlan = async (request: Request, response: Respons
 
 export const deleteSavedResearchPlanDetail = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const savedResearchPlanDetails = await deleteSavedPathwayPlanService(
       currentUser.netId,
       request.params.pathwayId,
@@ -868,9 +993,139 @@ export const deleteSavedResearchPlanDetail = async (request: Request, response: 
   }
 };
 
+export const getSavedResearchEntityIds = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    response.status(200).json({
+      savedResearchEntityIds: await getSavedResearchEntityIdsService(currentUser.netId),
+    });
+  } catch (error) {
+    console.error('Saved research entity id fetch failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to fetch saved research entity ids');
+  }
+};
+
+export const getSavedResearchEntities = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    response.status(200).json({
+      savedResearchEntities: await getSavedResearchEntitiesService(currentUser.netId),
+    });
+  } catch (error) {
+    console.error('Saved research entity fetch failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to fetch saved research entities');
+  }
+};
+
+export const addSavedResearchEntities = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const values = request.body?.data?.savedResearchEntities;
+    if (!values) {
+      const error: any = new Error('No savedResearchEntities provided');
+      error.status = 400;
+      throw error;
+    }
+    const ids = await addSavedResearchEntitiesService(
+      currentUser.netId,
+      Array.isArray(values) ? values : [values],
+    );
+    response.status(200).json({ savedResearchEntityIds: ids });
+  } catch (error) {
+    console.error('Saved research entity mutation failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to save research entities');
+  }
+};
+
+export const removeSavedResearchEntities = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const values = request.body?.savedResearchEntities;
+    if (!values) {
+      const error: any = new Error('No savedResearchEntities provided');
+      error.status = 400;
+      throw error;
+    }
+    const ids = await removeSavedResearchEntitiesService(
+      currentUser.netId,
+      Array.isArray(values) ? values : [values],
+    );
+    response.status(200).json({ savedResearchEntityIds: ids });
+  } catch (error) {
+    console.error('Saved research entity removal failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to remove saved research entities');
+  }
+};
+
+export const getSavedResearchEntityPlans = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({
+      savedResearchEntityPlans: await getSavedResearchEntityPlansService(currentUser.netId),
+    });
+  } catch (error) {
+    console.error('Saved research entity plan fetch failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to fetch saved research entity plans');
+  }
+};
+
+export const updateSavedResearchEntityPlan = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const plans = await updateSavedResearchEntityPlanService(
+      currentUser.netId,
+      request.params.entityId,
+      request.body?.data?.plan || request.body?.plan || {},
+    );
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({ savedResearchEntityPlans: plans });
+  } catch (error) {
+    console.error('Saved research entity plan update failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to update saved research entity plan');
+  }
+};
+
+export const deleteSavedResearchEntityPlan = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const plans = await deleteSavedResearchEntityPlanService(
+      currentUser.netId,
+      request.params.entityId,
+    );
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({ savedResearchEntityPlans: plans });
+  } catch (error) {
+    console.error('Saved research entity plan delete failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to delete saved research entity plan');
+  }
+};
+
+export const exportSavedResearchEntities = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const payload = await exportSavedResearchEntitiesService(currentUser.netId, {
+      includePrivateNotes: request.method === 'POST' && request.body?.includePrivateNotes === true,
+    });
+    setPrivateAccountResponseHeaders(response);
+    response.setHeader(
+      'Content-Disposition',
+      'attachment; filename="saved-research-entities.json"',
+    );
+    response.status(200).json(payload);
+  } catch (error) {
+    console.error('Saved research entity export failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to export saved research entities');
+  }
+};
+
 export const getUserListings = async (request: Request, response: Response) => {
   try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
+    const currentUser = request.user as {
+      netId?: string;
+      userType: string;
+      userConfirmed: boolean;
+    };
     const user = await readUser(currentUser.netId);
     const ownListingIds = normalizeStoredObjectIdsForAccountRead(user.ownListings, 'ownListings');
     const favListingIds = normalizeStoredObjectIdsForAccountRead(user.favListings, 'favListings');
@@ -917,12 +1172,7 @@ const SELF_UPDATABLE_FIELDS = [
   'profileUrls',
 ] as const;
 
-const ALLOWED_SELF_USER_TYPES = new Set([
-  'undergraduate',
-  'graduate',
-  'professor',
-  'faculty',
-]);
+const ALLOWED_SELF_USER_TYPES = new Set(['undergraduate', 'graduate', 'professor', 'faculty']);
 
 // Identity fields can only be set during the unknown-user bootstrap flow,
 // then become admin-only to prevent impersonation of established accounts.

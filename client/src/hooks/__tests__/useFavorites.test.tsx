@@ -62,15 +62,15 @@ describe('useFavorites', () => {
   });
 
   it('uses saved research plan endpoints for canonical research plan favorites', async () => {
-    mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchPlanIds: ['plan-1'] } });
+    mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchEntityIds: ['entity-1'] } });
 
     const { result } = renderHook(() => useFavorites('researchPlans'));
 
     await waitFor(() => {
-      expect(result.current.favIds).toEqual(['plan-1']);
+      expect(result.current.favIds).toEqual(['entity-1']);
     });
 
-    expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedResearchPlanIds', {
+    expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedResearchEntityIds', {
       withCredentials: true,
     });
   });

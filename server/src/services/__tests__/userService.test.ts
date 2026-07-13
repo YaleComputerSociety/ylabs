@@ -6,6 +6,7 @@ import {
   buildCaseInsensitiveNetidFilter,
   buildSavedPathwayPlanUnsetForIds,
   buildSavedPathwayPlansExport,
+  buildSavedResearchEntityMigration,
   normalizeObjectIdStringForUserMutation,
   normalizeObjectIdsForUserMutation,
   normalizeUserLookupObjectId,
@@ -158,20 +159,24 @@ describe('pruneSavedPathwayPlansForExistingPathways', () => {
 
 describe('sanitizeSavedPathwayPlanForStorage', () => {
   it('keeps valid date-only reminders and rejects invalid dates and intervals', () => {
-    expect(sanitizeSavedPathwayPlanForStorage({
-      targetDeadline: '2026-09-30',
-      actedOnDate: '2026-02-29',
-      followUpIntervalDays: 14,
-    })).toMatchObject({
+    expect(
+      sanitizeSavedPathwayPlanForStorage({
+        targetDeadline: '2026-09-30',
+        actedOnDate: '2026-02-29',
+        followUpIntervalDays: 14,
+      }),
+    ).toMatchObject({
       targetDeadline: '2026-09-30',
       actedOnDate: null,
       followUpIntervalDays: 14,
     });
-    expect(sanitizeSavedPathwayPlanForStorage({
-      targetDeadline: '09/30/2026',
-      actedOnDate: '2026-07-12T00:00:00Z',
-      followUpIntervalDays: 15,
-    })).toMatchObject({ targetDeadline: null, actedOnDate: null, followUpIntervalDays: null });
+    expect(
+      sanitizeSavedPathwayPlanForStorage({
+        targetDeadline: '09/30/2026',
+        actedOnDate: '2026-07-12T00:00:00Z',
+        followUpIntervalDays: 15,
+      }),
+    ).toMatchObject({ targetDeadline: null, actedOnDate: null, followUpIntervalDays: null });
   });
 
   it('normalizes create/update payloads before persisting a saved pathway plan', () => {
@@ -493,5 +498,40 @@ describe('buildSavedPathwayPlansExport', () => {
       stage: 'saved',
       checklist: {},
     });
+  });
+});
+
+describe('buildSavedResearchEntityMigration', () => {
+  it('deduplicates pathways by entity and preserves every colliding private plan', () => {
+    const firstId = '665f0b0c0b0c0b0c0b0c0b0c';
+    const secondId = '665f0b0c0b0c0b0c0b0c0b0f';
+    const entityId = '665f0b0c0b0c0b0c0b0c0b0d';
+    const first = sanitizeSavedPathwayPlanForStorage({ note: 'First private note' });
+    const second = sanitizeSavedPathwayPlanForStorage({ note: 'Second private note' });
+
+    const result = buildSavedResearchEntityMigration(
+      [pathway({ _id: secondId }), pathway({ _id: firstId })],
+      { [firstId]: first, [secondId]: second },
+    );
+
+    expect(result.entityIds).toEqual([entityId]);
+    expect(result.plans[entityId].note).toBe('First private note');
+    expect(result.conflicts[entityId]).toEqual({
+      [firstId]: first,
+      [secondId]: second,
+    });
+  });
+
+  it('never overwrites an existing entity-owned plan during lazy migration', () => {
+    const entityId = '665f0b0c0b0c0b0c0b0c0b0d';
+    const existing = sanitizeSavedPathwayPlanForStorage({ note: 'Canonical entity note' });
+    const result = buildSavedResearchEntityMigration(
+      [pathway()],
+      { [pathway()._id]: sanitizeSavedPathwayPlanForStorage({ note: 'Legacy note' }) },
+      [entityId],
+      { [entityId]: existing },
+    );
+
+    expect(result.plans[entityId]).toEqual(existing);
   });
 });
