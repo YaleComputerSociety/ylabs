@@ -67,8 +67,7 @@ const CombinedFilterDropdown = ({
     if (!isOpen) return;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      setIsOpen(false);
-      if (mobileSheet) window.setTimeout(() => triggerRef.current?.focus(), 0);
+      closeFilters();
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
