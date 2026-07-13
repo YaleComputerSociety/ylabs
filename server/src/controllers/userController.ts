@@ -55,10 +55,7 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 
 const publicHttpUrls = (values: unknown): string[] =>
   Array.isArray(values)
-    ? values
-        .slice(0, MAX_ACCOUNT_LISTING_URLS)
-        .map(publicHttpUrl)
-        .filter((value): value is string => Boolean(value))
+    ? values.slice(0, MAX_ACCOUNT_LISTING_URLS).map(publicHttpUrl).filter((value): value is string => Boolean(value))
     : [];
 
 const MAX_ACCOUNT_LISTING_URLS = 20;
