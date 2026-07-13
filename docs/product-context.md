@@ -64,7 +64,9 @@ Target surfaces:
 - `/research`: explore research entities, even when no opening exists.
 - `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, source context, saved research-plan actions, and planning routes when they are supported.
 - `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
-- `/listings`: temporary legacy board for posted roles, preserved for old direct links and professor-created role workflows while the product migrates toward posted opportunities.
+- `/programs`: active authenticated program and fellowship discovery surface.
+- `/listings`: retired compatibility URL that redirects to `/research`.
+- `/fellowships`: retired compatibility URL that redirects to `/programs`.
 
 The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Explore Research route.
 
