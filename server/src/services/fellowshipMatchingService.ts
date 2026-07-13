@@ -34,6 +34,36 @@ export interface FellowshipMatchingDeps {
   fellowshipReader?: () => Promise<any[]>;
 }
 
+export interface FellowshipMatchContext {
+  userType?: string;
+  classYear?: number;
+  plansByPathwayId?: Record<string, { intent?: string } | undefined>;
+}
+
+const JUNK_TITLES = /^(home|menu|search|apply|learn more|read more|fellowships?|programs?|opportunities|navigation)$/i;
+
+export function isCandidateFellowshipTitle(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const title = value.replace(/\s+/g, ' ').trim();
+  if (title.length < 4 || title.length > 240 || JUNK_TITLES.test(title)) return false;
+  const letters = (title.match(/[a-z]/gi) || []).length;
+  return letters >= 3 && letters / title.length >= 0.35 && !/(.)\1{7,}/.test(title);
+}
+
+function undergraduateStanding(classYear: number | undefined, now: Date): string | undefined {
+  if (!Number.isInteger(classYear)) return undefined;
+  const yearsRemaining = Number(classYear) - now.getUTCFullYear();
+  if (yearsRemaining >= 4) return 'first-year';
+  if (yearsRemaining === 3) return 'sophomore';
+  if (yearsRemaining === 2) return 'junior';
+  if (yearsRemaining <= 1 && yearsRemaining >= 0) return 'senior';
+  return undefined;
+}
+
+function normalizedValues(value: unknown): string[] {
+  return textPart(value).map((item) => item.toLowerCase());
+}
+
 const STOP_WORDS = new Set([
   'and',
   'for',
@@ -130,10 +160,11 @@ export function scoreFellowshipForPathway(
   pathway: PathwaySearchHit,
   fellowship: any,
   now: Date = new Date(),
+  context: FellowshipMatchContext = {},
 ): FellowshipMatch | null {
   const rawFellowshipId = fellowship._id || fellowship.id;
   const fellowshipId = serializedDocumentId(rawFellowshipId) || '';
-  if (!fellowshipId || fellowship.archived === true) return null;
+  if (!fellowshipId || fellowship.archived === true || !isCandidateFellowshipTitle(fellowship.title)) return null;
 
   const fellowshipText = textForFellowship(fellowship);
   const fellowshipTokens = tokens(fellowshipText);
@@ -143,6 +174,42 @@ export function scoreFellowshipForPathway(
   const reasons: string[] = [];
   const caveats: string[] = [];
   let score = 0;
+
+  const standing = undergraduateStanding(context.classYear, now);
+  const studyLevels = normalizedValues(fellowship.yearOfStudy);
+  const explicitlyGraduateOnly =
+    studyLevels.length > 0 &&
+    studyLevels.every((value) => /graduate|postgraduate|doctoral|ph\.?d|master/.test(value)) &&
+    !studyLevels.some((value) => /undergraduate|first|sophomore|junior|senior/.test(value));
+  if (context.userType === 'undergraduate' && explicitlyGraduateOnly) return null;
+  if (standing && studyLevels.length > 0) {
+    const standingPattern = standing === 'first-year' ? /first|freshman/ : new RegExp(standing);
+    if (studyLevels.some((value) => standingPattern.test(value))) {
+      score += 14;
+      reasons.push(`This program lists ${standing} students among the years it considers.`);
+    } else if (studyLevels.some((value) => /undergraduate|first|freshman|sophomore|junior|senior/.test(value))) {
+      score -= 35;
+      caveats.push(`The listed years do not include your current ${standing} standing.`);
+    }
+  }
+
+  const terms = normalizedValues(fellowship.termOfAward);
+  const planIntent = context.plansByPathwayId?.[pathway._id]?.intent;
+  const thesisPlan = pathway.pathwayType === 'SENIOR_THESIS' || planIntent === 'thesis';
+  if (terms.length > 0) {
+    const isSummer = terms.some((value) => /summer/.test(value));
+    const isAcademicYear = terms.some((value) => /academic|year[- ]long|semester|fall|spring/.test(value));
+    if (thesisPlan && isAcademicYear) {
+      score += 12;
+      reasons.push('The award timing aligns with an academic-year or thesis plan.');
+    } else if (thesisPlan && isSummer && !isAcademicYear) {
+      score -= 18;
+      caveats.push('This is listed as a summer award, which may not fit an academic-year thesis plan.');
+    } else if (!thesisPlan && isSummer) {
+      score += 8;
+      reasons.push('The program is scheduled for summer research planning.');
+    }
+  }
 
   if (hasFellowshipCompatibleEvidence(pathway)) {
     score += 25;
@@ -262,6 +329,7 @@ export function scoreFellowshipForPathway(
 export async function matchFellowshipsForPathways(
   pathwayIds: string[],
   deps: FellowshipMatchingDeps = {},
+  context: FellowshipMatchContext = {},
 ): Promise<Record<string, FellowshipMatch[]>> {
   const uniqueIds = Array.from(new Set(pathwayIds.filter(Boolean)));
   if (uniqueIds.length === 0) return {};
@@ -276,7 +344,7 @@ export async function matchFellowshipsForPathways(
   const matchesByPathway: Record<string, FellowshipMatch[]> = {};
   for (const pathway of pathways) {
     const matches = fellowships
-      .map((fellowship) => scoreFellowshipForPathway(pathway, fellowship))
+      .map((fellowship) => scoreFellowshipForPathway(pathway, fellowship, new Date(), context))
       .filter((match): match is FellowshipMatch => !!match)
       .sort(
         (a, b) =>
