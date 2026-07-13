@@ -1,7 +1,7 @@
 /**
  * Analytics dashboard page for admin usage statistics.
  */
-import { FormEvent, useCallback, useContext, useEffect, useReducer, useState } from 'react';
+import { FormEvent, useCallback, useContext, useEffect, useReducer, useRef, useState } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import AdminPanel from '../components/admin/AdminPanel';
@@ -70,6 +70,10 @@ const Analytics = () => {
   const [adminAccessError, setAdminAccessError] = useState<string | null>(null);
   const [adminGrantNetid, setAdminGrantNetid] = useState('');
   const [adminGrantNote, setAdminGrantNote] = useState('');
+  const [pendingAdminGrantNetid, setPendingAdminGrantNetid] = useState<string | null>(null);
+  const [adminGrantConfirmation, setAdminGrantConfirmation] = useState('');
+  const grantDialogCancelRef = useRef<HTMLButtonElement>(null);
+  const grantReviewButtonRef = useRef<HTMLButtonElement>(null);
   const [adminAccessActionError, setAdminAccessActionError] = useState<string | null>(null);
   const [adminAccessActionMessage, setAdminAccessActionMessage] = useState<string | null>(null);
   const [adminAccessActionNetid, setAdminAccessActionNetid] = useState<string | null>(null);
@@ -154,37 +158,56 @@ const Analytics = () => {
     return clientErrorMessage(error, fallback);
   };
 
-  const handleGrantAdminAccess = useCallback(
-    async (event?: FormEvent, requestedNetid?: string) => {
-      event?.preventDefault();
-      const netid = (requestedNetid || adminGrantNetid).trim().toLowerCase();
-      if (!netid) {
-        setAdminAccessActionError('NetID is required.');
-        return;
-      }
-      setAdminAccessActionNetid(netid);
-      setAdminAccessActionError(null);
-      setAdminAccessActionMessage(null);
-      try {
-        await axios.post(
-          '/admin/admin-grants',
-          { netid, note: requestedNetid ? '' : adminGrantNote.trim() },
-          { withCredentials: true },
-        );
-        setAdminGrantNetid('');
-        if (!requestedNetid) setAdminGrantNote('');
-        setAdminAccessActionMessage(`Admin access granted to ${netid}.`);
-        await fetchAdminAccess();
-      } catch (error) {
-        setAdminAccessActionError(
-          adminAccessErrorMessage(error, `Failed to grant admin access to ${netid}.`),
-        );
-      } finally {
-        setAdminAccessActionNetid(null);
-      }
-    },
-    [adminGrantNetid, adminGrantNote, fetchAdminAccess],
-  );
+  const requestGrantAdminAccess = (event: FormEvent) => {
+    event.preventDefault();
+    const netid = adminGrantNetid.trim().toLowerCase();
+    if (!netid || !adminGrantNote.trim()) {
+      setAdminAccessActionError('NetID and reviewer note are required.');
+      return;
+    }
+    setAdminAccessActionError(null);
+    setAdminGrantConfirmation('');
+    setPendingAdminGrantNetid(netid);
+  };
+  const closeGrantDialog = () => {
+    setPendingAdminGrantNetid(null);
+    setAdminGrantConfirmation('');
+    window.setTimeout(() => grantReviewButtonRef.current?.focus(), 0);
+  };
+
+  const handleGrantAdminAccess = useCallback(async () => {
+    const netid = pendingAdminGrantNetid || '';
+    if (!netid) {
+      setAdminAccessActionError('NetID is required.');
+      return;
+    }
+    setAdminAccessActionNetid(netid);
+    setAdminAccessActionError(null);
+    setAdminAccessActionMessage(null);
+    try {
+      await axios.post(
+        '/admin/admin-grants',
+        { netid, note: adminGrantNote.trim() },
+        { withCredentials: true },
+      );
+      setAdminGrantNetid('');
+      setAdminGrantNote('');
+      setPendingAdminGrantNetid(null);
+      setAdminGrantConfirmation('');
+      setAdminAccessActionMessage(`Admin access granted to ${netid}.`);
+      await fetchAdminAccess();
+    } catch (error) {
+      setAdminAccessActionError(
+        adminAccessErrorMessage(error, `Failed to grant admin access to ${netid}.`),
+      );
+    } finally {
+      setAdminAccessActionNetid(null);
+    }
+  }, [pendingAdminGrantNetid, adminGrantNote, fetchAdminAccess]);
+
+  useEffect(() => {
+    if (pendingAdminGrantNetid) grantDialogCancelRef.current?.focus();
+  }, [pendingAdminGrantNetid]);
 
   const handleRevokeAdminAccess = useCallback(
     async (netid: string) => {
@@ -204,7 +227,7 @@ const Analytics = () => {
       try {
         await axios.post(
           `/admin/admin-grants/${encodeURIComponent(normalizedNetid)}/revoke`,
-          { note: '' },
+          { note: 'Revoked through the Admin Access panel.' },
           { withCredentials: true },
         );
         setAdminAccessActionMessage(`Admin access revoked for ${normalizedNetid}.`);
@@ -743,9 +766,7 @@ const Analytics = () => {
 
           <form
             className="mb-4 grid gap-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto]"
-            onSubmit={(event) => {
-              void handleGrantAdminAccess(event);
-            }}
+            onSubmit={requestGrantAdminAccess}
           >
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase text-gray-500">
@@ -766,15 +787,17 @@ const Analytics = () => {
                 className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 value={adminGrantNote}
                 onChange={(event) => setAdminGrantNote(event.target.value)}
-                placeholder="Optional"
+                placeholder="Required reason for this grant"
+                maxLength={512}
               />
             </label>
             <button
+              ref={grantReviewButtonRef}
               className="inline-flex min-h-[44px] items-center justify-center self-end rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-900 disabled:cursor-not-allowed disabled:bg-blue-300"
               type="submit"
               disabled={adminAccessActionNetid !== null}
             >
-              Grant Admin
+              Review Grant
             </button>
           </form>
 
@@ -792,9 +815,10 @@ const Analytics = () => {
 
           {adminAccess.legacyAdminsWithoutGrant.length > 0 && (
             <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              {adminAccess.legacyAdminsWithoutGrant.length} legacy admin profile row
-              {adminAccess.legacyAdminsWithoutGrant.length === 1 ? '' : 's'} without active grants:{' '}
-              {adminAccess.legacyAdminsWithoutGrant.map((user) => user.netid).join(', ')}
+              {adminAccess.legacyAdminsWithoutGrant.length} profile-derived admin authorit
+              {adminAccess.legacyAdminsWithoutGrant.length === 1 ? 'y is' : 'ies are'} present
+              without an active grant. These records are shown separately and do not silently change
+              the production authorization policy.
               <div className="mt-3 flex flex-wrap gap-2">
                 {adminAccess.legacyAdminsWithoutGrant.map((user) => (
                   <button
@@ -803,10 +827,11 @@ const Analytics = () => {
                     className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
                     disabled={adminAccessActionNetid !== null}
                     onClick={() => {
-                      void handleGrantAdminAccess(undefined, user.netid);
+                      setAdminGrantNetid(user.netid);
+                      setAdminGrantNote('');
                     }}
                   >
-                    Grant {user.netid}
+                    Review profile authority
                   </button>
                 ))}
               </div>
@@ -910,6 +935,61 @@ const Analytics = () => {
               </table>
             </div>
           </div>
+          {pendingAdminGrantNetid && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+              role="presentation"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') closeGrantDialog();
+              }}
+            >
+              <div
+                aria-describedby="admin-grant-confirm-description"
+                aria-labelledby="admin-grant-confirm-title"
+                aria-modal="true"
+                className="w-full max-w-lg rounded-md bg-white p-6 shadow-xl"
+                role="dialog"
+              >
+                <h3 id="admin-grant-confirm-title" className="text-lg font-bold text-gray-900">
+                  Confirm admin grant
+                </h3>
+                <p id="admin-grant-confirm-description" className="mt-2 text-sm text-gray-700">
+                  Grant admin authority to <strong>{pendingAdminGrantNetid}</strong>. Enter the
+                  target NetID again to confirm this deliberate access change.
+                </p>
+                <label className="mt-4 block text-sm font-semibold text-gray-700">
+                  Confirm target NetID
+                  <input
+                    autoComplete="off"
+                    className="mt-1 min-h-[44px] w-full rounded-md border px-3 py-2"
+                    value={adminGrantConfirmation}
+                    onChange={(event) => setAdminGrantConfirmation(event.target.value)}
+                  />
+                </label>
+                <div className="mt-5 flex justify-end gap-3">
+                  <button
+                    ref={grantDialogCancelRef}
+                    type="button"
+                    className="rounded-md border px-4 py-2 text-sm font-semibold"
+                    onClick={closeGrantDialog}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md bg-[var(--yr-blue)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    disabled={
+                      adminAccessActionNetid !== null ||
+                      adminGrantConfirmation.trim().toLowerCase() !== pendingAdminGrantNetid
+                    }
+                    onClick={() => void handleGrantAdminAccess()}
+                  >
+                    Confirm Grant
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         <DetailSectionHeader

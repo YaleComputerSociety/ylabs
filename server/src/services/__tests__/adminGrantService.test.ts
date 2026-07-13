@@ -60,35 +60,44 @@ describe('admin grant note persistence', () => {
     vi.restoreAllMocks();
   });
 
-  it('caps grant notes before persistence', async () => {
+  it('rejects missing and oversized grant notes', async () => {
     const findOneAndUpdate = vi
       .spyOn(AdminGrant, 'findOneAndUpdate')
       .mockReturnValue({ lean: vi.fn().mockResolvedValue({}) } as any);
 
-    await grantAdminAccess({
-      netid: 'abc123',
-      actorNetid: 'admin1',
-      note: ` ${'x'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 50)} `,
-    });
-
-    const update = findOneAndUpdate.mock.calls[0][1] as any;
-    expect(update.$set.note).toHaveLength(MAX_ADMIN_GRANT_NOTE_LENGTH);
-    expect(update.$set.note).toBe('x'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH));
+    await expect(
+      grantAdminAccess({ netid: 'abc123', actorNetid: 'admin1', note: '   ' }),
+    ).rejects.toThrow();
+    await expect(
+      grantAdminAccess({
+        netid: 'abc123',
+        actorNetid: 'admin1',
+        note: 'x'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 1),
+      }),
+    ).rejects.toThrow();
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('caps revoke notes before persistence', async () => {
+  it('rejects self grants before persistence', async () => {
+    const findOneAndUpdate = vi.spyOn(AdminGrant, 'findOneAndUpdate');
+    await expect(
+      grantAdminAccess({ netid: 'admin1', actorNetid: 'ADMIN1', note: 'reviewed' }),
+    ).rejects.toThrow();
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized revoke notes before persistence', async () => {
     const findOneAndUpdate = vi
       .spyOn(AdminGrant, 'findOneAndUpdate')
       .mockReturnValue({ lean: vi.fn().mockResolvedValue({}) } as any);
 
-    await revokeAdminAccess({
-      netid: 'abc123',
-      actorNetid: 'admin1',
-      note: ` ${'y'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 50)} `,
-    });
-
-    const update = findOneAndUpdate.mock.calls[0][1] as any;
-    expect(update.$set.revokeNote).toHaveLength(MAX_ADMIN_GRANT_NOTE_LENGTH);
-    expect(update.$set.revokeNote).toBe('y'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH));
+    await expect(
+      revokeAdminAccess({
+        netid: 'abc123',
+        actorNetid: 'admin1',
+        note: 'y'.repeat(MAX_ADMIN_GRANT_NOTE_LENGTH + 1),
+      }),
+    ).rejects.toThrow();
+    expect(findOneAndUpdate).not.toHaveBeenCalled();
   });
 });

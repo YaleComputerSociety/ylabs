@@ -9,6 +9,7 @@ const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 export const MAX_ADMIN_GRANT_NOTE_LENGTH = 512;
 
 export class AdminGrantValidationError extends Error {}
+export class AdminGrantConflictError extends Error {}
 
 export interface AdminGrantResponse {
   activeCount: number;
@@ -25,8 +26,14 @@ const assertValidNetid = (netid: string) => {
   }
 };
 
-const normalizeAdminGrantNote = (note: unknown): string =>
-  typeof note === 'string' ? note.trim().slice(0, MAX_ADMIN_GRANT_NOTE_LENGTH) : '';
+const normalizeAdminGrantNote = (note: unknown): string => {
+  if (typeof note !== 'string') throw new AdminGrantValidationError('Reviewer note is required');
+  const normalized = note.trim();
+  if (!normalized || normalized.length > MAX_ADMIN_GRANT_NOTE_LENGTH) {
+    throw new AdminGrantValidationError('Reviewer note is required and must be bounded');
+  }
+  return normalized;
+};
 
 export const allowsLegacyAdminUserType = (env: NodeJS.ProcessEnv = process.env): boolean =>
   isLocalDevelopmentRuntime(env);
@@ -115,27 +122,50 @@ export const grantAdminAccess = async ({
   const normalizedActor = normalizeNetid(actorNetid);
   assertValidNetid(normalizedNetid);
   assertValidNetid(normalizedActor);
-  adminGrantCache.delete(normalizedNetid);
+  if (normalizedNetid === normalizedActor) {
+    throw new AdminGrantValidationError('Administrators cannot grant access to themselves');
+  }
+  const normalizedNote = normalizeAdminGrantNote(note);
+  const now = new Date();
 
-  return AdminGrant.findOneAndUpdate(
-    { netid: normalizedNetid },
-    {
-      $set: {
-        netid: normalizedNetid,
-        status: 'active',
-        source,
-        grantedBy: normalizedActor,
-        grantedAt: new Date(),
-        note: normalizeAdminGrantNote(note),
+  let grant;
+  try {
+    grant = await AdminGrant.findOneAndUpdate(
+      { netid: normalizedNetid, status: { $ne: 'active' } },
+      {
+        $set: {
+          netid: normalizedNetid,
+          status: 'active',
+          source,
+          grantedBy: normalizedActor,
+          grantedAt: now,
+          note: normalizeAdminGrantNote(note),
+        },
+        $unset: {
+          revokedBy: '',
+          revokedAt: '',
+          revokeNote: '',
+        },
+        $push: {
+          history: {
+            action: 'granted',
+            actorNetid: normalizedActor,
+            note: normalizedNote,
+            at: now,
+          },
+        },
       },
-      $unset: {
-        revokedBy: '',
-        revokedAt: '',
-        revokeNote: '',
-      },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  ).lean();
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      throw new AdminGrantConflictError('Admin access is already active');
+    }
+    throw error;
+  }
+  if (!grant) throw new AdminGrantConflictError('Admin access is already active');
+  adminGrantCache.delete(normalizedNetid);
+  return grant;
 };
 
 export const revokeAdminAccess = async ({
@@ -151,18 +181,24 @@ export const revokeAdminAccess = async ({
   const normalizedActor = normalizeNetid(actorNetid);
   assertValidNetid(normalizedNetid);
   assertValidNetid(normalizedActor);
-  adminGrantCache.delete(normalizedNetid);
+  const normalizedNote = normalizeAdminGrantNote(note);
+  const now = new Date();
 
-  return AdminGrant.findOneAndUpdate(
+  const grant = await AdminGrant.findOneAndUpdate(
     { netid: normalizedNetid, status: 'active' },
     {
       $set: {
         status: 'revoked',
         revokedBy: normalizedActor,
-        revokedAt: new Date(),
+        revokedAt: now,
         revokeNote: normalizeAdminGrantNote(note),
+      },
+      $push: {
+        history: { action: 'revoked', actorNetid: normalizedActor, note: normalizedNote, at: now },
       },
     },
     { new: true },
   ).lean();
+  if (grant) adminGrantCache.delete(normalizedNetid);
+  return grant;
 };

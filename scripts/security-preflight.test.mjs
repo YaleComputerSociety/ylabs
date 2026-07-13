@@ -4911,7 +4911,8 @@ test('admin grant notes are bounded before persistence', () => {
   assert.doesNotMatch(source, /const normalizeNetid = \(netid: unknown\) => String\(netid \|\| ''\)/);
   assert.match(source, /MAX_ADMIN_GRANT_NOTE_LENGTH = 512/);
   assert.match(source, /const normalizeAdminGrantNote = \(note: unknown\): string =>/);
-  assert.match(source, /note\.trim\(\)\.slice\(0, MAX_ADMIN_GRANT_NOTE_LENGTH\)/);
+  assert.match(source, /const normalized = note\.trim\(\)/);
+  assert.match(source, /!normalized \|\| normalized\.length > MAX_ADMIN_GRANT_NOTE_LENGTH/);
   assert.match(source, /note: normalizeAdminGrantNote\(note\)/);
   assert.match(source, /revokeNote: normalizeAdminGrantNote\(note\)/);
   assert.doesNotMatch(source, /note: typeof note === 'string' \? note\.trim\(\) : ''/);
