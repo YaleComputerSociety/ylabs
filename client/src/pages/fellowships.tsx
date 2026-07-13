@@ -680,7 +680,7 @@ const Fellowships = () => {
         <div className="grid gap-6 xl:grid-cols-[20rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <aside className="space-y-3 xl:sticky xl:top-6">
             <div className="yr-panel flex flex-col gap-3 rounded-md p-3 sm:flex-row sm:flex-wrap sm:items-end xl:flex-col xl:items-stretch">
-              <div className="min-w-[220px] flex-1">
+              <div className="min-w-0 basis-full flex-1 sm:min-w-[220px]">
                 <label
                   htmlFor="program-search"
                   className="mb-1 block text-xs font-semibold text-slate-700"
@@ -702,7 +702,7 @@ const Fellowships = () => {
                   className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-2 xl:flex-col xl:items-stretch">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">
                 <FellowshipSortDropdown />
                 <ViewModeToggle />
                 <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
