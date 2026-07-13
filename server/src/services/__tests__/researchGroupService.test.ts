@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   postedOpportunityFind: vi.fn(),
   getAccessSummaryForResearchEntity: vi.fn(),
   listAccessSummariesForResearchEntities: vi.fn(),
+  listPlanningContextsForResearchEntities: vi.fn(),
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
@@ -112,6 +113,10 @@ vi.mock('../accessSummaryService', () => ({
   listAccessSummariesForResearchEntities: mocks.listAccessSummariesForResearchEntities,
 }));
 
+vi.mock('../planningContextService', () => ({
+  listPlanningContextsForResearchEntities: mocks.listPlanningContextsForResearchEntities,
+}));
+
 import {
   buildLeadPiOutreachContactRoute,
   buildResearchActivityLinkPayload,
@@ -155,6 +160,7 @@ beforeEach(() => {
   mocks.researchEntityFindOne.mockReset();
   mocks.researchEntityFind.mockReset();
   mocks.listAccessSummariesForResearchEntities.mockReset();
+  mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
   mocks.researchGroupMemberFind.mockReset();
   mocks.userFind.mockReset();
@@ -183,6 +189,7 @@ beforeEach(() => {
   mocks.postedOpportunityFind.mockReturnValue(queryResult([]));
   mocks.getAccessSummaryForResearchEntity.mockResolvedValue(undefined);
   mocks.listAccessSummariesForResearchEntities.mockResolvedValue(new Map());
+  mocks.listPlanningContextsForResearchEntities.mockResolvedValue(new Map());
 });
 
 describe('searchResearchGroupsViaMeili', () => {
@@ -359,6 +366,38 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
 
     expect(result.researchEntities).toEqual([expect.objectContaining({ slug: 'actual-ai-lab' })]);
+  });
+
+  it('keeps base research results usable when optional planning context fails', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search.mockResolvedValueOnce({ hits: [{ id: entityId }], estimatedTotalHits: 1 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+    mocks.listPlanningContextsForResearchEntities.mockRejectedValueOnce(
+      new Error('optional store unavailable'),
+    );
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
+
+    expect(result.researchEntities).toHaveLength(1);
+    expect(result.researchEntities[0]).not.toHaveProperty('planningContext');
+    expect(consoleError).toHaveBeenCalledWith(
+      'Optional research planning-context enrichment failed:',
+      expect.any(String),
+    );
+    consoleError.mockRestore();
   });
 
   it('drops object-shaped Meili hit ids before Mongo visibility filtering', async () => {
@@ -1315,9 +1354,8 @@ describe('listResearchEntityRelationshipPayload', () => {
     const publicInstituteId = '67d8928150621bcef434a1d6';
     const reviewInstituteId = '67d8928150621bcef434a1d7';
 
-    mocks.researchEntityRelationshipFind
-      .mockReturnValueOnce(queryResult([]))
-      .mockReturnValueOnce(queryResult([
+    mocks.researchEntityRelationshipFind.mockReturnValueOnce(queryResult([])).mockReturnValueOnce(
+      queryResult([
         {
           _id: 'rel-yqi',
           sourceResearchEntityId: publicInstituteId,
@@ -1338,7 +1376,8 @@ describe('listResearchEntityRelationshipPayload', () => {
           evidenceStrength: 'MODERATE',
           evidenceQuote: 'Held private operator note',
         },
-      ]));
+      ]),
+    );
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
         {
@@ -1405,18 +1444,21 @@ describe('listResearchEntityRelationshipPayload', () => {
   it('projects an allowlisted card shape and bounds a 99-related hub payload', async () => {
     const currentEntityId = '67d8928150621bcef434a1d5';
     const select = vi.fn();
-    const relatedIds = Array.from({ length: 99 }, (_, index) =>
-      `67d8928150621bcef434${String(index).padStart(4, '0')}`,
+    const relatedIds = Array.from(
+      { length: 99 },
+      (_, index) => `67d8928150621bcef434${String(index).padStart(4, '0')}`,
     );
     mocks.researchEntityRelationshipFind
-      .mockReturnValueOnce(queryResult(
-        relatedIds.map((id) => ({
-          sourceResearchEntityId: currentEntityId,
-          targetResearchEntityId: id,
-          relationshipType: 'MEMBER_RESEARCH_AREA',
-          label: 'Related',
-        })),
-      ))
+      .mockReturnValueOnce(
+        queryResult(
+          relatedIds.map((id) => ({
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: id,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            label: 'Related',
+          })),
+        ),
+      )
       .mockReturnValueOnce(queryResult([]));
     const entityQuery = queryResult(
       relatedIds.slice(0, 50).map((id, index) => ({
