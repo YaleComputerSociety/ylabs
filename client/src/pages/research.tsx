@@ -1,6 +1,6 @@
 import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
@@ -297,6 +297,7 @@ const scrollResearchViewportToTop = () => {
 };
 
 const Research = () => {
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(UserContext);
   const { departments } = useConfig();
@@ -400,6 +401,9 @@ const Research = () => {
   const searchAbortRef = useRef<AbortController | null>(null);
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
+  const pendingSearchParamsRef = useRef<string | null>(null);
+  const pendingSearchSourceParamsRef = useRef<string | null>(null);
+  const pendingSearchSourceLocationKeyRef = useRef<string | null>(null);
   const effectGenerationRef = useRef(0);
   const restoredSnapshotSyncKeyRef = useRef(
     restoredSnapshotRef.current
@@ -428,7 +432,7 @@ const Research = () => {
       department?: string;
       requireUndergradEvidence?: boolean;
     },
-    options: { replace?: boolean } = {},
+    options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
     const params = new URLSearchParams();
     const nextQuery = (nextState.query || '').trim();
@@ -445,6 +449,11 @@ const Research = () => {
       if (nextState.trustTiers?.length) params.set('tier', nextState.trustTiers.join(','));
     }
 
+    if (options.markPending) {
+      pendingSearchParamsRef.current = params.toString();
+      pendingSearchSourceParamsRef.current = searchParams.toString();
+      pendingSearchSourceLocationKeyRef.current = location.key;
+    }
     setSearchParams(params, { replace: Boolean(options.replace) });
   };
 
@@ -571,16 +580,19 @@ const Research = () => {
     setSearchError('');
     setGroupedResults(emptyGroupedResults(resultQueryLabel));
     if (options.syncUrl !== false) {
-      writeResearchSearchParams({
-        query: trimmed,
-        departmentLabel: options.departmentSearch?.label,
-        school: filters.school?.[0],
-        department: filters.departments?.[0],
-        requireUndergradEvidence: filters.acceptanceLevel === 'verified-or-likely',
-        showWeakest: showWeakestProfilesFirst,
-        quality: qualityFilters,
-        trustTiers: trustTierFilters,
-      });
+      writeResearchSearchParams(
+        {
+          query: trimmed,
+          departmentLabel: options.departmentSearch?.label,
+          school: filters.school?.[0],
+          department: filters.departments?.[0],
+          requireUndergradEvidence: filters.acceptanceLevel === 'verified-or-likely',
+          showWeakest: showWeakestProfilesFirst,
+          quality: qualityFilters,
+          trustTiers: trustTierFilters,
+        },
+        { markPending: true },
+      );
     }
 
     try {
@@ -748,6 +760,20 @@ const Research = () => {
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
 
   useEffect(() => {
+    const observedSearchParams = searchParams.toString();
+    if (pendingSearchParamsRef.current === observedSearchParams) {
+      pendingSearchParamsRef.current = null;
+      pendingSearchSourceParamsRef.current = null;
+      pendingSearchSourceLocationKeyRef.current = null;
+    } else if (
+      pendingSearchParamsRef.current !== null &&
+      (pendingSearchSourceParamsRef.current !== observedSearchParams ||
+        pendingSearchSourceLocationKeyRef.current !== location.key)
+    ) {
+      pendingSearchParamsRef.current = null;
+      pendingSearchSourceParamsRef.current = null;
+      pendingSearchSourceLocationKeyRef.current = null;
+    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlSchool = searchParams.get('school') || '';
@@ -851,7 +877,19 @@ const Research = () => {
       return;
     }
 
-    setQuery('');
+    // A search submission updates component state and the URL in the same
+    // transition. Do not let an effect that still observes the previous URL
+    // overwrite that active search before its pending URL write is observed.
+    if (activeSearchKeyRef.current !== null && pendingSearchParamsRef.current !== null) return;
+
+    searchAbortRef.current?.abort();
+    searchRequestIdRef.current += 1;
+    activeSearchKeyRef.current = null;
+
+    // Preserve an in-progress draft while startup context (for example config or
+    // user state) settles. Only clear the input when an existing URL-backed
+    // search is actually being reset.
+    if (hasSubmittedSearch) setQuery('');
     setSubmittedQuery('');
     setDepartmentSearch(null);
     setGroupedResults(emptyGroupedResults(''));
@@ -869,6 +907,7 @@ const Research = () => {
     void runDefaultResearchHomeSearchRef.current(1);
   }, [
     searchParams,
+    location.key,
     pageSnapshotKey,
     isAdmin,
     showWeakestProfilesFirst,
