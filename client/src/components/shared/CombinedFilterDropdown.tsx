@@ -1,5 +1,8 @@
 /**
- * Multi-category filter dropdown for browse pages.
+ * Multi-category browse filter.
+ *
+ * The default presentation is an anchored, non-modal dropdown for shared listing filters.
+ * Set `mobileSheet` for the Programs surface to use the labelled, focus-contained mobile sheet.
  */
 import { useState, useRef, useEffect } from 'react';
 import { FilterMode } from '../../contexts/SearchContext';
@@ -20,7 +23,9 @@ export interface FilterTabConfig {
 
 interface CombinedFilterDropdownProps {
   tabs: FilterTabConfig[];
+  /** Enables the Programs mobile modal-sheet presentation and focus management. */
   mobileSheet?: boolean;
+  /** Accessible name for the modal sheet. Used only when `mobileSheet` is enabled. */
   dialogLabel?: string;
 }
 

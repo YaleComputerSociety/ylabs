@@ -231,12 +231,13 @@ That contract cannot represent a research home with no pathway and is not a safe
 
 #### CP-08 - Shared Mobile Filter-Sheet Pattern - FR-37
 
-- **Status:** Not started on Beta.
+- **Status:** Active.
 - **Depends on:** surface-specific facet contracts and accessible focus management.
 - **Acceptance criteria:** Research and Programs use one shared filter-sheet interaction pattern on small viewports while retaining their own facets; opening moves focus into a labelled modal/sheet; Escape, close, apply, and focus return work by keyboard and screen reader; selected-count and clear behavior are honest; desktop remains quiet; no horizontal overflow.
-- **Validation evidence:** FR-37 exists as local-only implemented work but is not merged into Beta.
+- **Validation evidence:** PR `#175` added the bounded, labelled Programs mobile sheet with focus entry, containment, Escape close, and focus restoration.
+The shared listing filters intentionally retain their anchored non-modal presentation, so Research does not yet satisfy the cross-surface acceptance criterion.
 PR `#171` only simplified Research filters and must not be credited with FR-37.
-- **PRs:** none on Beta.
+- **PRs:** [#175](https://github.com/YaleComputerSociety/ylabs/pull/175) completed the Programs portion; Research remains outstanding.
 
 #### CP-09 - Honest Logged-Out Saving - FR-14
 
@@ -441,7 +442,7 @@ Its evidence is therefore current Beta source, routes, tests, and merged history
 | Claim | Current support | Delivery interpretation |
 | --- | --- | --- |
 | Entity-first discovery is the correct current baseline. | **Supported.** PR `#171` removes the parallel pathway request and stream and keeps research profiles primary. | Keep EF-01 Complete and protect it with regression tests. |
-| Discovery filters are fully adaptive and progressively disclosed. | **Disputed as complete.** Current controls are inline, have no shared mobile disclosure pattern, and missing facet counts may fall back to the total. | Keep EF-02 Active and CP-08 / FR-37 Not started on Beta. |
+| Discovery filters are fully adaptive and progressively disclosed. | **Disputed as complete.** Programs has a bounded mobile filter sheet, while shared Research/listing filters remain anchored and missing facet counts may fall back to the total. | Keep EF-02 and CP-08 / FR-37 Active until the remaining Research behavior and facet-count gaps are resolved. |
 | A server-qualified sparse planning summary exists. | **Not supported.** No bounded claim-specific summary or useful-state distribution exists. | Keep EF-03 Not started and dependent on QA-01. |
 | Research homes can be saved independently of pathways. | **Not supported.** Current saves are pathway favorites, details are keyed by pathway ID, and detail chooses an entry pathway. | Keep CP-05 / FR-45 Not started and ahead of FR-17 and FR-24. |
 | Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Not supported.** The current taxonomy is broader and canonical browse/detail lacks the complete invisible journey emissions. | Keep IM-01 Not started and IM-02 Active until QA-01 stabilizes conversion meaning. |
@@ -449,7 +450,7 @@ Its evidence is therefore current Beta source, routes, tests, and merged history
 | Historical persona findings describe current Beta behavior. | **Validation pending.** Several cited defects were changed by merged PRs, while the referenced transcript and fresh browser replay were unavailable. | Use historical observations as discovery inputs only; require current code, test, data, or CAS-preserving browser evidence before changing status or rationale. |
 
 Unresolved UX choices remain validation-pending even when engineering dependencies are known.
-These include the anonymous-save policy, final qualified-action enum and thresholds, exact material-use threshold for a documented-way-in filter, comparison layout, and the shared mobile filter-sheet presentation.
+These include the anonymous-save policy, final qualified-action enum and thresholds, exact material-use threshold for a documented-way-in filter, comparison layout, and the Research-side mobile filter-sheet presentation.
 An implementing PR must resolve only the choice in its accepted scope and update the corresponding requirement and decision evidence.
 
 ## Maintenance Protocol
