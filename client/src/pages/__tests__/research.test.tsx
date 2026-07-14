@@ -186,6 +186,24 @@ const LocationDisplay = () => {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
 };
 
+const ClearResearchLocation = () => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate('/research')}>
+      Clear research location
+    </button>
+  );
+};
+
+const NavigateToResearchQuery = ({ query }: { query: string }) => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(`/research?q=${encodeURIComponent(query)}`)}>
+      Navigate to {query}
+    </button>
+  );
+};
+
 const renderResearchWithDetailRoute = () =>
   render(
     <StrictMode>
@@ -1179,6 +1197,191 @@ describe('Research page', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('preserves a draft query when startup config settles before submission', async () => {
+    const searchResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q === 'machine learning') {
+        return searchResponse.promise;
+      }
+      if (url === '/research/search' && body.q === '')
+        return Promise.resolve(researchSearchResponse());
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    const researchTree = (departmentList: typeof departments) => (
+      <MemoryRouter initialEntries={['/research']}>
+        <UserContext.Provider
+          value={{
+            ...defaultUserContext,
+            isLoading: false,
+            isAuthenticated: false,
+            user: undefined,
+          }}
+        >
+          <ConfigContext.Provider
+            value={{
+              ...defaultConfigContext,
+              isLoading: false,
+              isLoaded: true,
+              departments: departmentList,
+              departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+            }}
+          >
+            <Research />
+          </ConfigContext.Provider>
+        </UserContext.Provider>
+      </MemoryRouter>
+    );
+
+    const view = render(researchTree([]));
+    const input = screen.getByLabelText('Search Yale research') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'machine learning' } });
+
+    view.rerender(researchTree(departments));
+
+    expect(input.value).toBe('machine learning');
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    view.rerender(researchTree([...departments]));
+
+    expect(screen.getByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(input.value).toBe('machine learning');
+
+    searchResponse.resolve(researchSearchResponse([researchEntity]));
+
+    expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+  });
+
+  it('resets promptly when navigation clears the URL during an active search', async () => {
+    const searchResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q === 'machine learning') {
+        return searchResponse.promise;
+      }
+      if (url === '/research/search' && body.q === '') {
+        return Promise.resolve(researchSearchResponse());
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <ClearResearchLocation />
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Showing research matches for 'machine learning'");
+    fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
+      expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
+    });
+
+    searchResponse.resolve(researchSearchResponse([researchEntity]));
+    await act(async () => searchResponse.promise);
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+  });
+
+  it('resets after another URL query supersedes a pending search navigation', async () => {
+    const responses = new Map([
+      ['first query', createDeferred<ReturnType<typeof researchSearchResponse>>()],
+      ['second query', createDeferred<ReturnType<typeof researchSearchResponse>>()],
+    ]);
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q && responses.has(body.q)) {
+        return responses.get(body.q)!.promise;
+      }
+      if (url === '/research/search' && body.q === '') {
+        return Promise.resolve(researchSearchResponse());
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <NavigateToResearchQuery query="second query" />
+        <ClearResearchLocation />
+        <LocationDisplay />
+        <Research />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'first query' },
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Navigate to second query' }));
+    });
+
+    expect(await screen.findByText("Showing research matches for 'second query'")).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.queryByText("Showing research matches for 'second query'")).toBeNull();
+      expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
+    });
+
+    responses.get('first query')!.resolve(researchSearchResponse([researchEntity]));
+    responses.get('second query')!.resolve(researchSearchResponse([researchEntity]));
+    await act(async () => Promise.all([...responses.values()].map(({ promise }) => promise)));
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+  });
+
+  it('resets when navigation returns to the pending search source location', async () => {
+    const searchResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/research/search' && body.q === 'machine learning') {
+        return searchResponse.promise;
+      }
+      if (url === '/research/search' && body.q === '') {
+        return Promise.resolve(researchSearchResponse());
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ClearResearchLocation />
+        <LocationDisplay />
+        <Research />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'machine learning' },
+    });
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
+      expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
+    });
+
+    searchResponse.resolve(researchSearchResponse([researchEntity]));
+    await act(async () => searchResponse.promise);
+    expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
   });
 
   it('keeps initial q searches alive under StrictMode effect cleanup', async () => {
