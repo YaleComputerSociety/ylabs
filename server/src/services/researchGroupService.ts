@@ -74,6 +74,17 @@ import {
   evaluateResearchActivityIntegrity,
   type ResearchActivityCandidate,
 } from './researchActivityIntegrity';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+import { listPlanningContextsForResearchEntities } from './planningContextService';
+
+const optionalPlanningContexts = async (entityIds: any[]) => {
+  try {
+    return await listPlanningContextsForResearchEntities(entityIds);
+  } catch (error) {
+    console.error('Optional research planning-context enrichment failed:', sanitizeLogValue(error));
+    return new Map();
+  }
+};
 
 const NON_LAB_CATEGORIES = new Set<string>([
   DepartmentCategory.SOCIAL_SCIENCES,
@@ -581,7 +592,10 @@ export async function searchResearchGroupsViaMeili(
     const activeListingGroupIdSet = new Set(
       activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
     );
-    const accessSummaries = await listAccessSummariesForResearchEntities(pageEntityIds);
+    const [accessSummaries, planningContexts] = await Promise.all([
+      listAccessSummariesForResearchEntities(pageEntityIds),
+      optionalPlanningContexts(pageEntityIds),
+    ]);
     return addResearchEntitySearchAliases(
       {
         hits: pageEntities.map((entity) => ({
@@ -589,6 +603,7 @@ export async function searchResearchGroupsViaMeili(
           _id: researchGroupDocumentId(entity._id),
           hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
           accessSummary: accessSummaries.get(researchGroupDocumentId(entity._id)),
+          planningContext: planningContexts.get(researchGroupDocumentId(entity._id)),
         })),
         estimatedTotalHits: filteredCandidates.length,
         page: safePage,
@@ -717,7 +732,10 @@ export async function searchResearchGroupsViaMeili(
   );
 
   // Map Meilisearch's `id` back to `_id` for client backward compatibility.
-  const accessSummaries = await listAccessSummariesForResearchEntities(visibleHitIds);
+  const [accessSummaries, planningContexts] = await Promise.all([
+    listAccessSummariesForResearchEntities(visibleHitIds),
+    optionalPlanningContexts(visibleHitIds),
+  ]);
   const normalizedHits = (hits || []).flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -728,6 +746,7 @@ export async function searchResearchGroupsViaMeili(
       _id: id,
       hasActiveListing: activeListingGroupIdSet.has(entityId),
       accessSummary: accessSummaries.get(entityId),
+      planningContext: planningContexts.get(entityId),
       ...(hit.searchMatch ? { searchMatch: hit.searchMatch } : {}),
     };
   });
@@ -2271,6 +2290,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     contactRoutes,
     postedOpportunities,
     accessSummary,
+    planningContexts,
   ] = await Promise.all([
     memberUserIds.length
       ? Paper.find({
@@ -2343,6 +2363,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .limit(MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES)
       .lean(),
     getAccessSummaryForResearchEntity((group as any)._id),
+    optionalPlanningContexts([(group as any)._id]),
   ]);
   const recentPapers = (recentPapersRaw as any[]).map(publicPaperForResearchDetail);
   const recentArxivPreprints = (recentArxivPreprintsRaw as any[]).map(publicPaperForResearchDetail);
@@ -2426,11 +2447,13 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   return addResearchEntityDetailAlias({
     group: {
       ...publicGroupForResponse,
-      leadIdentityStatus: Array.isArray((publicGroupForResponse as any).qualitySummary?.repairFlags) &&
+      leadIdentityStatus:
+        Array.isArray((publicGroupForResponse as any).qualitySummary?.repairFlags) &&
         (publicGroupForResponse as any).qualitySummary.repairFlags.includes('pi_identity_conflict')
-        ? 'under_review'
-        : 'verified',
+          ? 'under_review'
+          : 'verified',
       accessSummary,
+      planningContext: planningContexts.get(researchGroupDocumentId((group as any)._id)),
       studentDecisionExplanation: studentDecisionExplanation || undefined,
     },
     members,

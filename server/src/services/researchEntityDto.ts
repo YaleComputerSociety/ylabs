@@ -163,14 +163,12 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'accessSummary',
   'searchMatch',
   'waysIn',
+  'planningContext',
   'profileResearchAreas',
   'researchAreaSource',
 ] as const;
 
-const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = [
-  'qualitySummary',
-  'studentVisibilityTier',
-] as const;
+const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = ['qualitySummary', 'studentVisibilityTier'] as const;
 
 export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
@@ -257,9 +255,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
   };
 }
 
-export function addResearchEntityDetailAlias<
-  T extends { group: Record<string, any> },
->(
+export function addResearchEntityDetailAlias<T extends { group: Record<string, any> }>(
   detail: T,
   options: PublicResearchEntityDtoOptions = {},
 ): Omit<T, 'group'> & {
