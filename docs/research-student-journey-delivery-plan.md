@@ -90,11 +90,11 @@ The count-fallback and final adaptive documented-way-in distribution contract re
 
 #### EF-03 - Sparse Documented-Way-In Signal
 
-- **Status:** Not started.
+- **Status:** Active.
 - **Depends on:** QA-01 qualifying-action policy and a bounded server summary plus distribution.
 - **Acceptance criteria:** the server returns at most one allowlisted positive signal per entity; the client renders no access label when the signal is absent; PI profiles, publications, provenance URLs, generic participation, and exploratory outreach never create the signal; a filter appears only when documented and undocumented homes both exist and the split is materially useful; no client-side access inference or reranking occurs.
 - **Validation evidence:** current Beta deliberately removed the prior parallel `Verified ways in` presentation in PR `#171`.
-No replacement summary is present yet.
+The qualified-planning-context implementation adds a bounded, optional server projection with one deterministic signal per entity and deny-by-default policy tests; query-scoped distribution and client presentation remain separate work.
 - **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) establishes the baseline only.
 
 #### EF-04 - Stable And Efficient Discovery Requests
@@ -107,7 +107,7 @@ No replacement summary is present yet.
 
 #### EF-05 - Quiet Research-Activity Ranking Input - FR-44
 
-- **Status:** Blocked.
+- **Status:** Active.
 - **Depends on:** EP-06 / FR-42.2 activity rollups.
 - **Acceptance criteria:** a bounded, freshness-aware activity signal may order otherwise comparable entity matches or choose quiet signal precedence; relevance remains primary; no publication count, activity score, or separate activity cluster competes with the entity result; missing activity is neutral rather than negative.
 - **Validation evidence:** current Beta has attribution guards but does not have the required cached entity rollups.
@@ -253,10 +253,10 @@ PR `#171` only simplified Research filters and must not be credited with FR-37.
 - **Status:** Blocked.
 - **Depends on:** approved product contract, reviewed public contact routes, actionable source evidence, and EF-03.
 - **Acceptance criteria:** a positive action requires a current/recurring non-formalization record and explicit proof such as an open application, recurring official program, or approved non-PI public contact route; PI profiles and generic source pages remain source review only; the card shows at most one claim-specific action; absence renders no negative label; server policy and client analytics share the same qualifying enum.
-- **Validation evidence:** current publication policy and access-review infrastructure exist, but Beta still permits broader publishable pathways than this action contract.
-PR `#171` removed the misleading student-facing stream while the replacement policy is designed.
+- **Validation evidence:** current publication policy and access-review infrastructure exist, and PR `#171` removed the misleading student-facing stream.
+The qualified-planning-context implementation establishes a narrower public projection: reviewed current opportunities with safe application URLs, approved application or recurring-program instructions, and approved safe public non-PI routes qualify; profile provenance, generic source material, exploratory contact, formalization-only records, unsafe URLs, and unreviewed claims do not.
 - **PRs:** [#161](https://github.com/YaleComputerSociety/ylabs/pull/161), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
-- **Blocker:** a human must accept the qualifying-action enum and evidence threshold, then operators must review routes that will be represented as actionable.
+- **Blocker:** operators must review routes and source-backed claims before they can be represented as actionable; query-scoped distribution, client presentation, and analytics still depend on the stable projection.
 The operational program is named the **evidence and route review rollout**.
 Its acceptance measures are claim quality, reviewed-action precision, false-positive rate, and explainable rejection reasons, not a minimum number of published pathways.
 PI-profile provenance can never qualify as an action.
