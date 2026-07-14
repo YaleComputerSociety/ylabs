@@ -705,7 +705,11 @@ const Fellowships = () => {
               <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto xl:flex-col xl:items-stretch">
                 <FellowshipSortDropdown />
                 <ViewModeToggle />
-                <CombinedFilterDropdown tabs={fellowshipFilterTabs} />
+                <CombinedFilterDropdown
+                  tabs={fellowshipFilterTabs}
+                  mobileSheet
+                  dialogLabel="Program filters"
+                />
               </div>
             </div>
             <ActiveFilters
