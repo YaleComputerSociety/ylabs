@@ -17,11 +17,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
-import {
-  resolveAllFields,
-  ResolverObservation,
-  ResolvedField,
-} from './confidenceResolver';
+import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
@@ -257,7 +253,8 @@ function normalizeOfficialProfilePublication(
 } | null {
   const title = cleanScholarlyText(value.title);
   if (!title) return null;
-  const sourceUrl = cleanScholarlyHttpUrl(value.sourceUrl) || cleanScholarlyHttpUrl(fallbackSourceUrl);
+  const sourceUrl =
+    cleanScholarlyHttpUrl(value.sourceUrl) || cleanScholarlyHttpUrl(fallbackSourceUrl);
   if (!sourceUrl) return null;
   const url = cleanScholarlyHttpUrl(value.url);
   if (!url) return null;
@@ -284,7 +281,11 @@ function normalizeOfficialProfilePublication(
   };
 }
 
-function officialProfilePublicationUrl(publication: { title: string; url?: string; sourceUrl: string }): string {
+function officialProfilePublicationUrl(publication: {
+  title: string;
+  url?: string;
+  sourceUrl: string;
+}): string {
   if (publication.url) return publication.url;
   return '';
 }
@@ -387,7 +388,11 @@ function materializedFieldValue(
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
     return sanitizeResearchEntitySourceUrlsForMaterialization(value);
   }
-  if (isResearchEntityObservationType(entityType) && PUBLIC_QUOTE_FIELDS.has(field) && typeof value === 'string') {
+  if (
+    isResearchEntityObservationType(entityType) &&
+    PUBLIC_QUOTE_FIELDS.has(field) &&
+    typeof value === 'string'
+  ) {
     return redactDirectContactInfo(value);
   }
   if (entityType === 'user' && field === 'userType') {
@@ -446,7 +451,9 @@ function fieldProvenanceForResolvedObservation(
   const resolvedValue = comparableObservationValue(resolved.value);
   const contributingSources = new Set(resolved.contributingSources);
   const match = observations
-    .filter((obs) => obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName))
+    .filter(
+      (obs) => obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
+    )
     .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
   if (!match) return null;
 
@@ -462,12 +469,10 @@ function fieldProvenanceForResolvedObservation(
 export function buildInferredPiMemberUpsert(
   researchEntityId: string,
   observation: InferredPiObservation,
-):
-  | {
-      filter: Record<string, unknown>;
-      update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
-    }
-  | null {
+): {
+  filter: Record<string, unknown>;
+  update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
+} | null {
   const userId = String(observation.value || '').trim();
   const safeResearchEntityId = normalizeMaterializerObjectId(researchEntityId);
   const safeUserId = normalizeMaterializerObjectId(userId);
@@ -532,7 +537,9 @@ const LEAD_MEMBER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 const SUPERSEDED_BY_DIRECTOR_ROLES = ['core-faculty', 'affiliated', 'affiliate'];
 
 const objectRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 
 function memberNameFromInferredUserName(value: unknown): string {
   const record = objectRecord(value);
@@ -586,13 +593,13 @@ export function buildResearchGroupMemberUpsert(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
   user: Record<string, unknown> | null = null,
-):
-  | ResearchGroupMemberMaterializationPatch
-  | null {
+): ResearchGroupMemberMaterializationPatch | null {
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
   const role = normalizeMemberRole(resolved.role?.value);
   if (!role) return null;
-  const name = textValue(resolved.name?.value) || memberNameFromInferredUserName(resolved.inferredUserName?.value);
+  const name =
+    textValue(resolved.name?.value) ||
+    memberNameFromInferredUserName(resolved.inferredUserName?.value);
   const userId = idValue(user?._id);
   const facultyMemberId = idValue(user?.facultyMemberId);
   if (!name && !userId && !facultyMemberId) return null;
@@ -608,8 +615,8 @@ export function buildResearchGroupMemberUpsert(
   const identityFilter: Record<string, unknown> = userId
     ? { userId }
     : facultyMemberId
-    ? { facultyMemberId }
-    : { name };
+      ? { facultyMemberId }
+      : { name };
   const filter = {
     researchEntityId,
     role,
@@ -689,7 +696,10 @@ async function materializeResearchGroupMember(
     };
   }
 
-  const entity: any = await ResearchEntity.findOne({ slug: researchGroupKey, archived: { $ne: true } })
+  const entity: any = await ResearchEntity.findOne({
+    slug: researchGroupKey,
+    archived: { $ne: true },
+  })
     .select('_id')
     .lean();
   if (!entity?._id) {
@@ -742,10 +752,10 @@ async function materializeResearchGroupMember(
     const identity = patch.filter.userId
       ? { userId: patch.filter.userId }
       : patch.filter.facultyMemberId
-      ? { facultyMemberId: patch.filter.facultyMemberId }
-      : patch.filter.name
-      ? { name: patch.filter.name }
-      : null;
+        ? { facultyMemberId: patch.filter.facultyMemberId }
+        : patch.filter.name
+          ? { name: patch.filter.name }
+          : null;
     if (identity) {
       const existingLead = await ResearchGroupMember.findOne({
         researchEntityId: patch.filter.researchEntityId,
@@ -790,8 +800,9 @@ function withResolvedFieldProvenance(
   const output: Record<string, ProvenanceResolvedField> = {};
   for (const [field, value] of Object.entries(resolved)) {
     const source =
-      observations.find((observation) => observation.field === field && observation.value === value.value) ||
-      observations.find((observation) => observation.field === field);
+      observations.find(
+        (observation) => observation.field === field && observation.value === value.value,
+      ) || observations.find((observation) => observation.field === field);
     output[field] = {
       ...value,
       ...(source?.sourceName ? { sourceName: source.sourceName } : {}),
@@ -816,10 +827,7 @@ async function materializeInferredPiMembership(
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
   const inferredPiDepartments = departmentValuesForInferredPiLookup(observations);
   for (const observation of piKeyObservations) {
-    const filters = userLookupFiltersForInferredPiUserKey(
-      observation.value,
-      inferredPiDepartments,
-    );
+    const filters = userLookupFiltersForInferredPiUserKey(observation.value, inferredPiDepartments);
     if (filters.length === 0) continue;
     const users = await User.find(filters.length === 1 ? filters[0] : { $or: filters })
       .select('_id')
@@ -1025,9 +1033,12 @@ function piCompatibleResearchEntityNames(firstName: string, lastName: string): S
   const first = firstName.trim();
   const last = lastName.trim();
   return new Set(
-    [`${first} ${last} Lab`, `${first} ${last} Laboratory`, `${last} Lab`, `${last} Laboratory`].map(
-      (value) => normalizeResearchEntityName(value),
-    ),
+    [
+      `${first} ${last} Lab`,
+      `${first} ${last} Laboratory`,
+      `${last} Lab`,
+      `${last} Laboratory`,
+    ].map((value) => normalizeResearchEntityName(value)),
   );
 }
 
@@ -1044,7 +1055,9 @@ async function findUniqueUserByPersonName(personName: string): Promise<any | nul
     .lean();
   const expectedFullName = compactPersonName(`${first} ${last}`);
   const matches = users.filter((user: any) => {
-    const candidateFullName = compactPersonName(`${textValue(user.fname)} ${textValue(user.lname)}`);
+    const candidateFullName = compactPersonName(
+      `${textValue(user.fname)} ${textValue(user.lname)}`,
+    );
     return candidateFullName === expectedFullName;
   });
   return matches.length === 1 && matches[0]?._id ? matches[0] : null;
@@ -1083,7 +1096,11 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
     .select('researchEntityId')
     .lean();
   const candidateIds = Array.from(
-    new Set(memberships.map((member: any) => normalizeMaterializerObjectId(member.researchEntityId)).filter(Boolean)),
+    new Set(
+      memberships
+        .map((member: any) => normalizeMaterializerObjectId(member.researchEntityId))
+        .filter(Boolean),
+    ),
   );
   if (candidateIds.length === 0) return null;
 
@@ -1249,13 +1266,16 @@ async function materializeResearchEntityRelationship(
   }
 
   if (!canonicalFacultyResearchAreaTarget && target?._id) {
-    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(normalizeMaterializerObjectId(target._id) || '', {
-      entityKey: targetEntityKey,
-      name: target.name,
-      entityType: 'FACULTY_RESEARCH_AREA',
-      sourceUrl: textValue(resolved.sourceUrl?.value),
-      confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
-    });
+    await syncProfileBackedFacultyResearchAreaMemberFromIdentity(
+      normalizeMaterializerObjectId(target._id) || '',
+      {
+        entityKey: targetEntityKey,
+        name: target.name,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        sourceUrl: textValue(resolved.sourceUrl?.value),
+        confidence: Math.max(0, ...observations.map((o) => Number(o.confidence) || 0)),
+      },
+    );
   }
 
   const sourceResearchEntityId = normalizeMaterializerObjectId(source._id) || '';
@@ -1360,7 +1380,10 @@ function nameRegexFromSlugParts(parts: string[]): RegExp | null {
   return new RegExp(`^${normalized.map(escapeRegex).join('[\\s-]+')}$`, 'i');
 }
 
-function deptUserNameFilters(value: unknown, departments: string[]): Array<Record<string, unknown>> {
+function deptUserNameFilters(
+  value: unknown,
+  departments: string[],
+): Array<Record<string, unknown>> {
   const raw = typeof value === 'string' ? value.trim() : '';
   const match = raw.match(DEPT_USER_KEY_PATTERN);
   if (!match || departments.length === 0) return [];
@@ -1546,7 +1569,14 @@ export function officialProfileObservationMatchesUser(
   if (departmentTokens.length === 0) return false;
 
   const userNameTokens = identityTokens(
-    uniqueStrings([user.fname, user.firstName, user.lname, user.lastName, user.name, user.displayName]).join(' '),
+    uniqueStrings([
+      user.fname,
+      user.firstName,
+      user.lname,
+      user.lastName,
+      user.name,
+      user.displayName,
+    ]).join(' '),
   );
   if (!userNameTokens.includes(nameParts.lastToken)) return false;
   if (!userNameTokens.some((token) => token.charAt(0) === nameParts.firstInitial)) return false;
@@ -1727,8 +1757,7 @@ export function uniqueKeyValueForIdentifier(
   obs: Array<{ field?: string; value?: unknown }>,
 ): string | undefined {
   if (entityType === 'user') {
-    const observedNetid = obs
-      .find((o) => o.field === 'netid' && typeof o.value === 'string')
+    const observedNetid = obs.find((o) => o.field === 'netid' && typeof o.value === 'string')
       ?.value as string | undefined;
     if (observedNetid?.trim()) return observedNetid.trim();
     return entityKey?.replace(/^netid:/i, '').trim() || undefined;
@@ -1788,11 +1817,7 @@ async function findEntityDocByIdentifier(
   if (!keyValue) return null;
 
   if (entityType === 'user') {
-    const byOfficialProfile = await findUserDocByOfficialProfileObservations(
-      Model,
-      obs,
-      keyValue,
-    );
+    const byOfficialProfile = await findUserDocByOfficialProfileObservations(Model, obs, keyValue);
     if (byOfficialProfile) return byOfficialProfile;
   }
 
@@ -1800,9 +1825,7 @@ async function findEntityDocByIdentifier(
   if (exact) return exact;
 
   if (entityType === 'user') {
-    const emailObservation = obs.find(
-      (o) => o.field === 'email' && typeof o.value === 'string',
-    );
+    const emailObservation = obs.find((o) => o.field === 'email' && typeof o.value === 'string');
     const observedEmail =
       typeof emailObservation?.value === 'string'
         ? emailObservation.value.trim().toLowerCase()
@@ -1816,7 +1839,9 @@ async function findEntityDocByIdentifier(
   if (entityType === 'paper') {
     const doiValues = observedDoiValues(obs);
     if (doiValues.length > 0) {
-      const byDoi = await Model.find({ doi: { $in: doiValues } }).limit(2).lean();
+      const byDoi = await Model.find({ doi: { $in: doiValues } })
+        .limit(2)
+        .lean();
       if (byDoi.length === 1) return byDoi[0];
     }
   }
@@ -1824,9 +1849,7 @@ async function findEntityDocByIdentifier(
   return null;
 }
 
-function paperIdentityBuckets(
-  groups: Map<string, PaperMaterializationObservation[]>,
-): {
+function paperIdentityBuckets(groups: Map<string, PaperMaterializationObservation[]>): {
   openAlexKeys: string[];
   arxivKeys: string[];
   doiKeys: string[];
@@ -1909,7 +1932,11 @@ const PAPER_MATERIALIZATION_ONLY_FIELDS = new Set([PAPER_AUTHORSHIP_EVIDENCE_FIE
 
 export function mergeUniqueArrayValues(existing: unknown, next: unknown): unknown[] {
   const values = [
-    ...(Array.isArray(existing) ? existing : existing === undefined || existing === null ? [] : [existing]),
+    ...(Array.isArray(existing)
+      ? existing
+      : existing === undefined || existing === null
+        ? []
+        : [existing]),
     ...(Array.isArray(next) ? next : next === undefined || next === null ? [] : [next]),
   ];
   const seen = new Set<string>();
@@ -2240,7 +2267,10 @@ export async function materializeEntity(
       entityType === 'paper' && PAPER_SET_FIELDS.has(field)
         ? mergeUniqueArrayValues(entityDoc?.[field], r.value)
         : r.value;
-    if (entityType === 'user' && shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)) {
+    if (
+      entityType === 'user' &&
+      shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)
+    ) {
       continue;
     }
     set[field] = materializedFieldValue(entityType, field, nextValue);
@@ -2338,15 +2368,11 @@ export async function materializeEntity(
   } else {
     const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
     if (!keyField || !identifier.entityKey) {
-      throw new Error(
-        `Cannot create new ${entityType}: missing entityKey or no keyField defined`,
-      );
+      throw new Error(`Cannot create new ${entityType}: missing entityKey or no keyField defined`);
     }
     const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
     if (!keyValue) {
-      throw new Error(
-        `Cannot create new ${entityType}: missing normalized unique key value`,
-      );
+      throw new Error(`Cannot create new ${entityType}: missing normalized unique key value`);
     }
     const insert: Record<string, unknown> = { ...set, [keyField]: keyValue };
     if (!hasRequiredFieldsForCreate(entityType, insert)) {

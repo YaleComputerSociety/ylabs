@@ -16,10 +16,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { Link, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
-import {
-  createInitialLabDetailState,
-  labDetailReducer,
-} from '../reducers/labDetailReducer';
+import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import LabPapersList from '../components/labs/LabPapersList';
@@ -52,11 +49,7 @@ import {
   getEvidenceSignalLabel,
   getEvidenceStrengthLabel,
 } from '../utils/researchDiscoveryAdapters';
-import {
-  computeAcceptanceVerdict,
-  EvidenceItem,
-  verdictLabel,
-} from '../utils/undergradAcceptance';
+import { computeAcceptanceVerdict, EvidenceItem, verdictLabel } from '../utils/undergradAcceptance';
 import { resolveLabOutreachContact } from '../utils/labOutreachContact';
 import {
   approachHeadingLabel,
@@ -72,9 +65,7 @@ import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">
-    {children}
-  </h2>
+  <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">{children}</h2>
 );
 
 const formatEntityKindTag = (kind?: string | null): string | undefined =>
@@ -88,11 +79,11 @@ const RelatedResearchEntitiesSection = ({
   relatedResearchEntities: ResearchEntity[];
 }) => {
   const relationshipByEntityKey = new Map(
-    relationships
-      .flatMap((relationship) => [
-        relationship.relatedResearchEntitySlug,
-        relationship.relatedResearchEntityId,
-      ].filter(Boolean).map((key) => [key, relationship] as const)),
+    relationships.flatMap((relationship) =>
+      [relationship.relatedResearchEntitySlug, relationship.relatedResearchEntityId]
+        .filter(Boolean)
+        .map((key) => [key, relationship] as const),
+    ),
   );
 
   return (
@@ -152,19 +143,20 @@ const AffiliatedResearchEntitiesSection = ({
       {affiliatedResearchEntities.map((entity) => {
         const content = (
           <>
-          <div className="flex flex-wrap gap-2">
-            {uniqueCompact([formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)], 3).map(
-              (tag) => (
+            <div className="flex flex-wrap gap-2">
+              {uniqueCompact(
+                [formatEntityKindTag(entity.kind), ...compactDepartmentLabels(entity.departments)],
+                3,
+              ).map((tag) => (
                 <span
                   key={tag}
                   className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-gray-700"
                 >
                   {tag}
                 </span>
-              ),
-            )}
-          </div>
-          <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
+              ))}
+            </div>
+            <h3 className="mt-3 text-sm font-semibold text-gray-900">{entity.name}</h3>
           </>
         );
         const className =
@@ -249,12 +241,7 @@ const isGenericTopic = (value: string): boolean =>
   /^yale faculty\b/i.test(value);
 
 const detailTopics = (group: any, limit = 6): string[] =>
-  uniqueCompact(
-    [
-      ...(group.researchAreas || []),
-    ],
-    limit * 2,
-  )
+  uniqueCompact([...(group.researchAreas || [])], limit * 2)
     .filter((value) => !isGenericTopic(value))
     .slice(0, limit);
 
@@ -416,8 +403,7 @@ const dedupeLeadMembers = (members: LabMember[]): LabMember[] => {
     const current = byPerson.get(key);
     if (
       !current ||
-      (LEAD_ROLE_PRIORITY.get(member.role) ?? 99) <
-        (LEAD_ROLE_PRIORITY.get(current.role) ?? 99)
+      (LEAD_ROLE_PRIORITY.get(member.role) ?? 99) < (LEAD_ROLE_PRIORITY.get(current.role) ?? 99)
     ) {
       byPerson.set(key, member);
     }
@@ -587,10 +573,7 @@ const DecisionSummary = ({
               ? 'What this faculty research area covers'
               : decisionHeadingLabel(group)}
           </h2>
-          <LongText
-            text={description}
-            className="mt-2 text-base leading-relaxed text-gray-800"
-          />
+          <LongText text={description} className="mt-2 text-base leading-relaxed text-gray-800" />
           {studentDecisionExplanation && (
             <div className="mt-5 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
               <SectionHeading>Student decision</SectionHeading>
@@ -869,8 +852,12 @@ const OutreachSection = ({ group, onDraft }: { group: any; onDraft: () => void }
   const coursework = uniqueCompact(
     [
       ...compactDepartmentLabels(group.departments),
-      ...(topics.some((topic) => /comput|data|stat/i.test(topic)) ? ['Statistics and Computer Science'] : []),
-      ...(topics.some((topic) => /genetic|dna|biology/i.test(topic)) ? ['genetics or biology'] : []),
+      ...(topics.some((topic) => /comput|data|stat/i.test(topic))
+        ? ['Statistics and Computer Science']
+        : []),
+      ...(topics.some((topic) => /genetic|dna|biology/i.test(topic))
+        ? ['genetics or biology']
+        : []),
     ],
     4,
   );
@@ -990,7 +977,8 @@ const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 const hasPublicPlanningRoute = (contactRoutes: LabContactRoute[]): boolean =>
   contactRoutes.some(
-    (route) => route.visibility === 'PUBLIC' && Boolean(route.url) && route.routeType !== 'FACULTY_PI',
+    (route) =>
+      route.visibility === 'PUBLIC' && Boolean(route.url) && route.routeType !== 'FACULTY_PI',
   );
 
 const hasSpecificWaysToApproach = (
@@ -1006,20 +994,16 @@ const hasSpecificWaysToApproach = (
 
 const LabDetail = () => {
   const { slug } = useParams<{ slug: string }>();
-  const [state, dispatch] = useReducer(
-    labDetailReducer,
-    undefined,
-    () => createInitialLabDetailState(),
+  const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
+    createInitialLabDetailState(),
   );
   const { payload, loading, error, isInquireModalOpen } = state;
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
-  const {
-    favIds: savedResearchPlanIds,
-    setFavorite: setSavedResearchPlanFavorite,
-  } = useFavorites('researchPlans');
-  const documentTitleGroup = payload ? payload.group ?? payload.researchEntity : null;
+  const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
+    useFavorites('researchPlans');
+  const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
   useDocumentTitle(
     documentTitleGroup?.displayName || documentTitleGroup?.name || 'Research profile',
   );
@@ -1119,7 +1103,9 @@ const LabDetail = () => {
   );
   const hasActivePostedOpportunity = postedOpportunities.length > 0;
   const hasDirectRelatedResearch =
-    directRelatedResearchLinks.length > 0 || recentPapers.length > 0 || recentArxivPreprints.length > 0;
+    directRelatedResearchLinks.length > 0 ||
+    recentPapers.length > 0 ||
+    recentArxivPreprints.length > 0;
   const hasMemberRecentWork = memberRecentWorkLinks.length > 0;
   const hasResearchActivity = hasDirectRelatedResearch || hasMemberRecentWork;
   const hasWaysIn = entryPathways.length > 0 || postedOpportunities.length > 0;
@@ -1255,7 +1241,9 @@ const LabDetail = () => {
                     : [...recentPapers, ...recentArxivPreprints]
                 }
                 emptyText="No scholarly links are attached to this research profile yet."
-                showPreprintMeta={directRelatedResearchLinks.length === 0 && recentPapers.length === 0}
+                showPreprintMeta={
+                  directRelatedResearchLinks.length === 0 && recentPapers.length === 0
+                }
               />
             </section>
           )}

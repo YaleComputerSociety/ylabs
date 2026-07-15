@@ -132,8 +132,7 @@ const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) 
             </div>
           </>
         );
-        const className =
-          `flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+        const className = `flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
         const key = `${user.publicKey || fullName}-${role}`;
         // Lead-investigator cards are intentionally non-interactive: the
         // professor's official profile is reached via the decision-summary
