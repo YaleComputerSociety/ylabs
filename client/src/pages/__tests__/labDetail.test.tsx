@@ -311,7 +311,7 @@ describe('LabDetail page', () => {
     );
   });
 
-  it('renders the lead professor name as non-clickable text in the student decision panel', async () => {
+  it('renders one full PI card in the student decision panel without a duplicate section', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -338,17 +338,135 @@ describe('LabDetail page', () => {
       .getByRole('heading', { name: 'Principal Investigator' })
       .closest('section');
 
-    expect(screen.getByText('Lead professor')).toBeTruthy();
+    expect(screen.queryByText('Lead professor')).toBeNull();
     // The professor is reached via the action button(s); the name is not a link.
     expect(screen.queryAllByRole('link', { name: /Jordan Researcher/ })).toHaveLength(0);
-    expect(screen.getAllByText('Jordan Researcher').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Jordan Researcher')).toHaveLength(1);
     expect(
       within(principalInvestigatorSection as HTMLElement).queryByRole('link', {
         name: /Jordan Researcher/,
       }),
     ).toBeNull();
-    expect(screen.getByText('Professor of Example Studies · Example Studies')).toBeTruthy();
+    expect(screen.getByText('Professor of Example Studies')).toBeTruthy();
+    expect(screen.getByText('Example Studies')).toBeTruthy();
     expect(screen.getByText('Recommended next step')).toBeTruthy();
+  });
+
+  it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
+    const secondInvestigatorProfileUrl =
+      'https://medicine.yale.edu/profile/second-investigator/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: secondInvestigatorProfileUrl,
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            publicKey: 'fixture-first-pi',
+            fname: 'First',
+            lname: 'Investigator',
+            displayName: 'First Investigator',
+            profileUrls: {
+              official: 'https://medicine.yale.edu/profile/first-investigator/',
+            },
+          },
+        },
+        {
+          role: 'co-pi',
+          user: {
+            publicKey: 'fixture-second-pi',
+            fname: 'Second',
+            lname: 'Investigator',
+            displayName: 'Second Investigator',
+            title: 'Professor of Example Studies',
+            primary_department: 'Example Studies',
+            profileUrls: {
+              official: secondInvestigatorProfileUrl,
+            },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const section = screen
+      .getByRole('heading', { name: 'Principal Investigators' })
+      .closest('section');
+    expect(section).toBeTruthy();
+    expect(within(section as HTMLElement).getByText('First Investigator')).toBeTruthy();
+    expect(within(section as HTMLElement).getByText('Second Investigator')).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Principal Investigator' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Lead professor' })).toBeTruthy();
+    expect(screen.getAllByText('First Investigator')).toHaveLength(1);
+    expect(screen.getAllByText('Second Investigator')).toHaveLength(2);
+    expect(screen.getAllByText('Professor of Example Studies')).toHaveLength(2);
+    expect(screen.getAllByText('Example Studies')).toHaveLength(2);
+  });
+
+  it('does not choose an arbitrary lead professor when no PI matches the official profile', async () => {
+    renderLabDetail({
+      ...basePayload,
+      members: [
+        {
+          role: 'pi',
+          user: {
+            publicKey: 'fixture-first-unmatched-pi',
+            fname: 'First',
+            lname: 'Unmatched',
+            profileUrls: {
+              official: 'https://medicine.yale.edu/profile/first-unmatched/',
+            },
+          },
+        },
+        {
+          role: 'co-pi',
+          user: {
+            publicKey: 'fixture-second-unmatched-pi',
+            fname: 'Second',
+            lname: 'Unmatched',
+            profileUrls: {
+              official: 'https://medicine.yale.edu/profile/second-unmatched/',
+            },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('heading', { name: 'Principal Investigators' })).toBeTruthy();
+    expect(screen.queryByText('Lead professor')).toBeNull();
+  });
+
+  it('keeps the dedicated identity review state instead of showing a PI card', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        leadIdentityStatus: 'under_review',
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            publicKey: 'fixture-unverified-pi',
+            fname: 'Unverified',
+            lname: 'Investigator',
+            displayName: 'Unverified Investigator',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('heading', { name: 'Principal Investigator' })).toBeTruthy();
+    expect(screen.getByText('Lead identity under review')).toBeTruthy();
+    expect(screen.queryByText('Unverified Investigator')).toBeNull();
   });
 
   it('does not link principal investigators to official faculty profiles from the detail page', async () => {
