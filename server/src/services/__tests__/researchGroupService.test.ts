@@ -121,13 +121,14 @@ import {
   listResearchEntityRelationshipPayload,
   normalizeResearchGroupObjectId,
   publicMemberUserForRow,
+  researchDetailLeadIdentity,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
 // the same permissive chain to survive query-shape refactors.
-const queryResult = <T,>(value: T) => {
+const queryResult = <T>(value: T) => {
   const query: any = {
     lean: async () => value,
   };
@@ -137,15 +138,15 @@ const queryResult = <T,>(value: T) => {
   return query;
 };
 
-const leanResult = <T,>(value: T) => queryResult(value);
+const leanResult = <T>(value: T) => queryResult(value);
 
-const sortLeanResult = <T,>(value: T) => queryResult(value);
+const sortLeanResult = <T>(value: T) => queryResult(value);
 
-const sortLimitLeanResult = <T,>(value: T) => queryResult(value);
+const sortLimitLeanResult = <T>(value: T) => queryResult(value);
 
-const selectSortLimitLeanResult = <T,>(value: T) => queryResult(value);
+const selectSortLimitLeanResult = <T>(value: T) => queryResult(value);
 
-const selectLeanResult = <T,>(value: T) => queryResult(value);
+const selectLeanResult = <T>(value: T) => queryResult(value);
 
 beforeEach(() => {
   mocks.search.mockReset();
@@ -221,7 +222,8 @@ describe('searchResearchGroupsViaMeili', () => {
         ],
         estimatedTotalHits: 1,
       });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: entityId,
           slug: 'reilly-lab',
@@ -231,7 +233,8 @@ describe('searchResearchGroupsViaMeili', () => {
           researchAreas: [],
           sourceUrls: [],
         },
-      ]));
+      ]),
+    );
 
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
@@ -279,7 +282,8 @@ describe('searchResearchGroupsViaMeili', () => {
       ],
       estimatedTotalHits: 2,
     });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: entityId,
           slug: 'safe-lab',
@@ -290,7 +294,8 @@ describe('searchResearchGroupsViaMeili', () => {
           sourceUrls: [],
           studentVisibilityTier: 'student_ready',
         },
-      ]));
+      ]),
+    );
 
     await searchResearchGroupsViaMeili('', {}, 1, 24);
 
@@ -319,7 +324,8 @@ describe('searchResearchGroupsViaMeili', () => {
       ],
       estimatedTotalHits: 2,
     });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: currentEntityId,
           slug: 'current-lab',
@@ -329,7 +335,8 @@ describe('searchResearchGroupsViaMeili', () => {
           researchAreas: [],
           sourceUrls: [],
         },
-      ]));
+      ]),
+    );
 
     const result = await searchResearchGroupsViaMeili('', {}, 1, 2);
 
@@ -433,7 +440,8 @@ describe('searchResearchGroupsViaMeili', () => {
       hits: [{ id: reviewEntityId, slug: 'review-lab', name: 'Review Lab' }],
       estimatedTotalHits: 1,
     });
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: reviewEntityId,
           slug: 'review-lab',
@@ -444,7 +452,8 @@ describe('searchResearchGroupsViaMeili', () => {
           sourceUrls: [],
           studentVisibilityTier: 'operator_review',
         },
-      ]));
+      ]),
+    );
 
     const result = await searchResearchGroupsViaMeili(
       '',
@@ -468,7 +477,8 @@ describe('searchResearchGroupsViaMeili', () => {
   it('sorts and filters admin default browse by weakest quality first', async () => {
     const strongEntityId = '67d8928150621bcef434a1d8';
     const weakEntityId = '67d8928150621bcef434a1d9';
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: strongEntityId,
           slug: 'strong-lab',
@@ -487,8 +497,11 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: [],
           researchAreas: [],
         },
-      ]));
-    mocks.researchGroupMemberFind.mockReturnValue(queryResult([{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }]));
+      ]),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      queryResult([{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }]),
+    );
 
     const result = await searchResearchGroupsViaMeili(
       '',
@@ -871,6 +884,72 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('netid');
   });
 
+  it('derives PI identity review from raw records before public member replacement', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const wrongUserId = '67d8928150621bcef434a1d6';
+    const correctUserId = '67d8928150621bcef434a1d7';
+    const wrongFacultyId = '67d8928150621bcef434a1d8';
+    const correctFacultyId = '67d8928150621bcef434a1d9';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'disputed-pi-lab',
+        name: 'Disputed PI Lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: ['https://medicine.yale.edu/profile/correct-scholar/'],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId: wrongUserId,
+          facultyMemberId: correctFacultyId,
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: wrongUserId,
+          fname: 'Wrong',
+          lname: 'Person',
+          facultyMemberId: wrongFacultyId,
+        },
+      ]),
+    );
+    mocks.facultyMemberFind.mockReturnValue(
+      selectLeanResult([
+        {
+          _id: correctFacultyId,
+          userId: correctUserId,
+          firstName: 'Correct',
+          lastName: 'Scholar',
+          profileUrls: {
+            official: 'https://medicine.yale.edu/profile/correct-scholar/',
+          },
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('disputed-pi-lab');
+
+    expect(detail?.researchEntity).toMatchObject({ leadIdentityStatus: 'under_review' });
+    expect(detail?.researchEntity).not.toHaveProperty('leadProfessorPublicKey');
+    expect(detail?.members[0].user).toMatchObject({
+      fname: 'Correct',
+      lname: 'Scholar',
+    });
+    expect(detail?.members[0].user).not.toHaveProperty('facultyMemberId');
+    expect(detail?.members[0].user).not.toHaveProperty('userId');
+  });
+
   it('minimizes public research detail paper payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
@@ -1087,7 +1166,8 @@ describe('getResearchGroupDetail', () => {
         researchAreas: [],
         sourceUrls: ['https://music.yale.edu/people/david-lang'],
         description: '',
-        profileSynthesisDescription: "David Lang's lab studies how humans process complex sound patterns.",
+        profileSynthesisDescription:
+          "David Lang's lab studies how humans process complex sound patterns.",
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
         studentVisibilityTier: 'student_ready',
       }),
@@ -1140,9 +1220,8 @@ describe('getResearchGroupDetail', () => {
         sourceUrls: ['https://music.yale.edu/people/david-lang'],
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
         profileSynthesisDescription:
-          "This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.",
-      },
-      ),
+          'This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.',
+      }),
     );
     mocks.researchGroupMemberFind.mockReturnValue(
       leanResult([
@@ -1198,7 +1277,8 @@ describe('listResearchEntityRelationshipPayload', () => {
     const publicInstituteId = '67d8928150621bcef434a1d6';
     const reviewInstituteId = '67d8928150621bcef434a1d7';
 
-    mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([
+    mocks.researchEntityRelationshipFind.mockReturnValue(
+      queryResult([
         {
           _id: 'rel-yqi',
           sourceResearchEntityId: publicInstituteId,
@@ -1219,8 +1299,10 @@ describe('listResearchEntityRelationshipPayload', () => {
           evidenceStrength: 'MODERATE',
           evidenceQuote: 'Held private operator note',
         },
-      ]));
-    mocks.researchEntityFind.mockReturnValue(queryResult([
+      ]),
+    );
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
         {
           _id: publicInstituteId,
           slug: 'center-yale-quantum-institute',
@@ -1239,7 +1321,8 @@ describe('listResearchEntityRelationshipPayload', () => {
           studentVisibilityTier: 'operator_review',
           archived: false,
         },
-      ]));
+      ]),
+    );
 
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
@@ -1563,6 +1646,57 @@ describe('publicMemberUserForRow', () => {
       lname: 'Collaborator',
     });
     expect(publicUser).not.toHaveProperty('email');
+  });
+});
+
+describe('researchDetailLeadIdentity', () => {
+  const members = [
+    {
+      role: 'pi',
+      user: {
+        displayName: 'First Investigator',
+        profileUrls: { official: 'https://medicine.yale.edu/profile/first-investigator/' },
+      },
+      row: { facultyMemberId: 'faculty-1' },
+    },
+    {
+      role: 'co-pi',
+      user: {
+        displayName: 'Second Investigator',
+        profileUrls: { official: 'https://medicine.yale.edu/profile/second-investigator/' },
+      },
+      row: { facultyMemberId: 'faculty-2' },
+    },
+  ];
+
+  it('identifies a unique lead only from entity-owned official profile evidence', () => {
+    expect(
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://medicine.yale.edu/profile/second-investigator/'] },
+        members,
+      ),
+    ).toEqual({
+      leadIdentityStatus: 'verified',
+      leadProfessorPublicKey: 'second-investigator-co-pi',
+    });
+  });
+
+  it('omits the lead when entity evidence does not uniquely match a member', () => {
+    expect(researchDetailLeadIdentity({ sourceUrls: [] }, members)).toEqual({
+      leadIdentityStatus: 'verified',
+    });
+  });
+
+  it('derives the public review state from canonical PI identity conflicts', () => {
+    expect(
+      researchDetailLeadIdentity({}, [
+        {
+          role: 'pi',
+          user: { displayName: 'Disputed Investigator', facultyMemberId: 'faculty-user' },
+          row: { userId: 'user-1', facultyMemberId: 'faculty-row' },
+        },
+      ]),
+    ).toEqual({ leadIdentityStatus: 'under_review' });
   });
 });
 

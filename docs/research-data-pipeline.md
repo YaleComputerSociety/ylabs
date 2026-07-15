@@ -32,6 +32,10 @@ Research-entity `sourceUrls` are durable home/profile/grant evidence pointers, n
 
 Research detail membership resolution must not display a `User` whose linked `facultyMemberId` conflicts with the membership row's `facultyMemberId`. In that case, the public detail payload falls back to the scraper-backed `FacultyMember` identity rather than showing the wrong Yale account. The student visibility gate treats `pi_identity_conflict` as a blocking reason routed to the PI identity repair lane, while a membership row with a trusted `facultyMemberId` but no `userId` still counts as attached lead evidence.
 
+The public research detail payload derives `leadIdentityStatus` from the raw membership links before replacing them with sanitized public member data.
+When canonical PI identities conflict, the payload reports `under_review` and the detail page withholds the disputed lead card and profile link.
+For verified entities with multiple lead members, `leadProfessorPublicKey` is emitted only when exactly one member's official Yale faculty profile matches an entity-owned official profile URL; no arbitrary lead fallback is selected.
+
 ## Read-Only Control Plane
 
 The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:
