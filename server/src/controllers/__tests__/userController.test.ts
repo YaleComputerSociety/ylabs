@@ -264,10 +264,7 @@ const privateResponseDouble = () =>
   }) as any;
 
 const expectPrivateNoStore = (res: any) => {
-  expect(res.setHeader).toHaveBeenCalledWith(
-    'Cache-Control',
-    'no-store, private, max-age=0',
-  );
+  expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
   expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
 };
 
@@ -429,9 +426,7 @@ describe('userController', () => {
       ownListings: ['64a000000000000000000001'],
       favListings: ['64a000000000000000000002'],
     });
-    mocks.readListings.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
+    mocks.readListings.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
     const req = {
       user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
@@ -464,9 +459,7 @@ describe('userController', () => {
   });
 
   it('does not leak internal service errors when adding favorited listings fails', async () => {
-    mocks.addFavListings.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
+    mocks.addFavListings.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
@@ -761,9 +754,7 @@ describe('userController', () => {
   });
 
   it('does not leak internal service errors when saving research plans fails', async () => {
-    mocks.addFavPathways.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
+    mocks.addFavPathways.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
@@ -789,9 +780,7 @@ describe('userController', () => {
   });
 
   it('does not leak internal service errors when adding favorite pathways fails', async () => {
-    mocks.addFavPathways.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
+    mocks.addFavPathways.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
@@ -987,7 +976,7 @@ describe('userController', () => {
     Object.assign(profileUrls, {
       yale: 'https://example.yale.edu/profile/student123',
       ' research.profile ': 'https://example.yale.edu/research/student123',
-      '$source': 'https://example.yale.edu/source/student123',
+      $source: 'https://example.yale.edu/source/student123',
       constructor: 'https://example.yale.edu/constructor',
       prototype: 'https://example.yale.edu/prototype',
       personal: 'mailto:student123@yale.edu',
@@ -1008,7 +997,7 @@ describe('userController', () => {
       profileUrls: {
         yale: 'https://example.yale.edu/profile/student123',
         'research.profile': 'https://example.yale.edu/research/student123',
-        '$source': 'https://example.yale.edu/source/student123',
+        $source: 'https://example.yale.edu/source/student123',
         constructor: 'https://example.yale.edu/constructor',
       },
       bio: 'I study public health.',
@@ -1045,8 +1034,12 @@ describe('userController', () => {
       },
     });
     expect(res.body.user).not.toHaveProperty('imageUrl');
-    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'constructor')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'prototype')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'constructor')).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(res.body.user.profileUrls, 'prototype')).toBe(
+      false,
+    );
   });
 
   it('bounds self-edit account text and array fields before persisting the current user', async () => {
@@ -1156,10 +1149,7 @@ describe('userController', () => {
 
     await getSavedResearchPlanDetails(req, res);
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json.mock.calls[0][0]).toEqual({
@@ -1207,10 +1197,7 @@ describe('userController', () => {
 
     await exportSavedResearchPlanDetails(req, res);
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(res.setHeader).toHaveBeenCalledWith(
       'Content-Disposition',
@@ -1300,9 +1287,7 @@ describe('userController', () => {
     [getFavPathwayIds, 'Failed to fetch favorite pathway ids'],
     [getSavedResearchPlanIds, 'Failed to fetch saved research plan ids'],
   ])('does not leak internal read errors from account id readers', async (handler, message) => {
-    mocks.readUser.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
+    mocks.readUser.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
     const req = {
       user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
@@ -1320,21 +1305,22 @@ describe('userController', () => {
     [getSavedPrograms, 'Failed to fetch saved programs'],
     [getFavPathways, 'Failed to fetch favorite pathways'],
     [getSavedResearchPlans, 'Failed to fetch saved research plans'],
-  ])('does not leak internal read errors from hydrated account readers', async (handler, message) => {
-    mocks.readUser.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
+  ])(
+    'does not leak internal read errors from hydrated account readers',
+    async (handler, message) => {
+      mocks.readUser.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
+      const req = {
+        user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      } as any;
+      const res = privateResponseDouble();
 
-    await handler(req, res);
+      await handler(req, res);
 
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: message });
-  });
+      expect(res.statusCode).toBe(500);
+      expect(res.body).toEqual({ error: message });
+    },
+  );
 
   it('bounds stored program ids before program reader fan-out', async () => {
     mocks.readUser.mockResolvedValue({
@@ -1376,11 +1362,9 @@ describe('userController', () => {
   });
 
   it('passes profile year and saved plan intent into funding matching', async () => {
-    mocks.normalizeObjectIdsForUserMutation.mockReturnValueOnce([
-      { toHexString: () => '64a000000000000000000030' } as any,
-    ]).mockReturnValueOnce([
-      { toHexString: () => '64a000000000000000000030' } as any,
-    ]);
+    mocks.normalizeObjectIdsForUserMutation
+      .mockReturnValueOnce([{ toHexString: () => '64a000000000000000000030' } as any])
+      .mockReturnValueOnce([{ toHexString: () => '64a000000000000000000030' } as any]);
     mocks.readUser.mockResolvedValue({
       userType: 'undergraduate',
       year: 2027,
@@ -1392,7 +1376,9 @@ describe('userController', () => {
     mocks.getPathwaysByIds.mockResolvedValue([{ _id: '64a000000000000000000030' }]);
     mocks.matchFellowshipsForPathways.mockResolvedValue({});
 
-    const req = { user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true } } as any;
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+    } as any;
     const res = privateResponseDouble();
     await getFavPathwayFundingMatches(req, res);
 
@@ -1411,9 +1397,7 @@ describe('userController', () => {
 
   it('bounds stored favorite pathway ids before funding-match fan-out', async () => {
     mocks.readUser.mockResolvedValue({
-      favPathways: Array.from({ length: 101 }, (_, index) =>
-        index.toString(16).padStart(24, '0'),
-      ),
+      favPathways: Array.from({ length: 101 }, (_, index) => index.toString(16).padStart(24, '0')),
     });
 
     const req = {

@@ -146,13 +146,22 @@ afterEach(() => {
 describe('saved research plan hydration helpers', () => {
   it('uses local calendar dates for upcoming deadlines and overdue follow-ups', () => {
     const now = new Date(2026, 6, 12, 23, 30);
-    expect(planningCueForPlan(pathway(), plan({ targetDeadline: '2026-07-13' }), now)).toMatchObject({
+    expect(
+      planningCueForPlan(pathway(), plan({ targetDeadline: '2026-07-13' }), now),
+    ).toMatchObject({
       date: '2026-07-13',
       priority: 1,
     });
-    expect(planningCueForPlan(pathway(), plan({
-      actedOnDate: '2026-06-01', followUpIntervalDays: 30,
-    }), now)).toMatchObject({
+    expect(
+      planningCueForPlan(
+        pathway(),
+        plan({
+          actedOnDate: '2026-06-01',
+          followUpIntervalDays: 30,
+        }),
+        now,
+      ),
+    ).toMatchObject({
       date: '2026-07-01',
       priority: 0,
     });
@@ -738,10 +747,12 @@ describe('SavedPathwaysSection advising export', () => {
         return Promise.resolve({
           data: {
             matchesByPathwayId: {
-              'pathway-1': [fellowshipMatch({
-                reasons: ['The award timing aligns with an academic-year or thesis plan.'],
-                caveats: ['The listed years do not include your current senior standing.'],
-              })],
+              'pathway-1': [
+                fellowshipMatch({
+                  reasons: ['The award timing aligns with an academic-year or thesis plan.'],
+                  caveats: ['The listed years do not include your current senior standing.'],
+                }),
+              ],
             },
           },
         });
@@ -774,8 +785,12 @@ describe('SavedPathwaysSection advising export', () => {
     expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByText('Fellowship candidates')).toBeTruthy();
     expect(screen.getByText('Source 1')).toBeTruthy();
-    expect(screen.getByText('The award timing aligns with an academic-year or thesis plan.')).toBeTruthy();
-    expect(screen.getByText('Caveat: The listed years do not include your current senior standing.')).toBeTruthy();
+    expect(
+      screen.getByText('The award timing aligns with an academic-year or thesis plan.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Caveat: The listed years do not include your current senior standing.'),
+    ).toBeTruthy();
   });
 
   it('reports saved research plan count and next deadline summary', async () => {

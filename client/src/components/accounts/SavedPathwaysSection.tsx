@@ -721,9 +721,7 @@ export const uniqueLegacyPathwayIdsByResearchEntity = (
   pathways: PathwaySearchHit[],
 ): Record<string, string> => {
   const pathwayIdsByEntity = new Map<string, string[]>();
-  for (const [pathwayId, entityId] of Object.entries(
-    researchEntityIdsByLegacyPathway(pathways),
-  )) {
+  for (const [pathwayId, entityId] of Object.entries(researchEntityIdsByLegacyPathway(pathways))) {
     pathwayIdsByEntity.set(entityId, [...(pathwayIdsByEntity.get(entityId) || []), pathwayId]);
   }
   return Object.fromEntries(
@@ -989,8 +987,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         );
         await Promise.all(
           localOnlyPlanIds.flatMap((id) => {
-            const apiId =
-              activePlanApiMode === 'entity' ? id : activePlanApiIdBySavedId[id];
+            const apiId = activePlanApiMode === 'entity' ? id : activePlanApiIdBySavedId[id];
             return apiId
               ? [
                   axios.put(
@@ -1232,7 +1229,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const removePathway = async (pathwayId: string) => {
     const planApiId = planApiMode === 'entity' ? pathwayId : planApiIdBySavedId[pathwayId];
     if (!planApiMode || !planApiId) {
-      setError('This saved research plan cannot be changed safely while compatibility data is unavailable.');
+      setError(
+        'This saved research plan cannot be changed safely while compatibility data is unavailable.',
+      );
       return;
     }
     const previous = pathways;
