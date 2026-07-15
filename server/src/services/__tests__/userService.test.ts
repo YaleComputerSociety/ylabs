@@ -16,6 +16,7 @@ import {
   pruneSavedPathwayPlansForExistingPathways,
   sanitizeSavedPathwayPlanForStorage,
   sanitizeSavedProgramTrackingForResponse,
+  savedResearchEntityLegacyMigrationClaimFilter,
   savedResearchEntityLegacyMigrationInputs,
   type SavedPathwayPlanInput,
 } from '../userService';
@@ -567,6 +568,30 @@ describe('savedResearchEntityLegacyMigrationInputs', () => {
     expect(result.legacyPlans[pathwayId]).toMatchObject({
       intent: 'outreach',
       note: 'Legacy note',
+    });
+  });
+});
+
+describe('savedResearchEntityLegacyMigrationClaimFilter', () => {
+  it('claims only the legacy snapshot used to build the migration', () => {
+    const pathwayId = new mongoose.Types.ObjectId('665f0b0c0b0c0b0c0b0c0b0c');
+    const savedPathwayPlans = {
+      [pathwayId.toHexString()]: { intent: 'outreach', note: 'Legacy note' },
+    };
+
+    expect(
+      savedResearchEntityLegacyMigrationClaimFilter({
+        favPathways: [pathwayId],
+        savedPathwayPlans,
+      }),
+    ).toEqual({
+      savedResearchEntityMigrationCompleted: { $ne: true },
+      $expr: {
+        $and: [
+          { $eq: [{ $ifNull: ['$favPathways', []] }, [pathwayId]] },
+          { $eq: [{ $ifNull: ['$savedPathwayPlans', {}] }, savedPathwayPlans] },
+        ],
+      },
     });
   });
 });

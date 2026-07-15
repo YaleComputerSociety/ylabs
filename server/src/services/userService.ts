@@ -1254,12 +1254,26 @@ export const savedResearchEntityLegacyMigrationInputs = (user: {
   };
 };
 
+export const savedResearchEntityLegacyMigrationClaimFilter = (user: {
+  favPathways?: unknown;
+  savedPathwayPlans?: unknown;
+}) => ({
+  savedResearchEntityMigrationCompleted: { $ne: true },
+  $expr: {
+    $and: [
+      { $eq: [{ $ifNull: ['$favPathways', []] }, user.favPathways ?? []] },
+      { $eq: [{ $ifNull: ['$savedPathwayPlans', {}] }, user.savedPathwayPlans ?? {}] },
+    ],
+  },
+});
+
 /** Lazily moves pathway-owned saves to entity ownership without deleting rollback data. */
 export const migrateSavedResearchEntitiesForUser = async (id: any) => {
   let user = await readUser(id);
-  const { migrationCompleted, pathwayIds, legacyPlans } =
-    savedResearchEntityLegacyMigrationInputs(user);
-  if (!migrationCompleted) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { migrationCompleted, pathwayIds, legacyPlans } =
+      savedResearchEntityLegacyMigrationInputs(user);
+    if (migrationCompleted) break;
     const pathways = await getPathwaysByIds(pathwayIds);
     const migration = buildSavedResearchEntityMigration(pathways, legacyPlans);
     const visibleMigrated = await visibleSavedResearchEntities(migration.entityIds);
@@ -1267,10 +1281,10 @@ export const migrateSavedResearchEntitiesForUser = async (id: any) => {
     const migratedPlans = Object.fromEntries(
       Object.entries(migration.plans).filter(([entityId]) => visibleMigratedIds.has(entityId)),
     );
-    await User.findOneAndUpdate(
+    const claimed = await User.findOneAndUpdate(
       {
         ...userLookupFilterForMutation(id),
-        savedResearchEntityMigrationCompleted: { $ne: true },
+        ...savedResearchEntityLegacyMigrationClaimFilter(user),
       },
       [
         {
@@ -1301,6 +1315,12 @@ export const migrateSavedResearchEntitiesForUser = async (id: any) => {
       { new: true },
     );
     user = await readUser(id);
+    if (claimed || user.savedResearchEntityMigrationCompleted === true) break;
+    if (attempt === 4) {
+      const error: any = new Error('Saved planning changed during migration');
+      error.status = 409;
+      throw error;
+    }
   }
   const existingIds = storedObjectIdStringsForUserMutation(
     user.savedResearchEntities || [],
