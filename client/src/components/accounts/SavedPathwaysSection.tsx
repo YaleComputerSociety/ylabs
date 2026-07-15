@@ -109,6 +109,11 @@ type SavedPlanDashboardLoad = [
 ];
 const savedPlanDashboardLoads = new Map<string, Promise<SavedPlanDashboardLoad>>();
 
+const isEndpointUnavailableError = (error: unknown): boolean =>
+  [404, 405, 501].includes(
+    Number((error as { response?: { status?: unknown } })?.response?.status),
+  );
+
 const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> => {
   const existing = savedPlanDashboardLoads.get(owner);
   if (existing) return existing;
@@ -121,7 +126,8 @@ const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> 
   const savedItemsRequest = axios
     .get('/users/savedResearchEntities', { withCredentials: true })
     .then((value) => ({ value, apiMode: 'entity' as const }))
-    .catch(async () => {
+    .catch(async (error) => {
+      if (!isEndpointUnavailableError(error)) throw error;
       const legacyResult = await legacyPathwaysRequest;
       if (legacyResult.error || !legacyResult.value) {
         throw new Error('Saved research plans unavailable');
@@ -136,11 +142,12 @@ const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> 
           ? axios
               .get('/users/savedResearchEntityPlans', { withCredentials: true })
               .then((value) => ({ value, apiMode }))
-              .catch(() =>
-                axios
+              .catch((error) => {
+                if (!isEndpointUnavailableError(error)) throw error;
+                return axios
                   .get('/users/savedResearchPlanDetails', { withCredentials: true })
-                  .then((value) => ({ value, apiMode: 'pathway' as const })),
-              )
+                  .then((value) => ({ value, apiMode: 'pathway' as const }));
+              })
           : axios
               .get('/users/savedResearchPlanDetails', { withCredentials: true })
               .then((value) => ({ value, apiMode })),
@@ -905,6 +912,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
   const [hydratedPlanStorageOwner, setHydratedPlanStorageOwner] = useState<string | undefined>();
   const [canRewriteStoredPlans, setCanRewriteStoredPlans] = useState(false);
+  const [savedItemsApiMode, setSavedItemsApiMode] = useState<SavedPlanApiMode | null>(null);
   const [planApiMode, setPlanApiMode] = useState<SavedPlanApiMode | null>(null);
   const [planApiIdBySavedId, setPlanApiIdBySavedId] = useState<Record<string, string>>({});
   const [planMigrationNotice, setPlanMigrationNotice] = useState('');
@@ -927,6 +935,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     setExportError('');
     setHydratedPlanStorageOwner(undefined);
     setCanRewriteStoredPlans(false);
+    setSavedItemsApiMode(null);
     setPlanApiMode(null);
     setPlanApiIdBySavedId({});
     setPlanMigrationNotice('');
@@ -952,6 +961,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       const hasCanonicalEntityResponse = savedItemsResult.apiMode === 'entity';
       const legacyMappingIsComplete = !hasCanonicalEntityResponse || !legacyPathwaysResult.error;
       setPathways(savedPathways);
+      setSavedItemsApiMode(savedItemsResult.apiMode);
       if (!plansResult.error && plansResult.value) {
         const plansResponse: any = plansResult.value;
         if (!isCurrentOwnerLoad()) return;
@@ -1052,6 +1062,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       setFundingMatches({});
       setPlans({});
       setCanRewriteStoredPlans(false);
+      setSavedItemsApiMode(null);
       setPlanApiMode(null);
       setPlanApiIdBySavedId({});
       setError('Saved research plans could not be loaded.');
@@ -1239,8 +1250,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   }, [pendingIntentChange]);
 
   const removePathway = async (pathwayId: string) => {
-    const planApiId = planApiMode === 'entity' ? pathwayId : planApiIdBySavedId[pathwayId];
-    if (!planApiMode || !planApiId) {
+    if (!savedItemsApiMode) {
       setError(
         'This saved research plan cannot be changed safely while compatibility data is unavailable.',
       );
@@ -1254,10 +1264,10 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       return next;
     });
     try {
-      if (planApiMode === 'pathway') {
+      if (savedItemsApiMode === 'pathway') {
         await axios.delete('/users/savedResearchPlans', {
           withCredentials: true,
-          data: { savedResearchPlans: [planApiId] },
+          data: { savedResearchPlans: [pathwayId] },
         });
       } else {
         await axios.delete('/users/savedResearchEntities', {
@@ -1270,12 +1280,6 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         delete next[pathwayId];
         return next;
       });
-      await axios.delete(
-        planApiMode === 'pathway'
-          ? `/users/savedResearchPlanDetails/${planApiId}`
-          : `/users/savedResearchEntityPlans/${planApiId}`,
-        { withCredentials: true },
-      );
     } catch {
       console.error('Error removing saved research plan.');
       setPathways(previous);

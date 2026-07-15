@@ -119,6 +119,12 @@ const renderAuthenticatedSavedPlans = () =>
     ),
   );
 
+const endpointUnavailableError = () => ({ response: { status: 404 } });
+const unexpectedOrUnavailableError = (url: string) =>
+  ['/users/savedResearchEntities', '/users/savedResearchEntityPlans'].includes(url)
+    ? endpointUnavailableError()
+    : new Error(`Unexpected URL: ${url}`);
+
 beforeEach(() => {
   localStorage.clear();
   mockedAxios.get.mockReset();
@@ -415,7 +421,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
   };
 
@@ -463,7 +469,7 @@ describe('SavedPathwaysSection advising export', () => {
           data: { matchesByPathwayId: { 'pathway-1': [fellowshipMatch()] } },
         });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     renderAuthenticatedSavedPlans();
@@ -519,7 +525,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     renderAuthenticatedSavedPlans();
@@ -570,7 +576,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     renderAuthenticatedSavedPlans();
@@ -628,7 +634,9 @@ describe('SavedPathwaysSection advising export', () => {
           },
         });
       }
-      if (url === '/users/savedResearchEntityPlans') return Promise.reject(new Error('missing'));
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.reject(endpointUnavailableError());
+      }
       if (url === '/users/savedResearchPlanDetails') {
         return Promise.resolve({
           data: { savedResearchPlanDetails: { 'pathway-1': plan({ intent: 'outreach' }) } },
@@ -640,7 +648,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     renderAuthenticatedSavedPlans();
@@ -656,7 +664,9 @@ describe('SavedPathwaysSection advising export', () => {
   it('keeps pathway plan endpoints when saved items fall back to pathways', async () => {
     const user = userEvent.setup();
     mockedAxios.get.mockImplementation((url) => {
-      if (url === '/users/savedResearchEntities') return Promise.reject(new Error('missing'));
+      if (url === '/users/savedResearchEntities') {
+        return Promise.reject(endpointUnavailableError());
+      }
       if (url === '/users/savedResearchEntityPlans') {
         return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
       }
@@ -671,7 +681,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     renderAuthenticatedSavedPlans();
@@ -688,6 +698,119 @@ describe('SavedPathwaysSection advising export', () => {
     );
   });
 
+  it('removes a canonical saved item even when plan details use pathway fallback', async () => {
+    const user = userEvent.setup();
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'entity-1', slug: 'climate-archive', name: 'Climate Archive' },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.reject(endpointUnavailableError());
+      }
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({
+          data: { savedResearchPlanDetails: { 'pathway-1': plan({ intent: 'outreach' }) } },
+        });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(unexpectedOrUnavailableError(url));
+    });
+
+    renderAuthenticatedSavedPlans();
+    await user.click(await screen.findByRole('button', { name: 'Remove' }));
+
+    expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+      withCredentials: true,
+      data: { savedResearchEntities: ['entity-1'] },
+    });
+    expect(mockedAxios.delete).not.toHaveBeenCalledWith(
+      '/users/savedResearchPlans',
+      expect.anything(),
+    );
+  });
+
+  it('removes a canonical saved item when both plan-detail endpoints fail', async () => {
+    const user = userEvent.setup();
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'entity-1', slug: 'climate-archive', name: 'Climate Archive' },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.reject(endpointUnavailableError());
+      }
+      if (url === '/users/savedResearchPlanDetails') return Promise.reject(new Error('missing'));
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(unexpectedOrUnavailableError(url));
+    });
+
+    renderAuthenticatedSavedPlans();
+    await user.click(await screen.findByRole('button', { name: 'Remove' }));
+
+    expect(mockedAxios.delete).toHaveBeenCalledWith('/users/savedResearchEntities', {
+      withCredentials: true,
+      data: { savedResearchEntities: ['entity-1'] },
+    });
+  });
+
+  it('does not fall back or write plans after a transient canonical plan failure', async () => {
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              { _id: 'entity-1', slug: 'climate-archive', name: 'Climate Archive' },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.reject({ response: { status: 503 } });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(unexpectedOrUnavailableError(url));
+    });
+
+    renderAuthenticatedSavedPlans();
+
+    await screen.findByRole('heading', { name: 'Climate Archive' });
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedResearchEntityPlans', {
+        withCredentials: true,
+      });
+    });
+    expect(mockedAxios.get).not.toHaveBeenCalledWith('/users/savedResearchPlanDetails', {
+      withCredentials: true,
+    });
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+  });
+
   it('never PUTs fallback plan state when plan hydration fails', async () => {
     const user = userEvent.setup();
     mockedAxios.get.mockImplementation((url) => {
@@ -698,7 +821,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
@@ -792,7 +915,7 @@ describe('SavedPathwaysSection advising export', () => {
           },
         });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
@@ -855,7 +978,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     render(
@@ -896,7 +1019,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
 
     render(createElement(MemoryRouter, null, createElement(SavedPathwaysSection)));
@@ -941,7 +1064,7 @@ describe('SavedPathwaysSection advising export', () => {
       if (url === '/users/savedResearchPlanFundingMatches') {
         return Promise.resolve({ data: { matchesByPathwayId: {} } });
       }
-      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      return Promise.reject(unexpectedOrUnavailableError(url));
     });
     const print = vi.spyOn(window, 'print').mockImplementation(() => {});
 

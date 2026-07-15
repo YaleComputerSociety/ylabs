@@ -176,7 +176,8 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Depends on:** CAS-authenticated user routes and canonical ResearchEntity IDs.
 - **Acceptance criteria:** a student can save and remove a research plan; reads and writes are owner-scoped; saved-plan details hydrate from the server; malformed or oversized values are bounded; optimistic UI failures remain recoverable.
 - **Validation evidence:** authenticated `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans` routes, `SavedPathwaysSection`, user-service sanitization and migration guards, and focused route/service/client tests.
-- **PRs:** capability predates the reconciled `#156`-`#171` tranche; [#164](https://github.com/YaleComputerSociety/ylabs/pull/164) extended its persisted planning contract, and [#191](https://github.com/YaleComputerSociety/ylabs/pull/191) moved ownership to ResearchEntity.
+  Saved-item removal follows the successfully loaded saved-item API mode independently of plan-detail hydration, and legacy fallback is limited to canonical `404`, `405`, or `501` responses.
+- **PRs:** capability predates the reconciled `#156`-`#171` tranche; [#164](https://github.com/YaleComputerSociety/ylabs/pull/164) extended its persisted planning contract, [#191](https://github.com/YaleComputerSociety/ylabs/pull/191) moved ownership to ResearchEntity, and [#194](https://github.com/YaleComputerSociety/ylabs/pull/194) preserves removal and transient-failure safety during compatibility fallback.
 
 #### CP-02 - Private Notes, Stage, Deadlines, And Follow-Up
 
@@ -208,7 +209,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Depends on:** canonical ResearchEntity identity and CAS-authenticated owner-scoped persistence.
 - **Acceptance criteria:** a student can save a research entity even when it has no indexed pathway; save identity is the entity, not `entryPathways[0]`; existing pathway plans migrate or coexist without duplication; detail and search cards show server-confirmed state; authorization and privacy remain unchanged.
 - **Validation evidence:** `savedResearchEntities` and `savedResearchEntityPlans` use canonical entity ids; `labDetail.tsx` saves the entity directly; the account workspace preserves owner-scoped browser plans during migration; and the server atomically claims one-time legacy migration while retaining collisions for private review.
-- **PRs:** [#191](https://github.com/YaleComputerSociety/ylabs/pull/191).
+- **PRs:** [#191](https://github.com/YaleComputerSociety/ylabs/pull/191), [#194](https://github.com/YaleComputerSociety/ylabs/pull/194).
 - **Dependency note:** CP-06 / FR-17 and CP-07 / FR-24 can build on canonical entity identity.
 
 #### CP-06 - Compare Shortlisted Research Homes - FR-17
