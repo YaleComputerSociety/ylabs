@@ -4217,7 +4217,10 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.doesNotMatch(source, /for \(const fellowshipId of visibleFellowshipIds\) \{\s*await removeFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/);
   assert.doesNotMatch(source, /for \(const fellowshipId of fellowshipIds\) \{\s*await removeFellowshipFavorite\(fellowshipId\.toHexString\(\)\);\s*\}/);
   assert.doesNotMatch(source, /mergeStoredObjectIdsForUserMutation\(\s*user\.favFellowships,\s*fellowshipIds,\s*'favFellowships',\s*\)/);
-  assert.match(source, /const visiblePathways = await getPathwaysByIds\(pathwayIds\.map\(\(pathwayId\) => pathwayId\.toHexString\(\)\)\)/);
+  assert.match(
+    source,
+    /const visiblePathways = await getPathwaysByIds\(\s*pathwayIds\.map\(\(pathwayId\) => pathwayId\.toHexString\(\)\),?\s*\)/,
+  );
   assert.match(source, /const visiblePathwayIds = normalizeObjectIdsForUserMutation\(\s*visiblePathways\.map\(\(pathway\) => pathway\._id\),\s*'favPathways',\s*\)/);
   assert.match(source, /for \(const pathwayId of visiblePathwayIds\) \{\s*const result = await addFavoriteObjectIdIfMissing\(id, 'favPathways', pathwayId\);[\s\S]*newUser = result\.user;[\s\S]*\}/);
   assert.match(source, /const newUser = await removeSavedPathwayIdsAndPlans\(id, pathwayIds\)/);
@@ -4311,7 +4314,10 @@ test('saved research-plan exports redact system-derived direct contact details',
   assert.match(source, /safeSpreadsheetCell\(redactDirectContactInfo\(String\(value \|\| ''\)\)\)/);
   assert.match(source, /const exportUserTextForSpreadsheet = \(value: unknown\): string =>/);
   assert.match(source, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
-  assert.match(source, /const exportChecklistForSpreadsheet = \(checklist: Record<string, boolean>\): Record<string, boolean> =>/);
+  assert.match(
+    source,
+    /const exportChecklistForSpreadsheet = \(\s*checklist: Record<string, boolean>,?\s*\): Record<string, boolean> =>/,
+  );
   assert.match(source, /title:\s*exportTextWithoutDirectContact\(pathway\.studentFacingLabel\)/);
   assert.match(source, /name:\s*exportTextWithoutDirectContact\(/);
   assert.match(source, /checklist:\s*exportChecklistForSpreadsheet\(plan\.checklist as Record<string, boolean>\)/);
@@ -5880,10 +5886,20 @@ test('saved research-plan local storage hydration is bounded and normalized', ()
   assert.match(source, /const planStorageOwner = normalizeSavedPlanStorageOwner\(user\?\.netId\)/);
   assert.match(source, /const \[hydratedPlanStorageOwner, setHydratedPlanStorageOwner\] = useState<string \| undefined>\(\)/);
   assert.match(source, /activePlanStorageOwnerRef\.current = ownerAtLoad/);
-  assert.match(source, /if \(!planStorageOwner \|\| hydratedPlanStorageOwner !== planStorageOwner\) return/);
-  assert.match(source, /const localPlansForSavedPathways = filterStoredPlansForSavedPathways\(/);
+  assert.match(
+    source,
+    /if \(\s*!canRewriteStoredPlans \|\|\s*!planStorageOwner \|\|\s*hydratedPlanStorageOwner !== planStorageOwner\s*\) \{\s*return;\s*\}/,
+  );
+  assert.match(source, /const localPlans = readStoredPlans\(ownerAtLoad\)/);
+  assert.match(
+    source,
+    /const localPlansForSavedPathways = remapLegacyPathwayPlansToResearchEntities\(\s*localPlans,\s*entityIdByPathwayId,\s*savedResearchEntityIds,\s*\)/,
+  );
   assert.match(source, /mergeSavedPathwayPlansForHydration\(\s*localPlansForSavedPathways,\s*serverPlans,\s*\)/);
-  assert.match(source, /getLocalOnlySavedPathwayPlanIds\(\s*localPlansForSavedPathways,\s*serverPlans,\s*savedPathwayIds,\s*\)/);
+  assert.match(
+    source,
+    /getLocalOnlySavedPathwayPlanIds\(\s*localPlansForSavedPathways,\s*serverPlans,\s*savedResearchEntityIds,\s*\)/,
+  );
   assert.match(source, /writeStoredPlans\(plans, planStorageOwner\)/);
   assert.doesNotMatch(source, /window\.localStorage\.setItem\(PLAN_STORAGE_KEY, JSON\.stringify/);
   assert.doesNotMatch(source, /readStoredPlans\(\)/);
