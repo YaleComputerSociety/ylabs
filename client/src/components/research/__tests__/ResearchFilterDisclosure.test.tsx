@@ -40,6 +40,7 @@ describe('ResearchFilterDisclosure', () => {
     const trigger = screen.getByRole('button', { name: 'Filters, 1 active' });
     fireEvent.click(trigger);
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
     const close = within(dialog).getByRole('button', { name: 'Close filters' });
     await waitFor(() => expect(close).toHaveFocus());
 
@@ -60,15 +61,23 @@ describe('ResearchFilterDisclosure', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it('starts desktop disclosure focus on the first useful facet', async () => {
+  it('keeps the desktop disclosure non-modal and lets Tab leave it', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     renderFilters();
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(dialog.className).toContain('sm:absolute');
+    expect(dialog).not.toHaveAttribute('aria-modal');
     await waitFor(() => expect(within(dialog).getByLabelText('Filter by school')).toHaveFocus());
     expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
+
+    const last = within(dialog).getByLabelText('Filter by department');
+    last.focus();
+    const tabEvent = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    dialog.dispatchEvent(tabEvent);
+    expect(tabEvent.defaultPrevented).toBe(false);
+    expect(last).toHaveFocus();
   });
 
   it.each([320, 375])(
