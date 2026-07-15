@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import UserContext from '../../../contexts/UserContext';
 import type { PathwaySearchHit } from '../../../types/pathway';
 import axios from '../../../utils/axios';
 import SavedPathwaysSection, {
@@ -11,8 +12,13 @@ import SavedPathwaysSection, {
   deadlineReminderForPathway,
   defaultIntentForPathway,
   fundingCueForPathway,
+  legacyPathwayPlanTargetsAreUnique,
   planningCueForPlan,
   readStoredPlans,
+  remapFundingMatchesToResearchEntities,
+  remapLegacyPathwayPlansToResearchEntities,
+  researchEntityIdsByLegacyPathway,
+  uniqueLegacyPathwayIdsByResearchEntity,
   type FellowshipFundingMatch,
   writeStoredPlans,
 } from '../SavedPathwaysSection';
@@ -92,6 +98,26 @@ const fellowshipMatch = (
   applicationLink: 'https://example.edu/fellowship/apply',
   ...overrides,
 });
+
+const renderAuthenticatedSavedPlans = () =>
+  render(
+    createElement(
+      UserContext.Provider,
+      {
+        value: {
+          isLoading: false,
+          isAuthenticated: true,
+          user: {
+            netId: 'avery1',
+            userType: 'undergraduate',
+            userConfirmed: true,
+          },
+          checkContext: vi.fn(),
+        },
+      },
+      createElement(MemoryRouter, null, createElement(SavedPathwaysSection)),
+    ),
+  );
 
 beforeEach(() => {
   localStorage.clear();
@@ -240,6 +266,66 @@ describe('saved research plan hydration helpers', () => {
       currentUserPathway: plan({ note: 'current account draft' }),
     });
   });
+
+  it('translates legacy pathway-owned plans to their saved research entity', () => {
+    const entityIdsByPathway = researchEntityIdsByLegacyPathway([pathway()]);
+    const localPlan = plan({ intent: 'outreach', note: 'Browser-only planning note' });
+    const collidingPlans = {
+      'pathway-1': localPlan,
+      'pathway-2': plan({ intent: 'thesis' }),
+    };
+    const collidingMappings = { ...entityIdsByPathway, 'pathway-2': 'entity-1' };
+
+    expect(
+      remapLegacyPathwayPlansToResearchEntities({ 'pathway-1': localPlan }, entityIdsByPathway, [
+        'entity-1',
+      ]),
+    ).toEqual({ 'entity-1': localPlan });
+    expect(legacyPathwayPlanTargetsAreUnique(collidingPlans, collidingMappings, ['entity-1'])).toBe(
+      false,
+    );
+    expect(
+      remapLegacyPathwayPlansToResearchEntities(collidingPlans, collidingMappings, ['entity-1']),
+    ).toEqual({});
+    expect(uniqueLegacyPathwayIdsByResearchEntity([pathway()])).toEqual({
+      'entity-1': 'pathway-1',
+    });
+    expect(
+      uniqueLegacyPathwayIdsByResearchEntity([pathway(), pathway({ _id: 'pathway-2' })]),
+    ).toEqual({});
+  });
+
+  it('groups and deduplicates legacy funding matches under saved entity ids', () => {
+    const result = remapFundingMatchesToResearchEntities(
+      {
+        'pathway-1': [fellowshipMatch({ score: 0.4 })],
+        'pathway-2': [
+          fellowshipMatch({ pathwayId: 'pathway-2', score: 0.9 }),
+          ...[0.7, 0.6, 0.5, 0.4, 0.3].map((score, index) =>
+            fellowshipMatch({
+              fellowshipId: `fellowship-${index + 2}`,
+              pathwayId: 'pathway-2',
+              title: `Research Grant ${index + 2}`,
+              score,
+            }),
+          ),
+        ],
+      },
+      { 'pathway-1': 'entity-1', 'pathway-2': 'entity-1' },
+      ['entity-1'],
+    );
+
+    expect(result['entity-1']).toHaveLength(5);
+    expect(result['entity-1'][0]).toMatchObject({
+      fellowshipId: 'fellowship-1',
+      pathwayId: 'pathway-2',
+      score: 0.9,
+    });
+    expect(
+      result['entity-1'].filter((match) => match.fellowshipId === 'fellowship-1'),
+    ).toHaveLength(1);
+    expect(result['entity-1'].map((match) => match.fellowshipId)).not.toContain('fellowship-6');
+  });
 });
 
 describe('saved research planning helpers', () => {
@@ -324,6 +410,174 @@ describe('SavedPathwaysSection advising export', () => {
     });
   };
 
+  it('migrates a browser-only pathway plan and funding match to its entity-owned card', async () => {
+    const user = userEvent.setup();
+    const browserPlan = plan({
+      intent: 'outreach',
+      stage: 'researching',
+      note: 'Browser-only planning note',
+    });
+    localStorage.setItem(
+      `${PLAN_STORAGE_KEY}.avery1`,
+      JSON.stringify({ 'pathway-1': browserPlan }),
+    );
+    mockedAxios.put.mockImplementationOnce(async () => {
+      expect(JSON.parse(localStorage.getItem(`${PLAN_STORAGE_KEY}.avery1`) || '{}')).toEqual({
+        'pathway-1': browserPlan,
+      });
+      return { data: {} };
+    });
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              {
+                _id: 'entity-1',
+                slug: 'climate-archive',
+                name: 'Climate Archive',
+                kind: 'group',
+                departments: ['History'],
+              },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({
+          data: { matchesByPathwayId: { 'pathway-1': [fellowshipMatch()] } },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    renderAuthenticatedSavedPlans();
+
+    await screen.findByRole('heading', { name: 'Climate Archive' });
+    await waitFor(() => {
+      expect(mockedAxios.put).toHaveBeenCalledWith(
+        '/users/savedResearchEntityPlans/entity-1',
+        { data: { plan: browserPlan } },
+        { withCredentials: true },
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Plan details' }));
+    expect(screen.getByLabelText('Note')).toHaveValue('Browser-only planning note');
+    expect(await screen.findByText('Summer Research Grant')).toBeTruthy();
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem(`${PLAN_STORAGE_KEY}.avery1`) || '{}')).toEqual({
+        'entity-1': plan({ intent: 'outreach', stage: 'researching' }),
+      });
+    });
+  });
+
+  it('keeps the legacy browser record when its private-plan upload fails', async () => {
+    const browserPlan = plan({ note: 'Keep this private note' });
+    localStorage.setItem(
+      `${PLAN_STORAGE_KEY}.avery1`,
+      JSON.stringify({ 'pathway-1': browserPlan }),
+    );
+    mockedAxios.put.mockRejectedValueOnce(new Error('offline'));
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              {
+                _id: 'entity-1',
+                slug: 'climate-archive',
+                name: 'Climate Archive',
+                kind: 'group',
+                departments: ['History'],
+              },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    renderAuthenticatedSavedPlans();
+
+    expect(await screen.findByText('Saved research plans could not be loaded.')).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem(`${PLAN_STORAGE_KEY}.avery1`) || '{}')).toEqual({
+      'pathway-1': browserPlan,
+    });
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      '/users/savedResearchEntityPlans/entity-1',
+      { data: { plan: browserPlan } },
+      { withCredentials: true },
+    );
+  });
+
+  it('keeps and surfaces colliding legacy plans without uploading either one', async () => {
+    const browserPlans = {
+      'pathway-1': plan({ note: 'First private note' }),
+      'pathway-2': plan({ intent: 'thesis', note: 'Second private note' }),
+    };
+    localStorage.setItem(`${PLAN_STORAGE_KEY}.avery1`, JSON.stringify(browserPlans));
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              {
+                _id: 'entity-1',
+                slug: 'climate-archive',
+                name: 'Climate Archive',
+                kind: 'group',
+                departments: ['History'],
+              },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({
+          data: {
+            savedResearchPlans: [pathway(), pathway({ _id: 'pathway-2' })],
+          },
+        });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    renderAuthenticatedSavedPlans();
+
+    await screen.findByRole('heading', { name: 'Climate Archive' });
+    expect(
+      screen.getByText(
+        'Multiple browser-only plans map to the same research profile. Your original browser records were kept so no plan was chosen or overwritten automatically.',
+      ),
+    ).toBeTruthy();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(`${PLAN_STORAGE_KEY}.avery1`) || '{}')).toEqual(
+      browserPlans,
+    );
+  });
+
   it('preserves hydrated intent and stage on the first checklist interaction', async () => {
     const user = userEvent.setup();
     mockSavedPlanLoad(plan({ intent: 'outreach', stage: 'ready' }));
@@ -333,6 +587,7 @@ describe('SavedPathwaysSection advising export', () => {
     await user.click(screen.getByLabelText('Review the official contact route or policy'));
 
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
+    expect(mockedAxios.put.mock.calls[0][0]).toBe('/users/savedResearchPlanDetails/pathway-1');
     expect(mockedAxios.put.mock.calls[0][1]).toEqual({
       data: {
         plan: plan({
@@ -344,6 +599,49 @@ describe('SavedPathwaysSection advising export', () => {
     });
     expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe('Plan saved.');
+  });
+
+  it('uses the mapped pathway id when only canonical plan loading falls back', async () => {
+    const user = userEvent.setup();
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') {
+        return Promise.resolve({
+          data: {
+            savedResearchEntities: [
+              {
+                _id: 'entity-1',
+                slug: 'climate-archive',
+                name: 'Climate Archive',
+                kind: 'group',
+                departments: ['History'],
+              },
+            ],
+          },
+        });
+      }
+      if (url === '/users/savedResearchEntityPlans') return Promise.reject(new Error('missing'));
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({
+          data: { savedResearchPlanDetails: { 'pathway-1': plan({ intent: 'outreach' }) } },
+        });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    renderAuthenticatedSavedPlans();
+    await user.click(await screen.findByRole('button', { name: 'Plan details' }));
+    await user.type(screen.getByLabelText('Note'), 'Updated');
+
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());
+    expect(mockedAxios.put.mock.calls.at(-1)?.[0]).toBe(
+      '/users/savedResearchPlanDetails/pathway-1',
+    );
   });
 
   it('never PUTs fallback plan state when plan hydration fails', async () => {

@@ -36,6 +36,13 @@ const mocks = vi.hoisted(() => ({
   }),
   updateSavedPathwayPlan: vi.fn(),
   deleteSavedPathwayPlan: vi.fn(),
+  getSavedResearchEntities: vi.fn(),
+  getSavedResearchEntityPlans: vi.fn(),
+  addSavedResearchEntities: vi.fn(),
+  removeSavedResearchEntities: vi.fn(),
+  updateSavedResearchEntityPlan: vi.fn(),
+  deleteSavedResearchEntityPlan: vi.fn(),
+  exportSavedResearchEntities: vi.fn(),
 }));
 
 vi.mock('../../services/listingService', () => ({
@@ -74,6 +81,13 @@ vi.mock('../../services/userService', () => ({
   pruneSavedPathwayPlansForExistingPathways: vi.fn((plans) => plans),
   updateSavedPathwayPlan: mocks.updateSavedPathwayPlan,
   deleteSavedPathwayPlan: mocks.deleteSavedPathwayPlan,
+  getSavedResearchEntities: mocks.getSavedResearchEntities,
+  getSavedResearchEntityPlans: mocks.getSavedResearchEntityPlans,
+  addSavedResearchEntities: mocks.addSavedResearchEntities,
+  removeSavedResearchEntities: mocks.removeSavedResearchEntities,
+  updateSavedResearchEntityPlan: mocks.updateSavedResearchEntityPlan,
+  deleteSavedResearchEntityPlan: mocks.deleteSavedResearchEntityPlan,
+  exportSavedResearchEntities: mocks.exportSavedResearchEntities,
 }));
 
 import {
@@ -81,8 +95,11 @@ import {
   addFavListings,
   addFavPathways,
   addSavedPrograms,
+  addSavedResearchEntities,
   addSavedResearchPlans,
+  deleteSavedResearchEntityPlan,
   deleteSavedResearchPlanDetail,
+  exportSavedResearchEntities,
   exportSavedResearchPlanDetails,
   getFavFellowshipIds,
   getFavFellowships,
@@ -91,6 +108,8 @@ import {
   getFavPathwayFundingMatches,
   getFavPathways,
   getSavedProgramIds,
+  getSavedResearchEntities,
+  getSavedResearchEntityPlans,
   getSavedResearchPlanDetails,
   getSavedResearchPlanIds,
   getSavedResearchPlans,
@@ -100,8 +119,10 @@ import {
   removeFavListings,
   removeFavPathways,
   removeSavedPrograms,
+  removeSavedResearchEntities,
   removeSavedResearchPlans,
   updateCurrentUser,
+  updateSavedResearchEntityPlan,
   updateSavedResearchPlanDetail,
 } from '../userController';
 
@@ -1423,5 +1444,80 @@ describe('userController', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ error: 'Bad request' });
     expect(mocks.getPathwaysByIds).not.toHaveBeenCalled();
+  });
+
+  it('scopes saved-entity reads and private exports to the authenticated owner', async () => {
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      method: 'POST',
+      body: { accountOwner: 'other-student', includePrivateNotes: true },
+    } as any;
+    mocks.getSavedResearchEntities.mockResolvedValue([]);
+    mocks.getSavedResearchEntityPlans.mockResolvedValue({});
+    mocks.exportSavedResearchEntities.mockResolvedValue({ items: [] });
+
+    await getSavedResearchEntities(req, privateResponseDouble());
+    const plansResponse = privateResponseDouble();
+    await getSavedResearchEntityPlans(req, plansResponse);
+    const exportResponse = privateResponseDouble();
+    await exportSavedResearchEntities(req, exportResponse);
+
+    expect(mocks.getSavedResearchEntities).toHaveBeenCalledWith('student123');
+    expect(mocks.getSavedResearchEntityPlans).toHaveBeenCalledWith('student123');
+    expect(mocks.exportSavedResearchEntities).toHaveBeenCalledWith('student123', {
+      includePrivateNotes: true,
+    });
+    expectPrivateNoStore(plansResponse);
+    expectPrivateNoStore(exportResponse);
+  });
+
+  it('scopes saved-entity writes and deletes to the authenticated owner', async () => {
+    const entityId = '64a000000000000000000030';
+    const owner = { netId: 'student123', userType: 'undergraduate', userConfirmed: true };
+    mocks.addSavedResearchEntities.mockResolvedValue([entityId]);
+    mocks.removeSavedResearchEntities.mockResolvedValue([]);
+    mocks.updateSavedResearchEntityPlan.mockResolvedValue({});
+    mocks.deleteSavedResearchEntityPlan.mockResolvedValue({});
+
+    await addSavedResearchEntities(
+      {
+        user: owner,
+        body: {
+          accountOwner: 'other-student',
+          data: { savedResearchEntities: [entityId] },
+        },
+      } as any,
+      privateResponseDouble(),
+    );
+    await removeSavedResearchEntities(
+      {
+        user: owner,
+        body: { accountOwner: 'other-student', savedResearchEntities: [entityId] },
+      } as any,
+      privateResponseDouble(),
+    );
+    await updateSavedResearchEntityPlan(
+      {
+        user: owner,
+        params: { entityId },
+        body: { accountOwner: 'other-student', data: { plan: { note: 'Private note' } } },
+      } as any,
+      privateResponseDouble(),
+    );
+    await deleteSavedResearchEntityPlan(
+      {
+        user: owner,
+        params: { entityId },
+        body: { accountOwner: 'other-student' },
+      } as any,
+      privateResponseDouble(),
+    );
+
+    expect(mocks.addSavedResearchEntities).toHaveBeenCalledWith('student123', [entityId]);
+    expect(mocks.removeSavedResearchEntities).toHaveBeenCalledWith('student123', [entityId]);
+    expect(mocks.updateSavedResearchEntityPlan).toHaveBeenCalledWith('student123', entityId, {
+      note: 'Private note',
+    });
+    expect(mocks.deleteSavedResearchEntityPlan).toHaveBeenCalledWith('student123', entityId);
   });
 });

@@ -98,10 +98,11 @@ const savedEntityAsPlanningItem = (entity: SavedResearchEntitySummary): PathwayS
 
 type DashboardResponse = Awaited<ReturnType<typeof axios.get>>;
 type OptionalDashboardResponse =
-  | { value: DashboardResponse; error: false }
+  | { value: DashboardResponse; error: false; apiMode?: SavedPlanApiMode }
   | { value: null; error: true };
 type SavedPlanDashboardLoad = [
   DashboardResponse,
+  OptionalDashboardResponse,
   OptionalDashboardResponse,
   OptionalDashboardResponse,
 ];
@@ -110,21 +111,38 @@ const savedPlanDashboardLoads = new Map<string, Promise<SavedPlanDashboardLoad>>
 const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> => {
   const existing = savedPlanDashboardLoads.get(owner);
   if (existing) return existing;
+  const legacyPathwaysRequest = axios
+    .get('/users/savedResearchPlans', { withCredentials: true })
+    .then(
+      (value) => ({ value, error: false as const }),
+      () => ({ value: null, error: true as const }),
+    );
   const request = Promise.all([
-    axios
-      .get('/users/savedResearchEntities', { withCredentials: true })
-      .catch(() => axios.get('/users/savedResearchPlans', { withCredentials: true })),
+    axios.get('/users/savedResearchEntities', { withCredentials: true }).catch(async () => {
+      const legacyResult = await legacyPathwaysRequest;
+      if (legacyResult.error || !legacyResult.value) {
+        throw new Error('Saved research plans unavailable');
+      }
+      return legacyResult.value;
+    }),
     axios
       .get('/users/savedResearchEntityPlans', { withCredentials: true })
-      .catch(() => axios.get('/users/savedResearchPlanDetails', { withCredentials: true }))
       .then(
-        (value) => ({ value, error: false as const }),
+        (value) => ({ value, apiMode: 'entity' as const }),
+        () =>
+          axios
+            .get('/users/savedResearchPlanDetails', { withCredentials: true })
+            .then((value) => ({ value, apiMode: 'pathway' as const })),
+      )
+      .then(
+        ({ value, apiMode }) => ({ value, error: false as const, apiMode }),
         () => ({ value: null, error: true as const }),
       ),
     axios.get('/users/savedResearchPlanFundingMatches', { withCredentials: true }).then(
       (value) => ({ value, error: false as const }),
       () => ({ value: null, error: true as const }),
     ),
+    legacyPathwaysRequest,
   ]) as Promise<SavedPlanDashboardLoad>;
   savedPlanDashboardLoads.set(owner, request);
   void request.finally(() => window.setTimeout(() => savedPlanDashboardLoads.delete(owner), 0));
@@ -686,6 +704,105 @@ export const filterStoredPlansForSavedPathways = (
   return filtered;
 };
 
+export const researchEntityIdsByLegacyPathway = (
+  pathways: PathwaySearchHit[],
+): Record<string, string> =>
+  Object.fromEntries(
+    pathways.flatMap((pathway) => {
+      const pathwayId = String(pathway?._id || '');
+      const entityId = String(pathway?.researchEntity?._id || '');
+      return STORAGE_PLAN_ID_RE.test(pathwayId) && STORAGE_PLAN_ID_RE.test(entityId)
+        ? [[pathwayId, entityId] as const]
+        : [];
+    }),
+  );
+
+export const uniqueLegacyPathwayIdsByResearchEntity = (
+  pathways: PathwaySearchHit[],
+): Record<string, string> => {
+  const pathwayIdsByEntity = new Map<string, string[]>();
+  for (const [pathwayId, entityId] of Object.entries(
+    researchEntityIdsByLegacyPathway(pathways),
+  )) {
+    pathwayIdsByEntity.set(entityId, [...(pathwayIdsByEntity.get(entityId) || []), pathwayId]);
+  }
+  return Object.fromEntries(
+    [...pathwayIdsByEntity].flatMap(([entityId, pathwayIds]) =>
+      pathwayIds.length === 1 ? [[entityId, pathwayIds[0]] as const] : [],
+    ),
+  );
+};
+
+export const remapLegacyPathwayPlansToResearchEntities = (
+  plans: PathwayPlanMap,
+  entityIdByPathwayId: Record<string, string>,
+  savedResearchEntityIds: Iterable<string>,
+): PathwayPlanMap => {
+  const savedIds = new Set(savedResearchEntityIds);
+  const normalizedPlans = normalizePathwayPlanMap(plans);
+  const remapped: PathwayPlanMap = {};
+  const sourceIdsByTarget = new Map<string, string[]>();
+
+  for (const id of Object.keys(normalizedPlans).sort()) {
+    const targetId = savedIds.has(id) ? id : entityIdByPathwayId[id];
+    if (!targetId || !savedIds.has(targetId)) continue;
+    sourceIdsByTarget.set(targetId, [...(sourceIdsByTarget.get(targetId) || []), id]);
+  }
+  for (const [targetId, sourceIds] of sourceIdsByTarget) {
+    if (sourceIds.length === 1) remapped[targetId] = normalizedPlans[sourceIds[0]];
+  }
+
+  return remapped;
+};
+
+export const legacyPathwayPlanTargetsAreUnique = (
+  plans: PathwayPlanMap,
+  entityIdByPathwayId: Record<string, string>,
+  savedResearchEntityIds: Iterable<string>,
+): boolean => {
+  const savedIds = new Set(savedResearchEntityIds);
+  const targetIds = Object.keys(normalizePathwayPlanMap(plans)).flatMap((id) => {
+    if (savedIds.has(id)) return [id];
+    const entityId = entityIdByPathwayId[id];
+    return entityId && savedIds.has(entityId) ? [entityId] : [];
+  });
+  return targetIds.length === new Set(targetIds).size;
+};
+
+export const remapFundingMatchesToResearchEntities = (
+  matchesByPathwayId: FundingMatchesByPathway,
+  entityIdByPathwayId: Record<string, string>,
+  savedResearchEntityIds: Iterable<string>,
+): FundingMatchesByPathway => {
+  const savedIds = new Set(savedResearchEntityIds);
+  const matchesByEntity: FundingMatchesByPathway = {};
+
+  for (const [pathwayId, matches] of Object.entries(matchesByPathwayId || {})) {
+    const entityId = savedIds.has(pathwayId) ? pathwayId : entityIdByPathwayId[pathwayId];
+    if (!entityId || !savedIds.has(entityId) || !Array.isArray(matches)) continue;
+    matchesByEntity[entityId] = [...(matchesByEntity[entityId] || []), ...matches];
+  }
+
+  for (const [entityId, matches] of Object.entries(matchesByEntity)) {
+    const bestByFellowship = new Map<string, FellowshipFundingMatch>();
+    for (const match of matches) {
+      const key = match.fellowshipId || `${match.pathwayId}:${match.title}`;
+      const current = bestByFellowship.get(key);
+      if (!current || match.score > current.score) bestByFellowship.set(key, match);
+    }
+    matchesByEntity[entityId] = [...bestByFellowship.values()]
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          String(a.deadline || '').localeCompare(String(b.deadline || '')) ||
+          a.title.localeCompare(b.title),
+      )
+      .slice(0, 5);
+  }
+
+  return matchesByEntity;
+};
+
 const sourceUrlsForPathway = (pathway: PathwaySearchHit): string[] =>
   safeHttpUrlList([
     ...(pathway.sourceUrls || []),
@@ -758,6 +875,8 @@ interface SavedPathwaysSectionProps {
   }) => void;
 }
 
+type SavedPlanApiMode = 'entity' | 'pathway';
+
 const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) => {
   const { user } = useContext(UserContext);
   const planStorageOwner = normalizeSavedPlanStorageOwner(user?.netId);
@@ -776,6 +895,10 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   const exportTriggerRef = useRef<HTMLButtonElement>(null);
   const [expandedPlanIds, setExpandedPlanIds] = useState<Record<string, boolean>>({});
   const [hydratedPlanStorageOwner, setHydratedPlanStorageOwner] = useState<string | undefined>();
+  const [canRewriteStoredPlans, setCanRewriteStoredPlans] = useState(false);
+  const [planApiMode, setPlanApiMode] = useState<SavedPlanApiMode | null>(null);
+  const [planApiIdBySavedId, setPlanApiIdBySavedId] = useState<Record<string, string>>({});
+  const [planMigrationNotice, setPlanMigrationNotice] = useState('');
   const [planSaveStatus, setPlanSaveStatus] = useState<Record<string, string>>({});
   const [pendingIntentChange, setPendingIntentChange] = useState<{
     pathwayId: string;
@@ -794,11 +917,14 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     setError('');
     setExportError('');
     setHydratedPlanStorageOwner(undefined);
+    setCanRewriteStoredPlans(false);
+    setPlanApiMode(null);
+    setPlanApiIdBySavedId({});
+    setPlanMigrationNotice('');
     setPlans({});
     try {
-      const [response, plansResult, matchesResult] = await loadSavedPlanDashboard(
-        ownerAtLoad || 'authenticated-account',
-      );
+      const [response, plansResult, matchesResult, legacyPathwaysResult] =
+        await loadSavedPlanDashboard(ownerAtLoad || 'authenticated-account');
       if (!isCurrentOwnerLoad()) return;
       const responseData = (response as any).data;
       const savedPathways: PathwaySearchHit[] = responseData.savedResearchEntities
@@ -806,45 +932,107 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
             savedEntityAsPlanningItem,
           )
         : responseData.savedResearchPlans || [];
+      const legacyPathways =
+        !legacyPathwaysResult.error && legacyPathwaysResult.value
+          ? (legacyPathwaysResult.value as any).data.savedResearchPlans || []
+          : responseData.savedResearchPlans || [];
+      const entityIdByPathwayId = researchEntityIdsByLegacyPathway(legacyPathways);
+      const pathwayIdByEntityId = uniqueLegacyPathwayIdsByResearchEntity(legacyPathways);
+      const savedResearchEntityIds = savedPathways.map((pathway: PathwaySearchHit) => pathway._id);
+      const hasCanonicalEntityResponse = Array.isArray(responseData.savedResearchEntities);
+      const legacyMappingIsComplete = !hasCanonicalEntityResponse || !legacyPathwaysResult.error;
       setPathways(savedPathways);
       if (!plansResult.error && plansResult.value) {
         const plansResponse: any = plansResult.value;
         if (!isCurrentOwnerLoad()) return;
-        const serverPlans =
+        const rawServerPlans =
           plansResponse.data.savedResearchEntityPlans ||
           plansResponse.data.savedResearchPlanDetails ||
           {};
+        const activePlanApiMode = plansResult.apiMode || 'pathway';
+        const activePlanApiIdBySavedId =
+          activePlanApiMode === 'entity'
+            ? {}
+            : hasCanonicalEntityResponse
+              ? pathwayIdByEntityId
+              : Object.fromEntries(savedResearchEntityIds.map((id) => [id, id]));
+        const planApiMappingIsComplete =
+          activePlanApiMode === 'entity' ||
+          savedResearchEntityIds.every((id) => activePlanApiIdBySavedId[id]);
+        const serverPlans =
+          activePlanApiMode === 'pathway' && hasCanonicalEntityResponse
+            ? remapLegacyPathwayPlansToResearchEntities(
+                rawServerPlans,
+                entityIdByPathwayId,
+                savedResearchEntityIds,
+              )
+            : rawServerPlans;
         const localPlans = readStoredPlans(ownerAtLoad);
-        const savedPathwayIds = savedPathways.map((pathway: PathwaySearchHit) => pathway._id);
-        const localPlansForSavedPathways = filterStoredPlansForSavedPathways(
+        const localPlanTargetsAreUnique = legacyPathwayPlanTargetsAreUnique(
           localPlans,
-          savedPathwayIds,
+          entityIdByPathwayId,
+          savedResearchEntityIds,
+        );
+        const localPlansForSavedPathways = remapLegacyPathwayPlansToResearchEntities(
+          localPlans,
+          entityIdByPathwayId,
+          savedResearchEntityIds,
         );
         const mergedPlans = mergeSavedPathwayPlansForHydration(
           localPlansForSavedPathways,
           serverPlans,
         );
-        setPlans(mergedPlans);
-        setHydratedPlanStorageOwner(ownerAtLoad);
         const localOnlyPlanIds = getLocalOnlySavedPathwayPlanIds(
           localPlansForSavedPathways,
           serverPlans,
-          savedPathwayIds,
+          savedResearchEntityIds,
         );
         await Promise.all(
-          localOnlyPlanIds.map((id) =>
-            axios.put(
-              `/users/savedResearchEntityPlans/${id}`,
-              { data: { plan: localPlansForSavedPathways[id] } },
-              { withCredentials: true },
-            ),
-          ),
+          localOnlyPlanIds.flatMap((id) => {
+            const apiId =
+              activePlanApiMode === 'entity' ? id : activePlanApiIdBySavedId[id];
+            return apiId
+              ? [
+                  axios.put(
+                    activePlanApiMode === 'entity'
+                      ? `/users/savedResearchEntityPlans/${apiId}`
+                      : `/users/savedResearchPlanDetails/${apiId}`,
+                    { data: { plan: localPlansForSavedPathways[id] } },
+                    { withCredentials: true },
+                  ),
+                ]
+              : [];
+          }),
         );
+        if (!isCurrentOwnerLoad()) return;
+        setPlans(mergedPlans);
+        setHydratedPlanStorageOwner(ownerAtLoad);
+        setPlanApiMode(activePlanApiMode);
+        setPlanApiIdBySavedId(activePlanApiIdBySavedId);
+        setCanRewriteStoredPlans(
+          legacyMappingIsComplete && localPlanTargetsAreUnique && planApiMappingIsComplete,
+        );
+        if (!localPlanTargetsAreUnique) {
+          setPlanMigrationNotice(
+            'Multiple browser-only plans map to the same research profile. Your original browser records were kept so no plan was chosen or overwritten automatically.',
+          );
+        } else if (!planApiMappingIsComplete) {
+          setPlanMigrationNotice(
+            'A saved research profile does not have one safe legacy pathway for fallback updates. Your original browser records were kept and no fallback write was attempted.',
+          );
+        }
       } else {
         console.error('Error loading saved research plan details.');
       }
       if (!matchesResult.error && matchesResult.value) {
-        setFundingMatches((matchesResult.value as any).data.matchesByPathwayId || {});
+        const matchesData = (matchesResult.value as any).data;
+        setFundingMatches(
+          remapFundingMatchesToResearchEntities(
+            matchesData.matchesByResearchEntityId || matchesData.matchesByPathwayId || {},
+            entityIdByPathwayId,
+            savedResearchEntityIds,
+          ),
+        );
       } else {
         setFundingMatches({});
       }
@@ -854,6 +1042,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       setPathways([]);
       setFundingMatches({});
       setPlans({});
+      setCanRewriteStoredPlans(false);
+      setPlanApiMode(null);
+      setPlanApiIdBySavedId({});
       setError('Saved research plans could not be loaded.');
     } finally {
       if (isCurrentOwnerLoad()) setLoading(false);
@@ -865,9 +1056,15 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   }, [loadPathways]);
 
   useEffect(() => {
-    if (!planStorageOwner || hydratedPlanStorageOwner !== planStorageOwner) return;
+    if (
+      !canRewriteStoredPlans ||
+      !planStorageOwner ||
+      hydratedPlanStorageOwner !== planStorageOwner
+    ) {
+      return;
+    }
     writeStoredPlans(plans, planStorageOwner);
-  }, [hydratedPlanStorageOwner, planStorageOwner, plans]);
+  }, [canRewriteStoredPlans, hydratedPlanStorageOwner, planStorageOwner, plans]);
 
   useEffect(() => {
     const watchedReminders = pathways
@@ -937,7 +1134,15 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   };
 
   const updatePlan = (pathwayId: string, patch: Partial<PathwayPlan>) => {
-    if (hydratedPlanStorageOwner !== planStorageOwner || !plans[pathwayId]) return;
+    const planApiId = planApiMode === 'entity' ? pathwayId : planApiIdBySavedId[pathwayId];
+    if (
+      hydratedPlanStorageOwner !== planStorageOwner ||
+      !plans[pathwayId] ||
+      !planApiMode ||
+      !planApiId
+    ) {
+      return;
+    }
     setPlans((current) => {
       const currentPlan = current[pathwayId];
       if (!currentPlan) return current;
@@ -945,7 +1150,9 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Saving plan...' }));
       axios
         .put(
-          `/users/savedResearchEntityPlans/${pathwayId}`,
+          planApiMode === 'entity'
+            ? `/users/savedResearchEntityPlans/${planApiId}`
+            : `/users/savedResearchPlanDetails/${planApiId}`,
           { data: { plan: nextPlan } },
           { withCredentials: true },
         )
@@ -1023,6 +1230,11 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
   }, [pendingIntentChange]);
 
   const removePathway = async (pathwayId: string) => {
+    const planApiId = planApiMode === 'entity' ? pathwayId : planApiIdBySavedId[pathwayId];
+    if (!planApiMode || !planApiId) {
+      setError('This saved research plan cannot be changed safely while compatibility data is unavailable.');
+      return;
+    }
     const previous = pathways;
     setPathways((current) => current.filter((pathway) => pathway._id !== pathwayId));
     setExpandedPlanIds((current) => {
@@ -1031,16 +1243,28 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       return next;
     });
     try {
-      await axios.delete('/users/savedResearchEntities', {
-        withCredentials: true,
-        data: { savedResearchEntities: [pathwayId] },
-      });
+      if (planApiMode === 'pathway') {
+        await axios.delete('/users/savedResearchPlans', {
+          withCredentials: true,
+          data: { savedResearchPlans: [planApiId] },
+        });
+      } else {
+        await axios.delete('/users/savedResearchEntities', {
+          withCredentials: true,
+          data: { savedResearchEntities: [pathwayId] },
+        });
+      }
       setPlans((current) => {
         const next = { ...current };
         delete next[pathwayId];
         return next;
       });
-      await axios.delete(`/users/savedResearchEntityPlans/${pathwayId}`, { withCredentials: true });
+      await axios.delete(
+        planApiMode === 'pathway'
+          ? `/users/savedResearchPlanDetails/${planApiId}`
+          : `/users/savedResearchEntityPlans/${planApiId}`,
+        { withCredentials: true },
+      );
     } catch {
       console.error('Error removing saved research plan.');
       setPathways(previous);
@@ -1367,6 +1591,15 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       {exportNotice && (
         <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
           {exportNotice}
+        </div>
+      )}
+
+      {planMigrationNotice && (
+        <div
+          role="status"
+          className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          {planMigrationNotice}
         </div>
       )}
 

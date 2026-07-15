@@ -3,6 +3,9 @@ import mongoose from 'mongoose';
 import {
   MAX_SAVED_PATHWAY_NOTE_LENGTH,
   MAX_SAVED_PROGRAM_NOTE_LENGTH,
+  MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH,
+  MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
+  boundSavedResearchEntitySummaryText,
   buildCaseInsensitiveNetidFilter,
   buildSavedPathwayPlanUnsetForIds,
   buildSavedPathwayPlansExport,
@@ -13,6 +16,7 @@ import {
   pruneSavedPathwayPlansForExistingPathways,
   sanitizeSavedPathwayPlanForStorage,
   sanitizeSavedProgramTrackingForResponse,
+  savedResearchEntityLegacyMigrationInputs,
   type SavedPathwayPlanInput,
 } from '../userService';
 import type { PathwaySearchHit } from '../pathwaySearchService';
@@ -515,7 +519,7 @@ describe('buildSavedResearchEntityMigration', () => {
     );
 
     expect(result.entityIds).toEqual([entityId]);
-    expect(result.plans[entityId].note).toBe('First private note');
+    expect(result.plans[entityId]).toBeUndefined();
     expect(result.conflicts[entityId]).toEqual({
       [firstId]: first,
       [secondId]: second,
@@ -533,5 +537,53 @@ describe('buildSavedResearchEntityMigration', () => {
     );
 
     expect(result.plans[entityId]).toEqual(existing);
+  });
+});
+
+describe('savedResearchEntityLegacyMigrationInputs', () => {
+  it('never re-imports legacy pathway state after migration completes', () => {
+    const pathwayId = '665f0b0c0b0c0b0c0b0c0b0c';
+    expect(
+      savedResearchEntityLegacyMigrationInputs({
+        savedResearchEntityMigrationCompleted: true,
+        favPathways: [pathwayId],
+        savedPathwayPlans: {
+          [pathwayId]: { note: 'Legacy note that must not resurrect' },
+        },
+      }),
+    ).toEqual({ migrationCompleted: true, pathwayIds: [], legacyPlans: {} });
+  });
+
+  it('returns bounded legacy inputs before the one-time migration', () => {
+    const pathwayId = '665f0b0c0b0c0b0c0b0c0b0c';
+    const result = savedResearchEntityLegacyMigrationInputs({
+      savedResearchEntityMigrationCompleted: false,
+      favPathways: [pathwayId],
+      savedPathwayPlans: { [pathwayId]: { intent: 'outreach', note: 'Legacy note' } },
+    });
+
+    expect(result.migrationCompleted).toBe(false);
+    expect(result.pathwayIds).toEqual([pathwayId]);
+    expect(result.legacyPlans[pathwayId]).toMatchObject({
+      intent: 'outreach',
+      note: 'Legacy note',
+    });
+  });
+});
+
+describe('boundSavedResearchEntitySummaryText', () => {
+  it('bounds both saved-entity summary description variants', () => {
+    expect(
+      boundSavedResearchEntitySummaryText(
+        's'.repeat(MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH + 1),
+        MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
+      ),
+    ).toHaveLength(MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH);
+    expect(
+      boundSavedResearchEntitySummaryText(
+        'd'.repeat(MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH + 1),
+        MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH,
+      ),
+    ).toHaveLength(MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH);
   });
 });
