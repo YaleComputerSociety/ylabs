@@ -410,6 +410,7 @@ const Research = () => {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestIdRef = useRef(0);
   const defaultSearchRequestIdRef = useRef(0);
+  const browseAnalyticsSessionRef = useRef(createResearchAnalyticsInteractionId('browse'));
   const searchAbortRef = useRef<AbortController | null>(null);
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
@@ -482,6 +483,24 @@ const Research = () => {
   }, []);
 
   useEffect(() => {
+    restoredSnapshotRef.current?.defaultResearchEntities.forEach((entity, index) => {
+      if (!entity._id) return;
+      void trackResearchEventOnce(
+        `${browseAnalyticsSessionRef.current}:restored:${entity._id}`,
+        {
+          eventType: 'research_entity_impression',
+          entityType: 'research_entity',
+          entityId: entity._id,
+          payload: {
+            surface: 'browse',
+            positionBucket: researchPositionBucket(index + 1),
+          },
+        },
+      );
+    });
+  }, []);
+
+  useEffect(() => {
     if (isAdmin) return;
     if (showWeakestProfilesFirst) setShowWeakestProfilesFirst(false);
     if (qualityFilters.length > 0) setQualityFilters([]);
@@ -490,6 +509,7 @@ const Research = () => {
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
     const requestId = ++defaultSearchRequestIdRef.current;
+    const browseLoadAnalyticsKey = `${browseAnalyticsSessionRef.current}:${requestId}:${page}`;
     const controller = new AbortController();
     defaultSearchAbortRef.current?.abort();
     defaultSearchAbortRef.current = controller;
@@ -527,7 +547,7 @@ const Research = () => {
       setDefaultSearchError('');
       researchEntities.forEach((entity, index) => {
         if (!entity._id) return;
-        void trackResearchEventOnce(`browse:${page}:${entity._id}`, {
+        void trackResearchEventOnce(`${browseLoadAnalyticsKey}:${entity._id}`, {
           eventType: 'research_entity_impression',
           entityType: 'research_entity',
           entityId: entity._id,
