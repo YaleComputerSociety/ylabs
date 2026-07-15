@@ -246,6 +246,11 @@ Current behavior:
 
 The same contact guardrail applies to public research detail payloads: unauthenticated/public detail responses should include only public route summaries and should not expose authenticated or admin-only scraped contact data.
 
+Public research detail entities also expose derived lead-display metadata.
+`leadIdentityStatus` is `verified` or `under_review`; an under-review identity suppresses the disputed lead card and profile link.
+`leadProfessorPublicKey` is present only when exactly one lead member's official Yale faculty profile matches an official person-profile URL owned by the entity.
+The detail page shows a sole verified lead once inside the decision summary, while multiple leads remain together in the dedicated Principal Investigators section and only the uniquely matched lead may also appear as Lead professor.
+
 Contact-route ordering should prefer official applications, program/department/fellowship/course routes, and lab-manager routes before faculty-direct routes. Public ways-in cards or detail sections may link to route URLs, but they should not expose raw scraped emails.
 
 Legacy active listings may still appear inside public research detail payloads for backwards compatibility, but those embedded listing summaries must be field allowlisted. Do not expose listing owner ids, creator ids, owner emails, collaborator emails, view counts, favorite counts, audit flags, or other authenticated/admin-oriented fields through `/api/research/:slug`.

@@ -4,8 +4,8 @@
  * Organizational research homes (CENTER / INSTITUTE / INITIATIVE / CORE_FACILITY)
  * have no single PI, so the membership rosters scraped by
  * `centersInstitutesScraper` tag everyone `core-faculty` and the public
- * "Principal Investigator" panel renders empty. The actual leader — the
- * center's Director / Executive Director / Faculty Director — is named on a
+ * research detail leadership display renders empty. The actual leader - the
+ * center's Director / Executive Director / Faculty Director - is named on a
  * separate leadership/about page that the roster scrape never reads.
  *
  * This source closes that gap. For each organizational home with an official

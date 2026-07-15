@@ -47,7 +47,9 @@ export type StudentVisibilityTier =
   | 'suppressed';
 
 export interface ResearchEntity extends ResearchEntityBacking {
+  /** Whether public lead identity evidence is safe to display or requires review. */
   leadIdentityStatus?: 'verified' | 'under_review';
+  /** Public member key for the unique lead matched by entity-owned official profile evidence. */
   leadProfessorPublicKey?: string;
   searchMatch?: ResearchEntitySearchMatch;
   waysIn?: PathwaySearchHit[];

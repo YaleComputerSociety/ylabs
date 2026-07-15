@@ -526,7 +526,7 @@ const MEMBER_ROLES = new Set([
   'affiliate',
 ]);
 
-/** Roles the public "Principal Investigator" panel renders as the entity lead. */
+/** Roles the public research detail leadership UI renders as entity leads. */
 const LEAD_MEMBER_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 /** Non-lead roster roles a promoted director supersedes within an entity. */
 const SUPERSEDED_BY_DIRECTOR_ROLES = ['core-faculty', 'affiliated', 'affiliate'];
