@@ -19,6 +19,7 @@ export interface LogEventParams {
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
+  dedupeKey?: string;
 }
 
 const MAX_ANALYTICS_METADATA_DEPTH = 5;
@@ -30,6 +31,7 @@ const MAX_ANALYTICS_USER_TYPE_LENGTH = 40;
 const ANALYTICS_USER_TYPE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const ANALYTICS_METADATA_KEY_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const ANALYTICS_OBJECT_ID_RE = /^[a-fA-F0-9]{24}$/;
+const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 const ANALYTICS_EVENT_TYPES = new Set<AnalyticsEventType>(Object.values(AnalyticsEventType));
 const ANALYTICS_RESEARCH_ENTITY_TYPES = new Set<string>(RESEARCH_ENTITY_TYPES);
 
@@ -254,6 +256,16 @@ export interface FunnelAnalytics {
   favoritesOrSaves: number;
   outreachClicks: number;
   outreachOutcomes: number;
+  researchSearches: number;
+  researchProfileOpens: number;
+  researchSaves: number;
+  researchComparisons: number;
+  researchPlanUpdates: number;
+  sourceInspections: number;
+  qualifiedActions: number;
+  officialRouteAttempts: number;
+  applicationOpens: number;
+  confirmedOutcomes: number;
 }
 
 export interface HighSearchLowResultsAction {
@@ -434,6 +446,9 @@ const sanitizeResearchEntityId = (value: unknown): string | undefined => {
   const sanitized = sanitizeAnalyticsText(value);
   return sanitized && sanitized.trim() !== '' ? sanitized.slice(0, 128) : undefined;
 };
+
+const sanitizeAnalyticsDedupeKey = (value: unknown): string | undefined =>
+  typeof value === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(value) ? value : undefined;
 
 const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefined => {
   if (value instanceof Types.ObjectId) {
@@ -713,6 +728,7 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     const fellowshipId = sanitizeAnalyticsObjectId(params.fellowshipId);
     const entityType = sanitizeResearchEntityType(params.entityType);
     const entityId = sanitizeResearchEntityId(params.entityId);
+    const dedupeKey = sanitizeAnalyticsDedupeKey(params.dedupeKey);
     const eventPayload: Record<string, unknown> = {
       eventType,
       netid,
@@ -726,8 +742,18 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
     if (fellowshipId) eventPayload.fellowshipId = fellowshipId;
     if (entityType) eventPayload.entityType = entityType;
     if (entityId) eventPayload.entityId = entityId;
+    if (dedupeKey) eventPayload.dedupeKey = dedupeKey;
 
-    await AnalyticsEvent.create(eventPayload);
+    if (dedupeKey) {
+      const result = await AnalyticsEvent.updateOne(
+        { netid, dedupeKey },
+        { $setOnInsert: eventPayload },
+        { upsert: true },
+      );
+      if (result.upsertedCount === 0) return;
+    } else {
+      await AnalyticsEvent.create(eventPayload);
+    }
 
     const now = new Date();
     const updateFields: any = {
@@ -874,11 +900,7 @@ export const getSearchQualityAnalytics = async (
               uniqueSearchers: { $addToSet: '$netid' },
               engagedSearches: {
                 $sum: {
-                  $cond: [
-                    { $and: [{ $gt: ['$resultCount', 0] }, '$hasAttributedAction'] },
-                    1,
-                    0,
-                  ],
+                  $cond: [{ $and: [{ $gt: ['$resultCount', 0] }, '$hasAttributedAction'] }, 1, 0],
                 },
               },
               returnedButIgnoredSearches: {
@@ -1113,6 +1135,13 @@ export const getFunnelAnalytics = async (
             AnalyticsEventType.FELLOWSHIP_FAVORITE,
             AnalyticsEventType.OUTREACH_CLICK,
             AnalyticsEventType.OUTREACH_OUTCOME,
+            AnalyticsEventType.RESEARCH_SEARCH,
+            AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+            AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
+            AnalyticsEventType.RESEARCH_SAVE,
+            AnalyticsEventType.RESEARCH_COMPARE,
+            AnalyticsEventType.RESEARCH_PLAN_UPDATE,
+            AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
           ],
         },
         ...buildRangeTimestampMatch(range),
@@ -1120,22 +1149,41 @@ export const getFunnelAnalytics = async (
     },
     {
       $group: {
-        _id: '$eventType',
+        _id: {
+          eventType: '$eventType',
+          actionCategory: '$metadata.actionCategory',
+        },
         uniqueNetids: { $addToSet: '$netid' },
       },
     },
     {
       $project: {
         _id: 0,
-        eventType: '$_id',
+        eventType: '$_id.eventType',
+        actionCategory: '$_id.actionCategory',
         count: { $size: '$uniqueNetids' },
       },
     },
   ]);
 
-  const counts = Object.fromEntries(
-    rows.map((row: { eventType: AnalyticsEventType; count: number }) => [row.eventType, row.count]),
-  ) as Partial<Record<AnalyticsEventType, number>>;
+  const counts = rows.reduce(
+    (
+      result: Partial<Record<AnalyticsEventType, number>>,
+      row: { eventType: AnalyticsEventType; count: number },
+    ) => {
+      result[row.eventType] = (result[row.eventType] || 0) + row.count;
+      return result;
+    },
+    {},
+  );
+  const qualifiedActionRows = rows.filter(
+    (row: { eventType: AnalyticsEventType }) =>
+      row.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
+  );
+  const countQualifiedCategories = (categories: string[]) =>
+    qualifiedActionRows
+      .filter((row: { actionCategory?: string }) => categories.includes(row.actionCategory || ''))
+      .reduce((sum: number, row: { count: number }) => sum + row.count, 0);
 
   return {
     logins: counts[AnalyticsEventType.LOGIN] ?? 0,
@@ -1147,6 +1195,21 @@ export const getFunnelAnalytics = async (
       (counts[AnalyticsEventType.FELLOWSHIP_FAVORITE] ?? 0),
     outreachClicks: counts[AnalyticsEventType.OUTREACH_CLICK] ?? 0,
     outreachOutcomes: counts[AnalyticsEventType.OUTREACH_OUTCOME] ?? 0,
+    researchSearches: counts[AnalyticsEventType.RESEARCH_SEARCH] ?? 0,
+    researchProfileOpens: counts[AnalyticsEventType.RESEARCH_PROFILE_OPEN] ?? 0,
+    researchSaves: counts[AnalyticsEventType.RESEARCH_SAVE] ?? 0,
+    researchComparisons: counts[AnalyticsEventType.RESEARCH_COMPARE] ?? 0,
+    researchPlanUpdates: counts[AnalyticsEventType.RESEARCH_PLAN_UPDATE] ?? 0,
+    sourceInspections: counts[AnalyticsEventType.RESEARCH_SOURCE_REVIEW] ?? 0,
+    qualifiedActions: counts[AnalyticsEventType.RESEARCH_QUALIFIED_ACTION] ?? 0,
+    officialRouteAttempts: countQualifiedCategories([
+      'open_position',
+      'official_application',
+      'reviewed_route',
+      'qualified_participation',
+    ]),
+    applicationOpens: countQualifiedCategories(['open_position', 'official_application']),
+    confirmedOutcomes: counts[AnalyticsEventType.OUTREACH_OUTCOME] ?? 0,
   };
 };
 
@@ -1584,6 +1647,15 @@ export const getAnalytics = async () => {
     AnalyticsEventType.WAYS_IN_CLICK,
     AnalyticsEventType.CONTACT_ROUTE_CLICK,
     AnalyticsEventType.SOURCE_LINK_CLICK,
+    AnalyticsEventType.RESEARCH_SEARCH,
+    AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+    AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+    AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
+    AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+    AnalyticsEventType.RESEARCH_SAVE,
+    AnalyticsEventType.RESEARCH_COMPARE,
+    AnalyticsEventType.RESEARCH_PLAN_UPDATE,
+    AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
   ];
   const researchStats = await AnalyticsEvent.aggregate([
     {

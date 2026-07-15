@@ -24,7 +24,9 @@ import {
   emitResearchEvent,
   isResearchEntityType,
   isResearchEventType,
+  isResearchJourneyEventType,
   researchEntityExists,
+  researchJourneyEventRequiresEntity,
 } from '../services/researchAnalytics';
 
 const router = Router();
@@ -54,21 +56,24 @@ router.post(
   '/research',
   isAuthenticated,
   asyncHandler(async (request: Request, response: Response) => {
-    const { eventType, entityType, entityId, payload } = request.body || {};
+    const { eventType, entityType, entityId, payload, dedupeKey } = request.body || {};
 
     if (!isResearchEventType(eventType)) {
       return response.status(400).json({ error: 'Invalid research analytics eventType' });
     }
 
-    if (!isResearchEntityType(entityType)) {
+    const requiresEntity =
+      !isResearchJourneyEventType(eventType) || researchJourneyEventRequiresEntity(eventType);
+
+    if (requiresEntity && !isResearchEntityType(entityType)) {
       return response.status(400).json({ error: 'Invalid research analytics entityType' });
     }
 
-    if (typeof entityId !== 'string' || entityId.trim() === '') {
+    if (requiresEntity && (typeof entityId !== 'string' || entityId.trim() === '')) {
       return response.status(400).json({ error: 'Invalid research analytics entityId' });
     }
 
-    if (!(await researchEntityExists(entityType, entityId))) {
+    if (requiresEntity && !(await researchEntityExists(entityType, entityId))) {
       return response.status(404).json({ error: 'Research analytics entity not found' });
     }
 
@@ -77,6 +82,7 @@ router.post(
       entityType,
       entityId,
       payload,
+      dedupeKey,
       user: request.user as { netId?: string; userType?: string },
     });
 
@@ -106,20 +112,14 @@ const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
 
   if (range === 'semester') {
     const semesterStart =
-      now.getMonth() >= 6
-        ? new Date(now.getFullYear(), 6, 1)
-        : new Date(now.getFullYear(), 0, 1);
+      now.getMonth() >= 6 ? new Date(now.getFullYear(), 6, 1) : new Date(now.getFullYear(), 0, 1);
     return { start: semesterStart, end: now };
   }
 
   return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
 };
 
-const handleAnalyticsError = (
-  response: Response,
-  error: unknown,
-  fallbackMessage: string,
-) => {
+const handleAnalyticsError = (response: Response, error: unknown, fallbackMessage: string) => {
   const isValidationFailure = error instanceof AnalyticsRequestError;
   response.status(isValidationFailure ? 400 : 500).json({
     error: isValidationFailure ? 'Invalid analytics request' : fallbackMessage,
@@ -250,64 +250,75 @@ router.get('/users', isAuthenticated, isAdmin, async (request: Request, response
   }
 });
 
-router.get('/search-quality', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
-    const analytics = await getSearchQualityAnalytics(parseAnalyticsRange(request.query.range));
-    response.status(200).json({
-      ...analytics,
-      searchesWithResults: Math.max(analytics.totalSearches - analytics.zeroResultSearches, 0),
-      avgResultsPerSearch:
-        analytics.byQueryAndEntityType.length > 0
-          ? analytics.byQueryAndEntityType.reduce(
-              (sum, query) => sum + query.avgResultCount * query.totalSearches,
-              0,
-            ) / analytics.byQueryAndEntityType.reduce((sum, query) => sum + query.totalSearches, 0)
-          : 0,
-      topQueries: analytics.topQueries.map((query) => ({
-        ...query,
-        count: query.totalSearches,
-        zeroResults: query.zeroResultSearches,
-        avgResults: query.avgResultCount,
-      })),
-      zeroResultQueries: analytics.topZeroResultQueries.map((query) => ({
-        ...query,
-        count: query.totalSearches,
-        zeroResults: query.zeroResultSearches,
-        avgResults: query.avgResultCount,
-      })),
-      lowResultQueries: analytics.byQueryAndEntityType
-        .filter((query) => query.avgResultCount > 0 && query.avgResultCount <= 3)
-        .slice(0, 10)
-        .map((query) => ({
+router.get(
+  '/search-quality',
+  isAuthenticated,
+  isAdmin,
+  async (request: Request, response: Response) => {
+    try {
+      const analytics = await getSearchQualityAnalytics(parseAnalyticsRange(request.query.range));
+      response.status(200).json({
+        ...analytics,
+        searchesWithResults: Math.max(analytics.totalSearches - analytics.zeroResultSearches, 0),
+        avgResultsPerSearch:
+          analytics.byQueryAndEntityType.length > 0
+            ? analytics.byQueryAndEntityType.reduce(
+                (sum, query) => sum + query.avgResultCount * query.totalSearches,
+                0,
+              ) /
+              analytics.byQueryAndEntityType.reduce((sum, query) => sum + query.totalSearches, 0)
+            : 0,
+        topQueries: analytics.topQueries.map((query) => ({
           ...query,
           count: query.totalSearches,
           zeroResults: query.zeroResultSearches,
           avgResults: query.avgResultCount,
         })),
-    });
-  } catch (error) {
-    console.error('Error fetching search quality analytics:', sanitizeLogValue(error));
-    handleAnalyticsError(response, error, 'Failed to fetch search quality analytics');
-  }
-});
+        zeroResultQueries: analytics.topZeroResultQueries.map((query) => ({
+          ...query,
+          count: query.totalSearches,
+          zeroResults: query.zeroResultSearches,
+          avgResults: query.avgResultCount,
+        })),
+        lowResultQueries: analytics.byQueryAndEntityType
+          .filter((query) => query.avgResultCount > 0 && query.avgResultCount <= 3)
+          .slice(0, 10)
+          .map((query) => ({
+            ...query,
+            count: query.totalSearches,
+            zeroResults: query.zeroResultSearches,
+            avgResults: query.avgResultCount,
+          })),
+      });
+    } catch (error) {
+      console.error('Error fetching search quality analytics:', sanitizeLogValue(error));
+      handleAnalyticsError(response, error, 'Failed to fetch search quality analytics');
+    }
+  },
+);
 
-router.get('/search-queries', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
-  try {
-    const analytics = await getSearchQueryAnalytics(parseAnalyticsRange(request.query.range), {
-      limit: parseAnalyticsLimit(request.query.limit, 100),
-    });
-    response.status(200).json(analytics);
-  } catch (error) {
-    console.error('Error fetching search query analytics:', sanitizeLogValue(error));
-    handleAnalyticsError(response, error, 'Failed to fetch search query analytics');
-  }
-});
+router.get(
+  '/search-queries',
+  isAuthenticated,
+  isAdmin,
+  async (request: Request, response: Response) => {
+    try {
+      const analytics = await getSearchQueryAnalytics(parseAnalyticsRange(request.query.range), {
+        limit: parseAnalyticsLimit(request.query.limit, 100),
+      });
+      response.status(200).json(analytics);
+    } catch (error) {
+      console.error('Error fetching search query analytics:', sanitizeLogValue(error));
+      handleAnalyticsError(response, error, 'Failed to fetch search query analytics');
+    }
+  },
+);
 
 router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
     const analytics = await getFunnelAnalytics(parseAnalyticsRange(request.query.range));
     const viewerCount = analytics.listingViews + analytics.fellowshipViews;
-    const stages = [
+    const legacyStages = [
       { key: 'logins', label: 'Logged In', count: analytics.logins },
       { key: 'searches', label: 'Searched', count: analytics.searches },
       { key: 'views', label: 'Viewed', count: viewerCount },
@@ -315,6 +326,19 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
       { key: 'outreach', label: 'Outreach Clicked', count: analytics.outreachClicks },
       { key: 'outcomes', label: 'Outcome Reported', count: analytics.outreachOutcomes },
     ];
+    const journeyStages = [
+      { key: 'research_searches', label: 'Searched research', count: analytics.researchSearches },
+      { key: 'profile_opens', label: 'Opened a profile', count: analytics.researchProfileOpens },
+      { key: 'research_saves', label: 'Saved a research home', count: analytics.researchSaves },
+      { key: 'comparisons', label: 'Compared saved homes', count: analytics.researchComparisons },
+      { key: 'plans', label: 'Updated a plan', count: analytics.researchPlanUpdates },
+      {
+        key: 'qualified_actions',
+        label: 'Used a qualified route',
+        count: analytics.qualifiedActions,
+      },
+    ];
+    const stages = journeyStages.some((stage) => stage.count > 0) ? journeyStages : legacyStages;
 
     response.status(200).json({
       ...analytics,
@@ -329,8 +353,15 @@ router.get('/funnel', isAuthenticated, isAdmin, async (request: Request, respons
       searcherCount: analytics.searches,
       viewerCount,
       favoriteCount: analytics.favoritesOrSaves,
-      applicantCount: analytics.outreachClicks,
-      overallConversionRate: analytics.logins > 0 ? analytics.outreachOutcomes / analytics.logins : 0,
+      applicantCount: analytics.qualifiedActions,
+      journeyMetrics: {
+        sourceInspections: analytics.sourceInspections,
+        officialRouteAttempts: analytics.officialRouteAttempts,
+        applicationOpens: analytics.applicationOpens,
+        confirmedOutcomes: analytics.confirmedOutcomes,
+      },
+      overallConversionRate:
+        analytics.logins > 0 ? analytics.qualifiedActions / analytics.logins : 0,
     });
   } catch (error) {
     console.error('Error fetching funnel analytics:', sanitizeLogValue(error));

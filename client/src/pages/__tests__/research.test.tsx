@@ -8,6 +8,7 @@ import axios from '../../utils/axios';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 import type { User } from '../../types/types';
+import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -75,7 +76,10 @@ const mockSearchResponses = (
         browseQuality?: string;
         qualityFilters?: string[];
       },
-    ) => Promise.resolve(resolver(url, body)),
+    ) =>
+      url === '/analytics/research'
+        ? Promise.resolve({ data: { ok: true }, status: 202 })
+        : Promise.resolve(resolver(url, body)),
   );
 };
 
@@ -314,6 +318,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   __resetResearchPageSnapshotForTests();
+  resetResearchAnalyticsDedupeForTests();
   vi.clearAllMocks();
   vi.restoreAllMocks();
   intersectionCallback = undefined;
@@ -460,7 +465,7 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ancient DNA' }));
 
     await screen.findByRole('heading', { name: 'Ancient DNA Example' });
-    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+    expect(mockedAxios.post).toHaveBeenCalledWith(
       '/research/search',
       expect.objectContaining({
         q: 'ancient DNA',
@@ -495,7 +500,7 @@ describe('Research page', () => {
     expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe(
       'ancient DNA',
     );
-    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+    expect(mockedAxios.post).toHaveBeenCalledWith(
       '/research/search',
       expect.objectContaining({
         q: 'ancient DNA',
@@ -1401,6 +1406,48 @@ describe('Research page', () => {
     expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/pathways/search')).toHaveLength(
       0,
     );
+    const searchJourneyCalls = mockedAxios.post.mock.calls.filter(
+      ([url, body]) => url === '/analytics/research' && body.eventType === 'research_search',
+    );
+    expect(searchJourneyCalls).toHaveLength(1);
+    expect(searchJourneyCalls[0][1].payload).toEqual({
+      outcome: 'results',
+      resultCountBucket: '1-5',
+      searchKind: 'query',
+      filterCountBucket: '0',
+    });
+    expect(JSON.stringify(searchJourneyCalls[0][1])).not.toContain('machine learning');
+  });
+
+  it('records exactly one terminal error outcome without the raw query', async () => {
+    mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
+      if (url === '/analytics/research') return Promise.resolve({ status: 202 });
+      if (url === '/research/search' && body.q === '') {
+        return Promise.resolve(researchSearchResponse());
+      }
+      if (url === '/research/search' && body.q === 'private mentor query') {
+        return Promise.reject(new Error('offline'));
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+    renderResearch();
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'private mentor query' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    expect(
+      await screen.findByText(
+        'Live search metadata is unavailable right now. Try another topic or check back soon.',
+      ),
+    ).toBeTruthy();
+    const searchJourneyCalls = mockedAxios.post.mock.calls.filter(
+      ([url, body]) => url === '/analytics/research' && body.eventType === 'research_search',
+    );
+    expect(searchJourneyCalls).toHaveLength(1);
+    expect(searchJourneyCalls[0][1].payload).toMatchObject({ outcome: 'error' });
+    expect(JSON.stringify(searchJourneyCalls[0][1])).not.toContain('private mentor query');
   });
 
   it('reveals one research-home result stream with inline ways-in context after a search', async () => {

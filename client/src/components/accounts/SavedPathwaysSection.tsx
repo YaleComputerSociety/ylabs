@@ -5,6 +5,11 @@ import type { PathwaySearchHit } from '../../types/pathway';
 import axios from '../../utils/axios';
 import UserContext from '../../contexts/UserContext';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeHttpUrlList, safeRouteSegment } from '../../utils/url';
+import {
+  createResearchAnalyticsInteractionId,
+  researchCountBucket,
+  trackResearchEvent,
+} from '../../utils/researchAnalytics';
 
 type PlanningIntent = 'thesis' | 'outreach' | 'credit' | 'funding' | 'apply' | 'later';
 type PlanningStage = 'saved' | 'researching' | 'ready' | 'acted' | 'archived';
@@ -27,6 +32,36 @@ export interface ChecklistHistoryItem {
 }
 
 export type PathwayPlanMap = Record<string, PathwayPlan>;
+
+type PlanAnalyticsField =
+  | 'intent'
+  | 'stage'
+  | 'note_presence'
+  | 'checklist'
+  | 'target_deadline'
+  | 'acted_on_date'
+  | 'follow_up';
+
+export const planAnalyticsFields = (
+  current: PathwayPlan,
+  next: PathwayPlan,
+  patch: Partial<PathwayPlan>,
+): PlanAnalyticsField[] => {
+  const fields: PlanAnalyticsField[] = [];
+  if ('intent' in patch) fields.push('intent');
+  if ('stage' in patch) fields.push('stage');
+  if ('note' in patch && Boolean(current.note.trim()) !== Boolean(next.note.trim())) {
+    fields.push('note_presence');
+  }
+  if ('checklist' in patch || 'checklistHistory' in patch) fields.push('checklist');
+  if ('targetDeadline' in patch) fields.push('target_deadline');
+  if ('actedOnDate' in patch) fields.push('acted_on_date');
+  if ('followUpIntervalDays' in patch) fields.push('follow_up');
+  return Array.from(new Set(fields));
+};
+
+const analyticsEntityIdForPlanningItem = (item: PathwaySearchHit): string =>
+  item.researchEntity?._id || item._id;
 
 export interface FellowshipFundingMatch {
   fellowshipId: string;
@@ -942,6 +977,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       const currentPlan = current[pathwayId];
       if (!currentPlan) return current;
       const nextPlan = { ...currentPlan, ...patch };
+      const analyticsFields = planAnalyticsFields(currentPlan, nextPlan, patch);
       setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Saving plan...' }));
       axios
         .put(
@@ -949,7 +985,22 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
           { data: { plan: nextPlan } },
           { withCredentials: true },
         )
-        .then(() => setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Plan saved.' })))
+        .then(() => {
+          setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Plan saved.' }));
+          analyticsFields.forEach((field) => {
+            const analyticsEntityId = analyticsEntityIdForPlanningItem(
+              pathways.find((pathway) => pathway._id === pathwayId) ||
+                ({ _id: pathwayId } as PathwaySearchHit),
+            );
+            void trackResearchEvent({
+              eventType: 'research_plan_update',
+              entityType: 'research_entity',
+              entityId: analyticsEntityId,
+              payload: { field },
+              dedupeKey: createResearchAnalyticsInteractionId('plan'),
+            });
+          });
+        })
         .catch(() => {
           console.error('Error saving research plan.');
           setPlanSaveStatus((statuses) => ({
@@ -1024,6 +1075,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
 
   const removePathway = async (pathwayId: string) => {
     const previous = pathways;
+    const removedPathway = pathways.find((pathway) => pathway._id === pathwayId);
     setPathways((current) => current.filter((pathway) => pathway._id !== pathwayId));
     setExpandedPlanIds((current) => {
       const next = { ...current };
@@ -1041,6 +1093,13 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
         return next;
       });
       await axios.delete(`/users/savedResearchEntityPlans/${pathwayId}`, { withCredentials: true });
+      void trackResearchEvent({
+        eventType: 'research_save',
+        entityType: 'research_entity',
+        entityId: removedPathway ? analyticsEntityIdForPlanningItem(removedPathway) : pathwayId,
+        payload: { operation: 'remove', surface: 'saved_plans' },
+        dedupeKey: createResearchAnalyticsInteractionId('save'),
+      });
     } catch {
       console.error('Error removing saved research plan.');
       setPathways(previous);
@@ -1073,6 +1132,19 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     }
     setExportError('');
     setShowExportPreview(true);
+    const comparisonId = createResearchAnalyticsInteractionId('compare');
+    const entityCountBucket = researchCountBucket(selectedExportItems.length);
+    pathways
+      .filter((pathway) => selectedExportIds[pathway._id] && plans[pathway._id])
+      .forEach((pathway) => {
+        void trackResearchEvent({
+          eventType: 'research_compare',
+          entityType: 'research_entity',
+          entityId: analyticsEntityIdForPlanningItem(pathway),
+          payload: { entityCountBucket },
+          dedupeKey: `${comparisonId}:${analyticsEntityIdForPlanningItem(pathway)}`,
+        });
+      });
     window.setTimeout(() => exportPreviewRef.current?.focus(), 0);
   };
 

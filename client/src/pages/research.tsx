@@ -22,6 +22,13 @@ import {
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import type { PathwaySearchFilters } from '../types/pathway';
+import {
+  createResearchAnalyticsInteractionId,
+  researchPositionBucket,
+  researchResultCountBucket,
+  trackResearchEvent,
+  trackResearchEventOnce,
+} from '../utils/researchAnalytics';
 
 interface DepartmentResearchHomeConfig {
   abbreviation?: string;
@@ -103,6 +110,11 @@ interface ActiveResearchSearchRequest {
   searchQuery: string;
   filters: ResearchSearchFilters;
   options?: ResearchEntitySearchOptions;
+}
+
+interface ResearchFilterAnalyticsChange {
+  operation: 'apply' | 'remove';
+  filter: 'school' | 'department' | 'documented_way_in';
 }
 
 interface ResearchPageSnapshot {
@@ -401,6 +413,7 @@ const Research = () => {
   const searchAbortRef = useRef<AbortController | null>(null);
   const defaultSearchAbortRef = useRef<AbortController | null>(null);
   const activeSearchKeyRef = useRef<string | null>(null);
+  const activeSearchAnalyticsKeyRef = useRef<string | null>(null);
   const pendingSearchParamsRef = useRef<string | null>(null);
   const pendingSearchSourceParamsRef = useRef<string | null>(null);
   const pendingSearchSourceLocationKeyRef = useRef<string | null>(null);
@@ -512,6 +525,20 @@ const Research = () => {
       setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
       setDefaultSearchError('');
+      researchEntities.forEach((entity, index) => {
+        if (!entity._id) return;
+        void trackResearchEventOnce(`browse:${page}:${entity._id}`, {
+          eventType: 'research_entity_impression',
+          entityType: 'research_entity',
+          entityId: entity._id,
+          payload: {
+            surface: 'browse',
+            positionBucket: researchPositionBucket(
+              (page - 1) * DEFAULT_RESEARCH_HOME_LIMIT + index + 1,
+            ),
+          },
+        });
+      });
     } catch (error) {
       if (
         requestId === defaultSearchRequestIdRef.current &&
@@ -535,6 +562,7 @@ const Research = () => {
       hasFilterSelections?: boolean;
       departmentSearch?: DepartmentSearchTarget | null;
       syncUrl?: boolean;
+      filterChanges?: ResearchFilterAnalyticsChange[];
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -545,6 +573,12 @@ const Research = () => {
     if (!trimmed && !hasFilters) return;
     if (!searchQuery.trim() && !hasFilters) return;
     const resultQueryLabel = trimmed || 'filtered research';
+    const searchKind = options.departmentSearch ? 'department' : hasFilters ? 'filtered' : 'query';
+    const filterCount = Object.values(filters).filter((value) =>
+      Array.isArray(value) ? value.length > 0 : Boolean(value),
+    ).length;
+    const filterCountBucket =
+      filterCount === 0 ? '0' : filterCount === 1 ? '1' : filterCount === 2 ? '2' : '3+';
 
     const requestKey = JSON.stringify({
       query: searchQuery.trim(),
@@ -556,6 +590,8 @@ const Research = () => {
     activeSearchKeyRef.current = requestKey;
 
     const requestId = ++searchRequestIdRef.current;
+    const analyticsKey = createResearchAnalyticsInteractionId('search');
+    activeSearchAnalyticsKeyRef.current = analyticsKey;
     const controller = new AbortController();
     searchAbortRef.current?.abort();
     searchAbortRef.current = controller;
@@ -625,6 +661,33 @@ const Research = () => {
           papers: [],
         }),
       );
+      const resultCount = researchEntitiesPage.estimatedTotalHits;
+      void trackResearchEvent({
+        eventType: 'research_search',
+        payload: {
+          outcome: resultCount > 0 ? 'results' : 'zero_results',
+          resultCountBucket: researchResultCountBucket(resultCount),
+          searchKind,
+          filterCountBucket,
+        },
+        dedupeKey: analyticsKey,
+      });
+      researchEntities.forEach((entity, index) => {
+        if (!entity._id) return;
+        void trackResearchEventOnce(`${analyticsKey}:i:${entity._id}`, {
+          eventType: 'research_entity_impression',
+          entityType: 'research_entity',
+          entityId: entity._id,
+          payload: { surface: 'search', positionBucket: researchPositionBucket(index + 1) },
+        });
+      });
+      options.filterChanges?.forEach((change) => {
+        void trackResearchEvent({
+          eventType: 'research_filter_change',
+          payload: change,
+          dedupeKey: createResearchAnalyticsInteractionId('filter'),
+        });
+      });
     } catch (error) {
       if (
         requestId === searchRequestIdRef.current &&
@@ -635,6 +698,16 @@ const Research = () => {
           'Live search metadata is unavailable right now. Try another topic or check back soon.',
         );
         setSearchExhausted(true);
+        void trackResearchEvent({
+          eventType: 'research_search',
+          payload: {
+            outcome: 'error',
+            resultCountBucket: '0',
+            searchKind,
+            filterCountBucket,
+          },
+          dedupeKey: analyticsKey,
+        });
       }
     } finally {
       if (activeSearchKeyRef.current === requestKey) activeSearchKeyRef.current = null;
@@ -679,6 +752,21 @@ const Research = () => {
         );
         return nextResearchEntities;
       });
+      const analyticsKey = activeSearchAnalyticsKeyRef.current;
+      if (analyticsKey) {
+        visibleResearchEntities.forEach((entity, index) => {
+          if (!entity._id) return;
+          void trackResearchEventOnce(`${analyticsKey}:i:${entity._id}`, {
+            eventType: 'research_entity_impression',
+            entityType: 'research_entity',
+            entityId: entity._id,
+            payload: {
+              surface: 'search',
+              positionBucket: researchPositionBucket((page - 1) * 24 + index + 1),
+            },
+          });
+        });
+      }
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
     } catch (error) {
@@ -739,6 +827,7 @@ const Research = () => {
     setSearchTotal(0);
     setSearchExhausted(true);
     setActiveSearchRequest(null);
+    activeSearchAnalyticsKeyRef.current = null;
     setSearchError('');
     setSearchLoading(false);
     setDefaultSearchExhausted(false);
@@ -1042,17 +1131,38 @@ const Research = () => {
     [facetDistribution.departments, selectedDepartment],
   );
   const applyStudentFacets = (school: string, department: string, undergradEvidence: boolean) => {
+    const filterChanges: ResearchFilterAnalyticsChange[] = [];
+    if (school !== selectedSchool) {
+      filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
+    }
+    if (department !== selectedDepartment) {
+      filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
+    }
+    if (undergradEvidence !== requireUndergradEvidence) {
+      filterChanges.push({
+        operation: undergradEvidence ? 'apply' : 'remove',
+        filter: 'documented_way_in',
+      });
+    }
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setRequireUndergradEvidence(undergradEvidence);
     const filters = studentSearchFilters(school, department, undergradEvidence);
     if (!query.trim() && !hasStructuredFilters(filters)) {
+      filterChanges.forEach((change) => {
+        void trackResearchEvent({
+          eventType: 'research_filter_change',
+          payload: change,
+          dedupeKey: createResearchAnalyticsInteractionId('filter'),
+        });
+      });
       resetSearch();
       return;
     }
     runSearch(query.trim(), {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
+      filterChanges,
     });
   };
   const runDepartmentSearch = (target: DepartmentSearchTarget) =>

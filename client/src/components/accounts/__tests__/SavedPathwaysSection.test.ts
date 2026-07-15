@@ -12,6 +12,7 @@ import SavedPathwaysSection, {
   defaultIntentForPathway,
   fundingCueForPathway,
   planningCueForPlan,
+  planAnalyticsFields,
   readStoredPlans,
   type FellowshipFundingMatch,
   writeStoredPlans,
@@ -118,15 +119,38 @@ afterEach(() => {
 });
 
 describe('saved research plan hydration helpers', () => {
+  it('reduces private plan changes to bounded field categories', () => {
+    const current = plan();
+    const next = plan({ note: 'Private advising note', targetDeadline: '2026-08-01' });
+
+    expect(
+      planAnalyticsFields(current, next, {
+        note: next.note,
+        targetDeadline: next.targetDeadline,
+      }),
+    ).toEqual(['note_presence', 'target_deadline']);
+    expect(JSON.stringify(planAnalyticsFields(current, next, { note: next.note }))).not.toContain(
+      'Private advising note',
+    );
+  });
   it('uses local calendar dates for upcoming deadlines and overdue follow-ups', () => {
     const now = new Date(2026, 6, 12, 23, 30);
-    expect(planningCueForPlan(pathway(), plan({ targetDeadline: '2026-07-13' }), now)).toMatchObject({
+    expect(
+      planningCueForPlan(pathway(), plan({ targetDeadline: '2026-07-13' }), now),
+    ).toMatchObject({
       date: '2026-07-13',
       priority: 1,
     });
-    expect(planningCueForPlan(pathway(), plan({
-      actedOnDate: '2026-06-01', followUpIntervalDays: 30,
-    }), now)).toMatchObject({
+    expect(
+      planningCueForPlan(
+        pathway(),
+        plan({
+          actedOnDate: '2026-06-01',
+          followUpIntervalDays: 30,
+        }),
+        now,
+      ),
+    ).toMatchObject({
       date: '2026-07-01',
       priority: 0,
     });
@@ -344,6 +368,15 @@ describe('SavedPathwaysSection advising export', () => {
     });
     expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe('Plan saved.');
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      '/analytics/research',
+      expect.objectContaining({
+        eventType: 'research_plan_update',
+        entityId: 'entity-1',
+        payload: { field: 'checklist' },
+      }),
+      { withCredentials: true },
+    );
   });
 
   it('never PUTs fallback plan state when plan hydration fails', async () => {
@@ -440,10 +473,12 @@ describe('SavedPathwaysSection advising export', () => {
         return Promise.resolve({
           data: {
             matchesByPathwayId: {
-              'pathway-1': [fellowshipMatch({
-                reasons: ['The award timing aligns with an academic-year or thesis plan.'],
-                caveats: ['The listed years do not include your current senior standing.'],
-              })],
+              'pathway-1': [
+                fellowshipMatch({
+                  reasons: ['The award timing aligns with an academic-year or thesis plan.'],
+                  caveats: ['The listed years do not include your current senior standing.'],
+                }),
+              ],
             },
           },
         });
@@ -476,8 +511,12 @@ describe('SavedPathwaysSection advising export', () => {
     expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByText('Fellowship candidates')).toBeTruthy();
     expect(screen.getByText('Source 1')).toBeTruthy();
-    expect(screen.getByText('The award timing aligns with an academic-year or thesis plan.')).toBeTruthy();
-    expect(screen.getByText('Caveat: The listed years do not include your current senior standing.')).toBeTruthy();
+    expect(
+      screen.getByText('The award timing aligns with an academic-year or thesis plan.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Caveat: The listed years do not include your current senior standing.'),
+    ).toBeTruthy();
   });
 
   it('reports saved research plan count and next deadline summary', async () => {
@@ -562,7 +601,16 @@ describe('SavedPathwaysSection advising export', () => {
     await user.click(screen.getByRole('button', { name: 'Preview advising export' }));
     expect(screen.getByRole('dialog')).toHaveFocus();
     expect(screen.queryByText('Discuss with my advisor.')).toBeNull();
-    expect(mockedAxios.post).not.toHaveBeenCalled();
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      '/analytics/research',
+      expect.objectContaining({
+        eventType: 'research_compare',
+        entityId: 'entity-1',
+        payload: { entityCountBucket: '1' },
+      }),
+      { withCredentials: true },
+    );
+    expect(JSON.stringify(mockedAxios.post.mock.calls)).not.toContain('Discuss with my advisor.');
   });
 
   it('previews translated labels, unknown professor, opted-in note, and prints', async () => {

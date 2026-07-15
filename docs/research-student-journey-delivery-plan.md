@@ -43,17 +43,17 @@ Progressive disclosure should keep early discovery quiet and move detail into th
 ### Evidence Honesty
 
 - Provenance proves where a claim came from.
-It does not prove that a student can act through that source.
+  It does not prove that a student can act through that source.
 - A faculty profile, publication, directory page, or generic entity website is not a documented way in by itself.
 - Unknown means the product lacks sufficient evidence.
-It does not mean unavailable, closed, or unsuitable.
+  It does not mean unavailable, closed, or unsuitable.
 - Identity, research activity, access, and availability are separate claims with separate evidence.
 
 ### Progressive Disclosure
 
 - The plain entity-first research list is the discovery baseline.
 - Relevance remains primary.
-Access context may only break close relevance ties within a bounded server-owned rule.
+  Access context may only break close relevance ties within a bounded server-owned rule.
 - Show at most one sparse, claim-specific, positive planning signal on an entity card.
 - Do not add a parallel results stream, persistent access controls, generic scores, or negative unknown labels.
 - Offer a `Documented way in` filter only when both states exist and the filter materially narrows the current result set.
@@ -85,7 +85,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Depends on:** accurate query-scoped facet distributions.
 - **Acceptance criteria:** school and department controls appear only when their positive buckets can narrow the current results; selected filters remain visible and clearable; missing facet counts never fall back to the total result count; mobile controls do not overflow; a future documented-way-in control follows EF-03 rather than reviving the retired undergraduate-evidence filter.
 - **Validation evidence:** PR `#171` hides school and department controls when current distributions cannot narrow and removes the unsupported inactive undergraduate-evidence control.
-The count-fallback and final adaptive documented-way-in distribution contract remain to be completed.
+  The count-fallback and final adaptive documented-way-in distribution contract remain to be completed.
 - **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
 
 #### EF-03 - Sparse Documented-Way-In Signal
@@ -94,7 +94,7 @@ The count-fallback and final adaptive documented-way-in distribution contract re
 - **Depends on:** QA-01 qualifying-action policy and a bounded server summary plus distribution.
 - **Acceptance criteria:** the server returns at most one allowlisted positive signal per entity; the client renders no access label when the signal is absent; PI profiles, publications, provenance URLs, generic participation, and exploratory outreach never create the signal; a filter appears only when documented and undocumented homes both exist and the split is materially useful; no client-side access inference or reranking occurs.
 - **Validation evidence:** current Beta deliberately removed the prior parallel `Verified ways in` presentation in PR `#171`.
-The qualified-planning-context implementation adds a bounded, optional server projection with one deterministic signal per entity and deny-by-default policy tests; query-scoped distribution and client presentation remain separate work.
+  The qualified-planning-context implementation adds a bounded, optional server projection with one deterministic signal per entity and deny-by-default policy tests; query-scoped distribution and client presentation remain separate work.
 - **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) establishes the baseline only.
 
 #### EF-04 - Stable And Efficient Discovery Requests
@@ -130,7 +130,7 @@ The qualified-planning-context implementation adds a bounded, optional server pr
 - **Depends on:** source-safe DTO shaping, publication attribution, and QA-01.
 - **Acceptance criteria:** research description, identity, research activity, undergraduate participation, and action availability remain distinct claims; source labels explain provenance without implying access; duplicate or identity-conflicting publications do not appear as current entity activity; no generic confidence score substitutes for claim language.
 - **Validation evidence:** detail source ledger and evidence components exist; PR `#158` separates current, earlier, conflicting, and duplicate research activity; PR `#171` removes generic discovery evidence/confidence labels.
-Action-specific provenance still depends on QA-01.
+  Action-specific provenance still depends on QA-01.
 - **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
 
 #### EP-03 - Bounded Related-Entity Detail Payload
@@ -165,7 +165,7 @@ Action-specific provenance still depends on QA-01.
 - **Depends on:** canonical scholarly identifiers, current membership attribution, and cache refresh ownership.
 - **Acceptance criteria:** detail activity is newest-first; current and earlier work remain separate; duplicate and identity-conflicting work is excluded; entity rollups expose bounded recency/count facts with deterministic refresh and invalidation; missing activity is unknown, not inactive; rollups can support EF-05 without exposing generic scores.
 - **Validation evidence:** PR `#158` completed contamination, duplicate, and current-versus-earlier guards.
-Cached rollups and their refresh path are not implemented on Beta.
+  Cached rollups and their refresh path are not implemented on Beta.
 - **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158) covers the completed portion only.
 
 ### Comparison And Planning
@@ -208,7 +208,7 @@ Cached rollups and their refresh path are not implemented on Beta.
 - **Depends on:** canonical ResearchEntity identity and CAS-authenticated owner-scoped persistence.
 - **Acceptance criteria:** a student can save a research entity even when it has no indexed pathway; save identity is the entity, not `entryPathways[0]`; existing pathway plans migrate or coexist without duplication; detail and search cards show server-confirmed state; authorization and privacy remain unchanged.
 - **Validation evidence:** current saves are `favPathways`, saved details are keyed by `pathwayId`, and `labDetail.tsx` selects the first entry pathway.
-That contract cannot represent a research home with no pathway and is not a safe comparison identity.
+  That contract cannot represent a research home with no pathway and is not a safe comparison identity.
 - **PRs:** none.
 - **Dependency note:** CP-06 / FR-17 and CP-07 / FR-24 must not ship on pathway identity.
 
@@ -235,8 +235,8 @@ That contract cannot represent a research home with no pathway and is not a safe
 - **Depends on:** surface-specific facet contracts and accessible focus management.
 - **Acceptance criteria:** Research and Programs use one shared filter-sheet interaction pattern on small viewports while retaining their own facets; opening moves focus into a labelled modal/sheet; Escape, close, apply, and focus return work by keyboard and screen reader; selected-count and clear behavior are honest; desktop remains quiet; no horizontal overflow.
 - **Validation evidence:** PR `#175` added the bounded, labelled Programs mobile sheet with focus entry, containment, Escape close, and focus restoration.
-The shared listing filters intentionally retain their anchored non-modal presentation, so Research does not yet satisfy the cross-surface acceptance criterion.
-PR `#171` only simplified Research filters and must not be credited with FR-37.
+  The shared listing filters intentionally retain their anchored non-modal presentation, so Research does not yet satisfy the cross-surface acceptance criterion.
+  PR `#171` only simplified Research filters and must not be credited with FR-37.
 - **PRs:** [#175](https://github.com/YaleComputerSociety/ylabs/pull/175) completed the Programs portion; Research remains outstanding.
 
 #### CP-09 - Honest Logged-Out Saving - FR-14
@@ -255,12 +255,12 @@ PR `#171` only simplified Research filters and must not be credited with FR-37.
 - **Depends on:** approved product contract, reviewed public contact routes, actionable source evidence, and EF-03.
 - **Acceptance criteria:** a positive action requires a current/recurring non-formalization record and explicit proof such as an open application, recurring official program, or approved non-PI public contact route; PI profiles and generic source pages remain source review only; the card shows at most one claim-specific action; absence renders no negative label; server policy and client analytics share the same qualifying enum.
 - **Validation evidence:** current publication policy and access-review infrastructure exist, and PR `#171` removed the misleading student-facing stream.
-The qualified-planning-context implementation establishes a narrower public projection: reviewed current opportunities with safe application URLs, approved application or recurring-program instructions, and approved safe public non-PI routes qualify; profile provenance, generic source material, exploratory contact, formalization-only records, unsafe URLs, and unreviewed claims do not.
+  The qualified-planning-context implementation establishes a narrower public projection: reviewed current opportunities with safe application URLs, approved application or recurring-program instructions, and approved safe public non-PI routes qualify; profile provenance, generic source material, exploratory contact, formalization-only records, unsafe URLs, and unreviewed claims do not.
 - **PRs:** [#161](https://github.com/YaleComputerSociety/ylabs/pull/161), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
 - **Blocker:** operators must review routes and source-backed claims before they can be represented as actionable; query-scoped distribution, client presentation, and analytics still depend on the stable projection.
-The operational program is named the **evidence and route review rollout**.
-Its acceptance measures are claim quality, reviewed-action precision, false-positive rate, and explainable rejection reasons, not a minimum number of published pathways.
-PI-profile provenance can never qualify as an action.
+  The operational program is named the **evidence and route review rollout**.
+  Its acceptance measures are claim quality, reviewed-action precision, false-positive rate, and explainable rejection reasons, not a minimum number of published pathways.
+  PI-profile provenance can never qualify as an action.
 
 #### QA-02 - Accessible And Honest Account Onboarding
 
@@ -276,7 +276,7 @@ PI-profile provenance can never qualify as an action.
 - **Depends on:** route-by-route keyboard, focus, error-association, landmark, and responsive validation.
 - **Acceptance criteria:** canonical student flows have labelled controls, programmatically associated errors, announced async states, logical focus movement, unique landmarks/headings, 44-pixel primary targets, and no 320/375-pixel overflow; fixes use shared primitives where behavior is shared.
 - **Validation evidence:** PRs `#154` and `#169` completed major Programs and onboarding slices, and `#171` simplified Research.
-The cross-surface audit remains incomplete.
+  The cross-surface audit remains incomplete.
 - **PRs:** [#154](https://github.com/YaleComputerSociety/ylabs/pull/154), [#169](https://github.com/YaleComputerSociety/ylabs/pull/169), [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
 
 ### Supply And Moderation
@@ -295,7 +295,7 @@ The cross-surface audit remains incomplete.
 - **Depends on:** confirmed faculty/staff authorization and admin review.
 - **Acceptance criteria:** eligible users can submit a claim or correction from a linked research profile; duplicate pending requests are prevented; students, unknown users, and unconfirmed accounts are denied; admins can review with rationale and audit history; an approved decision hands off to a separately guarded mutation rather than silently changing data.
 - **Validation evidence:** listing-linked claim/correction and non-mutating admin review are merged.
-Entity-wide correction coverage beyond linked listings remains future work.
+  Entity-wide correction coverage beyond linked listings remains future work.
 - **PRs:** [#160](https://github.com/YaleComputerSociety/ylabs/pull/160).
 
 #### SM-03 - Scalable Human Review Without Bulk Approval
@@ -351,12 +351,13 @@ Entity-wide correction coverage beyond linked listings remains future work.
 
 #### IM-01 - Claim-Specific Journey Analytics
 
-- **Status:** Not started.
+- **Status:** Active.
 - **Depends on:** QA-01 server-owned qualifying signal and an accepted privacy-safe analytics taxonomy.
 - **Acceptance criteria:** invisible events distinguish search, research-profile open, source review, qualified action, filter-panel open/close, filter apply/remove, and save/unsave; only a qualified action counts as access conversion; faculty profile, website, ORCID, publication, filter, and save events never count as action; analytics does not delay navigation or alter UI; payloads exclude raw URLs, queries on downstream events, and free-text notes.
 - **Validation evidence:** current analytics distinguishes generic source, contact, pathway, save, and research-view events but canonical research browse/detail lacks the required complete taxonomy.
-One existing program filter-navigation event is still classified too broadly as `ways_in_click`.
-- **PRs:** none.
+  One existing program filter-navigation event is still classified too broadly as `ways_in_click`.
+  The pending IM-01 implementation adds the canonical contract in [`research-journey-analytics.md`](./research-journey-analytics.md), terminal search outcomes, canonical entity impressions and profile opens, source and filter events, first-class save/compare/plan events, server-requalified QA-01 actions, per-actor idempotency, and separately auditable admin journey metrics.
+- **PRs:** pending IM-01 pull request against Beta.
 
 #### IM-02 - Search Quality, Zero Results, And Funnel Integrity
 
@@ -439,15 +440,15 @@ This matrix separates current Beta evidence from older persona observations and 
 The 2026-07-13 validation lane could not retrieve the referenced historical Claude transcript and could not start the Chrome bridge.
 Its evidence is therefore current Beta source, routes, tests, and merged history rather than a fresh authenticated browser replay.
 
-| Claim | Current support | Delivery interpretation |
-| --- | --- | --- |
-| Entity-first discovery is the correct current baseline. | **Supported.** PR `#171` removes the parallel pathway request and stream and keeps research profiles primary. | Keep EF-01 Complete and protect it with regression tests. |
-| Discovery filters are fully adaptive and progressively disclosed. | **Disputed as complete.** Programs has a bounded mobile filter sheet, while shared Research/listing filters remain anchored and missing facet counts may fall back to the total. | Keep EF-02 and CP-08 / FR-37 Active until the remaining Research behavior and facet-count gaps are resolved. |
-| A server-qualified sparse planning summary exists. | **Not supported.** No bounded claim-specific summary or useful-state distribution exists. | Keep EF-03 Not started and dependent on QA-01. |
-| Research homes can be saved independently of pathways. | **Not supported.** Current saves are pathway favorites, details are keyed by pathway ID, and detail chooses an entry pathway. | Keep CP-05 / FR-45 Not started and ahead of FR-17 and FR-24. |
-| Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Not supported.** The current taxonomy is broader and canonical browse/detail lacks the complete invisible journey emissions. | Keep IM-01 Not started and IM-02 Active until QA-01 stabilizes conversion meaning. |
-| Publishing a target number of pathways establishes trustworthy access coverage. | **Disputed.** Quantity does not establish claim or route quality and can reward false positives. | The evidence and route review rollout uses claim precision, false-positive rate, rejection reasons, and reviewed-action quality instead. |
-| Historical persona findings describe current Beta behavior. | **Validation pending.** Several cited defects were changed by merged PRs, while the referenced transcript and fresh browser replay were unavailable. | Use historical observations as discovery inputs only; require current code, test, data, or CAS-preserving browser evidence before changing status or rationale. |
+| Claim                                                                                                  | Current support                                                                                                                                                                  | Delivery interpretation                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entity-first discovery is the correct current baseline.                                                | **Supported.** PR `#171` removes the parallel pathway request and stream and keeps research profiles primary.                                                                    | Keep EF-01 Complete and protect it with regression tests.                                                                                                       |
+| Discovery filters are fully adaptive and progressively disclosed.                                      | **Disputed as complete.** Programs has a bounded mobile filter sheet, while shared Research/listing filters remain anchored and missing facet counts may fall back to the total. | Keep EF-02 and CP-08 / FR-37 Active until the remaining Research behavior and facet-count gaps are resolved.                                                    |
+| A server-qualified sparse planning summary exists.                                                     | **Not supported.** No bounded claim-specific summary or useful-state distribution exists.                                                                                        | Keep EF-03 Not started and dependent on QA-01.                                                                                                                  |
+| Research homes can be saved independently of pathways.                                                 | **Not supported.** Current saves are pathway favorites, details are keyed by pathway ID, and detail chooses an entry pathway.                                                    | Keep CP-05 / FR-45 Not started and ahead of FR-17 and FR-24.                                                                                                    |
+| Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Not supported.** The current taxonomy is broader and canonical browse/detail lacks the complete invisible journey emissions.                                                   | Keep IM-01 Not started and IM-02 Active until QA-01 stabilizes conversion meaning.                                                                              |
+| Publishing a target number of pathways establishes trustworthy access coverage.                        | **Disputed.** Quantity does not establish claim or route quality and can reward false positives.                                                                                 | The evidence and route review rollout uses claim precision, false-positive rate, rejection reasons, and reviewed-action quality instead.                        |
+| Historical persona findings describe current Beta behavior.                                            | **Validation pending.** Several cited defects were changed by merged PRs, while the referenced transcript and fresh browser replay were unavailable.                             | Use historical observations as discovery inputs only; require current code, test, data, or CAS-preserving browser evidence before changing status or rationale. |
 
 Unresolved UX choices remain validation-pending even when engineering dependencies are known.
 These include the anonymous-save policy, final qualified-action enum and thresholds, exact material-use threshold for a documented-way-in filter, comparison layout, and the Research-side mobile filter-sheet presentation.

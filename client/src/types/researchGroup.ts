@@ -55,6 +55,12 @@ export interface AccessSummary {
   bestNextStep: string;
 }
 
+export interface ResearchPlanningContext {
+  category: 'open_position' | 'official_application' | 'reviewed_route' | 'qualified_participation';
+  label: string;
+  url: string;
+}
+
 export type StudentDecisionRecommendedAction =
   | 'APPLY'
   | 'OPEN_OFFICIAL_ROUTE'
@@ -178,6 +184,7 @@ export interface ResearchGroup {
    */
   hasActiveListing?: boolean;
   accessSummary?: AccessSummary;
+  planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
   studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }

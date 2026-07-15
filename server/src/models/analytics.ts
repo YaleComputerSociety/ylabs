@@ -31,9 +31,26 @@ export enum AnalyticsEventType {
   SOURCE_LINK_CLICK = 'source_link_click',
   OUTREACH_CONTACT_REVEAL = 'outreach_contact_reveal',
   OUTREACH_CONTACT_ATTEMPT = 'outreach_contact_attempt',
+  // Canonical research-student journey events. Keep these claim-specific so
+  // source inspection and planning activity can never be mistaken for access
+  // conversion.
+  RESEARCH_SEARCH = 'research_search',
+  RESEARCH_ENTITY_IMPRESSION = 'research_entity_impression',
+  RESEARCH_PROFILE_OPEN = 'research_profile_open',
+  RESEARCH_SOURCE_REVIEW = 'research_source_review',
+  RESEARCH_FILTER_CHANGE = 'research_filter_change',
+  RESEARCH_SAVE = 'research_save',
+  RESEARCH_COMPARE = 'research_compare',
+  RESEARCH_PLAN_UPDATE = 'research_plan_update',
+  RESEARCH_QUALIFIED_ACTION = 'research_qualified_action',
 }
 
-export const RESEARCH_ENTITY_TYPES = ['profile', 'listing', 'fellowship'] as const;
+export const RESEARCH_ENTITY_TYPES = [
+  'profile',
+  'listing',
+  'fellowship',
+  'research_entity',
+] as const;
 export type ResearchEntityType = (typeof RESEARCH_ENTITY_TYPES)[number];
 
 const analyticsEventSchema = new mongoose.Schema(
@@ -82,6 +99,10 @@ const analyticsEventSchema = new mongoose.Schema(
     metadata: {
       type: mongoose.Schema.Types.Mixed,
     },
+    dedupeKey: {
+      type: String,
+      maxlength: 160,
+    },
     timestamp: {
       type: Date,
       default: Date.now,
@@ -96,6 +117,10 @@ analyticsEventSchema.index({ eventType: 1, timestamp: -1 });
 analyticsEventSchema.index({ netid: 1, timestamp: -1 });
 analyticsEventSchema.index({ eventType: 1, netid: 1, timestamp: -1 });
 analyticsEventSchema.index({ eventType: 1, entityType: 1, timestamp: -1 });
+analyticsEventSchema.index(
+  { netid: 1, dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: 'string' } } },
+);
 analyticsEventSchema.index({ timestamp: -1 });
 
 analyticsEventSchema.index({ timestamp: 1 }, { expireAfterSeconds: 94608000 });

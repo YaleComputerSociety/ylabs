@@ -310,6 +310,12 @@ export interface AnalyticsFunnelResponse {
   profileUpdateCount?: number;
   listingCreateCount?: number;
   overallConversionRate?: number;
+  journeyMetrics?: {
+    sourceInspections: number;
+    officialRouteAttempts: number;
+    applicationOpens: number;
+    confirmedOutcomes: number;
+  };
 }
 
 export interface AnalyticsActionNeededItem {
