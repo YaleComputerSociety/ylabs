@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   canSubmitListingClaimRequest,
   canCreateListing,
+  canManagePostedOpportunities,
   isAdmin,
   isAuthenticated,
   isConfirmed,
@@ -66,7 +67,10 @@ const invokeIsAdminLike = async (
   return { res, next };
 };
 
-const invokeSyncMiddleware = (middleware: (req: any, res: any, next: any) => unknown, user: unknown) => {
+const invokeSyncMiddleware = (
+  middleware: (req: any, res: any, next: any) => unknown,
+  user: unknown,
+) => {
   const req = { user };
   const res = {
     statusCode: 200,
@@ -176,6 +180,52 @@ describe('authenticated principal shape', () => {
 });
 
 describe('professor/faculty authority', () => {
+  it('allows only confirmed, profile-verified faculty to author posted opportunities', () => {
+    const allowed = invokeSyncMiddleware(canManagePostedOpportunities, {
+      netId: 'fac1',
+      userType: 'faculty',
+      userConfirmed: true,
+      profileVerified: true,
+    });
+    const unverified = invokeSyncMiddleware(canManagePostedOpportunities, {
+      netId: 'fac1',
+      userType: 'faculty',
+      userConfirmed: true,
+      profileVerified: false,
+    });
+    const admin = invokeSyncMiddleware(canManagePostedOpportunities, {
+      netId: 'admin1',
+      userType: 'admin',
+      userConfirmed: true,
+      profileVerified: true,
+    });
+    const student = invokeSyncMiddleware(canManagePostedOpportunities, {
+      netId: 'student1',
+      userType: 'student',
+      userConfirmed: true,
+      profileVerified: true,
+    });
+    const unconfirmed = invokeSyncMiddleware(canManagePostedOpportunities, {
+      netId: 'fac1',
+      userType: 'faculty',
+      userConfirmed: false,
+      profileVerified: true,
+    });
+    const anonymous = invokeSyncMiddleware(canManagePostedOpportunities, undefined);
+
+    expect(allowed.next).toHaveBeenCalledOnce();
+    expect(unverified.next).not.toHaveBeenCalled();
+    expect(unverified.res.body).toMatchObject({ code: 'PROFILE_VERIFICATION_REQUIRED' });
+    expect(admin.next).not.toHaveBeenCalled();
+    expect(admin.res.body).toMatchObject({ code: 'FACULTY_ACCESS_REQUIRED' });
+    expect(student.next).not.toHaveBeenCalled();
+    expect(student.res.body).toMatchObject({ code: 'FACULTY_ACCESS_REQUIRED' });
+    expect(unconfirmed.next).not.toHaveBeenCalled();
+    expect(unconfirmed.res.body).toMatchObject({ code: 'ACCOUNT_CONFIRMATION_REQUIRED' });
+    expect(anonymous.next).not.toHaveBeenCalled();
+    expect(anonymous.res.body).toMatchObject({ code: 'AUTH_REQUIRED' });
+  });
+
   it('does not let unconfirmed professor rows pass professor-only route guards', () => {
     const { res, next } = invokeSyncMiddleware(isProfessor, {
       netId: 'prof1',

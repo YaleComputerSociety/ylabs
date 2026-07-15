@@ -22,8 +22,7 @@ export const pathwayBestNextStepCategories = [
   'check-back-later',
 ] as const;
 
-export type PathwayBestNextStepCategory =
-  (typeof pathwayBestNextStepCategories)[number];
+export type PathwayBestNextStepCategory = (typeof pathwayBestNextStepCategories)[number];
 
 export interface PathwaySearchFilters {
   pathwayIds?: string[];
@@ -138,9 +137,7 @@ const FORMALIZATION_ONLY_PATHWAY_TYPES: EntryPathwayType[] = [
   'SENIOR_THESIS',
   'FELLOWSHIP_FUNDED_PROJECT',
 ];
-const FORMALIZATION_ONLY_PATHWAY_TYPE_SET = new Set<string>(
-  FORMALIZATION_ONLY_PATHWAY_TYPES,
-);
+const FORMALIZATION_ONLY_PATHWAY_TYPE_SET = new Set<string>(FORMALIZATION_ONLY_PATHWAY_TYPES);
 
 const trimValues = (values?: unknown[]): string[] =>
   (values || [])
@@ -182,8 +179,7 @@ const sanitizePathwaySearchFilters = (
   ) as PathwayBestNextStepCategory[],
 });
 
-const escapeRegExp = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const PATHWAY_SEARCH_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
@@ -219,9 +215,7 @@ const publicHttpUrls = (values: unknown): string[] =>
   );
 
 const omitUndefined = <T extends Record<string, any>>(record: T): T =>
-  Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined),
-  ) as T;
+  Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as T;
 
 export function getBestNextStepCategory(
   snapshot: BestNextStepSnapshot,
@@ -331,6 +325,7 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
 
   return compactMatch({
     archived: { $ne: true },
+    'review.status': 'approved',
     ...studentPathwayMongoMatch(),
     _id: hasPathwayIdFilter ? { $in: pathwayIds } : undefined,
     pathwayType,
@@ -338,8 +333,7 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
       filters.compensation && filters.compensation.length > 0
         ? { $in: filters.compensation }
         : undefined,
-    status:
-      filters.status && filters.status.length > 0 ? { $in: filters.status } : undefined,
+    status: filters.status && filters.status.length > 0 ? { $in: filters.status } : undefined,
     evidenceStrength:
       filters.evidenceStrength && filters.evidenceStrength.length > 0
         ? { $in: filters.evidenceStrength }
@@ -355,16 +349,11 @@ function buildEntityMatch(filters: PathwaySearchFilters): Record<string, unknown
   return compactMatch({
     'researchEntity.archived': { $ne: true },
     'researchEntity.studentVisibilityTier': { $in: publicStudentVisibilityTiers },
-    'researchEntity._id':
-      trimValues(filters.entityIds).length > 0 ? { $in: entityIds } : undefined,
+    'researchEntity._id': trimValues(filters.entityIds).length > 0 ? { $in: entityIds } : undefined,
     'researchEntity.entityType':
-      filters.entityType && filters.entityType.length > 0
-        ? { $in: filters.entityType }
-        : undefined,
-    'researchEntity.departments':
-      departments.length > 0 ? { $in: departments } : undefined,
-    'researchEntity.researchAreas':
-      researchAreas.length > 0 ? { $in: researchAreas } : undefined,
+      filters.entityType && filters.entityType.length > 0 ? { $in: filters.entityType } : undefined,
+    'researchEntity.departments': departments.length > 0 ? { $in: departments } : undefined,
+    'researchEntity.researchAreas': researchAreas.length > 0 ? { $in: researchAreas } : undefined,
   });
 }
 
@@ -400,7 +389,11 @@ function buildSort(sort: PathwaySearchSort, query: string): Record<string, 1 | -
     case 'lastObservedAt':
       return { lastObservedAt: direction, confidence: -1, studentFacingLabel: 1 };
     case 'deadline':
-      return { 'activePostedOpportunity.deadline': direction, confidence: -1, studentFacingLabel: 1 };
+      return {
+        'activePostedOpportunity.deadline': direction,
+        confidence: -1,
+        studentFacingLabel: 1,
+      };
     case 'relevance':
     default:
       if (query.trim()) {
@@ -411,10 +404,7 @@ function buildSort(sort: PathwaySearchSort, query: string): Record<string, 1 | -
 }
 
 const publicResearchEntityKey = (entity: Record<string, any> | undefined): string =>
-  publicText(entity?.slug) ||
-  publicText(entity?.displayName) ||
-  publicText(entity?.name) ||
-  '';
+  publicText(entity?.slug) || publicText(entity?.displayName) || publicText(entity?.name) || '';
 
 const pathwaySearchDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
@@ -482,9 +472,7 @@ function normalizeHit(raw: Record<string, any>): PathwaySearchHit {
   };
 }
 
-export async function searchPathways(
-  input: PathwaySearchInput,
-): Promise<PathwaySearchResult> {
+export async function searchPathways(input: PathwaySearchInput): Promise<PathwaySearchResult> {
   const filters = sanitizePathwaySearchFilters(input.filters || {});
   const page = Math.min(MAX_PAGE, Math.max(1, Math.floor(input.page || 1)));
   const pageSize = Math.min(
@@ -519,6 +507,13 @@ export async function searchPathways(
                   { $eq: ['$entryPathwayId', '$$pathwayId'] },
                   { $ne: ['$archived', true] },
                   { $in: ['$status', ['OPEN', 'ROLLING']] },
+                  { $eq: ['$review.status', 'approved'] },
+                  {
+                    $or: [
+                      { $eq: [{ $ifNull: ['$deadline', null] }, null] },
+                      { $gte: ['$deadline', '$$NOW'] },
+                    ],
+                  },
                 ],
               },
             },

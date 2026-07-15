@@ -100,12 +100,27 @@ export function selectPlanningContexts(input: {
   const pathwaysById = new Map(
     input.pathways.map((pathway) => [serializedDocumentId(pathway._id), pathway]),
   );
+  const approvedFacultyOpportunityPathwayIds = new Set(
+    input.opportunities.flatMap((opportunity) => {
+      const pathwayId = serializedDocumentId(opportunity.entryPathwayId);
+      return opportunity.origin === 'FACULTY_SUBMITTED' &&
+        opportunity.archived !== true &&
+        approved(opportunity) &&
+        isCurrentOpportunity(opportunity) &&
+        pathwayId
+        ? [pathwayId]
+        : [];
+    }),
+  );
   const candidates: Candidate[] = [];
 
   for (const opportunity of input.opportunities) {
     const pathway = pathwaysById.get(serializedDocumentId(opportunity.entryPathwayId));
     const id = entityId(opportunity.researchEntityId) || entityId(pathway?.researchEntityId);
-    const url = usableActionableUrl(opportunity.applicationUrl);
+    const url =
+      opportunity.origin === 'FACULTY_SUBMITTED'
+        ? usableUrl(opportunity.applicationUrl)
+        : usableActionableUrl(opportunity.applicationUrl);
     if (
       !id ||
       !url ||
@@ -131,6 +146,13 @@ export function selectPlanningContexts(input: {
 
   for (const pathway of input.pathways) {
     const id = entityId(pathway.researchEntityId);
+    const pathwayId = serializedDocumentId(pathway._id);
+    if (
+      String(pathway.derivationKey || '').startsWith('faculty-opportunity:') &&
+      (!pathwayId || !approvedFacultyOpportunityPathwayIds.has(pathwayId))
+    ) {
+      continue;
+    }
     const url = usableActionableUrl(
       ...(Array.isArray(pathway.sourceUrls) ? pathway.sourceUrls : []),
     );

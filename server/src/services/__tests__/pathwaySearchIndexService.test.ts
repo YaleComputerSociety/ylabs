@@ -203,6 +203,26 @@ describe('pathwaySearchIndexService', () => {
     expect(JSON.stringify(result.hits[0])).not.toContain('javascript:');
   });
 
+  it('does not independently publish an opportunity-managed pathway to Meilisearch', () => {
+    const doc = buildPathwaySearchIndexDocument({
+      _id: 'faculty-opportunity-pathway',
+      derivationKey: 'faculty-opportunity:64f555555555555555555555',
+      pathwayType: 'POSTED_ROLE',
+      status: 'ACTIVE',
+      evidenceStrength: 'DIRECT',
+      confidence: 1,
+      sourceUrls: ['https://research.yale.edu/forms/apply'],
+      review: { status: 'approved' },
+      researchEntity: {
+        _id: 'faculty-opportunity-entity',
+        name: 'Verified Lab',
+        studentVisibilityTier: 'student_ready',
+      },
+    });
+
+    expect(doc.studentPublishable).toBe(false);
+  });
+
   it('indexes public entity visibility tiers and gates Meili searches to those tiers', async () => {
     const studentReadyDoc = buildPathwaySearchIndexDocument({
       _id: 'pathway-student-ready',

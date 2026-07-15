@@ -85,6 +85,74 @@ describe('planningContextService qualification policy', () => {
     expect(contexts.size).toBe(1);
   });
 
+  it('qualifies an approved faculty-submitted HTTPS form through the shared projection', () => {
+    const context = selectPlanningContexts({
+      pathways: [
+        {
+          _id: pathwayId,
+          researchEntityId: entityId,
+          pathwayType: 'POSTED_ROLE',
+          status: 'ACTIVE',
+          sourceUrls: ['https://forms.office.com/r/AbCdEf1234'],
+          evidenceStrength: 'DIRECT',
+          confidence: 1,
+          review: approved,
+        },
+      ],
+      opportunities: [
+        {
+          _id: new Types.ObjectId(),
+          researchEntityId: entityId,
+          entryPathwayId: pathwayId,
+          origin: 'FACULTY_SUBMITTED',
+          status: 'ROLLING',
+          applicationUrl: 'https://forms.office.com/r/AbCdEf1234',
+          review: approved,
+        },
+      ],
+      routes: [],
+    }).get(entityId.toString());
+
+    expect(context).toEqual({
+      category: 'open_position',
+      label: 'Open position',
+      url: 'https://forms.office.com/r/AbCdEf1234',
+    });
+  });
+
+  it('does not let an opportunity-managed pathway qualify before its posting is approved', () => {
+    const contexts = selectPlanningContexts({
+      pathways: [
+        {
+          _id: pathwayId,
+          researchEntityId: entityId,
+          derivationKey: 'faculty-opportunity:64f111111111111111111111',
+          pathwayType: 'POSTED_ROLE',
+          status: 'ACTIVE',
+          bestNextStep: 'Apply through the official application.',
+          sourceUrls: ['https://research.yale.edu/apply'],
+          evidenceStrength: 'DIRECT',
+          confidence: 1,
+          review: approved,
+        },
+      ],
+      opportunities: [
+        {
+          _id: new Types.ObjectId(),
+          researchEntityId: entityId,
+          entryPathwayId: pathwayId,
+          origin: 'FACULTY_SUBMITTED',
+          status: 'OPEN',
+          applicationUrl: 'https://research.yale.edu/apply',
+          review: { status: 'unreviewed' },
+        },
+      ],
+      routes: [],
+    });
+
+    expect(contexts.size).toBe(0);
+  });
+
   it('rejects PI provenance, generic pages, inferred outreach, and unapproved records', () => {
     const contexts = selectPlanningContexts({
       pathways: [

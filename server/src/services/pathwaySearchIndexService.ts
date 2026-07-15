@@ -538,7 +538,9 @@ export function buildPathwaySearchIndexDocument(
     publicContactPolicy: publicContactRoute?.contactPolicy,
     evidence: normalizedEvidence.evidence,
     evidenceSnippets: normalizedEvidence.snippets,
-    studentPublishable: isStudentPublishablePathway(record),
+    studentPublishable:
+      !String(toStringValue(record.derivationKey) || '').startsWith('faculty-opportunity:') &&
+      isStudentPublishablePathway(record),
   };
 }
 

@@ -1396,9 +1396,7 @@ const OFFICIAL_PROFILE_URL_KEYS = [
 const safeProfileUrlObject = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(
-      ([, url]) => publicHttpUrl(url),
-    ),
+    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
   ) as Record<string, string>;
 };
 
@@ -2007,6 +2005,7 @@ const publicAccessSignalForResearchDetail = (signal: any) => ({
 const publicPostedOpportunityForResearchDetail = (opportunity: any) => ({
   _id: opportunity._id,
   title: publicString(opportunity.title),
+  description: publicString(opportunity.description),
   term: publicString(opportunity.term),
   deadline: opportunity.deadline,
   applicationUrl: publicHttpUrl(opportunity.applicationUrl),
@@ -2337,6 +2336,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     EntryPathway.find({
       researchEntityId: (group as any)._id,
       archived: false,
+      'review.status': 'approved',
       ...studentPathwayMongoMatch(),
     })
       .sort({ updatedAt: -1 })
@@ -2358,7 +2358,17 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ priority: 1 })
       .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
       .lean(),
-    PostedOpportunity.find({ researchEntityId: (group as any)._id, archived: false })
+    PostedOpportunity.find({
+      researchEntityId: (group as any)._id,
+      archived: false,
+      status: { $in: ['OPEN', 'ROLLING'] },
+      'review.status': 'approved',
+      $or: [
+        { deadline: { $exists: false } },
+        { deadline: null },
+        { deadline: { $gte: new Date() } },
+      ],
+    })
       .sort({ deadline: 1 })
       .limit(MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES)
       .lean(),

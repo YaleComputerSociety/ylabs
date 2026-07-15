@@ -230,6 +230,11 @@ Initial implementation note: `PostedOpportunity` is a separate collection that b
 
 Listing bridge note: legacy `Listing` rows with a `researchGroupId` now materialize into a `POSTED_ROLE` `EntryPathway`, `POSTED_OPENING` `AccessSignal`, and linked `PostedOpportunity`. Open listings with future deadlines become `OPEN`, listings without deadlines become `ROLLING`, expired/unconfirmed listings become `CLOSED`, and archived/deleted listings become `ARCHIVED`. Existing rows can be backfilled with [`server/src/scripts/backfillPostedOpportunitiesFromListings.ts`](../server/src/scripts/backfillPostedOpportunitiesFromListings.ts).
 
+Faculty posting note: confirmed faculty with a verified profile and a current lead membership may create a private draft for an owned canonical `ResearchEntity`, preview it, and submit it for admin review.
+The draft creates a linked `POSTED_ROLE` pathway, but neither record is student-publishable until the opportunity is approved.
+Edits revoke approval and return the opportunity to draft, while close and archive actions retain author, ownership, revision, and audit provenance.
+Ownership ambiguity, stale revisions, unsafe application URLs, and incomplete submissions fail closed.
+
 Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and listing-bridged versus scraper-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
 
 ## Ways-In Projection

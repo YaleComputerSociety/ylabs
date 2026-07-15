@@ -13,6 +13,7 @@ import ProfileEditor from '../components/accounts/ProfileEditor';
 import FavoritesManager from '../components/accounts/FavoritesManager';
 import SavedPathwaysSection from '../components/accounts/SavedPathwaysSection';
 import PlanningOverview from '../components/accounts/PlanningOverview';
+import FacultyOpportunityManager from '../components/faculty/FacultyOpportunityManager';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import { safeRouteSegment } from '../utils/url';
 
@@ -151,6 +152,8 @@ const Account = () => {
       )}
 
       {showProfView && user && <ProfileEditor netid={user.netId} />}
+
+      {showProfView && isProfessorUser && <FacultyOpportunityManager />}
 
       {!showProfView && (
         <PlanningOverview

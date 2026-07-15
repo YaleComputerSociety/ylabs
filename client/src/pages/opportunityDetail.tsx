@@ -231,6 +231,12 @@ const OpportunityDetail = () => {
                 className="mt-4 text-sm leading-relaxed text-gray-600"
               />
             )}
+            {opportunity.description && (
+              <LongText
+                text={opportunity.description}
+                className="mt-4 border-t border-[var(--yr-line)] pt-4 text-sm leading-relaxed text-slate-700"
+              />
+            )}
           </header>
 
           <section>

@@ -106,10 +106,7 @@ describe('accessSummaryService', () => {
         throw new Error('access summary called arbitrary returned entity id toHexString');
       },
     };
-    const queryEntityIds = [
-      entityId,
-      ...Array.from({ length: 99 }, () => new Types.ObjectId()),
-    ];
+    const queryEntityIds = [entityId, ...Array.from({ length: 99 }, () => new Types.ObjectId())];
     Object.defineProperty(queryEntityIds, '100', {
       get: () => {
         throw new Error('access summary read past the entity id cap');
@@ -205,5 +202,26 @@ describe('accessSummaryService', () => {
     expect(mocks.accessSignalFind).not.toHaveBeenCalled();
     expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
     expect(mocks.postedOpportunityFind).not.toHaveBeenCalled();
+  });
+
+  it('counts only approved, unexpired opportunities and approved pathways in public summaries', async () => {
+    const entityId = new Types.ObjectId();
+
+    await listAccessSummariesForResearchEntities([entityId]);
+
+    expect(mocks.entryPathwayFind.mock.calls[0][0]).toMatchObject({
+      archived: false,
+      'review.status': 'approved',
+    });
+    const opportunityFilter = mocks.postedOpportunityFind.mock.calls[0][0];
+    expect(opportunityFilter).toMatchObject({
+      archived: false,
+      status: { $in: ['OPEN', 'ROLLING'] },
+      'review.status': 'approved',
+    });
+    expect(opportunityFilter.$or).toEqual(
+      expect.arrayContaining([{ deadline: { $exists: false } }, { deadline: null }]),
+    );
+    expect(opportunityFilter.$or[2].deadline.$gte).toBeInstanceOf(Date);
   });
 });
