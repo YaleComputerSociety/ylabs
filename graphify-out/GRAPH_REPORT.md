@@ -1,16 +1,16 @@
 # Graph Report - 01KXHSYGY3GN42EV0VQTHKNYWY  (2026-07-14)
 
 ## Corpus Check
-- 823 files · ~1,303,803 words
+- 823 files · ~1,303,991 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 11262 nodes · 21227 edges · 3266 communities (913 shown, 2353 thin omitted)
-- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 452 edges (avg confidence: 0.62)
+- 11155 nodes · 21227 edges · 3161 communities (915 shown, 2246 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 451 edges (avg confidence: 0.62)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `eebbcfaa`
+- Built from commit: `358d7fc2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -249,7 +249,6 @@
 - [[_COMMUNITY_normalizeAcceptedDecisionValidation|normalizeAcceptedDecisionValidation]]
 - [[_COMMUNITY_UIUX Direction|UI/UX Direction]]
 - [[_COMMUNITY_LEGACY_EXPLORATORY_CONTACT_PATHWAY_DERIVATION_KEYS|LEGACY_EXPLORATORY_CONTACT_PATHWAY_DERIVATION_KEYS]]
-- [[_COMMUNITY_profileService.test.ts|profileService.test.ts]]
 - [[_COMMUNITY_researchEntity.ts|researchEntity.ts]]
 - [[_COMMUNITY_fellowship.ts|fellowship.ts]]
 - [[_COMMUNITY_seed.ts|seed.ts]]
@@ -287,7 +286,6 @@
 - [[_COMMUNITY_redactDirectContactInfo|redactDirectContactInfo]]
 - [[_COMMUNITY_applyResearchEntityDedupeMergeGroup|applyResearchEntityDedupeMergeGroup]]
 - [[_COMMUNITY_researchAreasRoutes.test.ts|researchAreasRoutes.test.ts]]
-- [[_COMMUNITY_Codex Guide|Codex Guide]]
 - [[_COMMUNITY_visibilityRepairQueueService.test.ts|visibilityRepairQueueService.test.ts]]
 - [[_COMMUNITY_Codex Guide|Codex Guide]]
 - [[_COMMUNITY_dedupeSameNameLeadMembers|dedupeSameNameLeadMembers]]
@@ -309,7 +307,6 @@
 - [[_COMMUNITY_Yale Research Product Context|Yale Research Product Context]]
 - [[_COMMUNITY_10. P2 Fellowship, Course, And Contact Materialization|10. P2 Fellowship, Course, And Contact Materialization]]
 - [[_COMMUNITY_Research Data Pipeline|Research Data Pipeline]]
-- [[_COMMUNITY_API Routes|API Routes]]
 - [[_COMMUNITY_courseTableService.ts|courseTableService.ts]]
 - [[_COMMUNITY_1. M1.2 Client API-Boundary Vocabulary|1. M1.2 Client API-Boundary Vocabulary]]
 - [[_COMMUNITY_AdminListingsTable.tsx|AdminListingsTable.tsx]]
@@ -347,9 +344,6 @@
 - [[_COMMUNITY_check-no-secrets-core.mjs|check-no-secrets-core.mjs]]
 - [[_COMMUNITY_codebash (SCRAPER_ENV=beta yarn --cwd server betadata-quality --inclu)|code:bash (SCRAPER_ENV=beta yarn --cwd server beta:data-quality --inclu)]]
 - [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
-- [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
-- [[_COMMUNITY_1. Fresh machine setup|1. Fresh machine setup]]
-- [[_COMMUNITY_CI|CI]]
 - [[_COMMUNITY_runStaleObservationConflictReview|runStaleObservationConflictReview]]
 - [[_COMMUNITY_Graphify repo memory|Graphify repo memory]]
 - [[_COMMUNITY_dataMigrationV4DeprecatedBackfills.test.ts|dataMigrationV4DeprecatedBackfills.test.ts]]
@@ -367,8 +361,6 @@
 - [[_COMMUNITY_checker.py|checker.py]]
 - [[_COMMUNITY_normalizeStaleObservationReviewDecision|normalizeStaleObservationReviewDecision]]
 - [[_COMMUNITY_3. Configure environment|3. Configure environment]]
-- [[_COMMUNITY_Architecture|Architecture]]
-- [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
 - [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
 - [[_COMMUNITY_{ hasExpectedEntityName }|{ hasExpectedEntityName }]]
 - [[_COMMUNITY_postcss.config.js|postcss.config.js]]
@@ -934,104 +926,62 @@
 - [[_COMMUNITY_2026-05-22 Student Experience MCP Fix Pass|2026-05-22 Student Experience MCP Fix Pass]]
 - [[_COMMUNITY_2) `pathways` debounced search can update from stale payload|2) `/pathways` debounced search can update from stale payload]]
 - [[_COMMUNITY_Commands|Commands]]
-- [[_COMMUNITY_Product Surfaces|Product Surfaces]]
 - [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
-- [[_COMMUNITY_`client.env`|`client/.env`]]
 - [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
-- [[_COMMUNITY_Commands|Commands]]
 - [[_COMMUNITY_Error Handling|Error Handling]]
 - [[_COMMUNITY_External Integrations|External Integrations]]
 - [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
 - [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
 - [[_COMMUNITY_Naming Conventions|Naming Conventions]]
-- [[_COMMUNITY_Rate Limiting|Rate Limiting]]
 - [[_COMMUNITY_Routes|Routes]]
-- [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
 - [[_COMMUNITY_codebash (cd data-migration)|code:bash (cd data-migration)]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (cd client)|code:bash (cd client)]]
-- [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
-- [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
-- [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
 - [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
 - [[_COMMUNITY_Environments|Environments]]
 - [[_COMMUNITY_Migration Scripts|Migration Scripts]]
 - [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
-- [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
-- [[_COMMUNITY_Quick Start|Quick Start]]
-- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
 - [[_COMMUNITY_Product Surfaces|Product Surfaces]]
-- [[_COMMUNITY_Architecture|Architecture]]
-- [[_COMMUNITY_Auth Middleware|Auth Middleware]]
-- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
 - [[_COMMUNITY_Database|Database]]
-- [[_COMMUNITY_External Integrations|External Integrations]]
 - [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
-- [[_COMMUNITY_Routes|Routes]]
-- [[_COMMUNITY_`server.env`|`server/.env`]]
-- [[_COMMUNITY_Testing|Testing]]
 - [[_COMMUNITY_Validation Middleware|Validation Middleware]]
-- [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
-- [[_COMMUNITY_7. Verify setup|7. Verify setup]]
-- [[_COMMUNITY_Authentication|Authentication]]
 - [[_COMMUNITY_CI|CI]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
-- [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
-- [[_COMMUNITY_codebash (yarn installall)|code:bash (yarn install:all)]]
 - [[_COMMUNITY_codebash (cp server.env.example server.env)|code:bash (cp server/.env.example server/.env)]]
-- [[_COMMUNITY_New API Endpoint|New API Endpoint]]
-- [[_COMMUNITY_Prerequisites|Prerequisites]]
 - [[_COMMUNITY_Running tests|Running tests]]
 - [[_COMMUNITY_Testing|Testing]]
-- [[_COMMUNITY_Commands|Commands]]
-- [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
 - [[_COMMUNITY_Done Criteria|Done Criteria]]
 - [[_COMMUNITY_Parallel Work|Parallel Work]]
 - [[_COMMUNITY_Authentication Flow|Authentication Flow]]
 - [[_COMMUNITY_CI|CI]]
 - [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
-- [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
 - [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
 - [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
 - [[_COMMUNITY_6. Start dev servers|6. Start dev servers]]
 - [[_COMMUNITY_7. Verify setup|7. Verify setup]]
-- [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
 - [[_COMMUNITY_codebash (npx ts-node --transpile-only script.ts)|code:bash (npx ts-node --transpile-only <script>.ts)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
-- [[_COMMUNITY_Common Commands|Common Commands]]
 - [[_COMMUNITY_What Is This|What Is This?]]
-- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
-- [[_COMMUNITY_Tech Stack|Tech Stack]]
 - [[_COMMUNITY_YURA Research Database|YURA Research Database]]
-- [[_COMMUNITY_Adding a New Page|Adding a New Page]]
 - [[_COMMUNITY_Auth Middleware|Auth Middleware]]
-- [[_COMMUNITY_CI|CI]]
 - [[_COMMUNITY_Commands|Commands]]
 - [[_COMMUNITY_Rate Limiting|Rate Limiting]]
-- [[_COMMUNITY_Search|Search]]
 - [[_COMMUNITY_Sensitive Files|Sensitive Files]]
-- [[_COMMUNITY_Validation Middleware|Validation Middleware]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codeblock19 (ylabs)|code:block19 (ylabs/)]]
-- [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
-- [[_COMMUNITY_Environments|Environments]]
 - [[_COMMUNITY_Local Development Setup|Local Development Setup]]
-- [[_COMMUNITY_Migration Scripts|Migration Scripts]]
-- [[_COMMUNITY_Project Structure|Project Structure]]
-- [[_COMMUNITY_Running tests|Running tests]]
 - [[_COMMUNITY_Tech Stack|Tech Stack]]
 - [[_COMMUNITY_What is tested|What is tested]]
 - [[_COMMUNITY_Quick Start|Quick Start]]
-- [[_COMMUNITY_YURA Research Database|YURA Research Database]]
 - [[_COMMUNITY_Core Modeling Direction|Core Modeling Direction]]
 - [[_COMMUNITY_Current Stack|Current Stack]]
 - [[_COMMUNITY_Default Task Loop|Default Task Loop]]
@@ -1039,69 +989,40 @@
 - [[_COMMUNITY_Rule Evolution|Rule Evolution]]
 - [[_COMMUNITY_Architecture|Architecture]]
 - [[_COMMUNITY_codeblock2 (ylabs)|code:block2 (ylabs/)]]
-- [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
 - [[_COMMUNITY_Environments|Environments]]
-- [[_COMMUNITY_Error Handling|Error Handling]]
-- [[_COMMUNITY_Known Technical Debt|Known Technical Debt]]
 - [[_COMMUNITY_Scrapers|Scrapers]]
-- [[_COMMUNITY_4. Start local Meilisearch|4. Start local Meilisearch]]
-- [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
 - [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (yarn devclient     Vite on port 3000)|code:bash (yarn dev:client    # Vite on port 3000)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
 - [[_COMMUNITY_codebash ( client.env)|code:bash (# client/.env)]]
-- [[_COMMUNITY_codebash (docker pull getmeilimeilisearchlatest)|code:bash (docker pull getmeili/meilisearch:latest)]]
 - [[_COMMUNITY_Common Commands|Common Commands]]
-- [[_COMMUNITY_Dev login bypass|Dev login bypass]]
 - [[_COMMUNITY_New Page|New Page]]
 - [[_COMMUNITY_Prerequisites|Prerequisites]]
-- [[_COMMUNITY_Search|Search]]
-- [[_COMMUNITY_What Is This|What Is This?]]
-- [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
 - [[_COMMUNITY_codebash (yarn playwrightrun screenshot httpsexample.com tmpexam)|code:bash (yarn playwright:run screenshot https://example.com /tmp/exam)]]
-- [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
 - [[_COMMUNITY_Tech Stack|Tech Stack]]
-- [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
-- [[_COMMUNITY_Current Stack|Current Stack]]
 - [[_COMMUNITY_Implementation Rules|Implementation Rules]]
-- [[_COMMUNITY_Parallel Work|Parallel Work]]
 - [[_COMMUNITY_Product North Star|Product North Star]]
 - [[_COMMUNITY_Adding a New Page|Adding a New Page]]
-- [[_COMMUNITY_Analytics Interception|Analytics Interception]]
 - [[_COMMUNITY_`client.env`|`client/.env`]]
-- [[_COMMUNITY_Database|Database]]
-- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
 - [[_COMMUNITY_Product Model|Product Model]]
-- [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
-- [[_COMMUNITY_codebash (yarn install)|code:bash (yarn install)]]
-- [[_COMMUNITY_codebash (sudo apt update)|code:bash (sudo apt update)]]
 - [[_COMMUNITY_codeblock20 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block20 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
 - [[_COMMUNITY_codebash (curl -o- httpsraw.githubusercontent.comnvm-shnvmmaster)|code:bash (curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master)]]
 - [[_COMMUNITY_New API Endpoint|New API Endpoint]]
-- [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
 - [[_COMMUNITY_Documentation|Documentation]]
-- [[_COMMUNITY_Default Task Loop|Default Task Loop]]
-- [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
 - [[_COMMUNITY_Graphify Repo Memory|Graphify Repo Memory]]
-- [[_COMMUNITY_Product North Star|Product North Star]]
 - [[_COMMUNITY_Analytics Interception|Analytics Interception]]
 - [[_COMMUNITY_codeblock2 (yale-research)|code:block2 (yale-research/)]]
-- [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
 - [[_COMMUNITY_Environment Variables|Environment Variables]]
 - [[_COMMUNITY_Key Services|Key Services]]
-- [[_COMMUNITY_Maintenance|Maintenance]]
-- [[_COMMUNITY_Monorepo Structure|Monorepo Structure]]
-- [[_COMMUNITY_Naming Conventions|Naming Conventions]]
 - [[_COMMUNITY_Security Middleware|Security Middleware]]
 - [[_COMMUNITY_`server.env`|`server/.env`]]
 - [[_COMMUNITY_Yale Research Codebase Reference|Yale Research Codebase Reference]]
 - [[_COMMUNITY_API Routes|API Routes]]
 - [[_COMMUNITY_Architecture|Architecture]]
-- [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (which node)|code:bash (which node)]]
 - [[_COMMUNITY_codeblock20 (yale-research)|code:block20 (yale-research/)]]
@@ -1109,11 +1030,8 @@
 - [[_COMMUNITY_Dev login bypass|Dev login bypass]]
 - [[_COMMUNITY_Operator board Gate Status — keeping it honest and current|Operator board Gate Status — keeping it honest and current]]
 - [[_COMMUNITY_YLabs — Developer Guide|Y/Labs — Developer Guide]]
-- [[_COMMUNITY_Acknowledgements|Acknowledgements]]
 - [[_COMMUNITY_codebash (corepack enable)|code:bash (corepack enable)]]
-- [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
 - [[_COMMUNITY_codebash (codex mcp add playwright -- reposcriptswith-playwright-l)|code:bash (codex mcp add playwright -- <repo>/scripts/with-playwright-l)]]
-- [[_COMMUNITY_Documentation|Documentation]]
 - [[_COMMUNITY_Playwright environment fix (no root required)|Playwright environment fix (no root required)]]
 - [[_COMMUNITY_summary|summary]]
 - [[_COMMUNITY_acceptedInputsCoreSource|acceptedInputsCoreSource]]
@@ -2586,24 +2504,17 @@
 - [[_COMMUNITY_lab|lab]]
 - [[_COMMUNITY_sanitized|sanitized]]
 - [[_COMMUNITY_agents|agents]]
-- [[_COMMUNITY_Done Criteria|Done Criteria]]
-- [[_COMMUNITY_graphify|graphify]]
-- [[_COMMUNITY_Environment Variables|Environment Variables]]
-- [[_COMMUNITY_Environments|Environments]]
 - [[_COMMUNITY_Maintenance|Maintenance]]
 - [[_COMMUNITY_Tech Stack|Tech Stack]]
 - [[_COMMUNITY_Testing|Testing]]
 - [[_COMMUNITY_TypeScript Configuration|TypeScript Configuration]]
-- [[_COMMUNITY_YLabs Codebase Reference|Y/Labs Codebase Reference]]
 - [[_COMMUNITY_1. Install dependencies|1. Install dependencies]]
 - [[_COMMUNITY_2. Configure environment|2. Configure environment]]
 - [[_COMMUNITY_2. Install dependencies|2. Install dependencies]]
-- [[_COMMUNITY_3. Configure environment|3. Configure environment]]
 - [[_COMMUNITY_3. Start local Meilisearch|3. Start local Meilisearch]]
 - [[_COMMUNITY_4. Seed Meilisearch|4. Seed Meilisearch]]
 - [[_COMMUNITY_5. Seed Meilisearch|5. Seed Meilisearch]]
 - [[_COMMUNITY_5. Start dev servers|5. Start dev servers]]
-- [[_COMMUNITY_codeblock1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)|code:block1 (React (Vite) → Express (Passport.js) → MongoDB Atlas + Meili)]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
 - [[_COMMUNITY_codebash (yarn --cwd server meilirebuild-all --clear)|code:bash (yarn --cwd server meili:rebuild-all --clear)]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
@@ -2611,36 +2522,20 @@
 - [[_COMMUNITY_codebash (yarn scrape help)|code:bash (yarn scrape help)]]
 - [[_COMMUNITY_codeblock21 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block21 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
 - [[_COMMUNITY_codebash (yarn --cwd client test         watch mode — reruns on file )|code:bash (yarn --cwd client test        # watch mode — reruns on file )]]
-- [[_COMMUNITY_Local Development Setup|Local Development Setup]]
-- [[_COMMUNITY_Modifying a Schema|Modifying a Schema]]
-- [[_COMMUNITY_New Page|New Page]]
 - [[_COMMUNITY_Search|Search]]
-- [[_COMMUNITY_Tech Stack|Tech Stack]]
-- [[_COMMUNITY_Testing|Testing]]
 - [[_COMMUNITY_Troubleshooting|Troubleshooting]]
-- [[_COMMUNITY_What is tested|What is tested]]
 - [[_COMMUNITY_Yale Research — Developer Guide|Yale Research — Developer Guide]]
 - [[_COMMUNITY_Legacy CSV-to-JSON update script retired.  Department ground truth no longer com|Legacy CSV-to-JSON update script retired.  Department ground truth no longer com]]
 - [[_COMMUNITY_Documentation Maintenance|Documentation Maintenance]]
-- [[_COMMUNITY_Implementation Rules|Implementation Rules]]
-- [[_COMMUNITY_Rule Evolution|Rule Evolution]]
-- [[_COMMUNITY_Sensitive Areas|Sensitive Areas]]
 - [[_COMMUNITY_codetypescript (export const asyncHandler = (fn Function) = {)|code:typescript (export const asyncHandler = (fn: Function) => {)]]
-- [[_COMMUNITY_codetypescript (const logListingEvent = (eventType AnalyticsEventType) = {)|code:typescript (const logListingEvent = (eventType: AnalyticsEventType) => {)]]
 - [[_COMMUNITY_codeblock5 (User → Yale CAS SSO → passport.ts findOrCreateUser)|code:block5 (User → Yale CAS SSO → passport.ts findOrCreateUser)]]
-- [[_COMMUNITY_Product Model|Product Model]]
-- [[_COMMUNITY_Scrapers|Scrapers]]
 - [[_COMMUNITY_Search|Search]]
-- [[_COMMUNITY_Sensitive Files|Sensitive Files]]
-- [[_COMMUNITY_Tech Stack|Tech Stack]]
 - [[_COMMUNITY_Auth Middleware (`serversrcmiddlewareauth.ts`)|Auth Middleware (`server/src/middleware/auth.ts`)]]
 - [[_COMMUNITY_Authentication|Authentication]]
 - [[_COMMUNITY_codebash (curl httplocalhost7700health)|code:bash (curl http://localhost:7700/health)]]
-- [[_COMMUNITY_codetxt (Usage Error Couldn't find the node_modules state file - run)|code:txt (Usage Error: Couldn't find the node_modules state file - run)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_codebash (nvm install 20)|code:bash (nvm install 20)]]
 - [[_COMMUNITY_Project Structure|Project Structure]]
-- [[_COMMUNITY_Troubleshooting|Troubleshooting]]
 - [[_COMMUNITY_Troubleshooting Yarn setup|Troubleshooting Yarn setup]]
 - [[_COMMUNITY_codebash ( Terminal 1)|code:bash (# Terminal 1)]]
 
@@ -2671,7 +2566,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (3266 total, 2353 thin omitted)
+## Communities (3161 total, 2246 thin omitted)
 
 ### Community 0 - "Decisions"
 Cohesion: 0.11
@@ -2682,8 +2577,8 @@ Cohesion: 0.07
 Nodes (48): adminQualityNotes(), AffiliatedResearchEntitiesSection(), compactDepartmentLabels(), decisionNextStep(), DecisionSummary(), dedupeLeadMembers(), detailDescription(), detailTopics() (+40 more)
 
 ### Community 2 - "browsable.ts"
-Cohesion: 0.05
-Nodes (58): FellowshipModal(), FellowshipModalProps, RichText(), trackFellowshipApplyClick(), ArchivedBadge(), BrowseCard, BrowseCardProps, BrowseGrid() (+50 more)
+Cohesion: 0.06
+Nodes (47): ArchivedBadge(), BrowseCard, BrowseCardProps, BrowseGrid(), BrowseGridProps, BrowseListItem, BrowseListItemProps, FavoriteButton (+39 more)
 
 ### Community 3 - "security-preflight.test.mjs"
 Cohesion: 0.29
@@ -2698,8 +2593,8 @@ Cohesion: 0.08
 Nodes (32): LabInquireModal(), LabInquireModalProps, LabMembersList(), LabMembersListProps, ROLE_LABELS, ROLE_ORDER, ROLE_PILL_CLASSES, basePayload (+24 more)
 
 ### Community 6 - "App.tsx"
-Cohesion: 0.05
-Nodes (33): PlanningOverview(), PlanningOverviewProps, pluralize(), scrollPositions, ScrollToTop(), normalizeReturnPath(), SignInButton(), SignInButtonProps (+25 more)
+Cohesion: 0.04
+Nodes (34): PlanningOverview(), PlanningOverviewProps, pluralize(), scrollPositions, ScrollToTop(), normalizeReturnPath(), SignInButton(), SignInButtonProps (+26 more)
 
 ### Community 7 - "logSanitizer.ts"
 Cohesion: 0.06
@@ -2710,8 +2605,8 @@ Cohesion: 0.21
 Nodes (9): AdminFellowshipsTable(), AdminFellowshipsFilter, AdminFellowshipsSortField, AdminFellowshipsTableAction, adminFellowshipsTableReducer(), AdminFellowshipsTableState, createInitialAdminFellowshipsTableState(), createInitialAdminTableState() (+1 more)
 
 ### Community 9 - "cleanPublicProfileBio"
-Cohesion: 0.12
-Nodes (24): appointmentTitleCount(), cleanPublicProfileBio(), clipPublicProfileBio(), degreeTokenCount(), hasPublicProfileEmail(), hasResearchDescriptionVerb(), isAffiliationOnlyResearchSummary(), isAppointmentListOnlyProfileBio() (+16 more)
+Cohesion: 0.07
+Nodes (60): ADMIN_UPDATE_FIELDS, ALLOWED_SELF_UPDATE_FIELDS, appointmentTitleCount(), boundedProfileUrlKey(), boundedPublicationNumber(), boundedPublicationText(), boundedPublicProfileUrl(), capitalizeSentenceStart() (+52 more)
 
 ### Community 10 - "labMicrositeUndergradLLMExtractor.ts"
 Cohesion: 0.09
@@ -2738,8 +2633,8 @@ Cohesion: 0.08
 Nodes (55): AccessSignalConfidence, AccessSignalType, ContactPolicy, ContactRouteVisibility, accessArtifactCandidatesFromDerived(), AccessMaterializationResult, AccessObservation, bestObservation() (+47 more)
 
 ### Community 16 - "ConfigContext.ts"
-Cohesion: 0.18
-Nodes (16): baseProfile, ConfigContextType, defaultConfigContext, DepartmentConfig, FieldConfig, ResearchAreaConfig, colorKeyToTailwind, ConfigContextProvider() (+8 more)
+Cohesion: 0.09
+Nodes (26): baseProfile, ConfigContextType, defaultConfigContext, DepartmentConfig, FieldConfig, ResearchAreaConfig, __resetResearchPageSnapshotForTests(), departments (+18 more)
 
 ### Community 18 - "sanitizeLogValue"
 Cohesion: 0.10
@@ -2754,8 +2649,8 @@ Cohesion: 0.07
 Nodes (49): authConfig, authDebug(), AuthenticatedSessionUser, buildDirectoryUpdate(), casLogin(), DEV_LOGIN_PROFILES, ensureDevLoginUser(), findOrCreateUser() (+41 more)
 
 ### Community 21 - "Navbar.tsx"
-Cohesion: 0.05
-Nodes (32): AboutButton(), AnalyticsButton(), FeedbackButton(), getAcademicDisciplineColor(), getResearchAreaChipColor(), listingQuickFilters, Navbar(), NavbarSearchBar() (+24 more)
+Cohesion: 0.04
+Nodes (36): AboutButton(), AnalyticsButton(), FeedbackButton(), getAcademicDisciplineColor(), getResearchAreaChipColor(), listingQuickFilters, Navbar(), NavbarSearchBar() (+28 more)
 
 ### Community 22 - "undergradFellowshipRecipientScraper.ts"
 Cohesion: 0.10
@@ -2830,8 +2725,8 @@ Cohesion: 0.06
 Nodes (44): AdminDepartments(), CATEGORY_COLORS, DEPARTMENT_CATEGORIES, DepartmentAction, DepartmentDoc, DepartmentState, EditDraft, INITIAL_NEW_DRAFT (+36 more)
 
 ### Community 42 - "getUniqueDepartmentLabels"
-Cohesion: 0.07
-Nodes (42): DepartmentInput(), DepartmentInputProps, ProfileEditor(), ProfileEditorProps, orcidHref(), ProfileHeader(), ProfileHeaderProps, profileLinkDedupeKey() (+34 more)
+Cohesion: 0.08
+Nodes (37): DepartmentInput(), DepartmentInputProps, ProfileEditor(), ProfileEditorProps, AdminListing, AdminListingEditModal(), Props, orcidHref() (+29 more)
 
 ### Community 43 - "researchEntityCoverageAudit.ts"
 Cohesion: 0.13
@@ -2839,7 +2734,7 @@ Nodes (29): aggregateCountMap(), AuditEntityRecord, buildBulkAudit(), buildObser
 
 ### Community 44 - "axios.ts"
 Cohesion: 0.05
-Nodes (37): mockedAxios, AdminListing, AdminListingEditModal(), Props, mockedAxios, HttpStatusNotifier(), CourseTableCourse, CourseTableSection() (+29 more)
+Nodes (42): mockedAxios, mockedAxios, HttpStatusNotifier(), CourseTableCourse, CourseTableSection(), CourseTableSectionProps, formatSeason(), ProfileListingsProps (+34 more)
 
 ### Community 45 - "sourceHealth.ts"
 Cohesion: 0.06
@@ -2859,15 +2754,15 @@ Nodes (38): annotateEntitiesWithLeadUsers(), annotateEntitiesWithSourceObservati
 
 ### Community 49 - "listingService.ts"
 Cohesion: 0.10
-Nodes (48): deleteListingForCurrentUser(), getListingModel(), addFavorite(), addView(), archiveListing(), boundedListingDate(), boundedListingNetid(), boundedListingNetidArray() (+40 more)
+Nodes (47): getListingModel(), addFavorite(), addView(), archiveListing(), boundedListingDate(), boundedListingNetid(), boundedListingNetidArray(), boundedListingNumber() (+39 more)
 
 ### Community 50 - "fellowshipService.ts"
 Cohesion: 0.09
 Nodes (43): addFavorite(), addView(), adminFellowshipDate(), adminFellowshipLinks(), adminFellowshipNumber(), adminFellowshipStringArray(), adminFellowshipText(), archiveFellowship() (+35 more)
 
 ### Community 51 - "betaDataQualityCore.ts"
-Cohesion: 0.06
-Nodes (65): DuplicateEntityCluster, main(), BETA_CHECK_OPERATOR_METADATA, betaCommand(), BetaDataQualityCheck, BetaDataQualityDiagnostics, BetaDataQualityProgressEvent, BetaDataQualityScorecard (+57 more)
+Cohesion: 0.05
+Nodes (67): DuplicateEntityCluster, main(), BETA_CHECK_OPERATOR_METADATA, betaCommand(), BetaDataQualityCheck, BetaDataQualityDiagnostics, BetaDataQualityProgressEvent, BetaDataQualityScorecard (+59 more)
 
 ### Community 52 - "scripts"
 Cohesion: 0.03
@@ -2890,16 +2785,16 @@ Cohesion: 0.11
 Nodes (27): getOpportunityById(), normalizeOpportunityIdParam(), mocks, compactStrings(), evidenceExcerpt(), firstEvidenceText(), getOpportunityApplicationLabel(), getOpportunityApplicationState() (+19 more)
 
 ### Community 57 - "staleObservationConflictReview.ts"
-Cohesion: 0.07
-Nodes (29): ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, AggregatedObservationConflictGroup, ALL_KNOWN_CONFLICT_FIELDS, buildMongoFieldFilter(), CONTENT_CONFLICT_FIELDS, __filename, FUNDING_CONTEXT_CONFLICT_FIELDS (+21 more)
+Cohesion: 0.08
+Nodes (25): ACCESS_EVIDENCE_CONFLICT_FIELDS, ADDITIVE_METADATA_CONFLICT_FIELDS, AggregatedObservationConflictGroup, ALL_KNOWN_CONFLICT_FIELDS, CONTENT_CONFLICT_FIELDS, __filename, FUNDING_CONTEXT_CONFLICT_FIELDS, IDENTITY_OR_ROUTING_CONFLICT_FIELDS (+17 more)
 
 ### Community 58 - "researchEntityDescriptionQuality.ts"
 Cohesion: 0.13
 Nodes (47): activeAreasOfResearchSummary(), assessResearchEntityDescriptionQuality(), deriveShortDescriptionFromFullDescription(), DescriptionQualityFlag, FieldQuality, fullDescriptionQuality(), hasBrokenTemplate(), hasDuplicatedLongFragment() (+39 more)
 
 ### Community 59 - "betaDataQuality.ts"
-Cohesion: 0.09
-Nodes (50): ACTIVE_FILTER, asString(), asStringArray(), buildBetaDataQualityScorecard(), buildCollectionCounts(), buildDescriptionQuality(), buildDuplicateEntityNames(), buildLiveLinkCheck() (+42 more)
+Cohesion: 0.10
+Nodes (48): ACTIVE_FILTER, asString(), asStringArray(), buildBetaDataQualityScorecard(), buildCollectionCounts(), buildDescriptionQuality(), buildDuplicateEntityNames(), buildLiveLinkCheck() (+40 more)
 
 ### Community 60 - "studentVisibilityTier.ts"
 Cohesion: 0.12
@@ -2907,15 +2802,15 @@ Nodes (33): classifyProgramResearchRelevance(), ProgramResearchRelevanceInput, P
 
 ### Community 61 - "listingController.ts"
 Cohesion: 0.09
-Nodes (42): addViewToListing(), archiveListingForCurrentUser(), boundedListingSearchQuery(), buildRobustFilterMatch(), createListingForCurrentUser(), escapeMeiliFilterValue(), filterListingUpdate(), getListingById() (+34 more)
+Nodes (43): addViewToListing(), archiveListingForCurrentUser(), boundedListingSearchQuery(), buildRobustFilterMatch(), createListingForCurrentUser(), deleteListingForCurrentUser(), escapeMeiliFilterValue(), filterListingUpdate() (+35 more)
 
 ### Community 62 - "researchGroup.ts"
 Cohesion: 0.07
 Nodes (48): LabHeader(), LabHeaderProps, normalizeActionUrl(), baseGroup, baseGroup, WaysToApproachSection(), getResearchGroupStatus(), AccessSummary (+40 more)
 
 ### Community 63 - "analyticsService.ts"
-Cohesion: 0.07
-Nodes (62): AnalyticsEvent, ActionNeededAnalytics, ANALYTICS_EVENT_TYPES, ANALYTICS_NON_USER_NETIDS, ANALYTICS_RESEARCH_ENTITY_TYPES, AnalyticsUserDrilldownQuery, AnalyticsUserDrilldownResult, AnalyticsUsersQuery (+54 more)
+Cohesion: 0.05
+Nodes (70): AnalyticsEvent, ANALYTICS_SORT_DIRECTIONS, ANALYTICS_USER_SORTS, AnalyticsRequestError, parseAnalyticsSortDirection(), parseAnalyticsUserSort(), ActionNeededAnalytics, ANALYTICS_EVENT_TYPES (+62 more)
 
 ### Community 65 - "acceptedInputsCore.ts"
 Cohesion: 0.07
@@ -2958,8 +2853,8 @@ Cohesion: 0.12
 Nodes (25): addIfDefined(), getProfile(), getProfileCourses(), getProfileListings(), getPublications(), normalizePublicationPagination(), PUBLICATION_SORT_FIELDS, publicationSortValue() (+17 more)
 
 ### Community 75 - "analytics.ts"
-Cohesion: 0.05
-Nodes (45): analyticsEventSchema, AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType, ANALYTICS_SORT_DIRECTIONS, ANALYTICS_USER_SORTS, AnalyticsRequestError, parseAnalyticsSortDirection() (+37 more)
+Cohesion: 0.09
+Nodes (33): analyticsEventSchema, AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType, AnalyticsUserEvent, LogEventParams, AnalyticsUser, buildResearchEvent() (+25 more)
 
 ### Community 76 - "openAlexPaperScraper.ts"
 Cohesion: 0.13
@@ -2994,8 +2889,8 @@ Cohesion: 0.06
 Nodes (42): BetaRepairQueueGateArtifact, buildQueueSummaries(), buildReleaseQueueSummary(), buildSourceFreshness(), classifyOperatorQueueReason(), compactProgramSample(), compactResearchSample(), countByTier() (+34 more)
 
 ### Community 84 - "Listing"
-Cohesion: 0.13
-Nodes (17): ListingEditor(), ListingEditorProps, COLUMNS, KanbanBoardProps, createInitialListingFormState(), ListingFormAction, ListingFormErrors, listingFormReducer() (+9 more)
+Cohesion: 0.11
+Nodes (24): ListingEditor(), COLUMNS, KanbanBoardProps, SearchContextProvider(), SearchContextProviderProps, createInitialOwnListingsState(), OwnListingsAction, ownListingsReducer() (+16 more)
 
 ### Community 85 - "promoteAcceptedBetaCopy.ts"
 Cohesion: 0.11
@@ -3058,8 +2953,8 @@ Cohesion: 0.12
 Nodes (31): DuplicatePersonGroup, buildUserIdentityDedupePlan(), buildUserIdentityDedupeSummary(), canonicalScore(), chooseCanonicalUser(), clusterUsersByCompatibleName(), comparePlannedGroups(), compareStrings() (+23 more)
 
 ### Community 101 - "opportunityDetail.tsx"
-Cohesion: 0.09
-Nodes (22): PrivateRoute(), PrivateRouteProps, InfiniteScrollLoadingDots(), InfiniteScrollLoadingDotsProps, LoadingSpinner(), LoadingSpinnerProps, sizeMap, applicationStateTone() (+14 more)
+Cohesion: 0.20
+Nodes (17): assertBetaSeedAllowed(), BetaSeedEnvironmentCliOptions, BetaSeedPlan, BetaSeedPlanStep, BetaSeedRunResult, buildBetaSeedPlan(), __filename, main() (+9 more)
 
 ### Community 103 - "ScraperContext"
 Cohesion: 0.12
@@ -3085,17 +2980,21 @@ Nodes (53): allowedValues(), hasOversizedStringList(), isOversizedSearchRequest(
 Cohesion: 0.25
 Nodes (16): addResearchEntityDetailAlias(), addResearchEntitySearchAliases(), departmentDisplayLabel(), normalizedDepartmentLabel(), OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS, OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS, publicDepartmentArray(), publicHttpUrl() (+8 more)
 
+### Community 109 - "Authentication Flow"
+Cohesion: 0.23
+Nodes (12): expandedResearchAreasPublicBio(), formatPublicBioList(), hasOfficialYaleProfileUrl(), officialProfileResearchInterestTermsBio(), publicProfileDisplayName(), supportedPublicProfileTopics(), cleanResearchTerm(), extractExplicitResearchInterestPhrases() (+4 more)
+
 ### Community 110 - "repairArchivedEntityArtifacts.ts"
 Cohesion: 0.15
 Nodes (24): applyRepairPlan(), archiveArtifact(), ARTIFACT_SPECS, ArtifactSpec, assertArchivedEntityArtifactRepairApplyAllowed(), buildRepairArchivedEntityArtifactsOutput(), collectionExists(), __filename (+16 more)
 
 ### Community 111 - "profileService.ts"
 Cohesion: 0.09
-Nodes (44): ADMIN_UPDATE_FIELDS, ALLOWED_SELF_UPDATE_FIELDS, boundedProfileUrlKey(), boundedPublicationNumber(), boundedPublicationText(), boundedPublicProfileUrl(), cleanPublicHttpUrl(), cleanPublicSourceLabel() (+36 more)
+Nodes (31): buildProfileResearchMembershipFilter(), cleanPublicSourceLabel(), cleanScholarlyTitle(), cleanUrl(), dateToIso(), hasInspectableOpenAlexDestination(), isDatasetLikeScholarlyLink(), isGeneratedOfficialProfilePublicationAnchor() (+23 more)
 
 ### Community 113 - "betaRepairQueue.ts"
-Cohesion: 0.09
-Nodes (36): StudentVisibilityTier, VisibilityReleaseQueueCollection, visibilityReleaseQueueCollections, visibilityReleaseQueueItemSchema, VisibilityReleaseQueueStatus, visibilityReleaseQueueStatuses, VisibilityRepairStage, visibilityRepairStages (+28 more)
+Cohesion: 0.22
+Nodes (17): arrayValue(), assertBetaRepairQueueApplyReviewedArtifact(), BetaRepairQueueApplyArtifactValidation, BetaRepairQueueCliOptions, blockedReasonsForAttempt(), buildApplyFromArtifactOptions(), buildBetaRepairQueueOutput(), main() (+9 more)
 
 ### Community 115 - "materializeEntity"
 Cohesion: 0.16
@@ -3117,6 +3016,10 @@ Nodes (21): ScrapeJobLock, scrapeJobLockSchema, Source, createCronOwnerId(), cre
 Cohesion: 0.18
 Nodes (19): absoluteUrl(), cleanText(), DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS, entityFromRecord(), entityToObservations(), inferResearchYaleKind(), pageUrlForIndex(), parseDirectory() (+11 more)
 
+### Community 123 - "Adding a New Endpoint"
+Cohesion: 0.31
+Nodes (7): createInitialListingFormState(), ListingFormAction, ListingFormErrors, listingFormReducer(), ListingFormState, researchAreasFromListing(), resolve()
+
 ### Community 124 - "visibilityRepairQueueService.ts"
 Cohesion: 0.10
 Nodes (68): member(), actionReasons, archivedResearchEntityRepairBlock(), attemptProgramRepair(), attemptResearchActionEvidenceRepair(), attemptResearchRepair(), attemptVisibilityRepair(), buildResearchSourceDescriptionPatch() (+60 more)
@@ -3126,8 +3029,8 @@ Cohesion: 0.18
 Nodes (16): candidateProfileUrls(), defaultVerifier(), DESC_BLOCK_REASONS, __dirname, __filename, isTrustedYaleProfileUrl(), LEAD_ROLES, main() (+8 more)
 
 ### Community 126 - "fellowships.tsx"
-Cohesion: 0.07
-Nodes (30): ActiveFilterChip, ActiveFiltersProps, QuickFilterDef, sortOptions, copy, FirstSaveCallout(), FirstSaveCalloutProps, ViewModeToggle() (+22 more)
+Cohesion: 0.06
+Nodes (38): FellowshipModal(), FellowshipModalProps, RichText(), trackFellowshipApplyClick(), sortOptions, copy, FirstSaveCallout(), FirstSaveCalloutProps (+30 more)
 
 ### Community 127 - "researchEntityDescriptionText.ts"
 Cohesion: 0.18
@@ -3142,8 +3045,8 @@ Cohesion: 0.21
 Nodes (12): arxivEntryToObservations(), ArxivFetcher, buildAuthorSearchQuery(), normalizeArxivId(), normalizeArxivText(), parseArxivFeed(), ParsedArxivEntry, shouldProcessFaculty() (+4 more)
 
 ### Community 131 - "launchReviewExceptions.ts"
-Cohesion: 0.09
-Nodes (36): publicSafeStudentVisibilityTiers, publicStudentVisibilityTiers, studentVisibilityTiers, buildLaunchReviewExceptionCandidates(), buildLaunchReviewExceptionDecisionTemplate(), buildLaunchReviewExceptionOutput(), buildLaunchReviewExceptionPlan(), buildLaunchReviewExceptionReview() (+28 more)
+Cohesion: 0.06
+Nodes (55): publicSafeStudentVisibilityTiers, publicStudentVisibilityTiers, StudentVisibilityTier, studentVisibilityTiers, VisibilityReleaseQueueCollection, visibilityReleaseQueueCollections, visibilityReleaseQueueItemSchema, VisibilityReleaseQueueStatus (+47 more)
 
 ### Community 133 - "Session Notes"
 Cohesion: 0.10
@@ -3183,7 +3086,7 @@ Nodes (29): cleanOfficialProfileDisplayName(), cleanOfficialProfileTitle(), clip
 
 ### Community 143 - "assertScriptApplyAllowed"
 Cohesion: 0.06
-Nodes (58): assertDepartmentMigrationApplyAllowed(), buildDepartmentMigrationOutput(), ChangeLog, DepartmentDoc, DepartmentMigrationCliOptions, DepartmentMigrationResult, __dirname, __filename (+50 more)
+Nodes (49): assertDepartmentMigrationApplyAllowed(), buildDepartmentMigrationOutput(), ChangeLog, DepartmentDoc, DepartmentMigrationCliOptions, DepartmentMigrationResult, __dirname, __filename (+41 more)
 
 ### Community 144 - "centerDirectorLLMExtractor.ts"
 Cohesion: 0.15
@@ -3246,8 +3149,8 @@ Cohesion: 0.18
 Nodes (21): addPublicPaperField(), buildLeadPiOutreachContactRoute(), getResearchGroupDetail(), memberDisplayName(), PUBLIC_PAPER_STAGES, publicAccessSignalForResearchDetail(), publicContactRouteForResearchDetail(), publicEntryPathwayForResearchDetail() (+13 more)
 
 ### Community 163 - "normalizePublicProfile"
-Cohesion: 0.13
-Nodes (23): hasProfileDirectoryLabelContamination(), isLabOrResearchGroupUrl(), normalizePublicProfile(), parseProfileUrl(), PUBLIC_PROFILE_BASE_ARRAY_FIELDS, PUBLIC_PROFILE_BASE_TEXT_FIELDS, publicProfileBase(), publicProfileImageUrl() (+15 more)
+Cohesion: 0.18
+Nodes (19): cleanProfileUrlsForPerson(), cleanPublicHttpUrl(), hasProfileDirectoryLabelContamination(), normalizePublicProfile(), officialYaleProfileUrlForUser(), PUBLIC_PROFILE_BASE_ARRAY_FIELDS, PUBLIC_PROFILE_BASE_TEXT_FIELDS, publicProfileBase() (+11 more)
 
 ### Community 164 - "disambiguateSurnameLabNames.ts"
 Cohesion: 0.12
@@ -3290,8 +3193,8 @@ Cohesion: 0.17
 Nodes (18): BETA_ROLLOUT_ORDER, BetaReadinessGateCliOptions, buildBetaReadinessCommands(), buildBetaReadinessGateOutput(), collectionCount(), describeMongoTarget(), __dirname, EXPECTED_SOURCE_NAMES (+10 more)
 
 ### Community 178 - "updateOwnProfile"
-Cohesion: 0.22
-Nodes (13): ADMIN_PROFILE_USER_TYPES, adminUpdateProfile(), boundedAdminProfileEmail(), boundedAdminProfileNumber(), boundedAdminProfileText(), boundedProfileString(), boundedProfileStringArray(), isProfileUpdatePayload() (+5 more)
+Cohesion: 0.31
+Nodes (10): ADMIN_PROFILE_USER_TYPES, adminUpdateProfile(), boundedAdminProfileEmail(), boundedAdminProfileNumber(), boundedAdminProfileText(), boundedProfileString(), boundedProfileStringArray(), sanitizeAdminProfileScalarFields() (+2 more)
 
 ### Community 180 - "adminAccessReviewService.ts"
 Cohesion: 0.14
@@ -3346,20 +3249,20 @@ Cohesion: 0.25
 Nodes (8): assertStaleObservationConflictReviewApplyAllowed(), buildStaleObservationConflictReviewOutput(), buildStaleObservationDecisionTemplate(), main(), normalizeStaleObservationObjectId(), toObjectId(), writeStaleObservationConflictReviewOutput(), writeStaleObservationDecisionTemplate()
 
 ### Community 193 - "launchTrustContract.ts"
-Cohesion: 0.22
-Nodes (14): LaunchReviewExceptionCliOptions, buildLaunchTrustContractOutput(), CliOptions, __filename, main(), parseLaunchTrustContractArgs(), parsePositiveInteger(), parseRequiredValue() (+6 more)
+Cohesion: 0.33
+Nodes (4): router, invokeRouteHandler(), mocks, routeByPath()
 
 ### Community 194 - "EvidenceSourceRow.tsx"
 Cohesion: 0.39
 Nodes (7): EvidenceSourceRow(), EvidenceSourceRowProps, formatConfidence(), formatDate(), formatSourceType(), labelize(), EvidenceSourceRowData
 
 ### Community 195 - "UserContext.ts"
-Cohesion: 0.07
-Nodes (22): defaultUserContext, container, root, __resetResearchPageSnapshotForTests(), UserContextValue, departments, mockedAxios, mockEmptySearchResponses() (+14 more)
+Cohesion: 0.22
+Nodes (11): ListingEditorProps, container, root, UserContextProvider(), sampleUser, createInitialUserState(), UserAction, userReducer() (+3 more)
 
 ### Community 196 - "resolveSafeJsonReportOutputPath"
-Cohesion: 0.12
-Nodes (30): Fellowship, CliOptions, main(), parseArgs(), assertBackfillProgramClassificationsApplyAllowed(), BackfillProgramClassificationsCliOptions, buildBackfillProgramClassificationsOutput(), main() (+22 more)
+Cohesion: 0.10
+Nodes (36): Fellowship, CliOptions, main(), parseArgs(), BackfillEntry, CliOptions, DEFAULT_INPUT, isCommunityForcePortal() (+28 more)
 
 ### Community 197 - "dependencies"
 Cohesion: 0.12
@@ -3392,6 +3295,10 @@ Nodes (13): applyRepairs(), assertRepairListingResearchEntityProfilesApplyAllowe
 ### Community 204 - "researchGroupFilters.ts"
 Cohesion: 0.33
 Nodes (6): acceptanceLevelClauses(), AcceptanceLevelInput, buildResearchGroupFilterString(), escapeMeiliFilterValue(), orEqualsClause(), ResearchGroupFilterInput
+
+### Community 205 - "Adding Things"
+Cohesion: 0.29
+Nodes (7): applyStaleObservationSupersessions(), buildMongoFieldFilter(), defaultStaleObservationApplyDeps(), loadSameSourceConflictGroups(), mongoFieldFilterForCategory(), runStaleObservationConflictReview(), stringifyId()
 
 ### Community 206 - "AdminFacultyProfilesTable.tsx"
 Cohesion: 0.16
@@ -3478,8 +3385,8 @@ Cohesion: 0.11
 Nodes (18): compilerOptions, esModuleInterop, forceConsistentCasingInFileNames, lib, module, moduleResolution, noImplicitAny, outDir (+10 more)
 
 ### Community 233 - "trustedLeadResearchHomeBioFallback"
-Cohesion: 0.21
-Nodes (13): capitalizeSentenceStart(), cleanResearchHomeSummaryForBio(), dedupeProfileResearchEntities(), entityNameMatchesUser(), isIndividualResearchEntity(), isLeadRole(), isUsefulResearchHomeBioSummary(), looksLikePersonOnlyResearchHomeName() (+5 more)
+Cohesion: 0.40
+Nodes (6): hasPersonScopedYaleDirectoryPath(), isLabOrResearchGroupUrl(), isOfficialYaleProfileUrlForUser(), isYaleHost(), parseProfileUrl(), pathSegments()
 
 ### Community 234 - "cli.ts"
 Cohesion: 0.15
@@ -3504,10 +3411,6 @@ Nodes (6): copyFiniteNumber(), normalizeAcceptedDecisionValidation(), normalizeD
 ### Community 243 - "UI/UX Direction"
 Cohesion: 0.18
 Nodes (11): Canonical Product Frame, Current Interface Shape, Graphify Grounding, `/listings`, Near-Term UX Moves, Open UX Questions, `/research`, `/research/:slug` (+3 more)
-
-### Community 247 - "profileService.test.ts"
-Cohesion: 0.21
-Nodes (9): buildProfileResearchMembershipFilter(), isOfficialProfileScholarlyLink(), loadProfileResearchEntities(), loadProfileScholarlyLinks(), orderProfileScholarlyLinks(), paperToScholarlyLink(), profileDocumentId(), buildResearchActivityLinkPayload() (+1 more)
 
 ### Community 248 - "researchEntity.ts"
 Cohesion: 0.06
@@ -3566,8 +3469,8 @@ Cohesion: 0.18
 Nodes (11): CTA Vocabulary, Entity Page Questions, Explore Research, Navigation Shape, North Star, Primary Surfaces, Product Context, Product Premise (+3 more)
 
 ### Community 272 - "apiBaseUrl.ts"
-Cohesion: 0.22
-Nodes (13): AdminRoute(), AdminRouteProps, getLocalAdminDevLoginUrl(), getSafeLocalAdminRedirectTarget(), SignOutButton(), storeLogoutReturnPath(), buildApiUrl(), getApiBaseUrl() (+5 more)
+Cohesion: 0.12
+Nodes (20): AdminRoute(), AdminRouteProps, getLocalAdminDevLoginUrl(), getSafeLocalAdminRedirectTarget(), PrivateRoute(), PrivateRouteProps, InfiniteScrollLoadingDots(), InfiniteScrollLoadingDotsProps (+12 more)
 
 ### Community 273 - "resolutions"
 Cohesion: 0.12
@@ -3586,8 +3489,8 @@ Cohesion: 0.27
 Nodes (7): adminTableReducer(), createInitialPublicationsTableState(), PublicationsFilter, PublicationsTableAction, publicationsTableReducer(), PublicationsTableState, TestPublication
 
 ### Community 283 - "isLikelyPersonUrl"
-Cohesion: 0.14
-Nodes (27): initial(), allNameTokens(), allowsLastNameOnlyPersonUrl(), cleanProfileUrlsForPerson(), compoundLastNameMatchedTokens(), expandedResearchAreasPublicBio(), formatPublicBioList(), givenNameAliasMatches() (+19 more)
+Cohesion: 0.28
+Nodes (15): initial(), allNameTokens(), allowsLastNameOnlyPersonUrl(), compoundLastNameMatchedTokens(), givenNameAliasMatches(), hasPartialCompoundLastNameProfilePath(), hasSurnameOnlyProfilePath(), isAmbiguousInitialLastProfileUrl() (+7 more)
 
 ### Community 284 - "sanitizeMongo.ts"
 Cohesion: 0.40
@@ -3738,8 +3641,8 @@ Cohesion: 0.43
 Nodes (5): findSecretFindings(), isAllowedPlaceholder(), lineNumberForIndex(), PLACEHOLDER_PATTERNS, SECRET_RULES
 
 ### Community 408 - "runStaleObservationConflictReview"
-Cohesion: 0.29
-Nodes (7): applyStaleObservationSupersessions(), defaultStaleObservationApplyDeps(), runStaleObservationConflictReview(), sameStringSet(), StaleObservationConflictObservation, validateStaleObservationReviewDecision(), validateStaleObservationReviewDecisions()
+Cohesion: 0.50
+Nodes (4): sameStringSet(), StaleObservationConflictObservation, validateStaleObservationReviewDecision(), validateStaleObservationReviewDecisions()
 
 ### Community 409 - "Graphify repo memory"
 Cohesion: 0.15
@@ -3774,24 +3677,24 @@ Cohesion: 0.09
 Nodes (33): AccessSignal, accessSignalSchema, ContactRoute, contactRouteSchema, EntryPathway, entryPathwaySchema, grantSchema, fieldProvenanceSchema (+25 more)
 
 ## Knowledge Gaps
-- **4483 isolated node(s):** `name`, `version`, `private`, `node`, `@emotion/react` (+4478 more)
+- **4377 isolated node(s):** `name`, `version`, `private`, `node`, `@emotion/react` (+4372 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **2353 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **2246 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `sanitizeLogValue()` connect `sanitizeLogValue` to `departmentRosterScraper.ts`, `logSanitizer.ts`, `labMicrositeUndergradLLMExtractor.ts`, `entityMaterializer.ts`, `labMicrositeDescriptionLLMExtractor.ts`, `passport.ts`, `undergradFellowshipRecipientScraper.ts`, `duplicateEntityNameReview.ts`, `dedupeResearchEntitiesByPi.ts`, `admin.ts`, `profileDataQualityAudit.ts`, `centersInstitutesScraper.ts`, `nihReporterScraper.ts`, `User`, `userService.ts`, `serializedDocumentId`, `researchEntityCoverageAudit.ts`, `sourceHealth.ts`, `repairOfficialProfilePublicationPointers.ts`, `officialProfilePiBackfillScraper.test.ts`, `listingService.ts`, `runReport.ts`, `opportunityDetailService.ts`, `staleObservationConflictReview.ts`, `betaDataQuality.ts`, `listingController.ts`, `analyticsService.ts`, `entryPathwayService.ts`, `yaleCollegeFellowshipsOfficeScraper.ts`, `nsfAwardScraper.ts`, `scholarlyLinkSuppressionAudit.ts`, `postedOpportunityService.ts`, `profileController.ts`, `analytics.ts`, `openAlexPaperScraper.ts`, `types.ts`, `ResearchGroupMember`, `promoteAcceptedBetaCopy.ts`, `paperAuthorshipAudit.ts`, `Observation`, `assertPublicHttpUrl`, `studentDecisionLLMExtractor.ts`, `backfillProfileBiosFromOfficialUrls.ts`, `rebuildPathwaySearchIndex.ts`, `claimGate.ts`, `ScraperContext`, `officialProfilePiBackfillScraper.ts`, `repairArchivedEntityArtifacts.ts`, `betaRepairQueue.ts`, `materializeEntity`, `pathwayQualityAudit.ts`, `cronRunner.ts`, `backfillResearchHomeOfficialUrls.ts`, `arxivPreprintScraper.ts`, `launchReviewExceptions.ts`, `acceptedInputs.ts`, `dedupeUsersByIdentity.ts`, `fellowshipController.ts`, `applicationRoutePathwayBackfillCore.ts`, `assertScriptApplyAllowed`, `centerDirectorLLMExtractor.ts`, `crossSourceObservationConflictReview.ts`, `migrateResearchEntities.ts`, `researchQualitySearchReview.ts`, `migrateResearchEntityCollections.ts`, `researchGroupController.ts`, `disambiguateSurnameLabNames.ts`, `repairDuplicateAccessSignals.ts`, `profileBioCoverageAudit.ts`, `programController.ts`, `repairMismatchedPersonEmailsCore.ts`, `betaReadinessGate.ts`, `studentVisibilityRepairTargets.ts`, `cleanupLegacyMongoCollections.ts`, `seedSources.ts`, `configService.ts`, `backfillCenterDirectors.ts`, `migrateMongoNaming.ts`, `launchTrustContract.ts`, `resolveSafeJsonReportOutputPath`, `userEmailHygiene.ts`, `orcidWorksScraper.ts`, `repairListingResearchEntityProfiles.ts`, `meiliSyncService.ts`, `index.ts`, `repairProfileDescriptionBackfillConflicts.ts`, `clearBetaStudentAnalytics.ts`, `scraperIntegrityDuplicateReview.ts`, `auditResearchEntityRename.ts`, `backfillPostedOpportunitiesFromListings.ts`, `paperQualityService.ts`, `pathwayRelevanceReview.ts`, `scraperIntegrityGate.ts`, `programs.ts`, `cli.ts`, `listings.ts`, `researchEntity.ts`, `seed.ts`, `users.ts`, `launchAcquisitionReport.ts`, `index.ts`, `refreshGateScorecards.ts`, `dedupeExploratoryContactPathways.ts`, `materializePaperObservationsFromRun`, `courseTableService.ts`, `errorHandler.ts`?**
-  _High betweenness centrality (0.082) - this node is a cross-community bridge._
+- **Why does `sanitizeLogValue()` connect `sanitizeLogValue` to `departmentRosterScraper.ts`, `logSanitizer.ts`, `labMicrositeUndergradLLMExtractor.ts`, `entityMaterializer.ts`, `labMicrositeDescriptionLLMExtractor.ts`, `passport.ts`, `undergradFellowshipRecipientScraper.ts`, `duplicateEntityNameReview.ts`, `dedupeResearchEntitiesByPi.ts`, `admin.ts`, `profileDataQualityAudit.ts`, `centersInstitutesScraper.ts`, `nihReporterScraper.ts`, `User`, `userService.ts`, `serializedDocumentId`, `researchEntityCoverageAudit.ts`, `sourceHealth.ts`, `repairOfficialProfilePublicationPointers.ts`, `officialProfilePiBackfillScraper.test.ts`, `listingService.ts`, `runReport.ts`, `opportunityDetailService.ts`, `staleObservationConflictReview.ts`, `betaDataQuality.ts`, `listingController.ts`, `analyticsService.ts`, `entryPathwayService.ts`, `yaleCollegeFellowshipsOfficeScraper.ts`, `nsfAwardScraper.ts`, `scholarlyLinkSuppressionAudit.ts`, `postedOpportunityService.ts`, `profileController.ts`, `openAlexPaperScraper.ts`, `types.ts`, `ResearchGroupMember`, `promoteAcceptedBetaCopy.ts`, `paperAuthorshipAudit.ts`, `Observation`, `assertPublicHttpUrl`, `studentDecisionLLMExtractor.ts`, `backfillProfileBiosFromOfficialUrls.ts`, `rebuildPathwaySearchIndex.ts`, `claimGate.ts`, `opportunityDetail.tsx`, `ScraperContext`, `officialProfilePiBackfillScraper.ts`, `repairArchivedEntityArtifacts.ts`, `betaRepairQueue.ts`, `materializeEntity`, `pathwayQualityAudit.ts`, `cronRunner.ts`, `backfillResearchHomeOfficialUrls.ts`, `arxivPreprintScraper.ts`, `launchReviewExceptions.ts`, `acceptedInputs.ts`, `dedupeUsersByIdentity.ts`, `fellowshipController.ts`, `applicationRoutePathwayBackfillCore.ts`, `assertScriptApplyAllowed`, `centerDirectorLLMExtractor.ts`, `crossSourceObservationConflictReview.ts`, `migrateResearchEntities.ts`, `researchQualitySearchReview.ts`, `migrateResearchEntityCollections.ts`, `researchGroupController.ts`, `disambiguateSurnameLabNames.ts`, `repairDuplicateAccessSignals.ts`, `profileBioCoverageAudit.ts`, `programController.ts`, `repairMismatchedPersonEmailsCore.ts`, `betaReadinessGate.ts`, `studentVisibilityRepairTargets.ts`, `cleanupLegacyMongoCollections.ts`, `seedSources.ts`, `configService.ts`, `backfillCenterDirectors.ts`, `migrateMongoNaming.ts`, `resolveSafeJsonReportOutputPath`, `userEmailHygiene.ts`, `orcidWorksScraper.ts`, `repairListingResearchEntityProfiles.ts`, `meiliSyncService.ts`, `index.ts`, `repairProfileDescriptionBackfillConflicts.ts`, `clearBetaStudentAnalytics.ts`, `scraperIntegrityDuplicateReview.ts`, `auditResearchEntityRename.ts`, `backfillPostedOpportunitiesFromListings.ts`, `paperQualityService.ts`, `pathwayRelevanceReview.ts`, `scraperIntegrityGate.ts`, `programs.ts`, `cli.ts`, `listings.ts`, `researchEntity.ts`, `seed.ts`, `users.ts`, `launchAcquisitionReport.ts`, `index.ts`, `refreshGateScorecards.ts`, `dedupeExploratoryContactPathways.ts`, `materializePaperObservationsFromRun`, `courseTableService.ts`, `errorHandler.ts`?**
+  _High betweenness centrality (0.085) - this node is a cross-community bridge._
 - **Why does `field()` connect `dedupeUsersByIdentity.ts` to `arxivPreprintScraper.ts`, `logSanitizer.ts`, `adminFellowshipsTableReducer.ts`, `ImportRootDataFiles.ts`, `safeHttpUrl`, `labMicrositeUndergradLLMExtractor.ts`, `textValue`, `integrityGate.ts`, `crossSourceObservationConflictReview.ts`, `index.ts`, `normalizePublicProfile`, `User`, `sourceHealth.ts`, `fellowshipService.ts`, `runReport.ts`, `betaDataQuality.ts`, `analyticsService.ts`, `acceptedInputsCore.ts`, `entryPathwayService.ts`, `workPlanner.ts`, `orcidWorksScraper.ts`, `AdminListingsTable.tsx`, `openAlexPaperScraper.ts`, `AdminFacultyProfilesTable.tsx`, `scraperIntegrityDuplicateReview.ts`, `promoteAcceptedBetaCopy.ts`, `ScraperContext`, `confidenceResolver.ts`, `materializeEntity`, `buildStaleObservationConflictSummary`, `visibilityRepairQueueService.ts`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+  _High betweenness centrality (0.047) - this node is a cross-community bridge._
 - **Why does `ResearchGroup` connect `researchGroup.ts` to `labDetailReducer.test.ts`, `browsable.ts`, `labDetail.ts`, `ImportRootDataFiles.ts`, `BackfillV4FacultyMembers.ts`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+  _High betweenness centrality (0.036) - this node is a cross-community bridge._
 - **What connects `name`, `version`, `private` to the rest of the system?**
-  _4487 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _4380 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Decisions` be split into smaller, more focused modules?**
   _Cohesion score 0.10526315789473684 - nodes in this community are weakly interconnected._
 - **Should `labDetail.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.0734006734006734 - nodes in this community are weakly interconnected._
 - **Should `browsable.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.0531883632089333 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05985915492957746 - nodes in this community are weakly interconnected._

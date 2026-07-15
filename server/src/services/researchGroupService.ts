@@ -1276,11 +1276,13 @@ const normalizePublicUrlDestination = (url?: string | null): string => {
 export function researchDetailLeadIdentity(
   group: Record<string, any>,
   members: Array<{ user: any; role: string; row?: any }>,
+  rawLeadMembers?: Array<Record<string, any>>,
 ): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
   const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
   const qualitySummary = buildResearchEntityQualitySummary({
     entity: group,
-    leadMembers: leadMembers.map((member) => ({ ...member.row, user: member.user })),
+    leadMembers:
+      rawLeadMembers || leadMembers.map((member) => ({ ...member.row, user: member.user })),
   });
   if (qualitySummary.repairFlags.includes('pi_identity_conflict')) {
     return { leadIdentityStatus: 'under_review' };
@@ -1954,9 +1956,35 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(membersWithRows);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
+  const rawLeadMembers = memberRows
+    .filter((row) => PUBLIC_LEAD_ROLES.has(row.role))
+    .map((row) => {
+      const user = row.userId ? usersById.get(researchGroupDocumentId(row.userId)) : undefined;
+      const facultyMember = row.facultyMemberId
+        ? facultyMembersById.get(researchGroupDocumentId(row.facultyMemberId))
+        : undefined;
+      return {
+        ...row,
+        userId: normalizeResearchGroupObjectId(row.userId),
+        facultyMemberId: normalizeResearchGroupObjectId(row.facultyMemberId),
+        user: user
+          ? {
+              ...user,
+              facultyMemberId: normalizeResearchGroupObjectId(user.facultyMemberId),
+            }
+          : undefined,
+        facultyMember: facultyMember
+          ? {
+              ...facultyMember,
+              userId: normalizeResearchGroupObjectId(facultyMember.userId),
+            }
+          : undefined,
+      };
+    });
   const leadIdentity = researchDetailLeadIdentity(
     group as Record<string, any>,
     dedupedMembersWithRows,
+    rawLeadMembers,
   );
   const piOutreachRoute = buildLeadPiOutreachContactRoute(dedupedMembersWithRows, group);
   const leadMemberNames = dedupedMembersWithRows
