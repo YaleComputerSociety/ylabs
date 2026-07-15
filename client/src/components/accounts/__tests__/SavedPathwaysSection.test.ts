@@ -653,6 +653,41 @@ describe('SavedPathwaysSection advising export', () => {
     );
   });
 
+  it('keeps pathway plan endpoints when saved items fall back to pathways', async () => {
+    const user = userEvent.setup();
+    mockedAxios.get.mockImplementation((url) => {
+      if (url === '/users/savedResearchEntities') return Promise.reject(new Error('missing'));
+      if (url === '/users/savedResearchEntityPlans') {
+        return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
+      }
+      if (url === '/users/savedResearchPlans') {
+        return Promise.resolve({ data: { savedResearchPlans: [pathway()] } });
+      }
+      if (url === '/users/savedResearchPlanDetails') {
+        return Promise.resolve({
+          data: { savedResearchPlanDetails: { 'pathway-1': plan({ intent: 'outreach' }) } },
+        });
+      }
+      if (url === '/users/savedResearchPlanFundingMatches') {
+        return Promise.resolve({ data: { matchesByPathwayId: {} } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    renderAuthenticatedSavedPlans();
+    await user.click(await screen.findByRole('button', { name: 'Plan details' }));
+    await user.type(screen.getByLabelText('Note'), 'Updated');
+
+    await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());
+    expect(mockedAxios.get).not.toHaveBeenCalledWith(
+      '/users/savedResearchEntityPlans',
+      expect.anything(),
+    );
+    expect(mockedAxios.put.mock.calls.at(-1)?.[0]).toBe(
+      '/users/savedResearchPlanDetails/pathway-1',
+    );
+  });
+
   it('never PUTs fallback plan state when plan hydration fails', async () => {
     const user = userEvent.setup();
     mockedAxios.get.mockImplementation((url) => {

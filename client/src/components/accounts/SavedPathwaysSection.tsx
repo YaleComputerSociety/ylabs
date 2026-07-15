@@ -100,8 +100,9 @@ type DashboardResponse = Awaited<ReturnType<typeof axios.get>>;
 type OptionalDashboardResponse =
   | { value: DashboardResponse; error: false; apiMode?: SavedPlanApiMode }
   | { value: null; error: true };
+type SavedItemsDashboardResponse = { value: DashboardResponse; apiMode: SavedPlanApiMode };
 type SavedPlanDashboardLoad = [
-  DashboardResponse,
+  SavedItemsDashboardResponse,
   OptionalDashboardResponse,
   OptionalDashboardResponse,
   OptionalDashboardResponse,
@@ -117,22 +118,32 @@ const loadSavedPlanDashboard = (owner: string): Promise<SavedPlanDashboardLoad> 
       (value) => ({ value, error: false as const }),
       () => ({ value: null, error: true as const }),
     );
-  const request = Promise.all([
-    axios.get('/users/savedResearchEntities', { withCredentials: true }).catch(async () => {
+  const savedItemsRequest = axios
+    .get('/users/savedResearchEntities', { withCredentials: true })
+    .then((value) => ({ value, apiMode: 'entity' as const }))
+    .catch(async () => {
       const legacyResult = await legacyPathwaysRequest;
       if (legacyResult.error || !legacyResult.value) {
         throw new Error('Saved research plans unavailable');
       }
-      return legacyResult.value;
-    }),
-    axios
-      .get('/users/savedResearchEntityPlans', { withCredentials: true })
-      .then(
-        (value) => ({ value, apiMode: 'entity' as const }),
-        () =>
-          axios
-            .get('/users/savedResearchPlanDetails', { withCredentials: true })
-            .then((value) => ({ value, apiMode: 'pathway' as const })),
+      return { value: legacyResult.value, apiMode: 'pathway' as const };
+    });
+  const request = Promise.all([
+    savedItemsRequest,
+    savedItemsRequest
+      .then(({ apiMode }) =>
+        apiMode === 'entity'
+          ? axios
+              .get('/users/savedResearchEntityPlans', { withCredentials: true })
+              .then((value) => ({ value, apiMode }))
+              .catch(() =>
+                axios
+                  .get('/users/savedResearchPlanDetails', { withCredentials: true })
+                  .then((value) => ({ value, apiMode: 'pathway' as const })),
+              )
+          : axios
+              .get('/users/savedResearchPlanDetails', { withCredentials: true })
+              .then((value) => ({ value, apiMode })),
       )
       .then(
         ({ value, apiMode }) => ({ value, error: false as const, apiMode }),
@@ -921,9 +932,10 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     setPlanMigrationNotice('');
     setPlans({});
     try {
-      const [response, plansResult, matchesResult, legacyPathwaysResult] =
+      const [savedItemsResult, plansResult, matchesResult, legacyPathwaysResult] =
         await loadSavedPlanDashboard(ownerAtLoad || 'authenticated-account');
       if (!isCurrentOwnerLoad()) return;
+      const response = savedItemsResult.value;
       const responseData = (response as any).data;
       const savedPathways: PathwaySearchHit[] = responseData.savedResearchEntities
         ? (responseData.savedResearchEntities as SavedResearchEntitySummary[]).map(
@@ -937,7 +949,7 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
       const entityIdByPathwayId = researchEntityIdsByLegacyPathway(legacyPathways);
       const pathwayIdByEntityId = uniqueLegacyPathwayIdsByResearchEntity(legacyPathways);
       const savedResearchEntityIds = savedPathways.map((pathway: PathwaySearchHit) => pathway._id);
-      const hasCanonicalEntityResponse = Array.isArray(responseData.savedResearchEntities);
+      const hasCanonicalEntityResponse = savedItemsResult.apiMode === 'entity';
       const legacyMappingIsComplete = !hasCanonicalEntityResponse || !legacyPathwaysResult.error;
       setPathways(savedPathways);
       if (!plansResult.error && plansResult.value) {
