@@ -652,7 +652,9 @@ const FellowshipEditModal = ({
           <div className="bg-[var(--yr-panel-muted)] border border-[var(--yr-line)] rounded-lg p-3">
             <p className="text-xs text-gray-500 mb-1">
               <strong>Tip:</strong> To add a clickable link inside any text field, use the format:{' '}
-              <code className="bg-[var(--yr-panel-muted)] px-1 rounded">[link text](https://url)</code>
+              <code className="bg-[var(--yr-panel-muted)] px-1 rounded">
+                [link text](https://url)
+              </code>
             </p>
           </div>
 

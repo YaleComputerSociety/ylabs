@@ -7,10 +7,7 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
-import {
-  formatFellowshipDate,
-  getFellowshipApplicationStatus,
-} from '../../utils/fellowshipStatus';
+import { formatFellowshipDate, getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -172,7 +169,10 @@ const FellowshipModal = ({
 
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+    if (
+      event.shiftKey &&
+      (document.activeElement === first || document.activeElement === titleRef.current)
+    ) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -233,10 +233,9 @@ const FellowshipModal = ({
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
-  const applicationActionLabel =
-    applicationStatus.isApplicationWindowOpen
-      ? 'Apply'
-      : 'Open source';
+  const applicationActionLabel = applicationStatus.isApplicationWindowOpen
+    ? 'Apply'
+    : 'Open source';
   const applicationHref = safeHttpUrl(fellowship.applicationLink);
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
   const safeLinks = (fellowship.links || [])
@@ -413,7 +412,8 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-slate-500">What this is</span>
                       <p className="text-sm font-medium text-slate-900">
-                        {fellowship.studentFacingCategory || programKindLabel(fellowship.programKind)}
+                        {fellowship.studentFacingCategory ||
+                          programKindLabel(fellowship.programKind)}
                       </p>
                     </div>
                     <div>
@@ -443,7 +443,9 @@ const FellowshipModal = ({
                   <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
                     <div>
                       <span className="text-xs text-blue-600">Current Status</span>
-                      <p className="text-sm font-semibold text-blue-900">{applicationStatus.label}</p>
+                      <p className="text-sm font-semibold text-blue-900">
+                        {applicationStatus.label}
+                      </p>
                       <p className="text-xs text-blue-700">{applicationStatus.detail}</p>
                     </div>
                     {cycleStatus.category === 'nextCycle' && (
@@ -520,7 +522,9 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {(fellowship.compensationSummary || fellowship.hoursPerWeek || fellowship.programDates) && (
+                {(fellowship.compensationSummary ||
+                  fellowship.hoursPerWeek ||
+                  fellowship.programDates) && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       Time & Funding

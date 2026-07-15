@@ -294,10 +294,9 @@ describe('profileController', () => {
 
     await getPublications(req, res);
 
-    expect(res.json.mock.calls[0][0].publications.map((publication: any) => publication.title)).toEqual([
-      'New public paper',
-      'Old public paper',
-    ]);
+    expect(
+      res.json.mock.calls[0][0].publications.map((publication: any) => publication.title),
+    ).toEqual(['New public paper', 'Old public paper']);
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('sourceEvidenceId');
   });
 
@@ -359,7 +358,9 @@ describe('profileController', () => {
       research_interest_summary:
         'The Owner group studies adaptive optics and wavefront control for ground-based telescopes.',
       research_interests: ['Adaptive Optics', 'Wavefront Control'],
-      researchEntities: [{ slug: 'owner-lab', name: 'Owner Lab', researchAreas: ['Adaptive Optics'] }],
+      researchEntities: [
+        { slug: 'owner-lab', name: 'Owner Lab', researchAreas: ['Adaptive Optics'] },
+      ],
     };
     mocks.getProfileByNetid.mockResolvedValue(normalized);
 

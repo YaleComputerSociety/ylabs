@@ -76,9 +76,7 @@ const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
       <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
         Best next step
       </p>
-      <h3 className="mt-1 text-base font-semibold leading-snug text-gray-950">
-        {nextStep}
-      </h3>
+      <h3 className="mt-1 text-base font-semibold leading-snug text-gray-950">{nextStep}</h3>
 
       <Link
         to={researchEntityLink}
@@ -89,7 +87,10 @@ const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
 
       {(pathway.activePostedOpportunity?.title || opportunityDeadline) && (
         <p className="mt-1 text-xs leading-relaxed text-gray-500">
-          {[pathway.activePostedOpportunity?.title, opportunityDeadline && `Deadline ${opportunityDeadline}`]
+          {[
+            pathway.activePostedOpportunity?.title,
+            opportunityDeadline && `Deadline ${opportunityDeadline}`,
+          ]
             .filter(Boolean)
             .join(' | ')}
         </p>

@@ -139,10 +139,6 @@ contactRouteSchema.index(
   },
 );
 
-export const ContactRoute = mongoose.model(
-  'ContactRoute',
-  contactRouteSchema,
-  'contact_routes',
-);
+export const ContactRoute = mongoose.model('ContactRoute', contactRouteSchema, 'contact_routes');
 
 export { contactRouteSchema };

@@ -6,12 +6,12 @@ import { AnalyticsEventType } from '../models/analytics';
 export const sendContactEmail = async (req: Request, res: Response) => {
   try {
     const { studentName, studentEmail, professorEmail, subject, message, cc, bcc } = req.body;
-    const currentUser = req.user as { netId?: string, userType: string };
-    
+    const currentUser = req.user as { netId?: string; userType: string };
+
     if (!studentName || !studentEmail || !professorEmail || !subject || !message) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Missing required fields',
-        required: ['studentName', 'studentEmail', 'professorEmail', 'subject', 'message']
+        required: ['studentName', 'studentEmail', 'professorEmail', 'subject', 'message'],
       });
     }
 
@@ -28,7 +28,7 @@ export const sendContactEmail = async (req: Request, res: Response) => {
       message,
       cc: ccArray,
       bcc: bccArray,
-      attachments
+      attachments,
     });
 
     if (currentUser?.netId) {
@@ -42,23 +42,22 @@ export const sendContactEmail = async (req: Request, res: Response) => {
           subject,
           attachmentCount: attachments.length,
           ccCount: ccArray.length,
-          bccCount: bccArray.length
-        }
+          bccCount: bccArray.length,
+        },
       });
     }
 
-    res.status(200).json({ 
+    res.status(200).json({
       success: true,
       message: 'Email sent successfully',
       emailsSent: 1 + ccArray.length + bccArray.length,
-      attachmentCount: attachments.length
+      attachmentCount: attachments.length,
     });
-
   } catch (error: any) {
     console.error('Email send error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to send email',
-      details: error.message
+      details: error.message,
     });
   }
 };

@@ -124,12 +124,15 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     [],
   ) as React.Dispatch<React.SetStateAction<StudentVisibilityTier[]>>;
 
-  const setSortBy = useCallback((value: string) => {
-    dispatch({
-      type: 'SET_SORT_BY',
-      payload: sortableKeys.includes(value) ? value : sortableKeys[0],
-    });
-  }, [sortableKeys]);
+  const setSortBy = useCallback(
+    (value: string) => {
+      dispatch({
+        type: 'SET_SORT_BY',
+        payload: sortableKeys.includes(value) ? value : sortableKeys[0],
+      });
+    },
+    [sortableKeys],
+  );
 
   const setSortOrder = useCallback((value: number) => {
     dispatch({ type: 'SET_SORT_ORDER', payload: value });

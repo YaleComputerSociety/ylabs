@@ -66,7 +66,10 @@ const invokeIsAdminLike = async (
   return { res, next };
 };
 
-const invokeSyncMiddleware = (middleware: (req: any, res: any, next: any) => unknown, user: unknown) => {
+const invokeSyncMiddleware = (
+  middleware: (req: any, res: any, next: any) => unknown,
+  user: unknown,
+) => {
   const req = { user };
   const res = {
     statusCode: 200,

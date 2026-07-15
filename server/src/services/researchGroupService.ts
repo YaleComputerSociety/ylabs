@@ -45,7 +45,6 @@ import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes'
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
-  toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
@@ -1201,12 +1200,6 @@ export function publicMemberUserForRow(
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
-const idEquals = (left: unknown, right: unknown): boolean => {
-  const leftId = normalizeResearchGroupObjectId(left);
-  const rightId = normalizeResearchGroupObjectId(right);
-  return Boolean(leftId && rightId && leftId === rightId);
-};
-
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
   archived: { $ne: true },
@@ -1396,9 +1389,7 @@ const OFFICIAL_PROFILE_URL_KEYS = [
 const safeProfileUrlObject = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(
-      ([, url]) => publicHttpUrl(url),
-    ),
+    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
   ) as Record<string, string>;
 };
 

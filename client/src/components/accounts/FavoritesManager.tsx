@@ -663,9 +663,7 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                 saveStatuses[fellowship.id] !== 'idle' && (
                   <p
                     className={`mt-1 text-xs ${
-                      saveStatuses[fellowship.id] === 'error'
-                        ? 'text-red-700'
-                        : 'text-gray-500'
+                      saveStatuses[fellowship.id] === 'error' ? 'text-red-700' : 'text-gray-500'
                     }`}
                     role={saveStatuses[fellowship.id] === 'error' ? 'alert' : 'status'}
                     aria-live="polite"

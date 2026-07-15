@@ -14,10 +14,7 @@ import { Listing } from '../types/types';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
 import { getInstitutionAffiliation } from '../utils/institutionAffiliation';
-import {
-  browsePageReducer,
-  createInitialBrowsePageState,
-} from '../reducers/browsePageReducer';
+import { browsePageReducer, createInitialBrowsePageState } from '../reducers/browsePageReducer';
 import { createListing } from '../utils/apiCleaner';
 import { getListingEmptyMessage, hasListingSearchCriteria } from '../utils/listingEmptyState';
 
@@ -127,9 +124,23 @@ const Home = () => {
   const roleBoardModes = [
     { key: null, label: 'All roles', value: listings.length },
     { key: 'open', label: 'Open', value: openListingCount },
-    { key: 'ysm', label: 'Medicine', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM').length },
-    { key: 'ysph', label: 'Public Health', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSPH').length },
-    { key: 'yc', label: 'Yale College', value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YC').length },
+    {
+      key: 'ysm',
+      label: 'Medicine',
+      value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSM')
+        .length,
+    },
+    {
+      key: 'ysph',
+      label: 'Public Health',
+      value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YSPH')
+        .length,
+    },
+    {
+      key: 'yc',
+      label: 'Yale College',
+      value: listings.filter((l) => getInstitutionAffiliation(l.departments || []) === 'YC').length,
+    },
   ];
 
   const sentinelRef = useInfiniteScroll({
@@ -236,8 +247,8 @@ const Home = () => {
             </p>
             <h1 className="mt-1 text-2xl font-bold text-gray-950">Posted Roles</h1>
             <p className="mt-1 max-w-3xl text-sm leading-relaxed text-gray-600">
-              Posted roles are now one part of Yale Research. Start with research homes
-              when you want to explore what exists, then use the evidence and next steps on each profile.
+              Posted roles are now one part of Yale Research. Start with research homes when you
+              want to explore what exists, then use the evidence and next steps on each profile.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

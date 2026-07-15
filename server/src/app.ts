@@ -5,7 +5,10 @@ import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { allowsNonProductionSecurityBypass, requiresSecureSessionCookie } from './utils/environment';
+import {
+  allowsNonProductionSecurityBypass,
+  requiresSecureSessionCookie,
+} from './utils/environment';
 import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
@@ -190,7 +193,11 @@ const corsOptions = {
   credentials: true,
 };
 
-function setPrivateApiCacheHeaders(_req: express.Request, res: express.Response, next: express.NextFunction) {
+function setPrivateApiCacheHeaders(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   res.setHeader('Cache-Control', 'no-store, private, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Surrogate-Control', 'no-store');
@@ -199,7 +206,11 @@ function setPrivateApiCacheHeaders(_req: express.Request, res: express.Response,
   next();
 }
 
-function blockSourceMapAssetRequests(req: express.Request, res: express.Response, next: express.NextFunction) {
+function blockSourceMapAssetRequests(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   if (req.path.endsWith('.map')) {
     res.setHeader('Cache-Control', 'no-store, private, max-age=0');
     res.setHeader('Pragma', 'no-cache');
@@ -254,9 +265,12 @@ const app = express()
   .use(securityHeaders)
   .use(cors(corsOptions))
   .use('/api', setPrivateApiCacheHeaders)
-  .use('/api', csrfOriginGuard(allowList, {
-    writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,
-  }))
+  .use(
+    '/api',
+    csrfOriginGuard(allowList, {
+      writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,
+    }),
+  )
   .use(express.json({ limit: API_BODY_LIMIT }))
   .use(
     express.urlencoded({

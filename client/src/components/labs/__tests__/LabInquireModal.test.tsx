@@ -55,15 +55,17 @@ describe('LabInquireModal', () => {
         onClose={vi.fn()}
         group={baseGroup}
         members={[]}
-        contactRoutes={[{
-          routeType: 'PROGRAM_MANAGER',
-          label: 'Undergraduate research contact form',
-          url: 'https://research.yale.edu/contact',
-          sourceUrl: 'https://research.yale.edu/about',
-          reviewStatus: 'approved',
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        }]}
+        contactRoutes={[
+          {
+            routeType: 'PROGRAM_MANAGER',
+            label: 'Undergraduate research contact form',
+            url: 'https://research.yale.edu/contact',
+            sourceUrl: 'https://research.yale.edu/about',
+            reviewStatus: 'approved',
+            visibility: 'PUBLIC',
+            contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
+          },
+        ]}
         onOfficialRouteOpen={onOfficialRouteOpen}
       />,
     );

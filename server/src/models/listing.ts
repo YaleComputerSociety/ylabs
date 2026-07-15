@@ -71,12 +71,12 @@ const listingSchema = new mongoose.Schema(
       required: false,
     },
     ownerTitle: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     ownerPrimaryDepartment: {
-        type: String,
-        required: false,
+      type: String,
+      required: false,
     },
     professorIds: {
       type: [String],
@@ -201,8 +201,8 @@ const listingSchema = new mongoose.Schema(
       required: false,
     },
     audited: {
-        type: Boolean,
-        default: false,
+      type: Boolean,
+      default: false,
     },
     embedding: {
       type: [Number],

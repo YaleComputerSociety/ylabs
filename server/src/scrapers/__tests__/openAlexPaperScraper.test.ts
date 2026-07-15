@@ -141,11 +141,7 @@ describe('lookupAuthorIdByOrcid', () => {
     const fetcher: HttpFetcher = vi.fn(async () => ({
       results: [{ id: 'https://openalex.org/A1234', display_name: 'Amy Arnsten' }],
     }));
-    const id = await lookupAuthorIdByOrcid(
-      '0000-0001-2345-6789',
-      'test@example.com',
-      fetcher,
-    );
+    const id = await lookupAuthorIdByOrcid('0000-0001-2345-6789', 'test@example.com', fetcher);
     expect(id).toBe('https://openalex.org/A1234');
     expect(fetcher).toHaveBeenCalledWith(
       'https://api.openalex.org/authors',
@@ -422,7 +418,9 @@ describe('OpenAlexPaperScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(emitted.filter((o) => o.entityType === 'user')).toHaveLength(0);
-    expect(emitted.filter((o) => o.field === 'openAlexId' && o.entityType === 'user')).toHaveLength(0);
+    expect(emitted.filter((o) => o.field === 'openAlexId' && o.entityType === 'user')).toHaveLength(
+      0,
+    );
     expect(emitted.filter((o) => o.field === 'yaleAuthorIds')).toHaveLength(0);
     expect(emitted.filter((o) => o.field === 'yaleAuthorNetIds')).toHaveLength(0);
     expect(emitted.filter((o) => o.field === 'paperAuthorshipEvidence')).toHaveLength(0);

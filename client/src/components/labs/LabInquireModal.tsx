@@ -85,28 +85,30 @@ const LabInquireModal = ({
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          {!contact ? officialRouteUrl ? (
-            <div className="space-y-3 text-sm text-gray-700">
-              <p>
-                Yale Research does not release a direct email for this profile. Use the approved
-                official route after reviewing its current instructions.
-              </p>
-              <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
-                <p className="font-semibold text-gray-900">
-                  {officialRoute?.label || 'Official contact route'}
+          {!contact ? (
+            officialRouteUrl ? (
+              <div className="space-y-3 text-sm text-gray-700">
+                <p>
+                  Yale Research does not release a direct email for this profile. Use the approved
+                  official route after reviewing its current instructions.
                 </p>
-                {officialRoute?.rationale && <p className="mt-1">{officialRoute.rationale}</p>}
-                <p className="mt-2 text-xs text-gray-600">
-                  Personalize your note with your year, relevant coursework, and a specific
-                  connection to this research before submitting it.
-                </p>
+                <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
+                  <p className="font-semibold text-gray-900">
+                    {officialRoute?.label || 'Official contact route'}
+                  </p>
+                  {officialRoute?.rationale && <p className="mt-1">{officialRoute.rationale}</p>}
+                  <p className="mt-2 text-xs text-gray-600">
+                    Personalize your note with your year, relevant coursework, and a specific
+                    connection to this research before submitting it.
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-700">
-              No verified contact route is available yet. Administrators review official sources
-              before a route appears here.
-            </p>
+            ) : (
+              <p className="text-sm text-gray-700">
+                No verified contact route is available yet. Administrators review official sources
+                before a route appears here.
+              </p>
+            )
           ) : (
             <>
               <div>

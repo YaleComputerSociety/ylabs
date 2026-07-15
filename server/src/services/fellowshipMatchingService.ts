@@ -40,7 +40,8 @@ export interface FellowshipMatchContext {
   plansByPathwayId?: Record<string, { intent?: string } | undefined>;
 }
 
-const JUNK_TITLES = /^(home|menu|search|apply|learn more|read more|fellowships?|programs?|opportunities|navigation)$/i;
+const JUNK_TITLES =
+  /^(home|menu|search|apply|learn more|read more|fellowships?|programs?|opportunities|navigation)$/i;
 
 export function isCandidateFellowshipTitle(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -164,7 +165,12 @@ export function scoreFellowshipForPathway(
 ): FellowshipMatch | null {
   const rawFellowshipId = fellowship._id || fellowship.id;
   const fellowshipId = serializedDocumentId(rawFellowshipId) || '';
-  if (!fellowshipId || fellowship.archived === true || !isCandidateFellowshipTitle(fellowship.title)) return null;
+  if (
+    !fellowshipId ||
+    fellowship.archived === true ||
+    !isCandidateFellowshipTitle(fellowship.title)
+  )
+    return null;
 
   const fellowshipText = textForFellowship(fellowship);
   const fellowshipTokens = tokens(fellowshipText);
@@ -187,7 +193,11 @@ export function scoreFellowshipForPathway(
     if (studyLevels.some((value) => standingPattern.test(value))) {
       score += 14;
       reasons.push(`This program lists ${standing} students among the years it considers.`);
-    } else if (studyLevels.some((value) => /undergraduate|first|freshman|sophomore|junior|senior/.test(value))) {
+    } else if (
+      studyLevels.some((value) =>
+        /undergraduate|first|freshman|sophomore|junior|senior/.test(value),
+      )
+    ) {
       score -= 35;
       caveats.push(`The listed years do not include your current ${standing} standing.`);
     }
@@ -198,13 +208,17 @@ export function scoreFellowshipForPathway(
   const thesisPlan = pathway.pathwayType === 'SENIOR_THESIS' || planIntent === 'thesis';
   if (terms.length > 0) {
     const isSummer = terms.some((value) => /summer/.test(value));
-    const isAcademicYear = terms.some((value) => /academic|year[- ]long|semester|fall|spring/.test(value));
+    const isAcademicYear = terms.some((value) =>
+      /academic|year[- ]long|semester|fall|spring/.test(value),
+    );
     if (thesisPlan && isAcademicYear) {
       score += 12;
       reasons.push('The award timing aligns with an academic-year or thesis plan.');
     } else if (thesisPlan && isSummer && !isAcademicYear) {
       score -= 18;
-      caveats.push('This is listed as a summer award, which may not fit an academic-year thesis plan.');
+      caveats.push(
+        'This is listed as a summer award, which may not fit an academic-year thesis plan.',
+      );
     } else if (!thesisPlan && isSummer) {
       score += 8;
       reasons.push('The program is scheduled for summer research planning.');

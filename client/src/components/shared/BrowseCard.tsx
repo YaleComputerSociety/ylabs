@@ -38,296 +38,306 @@ interface BrowseCardProps {
   isCompact?: boolean;
 }
 
-const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal, onAdminEdit, isCompact }: BrowseCardProps) => {
-  const { departments, getColorForResearchArea } = useContext(ConfigContext);
-  const { user } = useContext(UserContext);
-  const isAdmin = user?.userType === 'admin';
-  const tags = useMemo(() => getItemTags(item, getColorForResearchArea), [item, getColorForResearchArea]);
-  const trackView = useViewTracking(item.type, getItemId(item));
-
-  const daysUntil = getDaysUntilDeadline(item);
-  const showUrgentBanner = item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
-
-  const hasPrerequisites = item.type === 'listing' &&
-    !!item.data.applicantDescription && item.data.applicantDescription.trim() !== '';
-
-  const isListing = item.type === 'listing';
-  const isResearchGroup = item.type === 'researchGroup';
-  const professorName = isListing
-    ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
-    : null;
-  const isArchived = isListing && item.data.archived;
-
-  const deptInfo = useMemo(() => {
-    if (!isListing) return null;
-    return getOrderedDeptAbbrs(
-      item.data.departments,
-      item.data.ownerPrimaryDepartment,
-      DEPT_CAP,
-      departments,
+const BrowseCard = React.memo(
+  ({
+    item,
+    isFavorite,
+    onToggleFavorite,
+    onOpenModal,
+    onAdminEdit,
+    isCompact,
+  }: BrowseCardProps) => {
+    const { departments, getColorForResearchArea } = useContext(ConfigContext);
+    const { user } = useContext(UserContext);
+    const isAdmin = user?.userType === 'admin';
+    const tags = useMemo(
+      () => getItemTags(item, getColorForResearchArea),
+      [item, getColorForResearchArea],
     );
-  }, [item, isListing, departments]);
+    const trackView = useViewTracking(item.type, getItemId(item));
 
-  const deptLabel = deptInfo && deptInfo.abbrs.length > 0
-    ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
-    : null;
+    const daysUntil = getDaysUntilDeadline(item);
+    const showUrgentBanner =
+      item.type === 'fellowship' && daysUntil !== null && daysUntil > 0 && daysUntil <= 14;
 
-  const subtitle = getItemSubtitle(item);
-  const subtitleColor = getItemSubtitleColor(item);
-  const researchStatus = getResearchGroupStatus(item);
-  const researchPathwaySummary = isResearchGroup
-    ? getResearchEntityPathwaySummary(item.data)
-    : null;
-  const researchBestNextStep = isResearchGroup
-    ? getResearchEntityBestNextStep(item.data)
-    : null;
-  const hasActiveResearchOpportunity =
-    isResearchGroup &&
-    item.data.accessSummary?.hasActivePostedOpportunity;
-  const fellowshipCycleStatus = item.type === 'fellowship'
-    ? getFellowshipCycleStatus(item.data)
-    : null;
-  const fellowshipJourneySummary = item.type === 'fellowship'
-    ? getFellowshipJourneySummary(item.data)
-    : null;
+    const hasPrerequisites =
+      item.type === 'listing' &&
+      !!item.data.applicantDescription &&
+      item.data.applicantDescription.trim() !== '';
 
-  const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
+    const isListing = item.type === 'listing';
+    const isResearchGroup = item.type === 'researchGroup';
+    const professorName = isListing
+      ? `${item.data.ownerFirstName} ${item.data.ownerLastName}`
+      : null;
+    const isArchived = isListing && item.data.archived;
 
-  const handleClick = () => {
-    trackView();
-    onOpenModal();
-  };
+    const deptInfo = useMemo(() => {
+      if (!isListing) return null;
+      return getOrderedDeptAbbrs(
+        item.data.departments,
+        item.data.ownerPrimaryDepartment,
+        DEPT_CAP,
+        departments,
+      );
+    }, [item, isListing, departments]);
 
-  return (
-    <div
-      className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col ${isArchived ? 'opacity-75' : ''}`}
-      onClick={item.type === 'fellowship' ? undefined : handleClick}
-    >
-      {showUrgentBanner && daysUntil !== null && (
-        <UrgentBadge daysUntil={daysUntil} variant="banner" />
-      )}
+    const deptLabel =
+      deptInfo && deptInfo.abbrs.length > 0
+        ? deptInfo.abbrs.join(' | ') + (deptInfo.truncated > 0 ? ` +${deptInfo.truncated}` : '')
+        : null;
 
-      <div className="p-5 flex-1 flex flex-col">
-        <div className="absolute top-2 right-2 flex items-center gap-1 z-10 flex-shrink-0">
-          {hasPrerequisites && <HasPrerequisitesIcon />}
-          {isAdmin && onAdminEdit && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onAdminEdit();
-              }}
-              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-              aria-label="Admin edit"
-              title={`Edit ${item.type} (Admin)`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-          )}
-          {onToggleFavorite && item.type !== 'researchGroup' && (
-            <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
-          )}
-        </div>
+    const subtitle = getItemSubtitle(item);
+    const subtitleColor = getItemSubtitleColor(item);
+    const researchStatus = getResearchGroupStatus(item);
+    const researchPathwaySummary = isResearchGroup
+      ? getResearchEntityPathwaySummary(item.data)
+      : null;
+    const researchBestNextStep = isResearchGroup ? getResearchEntityBestNextStep(item.data) : null;
+    const hasActiveResearchOpportunity =
+      isResearchGroup && item.data.accessSummary?.hasActivePostedOpportunity;
+    const fellowshipCycleStatus =
+      item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
+    const fellowshipJourneySummary =
+      item.type === 'fellowship' ? getFellowshipJourneySummary(item.data) : null;
 
-        {isResearchGroup ? (
-          <>
-            <div className="flex items-center gap-2 mb-2 flex-wrap pr-10">
-              <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-[var(--yr-blue-soft)] text-blue-700">
-                {getResearchGroupKindLabel(item.data.kind)}
-              </span>
-              {researchStatus && (
-                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${researchStatus.className}`}>
-                  {researchStatus.label}
+    const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
+
+    const handleClick = () => {
+      trackView();
+      onOpenModal();
+    };
+
+    return (
+      <div
+        className={`yr-card-interactive group relative rounded-md ${isAudited ? 'border-green-400 ring-1 ring-green-200' : ''} cursor-pointer overflow-hidden h-full flex flex-col ${isArchived ? 'opacity-75' : ''}`}
+        onClick={item.type === 'fellowship' ? undefined : handleClick}
+      >
+        {showUrgentBanner && daysUntil !== null && (
+          <UrgentBadge daysUntil={daysUntil} variant="banner" />
+        )}
+
+        <div className="p-5 flex-1 flex flex-col">
+          <div className="absolute top-2 right-2 flex items-center gap-1 z-10 flex-shrink-0">
+            {hasPrerequisites && <HasPrerequisitesIcon />}
+            {isAdmin && onAdminEdit && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAdminEdit();
+                }}
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-gray-500 hover:text-blue-600 hover:bg-[var(--yr-panel-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                aria-label="Admin edit"
+                title={`Edit ${item.type} (Admin)`}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </button>
+            )}
+            {onToggleFavorite && item.type !== 'researchGroup' && (
+              <FavoriteButton isFavorite={isFavorite} onToggle={onToggleFavorite} />
+            )}
+          </div>
+
+          {isResearchGroup ? (
+            <>
+              <div className="flex items-center gap-2 mb-2 flex-wrap pr-10">
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-[var(--yr-blue-soft)] text-blue-700">
+                  {getResearchGroupKindLabel(item.data.kind)}
                 </span>
-              )}
-              {hasActiveResearchOpportunity && (
-                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  Active opportunity
-                </span>
-              )}
-            </div>
-
-            <h3 className="text-base font-bold text-gray-900 leading-tight line-clamp-2">
-              {getResearchGroupDisplayName(item.data)}
-            </h3>
-
-            <p className="text-sm text-gray-600 mb-1 line-clamp-1 leading-snug">
-              {subtitle}
-            </p>
-
-            {item.data.description && !isCompact && (
-              <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
-                {item.data.description}
-              </p>
-            )}
-
-            {(researchPathwaySummary || researchBestNextStep) && !isCompact && (
-              <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-gray-700">
-                {researchPathwaySummary && (
-                  <p>
-                    <span className="font-semibold text-gray-800">Pathway:</span>{' '}
-                    {researchPathwaySummary}
-                  </p>
-                )}
-                {researchBestNextStep && (
-                  <p className={researchPathwaySummary ? 'mt-1' : ''}>
-                    <span className="font-semibold text-gray-800">Best next step:</span>{' '}
-                    {researchBestNextStep}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {tags.length > 0 && !isCompact && (
-              <div className="border-t border-[var(--yr-line)] my-2" />
-            )}
-
-            <div className="flex-1" />
-
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
+                {researchStatus && (
                   <span
-                    key={tag.label}
-                    className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                    className={`text-xs font-semibold px-1.5 py-0.5 rounded ${researchStatus.className}`}
                   >
-                    {tag.label}
+                    {researchStatus.label}
                   </span>
-                ))}
-                {!isCompact && tags.length > TAG_CAP && (
-                  <span className="text-xs text-gray-400">
-                    +{tags.length - TAG_CAP}
+                )}
+                {hasActiveResearchOpportunity && (
+                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    Active opportunity
                   </span>
                 )}
               </div>
-            )}
-          </>
-        ) : isListing ? (
-          <>
-            <div className="flex items-center gap-2 mb-1">
-              {deptLabel && (
-                <p className="text-sm font-semibold text-blue-700 truncate">
-                  {deptLabel}
+
+              <h3 className="text-base font-bold text-gray-900 leading-tight line-clamp-2">
+                {getResearchGroupDisplayName(item.data)}
+              </h3>
+
+              <p className="text-sm text-gray-600 mb-1 line-clamp-1 leading-snug">{subtitle}</p>
+
+              {item.data.description && !isCompact && (
+                <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
+                  {item.data.description}
                 </p>
               )}
-              {isArchived && <ArchivedBadge />}
-            </div>
 
-            <h3 className="text-base font-bold text-gray-900 leading-tight">
-              {professorName}
-            </h3>
+              {(researchPathwaySummary || researchBestNextStep) && !isCompact && (
+                <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-gray-700">
+                  {researchPathwaySummary && (
+                    <p>
+                      <span className="font-semibold text-gray-800">Pathway:</span>{' '}
+                      {researchPathwaySummary}
+                    </p>
+                  )}
+                  {researchBestNextStep && (
+                    <p className={researchPathwaySummary ? 'mt-1' : ''}>
+                      <span className="font-semibold text-gray-800">Best next step:</span>{' '}
+                      {researchBestNextStep}
+                    </p>
+                  )}
+                </div>
+              )}
 
-            <p className="text-sm text-gray-600 mb-1 line-clamp-2 leading-snug">
-              {item.data.title}
-            </p>
+              {tags.length > 0 && !isCompact && (
+                <div className="border-t border-[var(--yr-line)] my-2" />
+              )}
 
-            {item.data.description && !isCompact && (
-              <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
-                {item.data.description}
-              </p>
-            )}
+              <div className="flex-1" />
 
-            {tags.length > 0 && !isCompact && (
-              <div className="border-t border-[var(--yr-line)] my-2" />
-            )}
-
-            <div className="flex-1" />
-
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
-                  <span
-                    key={tag.label}
-                    className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
-                  >
-                    {tag.label}
-                  </span>
-                ))}
-                {!isCompact && tags.length > TAG_CAP && (
-                  <span className="text-xs text-gray-400">
-                    +{tags.length - TAG_CAP}
-                  </span>
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
+                    <span
+                      key={tag.label}
+                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                    >
+                      {tag.label}
+                    </span>
+                  ))}
+                  {!isCompact && tags.length > TAG_CAP && (
+                    <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
+                  )}
+                </div>
+              )}
+            </>
+          ) : isListing ? (
+            <>
+              <div className="flex items-center gap-2 mb-1">
+                {deptLabel && (
+                  <p className="text-sm font-semibold text-blue-700 truncate">{deptLabel}</p>
                 )}
+                {isArchived && <ArchivedBadge />}
               </div>
-            )}
-          </>
-        ) : (
-          <>
-            {fellowshipCycleStatus && (
-              <div className="mb-2 pr-10">
-                <span
-                  className={`text-xs font-semibold px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
-                >
-                  {fellowshipCycleStatus.label}
-                </span>
-              </div>
-            )}
 
-            <h3 className="mb-1 text-base font-bold leading-tight text-gray-900">
-              <button
-                type="button"
-                onClick={handleClick}
-                className="line-clamp-2 text-left hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                aria-label={`View details for ${item.data.title}`}
-              >
+              <h3 className="text-base font-bold text-gray-900 leading-tight">{professorName}</h3>
+
+              <p className="text-sm text-gray-600 mb-1 line-clamp-2 leading-snug">
                 {item.data.title}
-              </button>
-            </h3>
-
-            <p className={`text-sm mb-1 ${subtitleColor}`}>
-              {subtitle}
-            </p>
-
-            {item.data.summary && !isCompact && (
-              <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
-                {item.data.summary}
               </p>
-            )}
 
-            {(fellowshipJourneySummary || item.data.bestNextStep) && !isCompact && (
-              <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-slate-700">
-                {fellowshipJourneySummary && (
-                  <p>
-                    <span className="font-semibold text-slate-800">Route:</span>{' '}
-                    {fellowshipJourneySummary}
-                  </p>
-                )}
-                {item.data.bestNextStep && (
-                  <p className={fellowshipJourneySummary ? 'mt-1' : ''}>
-                    <span className="font-semibold text-slate-800">Next:</span>{' '}
-                    {item.data.bestNextStep}
-                  </p>
-                )}
-              </div>
-            )}
+              {item.data.description && !isCompact && (
+                <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
+                  {item.data.description}
+                </p>
+              )}
 
-            <div className="flex-1" />
+              {tags.length > 0 && !isCompact && (
+                <div className="border-t border-[var(--yr-line)] my-2" />
+              )}
 
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
+              <div className="flex-1" />
+
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
+                    <span
+                      key={tag.label}
+                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                    >
+                      {tag.label}
+                    </span>
+                  ))}
+                  {!isCompact && tags.length > TAG_CAP && (
+                    <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {fellowshipCycleStatus && (
+                <div className="mb-2 pr-10">
                   <span
-                    key={tag.label}
-                    className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                    className={`text-xs font-semibold px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
                   >
-                    {tag.label}
+                    {fellowshipCycleStatus.label}
                   </span>
-                ))}
-                {!isCompact && tags.length > TAG_CAP && (
-                  <span className="text-xs text-gray-400">
-                    +{tags.length - TAG_CAP}
-                  </span>
-                )}
-              </div>
-            )}
-          </>
-        )}
+                </div>
+              )}
+
+              <h3 className="mb-1 text-base font-bold leading-tight text-gray-900">
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="line-clamp-2 text-left hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-label={`View details for ${item.data.title}`}
+                >
+                  {item.data.title}
+                </button>
+              </h3>
+
+              <p className={`text-sm mb-1 ${subtitleColor}`}>{subtitle}</p>
+
+              {item.data.summary && !isCompact && (
+                <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
+                  {item.data.summary}
+                </p>
+              )}
+
+              {(fellowshipJourneySummary || item.data.bestNextStep) && !isCompact && (
+                <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-slate-700">
+                  {fellowshipJourneySummary && (
+                    <p>
+                      <span className="font-semibold text-slate-800">Route:</span>{' '}
+                      {fellowshipJourneySummary}
+                    </p>
+                  )}
+                  {item.data.bestNextStep && (
+                    <p className={fellowshipJourneySummary ? 'mt-1' : ''}>
+                      <span className="font-semibold text-slate-800">Next:</span>{' '}
+                      {item.data.bestNextStep}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex-1" />
+
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
+                    <span
+                      key={tag.label}
+                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                    >
+                      {tag.label}
+                    </span>
+                  ))}
+                  {!isCompact && tags.length > TAG_CAP && (
+                    <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 BrowseCard.displayName = 'BrowseCard';
 

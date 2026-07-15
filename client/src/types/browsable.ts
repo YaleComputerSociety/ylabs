@@ -13,10 +13,7 @@ import {
   verdictBadgeStyles,
   verdictLabel,
 } from '../utils/undergradAcceptance';
-import {
-  getFellowshipCycleStatus,
-  getFellowshipDeadlineSubtitle,
-} from '../utils/fellowshipCycle';
+import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
@@ -91,7 +88,9 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
   if (group.kind !== 'individual' && group.kind !== 'solo') {
     return group.name;
   }
-  return group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '');
+  return (
+    group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '')
+  );
 }
 
 const PATHWAY_TYPE_LABELS: Record<string, string> = {

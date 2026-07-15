@@ -24,8 +24,8 @@ async function testEmail() {
     secure: false,
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD
-    }
+      pass: process.env.EMAIL_PASSWORD,
+    },
   });
 
   try {
@@ -33,7 +33,7 @@ async function testEmail() {
       from: process.env.EMAIL_USER,
       to: 'sebastian.gonzalez@yale.edu', // PUT YOUR EMAIL HERE
       subject: 'Test Email from YaleLabs',
-      text: 'If you receive this, the email service is working!'
+      text: 'If you receive this, the email service is working!',
     });
     console.log('✅ Test email sent successfully!');
   } catch (error) {
@@ -41,4 +41,4 @@ async function testEmail() {
   }
 }
 
-testEmail();
+void testEmail();

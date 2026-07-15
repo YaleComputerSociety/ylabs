@@ -63,7 +63,7 @@ describe('SearchHub', () => {
     return render(
       <SearchContext.Provider value={mergedContext}>
         <SearchHub {...defaultProps} />
-      </SearchContext.Provider>
+      </SearchContext.Provider>,
     );
   };
 
@@ -81,9 +81,7 @@ describe('SearchHub', () => {
         },
       });
 
-      const searchInput = screen.getByPlaceholderText(
-        'Start your search...'
-      ) as HTMLInputElement;
+      const searchInput = screen.getByPlaceholderText('Start your search...') as HTMLInputElement;
       expect(searchInput.value).toBe('machine learning');
     });
 
@@ -157,9 +155,7 @@ describe('SearchHub', () => {
       const dropdownButton = screen.getByText('Filter by department');
       fireEvent.click(dropdownButton);
 
-      const departmentSearchInput = await screen.findByPlaceholderText(
-        'Search departments...'
-      );
+      const departmentSearchInput = await screen.findByPlaceholderText('Search departments...');
       fireEvent.change(departmentSearchInput, { target: { value: 'comp' } });
 
       await waitFor(() => {
@@ -195,9 +191,7 @@ describe('SearchHub', () => {
         // Computer Science should not be in dropdown
         const items = screen.queryAllByText('Computer Science');
         // It should only appear in the filter badges, not in dropdown
-        const dropdownItems = items.filter((item) =>
-          item.closest('ul')
-        );
+        const dropdownItems = items.filter((item) => item.closest('ul'));
         expect(dropdownItems.length).toBe(0);
       });
     });
@@ -208,16 +202,12 @@ describe('SearchHub', () => {
       const dropdownButton = screen.getByText('Filter by department');
       fireEvent.click(dropdownButton);
 
-      const departmentSearchInput = await screen.findByPlaceholderText(
-        'Search departments...'
-      );
+      const departmentSearchInput = await screen.findByPlaceholderText('Search departments...');
 
       fireEvent.keyDown(departmentSearchInput, { key: 'Escape' });
 
       await waitFor(() => {
-        expect(
-          screen.queryByPlaceholderText('Search departments...')
-        ).not.toBeInTheDocument();
+        expect(screen.queryByPlaceholderText('Search departments...')).not.toBeInTheDocument();
       });
     });
 
@@ -227,9 +217,7 @@ describe('SearchHub', () => {
       const dropdownButton = screen.getByText('Filter by department');
       fireEvent.click(dropdownButton);
 
-      const departmentSearchInput = await screen.findByPlaceholderText(
-        'Search departments...'
-      );
+      const departmentSearchInput = await screen.findByPlaceholderText('Search departments...');
 
       fireEvent.keyDown(departmentSearchInput, { key: 'ArrowDown' });
 
@@ -244,9 +232,7 @@ describe('SearchHub', () => {
       const dropdownButton = screen.getByText('Filter by department');
       fireEvent.click(dropdownButton);
 
-      const departmentSearchInput = await screen.findByPlaceholderText(
-        'Search departments...'
-      );
+      const departmentSearchInput = await screen.findByPlaceholderText('Search departments...');
 
       // Focus first item
       fireEvent.keyDown(departmentSearchInput, { key: 'ArrowDown' });
@@ -411,9 +397,7 @@ describe('SearchHub', () => {
       const dropdownButton = screen.getByText('Filter by department');
       fireEvent.click(dropdownButton);
 
-      const departmentSearchInput = await screen.findByPlaceholderText(
-        'Search departments...'
-      );
+      const departmentSearchInput = await screen.findByPlaceholderText('Search departments...');
       fireEvent.change(departmentSearchInput, { target: { value: 'comp' } });
 
       const csOption = screen.getByText('Computer Science');
@@ -440,9 +424,7 @@ describe('SearchHub', () => {
       fireEvent.mouseDown(document.body);
 
       await waitFor(() => {
-        expect(
-          screen.queryByPlaceholderText('Search departments...')
-        ).not.toBeInTheDocument();
+        expect(screen.queryByPlaceholderText('Search departments...')).not.toBeInTheDocument();
       });
     });
   });

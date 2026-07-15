@@ -25,7 +25,12 @@ export interface ApplyDependencies {
   alreadyApplied(key: string): Promise<boolean>;
   appendEvidence(evidence: ExistingEvidence, sourceUrl: string): Promise<void>;
   materialize(researchEntityId: string): Promise<void>;
-  writeAudit(row: { key: string; target: string; kind: string; restoreTokenHash: string }): Promise<void>;
+  writeAudit(row: {
+    key: string;
+    target: string;
+    kind: string;
+    restoreTokenHash: string;
+  }): Promise<void>;
 }
 
 export interface ApplySummary {
@@ -64,9 +69,12 @@ export async function applyValidatedPathwayDecisions(input: {
       continue;
     }
     const evidence = await input.deps.findEvidence(candidate.sourceEvidenceIds);
-    const matching = evidence.find((item) =>
-      item.entityId === candidate.researchEntityId &&
-      item.sourceUrl && normalizedUrl(item.sourceUrl) === normalizedUrl(decision.sourceUrl));
+    const matching = evidence.find(
+      (item) =>
+        item.entityId === candidate.researchEntityId &&
+        item.sourceUrl &&
+        normalizedUrl(item.sourceUrl) === normalizedUrl(decision.sourceUrl),
+    );
     if (!matching) {
       summary.rejected += 1;
       continue;

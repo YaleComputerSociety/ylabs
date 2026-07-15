@@ -458,6 +458,8 @@ const Research = () => {
     const generation = ++effectGenerationRef.current;
     return () => {
       queueMicrotask(() => {
+        // The current generation must be read after the microtask begins so a remount can supersede it.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         if (effectGenerationRef.current !== generation) return;
         searchAbortRef.current?.abort();
         defaultSearchAbortRef.current?.abort();

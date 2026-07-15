@@ -3,10 +3,7 @@
  */
 import mongoose from 'mongoose';
 import { recordReviewSchema } from './modelPrimitives';
-import {
-  accessSignalConfidences,
-  accessSignalTypes,
-} from './researchAccessTypes';
+import { accessSignalConfidences, accessSignalTypes } from './researchAccessTypes';
 
 const accessSignalSchema = new mongoose.Schema(
   {
@@ -108,10 +105,6 @@ accessSignalSchema.index(
   },
 );
 
-export const AccessSignal = mongoose.model(
-  'AccessSignal',
-  accessSignalSchema,
-  'access_signals',
-);
+export const AccessSignal = mongoose.model('AccessSignal', accessSignalSchema, 'access_signals');
 
 export { accessSignalSchema };
