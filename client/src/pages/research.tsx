@@ -129,6 +129,7 @@ interface ResearchPageSnapshot {
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
   searchError: string;
+  hasFacetError: boolean;
   defaultSearchError: string;
 }
 
@@ -387,6 +388,9 @@ const Research = () => {
   const [searchError, setSearchError] = useState(
     () => restoredSnapshotRef.current?.searchError ?? '',
   );
+  const [hasFacetError, setHasFacetError] = useState(
+    () => restoredSnapshotRef.current?.hasFacetError ?? false,
+  );
   const [defaultSearchError, setDefaultSearchError] = useState(
     () => restoredSnapshotRef.current?.defaultSearchError ?? '',
   );
@@ -572,6 +576,7 @@ const Research = () => {
     setFacetDistribution({});
     setSearchLoading(true);
     setSearchError('');
+    setHasFacetError(false);
     setGroupedResults(emptyGroupedResults(resultQueryLabel));
     if (options.syncUrl !== false) {
       writeResearchSearchParams(
@@ -605,6 +610,7 @@ const Research = () => {
 
       const researchEntities = researchEntitiesPage.researchEntities;
       setSearchError('');
+      setHasFacetError(false);
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setFacetDistribution(researchEntitiesPage.facetDistribution);
@@ -627,6 +633,7 @@ const Research = () => {
         setSearchError(
           'Live search metadata is unavailable right now. Try another topic or check back soon.',
         );
+        setHasFacetError(true);
         setSearchExhausted(true);
       }
     } finally {
@@ -730,6 +737,7 @@ const Research = () => {
     setSearchExhausted(true);
     setActiveSearchRequest(null);
     setSearchError('');
+    setHasFacetError(false);
     setSearchLoading(false);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
@@ -888,6 +896,7 @@ const Research = () => {
     setSearchExhausted(true);
     setActiveSearchRequest(null);
     setSearchError('');
+    setHasFacetError(false);
     setSearchLoading(false);
     setDefaultResearchEntities([]);
     setDefaultSearchTotal(0);
@@ -936,6 +945,7 @@ const Research = () => {
       defaultSearchTotal,
       defaultSearchExhausted,
       searchError,
+      hasFacetError,
       defaultSearchError,
     };
   }, [
@@ -961,6 +971,7 @@ const Research = () => {
     defaultSearchTotal,
     defaultSearchExhausted,
     searchError,
+    hasFacetError,
     defaultSearchError,
   ]);
 
@@ -1306,7 +1317,7 @@ const Research = () => {
                   selectedSchool={selectedSchool}
                   selectedDepartment={selectedDepartment}
                   isApplying={searchLoading}
-                  hasFacetError={Boolean(searchError)}
+                  hasFacetError={hasFacetError}
                   departmentLabel={departmentFacetLabel}
                   onSchoolChange={(school) => applyStudentFacets(school, selectedDepartment)}
                   onDepartmentChange={(department) =>

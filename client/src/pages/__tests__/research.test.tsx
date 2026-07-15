@@ -1368,6 +1368,68 @@ describe('Research page', () => {
     );
   });
 
+  it('preserves facet availability when loading more search results fails', async () => {
+    class MockIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    window.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      bottom: 2000,
+      height: 1,
+      left: 0,
+      right: 1,
+      top: 2000,
+      width: 1,
+      x: 0,
+      y: 2000,
+      toJSON: () => ({}),
+    }));
+
+    mockedAxios.post.mockImplementation((url: string, body: { page?: number }) => {
+      if (url !== '/research/search') return Promise.reject(unexpectedSearchEndpoint(url));
+      if (body.page === 2) return Promise.reject(new Error('pagination unavailable'));
+      return Promise.resolve(
+        researchSearchResponse([researchEntity], {
+          estimatedTotalHits: 25,
+          facetDistribution: {
+            school: { 'Yale College': 8, 'School of Medicine': 4 },
+            departments: { 'Computer Science': 5, Neuroscience: 3 },
+          },
+        }),
+      );
+    });
+
+    renderResearch(departments, ['/research?q=protein+folding']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() => expect(intersectionCallback).toBeDefined());
+    await act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'More research homes are temporarily unavailable.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.getByLabelText('Filter by school')).toBeTruthy();
+    expect(screen.getByLabelText('Filter by department')).toBeTruthy();
+    expect(screen.queryByText('Filter options are temporarily unavailable.')).toBeNull();
+  });
+
   it('does not expose server-provided or hardcoded example search chips', async () => {
     mockedAxios.get.mockResolvedValueOnce({
       data: {
