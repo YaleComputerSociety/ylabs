@@ -269,8 +269,9 @@ Current behavior:
 - Saved profile cards link back to `/research/:slug` rather than introducing a separate planning-detail route.
 
 Legacy `favPathways`, `savedPathwayPlans`, and their compatibility endpoints remain as rollback data and API support.
-On the first canonical saved-entity read, an idempotent lazy migration resolves each visible saved pathway to its `ResearchEntity`, deduplicates multiple pathways for the same entity, and preserves every conflicting legacy plan in private migration-conflict storage without deleting the legacy fields.
-Once marked complete, later reads do not re-import removed legacy pathway saves.
+On the first canonical saved-entity read, an idempotent lazy migration resolves each visible saved pathway to its `ResearchEntity`, deduplicates multiple pathways for the same entity, and preserves every conflicting legacy plan in private migration-conflict storage without choosing a winner or deleting the legacy fields.
+The server claims that migration atomically against the legacy pathway ids and plans it read, retries if those inputs changed concurrently, and records a one-time completion marker.
+Once marked complete, later reads, plan deletes, and entity removals do not re-import removed legacy pathway saves.
 Account hydration uses the authenticated legacy pathway read as a bounded compatibility bridge for browser-only plans and pathway-keyed funding matches.
 It rewrites owner-scoped browser storage only after legacy keys map to saved entity ids and local-only plans upload successfully, and it retains the legacy browser record when multiple plans collide on one entity.
 If canonical entity reads or plan endpoints are unavailable, the account workspace keeps legacy pathway reads, writes, and deletes paired instead of writing entity ids through pathway endpoints.

@@ -349,13 +349,13 @@ Route-level middleware logs successful server-observed events by wrapping `res.s
 
 Research-surface analytics cover the canonical research entities (`profile`, `listing`, and `fellowship`) and use these event types:
 
-| Event type            | Meaning                                                                   |
-| --------------------- | ------------------------------------------------------------------------- |
-| `research_view`       | A profile, listing, or fellowship detail surface opened                   |
-| `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged                  |
+| Event type            | Meaning                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| `research_view`       | A profile, listing, or fellowship detail surface opened                             |
+| `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged                            |
 | `ways_in_click`       | A best-next-step, apply, planning, listings, courses, or similar action was clicked |
-| `contact_route_click` | A guarded route such as an official application or public source route was clicked |
-| `source_link_click`   | A source link such as a lab site, publication, or application was clicked |
+| `contact_route_click` | A guarded route such as an official application or public source route was clicked  |
+| `source_link_click`   | A source link such as a lab site, publication, or application was clicked           |
 
 Client-only interactions are sent to `POST /api/analytics/research` for authenticated users.
 Server-observed views and save/favorite actions are emitted from route middleware in listings, fellowships, profiles, and users.
@@ -394,20 +394,20 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 
 All mount under `/api`.
 
-| Prefix            | Description                                                            | Auth                                                   |
-| ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
+| Prefix            | Description                                                                             | Auth                                                   |
+| ----------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment | Varies                                                 |
-| `/programs`       | Programs & Fellowships browse/search and saved-program support         | Varies                                                 |
-| `/opportunities`  | Real posted opportunity detail workflows                               | Varies                                                 |
-| `/listings`       | Retired legacy API, returns `410 Gone`                                 | Varies                                                 |
-| `/fellowships`    | Compatibility alias around program/fellowship storage during migration | Varies                                                 |
-| `/users`          | User CRUD                                                              | Yes                                                    |
-| `/profiles`       | Faculty profiles                                                       | Varies                                                 |
-| `/analytics`      | Analytics dashboard + research event writes                            | Admin for dashboard, authenticated for research writes |
-| `/config`         | Departments + research areas                                           | No                                                     |
-| `/research-areas` | Research area CRUD                                                     | Admin for writes                                       |
-| `/admin`          | Admin operations                                                       | Admin                                                  |
-| `/seed`           | Dev seeding routes                                                     | Dev mode only                                          |
+| `/programs`       | Programs & Fellowships browse/search and saved-program support                          | Varies                                                 |
+| `/opportunities`  | Real posted opportunity detail workflows                                                | Varies                                                 |
+| `/listings`       | Retired legacy API, returns `410 Gone`                                                  | Varies                                                 |
+| `/fellowships`    | Compatibility alias around program/fellowship storage during migration                  | Varies                                                 |
+| `/users`          | User CRUD                                                                               | Yes                                                    |
+| `/profiles`       | Faculty profiles                                                                        | Varies                                                 |
+| `/analytics`      | Analytics dashboard + research event writes                                             | Admin for dashboard, authenticated for research writes |
+| `/config`         | Departments + research areas                                                            | No                                                     |
+| `/research-areas` | Research area CRUD                                                                      | Admin for writes                                       |
+| `/admin`          | Admin operations                                                                        | Admin                                                  |
+| `/seed`           | Dev seeding routes                                                                      | Dev mode only                                          |
 
 ---
 
@@ -479,12 +479,12 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 
 ## Troubleshooting
 
-| Issue                                          | Solution                                                                                                                             |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| CAS login not working locally                  | Use dev-login: `http://localhost:4000/api/dev-login`                                                                                 |
-| Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                    |
-| Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                         |
-| CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                |
-| `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                               |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning. |
-| A client needs pathway data                    | Use `/api/research/search`, research detail, or saved research-plan APIs. Standalone pathway search is not a public/client contract. |
+| Issue                                          | Solution                                                                                                                                                                                                                                           |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CAS login not working locally                  | Use dev-login: `http://localhost:4000/api/dev-login`                                                                                                                                                                                               |
+| Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                                                                                                                                  |
+| Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                                                                                                                                       |
+| CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                                                                                                                              |
+| `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                                                                                                                                             |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning.                                                                                                               |
+| A client needs pathway data                    | Use `/api/research/search` or research detail. Saved planning uses entity-owned `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans`; legacy pathway-owned endpoints are compatibility support, not a new client contract. |
