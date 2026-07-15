@@ -84,9 +84,10 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Active.
 - **Depends on:** accurate query-scoped facet distributions.
 - **Acceptance criteria:** school and department controls appear only when their positive buckets can narrow the current results; selected filters remain visible and clearable; missing facet counts never fall back to the total result count; mobile controls do not overflow; a future documented-way-in control follows EF-03 rather than reviving the retired undergraduate-evidence filter.
-- **Validation evidence:** PR `#171` hides school and department controls when current distributions cannot narrow and removes the unsupported inactive undergraduate-evidence control.
-The count-fallback and final adaptive documented-way-in distribution contract remain to be completed.
-- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171).
+- **Validation evidence:** PR `#171` removed the unsupported undergraduate-evidence control.
+The pending EF-02 change adds one adaptive Research filter disclosure, query-scoped positive school and department choices, persistent selected values without invented counts, URL-backed removable chips, clear-one and clear-all actions, independent facet-error handling, a non-modal desktop disclosure, and a focus-contained mobile sheet with focused responsive and accessibility tests.
+The documented-way-in distribution remains separate EF-03 work and is not exposed as a filter.
+- **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171); issue [#184](https://github.com/YaleComputerSociety/ylabs/issues/184) change pending merge.
 
 #### EF-03 - Sparse Documented-Way-In Signal
 
@@ -102,8 +103,8 @@ The qualified-planning-context implementation adds a bounded, optional server pr
 - **Status:** Complete.
 - **Depends on:** URL-hydrated search state and abort-safe request ownership.
 - **Acceptance criteria:** equivalent initial and URL-hydrated searches deduplicate at dispatch; Strict Mode replay does not duplicate requests or apply stale results; pagination remains usable; changes preserve canonical query URLs.
-- **Validation evidence:** research and dashboard request-deduplication tests merged with PR `#165`.
-- **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165).
+- **Validation evidence:** research and dashboard request-deduplication tests merged with PR `#165`; PR `#179` also prevents URL hydration from losing an initial Research search when configuration arrives later.
+- **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165), [#179](https://github.com/YaleComputerSociety/ylabs/pull/179).
 
 #### EF-05 - Quiet Research-Activity Ranking Input - FR-44
 
@@ -204,12 +205,12 @@ Cached rollups and their refresh path are not implemented on Beta.
 
 #### CP-05 - Entity-Level Saving - FR-45
 
-- **Status:** Not started.
+- **Status:** Active.
 - **Depends on:** canonical ResearchEntity identity and CAS-authenticated owner-scoped persistence.
 - **Acceptance criteria:** a student can save a research entity even when it has no indexed pathway; save identity is the entity, not `entryPathways[0]`; existing pathway plans migrate or coexist without duplication; detail and search cards show server-confirmed state; authorization and privacy remain unchanged.
-- **Validation evidence:** current saves are `favPathways`, saved details are keyed by `pathwayId`, and `labDetail.tsx` selects the first entry pathway.
-That contract cannot represent a research home with no pathway and is not a safe comparison identity.
-- **PRs:** none.
+- **Validation evidence:** PR `#174` adds owner-scoped `savedResearchEntities`, migrates compatible pathway favorites into entity saves, and lets search, detail, and Dashboard planning represent homes without pathways.
+Follow-up issue `#189` remains open to guarantee that planning metadata survives every entity-save migration case.
+- **PRs:** [#174](https://github.com/YaleComputerSociety/ylabs/pull/174); follow-up [#189](https://github.com/YaleComputerSociety/ylabs/issues/189).
 - **Dependency note:** CP-06 / FR-17 and CP-07 / FR-24 must not ship on pathway identity.
 
 #### CP-06 - Compare Shortlisted Research Homes - FR-17
@@ -217,7 +218,7 @@ That contract cannot represent a research home with no pathway and is not a safe
 - **Status:** Blocked.
 - **Depends on:** CP-05 / FR-45.
 - **Acceptance criteria:** an authenticated student can choose two to four saved entities and compare existing claim-specific fields without inventing missing facts; private notes remain private unless explicitly included; rows preserve unknown rather than unavailable; comparison links return to canonical entity profiles; no pathway identity or duplicate home columns.
-- **Validation evidence:** advising selection/preview patterns exist in PR `#163`, but there is no entity-level shortlist to compare.
+- **Validation evidence:** advising selection/preview patterns exist in PR `#163`, and PR `#174` supplies the entity-level shortlist identity, but the comparison workflow is not implemented.
 - **PRs:** none; FR-17 is actively assigned, but unmerged work is not Beta evidence.
 - **CAS boundary:** the logged-in comparison can ship after FR-45; any logged-out variant remains blocked by CP-09 / FR-14 policy.
 
@@ -226,8 +227,9 @@ That contract cannot represent a research home with no pathway and is not a safe
 - **Status:** Active.
 - **Depends on:** CP-05 / FR-45 for correct entity identity.
 - **Acceptance criteria:** dashboard cards lead with canonical research-home names; section and selected counts reflect hydrated server state; stale pathway aliases do not masquerade as entity names; loading, empty, and failure counts are honest; entity saves without pathways remain visible.
-- **Validation evidence:** current dashboard planning and server hydration are useful, but the identity contract remains pathway-first.
-- **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165) improved load behavior but did not complete FR-24.
+- **Validation evidence:** PR `#165` improved load behavior and PR `#174` moved saved-home identity to research entities, including homes without pathways.
+Canonical naming and count behavior still require focused FR-24 validation.
+- **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165), [#174](https://github.com/YaleComputerSociety/ylabs/pull/174).
 
 #### CP-08 - Shared Mobile Filter-Sheet Pattern - FR-37
 
@@ -235,9 +237,8 @@ That contract cannot represent a research home with no pathway and is not a safe
 - **Depends on:** surface-specific facet contracts and accessible focus management.
 - **Acceptance criteria:** Research and Programs use one shared filter-sheet interaction pattern on small viewports while retaining their own facets; opening moves focus into a labelled modal/sheet; Escape, close, apply, and focus return work by keyboard and screen reader; selected-count and clear behavior are honest; desktop remains quiet; no horizontal overflow.
 - **Validation evidence:** PR `#175` added the bounded, labelled Programs mobile sheet with focus entry, containment, Escape close, and focus restoration.
-The shared listing filters intentionally retain their anchored non-modal presentation, so Research does not yet satisfy the cross-surface acceptance criterion.
-PR `#171` only simplified Research filters and must not be credited with FR-37.
-- **PRs:** [#175](https://github.com/YaleComputerSociety/ylabs/pull/175) completed the Programs portion; Research remains outstanding.
+The pending EF-02 change gives Research the same small-screen interaction contract while retaining a non-modal desktop disclosure, active count, clear actions, focus containment and restoration, and narrow-viewport overflow guards.
+- **PRs:** [#175](https://github.com/YaleComputerSociety/ylabs/pull/175); issue [#184](https://github.com/YaleComputerSociety/ylabs/issues/184) Research change pending merge.
 
 #### CP-09 - Honest Logged-Out Saving - FR-14
 
@@ -442,15 +443,15 @@ Its evidence is therefore current Beta source, routes, tests, and merged history
 | Claim | Current support | Delivery interpretation |
 | --- | --- | --- |
 | Entity-first discovery is the correct current baseline. | **Supported.** PR `#171` removes the parallel pathway request and stream and keeps research profiles primary. | Keep EF-01 Complete and protect it with regression tests. |
-| Discovery filters are fully adaptive and progressively disclosed. | **Disputed as complete.** Programs has a bounded mobile filter sheet, while shared Research/listing filters remain anchored and missing facet counts may fall back to the total. | Keep EF-02 and CP-08 / FR-37 Active until the remaining Research behavior and facet-count gaps are resolved. |
-| A server-qualified sparse planning summary exists. | **Not supported.** No bounded claim-specific summary or useful-state distribution exists. | Keep EF-03 Not started and dependent on QA-01. |
-| Research homes can be saved independently of pathways. | **Not supported.** Current saves are pathway favorites, details are keyed by pathway ID, and detail chooses an entry pathway. | Keep CP-05 / FR-45 Not started and ahead of FR-17 and FR-24. |
+| Discovery filters are fully adaptive and progressively disclosed. | **Pending merge.** The EF-02 change gives Research its own compact desktop disclosure and mobile sheet, uses only positive query-scoped facet counts, preserves selected values without invented counts, and keeps base search usable when facet metadata fails. | Keep EF-02 Active until the change merges into Beta; keep the documented-way-in filter governed separately by EF-03. |
+| A server-qualified sparse planning summary exists. | **Partially supported.** PR `#177` adds a bounded, deny-by-default qualified planning-context projection, but no query-scoped useful-state distribution or student filter exists. | Keep EF-03 Active while the distribution and presentation remain unresolved. |
+| Research homes can be saved independently of pathways. | **Partially supported.** PR `#174` adds entity-level saves and compatibility migration, but issue `#189` tracks preservation of planning metadata through every migration case. | Keep CP-05 / FR-45 Active until the planning-data follow-up is complete. |
 | Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Not supported.** The current taxonomy is broader and canonical browse/detail lacks the complete invisible journey emissions. | Keep IM-01 Not started and IM-02 Active until QA-01 stabilizes conversion meaning. |
 | Publishing a target number of pathways establishes trustworthy access coverage. | **Disputed.** Quantity does not establish claim or route quality and can reward false positives. | The evidence and route review rollout uses claim precision, false-positive rate, rejection reasons, and reviewed-action quality instead. |
 | Historical persona findings describe current Beta behavior. | **Validation pending.** Several cited defects were changed by merged PRs, while the referenced transcript and fresh browser replay were unavailable. | Use historical observations as discovery inputs only; require current code, test, data, or CAS-preserving browser evidence before changing status or rationale. |
 
 Unresolved UX choices remain validation-pending even when engineering dependencies are known.
-These include the anonymous-save policy, final qualified-action enum and thresholds, exact material-use threshold for a documented-way-in filter, comparison layout, and the Research-side mobile filter-sheet presentation.
+These include the anonymous-save policy, final qualified-action enum and thresholds, exact material-use threshold for a documented-way-in filter, and comparison layout.
 An implementing PR must resolve only the choice in its accepted scope and update the corresponding requirement and decision evidence.
 
 ## Maintenance Protocol
