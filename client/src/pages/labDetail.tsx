@@ -1147,13 +1147,11 @@ const LabDetail = () => {
     !leadIdentityUnderReview && principalInvestigators.length === 1
       ? principalInvestigators[0]
       : undefined;
-  const normalizedDecisionProfileUrl = normalizeActionDestination(decisionProfileUrl);
   const officialProfileLeadProfessor =
-    !leadIdentityUnderReview && principalInvestigators.length > 1 && normalizedDecisionProfileUrl
-      ? principalInvestigators.find((member) => {
-          const memberProfile = principalInvestigatorLinkFromMemberUser(member.user);
-          return normalizeActionDestination(memberProfile?.href) === normalizedDecisionProfileUrl;
-        })
+    !leadIdentityUnderReview && principalInvestigators.length > 1 && group.leadProfessorPublicKey
+      ? principalInvestigators.find(
+          (member) => member.user.publicKey === group.leadProfessorPublicKey,
+        )
       : undefined;
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
