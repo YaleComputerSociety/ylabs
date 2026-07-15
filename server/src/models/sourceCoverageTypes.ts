@@ -8,6 +8,7 @@
 export const sourceCoverageArtifactTypes = [
   'Fellowship',
   'ResearchEntity',
+  'ResearchEntityMember',
   'EntryPathway',
   'AccessSignal',
   'ContactRoute',

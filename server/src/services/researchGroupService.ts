@@ -45,7 +45,6 @@ import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes'
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
-  toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
@@ -1099,8 +1098,11 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
   }
 };
 
-function publicMemberKeyForResearchDetail(user: any, role?: string): string {
-  return [user?.displayName || [user?.fname, user?.lname].filter(Boolean).join(' '), role]
+function publicMemberKeyForResearchDetail(user: any, role?: string, stableIdentity?: string): string {
+  return [
+    stableIdentity || user?.displayName || [user?.fname, user?.lname].filter(Boolean).join(' '),
+    role,
+  ]
     .filter(Boolean)
     .join(':')
     .toLowerCase()
@@ -1196,16 +1198,85 @@ export function publicMemberUserForRow(
     return publicMemberUserFromFaculty(faculty);
   }
 
-  return publicMemberUserForResearchDetail(user);
+  if (!user && !faculty && isFreshVerifiedOfficialRosterRow(row)) {
+    const nameParts = String(row.name || '').trim().split(/\s+/).filter(Boolean);
+    const fname = nameParts.shift() || '';
+    const lname = nameParts.join(' ');
+    if (!fname || !lname) return null;
+    return {
+      fname,
+      lname,
+      displayName: publicString(row.name),
+      title: publicString(row.title),
+      imageUrl: '',
+      image_url: '',
+      profileUrls: {},
+      profile_urls: {},
+    };
+  }
+
+  return user ? publicMemberUserForResearchDetail(user) : null;
+}
+
+const OFFICIAL_ROSTER_SOURCE_NAME = 'official-research-home-roster';
+const MAX_PUBLIC_ROSTER_MEMBERS = 24;
+
+export function isFreshVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
+  const expiresAt = new Date(row?.freshnessExpiresAt || 0);
+  return (
+    row?.sourceName === OFFICIAL_ROSTER_SOURCE_NAME &&
+    row?.evidenceStatus === 'verified' &&
+    Boolean(row?.identityKey && row?.membershipKey && row?.name) &&
+    Number.isFinite(expiresAt.getTime()) &&
+    expiresAt.getTime() >= now.getTime()
+  );
+}
+
+export type PublicRosterDisclosureStatus =
+  | 'current'
+  | 'partial'
+  | 'no-verified-data'
+  | 'withheld'
+  | 'optional-source-failure';
+
+export interface PublicRosterDisclosure {
+  status: PublicRosterDisclosureStatus;
+  returned: number;
+  truncated: boolean;
+  withheldCount: number;
+  sourceUrl?: string;
+  observedAt?: unknown;
+  freshnessExpiresAt?: unknown;
+}
+
+export function publicRosterDisclosure(
+  enrichment: any,
+  verifiedMemberCount: number,
+  availableMemberCount: number,
+): PublicRosterDisclosure {
+  const withheldCount = Math.max(0, Number(enrichment?.withheldCount) || 0);
+  let status: PublicRosterDisclosureStatus;
+  if (enrichment?.state === 'failed') {
+    status = 'optional-source-failure';
+  } else if (verifiedMemberCount > 0) {
+    status = withheldCount > 0 || enrichment?.state === 'partial' ? 'partial' : 'current';
+  } else if (withheldCount > 0 || enrichment?.state === 'withheld') {
+    status = 'withheld';
+  } else {
+    status = 'no-verified-data';
+  }
+  return {
+    status,
+    returned: Math.min(verifiedMemberCount, MAX_PUBLIC_ROSTER_MEMBERS),
+    truncated: availableMemberCount > MAX_PUBLIC_ROSTER_MEMBERS,
+    withheldCount,
+    sourceUrl: publicHttpUrl(enrichment?.sourceUrl),
+    observedAt: enrichment?.observedAt,
+    freshnessExpiresAt: enrichment?.freshnessExpiresAt,
+  };
 }
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
-const idEquals = (left: unknown, right: unknown): boolean => {
-  const leftId = normalizeResearchGroupObjectId(left);
-  const rightId = normalizeResearchGroupObjectId(right);
-  return Boolean(leftId && rightId && leftId === rightId);
-};
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
@@ -2026,6 +2097,7 @@ const publicResearchDetailGroup = (group: any) => {
     contactPhone: _contactPhone,
     email: _email,
     phone: _phone,
+    rosterEnrichment: _rosterEnrichment,
     ...publicGroup
   } = group || {};
   return publicGroup;
@@ -2105,6 +2177,7 @@ export async function recordResearchEntityOutreach(
 export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
+  roster: PublicRosterDisclosure;
   recentPapers: any[];
   recentArxivPreprints: any[];
   researchActivityLinks: any[];
@@ -2133,12 +2206,15 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   }).lean();
   if (!group) return null;
 
-  const memberRows: any[] = await ResearchGroupMember.find(
+  const memberRowsRaw: any[] = await ResearchGroupMember.find(
     currentResearchEntityMemberFilter((group as any)._id),
   )
     .sort({ role: 1, updatedAt: -1 })
     .limit(MAX_PUBLIC_DETAIL_MEMBERS)
     .lean();
+  const memberRows = memberRowsRaw.filter(
+    (row) => row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME || isFreshVerifiedOfficialRosterRow(row),
+  );
 
   const memberUserIds = memberRows
     .map((row) => row.userId)
@@ -2200,6 +2276,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     }))
     .filter((member, index, rows) => {
       const userKey =
+        member.row?.identityKey ||
         member.user.netid ||
         researchGroupDocumentId(member.user._id) ||
         [member.user.fname, member.user.lname].filter(Boolean).join(' ');
@@ -2208,6 +2285,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         index ===
         rows.findIndex((candidate) => {
           const candidateUserKey =
+            candidate.row?.identityKey ||
             candidate.user.netid ||
             researchGroupDocumentId(candidate.user._id) ||
             [candidate.user.fname, candidate.user.lname].filter(Boolean).join(' ');
@@ -2238,7 +2316,16 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     dedupedMembersWithRows
       .map((member) => {
         const id = normalizeResearchGroupObjectId(member.user?._id);
-        return id ? [id, publicMemberKeyForResearchDetail(member.user, member.role)] : undefined;
+        return id
+          ? [
+              id,
+              publicMemberKeyForResearchDetail(
+                member.user,
+                member.role,
+                member.row?.identityKey,
+              ),
+            ]
+          : undefined;
       })
       .filter((entry): entry is [string, string] => Boolean(entry)),
   );
@@ -2250,15 +2337,42 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         : [];
     }),
   );
-  const members = dedupedMembersWithRows.map(({ row: _row, ...member }) => {
+  const availableRosterMembers = dedupedMembersWithRows.filter((member) =>
+    isFreshVerifiedOfficialRosterRow(member.row),
+  );
+  const publicRosterMembers = availableRosterMembers.slice(0, MAX_PUBLIC_ROSTER_MEMBERS);
+  const publicRosterMemberRows = new Set(publicRosterMembers.map((member) => member.row));
+  const boundedMembersWithRows = dedupedMembersWithRows.filter(
+    (member) =>
+      member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME || publicRosterMemberRows.has(member.row),
+  );
+  const members = boundedMembersWithRows.map(({ row, ...member }) => {
+    const rosterEvidence = isFreshVerifiedOfficialRosterRow(row)
+      ? {
+          sourceUrl: publicHttpUrl(row.sourceUrl),
+          profileUrl: publicHttpUrl(row.profileUrl),
+          observedAt: row.lastObservedAt,
+          freshnessExpiresAt: row.freshnessExpiresAt,
+        }
+      : undefined;
     return {
       ...member,
       user: {
         ...publicMemberUserForResearchDetail(member.user),
-        publicKey: publicMemberKeyForResearchDetail(member.user, member.role),
+        publicKey: publicMemberKeyForResearchDetail(
+          member.user,
+          member.role,
+          row?.identityKey,
+        ),
       },
+      ...(rosterEvidence ? { rosterEvidence } : {}),
     };
   });
+  const roster = publicRosterDisclosure(
+    (group as any).rosterEnrichment,
+    publicRosterMembers.length,
+    availableRosterMembers.length,
+  );
   const attributionRows = memberDisplayIds.length
     ? await ResearchScholarlyAttribution.find({
         targetUserId: { $in: memberDisplayIds },
@@ -2457,6 +2571,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       studentDecisionExplanation: studentDecisionExplanation || undefined,
     },
     members,
+    roster,
     ...researchActivity,
     recentPapers,
     recentArxivPreprints,

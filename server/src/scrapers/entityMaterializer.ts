@@ -550,36 +550,22 @@ async function findUniqueUserForResearchGroupMember(
   resolved: Record<string, ResolvedField>,
 ): Promise<any | null> {
   const profileUrl = textValue(resolved.profileUrl?.value);
-  const inferredName = objectRecord(resolved.inferredUserName?.value);
-  const first = textValue(inferredName.fname || inferredName.first || inferredName.firstName);
-  const last = textValue(inferredName.lname || inferredName.last || inferredName.lastName);
-
-  const filters: Record<string, unknown>[] = [];
-  if (profileUrl) {
-    filters.push({
-      $or: [
-        { 'profileUrls.official': profileUrl },
-        { 'profileUrls.medicine': profileUrl },
-        { 'profileUrls.yale': profileUrl },
-        { 'profileUrls.department': profileUrl },
-        { 'profileUrls.directory': profileUrl },
-        { scholarCandidateProfileUrls: profileUrl },
-        { website: profileUrl },
-      ],
-    });
-  }
-  if (first && last) {
-    filters.push({
-      fname: new RegExp(`^${escapeRegex(first)}$`, 'i'),
-      lname: new RegExp(`^${escapeRegex(last)}$`, 'i'),
-    });
-  }
-
-  for (const filter of filters) {
-    const users = await User.find(filter).select('_id facultyMemberId').limit(2).lean();
-    if (users.length === 1) return users[0];
-  }
-  return null;
+  if (!profileUrl) return null;
+  const users = await User.find({
+    $or: [
+      { 'profileUrls.official': profileUrl },
+      { 'profileUrls.medicine': profileUrl },
+      { 'profileUrls.yale': profileUrl },
+      { 'profileUrls.department': profileUrl },
+      { 'profileUrls.directory': profileUrl },
+      { scholarCandidateProfileUrls: profileUrl },
+      { website: profileUrl },
+    ],
+  })
+    .select('_id facultyMemberId')
+    .limit(2)
+    .lean();
+  return users.length === 1 ? users[0] : null;
 }
 
 export function buildResearchGroupMemberUpsert(
@@ -592,10 +578,33 @@ export function buildResearchGroupMemberUpsert(
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
   const role = normalizeMemberRole(resolved.role?.value);
   if (!role) return null;
+  if (textValue(resolved.currentStatus?.value) && textValue(resolved.currentStatus?.value) !== 'current') {
+    return null;
+  }
+  if (
+    textValue(resolved.evidenceStatus?.value) &&
+    textValue(resolved.evidenceStatus?.value) !== 'verified'
+  ) {
+    return null;
+  }
+  if (
+    resolved.name?.hasConflict ||
+    resolved.profileUrl?.hasConflict ||
+    resolved.identityKey?.hasConflict ||
+    resolved.membershipKey?.hasConflict ||
+    resolved.role?.hasConflict
+  ) {
+    return null;
+  }
   const name = textValue(resolved.name?.value) || memberNameFromInferredUserName(resolved.inferredUserName?.value);
   const userId = idValue(user?._id);
   const facultyMemberId = idValue(user?.facultyMemberId);
-  if (!name && !userId && !facultyMemberId) return null;
+  const profileUrl = textValue(resolved.profileUrl?.value);
+  const identityKey = textValue(resolved.identityKey?.value) || (profileUrl ? `official-profile:${profileUrl.toLowerCase()}` : '');
+  const membershipKey = textValue(resolved.membershipKey?.value) || (identityKey ? `${identityKey}|${role}` : '');
+  if ((!name && !userId && !facultyMemberId) || (!userId && !facultyMemberId && !identityKey)) {
+    return null;
+  }
 
   const roleSource = resolved.role;
   const observedAt = roleSource?.observedAt || new Date();
@@ -603,13 +612,12 @@ export function buildResearchGroupMemberUpsert(
   const sourceUrl = textValue(roleSource?.sourceUrl);
   const sourceName = textValue(roleSource?.sourceName);
   const title = textValue(resolved.title?.value);
-  const profileUrl = textValue(resolved.profileUrl?.value);
 
   const identityFilter: Record<string, unknown> = userId
     ? { userId }
     : facultyMemberId
     ? { facultyMemberId }
-    : { name };
+    : { membershipKey };
   const filter = {
     researchEntityId,
     role,
@@ -622,6 +630,7 @@ export function buildResearchGroupMemberUpsert(
     role,
     isCurrentMember: true,
     sourceUrl,
+    sourceName,
     confidence,
     lastObservedAt: observedAt,
     'confidenceByField.role': confidence,
@@ -635,12 +644,26 @@ export function buildResearchGroupMemberUpsert(
   if (name) set.name = name;
   if (userId) set.userId = userId;
   if (facultyMemberId) set.facultyMemberId = facultyMemberId;
+  if (identityKey) set.identityKey = identityKey;
+  if (membershipKey) set.membershipKey = membershipKey;
+  if (textValue(resolved.evidenceStatus?.value)) {
+    set.evidenceStatus = textValue(resolved.evidenceStatus?.value);
+  }
+  if (textValue(resolved.sectionLabel?.value)) {
+    set.sectionLabel = textValue(resolved.sectionLabel?.value);
+  }
+  if (resolved.sourcePublishedAt?.value) {
+    set.sourcePublishedAt = resolved.sourcePublishedAt.value;
+  }
+  if (resolved.freshnessExpiresAt?.value) {
+    set.freshnessExpiresAt = resolved.freshnessExpiresAt.value;
+  }
   if (title) {
     set.title = title;
     set['confidenceByField.title'] = resolved.title?.confidence ?? confidence;
   }
   if (profileUrl) {
-    set.sourceUrl = profileUrl;
+    set.profileUrl = profileUrl;
     set['fieldProvenance.profileUrl'] = {
       sourceName: textValue(resolved.profileUrl?.sourceName) || sourceName,
       sourceUrl: profileUrl,
@@ -2543,6 +2566,86 @@ async function materializePaperObservationsFromRun(
   return { materialized, created, updated, conflicts, skipped, errors };
 }
 
+const OFFICIAL_ROSTER_SOURCE_NAME = 'official-research-home-roster';
+
+export interface OfficialRosterSnapshotForReconciliation {
+  complete?: boolean;
+  memberKeys?: unknown;
+  observedAt?: unknown;
+}
+
+export function buildOfficialRosterArchiveFilter(
+  researchEntityId: string,
+  snapshot: OfficialRosterSnapshotForReconciliation,
+): Record<string, unknown> | null {
+  const safeResearchEntityId = normalizeMaterializerObjectId(researchEntityId);
+  const memberKeys = Array.isArray(snapshot.memberKeys)
+    ? Array.from(
+        new Set(
+          snapshot.memberKeys
+            .map((value) => textValue(value))
+            .filter(Boolean)
+            .slice(0, 40),
+        ),
+      )
+    : [];
+  if (!safeResearchEntityId || snapshot.complete !== true || memberKeys.length === 0) return null;
+  return {
+    researchEntityId: safeResearchEntityId,
+    sourceName: OFFICIAL_ROSTER_SOURCE_NAME,
+    archived: { $ne: true },
+    isCurrentMember: { $ne: false },
+    membershipKey: { $nin: memberKeys },
+  };
+}
+
+async function reconcileOfficialRosterSnapshotsFromRun(
+  scrapeRunId: string,
+  options: MaterializeOptions,
+): Promise<number> {
+  const runObjectId = toMaterializerObjectId(scrapeRunId);
+  if (!runObjectId || options.dryRun) return 0;
+  const snapshots = await Observation.find({
+    scrapeRunId: runObjectId,
+    sourceName: OFFICIAL_ROSTER_SOURCE_NAME,
+    entityType: 'researchEntity',
+    field: 'rosterEnrichment',
+  })
+    .select('entityKey value observedAt sourceUrl confidence')
+    .lean();
+  let archived = 0;
+  for (const snapshotObservation of snapshots as any[]) {
+    const snapshot = objectRecord(snapshotObservation.value) as OfficialRosterSnapshotForReconciliation;
+    if (!snapshotObservation.entityKey) continue;
+    const entity: any = await ResearchEntity.findOne({
+      slug: snapshotObservation.entityKey,
+      archived: { $ne: true },
+    })
+      .select('_id')
+      .lean();
+    if (!entity?._id) continue;
+    const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
+    if (!filter) continue;
+    const endedAt = snapshotObservation.observedAt || new Date();
+    const result = await ResearchGroupMember.updateMany(filter, {
+      $set: {
+        archived: true,
+        isCurrentMember: false,
+        endedAt,
+        evidenceStatus: 'historical',
+        'fieldProvenance.currentStatus': {
+          sourceName: OFFICIAL_ROSTER_SOURCE_NAME,
+          sourceUrl: snapshotObservation.sourceUrl || '',
+          observedAt: endedAt,
+          confidence: snapshotObservation.confidence ?? 1,
+        },
+      },
+    });
+    archived += result.modifiedCount || 0;
+  }
+  return archived;
+}
+
 export async function materializeFromRun(
   scrapeRunId: string,
   options: MaterializeOptions = {},
@@ -2626,6 +2729,7 @@ export async function materializeFromRun(
   }
   postMaterializationMetrics.postedOpportunities +=
     await countListingBackedPostedOpportunitiesForRun(scrapeRunId);
+  const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
   if (!options.dryRun) {
     await ScrapeRun.updateOne(
       { _id: scrapeRunId },
@@ -2636,6 +2740,7 @@ export async function materializeFromRun(
           materializationSkipped: skipped,
           materializationConflicts: conflicts,
           materializationErrors: errors,
+          entitiesArchived: rosterMembersArchived,
           postMaterializationMetrics,
         },
       },

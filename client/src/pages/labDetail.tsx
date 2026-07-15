@@ -18,6 +18,7 @@ import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
+import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import LabPapersList from '../components/labs/LabPapersList';
 import LabInquireModal from '../components/labs/LabInquireModal';
 import LongText from '../components/shared/LongText';
@@ -1048,6 +1049,12 @@ const LabDetail = () => {
     group: legacyGroup,
     researchEntity,
     members,
+    roster = {
+      status: 'no-verified-data',
+      returned: 0,
+      truncated: false,
+      withheldCount: 0,
+    },
     researchActivityLinks: payloadResearchActivityLinks = [],
     earlierResearchActivityLinks = [],
     scholarlyLinks = [],
@@ -1274,6 +1281,8 @@ const LabDetail = () => {
               <LabMembersList members={principalInvestigators} />
             )}
           </section>
+
+          <ResearchTeamSection members={members} roster={roster} />
 
           {hasDirectRelatedResearch && (
             <section>

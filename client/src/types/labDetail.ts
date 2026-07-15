@@ -15,7 +15,12 @@ export type LabMemberRole =
   | 'co-director'
   | 'core-faculty'
   | 'affiliated'
-  | 'alumni';
+  | 'alumni'
+  | 'postdoc'
+  | 'grad-student'
+  | 'undergrad'
+  | 'staff'
+  | 'affiliate';
 
 export interface LabMemberUser {
   _id?: string;
@@ -41,6 +46,27 @@ export interface LabMemberUser {
 export interface LabMember {
   user: LabMemberUser;
   role: LabMemberRole;
+  rosterEvidence?: {
+    sourceUrl?: string;
+    profileUrl?: string;
+    observedAt?: string;
+    freshnessExpiresAt?: string;
+  };
+}
+
+export interface LabRosterDisclosure {
+  status:
+    | 'current'
+    | 'partial'
+    | 'no-verified-data'
+    | 'withheld'
+    | 'optional-source-failure';
+  returned: number;
+  truncated: boolean;
+  withheldCount: number;
+  sourceUrl?: string;
+  observedAt?: string;
+  freshnessExpiresAt?: string;
 }
 
 export interface LabPaper {
@@ -188,6 +214,7 @@ export interface LabDetailPayload {
   group: ResearchGroup;
   researchEntity?: ResearchEntity;
   members: LabMember[];
+  roster?: LabRosterDisclosure;
   researchActivityLinks?: LabResearchActivityLink[];
   earlierResearchActivityLinks?: LabResearchActivityLink[];
   scholarlyLinks?: LabScholarlyLink[];

@@ -7,6 +7,7 @@ import {
   buildOfficialProfileScholarlyLinkUpserts,
   buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
+  buildOfficialRosterArchiveFilter,
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
   mergeUniqueArrayValues,
@@ -770,6 +771,100 @@ describe('entityMaterializer post-materialization metrics', () => {
         $setOnInsert: { startedAt: observedAt },
       },
     });
+  });
+
+  it('materializes official roster membership idempotently from stable source identity', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt,
+      hasConflict: false,
+      contributingSources: ['official-research-home-roster'],
+    });
+    const resolved = {
+      role: field('grad-student'),
+      name: field('Fixture Scholar'),
+      title: field('Graduate Student'),
+      profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
+      identityKey: field('official-profile:fixture-scholar'),
+      membershipKey: field('official-profile:fixture-scholar|grad-student'),
+      currentStatus: field('current'),
+      evidenceStatus: field('verified'),
+      freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
+    };
+
+    const first = buildResearchGroupMemberUpsert('64f000000000000000000010', resolved);
+    const second = buildResearchGroupMemberUpsert('64f000000000000000000010', resolved);
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      filter: {
+        researchEntityId: '64f000000000000000000010',
+        membershipKey: 'official-profile:fixture-scholar|grad-student',
+        role: 'grad-student',
+        isCurrentMember: true,
+      },
+      update: {
+        $set: {
+          sourceName: 'official-research-home-roster',
+          profileUrl: 'https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/',
+          evidenceStatus: 'verified',
+        },
+      },
+    });
+  });
+
+  it('refuses name-only roster identity and any stable-identity collision', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown, hasConflict = false) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      observedAt,
+      hasConflict,
+      contributingSources: ['official-research-home-roster'],
+    });
+    expect(
+      buildResearchGroupMemberUpsert('64f000000000000000000010', {
+        role: field('staff'),
+        name: field('Same Name'),
+        currentStatus: field('current'),
+        evidenceStatus: field('verified'),
+      }),
+    ).toBeNull();
+    expect(
+      buildResearchGroupMemberUpsert('64f000000000000000000010', {
+        role: field('staff'),
+        name: field('Conflicted Name', true),
+        identityKey: field('official-profile:collision', true),
+        membershipKey: field('official-profile:collision|staff'),
+        currentStatus: field('current'),
+        evidenceStatus: field('verified'),
+      }),
+    ).toBeNull();
+  });
+
+  it('archives only missing members after a non-empty complete roster snapshot', () => {
+    expect(
+      buildOfficialRosterArchiveFilter('64f000000000000000000010', {
+        complete: true,
+        memberKeys: ['official-profile:current|staff'],
+      }),
+    ).toEqual({
+      researchEntityId: '64f000000000000000000010',
+      sourceName: 'official-research-home-roster',
+      archived: { $ne: true },
+      isCurrentMember: { $ne: false },
+      membershipKey: { $nin: ['official-profile:current|staff'] },
+    });
+    expect(
+      buildOfficialRosterArchiveFilter('64f000000000000000000010', {
+        complete: false,
+        memberKeys: [],
+      }),
+    ).toBeNull();
   });
 
   it('builds official-profile scholarly link upserts from user observations', () => {

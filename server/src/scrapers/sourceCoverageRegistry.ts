@@ -8,6 +8,15 @@
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 export const sourceCoverageRegistry = {
+  'official-research-home-roster': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['ResearchEntity', 'ResearchEntityMember', 'Observation'],
+    evidenceCategories: ['ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Reviewed official current-roster sections for allowlisted research homes. Disabled by default until the roster coverage/precision audit is reviewed; refresh owner is Yale Research data operations on a weekly cadence.',
+  },
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',

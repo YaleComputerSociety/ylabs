@@ -153,12 +153,12 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### EP-05 - Research-Home Member Roster Beyond The Lead - FR-18
 
-- **Status:** Blocked.
+- **Status:** Active.
 - **Depends on:** official roster acquisition, identity matching, current-role evidence, and public-person policy.
 - **Acceptance criteria:** detail pages may list graduate students, postdocs, staff, or other current members only from official, current, attributable roster evidence; roles and source context are explicit; stale or ambiguous people are withheld; the section does not turn names into unsolicited-contact recommendations.
-- **Validation evidence:** the detail/member rendering path exists, but acquisition coverage is lead-heavy and does not satisfy the roster requirement.
+- **Validation evidence:** `officialResearchHomeRosterScraper.ts` adds a disabled-by-default reviewed-source adapter, stable-profile identity keys, publish-date and refresh freshness gates, complete-snapshot archival reconciliation, bounded role-grouped detail presentation, and `research-homes:audit-rosters` coverage/precision review.
 - **PRs:** none.
-- **Blocker:** new roster scraping and identity-quality review.
+- **Rollout note:** the initial allowlist is intentionally narrow and the source remains disabled until a sampled precision review accompanies a clean structural audit.
 
 #### EP-06 - Trustworthy Activity Ordering And Rollups - FR-19 / FR-42.2
 

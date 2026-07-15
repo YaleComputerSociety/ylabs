@@ -388,6 +388,32 @@ Project impact:
 
 - Gives the operator board and canonical `/programs` surface official fellowship URL/deadline evidence with explicit student visibility tiers.
 
+### Official Research-Home Rosters
+
+Source:
+
+- `official-research-home-roster`
+
+Expected collections:
+
+- `observations`
+- `research_entities` for bounded roster refresh state
+- `research_entity_members` for verified current and archived historical roles
+
+Audit focus:
+
+- Run the source in dry-run mode against the narrow reviewed allowlist before any write.
+- Confirm every accepted section is explicitly configured as current and that former or alumni sections remain excluded.
+- Confirm each materialized member has a unique official profile identity, an honest mapped role, an observation date, and an unexpired freshness window.
+- Confirm duplicate profile identities, same-profile different-name collisions, ambiguous roles, unsafe links, and direct contact text are withheld.
+- Run `yarn --cwd server research-homes:audit-rosters --strict --output /tmp/ylabs-roster-audit.json` after Beta materialization.
+- Review the bounded sample manually, then rerun with `--sampled-precision-reviewed`; do not enable the source broadly unless `broadEnablementReady` is true.
+- Confirm a successful complete non-empty refresh archives disappeared source-owned rows, while empty or failed refreshes archive nothing.
+
+Project impact:
+
+- Adds bounded team-composition context without implying access, availability, or permission to contact a member.
+
 ### Entity Discovery Sources
 
 Sources:

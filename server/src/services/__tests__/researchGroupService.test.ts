@@ -127,6 +127,8 @@ import {
   normalizeResearchSearchQuery,
   normalizeResearchGroupObjectId,
   publicMemberUserForRow,
+  isFreshVerifiedOfficialRosterRow,
+  publicRosterDisclosure,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
@@ -696,6 +698,49 @@ describe('getResearchGroupDetail', () => {
     });
   });
 
+  it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          sourceName: 'official-research-home-roster',
+          evidenceStatus: 'verified',
+          identityKey: 'official-profile:fixture',
+          membershipKey: 'official-profile:fixture|staff',
+          name: 'Fixture Scholar',
+          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+        },
+        new Date('2026-07-14T00:00:00Z'),
+      ),
+    ).toBe(true);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          sourceName: 'official-research-home-roster',
+          evidenceStatus: 'verified',
+          identityKey: 'official-profile:fixture',
+          membershipKey: 'official-profile:fixture|staff',
+          name: 'Fixture Scholar',
+          freshnessExpiresAt: '2026-01-01T00:00:00Z',
+        },
+        new Date('2026-07-14T00:00:00Z'),
+      ),
+    ).toBe(false);
+    expect(
+      publicRosterDisclosure(
+        {
+          state: 'partial',
+          withheldCount: 2,
+          sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+        },
+        24,
+        27,
+      ),
+    ).toMatchObject({ status: 'partial', returned: 24, truncated: true, withheldCount: 2 });
+    expect(publicRosterDisclosure({ state: 'failed' }, 0, 0).status).toBe(
+      'optional-source-failure',
+    );
+  });
+
   it('removes private listing ownership and contact fields from public detail payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
@@ -707,6 +752,12 @@ describe('getResearchGroupDetail', () => {
         researchAreas: [],
         sourceUrls: [],
         studentVisibilityTier: 'student_ready',
+        rosterEnrichment: {
+          state: 'current',
+          memberKeys: ['official-profile:private|staff'],
+          sourceUrl: 'https://medicine.yale.edu/lab/private/members/',
+          observedAt: '2026-07-14T00:00:00Z',
+        },
       }),
     );
     mocks.listingFind.mockReturnValue(
@@ -887,6 +938,7 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.postedOpportunities[0]).not.toHaveProperty('derivationKey');
     expect(detail?.postedOpportunities[0]).not.toHaveProperty('archived');
     expect(detail?.postedOpportunities[0]).not.toHaveProperty('review');
+    expect(detail?.researchEntity).not.toHaveProperty('rosterEnrichment');
   });
 
   it('allowlists public member user fields in public detail payloads', async () => {

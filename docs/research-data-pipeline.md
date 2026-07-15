@@ -32,6 +32,13 @@ Research-entity `sourceUrls` are durable home/profile/grant evidence pointers, n
 
 Research detail membership resolution must not display a `User` whose linked `facultyMemberId` conflicts with the membership row's `facultyMemberId`. In that case, the public detail payload falls back to the scraper-backed `FacultyMember` identity rather than showing the wrong Yale account. The student visibility gate treats `pi_identity_conflict` as a blocking reason routed to the PI identity repair lane, while a membership row with a trusted `facultyMemberId` but no `userId` still counts as attached lead evidence.
 
+The `official-research-home-roster` source acquires non-lead current membership only from an allowlisted official page and explicitly configured current section.
+Each materialized row requires a source-specific official profile identity, an honestly mapped role, a recent page publish date, an observation date, and a bounded refresh-expiry date.
+Names alone never resolve a `User` or merge membership rows.
+A complete non-empty snapshot archives source-owned rows that disappeared while preserving their observation and membership history; empty, stale, withheld, and failed snapshots never trigger cleanup.
+Public detail suppresses expired or conflicting rows, limits roster presentation to 24 members, excludes direct contact data, and discloses that missing roster evidence does not mean an empty team.
+The source is seeded disabled and owned by Yale Research data operations on a weekly cadence until `research-homes:audit-rosters` reports clean structure and a sampled precision review is recorded.
+
 ## Read-Only Control Plane
 
 The first control-plane slice is the admin Operator Board. It remains read-only and does not replace CLI or cron execution. It should show:

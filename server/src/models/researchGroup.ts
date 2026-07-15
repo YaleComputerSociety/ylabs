@@ -274,6 +274,28 @@ const researchGroupSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       required: false,
     },
+    rosterEnrichment: {
+      type: {
+        state: {
+          type: String,
+          enum: ['current', 'partial', 'empty', 'withheld', 'stale', 'failed'],
+          required: true,
+        },
+        complete: { type: Boolean, default: false },
+        memberCount: { type: Number, min: 0, max: 40, default: 0 },
+        withheldCount: { type: Number, min: 0, max: 1000, default: 0 },
+        duplicateCount: { type: Number, min: 0, max: 1000, default: 0 },
+        memberKeys: { type: [String], default: [] },
+        sourceUrl: { type: String, default: '' },
+        sourcePublishedAt: { type: Date, required: false },
+        observedAt: { type: Date, required: true },
+        freshnessExpiresAt: { type: Date, required: false },
+        refreshOwner: { type: String, default: '' },
+        refreshCadence: { type: String, default: '' },
+      },
+      required: false,
+      default: undefined,
+    },
     timeCommitmentHoursPerWeek: {
       type: {
         min: { type: Number },

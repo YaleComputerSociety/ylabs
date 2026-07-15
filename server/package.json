@@ -22,6 +22,7 @@
     "research-entity:repair-archived-artifacts": "tsx src/scripts/repairArchivedEntityArtifacts.ts",
     "research-entity-members:audit-user-refs": "tsx src/scripts/researchEntityMemberReferenceAudit.ts",
     "research-entity:audit-lead-identity": "tsx src/scripts/leadIdentityConsistencyAudit.ts",
+    "research-homes:audit-rosters": "tsx src/scripts/researchHomeRosterAudit.ts",
     "users:dedupe-by-identity": "tsx src/scripts/dedupeUsersByIdentity.ts",
     "users:email-hygiene": "tsx src/scripts/userEmailHygiene.ts",
     "users:repair-mismatched-emails": "tsx src/scripts/repairMismatchedPersonEmails.ts",

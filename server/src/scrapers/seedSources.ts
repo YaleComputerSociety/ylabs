@@ -28,6 +28,7 @@ interface SourceSeed {
   defaultWeight: number;
   isManualLock?: boolean;
   cadence: string;
+  enabled?: boolean;
   coverage?: SourceCoverageMetadata;
 }
 
@@ -366,6 +367,16 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'official-research-home-roster',
+    displayName: 'Official research-home current rosters',
+    description:
+      'Reviewed, explicitly current roster sections on allowlisted official research-home pages. Public contact details are excluded.',
+    baseUrl: 'https://medicine.yale.edu/lab/',
+    defaultWeight: 0.95,
+    cadence: 'weekly',
+    enabled: false,
+  },
+  {
     name: 'centers-institutes-index',
     displayName: 'Yale centers/institutes index',
     description: 'Parameterized per-center scrapers (Wu Tsai, Cancer Center, Cowles, Tobin, MacMillan, ISPS, Whitney Humanities, Yale Quantum, etc.).',
@@ -443,7 +454,7 @@ export async function seedSources(options: SeedSourcesCliOptions) {
       });
     } else {
       if (options.apply) {
-        await Source.create({ ...seed, enabled: true });
+        await Source.create({ ...seed, enabled: seed.enabled ?? true });
       }
       sources.push({
         name: seed.name,

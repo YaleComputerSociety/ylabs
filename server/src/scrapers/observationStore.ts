@@ -103,6 +103,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'shortDescription',
   'researchAreas',
   'methods',
+  'rosterEnrichment',
 ]);
 
 export function buildObservationFingerprint(input: {
