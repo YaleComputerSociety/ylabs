@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -42,6 +42,9 @@ const ResearchFilterDisclosure = ({
   onClearAll,
 }: ResearchFilterDisclosureProps) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(
+    () => window.matchMedia?.('(min-width: 640px)').matches ?? false,
+  );
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -77,14 +80,22 @@ const ResearchFilterDisclosure = ({
       ) || [],
     );
 
-  const focusFirstControl = () => {
-    const desktop = window.matchMedia?.('(min-width: 640px)').matches ?? false;
-    if (desktop) {
+  const focusFirstControl = useCallback(() => {
+    if (isDesktop) {
       (firstSchoolRef.current || firstDepartmentRef.current || closeRef.current)?.focus();
       return;
     }
     closeRef.current?.focus();
-  };
+  }, [isDesktop]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(min-width: 640px)');
+    if (!mediaQuery) return;
+    const handleChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
+    setIsDesktop(mediaQuery.matches);
+    mediaQuery.addEventListener?.('change', handleChange);
+    return () => mediaQuery.removeEventListener?.('change', handleChange);
+  }, []);
 
   const closeFilters = (restoreFocus = true) => {
     setIsOpen(false);
@@ -95,7 +106,7 @@ const ResearchFilterDisclosure = ({
     if (!isOpen) return;
     const timeout = window.setTimeout(focusFirstControl, 0);
     return () => window.clearTimeout(timeout);
-  }, [isOpen]);
+  }, [focusFirstControl, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -103,7 +114,7 @@ const ResearchFilterDisclosure = ({
       if (!panelRef.current?.contains(document.activeElement)) focusFirstControl();
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [isOpen, visibleFacetKey]);
+  }, [focusFirstControl, isOpen, visibleFacetKey]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -119,7 +130,7 @@ const ResearchFilterDisclosure = ({
   useEffect(() => {
     if (!isOpen) return;
     const handlePointerOutside = (event: MouseEvent) => {
-      if (!(window.matchMedia?.('(min-width: 640px)').matches ?? false)) return;
+      if (!isDesktop) return;
       if (
         panelRef.current?.contains(event.target as Node) ||
         triggerRef.current?.contains(event.target as Node)
@@ -130,7 +141,7 @@ const ResearchFilterDisclosure = ({
     };
     document.addEventListener('mousedown', handlePointerOutside);
     return () => document.removeEventListener('mousedown', handlePointerOutside);
-  }, [isOpen]);
+  }, [isDesktop, isOpen]);
 
   const emptyMessage = hasFacetError
     ? 'Filter options are temporarily unavailable. Your search still works, and active filters can be cleared.'
@@ -193,11 +204,11 @@ const ResearchFilterDisclosure = ({
               id={panelId}
               ref={panelRef}
               role="dialog"
-              aria-modal="true"
+              aria-modal={isDesktop ? undefined : true}
               aria-label="Research filters"
               aria-busy={isApplying}
               onKeyDown={(event) => {
-                if (event.key !== 'Tab') return;
+                if (isDesktop || event.key !== 'Tab') return;
                 const focusable = getFocusableElements();
                 if (focusable.length === 0) return;
                 const first = focusable[0];
