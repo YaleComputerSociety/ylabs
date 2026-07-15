@@ -121,6 +121,7 @@ import {
   listResearchEntityRelationshipPayload,
   normalizeResearchGroupObjectId,
   publicMemberUserForRow,
+  researchDetailLeadIdentity,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
@@ -1563,6 +1564,57 @@ describe('publicMemberUserForRow', () => {
       lname: 'Collaborator',
     });
     expect(publicUser).not.toHaveProperty('email');
+  });
+});
+
+describe('researchDetailLeadIdentity', () => {
+  const members = [
+    {
+      role: 'pi',
+      user: {
+        displayName: 'First Investigator',
+        profileUrls: { official: 'https://medicine.yale.edu/profile/first-investigator/' },
+      },
+      row: { facultyMemberId: 'faculty-1' },
+    },
+    {
+      role: 'co-pi',
+      user: {
+        displayName: 'Second Investigator',
+        profileUrls: { official: 'https://medicine.yale.edu/profile/second-investigator/' },
+      },
+      row: { facultyMemberId: 'faculty-2' },
+    },
+  ];
+
+  it('identifies a unique lead only from entity-owned official profile evidence', () => {
+    expect(
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://medicine.yale.edu/profile/second-investigator/'] },
+        members,
+      ),
+    ).toEqual({
+      leadIdentityStatus: 'verified',
+      leadProfessorPublicKey: 'second-investigator-co-pi',
+    });
+  });
+
+  it('omits the lead when entity evidence does not uniquely match a member', () => {
+    expect(researchDetailLeadIdentity({ sourceUrls: [] }, members)).toEqual({
+      leadIdentityStatus: 'verified',
+    });
+  });
+
+  it('derives the public review state from canonical PI identity conflicts', () => {
+    expect(
+      researchDetailLeadIdentity({}, [
+        {
+          role: 'pi',
+          user: { displayName: 'Disputed Investigator', facultyMemberId: 'faculty-user' },
+          row: { userId: 'user-1', facultyMemberId: 'faculty-row' },
+        },
+      ]),
+    ).toEqual({ leadIdentityStatus: 'under_review' });
   });
 });
 

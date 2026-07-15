@@ -360,6 +360,7 @@ describe('LabDetail page', () => {
       group: {
         ...basePayload.group,
         websiteUrl: secondInvestigatorProfileUrl,
+        leadProfessorPublicKey: 'fixture-second-pi',
       },
       members: [
         {

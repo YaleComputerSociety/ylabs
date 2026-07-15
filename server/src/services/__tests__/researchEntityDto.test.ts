@@ -289,4 +289,20 @@ describe('researchEntityDto', () => {
     expect(detail.researchEntity.entityType).toBe('INDIVIDUAL_RESEARCH');
     expect(detail.members).toEqual([]);
   });
+
+  it('exposes only safe public lead identity fields', () => {
+    const dto = toPublicResearchEntityDto({
+      slug: 'lead-review-lab',
+      name: 'Lead Review Lab',
+      leadIdentityStatus: 'under_review',
+      leadProfessorPublicKey: 'reviewed-professor-pi',
+      qualitySummary: { repairFlags: ['pi_identity_conflict'], privateNote: 'operator only' },
+    });
+
+    expect(dto).toMatchObject({
+      leadIdentityStatus: 'under_review',
+      leadProfessorPublicKey: 'reviewed-professor-pi',
+    });
+    expect(dto).not.toHaveProperty('qualitySummary');
+  });
 });

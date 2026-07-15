@@ -1273,6 +1273,49 @@ const normalizePublicUrlDestination = (url?: string | null): string => {
   }
 };
 
+export function researchDetailLeadIdentity(
+  group: Record<string, any>,
+  members: Array<{ user: any; role: string; row?: any }>,
+): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
+  const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
+  const qualitySummary = buildResearchEntityQualitySummary({
+    entity: group,
+    leadMembers: leadMembers.map((member) => ({ ...member.row, user: member.user })),
+  });
+  if (qualitySummary.repairFlags.includes('pi_identity_conflict')) {
+    return { leadIdentityStatus: 'under_review' };
+  }
+
+  const entityProfileDestinations = new Set(
+    [
+      group.websiteUrl,
+      group.website,
+      ...(Array.isArray(group.sourceUrls) ? group.sourceUrls : []),
+      ...Object.values(safeProfileUrlObject(group.profileUrls || group.profile_urls)),
+    ]
+      .filter(isLikelyOfficialPersonProfileUrl)
+      .map((url) => normalizePublicUrlDestination(String(url)))
+      .filter(Boolean),
+  );
+  const matchingMembers = leadMembers.filter((member) =>
+    entityProfileDestinations.has(
+      normalizePublicUrlDestination(resolveLeadOfficialProfileUrl(member)),
+    ),
+  );
+
+  return {
+    leadIdentityStatus: 'verified',
+    ...(matchingMembers.length === 1
+      ? {
+          leadProfessorPublicKey: publicMemberKeyForResearchDetail(
+            matchingMembers[0].user,
+            matchingMembers[0].role,
+          ),
+        }
+      : {}),
+  };
+}
+
 function isResearchWebsiteFacultyPiRoute(route: any, group: any): boolean {
   if (route?.routeType !== 'FACULTY_PI') return false;
   const researchWebsiteDestinations = new Set(
@@ -1911,6 +1954,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(membersWithRows);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
+  const leadIdentity = researchDetailLeadIdentity(
+    group as Record<string, any>,
+    dedupedMembersWithRows,
+  );
   const piOutreachRoute = buildLeadPiOutreachContactRoute(dedupedMembersWithRows, group);
   const leadMemberNames = dedupedMembersWithRows
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
@@ -2104,6 +2151,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   return addResearchEntityDetailAlias({
     group: {
       ...publicGroupForResponse,
+      ...leadIdentity,
       accessSummary,
       studentDecisionExplanation: studentDecisionExplanation || undefined,
     },

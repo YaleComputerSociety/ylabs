@@ -47,6 +47,8 @@ export type StudentVisibilityTier =
   | 'suppressed';
 
 export interface ResearchEntity extends ResearchEntityBacking {
+  leadIdentityStatus?: 'verified' | 'under_review';
+  leadProfessorPublicKey?: string;
   searchMatch?: ResearchEntitySearchMatch;
   waysIn?: PathwaySearchHit[];
   qualitySummary?: ResearchEntityQualitySummary;
