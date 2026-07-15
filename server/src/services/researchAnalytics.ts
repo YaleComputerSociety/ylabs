@@ -16,10 +16,16 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import { AnalyticsEventType, RESEARCH_ENTITY_TYPES, ResearchEntityType } from '../models/analytics';
-import { Fellowship, User } from '../models/index';
+import { Fellowship, ResearchEntity, User } from '../models/index';
 import { getListingModel } from '../db/connections';
 import { logEvent } from './analyticsService';
 import type { LogEventParams } from './analyticsService';
+import {
+  listPlanningContextsForResearchEntities,
+  PLANNING_CONTEXT_CATEGORIES,
+  type PlanningContextCategory,
+  type PublicPlanningContext,
+} from './planningContextService';
 
 /** The subset of AnalyticsEventType that describes research-surface activity. */
 export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
@@ -28,7 +34,76 @@ export const RESEARCH_EVENT_TYPES: readonly AnalyticsEventType[] = [
   AnalyticsEventType.WAYS_IN_CLICK,
   AnalyticsEventType.CONTACT_ROUTE_CLICK,
   AnalyticsEventType.SOURCE_LINK_CLICK,
+  AnalyticsEventType.RESEARCH_SEARCH,
+  AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+  AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+  AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
+  AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+  AnalyticsEventType.RESEARCH_SAVE,
+  AnalyticsEventType.RESEARCH_COMPARE,
+  AnalyticsEventType.RESEARCH_PLAN_UPDATE,
+  AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
 ];
+
+export const RESEARCH_JOURNEY_EVENT_TYPES: readonly AnalyticsEventType[] = [
+  AnalyticsEventType.RESEARCH_SEARCH,
+  AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION,
+  AnalyticsEventType.RESEARCH_PROFILE_OPEN,
+  AnalyticsEventType.RESEARCH_SOURCE_REVIEW,
+  AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+  AnalyticsEventType.RESEARCH_SAVE,
+  AnalyticsEventType.RESEARCH_COMPARE,
+  AnalyticsEventType.RESEARCH_PLAN_UPDATE,
+  AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
+];
+
+export const RESEARCH_SEARCH_OUTCOMES = ['results', 'zero_results', 'error'] as const;
+export const RESEARCH_RESULT_COUNT_BUCKETS = ['0', '1-5', '6-20', '21-50', '51+'] as const;
+export const RESEARCH_SEARCH_KINDS = ['query', 'filtered', 'department'] as const;
+export const RESEARCH_FILTER_COUNT_BUCKETS = ['0', '1', '2', '3+'] as const;
+export const RESEARCH_IMPRESSION_SURFACES = ['browse', 'search', 'saved_plans'] as const;
+export const RESEARCH_POSITION_BUCKETS = ['1-3', '4-10', '11-24', '25+'] as const;
+export const RESEARCH_PROFILE_OPEN_SOURCES = ['browse', 'search', 'direct', 'saved_plans'] as const;
+export const RESEARCH_SOURCE_CATEGORIES = [
+  'entity_website',
+  'faculty_profile',
+  'orcid',
+  'publication',
+  'evidence',
+  'other',
+] as const;
+export const RESEARCH_FILTER_OPERATIONS = [
+  'apply',
+  'remove',
+  'clear',
+  'panel_open',
+  'panel_close',
+] as const;
+export const RESEARCH_FILTER_KINDS = [
+  'school',
+  'department',
+  'documented_way_in',
+  'admin_quality',
+  'admin_trust',
+] as const;
+export const RESEARCH_SAVE_OPERATIONS = ['save', 'remove'] as const;
+export const RESEARCH_SAVE_SURFACES = ['profile', 'search', 'saved_plans'] as const;
+export const RESEARCH_COMPARE_COUNT_BUCKETS = ['1', '2', '3-4', '5+'] as const;
+export const RESEARCH_PLAN_FIELDS = [
+  'intent',
+  'stage',
+  'note_presence',
+  'checklist',
+  'target_deadline',
+  'acted_on_date',
+  'follow_up',
+] as const;
+
+const JOURNEY_EVENTS_WITHOUT_ENTITY = new Set<AnalyticsEventType>([
+  AnalyticsEventType.RESEARCH_SEARCH,
+  AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+]);
+const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 
 /** Allowed coarse categories for a contact-route click. Never the address. */
 export const CONTACT_METHODS = ['email', 'phone', 'website', 'directory', 'other'] as const;
@@ -114,6 +189,49 @@ export const sanitizeResearchPayload = (
   const out: Record<string, string> = {};
 
   switch (eventType) {
+    case AnalyticsEventType.RESEARCH_SEARCH: {
+      out.outcome = oneOf(input.outcome, RESEARCH_SEARCH_OUTCOMES) ?? 'error';
+      out.resultCountBucket = oneOf(input.resultCountBucket, RESEARCH_RESULT_COUNT_BUCKETS) ?? '0';
+      out.searchKind = oneOf(input.searchKind, RESEARCH_SEARCH_KINDS) ?? 'query';
+      out.filterCountBucket = oneOf(input.filterCountBucket, RESEARCH_FILTER_COUNT_BUCKETS) ?? '0';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_ENTITY_IMPRESSION: {
+      out.surface = oneOf(input.surface, RESEARCH_IMPRESSION_SURFACES) ?? 'search';
+      out.positionBucket = oneOf(input.positionBucket, RESEARCH_POSITION_BUCKETS) ?? '25+';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_PROFILE_OPEN: {
+      out.source = oneOf(input.source, RESEARCH_PROFILE_OPEN_SOURCES) ?? 'direct';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_SOURCE_REVIEW: {
+      out.sourceCategory = oneOf(input.sourceCategory, RESEARCH_SOURCE_CATEGORIES) ?? 'other';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_FILTER_CHANGE: {
+      out.operation = oneOf(input.operation, RESEARCH_FILTER_OPERATIONS) ?? 'apply';
+      out.filter = oneOf(input.filter, RESEARCH_FILTER_KINDS) ?? 'department';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_SAVE: {
+      out.operation = oneOf(input.operation, RESEARCH_SAVE_OPERATIONS) ?? 'save';
+      out.surface = oneOf(input.surface, RESEARCH_SAVE_SURFACES) ?? 'profile';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_COMPARE: {
+      out.entityCountBucket = oneOf(input.entityCountBucket, RESEARCH_COMPARE_COUNT_BUCKETS) ?? '1';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_PLAN_UPDATE: {
+      out.field = oneOf(input.field, RESEARCH_PLAN_FIELDS) ?? 'stage';
+      break;
+    }
+    case AnalyticsEventType.RESEARCH_QUALIFIED_ACTION: {
+      const actionCategory = oneOf(input.actionCategory, PLANNING_CONTEXT_CATEGORIES);
+      if (actionCategory) out.actionCategory = actionCategory;
+      break;
+    }
     case AnalyticsEventType.CONTACT_ROUTE_CLICK: {
       const method = oneOf(input.contactMethod ?? input.method, CONTACT_METHODS) ?? 'other';
       out.contactMethod = method;
@@ -168,6 +286,12 @@ const cleanHost = (value: unknown): string | undefined => {
 export const isResearchEventType = (value: unknown): value is AnalyticsEventType =>
   isPlainString(value) && (RESEARCH_EVENT_TYPES as readonly string[]).includes(value);
 
+export const isResearchJourneyEventType = (value: unknown): value is AnalyticsEventType =>
+  isPlainString(value) && (RESEARCH_JOURNEY_EVENT_TYPES as readonly string[]).includes(value);
+
+export const researchJourneyEventRequiresEntity = (eventType: AnalyticsEventType): boolean =>
+  !JOURNEY_EVENTS_WITHOUT_ENTITY.has(eventType);
+
 export const isResearchEntityType = (value: unknown): value is ResearchEntityType =>
   isPlainString(value) && (RESEARCH_ENTITY_TYPES as readonly string[]).includes(value);
 
@@ -179,6 +303,10 @@ export const researchEntityExists = async (
 
   if (entityType === 'profile') {
     return Boolean(await User.exists({ netid: id }));
+  }
+
+  if (entityType === 'research_entity') {
+    return mongoose.isValidObjectId(id) && Boolean(await ResearchEntity.exists({ _id: id }));
   }
 
   if (!mongoose.isValidObjectId(id)) {
@@ -196,9 +324,10 @@ export interface BuildResearchEventInput {
   eventType: AnalyticsEventType;
   netid: string;
   userType: string;
-  entityType: ResearchEntityType;
-  entityId: string;
+  entityType?: ResearchEntityType;
+  entityId?: string;
   payload?: unknown;
+  dedupeKey?: string;
 }
 
 type AnalyticsUser = { netId?: string; userType?: string };
@@ -217,9 +346,10 @@ export const buildResearchEvent = (input: BuildResearchEventInput): LogEventPara
     eventType: input.eventType,
     netid: input.netid,
     userType: input.userType,
-    entityType: input.entityType,
-    entityId: String(input.entityId).slice(0, 128),
+    ...(input.entityType ? { entityType: input.entityType } : {}),
+    ...(input.entityId ? { entityId: String(input.entityId).slice(0, 128) } : {}),
     ...(metadata ? { metadata } : {}),
+    ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
   };
 };
 
@@ -229,19 +359,45 @@ export interface EmitResearchEventInput {
   entityId: unknown;
   user?: AnalyticsUser;
   payload?: unknown;
+  dedupeKey?: unknown;
 }
+
+type PlanningContextResolver = (
+  ids: Array<string | mongoose.Types.ObjectId>,
+) => Promise<Map<string, PublicPlanningContext>>;
 
 export const emitResearchEvent = async (
   input: EmitResearchEventInput,
   log: ResearchLogFn = logEvent,
+  resolvePlanningContexts: PlanningContextResolver = listPlanningContextsForResearchEntities,
 ): Promise<boolean> => {
-  if (
-    !isResearchEventType(input.eventType) ||
-    !isResearchEntityType(input.entityType) ||
-    !isNonEmptyString(input.entityId) ||
-    !isNonEmptyString(input.user?.netId)
-  ) {
+  if (!isResearchEventType(input.eventType) || !isNonEmptyString(input.user?.netId)) {
     return false;
+  }
+
+  const entityOptional = JOURNEY_EVENTS_WITHOUT_ENTITY.has(input.eventType);
+  const hasEntity = isResearchEntityType(input.entityType) && isNonEmptyString(input.entityId);
+  if (!entityOptional && !hasEntity) return false;
+  if (
+    input.dedupeKey !== undefined &&
+    !(typeof input.dedupeKey === 'string' && ANALYTICS_DEDUPE_KEY_RE.test(input.dedupeKey))
+  )
+    return false;
+
+  let payload = input.payload;
+  if (input.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION) {
+    if (input.entityType !== 'research_entity' || !isNonEmptyString(input.entityId)) return false;
+    const contexts = await resolvePlanningContexts([input.entityId.trim()]);
+    const context = contexts.get(input.entityId.trim());
+    if (!context) return false;
+    const requestedCategory = (input.payload as { actionCategory?: unknown } | undefined)
+      ?.actionCategory;
+    if (
+      requestedCategory !== undefined &&
+      requestedCategory !== (context.category as PlanningContextCategory)
+    )
+      return false;
+    payload = { actionCategory: context.category };
   }
 
   await log(
@@ -249,9 +405,14 @@ export const emitResearchEvent = async (
       eventType: input.eventType,
       netid: input.user.netId,
       userType: input.user.userType || 'unknown',
-      entityType: input.entityType,
-      entityId: input.entityId.trim(),
-      payload: input.payload,
+      ...(hasEntity
+        ? {
+            entityType: input.entityType as ResearchEntityType,
+            entityId: (input.entityId as string).trim(),
+          }
+        : {}),
+      payload,
+      ...(typeof input.dedupeKey === 'string' ? { dedupeKey: input.dedupeKey } : {}),
     }),
   );
 

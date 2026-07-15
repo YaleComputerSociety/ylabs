@@ -9,11 +9,14 @@ import {
   isStudentPublishablePathway,
 } from './studentAccessPublicationPolicy';
 
-export type PlanningContextCategory =
-  | 'open_position'
-  | 'official_application'
-  | 'reviewed_route'
-  | 'qualified_participation';
+export const PLANNING_CONTEXT_CATEGORIES = [
+  'open_position',
+  'official_application',
+  'reviewed_route',
+  'qualified_participation',
+] as const;
+
+export type PlanningContextCategory = (typeof PLANNING_CONTEXT_CATEGORIES)[number];
 
 export interface PublicPlanningContext {
   category: PlanningContextCategory;

@@ -5,6 +5,10 @@
 import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import axios from '../utils/axios';
 import swal from 'sweetalert';
+import {
+  createResearchAnalyticsInteractionId,
+  trackResearchEvent,
+} from '../utils/researchAnalytics';
 
 type FavoritesKind = 'listings' | 'programs' | 'researchPlans';
 
@@ -81,6 +85,15 @@ export const useFavorites = (kind: FavoritesKind) => {
           await axios.delete(config.collectionPath, {
             withCredentials: true,
             data: { [config.payloadKey]: [id] },
+          });
+        }
+        if (kind === 'researchPlans') {
+          void trackResearchEvent({
+            eventType: 'research_save',
+            entityType: 'research_entity',
+            entityId: id,
+            payload: { operation: favorite ? 'save' : 'remove', surface: 'profile' },
+            dedupeKey: createResearchAnalyticsInteractionId('save'),
           });
         }
       } catch {

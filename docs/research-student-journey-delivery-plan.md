@@ -351,12 +351,13 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### IM-01 - Claim-Specific Journey Analytics
 
-- **Status:** Not started.
+- **Status:** Active.
 - **Depends on:** QA-01 server-owned qualifying signal and an accepted privacy-safe analytics taxonomy.
 - **Acceptance criteria:** invisible events distinguish search, research-profile open, source review, qualified action, filter-panel open/close, filter apply/remove, and save/unsave; only a qualified action counts as access conversion; faculty profile, website, ORCID, publication, filter, and save events never count as action; analytics does not delay navigation or alter UI; payloads exclude raw URLs, queries on downstream events, and free-text notes.
 - **Validation evidence:** current analytics distinguishes generic source, contact, pathway, save, and research-view events but canonical research browse/detail lacks the required complete taxonomy.
   One existing program filter-navigation event is still classified too broadly as `ways_in_click`.
-- **PRs:** none.
+  The pending IM-01 implementation adds the canonical contract in [`research-journey-analytics.md`](./research-journey-analytics.md), terminal search outcomes, canonical entity impressions and profile opens, source and filter events, first-class save/compare/plan events, server-requalified QA-01 actions, per-actor idempotency, and separately auditable admin journey metrics.
+- **PRs:** pending IM-01 pull request against Beta.
 
 #### IM-02 - Search Quality, Zero Results, And Funnel Integrity
 

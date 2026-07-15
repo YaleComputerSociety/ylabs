@@ -579,6 +579,12 @@ const Analytics = () => {
     { key: 'applications', label: 'Outreach Clicked', count: funnel?.applicantCount || 0 },
   ].filter((stage) => stage.count > 0);
   const funnelStages: AnalyticsFunnelStage[] = funnel?.stages || fallbackFunnelStages;
+  const journeyMetrics = funnel?.journeyMetrics || {
+    sourceInspections: 0,
+    officialRouteAttempts: 0,
+    applicationOpens: 0,
+    confirmedOutcomes: 0,
+  };
   const selectedRangeLabel =
     analyticsRanges.find((range) => range.value === analyticsRange)?.label || 'Selected range';
   const searchSuccessRate = searchTotal > 0 ? engagedSearches / searchTotal : null;
@@ -656,7 +662,7 @@ const Analytics = () => {
             <DashboardMetric
               title="Student action funnel"
               value={formatPercent(funnel?.overallConversionRate)}
-              context="Share of visitors reaching a concrete save or outreach-style action."
+              context="Share of logged-in visitors using a currently qualified route."
               tone="blue"
             />
             <DashboardMetric
@@ -670,6 +676,33 @@ const Analytics = () => {
               value={formatNumber(attentionCount)}
               context={topAction}
               tone={healthTone}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 border-t border-[var(--yr-line)] p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <DashboardMetric
+              title="Source inspections"
+              value={formatNumber(journeyMetrics.sourceInspections)}
+              context="Profile, publication, website, ORCID, and evidence review. Never conversion."
+              tone="blue"
+            />
+            <DashboardMetric
+              title="Official-route attempts"
+              value={formatNumber(journeyMetrics.officialRouteAttempts)}
+              context="Clicks whose category was re-qualified by the server at event time."
+              tone="blue"
+            />
+            <DashboardMetric
+              title="Application opens"
+              value={formatNumber(journeyMetrics.applicationOpens)}
+              context="Qualified open-position and official-application routes only."
+              tone="green"
+            />
+            <DashboardMetric
+              title="Confirmed outcomes"
+              value={formatNumber(journeyMetrics.confirmedOutcomes)}
+              context="Self-reported outcomes remain separate from route attempts."
+              tone="green"
             />
           </div>
 
