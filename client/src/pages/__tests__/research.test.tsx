@@ -939,7 +939,7 @@ describe('Research page', () => {
     fireEvent.click(toggle);
 
     await screen.findByRole('heading', { name: 'Sparse Lab' });
-    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+    expect(mockedAxios.post).toHaveBeenCalledWith(
       '/research/search',
       expect.objectContaining({
         q: '',
@@ -1075,7 +1075,7 @@ describe('Research page', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     expect(screen.queryByRole('heading', { name: 'Sparse Lab' })).toBeNull();
-    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+    expect(mockedAxios.post).toHaveBeenCalledWith(
       '/research/search',
       expect.objectContaining({
         q: '',
@@ -1719,6 +1719,37 @@ describe('Research page', () => {
     expect(JSON.stringify(searchJourneyCalls[0][1])).not.toContain('machine learning');
   });
 
+  it('dedupes browse impressions per StrictMode load but records a later visit', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    const firstVisit = renderResearchStrict();
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() => {
+      expect(
+        mockedAxios.post.mock.calls.filter(
+          ([url, body]) =>
+            url === '/analytics/research' && body.eventType === 'research_entity_impression',
+        ),
+      ).toHaveLength(1);
+    });
+    firstVisit.unmount();
+
+    renderResearchStrict();
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() => {
+      const impressionCalls = mockedAxios.post.mock.calls.filter(
+        ([url, body]) =>
+          url === '/analytics/research' && body.eventType === 'research_entity_impression',
+      );
+      expect(impressionCalls).toHaveLength(2);
+      expect(impressionCalls[0][1].dedupeKey).not.toBe(impressionCalls[1][1].dedupeKey);
+    });
+  });
+
   it('records exactly one terminal error outcome without the raw query', async () => {
     mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
       if (url === '/analytics/research') return Promise.resolve({ status: 202 });
@@ -2029,7 +2060,9 @@ describe('Research page', () => {
     renderResearchWithDetailRoute();
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
-    const initialSearchCalls = mockedAxios.post.mock.calls.length;
+    const initialSearchCalls = mockedAxios.post.mock.calls.filter(
+      ([url]) => url === '/research/search',
+    ).length;
     expect(initialSearchCalls).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('link', { name: 'View profile →' }));
@@ -2038,6 +2071,8 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
-    expect(mockedAxios.post).toHaveBeenCalledTimes(initialSearchCalls);
+    expect(
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search'),
+    ).toHaveLength(initialSearchCalls);
   });
 });

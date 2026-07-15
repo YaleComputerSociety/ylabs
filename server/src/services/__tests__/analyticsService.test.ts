@@ -142,19 +142,21 @@ describe('claim-specific research funnel', () => {
         eventType: 'research_qualified_action',
         actionCategory: 'official_application',
         count: 3,
+        uniqueNetids: ['student-1', 'student-2', 'student-3'],
       },
       {
         eventType: 'research_qualified_action',
         actionCategory: 'reviewed_route',
         count: 2,
+        uniqueNetids: ['student-1', 'student-4'],
       },
       { eventType: 'outreach_outcome', count: 1 },
     ]);
 
     await expect(getFunnelAnalytics()).resolves.toMatchObject({
       sourceInspections: 7,
-      qualifiedActions: 5,
-      officialRouteAttempts: 5,
+      qualifiedActions: 4,
+      officialRouteAttempts: 4,
       applicationOpens: 3,
       confirmedOutcomes: 1,
     });

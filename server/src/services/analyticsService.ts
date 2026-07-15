@@ -1161,6 +1161,7 @@ export const getFunnelAnalytics = async (
         _id: 0,
         eventType: '$_id.eventType',
         actionCategory: '$_id.actionCategory',
+        uniqueNetids: 1,
         count: { $size: '$uniqueNetids' },
       },
     },
@@ -1179,11 +1180,19 @@ export const getFunnelAnalytics = async (
   const qualifiedActionRows = rows.filter(
     (row: { eventType: AnalyticsEventType }) =>
       row.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
-  );
+  ) as Array<{ actionCategory?: string; uniqueNetids: string[] }>;
   const countQualifiedCategories = (categories: string[]) =>
-    qualifiedActionRows
-      .filter((row: { actionCategory?: string }) => categories.includes(row.actionCategory || ''))
-      .reduce((sum: number, row: { count: number }) => sum + row.count, 0);
+    new Set(
+      qualifiedActionRows
+        .filter((row) => categories.includes(row.actionCategory || ''))
+        .flatMap((row) => row.uniqueNetids),
+    ).size;
+  const qualifiedActions = countQualifiedCategories([
+    'open_position',
+    'official_application',
+    'reviewed_route',
+    'qualified_participation',
+  ]);
 
   return {
     logins: counts[AnalyticsEventType.LOGIN] ?? 0,
@@ -1201,7 +1210,7 @@ export const getFunnelAnalytics = async (
     researchComparisons: counts[AnalyticsEventType.RESEARCH_COMPARE] ?? 0,
     researchPlanUpdates: counts[AnalyticsEventType.RESEARCH_PLAN_UPDATE] ?? 0,
     sourceInspections: counts[AnalyticsEventType.RESEARCH_SOURCE_REVIEW] ?? 0,
-    qualifiedActions: counts[AnalyticsEventType.RESEARCH_QUALIFIED_ACTION] ?? 0,
+    qualifiedActions,
     officialRouteAttempts: countQualifiedCategories([
       'open_position',
       'official_application',

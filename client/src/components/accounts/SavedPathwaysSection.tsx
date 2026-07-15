@@ -1198,48 +1198,44 @@ const SavedPathwaysSection = ({ onSummaryChange }: SavedPathwaysSectionProps) =>
     ) {
       return;
     }
-    setPlans((current) => {
-      const currentPlan = current[pathwayId];
-      if (!currentPlan) return current;
-      const nextPlan = { ...currentPlan, ...patch };
-      const analyticsFields = planAnalyticsFields(currentPlan, nextPlan, patch);
-      setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Saving plan...' }));
-      axios
-        .put(
-          planApiMode === 'entity'
-            ? `/users/savedResearchEntityPlans/${planApiId}`
-            : `/users/savedResearchPlanDetails/${planApiId}`,
-          { data: { plan: nextPlan } },
-          { withCredentials: true },
-        )
-        .then(() => {
-          setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Plan saved.' }));
-          analyticsFields.forEach((field) => {
-            const analyticsEntityId = analyticsEntityIdForPlanningItem(
-              pathways.find((pathway) => pathway._id === pathwayId) ||
-                ({ _id: pathwayId } as PathwaySearchHit),
-            );
-            void trackResearchEvent({
-              eventType: 'research_plan_update',
-              entityType: 'research_entity',
-              entityId: analyticsEntityId,
-              payload: { field },
-              dedupeKey: createResearchAnalyticsInteractionId('plan'),
-            });
+    const currentPlan = plans[pathwayId];
+    const nextPlan = { ...currentPlan, ...patch };
+    const analyticsFields = planAnalyticsFields(currentPlan, nextPlan, patch);
+    const analyticsInteractionId = createResearchAnalyticsInteractionId('plan');
+    const analyticsEntityId = analyticsEntityIdForPlanningItem(
+      pathways.find((pathway) => pathway._id === pathwayId) ||
+        ({ _id: pathwayId } as PathwaySearchHit),
+    );
+
+    setPlans((current) => ({ ...current, [pathwayId]: nextPlan }));
+    setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Saving plan...' }));
+    axios
+      .put(
+        planApiMode === 'entity'
+          ? `/users/savedResearchEntityPlans/${planApiId}`
+          : `/users/savedResearchPlanDetails/${planApiId}`,
+        { data: { plan: nextPlan } },
+        { withCredentials: true },
+      )
+      .then(() => {
+        setPlanSaveStatus((statuses) => ({ ...statuses, [pathwayId]: 'Plan saved.' }));
+        analyticsFields.forEach((field) => {
+          void trackResearchEvent({
+            eventType: 'research_plan_update',
+            entityType: 'research_entity',
+            entityId: analyticsEntityId,
+            payload: { field },
+            dedupeKey: `${analyticsInteractionId}:${field}`,
           });
-        })
-        .catch(() => {
-          console.error('Error saving research plan.');
-          setPlanSaveStatus((statuses) => ({
-            ...statuses,
-            [pathwayId]: 'Plan could not be saved.',
-          }));
         });
-      return {
-        ...current,
-        [pathwayId]: nextPlan,
-      };
-    });
+      })
+      .catch(() => {
+        console.error('Error saving research plan.');
+        setPlanSaveStatus((statuses) => ({
+          ...statuses,
+          [pathwayId]: 'Plan could not be saved.',
+        }));
+      });
   };
 
   const toggleChecklistItem = (pathwayId: string, itemKey: string, checked: boolean) => {
