@@ -251,27 +251,43 @@ Contact-route ordering should prefer official applications, program/department/f
 
 Legacy active listings may still appear inside public research detail payloads for backwards compatibility, but those embedded listing summaries must be field allowlisted. Do not expose listing owner ids, creator ids, owner emails, collaborator emails, view counts, favorite counts, audit flags, or other authenticated/admin-oriented fields through `/api/research/:slug`.
 
-## Saved Pathways
+## Saved Research Entities
 
-Student workflow depth starts with saved research plans. User accounts can now store `favPathways` as references to `EntryPathway` records, and `/account` hydrates them through the same guarded pathway projection used by research surfaces.
+Student workflow depth starts with saved research profiles.
+User accounts store `savedResearchEntities` as references to first-class `ResearchEntity` records, so a student can save a research home even when it has no `EntryPathway`.
+The `/account` planning workspace hydrates bounded entity summaries and treats pathway and fellowship data as optional enrichment.
 
-First-slice behavior:
+Current behavior:
 
-- `/api/users/savedResearchPlanIds` returns saved ids for optimistic UI state.
-- `/api/users/savedResearchPlans` returns hydrated saved pathways and prunes archived or otherwise hidden pathways from the saved list.
-- `/api/users/savedResearchPlanDetails` stores the authenticated student's sanitized planning details.
-- Saved pathway cards link back to `/research/:slug` rather than introducing a dedicated pathway detail route.
-- User-owned saved pathway plans store intent, stage, notes, and checklist state.
-- Saved pathway fellowship matches expose cautious source-backed reasons, caveats, public source links, and deadline/application context.
-- Authenticated saved pathway export omits non-public contacts and private notes by default.
+- `/api/users/savedResearchEntityIds` returns canonical entity ids for optimistic UI state.
+- `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters and `description` to 1,000 characters, and prunes archived, hidden, or deleted entities.
+- `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account.
+- `/api/users/savedResearchEntityPlans` stores the owning student's sanitized planning details, keyed by entity id.
+- `GET /api/users/savedResearchEntityPlans/export` exports saved entities without private notes.
+- `POST /api/users/savedResearchEntityPlans/export` includes private notes only when `includePrivateNotes: true` is explicitly supplied.
+- Private plan and export responses use private no-store handling, and exports never include contact routes or non-public contact emails.
+- Saved profile cards link back to `/research/:slug` rather than introducing a separate planning-detail route.
 
-Keep saved-pathway planning and matching separate from the legacy listing/fellowship favorites board.
+Legacy `favPathways`, `savedPathwayPlans`, and their compatibility endpoints remain as rollback data and API support.
+On the first canonical saved-entity read, an idempotent lazy migration resolves each visible saved pathway to its `ResearchEntity`, deduplicates multiple pathways for the same entity, and preserves every conflicting legacy plan in private migration-conflict storage without choosing a winner or deleting the legacy fields.
+The server claims that migration atomically against the legacy pathway ids and plans it read, retries if those inputs changed concurrently, and records a one-time completion marker.
+Once marked complete, later reads, plan deletes, and entity removals do not re-import removed legacy pathway saves.
+Account hydration uses the authenticated legacy pathway read as a bounded compatibility bridge for browser-only plans and pathway-keyed funding matches.
+It rewrites owner-scoped browser storage only after legacy keys map to saved entity ids and local-only plans upload successfully, and it retains the legacy browser record when multiple plans collide on one entity.
+If canonical entity reads or plan endpoints are unavailable, the account workspace keeps legacy pathway reads, writes, and deletes paired instead of writing entity ids through pathway endpoints.
+Pathway-keyed fellowship matches are remapped to saved entity ids, deduplicated by fellowship using the best score, sorted deterministically, and capped at five matches per entity.
 
-Planning note: saved Pathways now support user-owned planning state for intent, stage, note, and checklist data, with best-effort migration from the earlier local browser record. Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
+Keep saved-entity planning separate from the legacy listing and fellowship favorites board.
+Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
+Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
 
-Saved Pathway cards also include route-specific checklist templates keyed by planning intent. Checklist state uses stable item ids so copy edits do not erase checked state.
+Saved research cards include route-specific checklist templates keyed by planning intent.
+Checklist state uses stable item ids so copy edits do not erase checked state.
 
-Saved-pathway fellowship matching should stay source-cautious. The backend normalizes fellowship application-cycle evidence from `applicationLink`, official link rows, accepting status, dates, deadlines, and office contact context. Public match payloads may expose source URLs, application route flags, deadline status, and contact office, but should not expose direct contact emails without a guarded contact-route policy. Standalone fellowship rows usually support funding/formalization matches, not entry pathways; structured mentor-matching fellowship programs can support pathways or posted opportunities when the source describes a hosted application into the program.
+Saved-research fellowship matching should stay source-cautious.
+The backend normalizes fellowship application-cycle evidence from `applicationLink`, official link rows, accepting status, dates, deadlines, and office contact context.
+Public match payloads may expose source URLs, application route flags, deadline status, and contact office, but should not expose direct contact emails without a guarded contact-route policy.
+Standalone fellowship rows usually support funding/formalization matches, not entry pathways; structured mentor-matching fellowship programs can support pathways or posted opportunities when the source describes a hosted application into the program.
 
 ## AccessSignal
 
