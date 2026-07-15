@@ -67,10 +67,18 @@ export function validateLeadIdentityConsistency(
   const memberScore = evidenceScore(member);
   const routeScore = evidenceScore(route);
   if (memberScore >= routeScore + 2) {
-    return { status: 'reconciled', selected: 'member', reason: 'member_evidence_decisively_stronger' };
+    return {
+      status: 'reconciled',
+      selected: 'member',
+      reason: 'member_evidence_decisively_stronger',
+    };
   }
   if (routeScore >= memberScore + 2) {
-    return { status: 'reconciled', selected: 'route', reason: 'route_evidence_decisively_stronger' };
+    return {
+      status: 'reconciled',
+      selected: 'route',
+      reason: 'route_evidence_decisively_stronger',
+    };
   }
   return { status: 'under_review', selected: null, reason: 'conflicting_lead_identity' };
 }

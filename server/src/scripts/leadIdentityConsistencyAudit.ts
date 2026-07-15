@@ -23,12 +23,20 @@ async function main() {
     archived: { $ne: true },
     'qualitySummary.repairFlags': 'pi_identity_conflict',
   });
-  console.log(JSON.stringify({
-    mode: 'read-only',
-    totalResearchEntities: total,
-    piIdentityConflicts: conflictCount,
-    samples: includeHandles ? conflicts.map((row: any) => ({ id: String(row._id), slug: row.slug })) : [],
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        mode: 'read-only',
+        totalResearchEntities: total,
+        piIdentityConflicts: conflictCount,
+        samples: includeHandles
+          ? conflicts.map((row: any) => ({ id: String(row._id), slug: row.slug }))
+          : [],
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 void main()

@@ -334,7 +334,9 @@ describe('Google Sheets OAuth popup', () => {
     });
 
     await expect(exportPromise).resolves.toBe('https://docs.google.com/spreadsheets/d/test/edit');
-    const requestBody = JSON.parse(String((fetchMock.mock.calls as Array<Array<{ body?: unknown }>>)[0]?.[1]?.body));
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls as Array<Array<{ body?: unknown }>>)[0]?.[1]?.body),
+    );
     const rowData = requestBody.sheets[0].data[0].rowData;
     expect(rowData[0].values[0].userEnteredValue.stringValue).toBe("'=Header");
     expect(rowData[0].values[1].userEnteredValue.stringValue).toBe(' Safe');
@@ -376,7 +378,9 @@ describe('Google Sheets OAuth popup', () => {
     });
 
     await expect(exportPromise).resolves.toBe('https://docs.google.com/spreadsheets/d/test/edit');
-    const requestBody = JSON.parse(String((fetchMock.mock.calls as Array<Array<{ body?: unknown }>>)[0]?.[1]?.body));
+    const requestBody = JSON.parse(
+      String((fetchMock.mock.calls as Array<Array<{ body?: unknown }>>)[0]?.[1]?.body),
+    );
     expect(requestBody.properties.title).toHaveLength(120);
     const rowData = requestBody.sheets[0].data[0].rowData;
     expect(rowData).toHaveLength(1001);

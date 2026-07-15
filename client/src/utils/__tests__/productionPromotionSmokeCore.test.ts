@@ -53,13 +53,18 @@ describe('production promotion smoke core', () => {
   });
 
   it('checks deployed config fingerprints against an expected commit prefix', () => {
-    expect(deploymentFingerprintCheck({
-      deployment: {
-        provider: 'render',
-        gitCommit: '852f4a05355bb17dbfce9d1197f4693ddf2ccb2a',
-        gitBranch: 'main',
-      },
-    }, '852f4a0')).toEqual({
+    expect(
+      deploymentFingerprintCheck(
+        {
+          deployment: {
+            provider: 'render',
+            gitCommit: '852f4a05355bb17dbfce9d1197f4693ddf2ccb2a',
+            gitBranch: 'main',
+          },
+        },
+        '852f4a0',
+      ),
+    ).toEqual({
       status: 'pass',
       expectedCommit: '852f4a0',
       actualCommit: '852f4a05355bb17dbfce9d1197f4693ddf2ccb2a',
@@ -67,11 +72,16 @@ describe('production promotion smoke core', () => {
       gitBranch: 'main',
     });
 
-    expect(deploymentFingerprintCheck({
-      deployment: {
-        gitCommit: '1111111111111111111111111111111111111111',
-      },
-    }, '852f4a0')).toMatchObject({
+    expect(
+      deploymentFingerprintCheck(
+        {
+          deployment: {
+            gitCommit: '1111111111111111111111111111111111111111',
+          },
+        },
+        '852f4a0',
+      ),
+    ).toMatchObject({
       status: 'fail',
       expectedCommit: '852f4a0',
       actualCommit: '1111111111111111111111111111111111111111',
@@ -113,22 +123,18 @@ describe('production promotion smoke core', () => {
   });
 
   it('flags placeholder or malformed smoke targets before network calls', () => {
-    const placeholder = parseSmokeConfig([
-      '--api-base',
-      'https://<host>/api',
-      '--app-base',
-      'https://app.example.test',
-    ], {});
+    const placeholder = parseSmokeConfig(
+      ['--api-base', 'https://<host>/api', '--app-base', 'https://app.example.test'],
+      {},
+    );
     expect(validateSmokeConfig(placeholder)).toEqual([
       'apiBase must replace the runbook placeholder <host> before smoke execution.',
     ]);
 
-    const malformed = parseSmokeConfig([
-      '--api-base',
-      'localhost:4000/api',
-      '--app-base',
-      'app.example.test',
-    ], {});
+    const malformed = parseSmokeConfig(
+      ['--api-base', 'localhost:4000/api', '--app-base', 'app.example.test'],
+      {},
+    );
     expect(validateSmokeConfig(malformed)).toEqual([
       'apiBase must be an absolute http(s) URL.',
       'appBase must be an absolute http(s) URL.',
@@ -136,12 +142,15 @@ describe('production promotion smoke core', () => {
   });
 
   it('rejects credentialed smoke target URLs before they can be written to reports', () => {
-    const credentialed = parseSmokeConfig([
-      '--api-base',
-      'https://operator:secret@example.test/api',
-      '--app-base',
-      'https://viewer:secret@app.example.test',
-    ], {});
+    const credentialed = parseSmokeConfig(
+      [
+        '--api-base',
+        'https://operator:secret@example.test/api',
+        '--app-base',
+        'https://viewer:secret@app.example.test',
+      ],
+      {},
+    );
 
     expect(validateSmokeConfig(credentialed)).toEqual([
       'apiBase must not include username or password credentials.',
@@ -159,9 +168,7 @@ describe('production promotion smoke core', () => {
     expect(() => parseSmokeConfig(['prod'], {})).toThrow(
       /Unknown production promotion smoke argument: prod/,
     );
-    expect(() => parseSmokeConfig(['--api-base'], {})).toThrow(
-      /--api-base requires a value/,
-    );
+    expect(() => parseSmokeConfig(['--api-base'], {})).toThrow(/--api-base requires a value/);
   });
 
   it('derives browser origins and only sends them for unsafe API methods', () => {
@@ -176,7 +183,10 @@ describe('production promotion smoke core', () => {
   });
 
   it('summarizes fail and warn check names for CLI output', () => {
-    const report = createSmokeReport(parseSmokeConfig([], {}), new Date('2026-05-29T00:00:00.000Z'));
+    const report = createSmokeReport(
+      parseSmokeConfig([], {}),
+      new Date('2026-05-29T00:00:00.000Z'),
+    );
     (report.checks as Array<{ name: string; status: string }>).push(
       { name: 'api.config.200', status: 'pass' },
       { name: 'api.opportunity.explicitPublicId', status: 'warn' },
@@ -201,8 +211,9 @@ describe('production promotion smoke core', () => {
       'cross-origin-opener-policy': 'same-origin',
       'strict-transport-security': 'max-age=31536000; includeSubDomains',
     });
-    expect(buildSecurityHeaderChecks('api.config.headers', goodHeaders).map((check) => check.status))
-      .toEqual(['pass', 'pass', 'pass', 'pass', 'pass', 'pass', 'pass']);
+    expect(
+      buildSecurityHeaderChecks('api.config.headers', goodHeaders).map((check) => check.status),
+    ).toEqual(['pass', 'pass', 'pass', 'pass', 'pass', 'pass', 'pass']);
 
     const missingHeaders = new Headers({
       'x-frame-options': 'DENY',

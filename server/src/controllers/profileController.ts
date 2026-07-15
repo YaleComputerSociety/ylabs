@@ -42,20 +42,23 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 
 const publicHttpUrls = (values: unknown): string[] =>
   Array.isArray(values)
-    ? values.slice(0, MAX_PUBLIC_PROFILE_URLS).map(publicHttpUrl).filter((value): value is string => Boolean(value))
+    ? values
+        .slice(0, MAX_PUBLIC_PROFILE_URLS)
+        .map(publicHttpUrl)
+        .filter((value): value is string => Boolean(value))
     : [];
 
 const publicProfileListingText = (value: unknown): string | undefined =>
   typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
 
 const publicProfileListingTextArray = (values: unknown): string[] =>
-  Array.isArray(values)
-    ? values.flatMap((value) => publicProfileListingText(value) ?? [])
-    : [];
+  Array.isArray(values) ? values.flatMap((value) => publicProfileListingText(value) ?? []) : [];
 
 const publicProfilePublicationText = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
-  const text = redactDirectContactInfo(value).trim().slice(0, MAX_PUBLIC_PROFILE_PUBLICATION_TEXT_LENGTH);
+  const text = redactDirectContactInfo(value)
+    .trim()
+    .slice(0, MAX_PUBLIC_PROFILE_PUBLICATION_TEXT_LENGTH);
   return text || undefined;
 };
 
@@ -135,8 +138,10 @@ const publicPublicationSortOrder = (sortBy: unknown, sortOrder: unknown): 1 | -1
 };
 
 const publicationSortValue = (publication: any, sortBy: string) => {
-  if (sortBy === 'cited_by_count') return publication.cited_by_count ?? publication.citedByCount ?? 0;
-  if (sortBy === 'open_access_url') return publication.open_access_url ?? publication.openAccessUrl ?? '';
+  if (sortBy === 'cited_by_count')
+    return publication.cited_by_count ?? publication.citedByCount ?? 0;
+  if (sortBy === 'open_access_url')
+    return publication.open_access_url ?? publication.openAccessUrl ?? '';
   return publication[sortBy] ?? 0;
 };
 
@@ -316,7 +321,9 @@ export const verifyProfile = async (req: Request, res: Response) => {
         .json({ error: 'At least one research interest is required for verification.' });
     }
     if (!profile.bio?.trim() || !profile.imageUrl?.trim()) {
-      return res.status(400).json({ error: 'Bio and profile image are required for verification.' });
+      return res
+        .status(400)
+        .json({ error: 'Bio and profile image are required for verification.' });
     }
 
     const user = await User.findOneAndUpdate(

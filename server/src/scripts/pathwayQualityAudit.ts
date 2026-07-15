@@ -65,10 +65,7 @@ function parseNonNegativeInteger(value: string, flag: string): number {
   return parsed;
 }
 
-export function writePathwayQualityAuditOutput(
-  report: unknown,
-  output?: string,
-): void {
+export function writePathwayQualityAuditOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
@@ -140,7 +137,9 @@ async function aggregateCountMap(
 
 async function buildEntityContexts(entityIds: unknown[]): Promise<PathwayQualityEntityContext[]> {
   const [entities, leads, signals, publicRoutes] = await Promise.all([
-    ResearchEntity.find({ _id: { $in: entityIds } }).select('_id sourceUrls websiteUrl').lean(),
+    ResearchEntity.find({ _id: { $in: entityIds } })
+      .select('_id sourceUrls websiteUrl')
+      .lean(),
     aggregateCountMap(ResearchGroupMember, {
       researchEntityId: { $in: entityIds },
       role: { $in: ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'] },
@@ -185,14 +184,14 @@ async function main(): Promise<void> {
       archived: { $ne: true },
       status: { $nin: ['NOT_CURRENTLY_AVAILABLE', 'NO_EVIDENCE'] },
     })
-      .select('_id researchEntityId pathwayType status evidenceStrength confidence derivationKey sourceUrls sourceEvidenceIds')
+      .select(
+        '_id researchEntityId pathwayType status evidenceStrength confidence derivationKey sourceUrls sourceEvidenceIds',
+      )
       .lean(),
     ContactRoute.find({ archived: { $ne: true }, routeType: 'OFFICIAL_APPLICATION' })
       .select('_id researchEntityId entryPathwayId routeType sourceUrl sourceEvidenceIds')
       .lean(),
-    Listing.find(activeListingFilter())
-      .select('_id researchEntityId researchGroupId')
-      .lean(),
+    Listing.find(activeListingFilter()).select('_id researchEntityId researchGroupId').lean(),
   ]);
 
   const listingIds = (listingDocs as any[]).map((listing) => listing._id);

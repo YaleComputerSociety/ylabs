@@ -238,13 +238,13 @@ interface OperatorBoard {
       openCount?: number;
       scanned?: number;
       repairableCount?: number;
-	      blockedCount?: number;
-	      blockedReasonCounts?: Array<{ reason: string; count: number }>;
-	      options?: Record<string, string | number | boolean | undefined>;
-	      patchSummaryCounts?: Array<{ summary: string; count: number }>;
-	      repairSourceHosts?: Array<{ host: string; count: number }>;
-	      artifactAgeHours?: number;
-	    };
+      blockedCount?: number;
+      blockedReasonCounts?: Array<{ reason: string; count: number }>;
+      options?: Record<string, string | number | boolean | undefined>;
+      patchSummaryCounts?: Array<{ summary: string; count: number }>;
+      repairSourceHosts?: Array<{ host: string; count: number }>;
+      artifactAgeHours?: number;
+    };
     dataQuality: {
       status: string;
       command: string;
@@ -401,7 +401,9 @@ const formatAge = (ageMinutes?: number): string => {
 
 const ArtifactFreshnessStrip = ({ items }: { items: GateArtifactFreshness[] }) => {
   if (!items.length) return null;
-  const anyStale = items.some((i) => i.status === 'stale' || i.status === 'missing' || i.status === 'unreadable');
+  const anyStale = items.some(
+    (i) => i.status === 'stale' || i.status === 'missing' || i.status === 'unreadable',
+  );
   return (
     <div
       className={`mt-3 rounded-md border px-3 py-2 ${
@@ -580,16 +582,17 @@ const sourceReviewLanes = (board: OperatorBoard) => {
         },
       ];
 
-  return queues
-    .filter(
-      (queue): queue is {
-        queue: string;
-        label: string;
-        description: string;
-        count: number;
-        categories: Array<{ category: string; count: number }>;
-      } => typeof queue.count === 'number',
-    );
+  return queues.filter(
+    (
+      queue,
+    ): queue is {
+      queue: string;
+      label: string;
+      description: string;
+      count: number;
+      categories: Array<{ category: string; count: number }>;
+    } => typeof queue.count === 'number',
+  );
 };
 
 const sourceConflictScopeText = (board: OperatorBoard) => {
@@ -622,10 +625,7 @@ const sourceReviewArtifactRollupLines = (board: OperatorBoard) => {
     },
     {
       label: 'Stale policies',
-      value: formatCountList(
-        rollups.staleObservationReview.policyBucketCounts,
-        'policyBucket',
-      ),
+      value: formatCountList(rollups.staleObservationReview.policyBucketCounts, 'policyBucket'),
     },
     {
       label: 'Cross-source fields',
@@ -672,14 +672,8 @@ const sourceReviewDecisionValidationProbeCommands = (board: OperatorBoard) => {
   const status = board.sourceFreshness.reviewSummary?.reviewDecisionValidationStatus;
   if (!status) return [];
   return [
-    sourceReviewDecisionValidationProbeCommand(
-      'stale',
-      status.staleObservationReview,
-    ),
-    sourceReviewDecisionValidationProbeCommand(
-      'cross-source',
-      status.crossSourceObservationReview,
-    ),
+    sourceReviewDecisionValidationProbeCommand('stale', status.staleObservationReview),
+    sourceReviewDecisionValidationProbeCommand('cross-source', status.crossSourceObservationReview),
   ].filter(
     (
       item,
@@ -779,23 +773,24 @@ const queueKindRank: Record<QueueKind, number> = {
   evidence: 2,
 };
 
-const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; description: string }> = {
-  blocking: {
-    title: 'Must Fix Before Promotion',
-    eyebrow: 'Repair queue',
-    description: 'Rows that need source-backed facts before they can safely move up.',
-  },
-  review: {
-    title: 'Operator Decision Needed',
-    eyebrow: 'Review signal',
-    description: 'Rows that need an explicit keep, suppress, merge, or defer decision.',
-  },
-  evidence: {
-    title: 'Promotion Evidence',
-    eyebrow: 'Evidence signal',
-    description: 'Positive signals operators can use when deciding whether a row is ready.',
-  },
-};
+const decisionLaneCopy: Record<QueueKind, { title: string; eyebrow: string; description: string }> =
+  {
+    blocking: {
+      title: 'Must Fix Before Promotion',
+      eyebrow: 'Repair queue',
+      description: 'Rows that need source-backed facts before they can safely move up.',
+    },
+    review: {
+      title: 'Operator Decision Needed',
+      eyebrow: 'Review signal',
+      description: 'Rows that need an explicit keep, suppress, merge, or defer decision.',
+    },
+    evidence: {
+      title: 'Promotion Evidence',
+      eyebrow: 'Evidence signal',
+      description: 'Positive signals operators can use when deciding whether a row is ready.',
+    },
+  };
 
 const queueDecisionPrompt = (reason: string): string => {
   switch (reason) {
@@ -895,13 +890,9 @@ const DataQualityDuplicateNamePreflightBlock = ({
           {preflight.sharedWebsiteArtifactPath}
         </code>
       )}
-      {reviewerDecisions && (
-        <div className="mt-1 text-xs text-amber-800">{reviewerDecisions}</div>
-      )}
+      {reviewerDecisions && <div className="mt-1 text-xs text-amber-800">{reviewerDecisions}</div>}
       {manualReviewText && (
-        <div className="mt-1 text-xs text-amber-800">
-          Manual review: {manualReviewText}
-        </div>
+        <div className="mt-1 text-xs text-amber-800">Manual review: {manualReviewText}</div>
       )}
       {preflight.acceptedDecisionTemplate?.outputPath && (
         <div className="mt-2">
@@ -982,14 +973,10 @@ const DataQualitySamePiDedupeReviewBlock = ({
         <div className="mt-1 text-xs text-amber-800">{review.applyStatus}</div>
       )}
       {planParts.length > 0 && (
-        <div className="mt-1 text-xs text-amber-800">
-          Same-PI plans: {planParts.join(' · ')}
-        </div>
+        <div className="mt-1 text-xs text-amber-800">Same-PI plans: {planParts.join(' · ')}</div>
       )}
       {reviewFlags.length > 0 && (
-        <div className="mt-1 text-xs text-amber-800">
-          Review flags: {reviewFlags.join(' · ')}
-        </div>
+        <div className="mt-1 text-xs text-amber-800">Review flags: {reviewFlags.join(' · ')}</div>
       )}
       {review.reviewArtifactPath && (
         <code className="mt-1 block whitespace-pre-wrap text-[11px] text-amber-900">
@@ -1009,14 +996,11 @@ const DataQualitySamePiDedupeReviewBlock = ({
       {typeof validation.artifactAvailable === 'boolean' && (
         <div className="mt-1 text-xs text-amber-800">
           Same-PI validation: {validation.artifactAvailable ? 'loaded' : 'missing'} ·{' '}
-          {validation.validDecisionCount ?? 0} valid ·{' '}
-          {validation.invalidDecisionCount ?? 0} invalid ·{' '}
-          {validation.unreviewedPlanCount ?? 0} unreviewed
+          {validation.validDecisionCount ?? 0} valid · {validation.invalidDecisionCount ?? 0}{' '}
+          invalid · {validation.unreviewedPlanCount ?? 0} unreviewed
         </div>
       )}
-      {review.nextAction && (
-        <div className="mt-1 text-xs text-amber-800">{review.nextAction}</div>
-      )}
+      {review.nextAction && <div className="mt-1 text-xs text-amber-800">{review.nextAction}</div>}
     </div>
   );
 };
@@ -1038,9 +1022,7 @@ const DataQualitySuspiciousUserEmailCopyBlock = ({
       <div className="mt-1 text-xs text-amber-800">
         Lane A sample coverage: {copy.sampledCoverageComplete ? 'complete' : 'needs review'}
       </div>
-      {copy.nextAction && (
-        <div className="mt-1 text-xs text-amber-800">{copy.nextAction}</div>
-      )}
+      {copy.nextAction && <div className="mt-1 text-xs text-amber-800">{copy.nextAction}</div>}
     </div>
   );
 };
@@ -1142,17 +1124,20 @@ const AdminOperatorBoard = () => {
   );
   const decisionLanes = useMemo(
     () =>
-      (['blocking', 'review', 'evidence'] as QueueKind[])
-        .map((kind) => ({
-          kind,
-          queues: topQueues.filter((queue) => (queue.kind || classifyReason(queue.reason)) === kind),
-        })),
+      (['blocking', 'review', 'evidence'] as QueueKind[]).map((kind) => ({
+        kind,
+        queues: topQueues.filter((queue) => (queue.kind || classifyReason(queue.reason)) === kind),
+      })),
     [topQueues],
   );
   const sourceLanes = useMemo(() => (board ? sourceReviewLanes(board) : []), [board]);
 
   if (loading) {
-    return <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">Loading board...</div>;
+    return (
+      <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-6">
+        Loading board...
+      </div>
+    );
   }
 
   if (error || !board) {
@@ -1200,7 +1185,10 @@ const AdminOperatorBoard = () => {
           ['Research', board.trustTiers.research],
           ['Programs', board.trustTiers.programs],
         ].map(([label, rows]) => (
-          <section key={label as string} className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
+          <section
+            key={label as string}
+            className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4"
+          >
             <div className="mb-3 flex items-center justify-between">
               <h4 className="font-semibold text-gray-900">{label as string}</h4>
               <span className="text-sm text-gray-500">{total(rows as TierCount[])} records</span>
@@ -1278,8 +1266,7 @@ const AdminOperatorBoard = () => {
               ) : null}
               {board.gates.repairQueue.repairSourceHosts?.length ? (
                 <p className="mt-1 text-xs text-gray-600">
-                  Source hosts:{' '}
-                  {formatCountList(board.gates.repairQueue.repairSourceHosts, 'host')}
+                  Source hosts: {formatCountList(board.gates.repairQueue.repairSourceHosts, 'host')}
                 </p>
               ) : null}
               {typeof board.gates.repairQueue.artifactAgeHours === 'number' && (
@@ -1490,8 +1477,7 @@ const AdminOperatorBoard = () => {
                   {board.gates.launchAcquisition.missingOfficialProfileUrl}
                 </p>
               )}
-              {typeof board.gates.launchAcquisition.ambiguousOrMismatchedUserMatch ===
-                'number' && (
+              {typeof board.gates.launchAcquisition.ambiguousOrMismatchedUserMatch === 'number' && (
                 <p className="mt-1 text-xs text-amber-700">
                   Ambiguous/mismatched user cases:{' '}
                   {board.gates.launchAcquisition.ambiguousOrMismatchedUserMatch}
@@ -1605,8 +1591,8 @@ const AdminOperatorBoard = () => {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h4 className="font-semibold text-gray-900">Release Queue</h4>
             <span className="text-sm text-gray-500">
-              {board.releaseQueue.openCount} open ·{' '}
-              {board.releaseQueue.statusCounts.resolved || 0} resolved
+              {board.releaseQueue.openCount} open · {board.releaseQueue.statusCounts.resolved || 0}{' '}
+              resolved
             </span>
           </div>
           <div className="grid gap-3 lg:grid-cols-3">
@@ -1632,7 +1618,10 @@ const AdminOperatorBoard = () => {
               </div>
               <div className="mt-2 space-y-2">
                 {board.releaseQueue.sourcePressure.slice(0, 5).map((row) => (
-                  <div key={row.sourceName} className="flex items-center justify-between gap-2 text-sm">
+                  <div
+                    key={row.sourceName}
+                    className="flex items-center justify-between gap-2 text-sm"
+                  >
                     <span className="text-gray-700">{row.sourceName}</span>
                     <span className="font-semibold text-gray-900">{row.count}</span>
                   </div>
@@ -1695,7 +1684,10 @@ const AdminOperatorBoard = () => {
                     </div>
                   )}
                   {lane.queues.map((queue) => (
-                    <div key={`${queue.collection}-${queue.reason}`} className="rounded-md bg-[var(--yr-panel-muted)] p-3">
+                    <div
+                      key={`${queue.collection}-${queue.reason}`}
+                      className="rounded-md bg-[var(--yr-panel-muted)] p-3"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-medium text-gray-900">
@@ -1717,7 +1709,10 @@ const AdminOperatorBoard = () => {
                         {queue.samples.length === 0
                           ? 'No samples'
                           : queue.samples.slice(0, 3).map((sample) => {
-                              const { blockers, signals } = splitReasons(sample.reasons, queue.reason);
+                              const { blockers, signals } = splitReasons(
+                                sample.reasons,
+                                queue.reason,
+                              );
 
                               return (
                                 <div key={sample.id} className="mb-3 last:mb-0">
@@ -1783,9 +1778,7 @@ const AdminOperatorBoard = () => {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="text-xs font-semibold text-amber-950">
-                            {lane.label}
-                          </div>
+                          <div className="text-xs font-semibold text-amber-950">{lane.label}</div>
                           <div className="mt-0.5 text-[11px] text-amber-800">
                             {lane.description}
                           </div>

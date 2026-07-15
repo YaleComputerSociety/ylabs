@@ -28,7 +28,9 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsed;
 }
 
-export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisitionReportCliOptions {
+export function parseLaunchAcquisitionReportArgs(
+  argv: string[],
+): LaunchAcquisitionReportCliOptions {
   const options: LaunchAcquisitionReportCliOptions = {};
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -61,10 +63,7 @@ export function parseLaunchAcquisitionReportArgs(argv: string[]): LaunchAcquisit
   return options;
 }
 
-export function writeLaunchAcquisitionReportOutput(
-  report: object,
-  output?: string,
-): void {
+export function writeLaunchAcquisitionReportOutput(report: object, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });

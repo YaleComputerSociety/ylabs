@@ -104,8 +104,7 @@ export const buildPublicResearchSeoMetadata = (params: {
         researchEntity.fullDescription,
         researchEntity.profileSynthesisDescription,
         fallbackDescription,
-      ) ||
-        DEFAULT_RESEARCH_DESCRIPTION,
+      ) || DEFAULT_RESEARCH_DESCRIPTION,
       160,
     ),
     canonicalUrl,
@@ -147,7 +146,10 @@ export const renderSeoTags = (metadata: SeoMetadata): string => {
 };
 
 export const injectSeoMetadata = (html: string, metadata: SeoMetadata): string => {
-  const withTitle = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtml(metadata.title)}</title>`);
+  const withTitle = html.replace(
+    /<title>.*?<\/title>/i,
+    `<title>${escapeHtml(metadata.title)}</title>`,
+  );
   const startIndex = withTitle.indexOf(SEO_START);
   const endIndex = withTitle.indexOf(SEO_END);
 

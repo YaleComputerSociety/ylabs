@@ -81,7 +81,9 @@ describe('PathwayActionCard', () => {
     );
 
     expect(screen.getByText('Review source context')).toBeTruthy();
-    expect(screen.getByText('Review the program source and note any specific questions.')).toBeTruthy();
+    expect(
+      screen.getByText('Review the program source and note any specific questions.'),
+    ).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Open application' })).toBeNull();
   });
 

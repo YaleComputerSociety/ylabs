@@ -1771,8 +1771,8 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
-    expect(
-      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search'),
-    ).toHaveLength(initialSearchCalls);
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      initialSearchCalls,
+    );
   });
 });

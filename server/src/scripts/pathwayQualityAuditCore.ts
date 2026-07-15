@@ -63,9 +63,7 @@ export interface PathwayQualityAuditResult {
   samples: {
     activeListingsWithoutPostedOpportunity: PathwayQualityListingFact[];
     routesWithoutLinkedPathway: PathwayQualityRouteFact[];
-    weakPathwaysNeedingEvidence: Array<
-      PathwayQualityPathwayFact & { missingContext: string[] }
-    >;
+    weakPathwaysNeedingEvidence: Array<PathwayQualityPathwayFact & { missingContext: string[] }>;
     missingSourceUrls: PathwayQualityPathwayFact[];
     missingSourceEvidenceIds: PathwayQualityPathwayFact[];
   };
@@ -199,7 +197,10 @@ export function buildPathwayQualityAudit(
     publicationBlockers: publicationBlockerCounts,
     publicationBlockerCombinations,
     samples: {
-      activeListingsWithoutPostedOpportunity: take(activeListingsWithoutPostedOpportunity, sampleLimit),
+      activeListingsWithoutPostedOpportunity: take(
+        activeListingsWithoutPostedOpportunity,
+        sampleLimit,
+      ),
       routesWithoutLinkedPathway: take(routesWithoutLinkedPathway, sampleLimit),
       weakPathwaysNeedingEvidence: take(weakPathwaysNeedingEvidence, sampleLimit),
       missingSourceUrls: take(missingSourceUrls, sampleLimit),

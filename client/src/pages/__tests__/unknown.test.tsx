@@ -48,7 +48,11 @@ describe('Unknown onboarding', () => {
 
   it('shows loading and completion only after the persisted user is confirmed', async () => {
     let resolveRequest!: (value: unknown) => void;
-    mocks.put.mockReturnValue(new Promise((resolve) => { resolveRequest = resolve; }));
+    mocks.put.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
     render(<Unknown />);
     const user = await fillValidForm();
 
@@ -56,13 +60,23 @@ describe('Unknown onboarding', () => {
     expect(screen.getByRole('button', { name: 'Saving account setup...' })).toBeDisabled();
     expect(screen.queryByRole('heading', { name: 'Your account setup is complete' })).toBeNull();
 
-    resolveRequest({ data: { user: { fname: 'Ada', lname: 'Lovelace', userType: 'undergraduate', userConfirmed: false } } });
-    expect(await screen.findByRole('heading', { name: 'Your account setup is complete' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Continue to Yale Research' }).getAttribute('href')).toBe('/');
+    resolveRequest({
+      data: {
+        user: { fname: 'Ada', lname: 'Lovelace', userType: 'undergraduate', userConfirmed: false },
+      },
+    });
+    expect(
+      await screen.findByRole('heading', { name: 'Your account setup is complete' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'Continue to Yale Research' }).getAttribute('href'),
+    ).toBe('/');
   });
 
   it('does not claim completion when persistence fails or returns mismatched data', async () => {
-    mocks.put.mockResolvedValue({ data: { user: { fname: 'Different', lname: 'User', userType: 'graduate' } } });
+    mocks.put.mockResolvedValue({
+      data: { user: { fname: 'Different', lname: 'User', userType: 'graduate' } },
+    });
     render(<Unknown />);
     const user = await fillValidForm();
     await user.click(screen.getByRole('button', { name: 'Save and continue' }));

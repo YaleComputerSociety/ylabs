@@ -301,11 +301,7 @@ function consumeValue(
   return { value, nextIndex: index + 1 };
 }
 
-function consumeInlineValue(
-  arg: string,
-  flag: string,
-  noun: 'number' | 'path' | 'value',
-): string {
+function consumeInlineValue(arg: string, flag: string, noun: 'number' | 'path' | 'value'): string {
   const value = arg.slice(`${flag}=`.length);
   if (value.trim() === '' || value.startsWith('--')) {
     throw new Error(`${flag} requires a ${noun}`);
@@ -313,9 +309,7 @@ function consumeInlineValue(
   return value;
 }
 
-export function parseDuplicateEntityNameReviewArgs(
-  argv: string[],
-): DuplicateEntityNameReviewArgs {
+export function parseDuplicateEntityNameReviewArgs(argv: string[]): DuplicateEntityNameReviewArgs {
   const args: DuplicateEntityNameReviewArgs = {
     apply: false,
     confirmDuplicateEntityNameReview: false,
@@ -343,7 +337,10 @@ export function parseDuplicateEntityNameReviewArgs(
       continue;
     }
     if (arg.startsWith('--limit=')) {
-      args.limit = parsePositiveIntegerValue(consumeInlineValue(arg, '--limit', 'number'), '--limit');
+      args.limit = parsePositiveIntegerValue(
+        consumeInlineValue(arg, '--limit', 'number'),
+        '--limit',
+      );
       args.limitProvided = true;
       continue;
     }
@@ -420,12 +417,7 @@ export function parseDuplicateEntityNameReviewArgs(
       continue;
     }
     if (arg === '--decision-template-output') {
-      const { value, nextIndex } = consumeValue(
-        argv,
-        index,
-        '--decision-template-output',
-        'path',
-      );
+      const { value, nextIndex } = consumeValue(argv, index, '--decision-template-output', 'path');
       args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         value,
         '--decision-template-output',
@@ -630,14 +622,18 @@ export function selectDuplicateEntityNamePlansForAcceptedMergeApply(
   }
   const planById = new Map(plans.map((plan) => [plan.planId, plan]));
   return validation.decisions
-    .filter((decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical')
+    .filter(
+      (decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical',
+    )
     .map((decision) => {
       const plan = planById.get(decision.planId);
       if (!plan || !decision.canonicalEntityId) return undefined;
       return { plan, canonicalEntityId: decision.canonicalEntityId };
     })
     .filter(
-      (selection): selection is { plan: DuplicateEntityNameReviewPlan; canonicalEntityId: string } =>
+      (
+        selection,
+      ): selection is { plan: DuplicateEntityNameReviewPlan; canonicalEntityId: string } =>
         Boolean(selection),
     );
 }
@@ -656,9 +652,7 @@ export function buildDuplicateEntityNameMergeGroups(
       canonicalEntityId,
       duplicateEntityIds,
       mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity?.departments || [])),
-      mergedResearchAreas: uniqueStrings(
-        entities.flatMap((entity) => entity?.researchAreas || []),
-      ),
+      mergedResearchAreas: uniqueStrings(entities.flatMap((entity) => entity?.researchAreas || [])),
       mergedSourceUrls: uniqueStrings(
         entities.flatMap((entity) => [
           ...(entity?.sourceUrls || []),
@@ -1100,9 +1094,7 @@ function validateDuplicateEntityNameReviewDecision(
     decision.decision !== 'mark_distinct_homes' &&
     decision.decision !== 'defer_review'
   ) {
-    errors.push(
-      'Decision must be merge_into_canonical, mark_distinct_homes, or defer_review.',
-    );
+    errors.push('Decision must be merge_into_canonical, mark_distinct_homes, or defer_review.');
   }
 
   if (decision.decision === 'merge_into_canonical') {
@@ -1176,10 +1168,7 @@ function buildReferenceImpactPipeline(
     [field]: { $in: objectIds },
   };
   if (!array) {
-    return [
-      { $match: match },
-      { $group: { _id: `$${field}`, count: { $sum: 1 } } },
-    ];
+    return [{ $match: match }, { $group: { _id: `$${field}`, count: { $sum: 1 } } }];
   }
 
   return [
@@ -1214,7 +1203,9 @@ function totalReferenceCount(counts: DuplicateEntityReferenceImpactCounts): numb
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(
-    new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
+    new Set(
+      values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)),
+    ),
   );
 }
 
@@ -1237,7 +1228,11 @@ function normalizedWebsiteKey(value?: string): string {
     const urlPath = parsed.pathname.replace(/\/+$/, '').toLowerCase();
     return `${host}${urlPath}`;
   } catch {
-    return value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+    return value
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/+$/, '')
+      .toLowerCase();
   }
 }
 

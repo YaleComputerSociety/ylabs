@@ -358,44 +358,43 @@ async function buildSlugAudit(slug: string) {
   }
 
   const entityId = stringId(entity._id);
-  const [
-    members,
-    pathways,
-    signals,
-    routes,
-    opportunities,
-    listings,
-    observations,
-  ] = await Promise.all([
-    ResearchGroupMember.find({ researchEntityId: entity._id })
-      .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
-      .lean(),
-    EntryPathway.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey')
-      .lean(),
-    AccessSignal.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('signalType confidence confidenceScore excerpt sourceName sourceUrl observedAt derivationKey')
-      .sort({ observedAt: -1 })
-      .lean(),
-    ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('routeType label name role url visibility contactPolicy rationale sourceName sourceUrl observedAt derivationKey')
-      .sort({ priority: 1, observedAt: -1 })
-      .lean(),
-    PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title term status applicationUrl sourceUrls derivationKey')
-      .lean(),
-    Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title deadline website')
-      .lean(),
-    Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
-      superseded: false,
-      $or: [{ entityId: entity._id }, { entityKey: slug }],
-    })
-      .select('field value sourceName sourceUrl confidence observedAt entityKey')
-      .sort({ observedAt: -1 })
-      .lean(),
-  ]);
+  const [members, pathways, signals, routes, opportunities, listings, observations] =
+    await Promise.all([
+      ResearchGroupMember.find({ researchEntityId: entity._id })
+        .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
+        .lean(),
+      EntryPathway.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select(
+          'pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey',
+        )
+        .lean(),
+      AccessSignal.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select(
+          'signalType confidence confidenceScore excerpt sourceName sourceUrl observedAt derivationKey',
+        )
+        .sort({ observedAt: -1 })
+        .lean(),
+      ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select(
+          'routeType label name role url visibility contactPolicy rationale sourceName sourceUrl observedAt derivationKey',
+        )
+        .sort({ priority: 1, observedAt: -1 })
+        .lean(),
+      PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select('title term status applicationUrl sourceUrls derivationKey')
+        .lean(),
+      Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select('title deadline website')
+        .lean(),
+      Observation.find({
+        entityType: { $in: ['researchEntity', 'researchGroup'] },
+        superseded: false,
+        $or: [{ entityId: entity._id }, { entityKey: slug }],
+      })
+        .select('field value sourceName sourceUrl confidence observedAt entityKey')
+        .sort({ observedAt: -1 })
+        .lean(),
+    ]);
 
   const observationHints = observations as ObservationHint[];
   const coverageFacts: CoverageAuditFacts = {
@@ -480,9 +479,7 @@ async function main(): Promise<void> {
   });
   await initializeConnections();
 
-  const result = options.slug
-    ? await buildSlugAudit(options.slug)
-    : await buildBulkAudit(options);
+  const result = options.slug ? await buildSlugAudit(options.slug) : await buildBulkAudit(options);
 
   const output = buildResearchEntityCoverageAuditOutput(result, {
     environment: guard.environment,

@@ -274,12 +274,12 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
         <div className="flex flex-col gap-4 border-b border-[var(--yr-line)] pb-5 md:flex-row md:items-start md:justify-between">
           <div className="flex items-center gap-4">
             {profileImageHref ? (
-                <img
-                  src={profileImageHref}
-                  alt={fullName}
-                  referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
-                  className="w-16 h-16 rounded-md object-cover"
-                />
+              <img
+                src={profileImageHref}
+                alt={fullName}
+                referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
+                className="w-16 h-16 rounded-md object-cover"
+              />
             ) : (
               <div className="w-16 h-16 rounded-md bg-[var(--yr-blue-soft)] flex items-center justify-center">
                 <span className="text-xl font-bold text-blue-700">{initials}</span>
@@ -471,7 +471,9 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
                                 dispatch({ type: 'SELECT_PRIMARY_DEPT', payload: dept })
                               }
                               className={`p-2 cursor-pointer text-sm ${
-                                focusedPrimaryIndex === index ? 'bg-[var(--yr-blue-soft)]' : 'hover:bg-[var(--yr-panel-muted)]'
+                                focusedPrimaryIndex === index
+                                  ? 'bg-[var(--yr-blue-soft)]'
+                                  : 'hover:bg-[var(--yr-panel-muted)]'
                               }`}
                               onMouseDown={(e) => e.preventDefault()}
                             >
@@ -495,7 +497,10 @@ const ProfileEditor = ({ netid }: ProfileEditorProps) => {
               </div>
 
               <div>
-                <label htmlFor={imageUrlId} className="block text-xs font-medium text-gray-600 mb-1">
+                <label
+                  htmlFor={imageUrlId}
+                  className="block text-xs font-medium text-gray-600 mb-1"
+                >
                   Profile Image URL
                 </label>
                 <input

@@ -107,10 +107,6 @@ entryPathwaySchema.index(
   },
 );
 
-export const EntryPathway = mongoose.model(
-  'EntryPathway',
-  entryPathwaySchema,
-  'entry_pathways',
-);
+export const EntryPathway = mongoose.model('EntryPathway', entryPathwaySchema, 'entry_pathways');
 
 export { entryPathwaySchema };

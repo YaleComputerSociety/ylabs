@@ -82,7 +82,13 @@ const FEEDERS: Feeder[] = [
   {
     gate: 'betaRepairQueue',
     script: 'beta:repair-queue',
-    args: ['--collection=all', '--stage=source_description', '--mode=dry-run', '--retry-blocked', '--limit=500'],
+    args: [
+      '--collection=all',
+      '--stage=source_description',
+      '--mode=dry-run',
+      '--retry-blocked',
+      '--limit=500',
+    ],
     output: '/tmp/ylabs-beta-repair-source-description.json',
   },
   {
@@ -108,11 +114,12 @@ function argValue(flag: string): string | undefined {
 
 function runFeeder(feeder: Feeder, startedAt: number): Promise<FeederResult> {
   return new Promise((resolve) => {
-    const child = spawn(
-      'yarn',
-      [feeder.script, ...feeder.args, '--output', feeder.output],
-      { cwd: SERVER_ROOT, env: process.env, stdio: 'inherit', shell: false },
-    );
+    const child = spawn('yarn', [feeder.script, ...feeder.args, '--output', feeder.output], {
+      cwd: SERVER_ROOT,
+      env: process.env,
+      stdio: 'inherit',
+      shell: false,
+    });
     child.on('close', (code) => {
       // Success = the canonical artifact was written/updated during this run. A gate script that
       // exits nonzero because its gate did not PASS (e.g. launch-trust has held rows) still writes
@@ -152,7 +159,9 @@ export async function runGateRefresh(): Promise<FeederResult[]> {
   const results: FeederResult[] = [];
   for (const feeder of selected) {
     const startedAt = Date.now();
-    process.stdout.write(`\n=== gates:refresh → ${feeder.gate} (${feeder.script}) → ${feeder.output} ===\n`);
+    process.stdout.write(
+      `\n=== gates:refresh → ${feeder.gate} (${feeder.script}) → ${feeder.output} ===\n`,
+    );
     // Sequential by design: several feeders hit the same DB and Meili; avoid contention.
 
     const result = await runFeeder(feeder, startedAt);

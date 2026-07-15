@@ -472,10 +472,11 @@ const Research = () => {
   };
 
   useEffect(() => {
-    const generation = ++effectGenerationRef.current;
+    const effectGeneration = effectGenerationRef;
+    const generation = ++effectGeneration.current;
     return () => {
       queueMicrotask(() => {
-        if (effectGenerationRef.current !== generation) return;
+        if (effectGeneration.current !== generation) return;
         searchAbortRef.current?.abort();
         defaultSearchAbortRef.current?.abort();
       });
@@ -485,18 +486,15 @@ const Research = () => {
   useEffect(() => {
     restoredSnapshotRef.current?.defaultResearchEntities.forEach((entity, index) => {
       if (!entity._id) return;
-      void trackResearchEventOnce(
-        `${browseAnalyticsSessionRef.current}:restored:${entity._id}`,
-        {
-          eventType: 'research_entity_impression',
-          entityType: 'research_entity',
-          entityId: entity._id,
-          payload: {
-            surface: 'browse',
-            positionBucket: researchPositionBucket(index + 1),
-          },
+      void trackResearchEventOnce(`${browseAnalyticsSessionRef.current}:restored:${entity._id}`, {
+        eventType: 'research_entity_impression',
+        entityType: 'research_entity',
+        entityId: entity._id,
+        payload: {
+          surface: 'browse',
+          positionBucket: researchPositionBucket(index + 1),
         },
-      );
+      });
     });
   }, []);
 

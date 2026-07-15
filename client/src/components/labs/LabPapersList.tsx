@@ -51,7 +51,8 @@ const resolveYear = (paper: ResearchActivityLink): number | undefined => {
 const sourceTone = (paper: ResearchActivityLink, showPreprintMeta: boolean): string => {
   if (!isScholarlyLink(paper)) return showPreprintMeta ? 'yr-pill-gold' : 'yr-pill-blue';
   if (paper.destinationKind === 'PMC' || paper.freeFullTextUrl) return 'yr-pill-green';
-  if (paper.destinationKind === 'ARXIV' || paper.destinationKind === 'OPENALEX') return 'yr-pill-gold';
+  if (paper.destinationKind === 'ARXIV' || paper.destinationKind === 'OPENALEX')
+    return 'yr-pill-gold';
   return 'yr-pill-blue';
 };
 
@@ -99,9 +100,11 @@ const LabPapersList = ({
 
   const sourceLabels = Array.from(
     new Set(
-      papers.slice(0, 4).map((paper) =>
-        isScholarlyLink(paper) ? paper.displaySource : showPreprintMeta ? 'arXiv' : 'Paper',
-      ),
+      papers
+        .slice(0, 4)
+        .map((paper) =>
+          isScholarlyLink(paper) ? paper.displaySource : showPreprintMeta ? 'arXiv' : 'Paper',
+        ),
     ),
   );
 
@@ -111,7 +114,8 @@ const LabPapersList = ({
         <div>
           <p className="text-xs font-semibold uppercase text-slate-500">Research evidence</p>
           <p className="mt-0.5 text-sm text-slate-700">
-            {papers.length} linked source{papers.length === 1 ? '' : 's'} students can inspect directly.
+            {papers.length} linked source{papers.length === 1 ? '' : 's'} students can inspect
+            directly.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -127,7 +131,8 @@ const LabPapersList = ({
           const link = resolvePaperLink(paper);
           const scholarlyLink = isScholarlyLink(paper) ? paper : undefined;
           const freeFullTextHref = scholarlyLink ? safeHttpUrl(scholarlyLink.freeFullTextUrl) : '';
-          const pdfHref = showPreprintMeta && !isScholarlyLink(paper) ? safeHttpUrl(paper.pdfUrl) : '';
+          const pdfHref =
+            showPreprintMeta && !isScholarlyLink(paper) ? safeHttpUrl(paper.pdfUrl) : '';
           const year = resolveYear(paper);
           const displayDate = resolveDisplayDate(paper);
           const title = normalizeResearchActivityTitle(paper.title) || 'Untitled research activity';
@@ -146,109 +151,108 @@ const LabPapersList = ({
               key={paper._id}
               className="group grid gap-3 px-4 py-4 transition-colors hover:bg-[var(--yr-blue-soft)]/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_9rem] sm:px-5"
             >
-            <div className="hidden sm:block">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] font-mono text-xs font-semibold text-slate-700">
-                {String(index + 1).padStart(2, '0')}
+              <div className="hidden sm:block">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] font-mono text-xs font-semibold text-slate-700">
+                  {String(index + 1).padStart(2, '0')}
+                </div>
               </div>
-            </div>
-            <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className={`yr-pill min-h-0 px-2.5 py-0.5 ${sourceTone(paper, showPreprintMeta)}`}>
-                  {sourceLabel}
-                </span>
-                {paper.venue && (
-                  <span className="max-w-full truncate text-xs font-medium text-slate-600">
-                    {paper.venue}
-                  </span>
-                )}
-                {displayDate ? (
-                  <span className="text-xs text-slate-500">posted {displayDate}</span>
-                ) : (
-                  year !== undefined && <span className="text-xs text-slate-500">{year}</span>
-                )}
-                {!isScholarlyLink(paper) && typeof paper.citationCount === 'number' && paper.citationCount > 0 && (
-                  <span className="text-xs text-slate-500">
-                    {paper.citationCount} citation{paper.citationCount !== 1 ? 's' : ''}
-                  </span>
-                )}
-              </div>
-              {link ? (
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  {titleEl}
-                </a>
-              ) : (
-                titleEl
-              )}
-              {!isScholarlyLink(paper) && paper.tldr && (
-                <p className="mt-2 text-sm leading-relaxed text-slate-700">{paper.tldr}</p>
-              )}
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold sm:hidden">
-                {link && (
-                  <a href={link} target="_blank" rel="noopener noreferrer" className="yr-link">
-                    Open source
-                  </a>
-                )}
-                {freeFullTextHref && (
-                  <a
-                    href={freeFullTextHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yr-link"
+              <div className="min-w-0">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`yr-pill min-h-0 px-2.5 py-0.5 ${sourceTone(paper, showPreprintMeta)}`}
                   >
-                    {scholarlyLink?.freeFullTextLabel || 'Free full text'}
-                  </a>
-                )}
-                {pdfHref && (
-                  <a
-                    href={pdfHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yr-link"
-                  >
-                    PDF
-                  </a>
-                )}
-              </div>
-            </div>
-            <div className="hidden items-start justify-end sm:flex">
-              <div className="flex flex-col items-end gap-2 text-xs font-semibold">
-                {link && (
+                    {sourceLabel}
+                  </span>
+                  {paper.venue && (
+                    <span className="max-w-full truncate text-xs font-medium text-slate-600">
+                      {paper.venue}
+                    </span>
+                  )}
+                  {displayDate ? (
+                    <span className="text-xs text-slate-500">posted {displayDate}</span>
+                  ) : (
+                    year !== undefined && <span className="text-xs text-slate-500">{year}</span>
+                  )}
+                  {!isScholarlyLink(paper) &&
+                    typeof paper.citationCount === 'number' &&
+                    paper.citationCount > 0 && (
+                      <span className="text-xs text-slate-500">
+                        {paper.citationCount} citation{paper.citationCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                </div>
+                {link ? (
                   <a
                     href={link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="yr-focus-ring rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-[var(--yr-blue)] transition-colors hover:bg-[var(--yr-panel)]"
+                    className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                   >
-                    Open source
+                    {titleEl}
                   </a>
+                ) : (
+                  titleEl
                 )}
-                {freeFullTextHref && (
-                  <a
-                    href={freeFullTextHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yr-link rounded-sm"
-                  >
-                    {scholarlyLink?.freeFullTextLabel || 'Free full text'}
-                  </a>
+                {!isScholarlyLink(paper) && paper.tldr && (
+                  <p className="mt-2 text-sm leading-relaxed text-slate-700">{paper.tldr}</p>
                 )}
-                {pdfHref && (
-                  <a
-                    href={pdfHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yr-link rounded-sm"
-                  >
-                    PDF
-                  </a>
-                )}
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold sm:hidden">
+                  {link && (
+                    <a href={link} target="_blank" rel="noopener noreferrer" className="yr-link">
+                      Open source
+                    </a>
+                  )}
+                  {freeFullTextHref && (
+                    <a
+                      href={freeFullTextHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="yr-link"
+                    >
+                      {scholarlyLink?.freeFullTextLabel || 'Free full text'}
+                    </a>
+                  )}
+                  {pdfHref && (
+                    <a href={pdfHref} target="_blank" rel="noopener noreferrer" className="yr-link">
+                      PDF
+                    </a>
+                  )}
+                </div>
               </div>
-            </div>
+              <div className="hidden items-start justify-end sm:flex">
+                <div className="flex flex-col items-end gap-2 text-xs font-semibold">
+                  {link && (
+                    <a
+                      href={link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="yr-focus-ring rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-[var(--yr-blue)] transition-colors hover:bg-[var(--yr-panel)]"
+                    >
+                      Open source
+                    </a>
+                  )}
+                  {freeFullTextHref && (
+                    <a
+                      href={freeFullTextHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="yr-link rounded-sm"
+                    >
+                      {scholarlyLink?.freeFullTextLabel || 'Free full text'}
+                    </a>
+                  )}
+                  {pdfHref && (
+                    <a
+                      href={pdfHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="yr-link rounded-sm"
+                    >
+                      PDF
+                    </a>
+                  )}
+                </div>
+              </div>
             </article>
           );
         })}
