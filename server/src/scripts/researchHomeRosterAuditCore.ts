@@ -171,17 +171,16 @@ export function buildResearchHomeRosterAudit(
     const expectedMemberKeys = Array.isArray(source.enrichment?.memberKeys)
       ? Array.from(new Set(source.enrichment.memberKeys.map(text).filter(Boolean)))
       : [];
-    const matchingMemberKeys = new Set(
-      currentVerified
-        .filter(
-          (row) =>
-            entityId(row.researchEntityId) === id &&
-            text(row.sourceUrl) === source.sourceUrl &&
-            dateMs(row.lastObservedAt) >= snapshotObservedAt,
-        )
-        .map((row) => text(row.membershipKey))
-        .filter(Boolean),
+    const entityCurrentRows = currentRows.filter((row) => entityId(row.researchEntityId) === id);
+    const matchingRows = entityCurrentRows.filter(
+      (row) =>
+        row.evidenceStatus === 'verified' &&
+        dateMs(row.freshnessExpiresAt) >= now.getTime() &&
+        text(row.sourceUrl) === source.sourceUrl &&
+        dateMs(row.lastObservedAt) >= snapshotObservedAt,
     );
+    const matchingMemberKeys = matchingRows.map((row) => text(row.membershipKey)).filter(Boolean);
+    const matchingMemberKeySet = new Set(matchingMemberKeys);
     let reason: string | undefined;
     if (!id || !source.enrichment) reason = 'missing';
     else if (!['current', 'partial'].includes(state)) reason = state;
@@ -189,8 +188,15 @@ export function buildResearchHomeRosterAudit(
     else if (!snapshotObservedAt) reason = 'missing-snapshot-observation';
     else if (dateMs(source.enrichment.freshnessExpiresAt) < now.getTime()) reason = 'stale';
     else if (expectedMemberKeys.length === 0) reason = 'no-snapshot-members';
-    else if (expectedMemberKeys.some((key) => !matchingMemberKeys.has(key))) {
+    else if (expectedMemberKeys.some((key) => !matchingMemberKeySet.has(key))) {
       reason = 'incomplete-materialization';
+    } else if (
+      entityCurrentRows.length !== expectedMemberKeys.length ||
+      matchingMemberKeys.length !== expectedMemberKeys.length ||
+      matchingMemberKeySet.size !== expectedMemberKeys.length ||
+      matchingMemberKeys.some((key) => !expectedMemberKeys.includes(key))
+    ) {
+      reason = 'unexpected-materialization';
     }
     return {
       researchEntityKey: source.researchEntityKey,

@@ -1202,7 +1202,7 @@ export function publicMemberUserForRow(
     return publicMemberUserFromFaculty(faculty);
   }
 
-  if (!user && !faculty && isFreshVerifiedOfficialRosterRow(row)) {
+  if (!user && !faculty && isVerifiedOfficialRosterRow(row)) {
     const nameParts = String(row.name || '')
       .trim()
       .split(/\s+/)
@@ -1233,13 +1233,27 @@ export function isFreshVerifiedOfficialRosterRow(
   now = new Date(),
   enrichment?: any,
 ): boolean {
-  const expiresAt = new Date(row?.freshnessExpiresAt || 0);
-  const publishableEnrichmentState = ['current', 'partial', 'failed'].includes(
-    enrichment?.state,
+  if (!isVerifiedOfficialRosterRow(row, now)) return false;
+  if (enrichment?.state === 'failed') return true;
+  if (!['current', 'partial'].includes(enrichment?.state)) return false;
+
+  const snapshotObservedAt = new Date(enrichment?.observedAt || 0);
+  const rowObservedAt = new Date(row?.lastObservedAt || 0);
+  const memberKeys = Array.isArray(enrichment?.memberKeys) ? enrichment.memberKeys : [];
+  return (
+    memberKeys.includes(row.membershipKey) &&
+    row.sourceUrl === enrichment.sourceUrl &&
+    Number.isFinite(snapshotObservedAt.getTime()) &&
+    snapshotObservedAt.getTime() > 0 &&
+    Number.isFinite(rowObservedAt.getTime()) &&
+    rowObservedAt.getTime() >= snapshotObservedAt.getTime()
   );
+}
+
+function isVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
+  const expiresAt = new Date(row?.freshnessExpiresAt || 0);
   return (
     row?.sourceName === OFFICIAL_ROSTER_SOURCE_NAME &&
-    publishableEnrichmentState &&
     row?.evidenceStatus === 'verified' &&
     Boolean(row?.identityKey && row?.membershipKey && row?.name) &&
     Number.isFinite(expiresAt.getTime()) &&

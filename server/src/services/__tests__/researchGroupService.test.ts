@@ -699,43 +699,39 @@ describe('getResearchGroupDetail', () => {
   });
 
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
+    const latestSnapshot = {
+      state: 'current',
+      memberKeys: ['official-profile:fixture|staff'],
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt: '2026-07-14T00:00:00Z',
+    };
+    const latestRow = {
+      sourceName: 'official-research-home-roster',
+      sourceUrl: latestSnapshot.sourceUrl,
+      evidenceStatus: 'verified',
+      identityKey: 'official-profile:fixture',
+      membershipKey: 'official-profile:fixture|staff',
+      name: 'Fixture Scholar',
+      lastObservedAt: '2026-07-14T00:00:00Z',
+      freshnessExpiresAt: '2026-08-04T00:00:00Z',
+    };
     expect(
-      isFreshVerifiedOfficialRosterRow(
-        {
-          sourceName: 'official-research-home-roster',
-          evidenceStatus: 'verified',
-          identityKey: 'official-profile:fixture',
-          membershipKey: 'official-profile:fixture|staff',
-          name: 'Fixture Scholar',
-          freshnessExpiresAt: '2026-08-04T00:00:00Z',
-        },
-        new Date('2026-07-14T00:00:00Z'),
-        { state: 'current' },
-      ),
+      isFreshVerifiedOfficialRosterRow(latestRow, new Date('2026-07-14T00:00:00Z'), latestSnapshot),
     ).toBe(true);
     expect(
       isFreshVerifiedOfficialRosterRow(
         {
-          sourceName: 'official-research-home-roster',
-          evidenceStatus: 'verified',
-          identityKey: 'official-profile:fixture',
-          membershipKey: 'official-profile:fixture|staff',
-          name: 'Fixture Scholar',
+          ...latestRow,
           freshnessExpiresAt: '2026-01-01T00:00:00Z',
         },
         new Date('2026-07-14T00:00:00Z'),
-        { state: 'current' },
+        latestSnapshot,
       ),
     ).toBe(false);
     expect(
       isFreshVerifiedOfficialRosterRow(
         {
-          sourceName: 'official-research-home-roster',
-          evidenceStatus: 'verified',
-          identityKey: 'official-profile:fixture',
-          membershipKey: 'official-profile:fixture|staff',
-          name: 'Fixture Scholar',
-          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+          ...latestRow,
         },
         new Date('2026-07-14T00:00:00Z'),
         { state: 'stale' },
@@ -744,12 +740,7 @@ describe('getResearchGroupDetail', () => {
     expect(
       isFreshVerifiedOfficialRosterRow(
         {
-          sourceName: 'official-research-home-roster',
-          evidenceStatus: 'verified',
-          identityKey: 'official-profile:fixture',
-          membershipKey: 'official-profile:fixture|staff',
-          name: 'Fixture Scholar',
-          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+          ...latestRow,
         },
         new Date('2026-07-14T00:00:00Z'),
         { state: 'failed' },
@@ -759,12 +750,7 @@ describe('getResearchGroupDetail', () => {
       expect(
         isFreshVerifiedOfficialRosterRow(
           {
-            sourceName: 'official-research-home-roster',
-            evidenceStatus: 'verified',
-            identityKey: 'official-profile:fixture',
-            membershipKey: 'official-profile:fixture|staff',
-            name: 'Fixture Scholar',
-            freshnessExpiresAt: '2026-08-04T00:00:00Z',
+            ...latestRow,
           },
           new Date('2026-07-14T00:00:00Z'),
           state ? { state } : undefined,
@@ -785,6 +771,19 @@ describe('getResearchGroupDetail', () => {
     expect(publicRosterDisclosure({ state: 'failed' }, 0, 0).status).toBe(
       'optional-source-failure',
     );
+    for (const obsoleteRow of [
+      { ...latestRow, membershipKey: 'official-profile:old|staff' },
+      { ...latestRow, sourceUrl: 'https://medicine.yale.edu/lab/old/members/' },
+      { ...latestRow, lastObservedAt: '2026-07-13T00:00:00Z' },
+    ]) {
+      expect(
+        isFreshVerifiedOfficialRosterRow(
+          obsoleteRow,
+          new Date('2026-07-14T00:00:00Z'),
+          latestSnapshot,
+        ),
+      ).toBe(false);
+    }
   });
 
   it('removes private listing ownership and contact fields from public detail payloads', async () => {
@@ -1757,6 +1756,23 @@ describe('buildResearchActivityLinkPayload', () => {
 });
 
 describe('publicMemberUserForRow', () => {
+  it('preserves a verified roster-only member after entity-level validation', () => {
+    const publicUser = publicMemberUserForRow(
+      {
+        sourceName: 'official-research-home-roster',
+        evidenceStatus: 'verified',
+        identityKey: 'official-profile:fixture',
+        membershipKey: 'official-profile:fixture|staff',
+        name: 'Fixture Scholar',
+        freshnessExpiresAt: '2026-08-04T00:00:00Z',
+      },
+      new Map(),
+      new Map(),
+    );
+
+    expect(publicUser).toMatchObject({ fname: 'Fixture', lname: 'Scholar' });
+  });
+
   it('preserves official profile URLs without exposing user netids', () => {
     const row = {
       userId: 'internal-user',

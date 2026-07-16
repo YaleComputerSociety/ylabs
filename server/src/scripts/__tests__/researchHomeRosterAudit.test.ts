@@ -169,4 +169,27 @@ describe('research-home roster coverage and precision audit', () => {
     });
     expect(report.sources[0]).toMatchObject({ ready: false, reason: 'no-snapshot-members' });
   });
+
+  it('rejects extra, duplicate, mismatched-source, and older current materializations', () => {
+    const invalidRows = [
+      { ...verifiedRow, membershipKey: 'official-profile:old|grad-student' },
+      { ...verifiedRow },
+      { ...verifiedRow, sourceUrl: 'https://medicine.yale.edu/lab/other/members/' },
+      { ...verifiedRow, lastObservedAt: '2026-07-13T00:00:00Z' },
+    ];
+
+    for (const invalidRow of invalidRows) {
+      const report = buildResearchHomeRosterAudit([verifiedRow, invalidRow], {
+        now: new Date('2026-07-15T00:00:00Z'),
+        sampledPrecisionReviewed: true,
+        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        expectedSources: [expectedSource],
+      });
+      expect(report.broadEnablementReady).toBe(false);
+      expect(report.sources[0]).toMatchObject({
+        ready: false,
+        reason: 'unexpected-materialization',
+      });
+    }
+  });
 });
