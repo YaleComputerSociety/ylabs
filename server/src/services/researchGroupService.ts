@@ -2172,9 +2172,13 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
 };
 
 /**
- * Detail payload for the lab page: the group itself, member User snapshots
- * (PIs first), the most recent papers across all members, and the group's
- * non-archived listings.
+ * Public research-detail payload.
+ *
+ * Lead members remain first. Non-lead official-roster members are returned only
+ * while their stable identity and snapshot evidence are verified and fresh, are
+ * capped at 24, and carry public source/profile provenance. The separate roster
+ * disclosure distinguishes current, partial, withheld, no-verified-data, and
+ * optional-source-failure states so absence never implies an empty team.
  */
 export async function recordResearchEntityOutreach(
   slug: string,

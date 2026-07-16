@@ -137,7 +137,7 @@ Then run accepted sources in rollout order:
 2. Profile metadata: `yale-directory`.
 3. Enrichment: `openalex`, `nih-reporter`, `nsf-award-search`, `arxiv` where relevant.
 4. Access evidence: bounded `lab-microsite-undergrad-llm` source lists.
-5. Gated sources only after blockers clear: `undergrad-fellowships-recipients`.
+5. Gated sources only after blockers clear: `undergrad-fellowships-recipients` and bounded `official-research-home-roster` allowlist entries.
 
 For each Beta source:
 
