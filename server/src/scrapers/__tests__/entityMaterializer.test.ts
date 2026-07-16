@@ -4,6 +4,7 @@ import {
   buildInferredPiMemberUpsert,
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
+  rosterEnrichmentWithRetainedSuccessfulSnapshot,
   buildOfficialProfileScholarlyLinkUpserts,
   buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
@@ -865,6 +866,28 @@ describe('entityMaterializer post-materialization metrics', () => {
         memberKeys: [],
       }),
     ).toBeNull();
+  });
+
+  it('retains the exact last successful roster snapshot across a failed refresh', () => {
+    const partial = {
+      state: 'partial',
+      memberKeys: ['official-profile:retained|staff'],
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt: new Date('2026-07-14T00:00:00Z'),
+      freshnessExpiresAt: new Date('2026-08-04T00:00:00Z'),
+    };
+    const materializedPartial = rosterEnrichmentWithRetainedSuccessfulSnapshot(partial);
+    const failed = rosterEnrichmentWithRetainedSuccessfulSnapshot(
+      {
+        state: 'failed',
+        memberKeys: [],
+        sourceUrl: partial.sourceUrl,
+        observedAt: new Date('2026-07-15T00:00:00Z'),
+      },
+      materializedPartial,
+    );
+
+    expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
   });
 
   it('builds official-profile scholarly link upserts from user observations', () => {

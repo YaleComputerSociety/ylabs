@@ -1234,15 +1234,18 @@ export function isFreshVerifiedOfficialRosterRow(
   enrichment?: any,
 ): boolean {
   if (!isVerifiedOfficialRosterRow(row, now)) return false;
-  if (enrichment?.state === 'failed') return true;
-  if (!['current', 'partial'].includes(enrichment?.state)) return false;
+  const publicationSnapshot =
+    enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
+  if (!['current', 'partial'].includes(publicationSnapshot?.state)) return false;
 
-  const snapshotObservedAt = new Date(enrichment?.observedAt || 0);
+  const snapshotObservedAt = new Date(publicationSnapshot?.observedAt || 0);
   const rowObservedAt = new Date(row?.lastObservedAt || 0);
-  const memberKeys = Array.isArray(enrichment?.memberKeys) ? enrichment.memberKeys : [];
+  const memberKeys = Array.isArray(publicationSnapshot?.memberKeys)
+    ? publicationSnapshot.memberKeys
+    : [];
   return (
     memberKeys.includes(row.membershipKey) &&
-    row.sourceUrl === enrichment.sourceUrl &&
+    row.sourceUrl === publicationSnapshot.sourceUrl &&
     Number.isFinite(snapshotObservedAt.getTime()) &&
     snapshotObservedAt.getTime() > 0 &&
     Number.isFinite(rowObservedAt.getTime()) &&
@@ -1303,23 +1306,33 @@ export function publicRosterDisclosure(
         return Number.isFinite(time) && time > 0;
       })
       .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0];
-  const useRetainedEvidence = enrichment?.state === 'failed' && retainedRows.length > 0;
+  const retainedSnapshot =
+    enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : undefined;
+  const useRetainedSnapshot = Boolean(retainedSnapshot);
+  const useRetainedEvidence =
+    !useRetainedSnapshot && enrichment?.state === 'failed' && retainedRows.length > 0;
   return {
     status,
     returned: Math.min(verifiedMemberCount, MAX_PUBLIC_ROSTER_MEMBERS),
     truncated: availableMemberCount > MAX_PUBLIC_ROSTER_MEMBERS,
     withheldCount,
     sourceUrl: publicHttpUrl(
-      useRetainedEvidence
-        ? retainedRows.find((row) => row?.sourceUrl)?.sourceUrl
-        : enrichment?.sourceUrl,
+      useRetainedSnapshot
+        ? retainedSnapshot.sourceUrl
+        : useRetainedEvidence
+          ? retainedRows.find((row) => row?.sourceUrl)?.sourceUrl
+          : enrichment?.sourceUrl,
     ),
-    observedAt: useRetainedEvidence
-      ? earliestRetainedValue('lastObservedAt')
-      : enrichment?.observedAt,
-    freshnessExpiresAt: useRetainedEvidence
-      ? earliestRetainedValue('freshnessExpiresAt')
-      : enrichment?.freshnessExpiresAt,
+    observedAt: useRetainedSnapshot
+      ? retainedSnapshot.observedAt
+      : useRetainedEvidence
+        ? earliestRetainedValue('lastObservedAt')
+        : enrichment?.observedAt,
+    freshnessExpiresAt: useRetainedSnapshot
+      ? retainedSnapshot.freshnessExpiresAt
+      : useRetainedEvidence
+        ? earliestRetainedValue('freshnessExpiresAt')
+        : enrichment?.freshnessExpiresAt,
   };
 }
 

@@ -383,6 +383,7 @@ function materializedFieldValue(
   entityType: ObservedEntityType,
   field: string,
   value: unknown,
+  existingValue?: unknown,
 ): unknown {
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
     return sanitizeResearchEntitySourceUrlsForMaterialization(value);
@@ -393,7 +394,46 @@ function materializedFieldValue(
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);
   }
+  if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
+    return rosterEnrichmentWithRetainedSuccessfulSnapshot(value, existingValue);
+  }
   return value;
+}
+
+const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | undefined => {
+  const enrichment = objectRecord(value);
+  if (!['current', 'partial'].includes(textValue(enrichment.state))) return undefined;
+  const memberKeys = Array.isArray(enrichment.memberKeys)
+    ? Array.from(new Set(enrichment.memberKeys.map(textValue).filter(Boolean))).slice(0, 40)
+    : [];
+  const sourceUrl = textValue(enrichment.sourceUrl);
+  const observedAt = enrichment.observedAt;
+  const freshnessExpiresAt = enrichment.freshnessExpiresAt;
+  if (memberKeys.length === 0 || !sourceUrl || !observedAt || !freshnessExpiresAt) return undefined;
+  return {
+    state: enrichment.state,
+    memberKeys,
+    sourceUrl,
+    ...(enrichment.sourcePublishedAt ? { sourcePublishedAt: enrichment.sourcePublishedAt } : {}),
+    observedAt,
+    freshnessExpiresAt,
+  };
+};
+
+export function rosterEnrichmentWithRetainedSuccessfulSnapshot(
+  value: unknown,
+  existingValue?: unknown,
+): unknown {
+  const enrichment = objectRecord(value);
+  const currentSnapshot = successfulRosterSnapshot(enrichment);
+  if (currentSnapshot) return { ...enrichment, lastSuccessfulSnapshot: currentSnapshot };
+  if (textValue(enrichment.state) !== 'failed') return enrichment;
+
+  const existing = objectRecord(existingValue);
+  const retained =
+    successfulRosterSnapshot(existing) ||
+    successfulRosterSnapshot(objectRecord(existing.lastSuccessfulSnapshot));
+  return retained ? { ...enrichment, lastSuccessfulSnapshot: retained } : enrichment;
 }
 
 const RESEARCH_ENTITY_CONTENT_PAGE_SOURCE_PATH_RE =
@@ -2266,7 +2306,7 @@ export async function materializeEntity(
     if (entityType === 'user' && shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)) {
       continue;
     }
-    set[field] = materializedFieldValue(entityType, field, nextValue);
+    set[field] = materializedFieldValue(entityType, field, nextValue, entityDoc?.[field]);
     confidenceByField[field] = r.confidence;
     if (isResearchEntityObservationType(entityType)) {
       const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);

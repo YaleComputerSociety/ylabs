@@ -292,6 +292,18 @@ const researchGroupSchema = new mongoose.Schema(
         freshnessExpiresAt: { type: Date, required: false },
         refreshOwner: { type: String, default: '' },
         refreshCadence: { type: String, default: '' },
+        lastSuccessfulSnapshot: {
+          type: {
+            state: { type: String, enum: ['current', 'partial'], required: true },
+            memberKeys: { type: [String], default: [] },
+            sourceUrl: { type: String, required: true },
+            sourcePublishedAt: { type: Date, required: false },
+            observedAt: { type: Date, required: true },
+            freshnessExpiresAt: { type: Date, required: true },
+          },
+          required: false,
+          default: undefined,
+        },
       },
       required: false,
       default: undefined,

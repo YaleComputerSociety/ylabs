@@ -745,7 +745,25 @@ describe('getResearchGroupDetail', () => {
         new Date('2026-07-14T00:00:00Z'),
         { state: 'failed' },
       ),
+    ).toBe(false);
+    const failedAfterPartial = {
+      state: 'failed',
+      lastSuccessfulSnapshot: { ...latestSnapshot, state: 'partial' },
+    };
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        latestRow,
+        new Date('2026-07-14T00:00:00Z'),
+        failedAfterPartial,
+      ),
     ).toBe(true);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        { ...latestRow, membershipKey: 'official-profile:excluded|staff' },
+        new Date('2026-07-14T00:00:00Z'),
+        failedAfterPartial,
+      ),
+    ).toBe(false);
     for (const state of ['empty', 'withheld', 'stale', undefined]) {
       expect(
         isFreshVerifiedOfficialRosterRow(
@@ -778,6 +796,11 @@ describe('getResearchGroupDetail', () => {
           sourceUrl: latestSnapshot.sourceUrl,
           observedAt: '2026-07-15T00:00:00Z',
           freshnessExpiresAt: '2026-08-05T00:00:00Z',
+          lastSuccessfulSnapshot: {
+            ...latestSnapshot,
+            state: 'partial',
+            freshnessExpiresAt: latestRow.freshnessExpiresAt,
+          },
         },
         1,
         1,

@@ -34,6 +34,7 @@ treating unused collections as launch evidence.
 
 Current non-lead roster membership uses stable source identity fields on `research_entity_members`, including `identityKey`, role-specific `membershipKey`, source provenance, evidence status, and freshness expiry.
 Official roster snapshots update current rows idempotently and archive disappeared rows with `endedAt` instead of deleting provenance.
+Each entity retains the exact member keys, source URL, observation time, and freshness boundary of its last successful current or partial roster snapshot so a failed refresh can provide bounded grace without reviving older membership.
 An unresolved name, ambiguous profile identity, stale source, missing explicitly current section, or failed optional fetch remains hidden and reviewable rather than becoming current membership.
 
 Umbrella affiliations use `research_entity_relationships` with
