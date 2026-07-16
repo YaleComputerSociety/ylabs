@@ -73,10 +73,17 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const normalizedText = (value: unknown): string =>
-  redactDirectContactInfo(String(value || '').replace(/\s+/g, ' ').trim()).slice(0, 300);
+  redactDirectContactInfo(
+    String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  ).slice(0, 300);
 
 const normalizedLabel = (value: unknown): string =>
-  normalizedText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  normalizedText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 
 function dateFromPublishMeta(value: string): Date | undefined {
   const text = value.trim();
@@ -106,7 +113,10 @@ function officialProfileUrl(href: string, sourceUrl: string): string {
 const stableKey = (value: string): string =>
   createHash('sha256').update(value).digest('hex').slice(0, 24);
 
-export function mapOfficialRosterRole(titleValue: unknown, sectionValue: unknown): OfficialRosterRole | null {
+export function mapOfficialRosterRole(
+  titleValue: unknown,
+  sectionValue: unknown,
+): OfficialRosterRole | null {
   const title = normalizedLabel(titleValue);
   const section = normalizedLabel(sectionValue);
   const evidence = `${section} ${title}`;
@@ -133,7 +143,9 @@ export function extractOfficialResearchHomeRoster(
   observedAt = new Date(),
 ): ExtractedOfficialRoster {
   const $ = cheerio.load(html);
-  const freshnessExpiresAt = new Date(observedAt.getTime() + OFFICIAL_ROSTER_FRESHNESS_DAYS * DAY_MS);
+  const freshnessExpiresAt = new Date(
+    observedAt.getTime() + OFFICIAL_ROSTER_FRESHNESS_DAYS * DAY_MS,
+  );
   const sourcePublishedAt = dateFromPublishMeta(
     $('meta[property="publish-date"], meta[name="publish-date"]').first().attr('content') || '',
   );
@@ -367,7 +379,10 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
 
   constructor(
     private readonly configs: OfficialRosterConfig[] = OFFICIAL_ROSTER_CONFIGS,
-    private readonly fetchPage: (url: string, useCache: boolean) => Promise<string> = fetchRosterPage,
+    private readonly fetchPage: (
+      url: string,
+      useCache: boolean,
+    ) => Promise<string> = fetchRosterPage,
   ) {}
 
   async run(context: ScraperContext): Promise<ScraperResult> {

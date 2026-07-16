@@ -36,7 +36,11 @@ describe('official research-home roster acquisition', () => {
     const roster = extractOfficialResearchHomeRoster(
       page(
         card('Current Scholar', 'Graduate Student', '/lab/fixture/profile/current-scholar/'),
-        card('Former Scholar', 'Graduate Student, 2018-2022', '/lab/fixture/profile/former-scholar/'),
+        card(
+          'Former Scholar',
+          'Graduate Student, 2018-2022',
+          '/lab/fixture/profile/former-scholar/',
+        ),
       ),
       config,
       new Date('2026-07-14T00:00:00Z'),
@@ -134,7 +138,10 @@ describe('official research-home roster acquisition', () => {
 
   it('records optional source failure without emitting or archiving a roster snapshot', async () => {
     const emit = vi.fn(async () => undefined);
-    const scraper = new OfficialResearchHomeRosterScraper([config], vi.fn().mockRejectedValue(new Error('offline')));
+    const scraper = new OfficialResearchHomeRosterScraper(
+      [config],
+      vi.fn().mockRejectedValue(new Error('offline')),
+    );
     const result = await scraper.run({
       scrapeRunId: 'run',
       sourceId: 'source',

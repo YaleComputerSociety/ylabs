@@ -33,16 +33,7 @@ const researchGroupSchema = new mongoose.Schema(
     },
     kind: {
       type: String,
-      enum: [
-        'lab',
-        'center',
-        'institute',
-        'program',
-        'initiative',
-        'group',
-        'individual',
-        'solo',
-      ],
+      enum: ['lab', 'center', 'institute', 'program', 'initiative', 'group', 'individual', 'solo'],
       default: 'lab',
     },
     entityType: {

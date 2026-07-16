@@ -41,9 +41,7 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('normalizes DOI values for paper identity matching', () => {
-    expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe(
-      '10.1000/abc',
-    );
+    expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe('10.1000/abc');
     expect(normalizeDoiForMaterialization('')).toBeNull();
     expect(normalizeDoiForMaterialization(undefined)).toBeNull();
   });
@@ -75,10 +73,9 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('adds a department-scoped name lookup for inferred department PI keys', () => {
-    const filters = userLookupFiltersForInferredPiUserKey(
-      'dept:econ:timothy-christensen',
-      ['Economics'],
-    );
+    const filters = userLookupFiltersForInferredPiUserKey('dept:econ:timothy-christensen', [
+      'Economics',
+    ]);
 
     expect(filters).toEqual([
       { netid: 'dept:econ:timothy-christensen' },
@@ -187,11 +184,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     };
 
     expect(
-      selectOfficialProfileObservationUserMatch(
-        observations,
-        [alias, canonical],
-        'ari.match',
-      ),
+      selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'ari.match'),
     ).toBe(canonical);
     expect(
       selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'az248'),
@@ -199,26 +192,16 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('preserves existing non-initial user names over roster initials', () => {
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(
-      true,
-    );
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(
-      true,
-    );
-    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(
-      false,
-    );
+    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(true);
+    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(true);
+    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(false);
     expect(shouldPreserveExistingUserIdentityField('lname', 'Zayaruznaya', { fname: 'AZ' })).toBe(
       false,
     );
   });
 
   it('unions set-like paper fields without duplicating values', () => {
-    expect(mergeUniqueArrayValues(['u1', 'u2'], ['u2', 'u3'])).toEqual([
-      'u1',
-      'u2',
-      'u3',
-    ]);
+    expect(mergeUniqueArrayValues(['u1', 'u2'], ['u2', 'u3'])).toEqual(['u1', 'u2', 'u3']);
     expect(mergeUniqueArrayValues(undefined, 'arxiv')).toEqual(['arxiv']);
   });
 
@@ -236,9 +219,9 @@ describe('entityMaterializer post-materialization metrics', () => {
       'https://ysph.yale.edu/profile/amy-bei/',
       'https://reporter.nih.gov/project-details/11380220',
     ]);
-    expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news')).toBe(
-      'https://example.yale.edu/news',
-    );
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news'),
+    ).toBe('https://example.yale.edu/news');
   });
 
   it('builds paper bulk updates that union repeated set-like metadata observations', () => {
@@ -656,16 +639,13 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('builds a PI membership upsert from inferredPiUserId observations', () => {
-    const patch = buildInferredPiMemberUpsert(
-      '64f000000000000000000010',
-      {
-        value: '64f000000000000000000020',
-        sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
-        sourceName: 'ysm-atoz-index',
-        confidence: 0.84,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-      },
-    );
+    const patch = buildInferredPiMemberUpsert('64f000000000000000000010', {
+      value: '64f000000000000000000020',
+      sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+      sourceName: 'ysm-atoz-index',
+      confidence: 0.84,
+      observedAt: new Date('2026-05-25T00:00:00Z'),
+    });
 
     expect(patch).toEqual({
       filter: {
@@ -1081,14 +1061,17 @@ describe('entityMaterializer post-materialization metrics', () => {
 
 describe('center relationship type + label resolution', () => {
   it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
-    expect(
-      centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA'),
-    ).toBe('AFFILIATED_LAB');
+    expect(centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA')).toBe(
+      'AFFILIATED_LAB',
+    );
   });
 
   it('keeps the fallback type for a generated faculty-research-area target', () => {
     expect(
-      centerRelationshipTypeForResolvedTarget('faculty-research-area-amy-arnsten', 'MEMBER_RESEARCH_AREA'),
+      centerRelationshipTypeForResolvedTarget(
+        'faculty-research-area-amy-arnsten',
+        'MEMBER_RESEARCH_AREA',
+      ),
     ).toBe('MEMBER_RESEARCH_AREA');
   });
 

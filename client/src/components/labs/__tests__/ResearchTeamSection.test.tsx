@@ -39,10 +39,9 @@ describe('ResearchTeamSection', () => {
     render(<ResearchTeamSection members={[member(1), member(2, 'postdoc')]} roster={roster()} />);
     expect(screen.getByRole('heading', { name: 'Graduate students' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Postdoctoral researchers' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: /Fixture Scholar 1.*official public profile/ })).toHaveAttribute(
-      'href',
-      'https://medicine.yale.edu/lab/fixture/profile/scholar-1/',
-    );
+    expect(
+      screen.getByRole('link', { name: /Fixture Scholar 1.*official public profile/ }),
+    ).toHaveAttribute('href', 'https://medicine.yale.edu/lab/fixture/profile/scholar-1/');
     expect(screen.getByText(/not a recommendation to contact/)).toBeTruthy();
   });
 

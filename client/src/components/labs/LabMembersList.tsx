@@ -113,12 +113,8 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-gray-900">
-                {fullName}
-              </p>
-              {user.title && (
-                <p className="text-xs text-gray-500 truncate">{user.title}</p>
-              )}
+              <p className="truncate text-sm font-semibold text-gray-900">{fullName}</p>
+              {user.title && <p className="text-xs text-gray-500 truncate">{user.title}</p>}
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${ROLE_PILL_CLASSES[role]}`}

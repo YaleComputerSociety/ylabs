@@ -148,7 +148,13 @@ export const sourceCoverageRegistry = {
   'department-undergrad-research': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['ResearchEntity', 'EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+    artifactTypes: [
+      'ResearchEntity',
+      'EntryPathway',
+      'AccessSignal',
+      'ContactRoute',
+      'Observation',
+    ],
     evidenceCategories: [
       'ENTITY_IDENTITY',
       'TOPICS',
@@ -221,7 +227,8 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'TOPICS'],
     defaultConfidence: 'HIGH',
-    notes: 'Center/institute discovery and membership context; contact routes require explicit guarded route evidence.',
+    notes:
+      'Center/institute discovery and membership context; contact routes require explicit guarded route evidence.',
   },
   'yale-research-official': {
     priority: 2,
@@ -244,7 +251,8 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['EntryPathway', 'AccessSignal', 'Observation'],
     evidenceCategories: ['FELLOWSHIP_COMPATIBILITY', 'PAST_UNDERGRADS'],
     defaultConfidence: 'MEDIUM',
-    notes: 'Past recipient/advisor evidence supports historical participation and fellowship routes.',
+    notes:
+      'Past recipient/advisor evidence supports historical participation and fellowship routes.',
   },
   'yale-college-fellowships-office': {
     priority: 4,
@@ -281,7 +289,8 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
     defaultConfidence: 'MEDIUM',
-    notes: 'Funding activity enriches entity context but is not undergraduate-access evidence alone.',
+    notes:
+      'Funding activity enriches entity context but is not undergraduate-access evidence alone.',
   },
   'nsf-award-search': {
     priority: 6,
@@ -289,9 +298,10 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['ResearchEntity', 'Observation'],
     evidenceCategories: ['FUNDING_ACTIVITY', 'TOPICS'],
     defaultConfidence: 'MEDIUM',
-    notes: 'Funding activity enriches entity context but is not undergraduate-access evidence alone.',
+    notes:
+      'Funding activity enriches entity context but is not undergraduate-access evidence alone.',
   },
-  'openalex': {
+  openalex: {
     priority: 7,
     tier: 'THIRD_PARTY_ENRICHMENT',
     artifactTypes: ['Observation'],
@@ -300,7 +310,7 @@ export const sourceCoverageRegistry = {
     notes:
       'Research-activity enrichment source. ORCID is the identity anchor when present; stored OpenAlex author ids are used only without ORCID; name search is review-only.',
   },
-  'orcid': {
+  orcid: {
     priority: 7,
     tier: 'THIRD_PARTY_ENRICHMENT',
     artifactTypes: ['Observation'],
@@ -309,7 +319,7 @@ export const sourceCoverageRegistry = {
     notes:
       'Accepted Yale user ORCID public works prove authorship for that user; downstream sources may enrich the paper metadata.',
   },
-  'arxiv': {
+  arxiv: {
     priority: 7,
     tier: 'THIRD_PARTY_ENRICHMENT',
     artifactTypes: ['Observation'],
@@ -318,7 +328,7 @@ export const sourceCoverageRegistry = {
     notes:
       'Preprint and recent research activity enrichment; not undergraduate-access evidence by itself.',
   },
-  'crossref': {
+  crossref: {
     priority: 8,
     tier: 'THIRD_PARTY_ENRICHMENT',
     artifactTypes: ['Observation'],
@@ -327,7 +337,7 @@ export const sourceCoverageRegistry = {
     notes:
       'DOI-backed compact scholarly-link hydration. Crossref improves real destination metadata and never creates Yale authorship or access evidence by itself.',
   },
-  'pubmed': {
+  pubmed: {
     priority: 8,
     tier: 'THIRD_PARTY_ENRICHMENT',
     artifactTypes: ['Observation'],
@@ -342,8 +352,7 @@ export const sourceCoverageRegistry = {
     artifactTypes: ['Observation'],
     evidenceCategories: ['PUBLICATIONS'],
     defaultConfidence: 'HIGH',
-    notes:
-      'Europe PMC ORCID-backed paper discovery; author links require ORCID identity evidence.',
+    notes: 'Europe PMC ORCID-backed paper discovery; author links require ORCID identity evidence.',
   },
   'semantic-scholar': {
     priority: 8,

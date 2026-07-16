@@ -55,12 +55,7 @@ export interface LabMember {
 }
 
 export interface LabRosterDisclosure {
-  status:
-    | 'current'
-    | 'partial'
-    | 'no-verified-data'
-    | 'withheld'
-    | 'optional-source-failure';
+  status: 'current' | 'partial' | 'no-verified-data' | 'withheld' | 'optional-source-failure';
   returned: number;
   truncated: boolean;
   withheldCount: number;

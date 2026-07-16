@@ -42,8 +42,7 @@ export const sourceCoverageEvidenceCategories = [
   'PUBLICATIONS',
 ] as const;
 
-export type SourceCoverageEvidenceCategory =
-  (typeof sourceCoverageEvidenceCategories)[number];
+export type SourceCoverageEvidenceCategory = (typeof sourceCoverageEvidenceCategories)[number];
 
 export const sourceCoverageTiers = [
   'PRIMARY_OFFICIAL',
