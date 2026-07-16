@@ -30,6 +30,11 @@ const roster = (overrides: Partial<LabRosterDisclosure> = {}): LabRosterDisclosu
 });
 
 describe('ResearchTeamSection', () => {
+  it('presents the observed date as a UTC calendar date', () => {
+    render(<ResearchTeamSection members={[member(1)]} roster={roster()} />);
+    expect(screen.getByText('Official roster observed Jul 14, 2026')).toBeTruthy();
+  });
+
   it('groups verified members by honest role and links only official public profiles', () => {
     render(<ResearchTeamSection members={[member(1), member(2, 'postdoc')]} roster={roster()} />);
     expect(screen.getByRole('heading', { name: 'Graduate students' })).toBeTruthy();

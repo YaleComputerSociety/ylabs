@@ -19,7 +19,7 @@ const observedLabel = (value?: string): string => {
   if (!value) return '';
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date);
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
 };
 
 const emptyCopy = (status: LabRosterDisclosure['status']): string => {
