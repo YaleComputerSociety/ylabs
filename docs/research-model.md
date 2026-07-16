@@ -274,7 +274,9 @@ The server claims that migration atomically against the legacy pathway ids and p
 Once marked complete, later reads, plan deletes, and entity removals do not re-import removed legacy pathway saves.
 Account hydration uses the authenticated legacy pathway read as a bounded compatibility bridge for browser-only plans and pathway-keyed funding matches.
 It rewrites owner-scoped browser storage only after legacy keys map to saved entity ids and local-only plans upload successfully, and it retains the legacy browser record when multiple plans collide on one entity.
-If canonical entity reads or plan endpoints are unavailable, the account workspace keeps legacy pathway reads, writes, and deletes paired instead of writing entity ids through pathway endpoints.
+The account workspace selects saved-item and plan-detail API modes independently, so removing a canonical saved entity does not depend on canonical plan-detail hydration succeeding.
+It falls back from a canonical saved-item or plan-detail endpoint only when that endpoint explicitly reports unavailable with `404`, `405`, or `501`; transient and unexpected failures do not trigger legacy reads or writes.
+When a saved-item endpoint succeeds, removal uses that endpoint's identity mode and leaves associated plan cleanup to the server-side removal operation.
 Pathway-keyed fellowship matches are remapped to saved entity ids, deduplicated by fellowship using the best score, sorted deterministically, and capped at five matches per entity.
 
 Keep saved-entity planning separate from the legacy listing and fellowship favorites board.
