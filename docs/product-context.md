@@ -87,11 +87,6 @@ Each research entity page should answer:
 - How might the research relationship later be formalized?
 - What source verifies this?
 
-Leadership should be presented without redundant cards.
-A sole verified principal investigator appears once in the decision summary.
-When several principal investigators are attached, keep them together in a pluralized section and identify a separate Lead professor only from a unique match between the entity's official profile evidence and that member's official Yale faculty profile.
-If lead identity evidence conflicts, preserve an explicit review state instead of displaying the disputed person.
-
 ## CTA Vocabulary
 
 CTA options should depend on the access evidence, route, and current next step:

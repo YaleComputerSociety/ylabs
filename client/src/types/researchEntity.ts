@@ -47,10 +47,6 @@ export type StudentVisibilityTier =
   | 'suppressed';
 
 export interface ResearchEntity extends ResearchEntityBacking {
-  /** Whether public lead identity evidence is safe to display or requires review. */
-  leadIdentityStatus?: 'verified' | 'under_review';
-  /** Public member key for the unique lead matched by entity-owned official profile evidence. */
-  leadProfessorPublicKey?: string;
   searchMatch?: ResearchEntitySearchMatch;
   waysIn?: PathwaySearchHit[];
   qualitySummary?: ResearchEntityQualitySummary;
@@ -63,35 +59,29 @@ export interface ResearchEntity extends ResearchEntityBacking {
   studentVisibilityReviewNote?: string;
 }
 
-export interface ResearchEntitySearchResponse extends Partial<
-  Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'>
-> {
+export interface ResearchEntitySearchResponse
+  extends Partial<Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'>> {
   researchEntities?: ResearchEntity[];
   hits?: ResearchEntity[];
 }
 
-export interface NormalizedResearchEntitySearchResponse extends Omit<
-  ResearchGroupSearchResponse,
-  'hits' | 'researchEntities'
-> {
+export interface NormalizedResearchEntitySearchResponse
+  extends Omit<ResearchGroupSearchResponse, 'hits' | 'researchEntities'> {
   researchEntities: ResearchEntity[];
   hits: ResearchEntity[];
 }
 
-export interface ResearchEntityDetailPayload extends Omit<
-  LabDetailPayload,
-  'group' | 'researchEntity'
-> {
+export interface ResearchEntityDetailPayload
+  extends Omit<LabDetailPayload, 'group' | 'researchEntity'> {
   researchEntity: ResearchEntity;
   group?: ResearchEntity;
 }
 
-type MaybeResearchEntityDetailPayload = Partial<
-  Omit<LabDetailPayload, 'group' | 'researchEntity'>
-> & {
-  researchEntity?: ResearchEntity | null;
-  group?: ResearchEntity | null;
-};
+type MaybeResearchEntityDetailPayload =
+  Partial<Omit<LabDetailPayload, 'group' | 'researchEntity'>> & {
+    researchEntity?: ResearchEntity | null;
+    group?: ResearchEntity | null;
+  };
 
 const normalizeSearchMatch = (
   value: ResearchEntitySearchMatch | undefined,
@@ -117,10 +107,7 @@ const normalizeStudentDecisionExplanation = (
     headline: value.headline.trim(),
     explanation: value.explanation.trim(),
     why: Array.isArray(value.why)
-      ? value.why
-          .map((item) => String(item).trim())
-          .filter(Boolean)
-          .slice(0, 3)
+      ? value.why.map((item) => String(item).trim()).filter(Boolean).slice(0, 3)
       : [],
     sourceUrls: Array.isArray(value.sourceUrls)
       ? value.sourceUrls.map((item) => String(item).trim()).filter(Boolean)
