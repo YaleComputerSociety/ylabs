@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   analyticsAggregate: vi.fn(),
   analyticsCreate: vi.fn(),
   analyticsFind: vi.fn(),
+  analyticsUpdateOne: vi.fn(),
   userFindOneAndUpdate: vi.fn(),
 }));
 
@@ -31,12 +32,22 @@ vi.mock('../../models/analytics', () => ({
     WAYS_IN_CLICK: 'ways_in_click',
     CONTACT_ROUTE_CLICK: 'contact_route_click',
     SOURCE_LINK_CLICK: 'source_link_click',
+    RESEARCH_SEARCH: 'research_search',
+    RESEARCH_ENTITY_IMPRESSION: 'research_entity_impression',
+    RESEARCH_PROFILE_OPEN: 'research_profile_open',
+    RESEARCH_SOURCE_REVIEW: 'research_source_review',
+    RESEARCH_FILTER_CHANGE: 'research_filter_change',
+    RESEARCH_SAVE: 'research_save',
+    RESEARCH_COMPARE: 'research_compare',
+    RESEARCH_PLAN_UPDATE: 'research_plan_update',
+    RESEARCH_QUALIFIED_ACTION: 'research_qualified_action',
   },
-  RESEARCH_ENTITY_TYPES: ['profile', 'listing', 'fellowship'],
+  RESEARCH_ENTITY_TYPES: ['profile', 'listing', 'fellowship', 'research_entity'],
   AnalyticsEvent: {
     aggregate: mocks.analyticsAggregate,
     create: mocks.analyticsCreate,
     find: mocks.analyticsFind,
+    updateOne: mocks.analyticsUpdateOne,
   },
 }));
 
@@ -56,6 +67,7 @@ import {
   getUserAnalytics,
   getUserAnalyticsDrilldown,
   getSearchQualityAnalytics,
+  getFunnelAnalytics,
   logEvent,
   normalizeAnalyticsUserTypeBucket,
   shouldSuppressBetaAnalyticsEvent,
@@ -115,6 +127,39 @@ describe('search engagement attribution', () => {
     expect(JSON.stringify(lookup)).toContain('amount":30');
     expect(JSON.stringify(pipeline)).toContain('nextSearchAt');
     expect(JSON.stringify(pipeline)).toContain('$resultCount');
+  });
+});
+
+describe('claim-specific research funnel', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('keeps source inspection, route attempts, application opens, and outcomes separate', async () => {
+    mocks.analyticsAggregate.mockResolvedValueOnce([
+      { eventType: 'research_source_review', count: 7 },
+      {
+        eventType: 'research_qualified_action',
+        actionCategory: 'official_application',
+        count: 3,
+        uniqueNetids: ['student-1', 'student-2', 'student-3'],
+      },
+      {
+        eventType: 'research_qualified_action',
+        actionCategory: 'reviewed_route',
+        count: 2,
+        uniqueNetids: ['student-1', 'student-4'],
+      },
+      { eventType: 'outreach_outcome', count: 1 },
+    ]);
+
+    await expect(getFunnelAnalytics()).resolves.toMatchObject({
+      sourceInspections: 7,
+      qualifiedActions: 4,
+      officialRouteAttempts: 4,
+      applicationOpens: 3,
+      confirmedOutcomes: 1,
+    });
   });
 });
 
@@ -337,6 +382,28 @@ describe('logEvent', () => {
         listingId: '507f1f77bcf86cd799439011',
         fellowshipId: '507f1f77bcf86cd799439012',
       }),
+    );
+  });
+
+  it('uses an atomic per-actor upsert for retry-safe journey events', async () => {
+    mocks.analyticsUpdateOne.mockResolvedValue({ upsertedCount: 1 });
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.RESEARCH_SAVE,
+      netid: 'student123',
+      userType: 'undergraduate',
+      entityType: 'research_entity',
+      entityId: '507f1f77bcf86cd799439011',
+      metadata: { operation: 'save' },
+      dedupeKey: 'save:fixture-1',
+    });
+
+    expect(mocks.analyticsCreate).not.toHaveBeenCalled();
+    expect(mocks.analyticsUpdateOne).toHaveBeenCalledWith(
+      { netid: 'student123', dedupeKey: 'save:fixture-1' },
+      { $setOnInsert: expect.objectContaining({ eventType: 'research_save' }) },
+      { upsert: true },
     );
   });
 });

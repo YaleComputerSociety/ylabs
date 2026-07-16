@@ -5,12 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import LabDetail from '../labDetail';
 import axios from '../../utils/axios';
 import { LabDetailPayload } from '../../types/labDetail';
+import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
 
 vi.mock('../../utils/axios', () => ({
   default: {
     get: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
@@ -18,6 +20,7 @@ const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
+  post: ReturnType<typeof vi.fn>;
 };
 
 const DEFAULT_SLUG = 'sample-research-profile';
@@ -95,10 +98,96 @@ function renderLabDetail(payload: LabDetailPayload = basePayload) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetResearchAnalyticsDedupeForTests();
   localStorage.clear();
 });
 
 describe('LabDetail page', () => {
+  it('records one profile open after the canonical profile loads', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail();
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    await waitFor(() =>
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/analytics/research',
+        expect.objectContaining({
+          eventType: 'research_profile_open',
+          entityType: 'research_entity',
+          entityId: 'entity-1',
+          payload: { source: 'direct' },
+        }),
+        { withCredentials: true },
+      ),
+    );
+    expect(
+      mockedAxios.post.mock.calls.filter((call) => call[1]?.eventType === 'research_profile_open'),
+    ).toHaveLength(1);
+  });
+
+  it('keeps generic source review separate from a qualified action', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail();
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    fireEvent.click(screen.getByRole('link', { name: 'Open source' }));
+
+    await waitFor(() =>
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/analytics/research',
+        expect.objectContaining({
+          eventType: 'research_source_review',
+          payload: { sourceCategory: 'faculty_profile' },
+        }),
+        { withCredentials: true },
+      ),
+    );
+    expect(
+      mockedAxios.post.mock.calls.some(
+        (call) => call[1]?.eventType === 'research_qualified_action',
+      ),
+    ).toBe(false);
+  });
+
+  it('emits the server-owned category for a matching qualified route without its URL', async () => {
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        sourceUrls: [JOIN_PAGE_URL],
+        planningContext: {
+          category: 'official_application',
+          label: 'Official application',
+          url: JOIN_PAGE_URL,
+        },
+      },
+    });
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    const actionLink = screen
+      .getAllByRole('link', { name: 'Open source' })
+      .find((link) => link.getAttribute('href') === JOIN_PAGE_URL);
+    expect(actionLink).toBeTruthy();
+
+    fireEvent.click(actionLink!);
+
+    await waitFor(() =>
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/analytics/research',
+        expect.objectContaining({
+          eventType: 'research_qualified_action',
+          entityId: 'entity-1',
+          payload: { actionCategory: 'official_application' },
+        }),
+        { withCredentials: true },
+      ),
+    );
+    const actionCall = mockedAxios.post.mock.calls.find(
+      (call) => call[1]?.eventType === 'research_qualified_action',
+    );
+    expect(JSON.stringify(actionCall)).not.toContain(JOIN_PAGE_URL);
+  });
+
   it('shows an official-profile next step when no pathways or contact routes exist', async () => {
     renderLabDetail();
 

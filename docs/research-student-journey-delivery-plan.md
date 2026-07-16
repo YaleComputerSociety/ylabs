@@ -2,7 +2,7 @@
 
 Status: active delivery reference
 
-Last verified: 2026-07-13 against Beta commit `4316b21` and GitHub PRs `#156` through `#171`.
+Last verified: 2026-07-15 against Beta commit `0dbf9206` and the pending IM-01 implementation.
 
 This document is the durable execution map for the Yale Research student journey.
 It complements [`product-context.md`](./product-context.md), [`research-model.md`](./research-model.md), [`decisions.md`](./decisions.md), and [`tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
@@ -351,19 +351,19 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### IM-01 - Claim-Specific Journey Analytics
 
-- **Status:** Not started.
+- **Status:** Active.
 - **Depends on:** QA-01 server-owned qualifying signal and an accepted privacy-safe analytics taxonomy.
 - **Acceptance criteria:** invisible events distinguish search, research-profile open, source review, qualified action, filter-panel open/close, filter apply/remove, and save/unsave; only a qualified action counts as access conversion; faculty profile, website, ORCID, publication, filter, and save events never count as action; analytics does not delay navigation or alter UI; payloads exclude raw URLs, queries on downstream events, and free-text notes.
-- **Validation evidence:** current analytics distinguishes generic source, contact, pathway, save, and research-view events but canonical research browse/detail lacks the required complete taxonomy.
-  One existing program filter-navigation event is still classified too broadly as `ways_in_click`.
-- **PRs:** none.
+- **Validation evidence:** the pending IM-01 implementation adds the canonical contract in [`research-journey-analytics.md`](./research-journey-analytics.md), terminal search outcomes, canonical entity impressions and profile opens, source and filter events, first-class save/compare/plan events, server-requalified QA-01 actions, per-actor idempotency, and separately auditable admin journey metrics.
+  Legacy generic events remain for older surfaces but do not count as access conversion.
+- **PRs:** [#198](https://github.com/YaleComputerSociety/ylabs/pull/198) is pending against Beta.
 
 #### IM-02 - Search Quality, Zero Results, And Funnel Integrity
 
 - **Status:** Active.
 - **Depends on:** IM-01 and stable entity-first search result semantics.
 - **Acceptance criteria:** one submitted search records one results, zero-results, or error outcome; result counts are bucketed; action attribution stops at the next search; dashboards keep source review separate from qualified action; monitoring detects relevance degradation without storing query text on action events.
-- **Validation evidence:** existing search-quality analytics includes zero-result and engagement concepts, but canonical entity-first client emissions and the new conversion boundary are incomplete.
+- **Validation evidence:** the pending IM-01 implementation emits one idempotent terminal outcome per canonical search, uses bounded result-count buckets without raw query text, and keeps source inspections, qualified official-route attempts, application opens, and reported outcomes distinct in the admin funnel.
 - **PRs:** [#171](https://github.com/YaleComputerSociety/ylabs/pull/171) stabilizes the result model that measurement must follow.
 
 ## Delivery Phases
@@ -445,7 +445,7 @@ Its evidence is therefore current Beta source, routes, tests, and merged history
 | Discovery filters are fully adaptive and progressively disclosed.                                      | **Pending merge.** The EF-02 change gives Research its own compact desktop disclosure and mobile sheet, uses only positive query-scoped facet counts, preserves selected values without invented counts, and keeps base search usable when facet metadata fails. | Keep EF-02 Active until the change merges into Beta; keep the documented-way-in filter governed separately by EF-03.                                            |
 | A server-qualified sparse planning summary exists.                                                     | **Not supported.** No bounded claim-specific summary or useful-state distribution exists.                                                                                        | Keep EF-03 Not started and dependent on QA-01.                                                                                                                  |
 | Research homes can be saved independently of pathways.                                                 | **Supported.** Saves and private plan details are keyed by canonical ResearchEntity ID, including entities without an indexed pathway.                                           | Keep CP-05 / FR-45 Complete and preserve migration-continuity coverage as FR-17 and FR-24 build on entity identity.                                             |
-| Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Not supported.** The current taxonomy is broader and canonical browse/detail lacks the complete invisible journey emissions.                                                   | Keep IM-01 Not started and IM-02 Active until QA-01 stabilizes conversion meaning.                                                                              |
+| Canonical research analytics distinguish search, profile, source, filters, save, and qualified action. | **Supported in the pending IM-01 implementation.** The server owns the allowlisted taxonomy, entity validation, action re-qualification, and per-actor idempotency boundary.     | Keep IM-01 and IM-02 Active until the implementation merges into Beta; never reinterpret legacy generic events as conversion.                                   |
 | Publishing a target number of pathways establishes trustworthy access coverage.                        | **Disputed.** Quantity does not establish claim or route quality and can reward false positives.                                                                                 | The evidence and route review rollout uses claim precision, false-positive rate, rejection reasons, and reviewed-action quality instead.                        |
 | Historical persona findings describe current Beta behavior.                                            | **Validation pending.** Several cited defects were changed by merged PRs, while the referenced transcript and fresh browser replay were unavailable.                             | Use historical observations as discovery inputs only; require current code, test, data, or CAS-preserving browser evidence before changing status or rationale. |
 

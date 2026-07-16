@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-07-04
+Last updated: 2026-07-15
 
 This is the single task source of truth for Yale Research.
 Keep it operational and compact.
@@ -29,7 +29,7 @@ Active themes:
 
 - Make public research discovery reliable when Meilisearch or hybrid search is degraded.
 - Decide and implement the logged-out read-only discovery posture for `/research`, `/research/:slug`, and `/about`.
-- Add launch observability: client error boundary, server/client error tracking, and analytics for canonical research actions.
+- Validate launch observability across the client error boundary, server/client error tracking, and claim-specific research journey analytics.
 - Improve evidence trust: dedupe repeated evidence, distinguish synthesized fallback from observed access evidence, and show observed/freshness dates.
 - Keep the operator gate flow compact and artifact-driven without committing transient reports.
 - Reduce maintenance surface by deleting obsolete docs, screenshots, proposals, dead routes, dead indexes, and unused dependencies.
@@ -42,7 +42,6 @@ Active themes:
 | P0 | Make `/research` degrade instead of failing closed on Meilisearch/hybrid errors. | Killing or misconfiguring Meilisearch locally leaves browse/search usable through a degraded path or shows an honest failure state, not "no matches." |
 | P0 | Decide logged-out discovery. | Logged-out users can read public research/about pages, or `docs/decisions.md` records why Yale-only access is intentional for the current phase. |
 | P0 | Add error tracking and a top-level React error boundary. | A client render error and a server route error are captured with release/environment context, and the SPA shows a recovery UI instead of a white screen. |
-| P1 | Add analytics for canonical research behavior. | Research entity views, research-plan saves, planning-context clicks, best-next-step clicks, and source-link clicks flow to analytics. |
 | P1 | Fix evidence trust UI. | Duplicate evidence chips are removed, synthesized access fallback is visually distinct from source-observed evidence, and evidence dates/freshness are visible. |
 | P1 | Add a faculty/student correction loop. | Detail pages offer a claim/correction/report path that feeds an admin review queue with authenticated reporter context. |
 | P1 | Add URL-backed search state and evidence facets. | Query and filters survive reload/share/back navigation, and facets use evidence/product-model concepts instead of legacy acceptance labels. |

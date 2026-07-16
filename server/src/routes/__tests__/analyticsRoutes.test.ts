@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   getSearchQualityAnalytics: vi.fn(),
   getUserAnalytics: vi.fn(),
   getUserAnalyticsDrilldown: vi.fn(),
+  emitResearchEvent: vi.fn(),
+  researchEntityExists: vi.fn(),
 }));
 
 vi.mock('../../models/analytics', async (importOriginal) => ({
@@ -27,6 +29,12 @@ vi.mock('../../services/analyticsService', async (importOriginal) => ({
   getSearchQualityAnalytics: mocks.getSearchQualityAnalytics,
   getUserAnalytics: mocks.getUserAnalytics,
   getUserAnalyticsDrilldown: mocks.getUserAnalyticsDrilldown,
+}));
+
+vi.mock('../../services/researchAnalytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/researchAnalytics')>()),
+  emitResearchEvent: mocks.emitResearchEvent,
+  researchEntityExists: mocks.researchEntityExists,
 }));
 
 import router from '../analytics';
@@ -104,12 +112,53 @@ describe('analytics routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateAnalyticsCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('accepts an entity-free canonical search outcome and forwards its idempotency key', async () => {
+    mocks.emitResearchEvent.mockResolvedValue(true);
+
+    const res = await invokeRouteHandler('/research', {
+      body: {
+        eventType: 'research_search',
+        payload: {
+          outcome: 'results',
+          resultCountBucket: '6-20',
+          searchKind: 'query',
+          filterCountBucket: '0',
+        },
+        dedupeKey: 'search:fixture-1',
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(mocks.researchEntityExists).not.toHaveBeenCalled();
+    expect(mocks.emitResearchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'research_search',
+        dedupeKey: 'search:fixture-1',
+      }),
+    );
+  });
+
+  it('requires a real canonical entity for entity-scoped journey events', async () => {
+    mocks.researchEntityExists.mockResolvedValue(false);
+
+    const res = await invokeRouteHandler('/research', {
+      body: {
+        eventType: 'research_source_review',
+        entityType: 'research_entity',
+        entityId: '507f1f77bcf86cd799439011',
+        payload: { sourceCategory: 'publication' },
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
   });
 
   it('does not leak internal messages from analytics helper-backed route failures', async () => {

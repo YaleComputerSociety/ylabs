@@ -13,7 +13,7 @@
  */
 import { useContext, useEffect, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
@@ -62,6 +62,11 @@ import {
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import UserContext from '../contexts/UserContext';
 import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
+import {
+  createResearchAnalyticsInteractionId,
+  trackResearchEvent,
+  trackResearchEventOnce,
+} from '../utils/researchAnalytics';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
@@ -961,6 +966,7 @@ const hasSpecificWaysToApproach = (
 const LabDetail = () => {
   const { user } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
+  const location = useLocation();
   const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
     createInitialLabDetailState(),
   );
@@ -1005,6 +1011,17 @@ const LabDetail = () => {
       fetchAbortRef.current?.abort();
     };
   }, [slug]);
+
+  useEffect(() => {
+    const entity = payload?.researchEntity || payload?.group;
+    if (!entity?._id) return;
+    void trackResearchEventOnce(`profile:${location.key}:${entity._id}`, {
+      eventType: 'research_profile_open',
+      entityType: 'research_entity',
+      entityId: entity._id,
+      payload: { source: 'direct' },
+    });
+  }, [location.key, payload]);
 
   if (loading && !payload) {
     return (
@@ -1120,6 +1137,47 @@ const LabDetail = () => {
     ['professor', 'faculty', 'staff'].includes(user?.userType || '') &&
     activeListings.length > 0;
 
+  const handleDetailLinkOpen = (event: React.MouseEvent<HTMLElement>) => {
+    const anchor = (event.target as HTMLElement).closest('a');
+    const sourceUrl = safeHttpUrl(anchor?.getAttribute('href'));
+    if (!sourceUrl) return;
+    const planningContext = group.planningContext;
+    const isQualifiedAction =
+      planningContext && normalizeSourceUrl(planningContext.url) === normalizeSourceUrl(sourceUrl);
+    if (isQualifiedAction) {
+      void trackResearchEvent({
+        eventType: 'research_qualified_action',
+        entityType: 'research_entity',
+        entityId: group._id,
+        payload: { actionCategory: planningContext.category },
+        dedupeKey: createResearchAnalyticsInteractionId('action'),
+      });
+      return;
+    }
+
+    const sourceText = `${anchor?.textContent || ''} ${sourceUrl}`.toLowerCase();
+    const sourceCategory =
+      sourceText.includes('publication') || sourceText.includes('doi.org')
+        ? 'publication'
+        : sourceText.includes('orcid')
+          ? 'orcid'
+          : sourceText.includes('faculty') || sourceText.includes('profile')
+            ? 'faculty_profile'
+            : sourceText.includes('website') ||
+                (Boolean(group.websiteUrl) && sourceText.includes(group.websiteUrl.toLowerCase()))
+              ? 'entity_website'
+              : sourceText.includes('evidence') || sourceText.includes('application')
+                ? 'evidence'
+                : 'other';
+    void trackResearchEvent({
+      eventType: 'research_source_review',
+      entityType: 'research_entity',
+      entityId: group._id,
+      payload: { sourceCategory },
+      dedupeKey: createResearchAnalyticsInteractionId('source'),
+    });
+  };
+
   const handleToggleSavedResearchPlan = (entityId: string, shouldSave: boolean) => {
     setSavedResearchPlanFavorite(entityId, shouldSave);
     if (shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
@@ -1129,7 +1187,10 @@ const LabDetail = () => {
   };
 
   return (
-    <div className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:py-8 lg:px-8">
+    <div
+      className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:py-8 lg:px-8"
+      onClickCapture={handleDetailLinkOpen}
+    >
       <div className="grid grid-cols-1 gap-6 lg:gap-8">
         <div className="lg:mx-auto lg:w-full lg:max-w-5xl space-y-6 sm:space-y-8">
           {showResearchPlanSavedCallout && (
