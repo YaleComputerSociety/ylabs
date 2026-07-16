@@ -3,6 +3,7 @@ import { isCancel } from 'axios';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
+import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
 import LabPapersList from '../components/labs/LabPapersList';
 import UserContext from '../contexts/UserContext';
@@ -116,7 +117,6 @@ interface ResearchPageSnapshot {
   trustTierFilters: ResearchTrustTierFilter[];
   selectedSchool: string;
   selectedDepartment: string;
-  requireUndergradEvidence: boolean;
   facetDistribution: Record<string, Record<string, number>>;
   groupedResults: GroupedResearchResults;
   searchResultResearchEntities: ResearchEntity[];
@@ -129,6 +129,7 @@ interface ResearchPageSnapshot {
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
   searchError: string;
+  hasFacetError: boolean;
   defaultSearchError: string;
 }
 
@@ -350,11 +351,6 @@ const Research = () => {
   const [selectedDepartment, setSelectedDepartment] = useState(
     () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
   );
-  const [requireUndergradEvidence, setRequireUndergradEvidence] = useState(
-    () =>
-      restoredSnapshotRef.current?.requireUndergradEvidence ??
-      searchParams.get('undergrad') === '1',
-  );
   const [facetDistribution, setFacetDistribution] = useState<
     Record<string, Record<string, number>>
   >(() => restoredSnapshotRef.current?.facetDistribution ?? {});
@@ -391,6 +387,9 @@ const Research = () => {
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(
     () => restoredSnapshotRef.current?.searchError ?? '',
+  );
+  const [hasFacetError, setHasFacetError] = useState(
+    () => restoredSnapshotRef.current?.hasFacetError ?? false,
   );
   const [defaultSearchError, setDefaultSearchError] = useState(
     () => restoredSnapshotRef.current?.defaultSearchError ?? '',
@@ -430,7 +429,6 @@ const Research = () => {
       trustTiers?: ResearchTrustTierFilter[];
       school?: string;
       department?: string;
-      requireUndergradEvidence?: boolean;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -441,7 +439,6 @@ const Research = () => {
     if (departmentLabel) params.set('dept', departmentLabel);
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
-    if (nextState.requireUndergradEvidence) params.set('undergrad', '1');
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -576,8 +573,10 @@ const Research = () => {
     setQuery(trimmed);
     setSubmittedQuery(resultQueryLabel);
     setDepartmentSearch(options.departmentSearch ?? null);
+    setFacetDistribution({});
     setSearchLoading(true);
     setSearchError('');
+    setHasFacetError(false);
     setGroupedResults(emptyGroupedResults(resultQueryLabel));
     if (options.syncUrl !== false) {
       writeResearchSearchParams(
@@ -586,7 +585,6 @@ const Research = () => {
           departmentLabel: options.departmentSearch?.label,
           school: filters.school?.[0],
           department: filters.departments?.[0],
-          requireUndergradEvidence: filters.acceptanceLevel === 'verified-or-likely',
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -612,6 +610,7 @@ const Research = () => {
 
       const researchEntities = researchEntitiesPage.researchEntities;
       setSearchError('');
+      setHasFacetError(false);
       setSearchResultResearchEntities(researchEntities);
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setFacetDistribution(researchEntitiesPage.facetDistribution);
@@ -634,6 +633,7 @@ const Research = () => {
         setSearchError(
           'Live search metadata is unavailable right now. Try another topic or check back soon.',
         );
+        setHasFacetError(true);
         setSearchExhausted(true);
       }
     } finally {
@@ -707,11 +707,9 @@ const Research = () => {
   const studentSearchFilters = (
     school = selectedSchool,
     department = selectedDepartment,
-    undergradEvidence = requireUndergradEvidence,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
-    ...(undergradEvidence ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -731,7 +729,6 @@ const Research = () => {
     setDepartmentSearch(null);
     setSelectedSchool('');
     setSelectedDepartment('');
-    setRequireUndergradEvidence(false);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -740,6 +737,7 @@ const Research = () => {
     setSearchExhausted(true);
     setActiveSearchRequest(null);
     setSearchError('');
+    setHasFacetError(false);
     setSearchLoading(false);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
@@ -774,11 +772,16 @@ const Research = () => {
       pendingSearchSourceParamsRef.current = null;
       pendingSearchSourceLocationKeyRef.current = null;
     }
+    if (searchParams.has('undergrad')) {
+      const canonicalParams = new URLSearchParams(searchParams);
+      canonicalParams.delete('undergrad');
+      setSearchParams(canonicalParams, { replace: true });
+      return;
+    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
-    const urlRequiresUndergradEvidence = searchParams.get('undergrad') === '1';
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -821,15 +824,9 @@ const Research = () => {
       setSelectedDepartment(urlDepartment);
       return;
     }
-    if (requireUndergradEvidence !== urlRequiresUndergradEvidence) {
-      setRequireUndergradEvidence(urlRequiresUndergradEvidence);
-      return;
-    }
-
     const studentFilters: ResearchSearchFilters = {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
-      ...(urlRequiresUndergradEvidence ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel
@@ -899,6 +896,7 @@ const Research = () => {
     setSearchExhausted(true);
     setActiveSearchRequest(null);
     setSearchError('');
+    setHasFacetError(false);
     setSearchLoading(false);
     setDefaultResearchEntities([]);
     setDefaultSearchTotal(0);
@@ -907,6 +905,7 @@ const Research = () => {
     void runDefaultResearchHomeSearchRef.current(1);
   }, [
     searchParams,
+    setSearchParams,
     location.key,
     pageSnapshotKey,
     isAdmin,
@@ -915,7 +914,6 @@ const Research = () => {
     trustTierFilters,
     selectedSchool,
     selectedDepartment,
-    requireUndergradEvidence,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
@@ -935,7 +933,6 @@ const Research = () => {
       trustTierFilters,
       selectedSchool,
       selectedDepartment,
-      requireUndergradEvidence,
       facetDistribution,
       groupedResults,
       searchResultResearchEntities,
@@ -948,6 +945,7 @@ const Research = () => {
       defaultSearchTotal,
       defaultSearchExhausted,
       searchError,
+      hasFacetError,
       defaultSearchError,
     };
   }, [
@@ -961,7 +959,6 @@ const Research = () => {
     trustTierFilters,
     selectedSchool,
     selectedDepartment,
-    requireUndergradEvidence,
     facetDistribution,
     groupedResults,
     searchResultResearchEntities,
@@ -974,6 +971,7 @@ const Research = () => {
     defaultSearchTotal,
     defaultSearchExhausted,
     searchError,
+    hasFacetError,
     defaultSearchError,
   ]);
 
@@ -1012,40 +1010,19 @@ const Research = () => {
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
   });
-  const hasStudentFacetSelection = Boolean(
-    selectedSchool || selectedDepartment || requireUndergradEvidence,
-  );
+  const hasStudentFacetSelection = Boolean(selectedSchool || selectedDepartment);
   const searchDisabled = searchLoading || (query.trim().length === 0 && !hasStudentFacetSelection);
   const searchHelpText = query.trim()
     ? 'Press Enter or Search to see matching research homes.'
     : hasStudentFacetSelection
       ? 'Search with the selected filters.'
       : 'Enter a topic or name to enable Search.';
-  const schoolOptions = useMemo(
-    () =>
-      Array.from(
-        new Set([
-          ...Object.keys(facetDistribution.school || {}),
-          ...(selectedSchool ? [selectedSchool] : []),
-        ]),
-      ).sort((a, b) => a.localeCompare(b)),
-    [facetDistribution.school, selectedSchool],
-  );
-  const departmentOptions = useMemo(
-    () =>
-      Array.from(
-        new Set([
-          ...Object.keys(facetDistribution.departments || {}),
-          ...(selectedDepartment ? [selectedDepartment] : []),
-        ]),
-      ).sort((a, b) => a.localeCompare(b)),
-    [facetDistribution.departments, selectedDepartment],
-  );
-  const applyStudentFacets = (school: string, department: string, undergradEvidence: boolean) => {
+  const departmentFacetLabel = (department: string) =>
+    getUniqueDepartmentLabels([department], departments)[0] || department;
+  const applyStudentFacets = (school: string, department: string) => {
     setSelectedSchool(school);
     setSelectedDepartment(department);
-    setRequireUndergradEvidence(undergradEvidence);
-    const filters = studentSearchFilters(school, department, undergradEvidence);
+    const filters = studentSearchFilters(school, department);
     if (!query.trim() && !hasStructuredFilters(filters)) {
       resetSearch();
       return;
@@ -1335,135 +1312,19 @@ const Research = () => {
                   </div>
                 </div>
 
-                {(schoolOptions.length > 1 ||
-                  departmentOptions.length > 1 ||
-                  hasStudentFacetSelection) && (
-                  <fieldset className="mt-3 border-0 p-0">
-                    <legend className="sr-only">Narrow research results</legend>
-                    <div className="grid gap-4 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-end">
-                      {(schoolOptions.length > 1 || selectedSchool) && (
-                        <label className="block text-sm font-medium text-slate-800">
-                          School
-                          <select
-                            aria-label="Filter by school"
-                            value={selectedSchool}
-                            onChange={(event) =>
-                              applyStudentFacets(
-                                event.target.value,
-                                selectedDepartment,
-                                requireUndergradEvidence,
-                              )
-                            }
-                            className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                          >
-                            <option value="">All schools</option>
-                            {schoolOptions.map((school) => (
-                              <option key={school} value={school}>
-                                {school} ({facetDistribution.school?.[school] ?? searchTotal})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {(departmentOptions.length > 1 || selectedDepartment) && (
-                        <label className="block text-sm font-medium text-slate-800">
-                          Department
-                          <select
-                            aria-label="Filter by department"
-                            value={selectedDepartment}
-                            onChange={(event) =>
-                              applyStudentFacets(
-                                selectedSchool,
-                                event.target.value,
-                                requireUndergradEvidence,
-                              )
-                            }
-                            className="mt-1 min-h-11 w-full rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                          >
-                            <option value="">All departments</option>
-                            {departmentOptions.map((department) => (
-                              <option key={department} value={department}>
-                                {getUniqueDepartmentLabels([department], departments)[0] ||
-                                  department}{' '}
-                                ({facetDistribution.departments?.[department] ?? searchTotal})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {requireUndergradEvidence && (
-                        <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-white px-3 py-2 text-sm font-medium text-slate-800">
-                          <input
-                            type="checkbox"
-                            checked={requireUndergradEvidence}
-                            onChange={(event) =>
-                              applyStudentFacets(
-                                selectedSchool,
-                                selectedDepartment,
-                                event.target.checked,
-                              )
-                            }
-                            className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-                          />
-                          Undergraduate participation documented
-                        </label>
-                      )}
-                      {hasStudentFacetSelection && (
-                        <button
-                          type="button"
-                          onClick={() => applyStudentFacets('', '', false)}
-                          className="min-h-11 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                        >
-                          Clear filters
-                        </button>
-                      )}
-                    </div>
-                  </fieldset>
-                )}
-
-                {hasStudentFacetSelection && (
-                  <div className="mt-3 flex flex-wrap gap-2" aria-label="Active research filters">
-                    {selectedSchool && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          applyStudentFacets('', selectedDepartment, requireUndergradEvidence)
-                        }
-                        aria-label={`Remove School: ${selectedSchool}`}
-                        className="rounded-md border px-3 py-2 text-sm"
-                      >
-                        School: {selectedSchool} ×
-                      </button>
-                    )}
-                    {selectedDepartment && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          applyStudentFacets(selectedSchool, '', requireUndergradEvidence)
-                        }
-                        aria-label={`Remove Department: ${selectedDepartment}`}
-                        className="rounded-md border px-3 py-2 text-sm"
-                      >
-                        Department:{' '}
-                        {getUniqueDepartmentLabels([selectedDepartment], departments)[0] ||
-                          selectedDepartment}{' '}
-                        ×
-                      </button>
-                    )}
-                    {requireUndergradEvidence && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          applyStudentFacets(selectedSchool, selectedDepartment, false)
-                        }
-                        aria-label="Remove Undergraduate participation documented"
-                        className="rounded-md border px-3 py-2 text-sm"
-                      >
-                        Undergraduate participation documented ×
-                      </button>
-                    )}
-                  </div>
-                )}
+                <ResearchFilterDisclosure
+                  facetDistribution={facetDistribution}
+                  selectedSchool={selectedSchool}
+                  selectedDepartment={selectedDepartment}
+                  isApplying={searchLoading}
+                  hasFacetError={hasFacetError}
+                  departmentLabel={departmentFacetLabel}
+                  onSchoolChange={(school) => applyStudentFacets(school, selectedDepartment)}
+                  onDepartmentChange={(department) =>
+                    applyStudentFacets(selectedSchool, department)
+                  }
+                  onClearAll={() => applyStudentFacets('', '')}
+                />
 
                 {searchError && (
                   <div
