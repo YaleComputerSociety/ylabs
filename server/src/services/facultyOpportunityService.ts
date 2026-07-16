@@ -58,6 +58,7 @@ export interface FacultyOpportunityServiceDeps {
   opportunityModel?: mongoose.Model<any>;
   pathwayModel?: mongoose.Model<any>;
   syncPathway?: (pathwayId: string) => Promise<unknown>;
+  transaction?: <T>(work: (session: mongoose.ClientSession) => Promise<T>) => Promise<T>;
   now?: () => Date;
 }
 
@@ -147,7 +148,13 @@ const parseDeadline = (value: unknown, errors: FacultyOpportunityFieldErrors): D
     errors.deadline = 'Enter a valid deadline';
     return undefined;
   }
-  const deadline = value instanceof Date ? new Date(value) : new Date(value.trim());
+  const text = typeof value === 'string' ? value.trim() : '';
+  const deadline =
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(text)
+      ? new Date(`${text}T23:59:59.999Z`)
+      : value instanceof Date
+        ? new Date(value)
+        : new Date(text);
   if (Number.isNaN(deadline.getTime())) {
     errors.deadline = 'Enter a valid deadline';
     return undefined;
@@ -441,6 +448,12 @@ async function runOptionalPathwaySync(
     console.error('Faculty opportunity pathway sync failed:', sanitizeLogValue(error));
   });
 }
+
+const runTransaction = <T>(
+  deps: FacultyOpportunityServiceDeps,
+  work: (session: mongoose.ClientSession) => Promise<T>,
+): Promise<T> =>
+  (deps.transaction || ((callback) => mongoose.connection.transaction(callback)))(work);
 
 function pathwayFields(input: ValidatedFacultyOpportunity, archived = false) {
   return {
@@ -748,43 +761,47 @@ export async function updateFacultyOpportunityDraft(
   const { opportunityModel, pathwayModel } = modelDeps(deps);
   const now = nowFor(deps);
   const nextRevision = expectedRevision + 1;
-  const updated = await opportunityModel
-    .findOneAndUpdate(
-      { _id: current._id, createdByUserId: user._id, revision: expectedRevision },
-      {
-        $set: {
-          ...opportunityContent(validated),
-          submissionStatus: 'DRAFT',
-          submittedAt: null,
-          'review.status': 'unreviewed',
-          'review.reviewedByUserId': null,
-          'review.reviewedAt': null,
-          'review.note': '',
-          'review.lockedFields': [],
-        },
-        $inc: { revision: 1 },
-        $push: {
-          auditHistory: {
-            $each: [auditEntry('DRAFT_UPDATED', user._id, nextRevision, now)],
-            $slice: -MAX_AUDIT_HISTORY,
+  const updated = await runTransaction(deps, async (session) => {
+    const result = await opportunityModel
+      .findOneAndUpdate(
+        { _id: current._id, createdByUserId: user._id, revision: expectedRevision },
+        {
+          $set: {
+            ...opportunityContent(validated),
+            submissionStatus: 'DRAFT',
+            submittedAt: null,
+            'review.status': 'unreviewed',
+            'review.reviewedByUserId': null,
+            'review.reviewedAt': null,
+            'review.note': '',
+            'review.lockedFields': [],
+          },
+          $inc: { revision: 1 },
+          $push: {
+            auditHistory: {
+              $each: [auditEntry('DRAFT_UPDATED', user._id, nextRevision, now)],
+              $slice: -MAX_AUDIT_HISTORY,
+            },
           },
         },
-      },
-      { new: true, runValidators: true },
-    )
-    .lean();
-  if (!updated) {
-    throw new FacultyOpportunityError(
-      409,
-      'STALE_REVISION',
-      'This draft changed in another session. Reload it before saving again',
+        { new: true, runValidators: true, session },
+      )
+      .lean();
+    if (!result) {
+      throw new FacultyOpportunityError(
+        409,
+        'STALE_REVISION',
+        'This draft changed in another session. Reload it before saving again',
+      );
+    }
+    const pathwayResult = await pathwayModel.updateOne(
+      { _id: current.entryPathwayId },
+      { $set: pathwayFields(validated, true) },
+      { runValidators: true, session },
     );
-  }
-  await pathwayModel.updateOne(
-    { _id: current.entryPathwayId },
-    { $set: pathwayFields(validated, true) },
-    { runValidators: true },
-  );
+    if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
+    return result;
+  });
   await runOptionalPathwaySync(idString(current.entryPathwayId), deps);
   return facultyOpportunityDto(updated, now);
 }
@@ -818,43 +835,47 @@ export async function submitFacultyOpportunity(
   const now = nowFor(deps);
   const validated = validateFacultyOpportunityInput(current, { requireComplete: true, now });
   const { opportunityModel, pathwayModel } = modelDeps(deps);
-  await pathwayModel.updateOne(
-    { _id: current.entryPathwayId },
-    { $set: pathwayFields(validated) },
-    { runValidators: true },
-  );
   const nextRevision = expectedRevision + 1;
-  const submitted = await opportunityModel
-    .findOneAndUpdate(
-      { _id: current._id, createdByUserId: user._id, revision: expectedRevision },
-      {
-        $set: {
-          submissionStatus: 'PENDING_REVIEW',
-          submittedAt: now,
-          'review.status': 'unreviewed',
-          'review.reviewedByUserId': null,
-          'review.reviewedAt': null,
-          'review.note': '',
-          'review.lockedFields': [],
-        },
-        $inc: { revision: 1 },
-        $push: {
-          auditHistory: {
-            $each: [auditEntry('SUBMITTED', user._id, nextRevision, now)],
-            $slice: -MAX_AUDIT_HISTORY,
+  const submitted = await runTransaction(deps, async (session) => {
+    const result = await opportunityModel
+      .findOneAndUpdate(
+        { _id: current._id, createdByUserId: user._id, revision: expectedRevision },
+        {
+          $set: {
+            submissionStatus: 'PENDING_REVIEW',
+            submittedAt: now,
+            'review.status': 'unreviewed',
+            'review.reviewedByUserId': null,
+            'review.reviewedAt': null,
+            'review.note': '',
+            'review.lockedFields': [],
+          },
+          $inc: { revision: 1 },
+          $push: {
+            auditHistory: {
+              $each: [auditEntry('SUBMITTED', user._id, nextRevision, now)],
+              $slice: -MAX_AUDIT_HISTORY,
+            },
           },
         },
-      },
-      { new: true, runValidators: true },
-    )
-    .lean();
-  if (!submitted) {
-    throw new FacultyOpportunityError(
-      409,
-      'STALE_REVISION',
-      'This draft changed in another session. Reload it before submitting',
+        { new: true, runValidators: true, session },
+      )
+      .lean();
+    if (!result) {
+      throw new FacultyOpportunityError(
+        409,
+        'STALE_REVISION',
+        'This draft changed in another session. Reload it before submitting',
+      );
+    }
+    const pathwayResult = await pathwayModel.updateOne(
+      { _id: current.entryPathwayId },
+      { $set: pathwayFields(validated) },
+      { runValidators: true, session },
     );
-  }
+    if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
+    return result;
+  });
   await runOptionalPathwaySync(idString(current.entryPathwayId), deps);
   return facultyOpportunityDto(submitted, now);
 }
@@ -878,45 +899,49 @@ async function setInactiveFacultyOpportunity(
   const expectedRevision = normalizeExpectedRevision(expectedRevisionValue);
   const now = nowFor(deps);
   const { opportunityModel, pathwayModel } = modelDeps(deps);
-  await pathwayModel.updateOne(
-    { _id: current.entryPathwayId },
-    {
-      $set: {
-        status: 'NOT_CURRENTLY_AVAILABLE',
-        bestNextStep: 'This posted opportunity is not currently available.',
-        archived: isArchive,
-      },
-    },
-    { runValidators: true },
-  );
   const nextRevision = expectedRevision + 1;
-  const updated = await opportunityModel
-    .findOneAndUpdate(
-      { _id: current._id, createdByUserId: user._id, revision: expectedRevision },
-      {
-        $set: {
-          status: action,
-          archived: isArchive,
-          ...(isArchive ? { archivedAt: now } : { closedAt: now }),
-        },
-        $inc: { revision: 1 },
-        $push: {
-          auditHistory: {
-            $each: [auditEntry(action, user._id, nextRevision, now)],
-            $slice: -MAX_AUDIT_HISTORY,
+  const updated = await runTransaction(deps, async (session) => {
+    const result = await opportunityModel
+      .findOneAndUpdate(
+        { _id: current._id, createdByUserId: user._id, revision: expectedRevision },
+        {
+          $set: {
+            status: action,
+            archived: isArchive,
+            ...(isArchive ? { archivedAt: now } : { closedAt: now }),
+          },
+          $inc: { revision: 1 },
+          $push: {
+            auditHistory: {
+              $each: [auditEntry(action, user._id, nextRevision, now)],
+              $slice: -MAX_AUDIT_HISTORY,
+            },
           },
         },
+        { new: true, runValidators: true, session },
+      )
+      .lean();
+    if (!result) {
+      throw new FacultyOpportunityError(
+        409,
+        'STALE_REVISION',
+        'This opportunity changed in another session. Reload it before trying again',
+      );
+    }
+    const pathwayResult = await pathwayModel.updateOne(
+      { _id: current.entryPathwayId },
+      {
+        $set: {
+          status: 'NOT_CURRENTLY_AVAILABLE',
+          bestNextStep: 'This posted opportunity is not currently available.',
+          archived: isArchive,
+        },
       },
-      { new: true, runValidators: true },
-    )
-    .lean();
-  if (!updated) {
-    throw new FacultyOpportunityError(
-      409,
-      'STALE_REVISION',
-      'This opportunity changed in another session. Reload it before trying again',
+      { runValidators: true, session },
     );
-  }
+    if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
+    return result;
+  });
   await runOptionalPathwaySync(idString(current.entryPathwayId), deps);
   return facultyOpportunityDto(updated, now);
 }

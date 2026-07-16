@@ -629,9 +629,20 @@ export async function updateAccessReviewRecordReview(input: {
     update.archived = true;
   }
 
-  const updated = await model
-    .findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true })
-    .lean();
+  const expectedFacultyState = isFacultyModerationDecision
+    ? {
+        submissionStatus: facultyOpportunity?.submissionStatus,
+        'review.status': facultyOpportunity?.review?.status,
+      }
+    : {};
+  const updateQuery = isFacultyModerationDecision
+    ? model.findOneAndUpdate(
+        { _id: id, ...expectedFacultyState },
+        { $set: update },
+        { new: true, runValidators: true },
+      )
+    : model.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true });
+  const updated = await updateQuery.lean();
 
   if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {
     const reviewUpdate = Object.fromEntries(

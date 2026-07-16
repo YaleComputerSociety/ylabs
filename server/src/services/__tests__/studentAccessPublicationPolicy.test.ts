@@ -6,7 +6,7 @@ import {
 } from '../studentAccessPublicationPolicy';
 
 describe('student access publication policy', () => {
-  it('publishes only current, sufficiently evidenced pathways with a public source', () => {
+  it('publishes legacy pathways without requiring retroactive review approval', () => {
     expect(
       isStudentPublishablePathway({
         status: 'ACTIVE',
@@ -21,6 +21,16 @@ describe('student access publication policy', () => {
         status: 'ACTIVE',
         evidenceStrength: 'MODERATE',
         confidence: 0.7,
+        sourceUrls: ['https://research.yale.edu/pathway'],
+        review: { status: 'unreviewed' },
+      }),
+    ).toBe(true);
+    expect(
+      isStudentPublishablePathway({
+        derivationKey: 'faculty-opportunity:64f111111111111111111111',
+        status: 'ACTIVE',
+        evidenceStrength: 'DIRECT',
+        confidence: 1,
         sourceUrls: ['https://research.yale.edu/pathway'],
         review: { status: 'unreviewed' },
       }),
@@ -46,8 +56,8 @@ describe('student access publication policy', () => {
   it('keeps opportunity-managed pathways out of generic public pathway queries', () => {
     expect(studentPathwayMongoMatch()).toMatchObject({
       derivationKey: { $not: /^faculty-opportunity:/ },
-      'review.status': 'approved',
     });
+    expect(studentPathwayMongoMatch()).not.toHaveProperty('review.status');
   });
 
   it('requires an admin-approved public route and safe independent source', () => {

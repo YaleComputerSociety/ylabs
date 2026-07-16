@@ -14,8 +14,13 @@ const hasPublicUrl = (values: unknown): boolean =>
     }
   });
 
+const isFacultyOpportunityPathway = (pathway: Record<string, unknown>): boolean =>
+  typeof pathway.derivationKey === 'string' &&
+  pathway.derivationKey.startsWith('faculty-opportunity:');
+
 export const isStudentPublishablePathway = (pathway: Record<string, unknown>): boolean =>
-  (pathway.review as Record<string, unknown> | undefined)?.status === 'approved' &&
+  (!isFacultyOpportunityPathway(pathway) ||
+    (pathway.review as Record<string, unknown> | undefined)?.status === 'approved') &&
   STUDENT_PATHWAY_STATUSES.includes(pathway.status as any) &&
   STUDENT_PATHWAY_EVIDENCE_STRENGTHS.includes(pathway.evidenceStrength as any) &&
   typeof pathway.confidence === 'number' &&
@@ -24,7 +29,6 @@ export const isStudentPublishablePathway = (pathway: Record<string, unknown>): b
 
 export const studentPathwayMongoMatch = (): Record<string, unknown> => ({
   derivationKey: { $not: /^faculty-opportunity:/ },
-  'review.status': 'approved',
   status: { $in: [...STUDENT_PATHWAY_STATUSES] },
   evidenceStrength: { $in: [...STUDENT_PATHWAY_EVIDENCE_STRENGTHS] },
   confidence: { $gte: STUDENT_PATHWAY_MIN_CONFIDENCE },

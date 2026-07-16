@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   entryPathwayUpdateOne: vi.fn(),
   postedOpportunityFindById: vi.fn(),
   postedOpportunityFindByIdAndUpdate: vi.fn(),
+  postedOpportunityFindOneAndUpdate: vi.fn(),
   postedOpportunityUpdateOne: vi.fn(),
   countDocuments: vi.fn(),
 }));
@@ -54,6 +55,7 @@ vi.mock('../../models/postedOpportunity', () => ({
     countDocuments: mocks.countDocuments,
     findById: mocks.postedOpportunityFindById,
     findByIdAndUpdate: mocks.postedOpportunityFindByIdAndUpdate,
+    findOneAndUpdate: mocks.postedOpportunityFindOneAndUpdate,
     updateOne: mocks.postedOpportunityUpdateOne,
   },
 }));
@@ -280,7 +282,7 @@ describe('adminAccessReviewService', () => {
       }),
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
-    mocks.postedOpportunityFindByIdAndUpdate.mockReturnValue({
+    mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
       lean: vi.fn().mockResolvedValue({ _id: id, review: { status: 'approved' } }),
     });
     mocks.entryPathwayUpdateOne.mockResolvedValue({ modifiedCount: 1 });
@@ -293,7 +295,12 @@ describe('adminAccessReviewService', () => {
     });
 
     expect(result).toMatchObject({ review: { status: 'approved' } });
-    expect(mocks.postedOpportunityFindByIdAndUpdate.mock.calls[0][1].$set).toMatchObject({
+    expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][0]).toMatchObject({
+      _id: new mongoose.Types.ObjectId(id),
+      submissionStatus: 'PENDING_REVIEW',
+      'review.status': 'unreviewed',
+    });
+    expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][1].$set).toMatchObject({
       submissionStatus: 'REVIEWED',
       'review.status': 'approved',
     });
@@ -319,7 +326,35 @@ describe('adminAccessReviewService', () => {
     await expect(
       updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
     ).resolves.toBeNull();
-    expect(mocks.postedOpportunityFindByIdAndUpdate).not.toHaveBeenCalled();
+    expect(mocks.postedOpportunityFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mocks.entryPathwayUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('does not approve when faculty submission state changes after the moderation read', async () => {
+    const id = '64f222222222222222222222';
+    const recordQuery: any = {
+      select: vi.fn(() => recordQuery),
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        createdByUserId: new mongoose.Types.ObjectId(),
+        entryPathwayId: new mongoose.Types.ObjectId(),
+        submissionStatus: 'PENDING_REVIEW',
+        review: { status: 'unreviewed' },
+      }),
+    };
+    mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
+    mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
+    ).resolves.toBeNull();
+
+    expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][0]).toMatchObject({
+      submissionStatus: 'PENDING_REVIEW',
+      'review.status': 'unreviewed',
+    });
     expect(mocks.entryPathwayUpdateOne).not.toHaveBeenCalled();
   });
 

@@ -72,6 +72,7 @@ const baseDeps = (overrides: Record<string, unknown> = {}) => ({
   userModel: { findOne: vi.fn(() => chain(facultyUser)) },
   researchEntityModel: { findOne: vi.fn(() => chain(entity)) },
   memberModel: { find: vi.fn(() => chain([membership])) },
+  transaction: async (work: (session: any) => Promise<unknown>) => work({ id: 'session' }),
   now: () => new Date('2026-07-14T12:00:00.000Z'),
   ...overrides,
 });
@@ -125,6 +126,15 @@ describe('facultyOpportunityService validation and authorization', () => {
         { requireComplete: true, now: new Date('2026-07-14T12:00:00.000Z') },
       ),
     ).toThrow(/highlighted opportunity fields/);
+  });
+
+  it('keeps date-only deadlines valid through the selected UTC calendar day', () => {
+    expect(
+      validateFacultyOpportunityInput(
+        { ...completeInput, deadline: '2026-07-14' },
+        { requireComplete: true, now: new Date('2026-07-14T12:00:00.000Z') },
+      ).deadline,
+    ).toEqual(new Date('2026-07-14T23:59:59.999Z'));
   });
 
   it('denies an authoritative unverified faculty account even if the session middleware was stale', async () => {
@@ -249,7 +259,9 @@ describe('facultyOpportunityService lifecycle', () => {
       findOneAndUpdate: vi.fn(() => chain(submitted)),
     };
     const pathwayModel: any = { updateOne: vi.fn(async () => ({ modifiedCount: 1 })) };
-    const deps = baseDeps({ opportunityModel, pathwayModel });
+    const session = { id: 'submit-session' };
+    const transaction = vi.fn(async (work: (value: any) => Promise<unknown>) => work(session));
+    const deps = baseDeps({ opportunityModel, pathwayModel, transaction });
 
     const result = await submitFacultyOpportunity(
       'faculty1',
@@ -266,6 +278,9 @@ describe('facultyOpportunityService lifecycle', () => {
     });
     expect(opportunityModel.findOneAndUpdate.mock.calls[0][0]).toMatchObject({ revision: 4 });
     expect(opportunityModel.findOneAndUpdate.mock.calls[0][1].$inc).toEqual({ revision: 1 });
+    expect(opportunityModel.findOneAndUpdate.mock.calls[0][2]).toMatchObject({ session });
+    expect(pathwayModel.updateOne.mock.calls[0][2]).toMatchObject({ session });
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 
   it('fails a stale submission clearly without making it student-publishable', async () => {
@@ -294,12 +309,10 @@ describe('facultyOpportunityService lifecycle', () => {
       ),
     ).rejects.toMatchObject({ code: 'STALE_REVISION', status: 409 });
 
-    expect(pathwayModel.updateOne.mock.calls[0][1].$set).toMatchObject({
-      'review.status': 'unreviewed',
-    });
+    expect(pathwayModel.updateOne).not.toHaveBeenCalled();
   });
 
-  it('closes and archives without deleting provenance, deactivating the pathway first', async () => {
+  it('closes and archives atomically without deleting provenance', async () => {
     const current = {
       _id: ids.opportunity,
       entryPathwayId: ids.pathway,
@@ -328,8 +341,8 @@ describe('facultyOpportunityService lifecycle', () => {
     );
 
     expect(closed.workflowState).toBe('CLOSED');
-    expect(pathwayModel.updateOne.mock.invocationCallOrder[0]).toBeLessThan(
-      opportunityModel.findOneAndUpdate.mock.invocationCallOrder[0],
+    expect(opportunityModel.findOneAndUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      pathwayModel.updateOne.mock.invocationCallOrder[0],
     );
     expect(pathwayModel.updateOne.mock.calls[0][1].$set).toMatchObject({
       status: 'NOT_CURRENTLY_AVAILABLE',
