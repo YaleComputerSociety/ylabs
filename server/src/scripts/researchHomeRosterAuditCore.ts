@@ -34,7 +34,9 @@ export interface RosterAuditSource {
   enrichment?: {
     state?: unknown;
     sourceUrl?: unknown;
+    observedAt?: unknown;
     freshnessExpiresAt?: unknown;
+    memberKeys?: unknown;
   };
 }
 
@@ -165,13 +167,31 @@ export function buildResearchHomeRosterAudit(
   const sources = (options.expectedSources || []).map((source) => {
     const id = entityId(source.researchEntityId);
     const state = text(source.enrichment?.state) || 'missing';
-    const matchingRows = currentVerified.filter((row) => entityId(row.researchEntityId) === id);
+    const snapshotObservedAt = dateMs(source.enrichment?.observedAt);
+    const expectedMemberKeys = Array.isArray(source.enrichment?.memberKeys)
+      ? Array.from(new Set(source.enrichment.memberKeys.map(text).filter(Boolean)))
+      : [];
+    const matchingMemberKeys = new Set(
+      currentVerified
+        .filter(
+          (row) =>
+            entityId(row.researchEntityId) === id &&
+            text(row.sourceUrl) === source.sourceUrl &&
+            dateMs(row.lastObservedAt) >= snapshotObservedAt,
+        )
+        .map((row) => text(row.membershipKey))
+        .filter(Boolean),
+    );
     let reason: string | undefined;
     if (!id || !source.enrichment) reason = 'missing';
     else if (!['current', 'partial'].includes(state)) reason = state;
     else if (text(source.enrichment.sourceUrl) !== source.sourceUrl) reason = 'source-mismatch';
+    else if (!snapshotObservedAt) reason = 'missing-snapshot-observation';
     else if (dateMs(source.enrichment.freshnessExpiresAt) < now.getTime()) reason = 'stale';
-    else if (matchingRows.length === 0) reason = 'no-verified-members';
+    else if (expectedMemberKeys.length === 0) reason = 'no-snapshot-members';
+    else if (expectedMemberKeys.some((key) => !matchingMemberKeys.has(key))) {
+      reason = 'incomplete-materialization';
+    }
     return {
       researchEntityKey: source.researchEntityKey,
       researchEntityId: id,

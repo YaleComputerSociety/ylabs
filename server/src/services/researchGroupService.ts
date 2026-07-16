@@ -1234,9 +1234,12 @@ export function isFreshVerifiedOfficialRosterRow(
   enrichment?: any,
 ): boolean {
   const expiresAt = new Date(row?.freshnessExpiresAt || 0);
+  const publishableEnrichmentState = ['current', 'partial', 'failed'].includes(
+    enrichment?.state,
+  );
   return (
     row?.sourceName === OFFICIAL_ROSTER_SOURCE_NAME &&
-    enrichment?.state !== 'stale' &&
+    publishableEnrichmentState &&
     row?.evidenceStatus === 'verified' &&
     Boolean(row?.identityKey && row?.membershipKey && row?.name) &&
     Number.isFinite(expiresAt.getTime()) &&

@@ -710,6 +710,7 @@ describe('getResearchGroupDetail', () => {
           freshnessExpiresAt: '2026-08-04T00:00:00Z',
         },
         new Date('2026-07-14T00:00:00Z'),
+        { state: 'current' },
       ),
     ).toBe(true);
     expect(
@@ -723,6 +724,7 @@ describe('getResearchGroupDetail', () => {
           freshnessExpiresAt: '2026-01-01T00:00:00Z',
         },
         new Date('2026-07-14T00:00:00Z'),
+        { state: 'current' },
       ),
     ).toBe(false);
     expect(
@@ -753,6 +755,22 @@ describe('getResearchGroupDetail', () => {
         { state: 'failed' },
       ),
     ).toBe(true);
+    for (const state of ['empty', 'withheld', 'stale', undefined]) {
+      expect(
+        isFreshVerifiedOfficialRosterRow(
+          {
+            sourceName: 'official-research-home-roster',
+            evidenceStatus: 'verified',
+            identityKey: 'official-profile:fixture',
+            membershipKey: 'official-profile:fixture|staff',
+            name: 'Fixture Scholar',
+            freshnessExpiresAt: '2026-08-04T00:00:00Z',
+          },
+          new Date('2026-07-14T00:00:00Z'),
+          state ? { state } : undefined,
+        ),
+      ).toBe(false);
+    }
     expect(
       publicRosterDisclosure(
         {
