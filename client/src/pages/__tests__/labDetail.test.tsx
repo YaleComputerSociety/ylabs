@@ -105,9 +105,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(
-      screen.getByText(
-        'Review the official profile first, then decide whether targeted outreach is appropriate.',
-      ),
+      screen.getByText('Review the official profile first, then decide whether targeted outreach is appropriate.'),
     ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
       OFFICIAL_PROFILE_URL,
@@ -296,9 +294,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(
-      screen.getByText(
-        'Studies specific mechanisms of neurological disease in source-backed terms.',
-      ),
+      screen.getByText('Studies specific mechanisms of neurological disease in source-backed terms.'),
     ).toBeTruthy();
     expect(screen.getByText('Plan careful exploratory outreach.')).toBeTruthy();
     expect(
@@ -307,21 +303,15 @@ describe('LabDetail page', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText('Why')).toBeTruthy();
-    expect(
-      screen.getByText('The access evidence points to an official profile route.'),
-    ).toBeTruthy();
+    expect(screen.getByText('The access evidence points to an official profile route.')).toBeTruthy();
     expect(screen.getByText('What this page is')).toBeTruthy();
-    expect(
-      screen.getByText(
-        'This page summarizes the research context and entry points, not a posted opening.',
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText('This page summarizes the research context and entry points, not a posted opening.')).toBeTruthy();
     expect(container.textContent?.indexOf('Studies specific mechanisms')).toBeLessThan(
       container.textContent?.indexOf('Plan careful exploratory outreach.'),
     );
   });
 
-  it('renders one full PI card in the student decision panel without a duplicate section', async () => {
+  it('renders the lead professor name as non-clickable text in the student decision panel', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -348,135 +338,17 @@ describe('LabDetail page', () => {
       .getByRole('heading', { name: 'Principal Investigator' })
       .closest('section');
 
-    expect(screen.queryByText('Lead professor')).toBeNull();
+    expect(screen.getByText('Lead professor')).toBeTruthy();
     // The professor is reached via the action button(s); the name is not a link.
     expect(screen.queryAllByRole('link', { name: /Jordan Researcher/ })).toHaveLength(0);
-    expect(screen.getAllByText('Jordan Researcher')).toHaveLength(1);
+    expect(screen.getAllByText('Jordan Researcher').length).toBeGreaterThan(0);
     expect(
       within(principalInvestigatorSection as HTMLElement).queryByRole('link', {
         name: /Jordan Researcher/,
       }),
     ).toBeNull();
-    expect(screen.getByText('Professor of Example Studies')).toBeTruthy();
-    expect(screen.getByText('Example Studies')).toBeTruthy();
+    expect(screen.getByText('Professor of Example Studies · Example Studies')).toBeTruthy();
     expect(screen.getByText('Recommended next step')).toBeTruthy();
-  });
-
-  it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
-    const secondInvestigatorProfileUrl = 'https://medicine.yale.edu/profile/second-investigator/';
-    renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        websiteUrl: secondInvestigatorProfileUrl,
-        leadProfessorPublicKey: 'fixture-second-pi',
-      },
-      members: [
-        {
-          role: 'pi',
-          user: {
-            publicKey: 'fixture-first-pi',
-            fname: 'First',
-            lname: 'Investigator',
-            displayName: 'First Investigator',
-            profileUrls: {
-              official: 'https://medicine.yale.edu/profile/first-investigator/',
-            },
-          },
-        },
-        {
-          role: 'co-pi',
-          user: {
-            publicKey: 'fixture-second-pi',
-            fname: 'Second',
-            lname: 'Investigator',
-            displayName: 'Second Investigator',
-            title: 'Professor of Example Studies',
-            primary_department: 'Example Studies',
-            profileUrls: {
-              official: secondInvestigatorProfileUrl,
-            },
-          },
-        },
-      ],
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    const section = screen
-      .getByRole('heading', { name: 'Principal Investigators' })
-      .closest('section');
-    expect(section).toBeTruthy();
-    expect(within(section as HTMLElement).getByText('First Investigator')).toBeTruthy();
-    expect(within(section as HTMLElement).getByText('Second Investigator')).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'Principal Investigator' })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Lead professor' })).toBeTruthy();
-    expect(screen.getAllByText('First Investigator')).toHaveLength(1);
-    expect(screen.getAllByText('Second Investigator')).toHaveLength(2);
-    expect(screen.getAllByText('Professor of Example Studies')).toHaveLength(2);
-    expect(screen.getAllByText('Example Studies')).toHaveLength(2);
-  });
-
-  it('does not choose an arbitrary lead professor when no PI matches the official profile', async () => {
-    renderLabDetail({
-      ...basePayload,
-      members: [
-        {
-          role: 'pi',
-          user: {
-            publicKey: 'fixture-first-unmatched-pi',
-            fname: 'First',
-            lname: 'Unmatched',
-            profileUrls: {
-              official: 'https://medicine.yale.edu/profile/first-unmatched/',
-            },
-          },
-        },
-        {
-          role: 'co-pi',
-          user: {
-            publicKey: 'fixture-second-unmatched-pi',
-            fname: 'Second',
-            lname: 'Unmatched',
-            profileUrls: {
-              official: 'https://medicine.yale.edu/profile/second-unmatched/',
-            },
-          },
-        },
-      ],
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.getByRole('heading', { name: 'Principal Investigators' })).toBeTruthy();
-    expect(screen.queryByText('Lead professor')).toBeNull();
-  });
-
-  it('keeps the dedicated identity review state instead of showing a PI card', async () => {
-    renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        leadIdentityStatus: 'under_review',
-      },
-      members: [
-        {
-          role: 'pi',
-          user: {
-            publicKey: 'fixture-unverified-pi',
-            fname: 'Unverified',
-            lname: 'Investigator',
-            displayName: 'Unverified Investigator',
-          },
-        },
-      ],
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(screen.getByRole('heading', { name: 'Principal Investigator' })).toBeTruthy();
-    expect(screen.getByText('Lead identity under review')).toBeTruthy();
-    expect(screen.queryByText('Unverified Investigator')).toBeNull();
   });
 
   it('does not link principal investigators to official faculty profiles from the detail page', async () => {
@@ -586,9 +458,7 @@ describe('LabDetail page', () => {
 
     expect(screen.getByText('jordan.researcher@yale.edu')).toBeTruthy();
     expect(
-      screen.getByText(
-        `Inquiry from a Yale undergraduate about research in ${DEFAULT_ENTITY_NAME}`,
-      ),
+      screen.getByText(`Inquiry from a Yale undergraduate about research in ${DEFAULT_ENTITY_NAME}`),
     ).toBeTruthy();
   });
 
@@ -638,9 +508,7 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(
-      screen.getAllByText('Contact the program manager through the listed route.'),
-    ).toHaveLength(1);
+    expect(screen.getAllByText('Contact the program manager through the listed route.')).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Open official route' }).getAttribute('href')).toBe(
       OFFICIAL_ROUTE_URL,
     );
@@ -657,7 +525,11 @@ describe('LabDetail page', () => {
         slug: 'example-field-lab',
         name: 'Example Field Lab',
         websiteUrl: RESEARCH_WEBSITE_URL,
-        sourceUrls: [FACULTY_ROSTER_URL, FACULTY_AFFILIATED_PROFILE_URL, RESEARCH_WEBSITE_URL],
+        sourceUrls: [
+          FACULTY_ROSTER_URL,
+          FACULTY_AFFILIATED_PROFILE_URL,
+          RESEARCH_WEBSITE_URL,
+        ],
       },
       entryPathways: [
         {
@@ -668,7 +540,10 @@ describe('LabDetail page', () => {
           studentFacingLabel: 'Explore the PI profile',
           explanation: 'An official Yale faculty profile is available.',
           bestNextStep: 'Review the PI profile and lab site first.',
-          sourceUrls: [FACULTY_AFFILIATED_PROFILE_URL, RESEARCH_WEBSITE_URL],
+          sourceUrls: [
+            FACULTY_AFFILIATED_PROFILE_URL,
+            RESEARCH_WEBSITE_URL,
+          ],
         },
       ],
       contactRoutes: [
@@ -711,7 +586,11 @@ describe('LabDetail page', () => {
         kind: 'lab',
         entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
-        sourceUrls: [FACULTY_ROSTER_URL, FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
+        sourceUrls: [
+          FACULTY_ROSTER_URL,
+          FACULTY_PROFILE_URL,
+          RESEARCH_WEBSITE_URL,
+        ],
       },
       contactRoutes: [
         {
@@ -835,7 +714,10 @@ describe('LabDetail page', () => {
         entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
         shortDescription: 'Co-Director of Graduate Studies',
-        sourceUrls: [FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
+        sourceUrls: [
+          FACULTY_PROFILE_URL,
+          RESEARCH_WEBSITE_URL,
+        ],
         departments: ['Statistics & Data Science'],
         researchAreas: ['Mathematical Statistics', 'Machine Learning'],
       },
@@ -849,7 +731,10 @@ describe('LabDetail page', () => {
           explanation: 'An official Yale faculty profile is available.',
           bestNextStep:
             'Review the PI profile and lab site first, then decide whether targeted exploratory outreach is appropriate.',
-          sourceUrls: [FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
+          sourceUrls: [
+            FACULTY_PROFILE_URL,
+            RESEARCH_WEBSITE_URL,
+          ],
         },
       ],
       contactRoutes: [
@@ -898,7 +783,10 @@ describe('LabDetail page', () => {
         kind: 'lab',
         entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
-        sourceUrls: [FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
+        sourceUrls: [
+          FACULTY_PROFILE_URL,
+          RESEARCH_WEBSITE_URL,
+        ],
         departments: ['Psychology'],
         researchAreas: ['Decision neuroscience'],
       },
@@ -943,7 +831,10 @@ describe('LabDetail page', () => {
         kind: 'lab',
         entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
-        sourceUrls: [FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
+        sourceUrls: [
+          FACULTY_PROFILE_URL,
+          RESEARCH_WEBSITE_URL,
+        ],
         departments: ['Biomedical Engineering'],
         researchAreas: ['Optical Microscopy'],
       },
@@ -979,7 +870,10 @@ describe('LabDetail page', () => {
         kind: 'lab',
         entityType: 'LAB',
         websiteUrl: JOIN_LAB_WEBSITE_URL,
-        sourceUrls: [FACULTY_PROFILE_URL, JOIN_LAB_WEBSITE_URL],
+        sourceUrls: [
+          FACULTY_PROFILE_URL,
+          JOIN_LAB_WEBSITE_URL,
+        ],
         departments: ['Psychology'],
         researchAreas: ['Social cognition'],
       },
@@ -1016,9 +910,7 @@ describe('LabDetail page', () => {
     // already shown in the research summary.
     const officialRouteLinks = screen.getAllByRole('link', { name: 'Open official route' });
     expect(officialRouteLinks).toHaveLength(1);
-    expect(officialRouteLinks.every((link) => link.getAttribute('href') === JOIN_PAGE_URL)).toBe(
-      true,
-    );
+    expect(officialRouteLinks.every((link) => link.getAttribute('href') === JOIN_PAGE_URL)).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open contact route' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
@@ -1153,8 +1045,7 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         slug: 'example-health-systems-profile',
         name: 'Example Health Systems Profile',
-        description:
-          'Studies emergency medicine, health disparities, data systems, and public health research.',
+        description: 'Studies emergency medicine, health disparities, data systems, and public health research.',
         departments: ['Fixture School of Medicine'],
         researchAreas: [
           'Emergency Medicine',
@@ -1205,7 +1096,10 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith(`/research/${DEFAULT_SLUG}`, expect.any(Object));
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        `/research/${DEFAULT_SLUG}`,
+        expect.any(Object),
+      );
     });
 
     const text = container.textContent || '';
@@ -1275,11 +1169,9 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(
-      screen
-        .getByRole('link', {
-          name: 'Biomass gasification tar removal using catalyst assisted Dielectric Barrier discharge reactor',
-        })
-        .getAttribute('href'),
+      screen.getByRole('link', {
+        name: 'Biomass gasification tar removal using catalyst assisted Dielectric Barrier discharge reactor',
+      }).getAttribute('href'),
     ).toBe(EXAMPLE_MECHANISM_DOI);
     expect(document.body.textContent).not.toContain('<p><b><span>');
   });
@@ -1352,9 +1244,9 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(consoleError.mock.calls.some((call) => String(call[0]).includes('same key'))).toBe(
-      false,
-    );
+    expect(
+      consoleError.mock.calls.some((call) => String(call[0]).includes('same key')),
+    ).toBe(false);
     consoleError.mockRestore();
   });
 
@@ -1437,7 +1329,10 @@ describe('LabDetail page', () => {
       researchEntity: {
         ...basePayload.group,
         researchAreas: [],
-        profileResearchAreas: ['Fixture Delivery Systems', 'Synthetic Signal Transfer'],
+        profileResearchAreas: [
+          'Fixture Delivery Systems',
+          'Synthetic Signal Transfer',
+        ],
         researchAreaSource: 'PI_PROFILE_FALLBACK',
       },
     } as unknown as LabDetailPayload);
@@ -1460,7 +1355,10 @@ describe('LabDetail page', () => {
         fullDescription: '',
         departments: ['Behavioral Studies'],
         researchAreas: [],
-        profileResearchAreas: ['Fixture Care Pathway Design', 'Synthetic Adherence Workflow'],
+        profileResearchAreas: [
+          'Fixture Care Pathway Design',
+          'Synthetic Adherence Workflow',
+        ],
         researchAreaSource: 'PI_PROFILE_FALLBACK',
       },
       entryPathways: [
@@ -1495,7 +1393,9 @@ describe('LabDetail page', () => {
     expect(text).not.toContain('PI research interests');
     expect(text).not.toContain('Fixture Care Pathway Design');
     expect(text).toContain('A Yale research profile with limited public description.');
-    expect(text).not.toContain('Research connected to Fixture Care Pathway Design');
+    expect(text).not.toContain(
+      'Research connected to Fixture Care Pathway Design',
+    );
     expect(text).not.toContain('Research connected to Behavioral Studies.');
     expect(screen.queryByText('Plan your next step')).toBeNull();
     expect(screen.queryByText('Ways to approach this lab')).toBeNull();
@@ -1514,7 +1414,10 @@ describe('LabDetail page', () => {
         fullDescription: '',
         departments: ['Statistics & Data Science'],
         researchAreas: [],
-        profileResearchAreas: ['High-Dimensional Statistics', 'Probability Theory'],
+        profileResearchAreas: [
+          'High-Dimensional Statistics',
+          'Probability Theory',
+        ],
         researchAreaSource: 'PI_PROFILE_FALLBACK',
         profileSynthesisDescription:
           'It appears to center on High-Dimensional Statistics and Probability Theory.',
@@ -1686,7 +1589,11 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         name: 'Example Sparse Profile Lab',
         websiteUrl: DEPARTMENT_HOME_URL,
-        sourceUrls: [DEPARTMENT_PEOPLE_URL, FACULTY_PROFILE_URL, DEPARTMENT_HOME_URL],
+        sourceUrls: [
+          DEPARTMENT_PEOPLE_URL,
+          FACULTY_PROFILE_URL,
+          DEPARTMENT_HOME_URL,
+        ],
         departments: ['Public Policy'],
         researchAreas: [],
       },

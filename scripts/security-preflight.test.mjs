@@ -5488,7 +5488,7 @@ test('public PI official profile routes reject credential-bearing URLs', () => {
   assert.match(source, /if \(!isPublicHttpUrl\(trimmed\)\) return false/);
   assert.match(
     source,
-    /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => publicHttpUrl\(url\)\s*,?\s*\)/,
+    /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => publicHttpUrl\(url\),/,
   );
   assert.match(
     source,

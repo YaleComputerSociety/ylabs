@@ -135,7 +135,10 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'researchAreaSource',
 ] as const;
 
-const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = ['qualitySummary', 'studentVisibilityTier'] as const;
+const OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS = [
+  'qualitySummary',
+  'studentVisibilityTier',
+] as const;
 
 export interface PublicResearchEntityDtoOptions {
   includeOperatorFields?: boolean;
@@ -195,18 +198,6 @@ export function toPublicResearchEntityDto(
     }
   }
 
-  if (group.leadIdentityStatus === 'verified' || group.leadIdentityStatus === 'under_review') {
-    dto.leadIdentityStatus = group.leadIdentityStatus;
-  }
-  if (typeof group.leadProfessorPublicKey === 'string') {
-    const leadProfessorPublicKey = group.leadProfessorPublicKey
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 160);
-    if (leadProfessorPublicKey) dto.leadProfessorPublicKey = leadProfessorPublicKey;
-  }
-
   if (options.includeOperatorFields) {
     for (const field of OPERATOR_PUBLIC_RESEARCH_ENTITY_FIELDS) {
       if (group[field] !== undefined) {
@@ -234,7 +225,9 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
   };
 }
 
-export function addResearchEntityDetailAlias<T extends { group: Record<string, any> }>(
+export function addResearchEntityDetailAlias<
+  T extends { group: Record<string, any> },
+>(
   detail: T,
   options: PublicResearchEntityDtoOptions = {},
 ): Omit<T, 'group'> & {

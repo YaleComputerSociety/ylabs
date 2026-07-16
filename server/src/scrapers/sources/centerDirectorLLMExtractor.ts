@@ -4,8 +4,8 @@
  * Organizational research homes (CENTER / INSTITUTE / INITIATIVE / CORE_FACILITY)
  * have no single PI, so the membership rosters scraped by
  * `centersInstitutesScraper` tag everyone `core-faculty` and the public
- * research detail leadership display renders empty. The actual leader - the
- * center's Director / Executive Director / Faculty Director - is named on a
+ * "Principal Investigator" panel renders empty. The actual leader — the
+ * center's Director / Executive Director / Faculty Director — is named on a
  * separate leadership/about page that the roster scrape never reads.
  *
  * This source closes that gap. For each organizational home with an official
@@ -268,12 +268,7 @@ async function defaultCallLLM(input: {
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterDirectorExtraction>;
   const director = parsed.director && typeof parsed.director === 'object' ? parsed.director : null;
-  return {
-    director:
-      director && textValue((director as CenterDirector).name)
-        ? (director as CenterDirector)
-        : null,
-  };
+  return { director: director && textValue((director as CenterDirector).name) ? (director as CenterDirector) : null };
 }
 
 async function defaultCenterFinder(
@@ -281,9 +276,7 @@ async function defaultCenterFinder(
 ): Promise<CandidateCenter[]> {
   // Local import to keep the model graph lazy and avoid a hard cycle.
   const { ResearchGroupMember } = await import('../../models/researchGroupMember');
-  const only = Array.from(
-    new Set((options.only || []).map((value) => value.trim()).filter(Boolean)),
-  );
+  const only = Array.from(new Set((options.only || []).map((value) => value.trim()).filter(Boolean)));
   const onlyObjectIds = only
     .map((value) => normalizeCenterDirectorObjectId(value))
     .filter((value): value is string => Boolean(value))
@@ -355,11 +348,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
   async extractDirectorForCenter(
     center: CandidateCenter,
     log: (msg: string) => void = () => {},
-  ): Promise<{
-    observations: ObservationInput[];
-    director: CenterDirector;
-    sourceUrl: string;
-  } | null> {
+  ): Promise<{ observations: ObservationInput[]; director: CenterDirector; sourceUrl: string } | null> {
     if (!this.apiKey || !center.websiteUrl || !center.slug) return null;
     let landing: { url: string; html: string } | null = null;
     try {
@@ -377,9 +366,7 @@ export class CenterDirectorLLMExtractor implements IScraper {
         try {
           page = await this.fetchPage(url);
         } catch (error) {
-          log(
-            `[${center.slug}] leadership fetch failed for discovered center URL: ${sanitizeLogValue(error)}`,
-          );
+          log(`[${center.slug}] leadership fetch failed for discovered center URL: ${sanitizeLogValue(error)}`);
           continue;
         }
       }

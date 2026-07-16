@@ -9,7 +9,6 @@ import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl } from '../../utils/url';
 
 interface LabMembersListProps {
   members: LabMember[];
-  singleColumn?: boolean;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -43,7 +42,7 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   alumni: 6,
 };
 
-const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) => {
+const LabMembersList = ({ members }: LabMembersListProps) => {
   if (!members || members.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
@@ -75,9 +74,7 @@ const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) 
     .sort((a, b) => (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99));
 
   return (
-    <div
-      className={`grid grid-cols-1 gap-4 ${singleColumn ? '' : 'sm:grid-cols-2 lg:grid-cols-3'}`}
-    >
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {sorted.map(({ user, role }) => {
         const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
         const initials = `${user.fname?.charAt(0) || ''}${
@@ -92,39 +89,29 @@ const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) 
                   src={profileImageHref}
                   alt={fullName}
                   referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
-                  className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
+                  className="w-14 h-14 rounded-full object-cover"
                 />
               ) : (
-                <div
-                  className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 font-semibold text-blue-700`}
-                >
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center text-blue-700 font-semibold">
                   {initials || fullName.charAt(0).toUpperCase() || '?'}
                 </div>
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p
-                className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900`}
-              >
+              <p className="truncate text-sm font-semibold text-gray-900">
                 {fullName}
               </p>
               {user.title && (
-                <p
-                  className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-gray-500`}
-                >
-                  {user.title}
-                </p>
+                <p className="text-xs text-gray-500 truncate">{user.title}</p>
               )}
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 <span
-                  className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${ROLE_PILL_CLASSES[role]}`}
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${ROLE_PILL_CLASSES[role]}`}
                 >
                   {ROLE_LABELS[role]}
                 </span>
                 {user.primary_department && (
-                  <span
-                    className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-gray-500`}
-                  >
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--yr-panel-muted)] text-gray-500 truncate max-w-[10rem]">
                     {user.primary_department}
                   </span>
                 )}
@@ -132,7 +119,8 @@ const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) 
             </div>
           </>
         );
-        const className = `flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+        const className =
+          'flex items-center gap-3 p-3 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] transition';
         const key = `${user.publicKey || fullName}-${role}`;
         // Lead-investigator cards are intentionally non-interactive: the
         // professor's official profile is reached via the decision-summary

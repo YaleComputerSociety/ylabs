@@ -151,9 +151,7 @@ This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
 
-Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters list everyone as core faculty and the public leadership display has no lead to show.
-The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a Yale user before promoting them to a director (lead) member.
-New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
+Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters list everyone as core faculty and the public "Principal Investigator" panel shows nothing. The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a Yale user before promoting them to a director (lead) member. New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
 
 ### 6. Start dev servers
 
