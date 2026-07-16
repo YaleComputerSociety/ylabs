@@ -356,7 +356,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Acceptance criteria:** invisible events distinguish search, research-profile open, source review, qualified action, filter-panel open/close, filter apply/remove, and save/unsave; only a qualified action counts as access conversion; faculty profile, website, ORCID, publication, filter, and save events never count as action; analytics does not delay navigation or alter UI; payloads exclude raw URLs, queries on downstream events, and free-text notes.
 - **Validation evidence:** the pending IM-01 implementation adds the canonical contract in [`research-journey-analytics.md`](./research-journey-analytics.md), terminal search outcomes, canonical entity impressions and profile opens, source and filter events, first-class save/compare/plan events, server-requalified QA-01 actions, per-actor idempotency, and separately auditable admin journey metrics.
   Legacy generic events remain for older surfaces but do not count as access conversion.
-- **PRs:** pending IM-01 pull request against Beta.
+- **PRs:** [#198](https://github.com/YaleComputerSociety/ylabs/pull/198) is pending against Beta.
 
 #### IM-02 - Search Quality, Zero Results, And Funnel Integrity
 
