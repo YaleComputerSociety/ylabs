@@ -347,20 +347,19 @@ The Meilisearch client (`server/src/utils/meiliClient.ts`) exports:
 Analytics events are stored in MongoDB with a 3-year TTL.
 Route-level middleware logs successful server-observed events by wrapping `res.send` or `res.json`, so analytics stay outside controller and service business logic.
 
-Research-surface analytics cover the canonical research entities (`profile`, `listing`, and `fellowship`) and use these event types:
+The canonical research-student journey uses claim-specific events for terminal search outcomes, entity impressions, profile opens, source review, filter changes, entity save/removal, comparison, persisted plan updates, and qualified actions.
+The complete event and payload contract is documented in [`docs/research-journey-analytics.md`](docs/research-journey-analytics.md).
+Legacy `research_view`, `pathway_save`, `ways_in_click`, `contact_route_click`, and `source_link_click` events remain for older profile, listing, and fellowship instrumentation, but they are not access conversions.
 
-| Event type            | Meaning                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------- |
-| `research_view`       | A profile, listing, or fellowship detail surface opened                             |
-| `pathway_save`        | A listing or fellowship was saved, unsaved, or re-staged                            |
-| `ways_in_click`       | A best-next-step, apply, planning, listings, courses, or similar action was clicked |
-| `contact_route_click` | A guarded route such as an official application or public source route was clicked  |
-| `source_link_click`   | A source link such as a lab site, publication, or application was clicked           |
+Client interactions are sent to `POST /api/analytics/research` for authenticated users.
+Journey payloads use event-specific allowlists of bounded enums and count buckets, and the server validates canonical entity identifiers before persistence.
+They never retain raw query text, URLs, hostnames, direct contact destinations, private notes, plan contents, filter values, or client-supplied cross-event search identifiers.
+Every interaction uses a bounded idempotency key with per-actor server uniqueness, and client tracking is fire-and-forget so analytics failures cannot change student behavior.
 
-Client-only interactions are sent to `POST /api/analytics/research` for authenticated users.
-Server-observed views and save/favorite actions are emitted from route middleware in listings, fellowships, profiles, and users.
-Research analytics sanitize payloads before persistence: contact clicks keep only a coarse `contactMethod`, source clicks keep only `sourceCategory` plus the bare hostname, and labels reject raw contact addresses or URL-like values.
-The admin analytics dashboard segments research engagement by event type, entity type, user type, and top viewed entities over the trailing 30 days.
+Only `research_qualified_action` counts as access conversion, and the server re-qualifies its category against the current QA-01 planning-context projection.
+Source review, profile open, filters, saves, comparisons, plan updates, and legacy research events never count as action.
+The admin funnel reports source inspections, official-route attempts, application opens, and self-reported outcomes separately.
+Beta suppresses real student analytics while permitting fixture and admin validation.
 
 ---
 

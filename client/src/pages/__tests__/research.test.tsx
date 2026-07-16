@@ -702,7 +702,10 @@ describe('Research page', () => {
     );
 
     expect(await screen.findByRole('button', { name: 'Filters, 2 active' })).toBeTruthy();
-    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+    const researchSearchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/research/search',
+    );
+    expect(researchSearchCall).toEqual([
       '/research/search',
       expect.objectContaining({
         filters: {
@@ -711,7 +714,7 @@ describe('Research page', () => {
         },
       }),
       expect.any(Object),
-    );
+    ]);
     expect(screen.getByTestId('location').textContent).not.toContain('undergrad');
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
     expect(
@@ -2071,8 +2074,8 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
-    expect(
-      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search'),
-    ).toHaveLength(initialSearchCalls);
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      initialSearchCalls,
+    );
   });
 });
