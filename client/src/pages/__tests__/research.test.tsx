@@ -894,7 +894,7 @@ describe('Research page', () => {
     expect(await screen.findByText('Research homes to explore')).toBeTruthy();
     expect(screen.queryByLabelText('Search results')).toBeNull();
     expect(screen.queryByText("Showing research matches for 'quantum materials'")).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Default Research Home' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Default Research Home' })).toBeTruthy();
   });
 
   it('uses research search enrichment from research entities', async () => {
