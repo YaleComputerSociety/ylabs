@@ -55,6 +55,7 @@ export interface RosterAuditReport {
     missingStableIdentity: number;
     identityCollisions: number;
     nameCollisions: number;
+    unexpectedEntities: number;
     invalidRoles: number;
     unsafeUrls: number;
     directContactLeaks: number;
@@ -209,10 +210,23 @@ export function buildResearchHomeRosterAudit(
   });
   const entitiesReady = sources.filter((source) => source.ready).length;
   const entitiesBlocked = sources.length - entitiesReady;
+  const expectedEntityIds = new Set(
+    (options.expectedSources || [])
+      .map((source) => entityId(source.researchEntityId))
+      .filter(Boolean),
+  );
+  const unexpectedEntities = new Set(
+    currentRows
+      .map((row) => entityId(row.researchEntityId))
+      .map((id) => id || 'missing-entity')
+      .filter((id) => !expectedEntityIds.has(id)),
+  ).size;
   const qualityIssueCount =
     staleCurrent.length +
     missingStableIdentity.length +
     identityCollisions +
+    nameCollisions +
+    unexpectedEntities +
     invalidRoles.length +
     unsafeUrls.length +
     directContactLeaks.length;
@@ -239,6 +253,7 @@ export function buildResearchHomeRosterAudit(
       missingStableIdentity: missingStableIdentity.length,
       identityCollisions,
       nameCollisions,
+      unexpectedEntities,
       invalidRoles: invalidRoles.length,
       unsafeUrls: unsafeUrls.length,
       directContactLeaks: directContactLeaks.length,

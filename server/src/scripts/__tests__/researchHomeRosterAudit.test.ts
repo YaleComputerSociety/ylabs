@@ -192,4 +192,49 @@ describe('research-home roster coverage and precision audit', () => {
       });
     }
   });
+
+  it('blocks rollout for normalized-name collisions', () => {
+    const report = buildResearchHomeRosterAudit(
+      [
+        verifiedRow,
+        {
+          ...verifiedRow,
+          identityKey: 'official-profile:different',
+          membershipKey: 'official-profile:different|grad-student',
+        },
+      ],
+      {
+        now: new Date('2026-07-15T00:00:00Z'),
+        sampledPrecisionReviewed: true,
+        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        expectedSources: [
+          {
+            ...expectedSource,
+            enrichment: {
+              ...expectedSource.enrichment,
+              memberKeys: [verifiedRow.membershipKey, 'official-profile:different|grad-student'],
+            },
+          },
+        ],
+      },
+    );
+    expect(report.counts.nameCollisions).toBe(1);
+    expect(report.structuralPrecisionEligible).toBe(false);
+    expect(report.broadEnablementReady).toBe(false);
+  });
+
+  it('blocks rollout for source-owned rows outside the reviewed entity set', () => {
+    const report = buildResearchHomeRosterAudit(
+      [verifiedRow, { ...verifiedRow, researchEntityId: 'unauthorized-entity' }],
+      {
+        now: new Date('2026-07-15T00:00:00Z'),
+        sampledPrecisionReviewed: true,
+        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        expectedSources: [expectedSource],
+      },
+    );
+    expect(report.counts.unexpectedEntities).toBe(1);
+    expect(report.structuralPrecisionEligible).toBe(false);
+    expect(report.broadEnablementReady).toBe(false);
+  });
 });

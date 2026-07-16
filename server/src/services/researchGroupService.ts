@@ -1282,6 +1282,7 @@ export function publicRosterDisclosure(
   enrichment: any,
   verifiedMemberCount: number,
   availableMemberCount: number,
+  retainedRows: any[] = [],
 ): PublicRosterDisclosure {
   const withheldCount = Math.max(0, Number(enrichment?.withheldCount) || 0);
   let status: PublicRosterDisclosureStatus;
@@ -1294,14 +1295,31 @@ export function publicRosterDisclosure(
   } else {
     status = 'no-verified-data';
   }
+  const earliestRetainedValue = (field: 'lastObservedAt' | 'freshnessExpiresAt') =>
+    retainedRows
+      .map((row) => row?.[field])
+      .filter((value) => {
+        const time = new Date(value || 0).getTime();
+        return Number.isFinite(time) && time > 0;
+      })
+      .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0];
+  const useRetainedEvidence = enrichment?.state === 'failed' && retainedRows.length > 0;
   return {
     status,
     returned: Math.min(verifiedMemberCount, MAX_PUBLIC_ROSTER_MEMBERS),
     truncated: availableMemberCount > MAX_PUBLIC_ROSTER_MEMBERS,
     withheldCount,
-    sourceUrl: publicHttpUrl(enrichment?.sourceUrl),
-    observedAt: enrichment?.observedAt,
-    freshnessExpiresAt: enrichment?.freshnessExpiresAt,
+    sourceUrl: publicHttpUrl(
+      useRetainedEvidence
+        ? retainedRows.find((row) => row?.sourceUrl)?.sourceUrl
+        : enrichment?.sourceUrl,
+    ),
+    observedAt: useRetainedEvidence
+      ? earliestRetainedValue('lastObservedAt')
+      : enrichment?.observedAt,
+    freshnessExpiresAt: useRetainedEvidence
+      ? earliestRetainedValue('freshnessExpiresAt')
+      : enrichment?.freshnessExpiresAt,
   };
 }
 
@@ -2398,6 +2416,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     (group as any).rosterEnrichment,
     publicRosterMembers.length,
     availableRosterMembers.length,
+    availableRosterMembers.map((member) => member.row),
   );
   const attributionRows = memberDisplayIds.length
     ? await ResearchScholarlyAttribution.find({

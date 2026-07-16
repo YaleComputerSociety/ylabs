@@ -771,6 +771,24 @@ describe('getResearchGroupDetail', () => {
     expect(publicRosterDisclosure({ state: 'failed' }, 0, 0).status).toBe(
       'optional-source-failure',
     );
+    expect(
+      publicRosterDisclosure(
+        {
+          state: 'failed',
+          sourceUrl: latestSnapshot.sourceUrl,
+          observedAt: '2026-07-15T00:00:00Z',
+          freshnessExpiresAt: '2026-08-05T00:00:00Z',
+        },
+        1,
+        1,
+        [latestRow],
+      ),
+    ).toMatchObject({
+      status: 'optional-source-failure',
+      sourceUrl: latestRow.sourceUrl,
+      observedAt: latestRow.lastObservedAt,
+      freshnessExpiresAt: latestRow.freshnessExpiresAt,
+    });
     for (const obsoleteRow of [
       { ...latestRow, membershipKey: 'official-profile:old|staff' },
       { ...latestRow, sourceUrl: 'https://medicine.yale.edu/lab/old/members/' },
