@@ -407,7 +407,9 @@ Audit focus:
 - Confirm each materialized member has a unique official profile identity, an honest mapped role, an observation date, and an unexpired freshness window.
 - Confirm duplicate profile identities, same-profile different-name collisions, ambiguous roles, unsafe links, and direct contact text are withheld.
 - Run `yarn --cwd server research-homes:audit-rosters --strict --output /tmp/ylabs-roster-audit.json` after Beta materialization.
-- Review the bounded sample manually, then rerun with `--sampled-precision-reviewed`; do not enable the source broadly unless `broadEnablementReady` is true.
+- Review the bounded sample manually, then rerun with `--sampled-precision-reviewed-by=<reviewer>` so the approval is attributable in the report.
+- The audit checks every entity in `OFFICIAL_ROSTER_CONFIGS` and fails closed when an allowlisted entity is missing or its latest snapshot is failed, empty, withheld, stale, expired, mismatched, or has no verified members.
+- Do not enable the source broadly unless `broadEnablementReady` is true.
 - Confirm a successful complete non-empty refresh archives disappeared source-owned rows, while empty or failed refreshes archive nothing.
 
 Project impact:

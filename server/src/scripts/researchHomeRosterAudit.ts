@@ -3,11 +3,10 @@ import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { ResearchGroupMember } from '../models/researchGroupMember';
+import { ResearchEntity } from '../models/researchEntity';
+import { OFFICIAL_ROSTER_CONFIGS } from '../scrapers/sources/officialResearchHomeRosterScraper';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import {
-  AUDITED_ROSTER_SOURCE,
-  buildResearchHomeRosterAudit,
-} from './researchHomeRosterAuditCore';
+import { AUDITED_ROSTER_SOURCE, buildResearchHomeRosterAudit } from './researchHomeRosterAuditCore';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -15,6 +14,7 @@ interface Options {
   strict: boolean;
   sampleLimit: number;
   sampledPrecisionReviewed: boolean;
+  sampledPrecisionReviewedBy?: string;
   output?: string;
 }
 
@@ -27,8 +27,12 @@ export function parseResearchHomeRosterAuditArgs(argv: string[]): Options {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--strict') options.strict = true;
-    else if (arg === '--sampled-precision-reviewed') options.sampledPrecisionReviewed = true;
-    else if (arg.startsWith('--sample-limit=')) {
+    else if (arg.startsWith('--sampled-precision-reviewed-by=')) {
+      options.sampledPrecisionReviewed = true;
+      options.sampledPrecisionReviewedBy = arg
+        .slice('--sampled-precision-reviewed-by='.length)
+        .trim();
+    } else if (arg.startsWith('--sample-limit=')) {
       options.sampleLimit = Number(arg.slice('--sample-limit='.length));
     } else if (arg === '--output') {
       options.output = resolveSafeJsonReportOutputPath(argv[index + 1]);
@@ -39,8 +43,15 @@ export function parseResearchHomeRosterAuditArgs(argv: string[]): Options {
       throw new Error(`Unknown research-home roster audit argument: ${arg}`);
     }
   }
-  if (!Number.isSafeInteger(options.sampleLimit) || options.sampleLimit < 0 || options.sampleLimit > 100) {
+  if (
+    !Number.isSafeInteger(options.sampleLimit) ||
+    options.sampleLimit < 0 ||
+    options.sampleLimit > 100
+  ) {
     throw new Error('--sample-limit must be an integer from 0 to 100');
+  }
+  if (options.sampledPrecisionReviewed && !options.sampledPrecisionReviewedBy) {
+    throw new Error('--sampled-precision-reviewed-by requires a reviewer identifier');
   }
   return options;
 }
@@ -56,9 +67,26 @@ async function main(): Promise<void> {
       )
       .sort({ researchEntityId: 1, role: 1, name: 1 })
       .lean();
+    const entities = await ResearchEntity.find({
+      slug: { $in: OFFICIAL_ROSTER_CONFIGS.map((config) => config.researchEntityKey) },
+      archived: { $ne: true },
+    })
+      .select('_id slug rosterEnrichment')
+      .lean();
+    const entitiesBySlug = new Map(entities.map((entity: any) => [entity.slug, entity]));
     const report = buildResearchHomeRosterAudit(rows, {
       sampleLimit: options.sampleLimit,
       sampledPrecisionReviewed: options.sampledPrecisionReviewed,
+      sampledPrecisionReviewedBy: options.sampledPrecisionReviewedBy,
+      expectedSources: OFFICIAL_ROSTER_CONFIGS.map((config) => {
+        const entity: any = entitiesBySlug.get(config.researchEntityKey);
+        return {
+          researchEntityKey: config.researchEntityKey,
+          researchEntityId: entity?._id,
+          sourceUrl: config.url,
+          enrichment: entity?.rosterEnrichment,
+        };
+      }),
     });
     const json = `${JSON.stringify(report, null, 2)}\n`;
     if (options.output) {

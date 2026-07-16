@@ -27,6 +27,17 @@ export interface RosterAuditMember {
   freshnessExpiresAt?: unknown;
 }
 
+export interface RosterAuditSource {
+  researchEntityKey: string;
+  researchEntityId?: unknown;
+  sourceUrl: string;
+  enrichment?: {
+    state?: unknown;
+    sourceUrl?: unknown;
+    freshnessExpiresAt?: unknown;
+  };
+}
+
 export interface RosterAuditReport {
   sourceName: string;
   generatedAt: string;
@@ -36,6 +47,9 @@ export interface RosterAuditReport {
     historical: number;
     staleCurrent: number;
     entitiesCovered: number;
+    entitiesExpected: number;
+    entitiesReady: number;
+    entitiesBlocked: number;
     missingStableIdentity: number;
     identityCollisions: number;
     nameCollisions: number;
@@ -45,6 +59,7 @@ export interface RosterAuditReport {
   };
   structuralPrecisionEligible: boolean;
   sampledPrecisionReviewed: boolean;
+  sampledPrecisionReviewedBy?: string;
   broadEnablementReady: boolean;
   samples: Array<{
     researchEntityId: string;
@@ -53,6 +68,14 @@ export interface RosterAuditReport {
     sourceUrl: string;
     profileUrl: string;
     lastObservedAt: string;
+  }>;
+  sources: Array<{
+    researchEntityKey: string;
+    researchEntityId: string;
+    sourceUrl: string;
+    state: string;
+    ready: boolean;
+    reason?: string;
   }>;
 }
 
@@ -64,7 +87,10 @@ const entityId = (value: unknown): string =>
       ? text((value as Record<string, unknown>)._id)
       : text(value);
 const normalizedName = (value: unknown): string =>
-  text(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  text(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 const dateMs = (value: unknown): number => {
   const date = new Date(text(value));
   return Number.isFinite(date.getTime()) ? date.getTime() : 0;
@@ -89,6 +115,8 @@ export function buildResearchHomeRosterAudit(
     now?: Date;
     sampleLimit?: number;
     sampledPrecisionReviewed?: boolean;
+    sampledPrecisionReviewedBy?: string;
+    expectedSources?: RosterAuditSource[];
   } = {},
 ): RosterAuditReport {
   const now = options.now || new Date();
@@ -97,15 +125,13 @@ export function buildResearchHomeRosterAudit(
     (row) => row.archived !== true && row.isCurrentMember !== false,
   );
   const historicalRows = sourceRows.filter(
-    (row) => row.archived === true || row.isCurrentMember === false || row.evidenceStatus === 'historical',
+    (row) =>
+      row.archived === true || row.isCurrentMember === false || row.evidenceStatus === 'historical',
   );
   const currentVerified = currentRows.filter(
-    (row) =>
-      row.evidenceStatus === 'verified' && dateMs(row.freshnessExpiresAt) >= now.getTime(),
+    (row) => row.evidenceStatus === 'verified' && dateMs(row.freshnessExpiresAt) >= now.getTime(),
   );
-  const staleCurrent = currentRows.filter(
-    (row) => dateMs(row.freshnessExpiresAt) < now.getTime(),
-  );
+  const staleCurrent = currentRows.filter((row) => dateMs(row.freshnessExpiresAt) < now.getTime());
   const missingStableIdentity = currentRows.filter(
     (row) => !text(row.identityKey) || !text(row.membershipKey),
   );
@@ -134,7 +160,29 @@ export function buildResearchHomeRosterAudit(
   }
   const identityCollisions = [...identityNames.values()].filter((values) => values.size > 1).length;
   const nameCollisions = [...nameIdentities.values()].filter((values) => values.size > 1).length;
-  const entitiesCovered = new Set(currentVerified.map((row) => entityId(row.researchEntityId))).size;
+  const entitiesCovered = new Set(currentVerified.map((row) => entityId(row.researchEntityId)))
+    .size;
+  const sources = (options.expectedSources || []).map((source) => {
+    const id = entityId(source.researchEntityId);
+    const state = text(source.enrichment?.state) || 'missing';
+    const matchingRows = currentVerified.filter((row) => entityId(row.researchEntityId) === id);
+    let reason: string | undefined;
+    if (!id || !source.enrichment) reason = 'missing';
+    else if (!['current', 'partial'].includes(state)) reason = state;
+    else if (text(source.enrichment.sourceUrl) !== source.sourceUrl) reason = 'source-mismatch';
+    else if (dateMs(source.enrichment.freshnessExpiresAt) < now.getTime()) reason = 'stale';
+    else if (matchingRows.length === 0) reason = 'no-verified-members';
+    return {
+      researchEntityKey: source.researchEntityKey,
+      researchEntityId: id,
+      sourceUrl: source.sourceUrl,
+      state,
+      ready: !reason,
+      ...(reason ? { reason } : {}),
+    };
+  });
+  const entitiesReady = sources.filter((source) => source.ready).length;
+  const entitiesBlocked = sources.length - entitiesReady;
   const qualityIssueCount =
     staleCurrent.length +
     missingStableIdentity.length +
@@ -142,8 +190,12 @@ export function buildResearchHomeRosterAudit(
     invalidRoles.length +
     unsafeUrls.length +
     directContactLeaks.length;
-  const structuralPrecisionEligible = currentVerified.length > 0 && qualityIssueCount === 0;
-  const sampledPrecisionReviewed = options.sampledPrecisionReviewed === true;
+  const fullCoverageReady = sources.length > 0 && entitiesBlocked === 0;
+  const structuralPrecisionEligible =
+    currentVerified.length > 0 && qualityIssueCount === 0 && fullCoverageReady;
+  const sampledPrecisionReviewedBy = text(options.sampledPrecisionReviewedBy);
+  const sampledPrecisionReviewed =
+    options.sampledPrecisionReviewed === true && Boolean(sampledPrecisionReviewedBy);
   const sampleLimit = Math.max(0, Math.min(100, options.sampleLimit ?? 25));
 
   return {
@@ -155,6 +207,9 @@ export function buildResearchHomeRosterAudit(
       historical: historicalRows.length,
       staleCurrent: staleCurrent.length,
       entitiesCovered,
+      entitiesExpected: sources.length,
+      entitiesReady,
+      entitiesBlocked,
       missingStableIdentity: missingStableIdentity.length,
       identityCollisions,
       nameCollisions,
@@ -164,6 +219,7 @@ export function buildResearchHomeRosterAudit(
     },
     structuralPrecisionEligible,
     sampledPrecisionReviewed,
+    ...(sampledPrecisionReviewedBy ? { sampledPrecisionReviewedBy } : {}),
     broadEnablementReady: structuralPrecisionEligible && sampledPrecisionReviewed,
     samples: currentVerified.slice(0, sampleLimit).map((row) => ({
       researchEntityId: entityId(row.researchEntityId),
@@ -173,5 +229,6 @@ export function buildResearchHomeRosterAudit(
       profileUrl: text(row.profileUrl),
       lastObservedAt: text(row.lastObservedAt),
     })),
+    sources,
   };
 }

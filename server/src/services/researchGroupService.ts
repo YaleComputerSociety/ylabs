@@ -1098,7 +1098,11 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
   }
 };
 
-function publicMemberKeyForResearchDetail(user: any, role?: string, stableIdentity?: string): string {
+function publicMemberKeyForResearchDetail(
+  user: any,
+  role?: string,
+  stableIdentity?: string,
+): string {
   return [
     stableIdentity || user?.displayName || [user?.fname, user?.lname].filter(Boolean).join(' '),
     role,
@@ -1199,7 +1203,10 @@ export function publicMemberUserForRow(
   }
 
   if (!user && !faculty && isFreshVerifiedOfficialRosterRow(row)) {
-    const nameParts = String(row.name || '').trim().split(/\s+/).filter(Boolean);
+    const nameParts = String(row.name || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
     const fname = nameParts.shift() || '';
     const lname = nameParts.join(' ');
     if (!fname || !lname) return null;
@@ -1221,10 +1228,15 @@ export function publicMemberUserForRow(
 const OFFICIAL_ROSTER_SOURCE_NAME = 'official-research-home-roster';
 const MAX_PUBLIC_ROSTER_MEMBERS = 24;
 
-export function isFreshVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
+export function isFreshVerifiedOfficialRosterRow(
+  row: any,
+  now = new Date(),
+  enrichment?: any,
+): boolean {
   const expiresAt = new Date(row?.freshnessExpiresAt || 0);
   return (
     row?.sourceName === OFFICIAL_ROSTER_SOURCE_NAME &&
+    enrichment?.state !== 'stale' &&
     row?.evidenceStatus === 'verified' &&
     Boolean(row?.identityKey && row?.membershipKey && row?.name) &&
     Number.isFinite(expiresAt.getTime()) &&
@@ -1467,9 +1479,7 @@ const OFFICIAL_PROFILE_URL_KEYS = [
 const safeProfileUrlObject = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(
-      ([, url]) => publicHttpUrl(url),
-    ),
+    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
   ) as Record<string, string>;
 };
 
@@ -2213,7 +2223,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     .limit(MAX_PUBLIC_DETAIL_MEMBERS)
     .lean();
   const memberRows = memberRowsRaw.filter(
-    (row) => row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME || isFreshVerifiedOfficialRosterRow(row),
+    (row) =>
+      row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+      isFreshVerifiedOfficialRosterRow(row, new Date(), (group as any).rosterEnrichment),
   );
 
   const memberUserIds = memberRows
@@ -2319,11 +2331,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         return id
           ? [
               id,
-              publicMemberKeyForResearchDetail(
-                member.user,
-                member.role,
-                member.row?.identityKey,
-              ),
+              publicMemberKeyForResearchDetail(member.user, member.role, member.row?.identityKey),
             ]
           : undefined;
       })
@@ -2338,16 +2346,21 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     }),
   );
   const availableRosterMembers = dedupedMembersWithRows.filter((member) =>
-    isFreshVerifiedOfficialRosterRow(member.row),
+    isFreshVerifiedOfficialRosterRow(member.row, new Date(), (group as any).rosterEnrichment),
   );
   const publicRosterMembers = availableRosterMembers.slice(0, MAX_PUBLIC_ROSTER_MEMBERS);
   const publicRosterMemberRows = new Set(publicRosterMembers.map((member) => member.row));
   const boundedMembersWithRows = dedupedMembersWithRows.filter(
     (member) =>
-      member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME || publicRosterMemberRows.has(member.row),
+      member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+      publicRosterMemberRows.has(member.row),
   );
   const members = boundedMembersWithRows.map(({ row, ...member }) => {
-    const rosterEvidence = isFreshVerifiedOfficialRosterRow(row)
+    const rosterEvidence = isFreshVerifiedOfficialRosterRow(
+      row,
+      new Date(),
+      (group as any).rosterEnrichment,
+    )
       ? {
           sourceUrl: publicHttpUrl(row.sourceUrl),
           profileUrl: publicHttpUrl(row.profileUrl),
@@ -2359,11 +2372,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       ...member,
       user: {
         ...publicMemberUserForResearchDetail(member.user),
-        publicKey: publicMemberKeyForResearchDetail(
-          member.user,
-          member.role,
-          row?.identityKey,
-        ),
+        publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
       },
       ...(rosterEvidence ? { rosterEvidence } : {}),
     };

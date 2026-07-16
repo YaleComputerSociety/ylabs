@@ -726,6 +726,34 @@ describe('getResearchGroupDetail', () => {
       ),
     ).toBe(false);
     expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          sourceName: 'official-research-home-roster',
+          evidenceStatus: 'verified',
+          identityKey: 'official-profile:fixture',
+          membershipKey: 'official-profile:fixture|staff',
+          name: 'Fixture Scholar',
+          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+        },
+        new Date('2026-07-14T00:00:00Z'),
+        { state: 'stale' },
+      ),
+    ).toBe(false);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          sourceName: 'official-research-home-roster',
+          evidenceStatus: 'verified',
+          identityKey: 'official-profile:fixture',
+          membershipKey: 'official-profile:fixture|staff',
+          name: 'Fixture Scholar',
+          freshnessExpiresAt: '2026-08-04T00:00:00Z',
+        },
+        new Date('2026-07-14T00:00:00Z'),
+        { state: 'failed' },
+      ),
+    ).toBe(true);
+    expect(
       publicRosterDisclosure(
         {
           state: 'partial',
