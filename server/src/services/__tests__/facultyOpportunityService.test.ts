@@ -128,13 +128,18 @@ describe('facultyOpportunityService validation and authorization', () => {
     ).toThrow(/highlighted opportunity fields/);
   });
 
-  it('keeps date-only deadlines valid through the selected UTC calendar day', () => {
+  it.each([
+    ['2026-07-14', '2026-07-15T03:59:59.999Z'],
+    ['2026-01-14', '2026-01-15T04:59:59.999Z'],
+    ['2026-03-08', '2026-03-09T03:59:59.999Z'],
+    ['2026-11-01', '2026-11-02T04:59:59.999Z'],
+  ])('keeps %s valid through the selected Yale calendar day', (input, expected) => {
     expect(
       validateFacultyOpportunityInput(
-        { ...completeInput, deadline: '2026-07-14' },
-        { requireComplete: true, now: new Date('2026-07-14T12:00:00.000Z') },
+        { ...completeInput, deadline: input },
+        { requireComplete: true, now: new Date(`${input}T12:00:00.000Z`) },
       ).deadline,
-    ).toEqual(new Date('2026-07-14T23:59:59.999Z'));
+    ).toEqual(new Date(expected));
   });
 
   it('denies an authoritative unverified faculty account even if the session middleware was stale', async () => {

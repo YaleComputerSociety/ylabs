@@ -153,7 +153,6 @@ export async function listAccessSummariesForResearchEntities(
       researchEntityId: { $in: objectIds },
       archived: false,
       derivationKey: { $not: /^faculty-opportunity:/ },
-      'review.status': 'approved',
     }).lean(),
     PostedOpportunity.find({
       researchEntityId: { $in: objectIds },

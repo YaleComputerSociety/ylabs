@@ -576,7 +576,7 @@ export async function updateAccessReviewRecordReview(input: {
   const facultyOpportunity =
     input.type === 'postedOpportunity'
       ? await PostedOpportunity.findById(id)
-          .select('createdByUserId entryPathwayId submissionStatus review.status')
+          .select('createdByUserId entryPathwayId submissionStatus review archived')
           .lean()
       : null;
 
@@ -649,7 +649,7 @@ export async function updateAccessReviewRecordReview(input: {
       Object.entries(update).filter(([field]) => field.startsWith('review.')),
     );
     try {
-      await EntryPathway.updateOne(
+      const pathwayResult = await EntryPathway.updateOne(
         { _id: facultyOpportunity.entryPathwayId },
         {
           $set: {
@@ -659,6 +659,7 @@ export async function updateAccessReviewRecordReview(input: {
         },
         { runValidators: true },
       );
+      if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
       if (process.env.PATHWAY_SEARCH_SYNC === 'true') {
         const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
         if (pathwayId) {
@@ -668,20 +669,18 @@ export async function updateAccessReviewRecordReview(input: {
         }
       }
     } catch (error) {
-      if (update['review.status'] === 'approved') {
-        await PostedOpportunity.updateOne(
-          { _id: id, 'review.reviewedAt': update['review.reviewedAt'] },
-          {
-            $set: {
-              submissionStatus: 'PENDING_REVIEW',
-              'review.status': 'unreviewed',
-            },
-            $unset: {
-              'review.reviewedByUserId': 1,
-              'review.reviewedAt': 1,
-            },
+      const compensation = await PostedOpportunity.updateOne(
+        { _id: id, 'review.reviewedAt': update['review.reviewedAt'] },
+        {
+          $set: {
+            submissionStatus: facultyOpportunity.submissionStatus,
+            review: facultyOpportunity.review,
+            archived: facultyOpportunity.archived === true,
           },
-        ).catch(() => undefined);
+        },
+      ).catch(() => null);
+      if (!compensation || compensation.matchedCount === 0) {
+        throw new Error('Faculty opportunity moderation compensation failed', { cause: error });
       }
       throw error;
     }

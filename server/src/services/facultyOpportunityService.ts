@@ -142,6 +142,59 @@ const boundedText = (
   return text;
 };
 
+const YALE_TIME_ZONE = 'America/New_York';
+const yaleDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: YALE_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+const yaleDateTimeToUtc = (
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+): Date => {
+  const target = Date.UTC(year, month - 1, day, hour);
+  let instant = target;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = Object.fromEntries(
+      yaleDateTimeFormatter
+        .formatToParts(new Date(instant))
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, Number(part.value)]),
+    );
+    const represented = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+    );
+    instant += target - represented;
+  }
+  return new Date(instant);
+};
+
+const endOfYaleCalendarDay = (date: string): Date => {
+  const [year, month, day] = date.split('-').map(Number);
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
+  return new Date(
+    yaleDateTimeToUtc(
+      nextDay.getUTCFullYear(),
+      nextDay.getUTCMonth() + 1,
+      nextDay.getUTCDate(),
+      0,
+    ).getTime() - 1,
+  );
+};
+
 const parseDeadline = (value: unknown, errors: FacultyOpportunityFieldErrors): Date | undefined => {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value !== 'string' && !(value instanceof Date)) {
@@ -151,7 +204,7 @@ const parseDeadline = (value: unknown, errors: FacultyOpportunityFieldErrors): D
   const text = typeof value === 'string' ? value.trim() : '';
   const deadline =
     typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(text)
-      ? new Date(`${text}T23:59:59.999Z`)
+      ? endOfYaleCalendarDay(text)
       : value instanceof Date
         ? new Date(value)
         : new Date(text);

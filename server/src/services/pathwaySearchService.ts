@@ -325,7 +325,6 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
 
   return compactMatch({
     archived: { $ne: true },
-    'review.status': 'approved',
     ...studentPathwayMongoMatch(),
     _id: hasPathwayIdFilter ? { $in: pathwayIds } : undefined,
     pathwayType,

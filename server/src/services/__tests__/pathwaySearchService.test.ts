@@ -236,6 +236,11 @@ describe('pathwaySearchService', () => {
     const result = await searchPathways({ page: 999_999_999, pageSize: 500 });
 
     const pipeline = mocks.aggregate.mock.calls[0][0];
+    expect(pipeline[0].$match).toMatchObject({
+      archived: { $ne: true },
+      derivationKey: { $not: /^faculty-opportunity:/ },
+    });
+    expect(pipeline[0].$match).not.toHaveProperty('review.status');
     const facetStage = pipeline.find((stage: any) => stage.$facet);
     expect(facetStage.$facet.hits).toEqual(
       expect.arrayContaining([

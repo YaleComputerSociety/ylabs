@@ -285,7 +285,7 @@ describe('adminAccessReviewService', () => {
     mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
       lean: vi.fn().mockResolvedValue({ _id: id, review: { status: 'approved' } }),
     });
-    mocks.entryPathwayUpdateOne.mockResolvedValue({ modifiedCount: 1 });
+    mocks.entryPathwayUpdateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
 
     const result = await updateAccessReviewRecordReview({
       type: 'postedOpportunity',
@@ -328,6 +328,38 @@ describe('adminAccessReviewService', () => {
     ).resolves.toBeNull();
     expect(mocks.postedOpportunityFindOneAndUpdate).not.toHaveBeenCalled();
     expect(mocks.entryPathwayUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('compensates moderation when the linked pathway is missing', async () => {
+    const id = '64f222222222222222222222';
+    const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
+    const recordQuery: any = {
+      select: vi.fn(() => recordQuery),
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        createdByUserId: new mongoose.Types.ObjectId(),
+        entryPathwayId: pathwayId,
+        submissionStatus: 'PENDING_REVIEW',
+        review: { status: 'unreviewed' },
+        archived: false,
+      }),
+    };
+    mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
+    mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({ _id: id, review: { status: 'approved' } }),
+    });
+    mocks.entryPathwayUpdateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+    mocks.postedOpportunityUpdateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+
+    await expect(
+      updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
+    ).rejects.toThrow('Linked pathway not found');
+
+    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$set).toEqual({
+      submissionStatus: 'PENDING_REVIEW',
+      review: { status: 'unreviewed' },
+      archived: false,
+    });
   });
 
   it('does not approve when faculty submission state changes after the moderation read', async () => {

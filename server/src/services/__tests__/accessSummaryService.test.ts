@@ -204,15 +204,16 @@ describe('accessSummaryService', () => {
     expect(mocks.postedOpportunityFind).not.toHaveBeenCalled();
   });
 
-  it('counts only approved, unexpired opportunities and approved pathways in public summaries', async () => {
+  it('keeps legacy pathways public while requiring approved unexpired opportunities', async () => {
     const entityId = new Types.ObjectId();
 
     await listAccessSummariesForResearchEntities([entityId]);
 
     expect(mocks.entryPathwayFind.mock.calls[0][0]).toMatchObject({
       archived: false,
-      'review.status': 'approved',
+      derivationKey: { $not: /^faculty-opportunity:/ },
     });
+    expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
     const opportunityFilter = mocks.postedOpportunityFind.mock.calls[0][0];
     expect(opportunityFilter).toMatchObject({
       archived: false,

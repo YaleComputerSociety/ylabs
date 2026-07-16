@@ -2336,7 +2336,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     EntryPathway.find({
       researchEntityId: (group as any)._id,
       archived: false,
-      'review.status': 'approved',
       ...studentPathwayMongoMatch(),
     })
       .sort({ updatedAt: -1 })
