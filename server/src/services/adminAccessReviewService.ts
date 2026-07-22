@@ -576,7 +576,7 @@ export async function updateAccessReviewRecordReview(input: {
   const facultyOpportunity =
     input.type === 'postedOpportunity'
       ? await PostedOpportunity.findById(id)
-          .select('createdByUserId entryPathwayId submissionStatus review archived')
+          .select('createdByUserId entryPathwayId submissionStatus review status archived revision')
           .lean()
       : null;
 
@@ -631,6 +631,9 @@ export async function updateAccessReviewRecordReview(input: {
 
   const expectedFacultyState = isFacultyModerationDecision
     ? {
+        revision: facultyOpportunity?.revision,
+        status: facultyOpportunity?.status,
+        archived: facultyOpportunity?.archived,
         submissionStatus: facultyOpportunity?.submissionStatus,
         'review.status': facultyOpportunity?.review?.status,
       }
@@ -638,7 +641,7 @@ export async function updateAccessReviewRecordReview(input: {
   const updateQuery = isFacultyModerationDecision
     ? model.findOneAndUpdate(
         { _id: id, ...expectedFacultyState },
-        { $set: update },
+        { $set: update, $inc: { revision: 1 } },
         { new: true, runValidators: true },
       )
     : model.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true });
@@ -676,6 +679,8 @@ export async function updateAccessReviewRecordReview(input: {
         {
           _id: id,
           ...expectedModeratedState,
+          revision: (updated as any).revision,
+          status: (updated as any).status,
           archived: (updated as any).archived === true,
         },
         {
@@ -684,6 +689,7 @@ export async function updateAccessReviewRecordReview(input: {
             review: facultyOpportunity.review,
             archived: facultyOpportunity.archived === true,
           },
+          $inc: { revision: 1 },
         },
       ).catch(() => null);
       if (!compensation || compensation.matchedCount === 0) {

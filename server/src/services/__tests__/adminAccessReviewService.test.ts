@@ -279,6 +279,9 @@ describe('adminAccessReviewService', () => {
         entryPathwayId: pathwayId,
         submissionStatus: 'PENDING_REVIEW',
         review: { status: 'unreviewed' },
+        status: 'OPEN',
+        archived: false,
+        revision: 6,
       }),
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
@@ -286,6 +289,8 @@ describe('adminAccessReviewService', () => {
       lean: vi.fn().mockResolvedValue({
         _id: id,
         archived: false,
+        status: 'OPEN',
+        revision: 7,
         submissionStatus: 'REVIEWED',
         review: { status: 'approved' },
       }),
@@ -302,6 +307,9 @@ describe('adminAccessReviewService', () => {
     expect(result).toMatchObject({ review: { status: 'approved' } });
     expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][0]).toMatchObject({
       _id: new mongoose.Types.ObjectId(id),
+      revision: 6,
+      status: 'OPEN',
+      archived: false,
       submissionStatus: 'PENDING_REVIEW',
       'review.status': 'unreviewed',
     });
@@ -309,6 +317,7 @@ describe('adminAccessReviewService', () => {
       submissionStatus: 'REVIEWED',
       'review.status': 'approved',
     });
+    expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][1].$inc).toEqual({ revision: 1 });
     expect(mocks.entryPathwayUpdateOne.mock.calls[0][1].$set).toMatchObject({
       'review.status': 'approved',
     });
@@ -346,12 +355,20 @@ describe('adminAccessReviewService', () => {
         entryPathwayId: pathwayId,
         submissionStatus: 'PENDING_REVIEW',
         review: { status: 'unreviewed' },
+        status: 'OPEN',
         archived: false,
+        revision: 4,
       }),
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
     mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ _id: id, review: { status: 'approved' } }),
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        review: { status: 'approved' },
+        status: 'OPEN',
+        archived: false,
+        revision: 5,
+      }),
     });
     mocks.entryPathwayUpdateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
     mocks.postedOpportunityUpdateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
@@ -365,8 +382,11 @@ describe('adminAccessReviewService', () => {
       review: { status: 'unreviewed' },
       archived: false,
     });
+    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$inc).toEqual({ revision: 1 });
     expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
       _id: new mongoose.Types.ObjectId(id),
+      revision: 5,
+      status: 'OPEN',
       archived: false,
       submissionStatus: 'REVIEWED',
       'review.status': 'approved',
@@ -384,7 +404,9 @@ describe('adminAccessReviewService', () => {
         entryPathwayId: new mongoose.Types.ObjectId(),
         submissionStatus: 'PENDING_REVIEW',
         review: { status: 'unreviewed' },
+        status: 'OPEN',
         archived: false,
+        revision: 8,
       }),
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
@@ -392,6 +414,8 @@ describe('adminAccessReviewService', () => {
       lean: vi.fn().mockResolvedValue({
         _id: id,
         archived: false,
+        status: 'OPEN',
+        revision: 9,
         submissionStatus: 'REVIEWED',
         review: { status: 'approved' },
       }),
@@ -404,6 +428,8 @@ describe('adminAccessReviewService', () => {
     ).rejects.toThrow('Faculty opportunity moderation compensation failed');
 
     expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
+      revision: 9,
+      status: 'OPEN',
       archived: false,
       submissionStatus: 'REVIEWED',
       'review.status': 'approved',
@@ -420,6 +446,9 @@ describe('adminAccessReviewService', () => {
         entryPathwayId: new mongoose.Types.ObjectId(),
         submissionStatus: 'PENDING_REVIEW',
         review: { status: 'unreviewed' },
+        status: 'OPEN',
+        archived: false,
+        revision: 3,
       }),
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
@@ -432,9 +461,13 @@ describe('adminAccessReviewService', () => {
     ).resolves.toBeNull();
 
     expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][0]).toMatchObject({
+      revision: 3,
+      status: 'OPEN',
+      archived: false,
       submissionStatus: 'PENDING_REVIEW',
       'review.status': 'unreviewed',
     });
+    expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][1].$inc).toEqual({ revision: 1 });
     expect(mocks.entryPathwayUpdateOne).not.toHaveBeenCalled();
   });
 
