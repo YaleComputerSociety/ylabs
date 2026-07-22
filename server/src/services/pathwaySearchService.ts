@@ -325,7 +325,7 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
 
   return compactMatch({
     archived: { $ne: true },
-    ...studentPathwayMongoMatch(),
+    ...studentPathwayMongoMatch({ includeApprovedFacultyOpportunities: true }),
     _id: hasPathwayIdFilter ? { $in: pathwayIds } : undefined,
     pathwayType,
     compensation:
@@ -536,6 +536,14 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
     {
       $addFields: {
         activePostedOpportunity: { $arrayElemAt: ['$activePostedOpportunities', 0] },
+      },
+    },
+    {
+      $match: {
+        $or: [
+          { derivationKey: { $not: /^faculty-opportunity:/ } },
+          { activePostedOpportunity: { $ne: null } },
+        ],
       },
     },
   ];

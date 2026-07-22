@@ -59,7 +59,7 @@ describe('opportunityDetailService', () => {
     expect(calls).toEqual([]);
   });
 
-  it('queries only approved, non-archived PostedOpportunity records and returns null when missing', async () => {
+  it('queries only currently publishable PostedOpportunity records and returns null when missing', async () => {
     const calls: any[] = [];
     const id = new Types.ObjectId().toString();
 
@@ -70,7 +70,13 @@ describe('opportunityDetailService', () => {
     expect(detail).toBeNull();
     expect(String(calls[0].filter._id)).toBe(id);
     expect(calls[0].filter.archived).toBe(false);
+    expect(calls[0].filter.status).toEqual({ $in: ['OPEN', 'ROLLING'] });
     expect(calls[0].filter['review.status']).toBe('approved');
+    expect(calls[0].filter.$or).toEqual([
+      { deadline: { $exists: false } },
+      { deadline: null },
+      { deadline: { $gte: expect.any(Date) } },
+    ]);
   });
 
   it('requires public student visibility for the host research entity', async () => {

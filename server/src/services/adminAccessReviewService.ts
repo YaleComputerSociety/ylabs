@@ -669,8 +669,15 @@ export async function updateAccessReviewRecordReview(input: {
         }
       }
     } catch (error) {
+      const expectedModeratedState = Object.fromEntries(
+        Object.entries(update).map(([field, value]) => [field, value]),
+      );
       const compensation = await PostedOpportunity.updateOne(
-        { _id: id, 'review.reviewedAt': update['review.reviewedAt'] },
+        {
+          _id: id,
+          ...expectedModeratedState,
+          archived: (updated as any).archived === true,
+        },
         {
           $set: {
             submissionStatus: facultyOpportunity.submissionStatus,

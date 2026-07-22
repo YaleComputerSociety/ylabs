@@ -539,8 +539,9 @@ export function buildPathwaySearchIndexDocument(
     evidence: normalizedEvidence.evidence,
     evidenceSnippets: normalizedEvidence.snippets,
     studentPublishable:
-      !String(toStringValue(record.derivationKey) || '').startsWith('faculty-opportunity:') &&
-      isStudentPublishablePathway(record),
+      isStudentPublishablePathway(record) &&
+      (!String(toStringValue(record.derivationKey) || '').startsWith('faculty-opportunity:') ||
+        Boolean(activePostedOpportunity)),
   };
 }
 

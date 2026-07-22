@@ -238,9 +238,22 @@ describe('pathwaySearchService', () => {
     const pipeline = mocks.aggregate.mock.calls[0][0];
     expect(pipeline[0].$match).toMatchObject({
       archived: { $ne: true },
-      derivationKey: { $not: /^faculty-opportunity:/ },
+      $or: [
+        { derivationKey: { $not: /^faculty-opportunity:/ } },
+        {
+          derivationKey: /^faculty-opportunity:/,
+          'review.status': 'approved',
+        },
+      ],
     });
-    expect(pipeline[0].$match).not.toHaveProperty('review.status');
+    expect(pipeline).toContainEqual({
+      $match: {
+        $or: [
+          { derivationKey: { $not: /^faculty-opportunity:/ } },
+          { activePostedOpportunity: { $ne: null } },
+        ],
+      },
+    });
     const facetStage = pipeline.find((stage: any) => stage.$facet);
     expect(facetStage.$facet.hits).toEqual(
       expect.arrayContaining([
@@ -279,7 +292,7 @@ describe('pathwaySearchService', () => {
       (stage: any) => stage.$match?.['researchEntity.departments'],
     );
     const textMatch = pipeline.find((stage: any) =>
-      Array.isArray(stage.$match?.$or),
+      stage.$match?.$or?.some((clause: any) => clause.studentFacingLabel),
     );
     const labelRegex = textMatch.$match.$or.find((clause: any) => clause.studentFacingLabel)
       .studentFacingLabel;

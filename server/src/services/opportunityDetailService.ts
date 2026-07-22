@@ -299,7 +299,13 @@ export async function getOpportunityDetail(
       {
         _id: new Types.ObjectId(safeId),
         archived: false,
+        status: { $in: ['OPEN', 'ROLLING'] },
         'review.status': 'approved',
+        $or: [
+          { deadline: { $exists: false } },
+          { deadline: null },
+          { deadline: { $gte: now } },
+        ],
       },
       [
         'entryPathwayId',

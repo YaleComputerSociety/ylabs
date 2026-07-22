@@ -283,7 +283,12 @@ describe('adminAccessReviewService', () => {
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
     mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ _id: id, review: { status: 'approved' } }),
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        archived: false,
+        submissionStatus: 'REVIEWED',
+        review: { status: 'approved' },
+      }),
     });
     mocks.entryPathwayUpdateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
 
@@ -359,6 +364,49 @@ describe('adminAccessReviewService', () => {
       submissionStatus: 'PENDING_REVIEW',
       review: { status: 'unreviewed' },
       archived: false,
+    });
+    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
+      _id: new mongoose.Types.ObjectId(id),
+      archived: false,
+      submissionStatus: 'REVIEWED',
+      'review.status': 'approved',
+      'review.reviewedAt': expect.any(Date),
+    });
+  });
+
+  it('does not compensate over a concurrent faculty lifecycle write', async () => {
+    const id = '64f222222222222222222222';
+    const recordQuery: any = {
+      select: vi.fn(() => recordQuery),
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        createdByUserId: new mongoose.Types.ObjectId(),
+        entryPathwayId: new mongoose.Types.ObjectId(),
+        submissionStatus: 'PENDING_REVIEW',
+        review: { status: 'unreviewed' },
+        archived: false,
+      }),
+    };
+    mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
+    mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        archived: false,
+        submissionStatus: 'REVIEWED',
+        review: { status: 'approved' },
+      }),
+    });
+    mocks.entryPathwayUpdateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+    mocks.postedOpportunityUpdateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+
+    await expect(
+      updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
+    ).rejects.toThrow('Faculty opportunity moderation compensation failed');
+
+    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
+      archived: false,
+      submissionStatus: 'REVIEWED',
+      'review.status': 'approved',
     });
   });
 

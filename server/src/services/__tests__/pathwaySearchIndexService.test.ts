@@ -223,6 +223,32 @@ describe('pathwaySearchIndexService', () => {
     expect(doc.studentPublishable).toBe(false);
   });
 
+  it('publishes an approved faculty pathway only with a current linked opportunity', () => {
+    const [doc] = buildPathwaySearchIndexDocuments([
+      {
+        _id: 'faculty-opportunity-pathway',
+        derivationKey: 'faculty-opportunity:64f555555555555555555555',
+        status: 'ACTIVE',
+        evidenceStrength: 'DIRECT',
+        confidence: 1,
+        sourceUrls: ['https://example.edu/apply'],
+        review: { status: 'approved' },
+        researchEntity: {
+          _id: 'faculty-opportunity-entity',
+          departments: [],
+          researchAreas: [],
+        },
+        activePostedOpportunity: {
+          _id: '64f666666666666666666666',
+          title: 'Research assistant',
+          status: 'OPEN',
+        },
+      },
+    ]);
+
+    expect(doc.studentPublishable).toBe(true);
+  });
+
   it('indexes public entity visibility tiers and gates Meili searches to those tiers', async () => {
     const studentReadyDoc = buildPathwaySearchIndexDocument({
       _id: 'pathway-student-ready',
