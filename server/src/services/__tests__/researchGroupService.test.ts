@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
@@ -127,6 +128,8 @@ import {
   normalizeResearchSearchQuery,
   normalizeResearchGroupObjectId,
   publicMemberUserForRow,
+  isFreshVerifiedOfficialRosterRow,
+  publicRosterDisclosure,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
@@ -696,6 +699,190 @@ describe('getResearchGroupDetail', () => {
     });
   });
 
+  it('keeps only member rows whose normalized research entity id matches the detail entity', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const matchingUserId = '67d8928150621bcef434a1d7';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: new mongoose.Types.ObjectId(entityId),
+        slug: 'entity-isolation-lab',
+        name: 'Entity Isolation Lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'matching-member',
+          researchEntityId: entityId,
+          userId: matchingUserId,
+          role: 'affiliated',
+          archived: false,
+          isCurrentMember: true,
+        },
+        {
+          _id: 'cross-entity-member',
+          researchEntityId: '67d8928150621bcef434a1d6',
+          userId: 'cross-entity-user',
+          role: 'affiliated',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: matchingUserId,
+          fname: 'Matching',
+          lname: 'Scholar',
+          title: 'Research Scholar',
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('entity-isolation-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user).toMatchObject({
+      fname: 'Matching',
+      lname: 'Scholar',
+    });
+    expect(mocks.userFind.mock.calls[0]?.[0]).toEqual({ _id: { $in: [matchingUserId] } });
+  });
+
+  it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
+    const latestSnapshot = {
+      state: 'current',
+      memberKeys: ['official-profile:fixture|staff'],
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt: '2026-07-14T00:00:00Z',
+    };
+    const latestRow = {
+      sourceName: 'official-research-home-roster',
+      sourceUrl: latestSnapshot.sourceUrl,
+      evidenceStatus: 'verified',
+      identityKey: 'official-profile:fixture',
+      membershipKey: 'official-profile:fixture|staff',
+      name: 'Fixture Scholar',
+      lastObservedAt: '2026-07-14T00:00:00Z',
+      freshnessExpiresAt: '2026-08-04T00:00:00Z',
+    };
+    expect(
+      isFreshVerifiedOfficialRosterRow(latestRow, new Date('2026-07-14T00:00:00Z'), latestSnapshot),
+    ).toBe(true);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          ...latestRow,
+          freshnessExpiresAt: '2026-01-01T00:00:00Z',
+        },
+        new Date('2026-07-14T00:00:00Z'),
+        latestSnapshot,
+      ),
+    ).toBe(false);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          ...latestRow,
+        },
+        new Date('2026-07-14T00:00:00Z'),
+        { state: 'stale' },
+      ),
+    ).toBe(false);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        {
+          ...latestRow,
+        },
+        new Date('2026-07-14T00:00:00Z'),
+        { state: 'failed' },
+      ),
+    ).toBe(false);
+    const failedAfterPartial = {
+      state: 'failed',
+      lastSuccessfulSnapshot: { ...latestSnapshot, state: 'partial' },
+    };
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        latestRow,
+        new Date('2026-07-14T00:00:00Z'),
+        failedAfterPartial,
+      ),
+    ).toBe(true);
+    expect(
+      isFreshVerifiedOfficialRosterRow(
+        { ...latestRow, membershipKey: 'official-profile:excluded|staff' },
+        new Date('2026-07-14T00:00:00Z'),
+        failedAfterPartial,
+      ),
+    ).toBe(false);
+    for (const state of ['empty', 'withheld', 'stale', undefined]) {
+      expect(
+        isFreshVerifiedOfficialRosterRow(
+          {
+            ...latestRow,
+          },
+          new Date('2026-07-14T00:00:00Z'),
+          state ? { state } : undefined,
+        ),
+      ).toBe(false);
+    }
+    expect(
+      publicRosterDisclosure(
+        {
+          state: 'partial',
+          withheldCount: 2,
+          sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+        },
+        24,
+        27,
+      ),
+    ).toMatchObject({ status: 'partial', returned: 24, truncated: true, withheldCount: 2 });
+    expect(publicRosterDisclosure({ state: 'failed' }, 0, 0).status).toBe(
+      'optional-source-failure',
+    );
+    expect(
+      publicRosterDisclosure(
+        {
+          state: 'failed',
+          sourceUrl: latestSnapshot.sourceUrl,
+          observedAt: '2026-07-15T00:00:00Z',
+          freshnessExpiresAt: '2026-08-05T00:00:00Z',
+          lastSuccessfulSnapshot: {
+            ...latestSnapshot,
+            state: 'partial',
+            freshnessExpiresAt: latestRow.freshnessExpiresAt,
+          },
+        },
+        1,
+        1,
+        [latestRow],
+      ),
+    ).toMatchObject({
+      status: 'optional-source-failure',
+      sourceUrl: latestRow.sourceUrl,
+      observedAt: latestRow.lastObservedAt,
+      freshnessExpiresAt: latestRow.freshnessExpiresAt,
+    });
+    for (const obsoleteRow of [
+      { ...latestRow, membershipKey: 'official-profile:old|staff' },
+      { ...latestRow, sourceUrl: 'https://medicine.yale.edu/lab/old/members/' },
+      { ...latestRow, lastObservedAt: '2026-07-13T00:00:00Z' },
+    ]) {
+      expect(
+        isFreshVerifiedOfficialRosterRow(
+          obsoleteRow,
+          new Date('2026-07-14T00:00:00Z'),
+          latestSnapshot,
+        ),
+      ).toBe(false);
+    }
+  });
+
   it('removes private listing ownership and contact fields from public detail payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
@@ -707,6 +894,12 @@ describe('getResearchGroupDetail', () => {
         researchAreas: [],
         sourceUrls: [],
         studentVisibilityTier: 'student_ready',
+        rosterEnrichment: {
+          state: 'current',
+          memberKeys: ['official-profile:private|staff'],
+          sourceUrl: 'https://medicine.yale.edu/lab/private/members/',
+          observedAt: '2026-07-14T00:00:00Z',
+        },
       }),
     );
     mocks.listingFind.mockReturnValue(
@@ -887,6 +1080,7 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.postedOpportunities[0]).not.toHaveProperty('derivationKey');
     expect(detail?.postedOpportunities[0]).not.toHaveProperty('archived');
     expect(detail?.postedOpportunities[0]).not.toHaveProperty('review');
+    expect(detail?.researchEntity).not.toHaveProperty('rosterEnrichment');
   });
 
   it('allowlists public member user fields in public detail payloads', async () => {
@@ -1659,6 +1853,23 @@ describe('buildResearchActivityLinkPayload', () => {
 });
 
 describe('publicMemberUserForRow', () => {
+  it('preserves a verified roster-only member after entity-level validation', () => {
+    const publicUser = publicMemberUserForRow(
+      {
+        sourceName: 'official-research-home-roster',
+        evidenceStatus: 'verified',
+        identityKey: 'official-profile:fixture',
+        membershipKey: 'official-profile:fixture|staff',
+        name: 'Fixture Scholar',
+        freshnessExpiresAt: '2026-08-04T00:00:00Z',
+      },
+      new Map(),
+      new Map(),
+    );
+
+    expect(publicUser).toMatchObject({ fname: 'Fixture', lname: 'Scholar' });
+  });
+
   it('preserves official profile URLs without exposing user netids', () => {
     const row = {
       userId: 'internal-user',

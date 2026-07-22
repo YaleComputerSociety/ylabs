@@ -19,6 +19,11 @@ const ROLE_LABELS: Record<LabMemberRole, string> = {
   'core-faculty': 'Core Faculty',
   affiliated: 'Affiliated',
   alumni: 'Alumni',
+  postdoc: 'Postdoctoral Researcher',
+  'grad-student': 'Graduate Student',
+  undergrad: 'Undergraduate Researcher',
+  staff: 'Research Staff',
+  affiliate: 'Other Current Member',
 };
 
 const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
@@ -29,6 +34,11 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
   'core-faculty': 'bg-purple-50 text-purple-700',
   affiliated: 'bg-[var(--yr-panel-muted)] text-gray-600',
   alumni: 'bg-[var(--yr-panel-muted)] text-gray-500',
+  postdoc: 'bg-teal-50 text-teal-700',
+  'grad-student': 'bg-emerald-50 text-emerald-700',
+  undergrad: 'bg-amber-50 text-amber-800',
+  staff: 'bg-slate-100 text-slate-700',
+  affiliate: 'bg-[var(--yr-panel-muted)] text-gray-600',
 };
 
 // Lower index = more prominent. Sort members so leaders come first.
@@ -40,6 +50,11 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   'core-faculty': 4,
   affiliated: 5,
   alumni: 6,
+  postdoc: 7,
+  'grad-student': 8,
+  undergrad: 9,
+  staff: 10,
+  affiliate: 11,
 };
 
 const LabMembersList = ({ members }: LabMembersListProps) => {
@@ -98,12 +113,8 @@ const LabMembersList = ({ members }: LabMembersListProps) => {
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-gray-900">
-                {fullName}
-              </p>
-              {user.title && (
-                <p className="text-xs text-gray-500 truncate">{user.title}</p>
-              )}
+              <p className="truncate text-sm font-semibold text-gray-900">{fullName}</p>
+              {user.title && <p className="text-xs text-gray-500 truncate">{user.title}</p>}
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${ROLE_PILL_CLASSES[role]}`}

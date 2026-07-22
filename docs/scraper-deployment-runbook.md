@@ -2,7 +2,7 @@
 
 Status: active runbook
 
-Last updated: 2026-05-29
+Last updated: 2026-07-21
 
 ## Goal
 
@@ -137,7 +137,7 @@ Then run accepted sources in rollout order:
 2. Profile metadata: `yale-directory`.
 3. Enrichment: `openalex`, `nih-reporter`, `nsf-award-search`, `arxiv` where relevant.
 4. Access evidence: bounded `lab-microsite-undergrad-llm` source lists.
-5. Gated sources only after blockers clear: `undergrad-fellowships-recipients`.
+5. Gated sources only after blockers clear: `undergrad-fellowships-recipients` and bounded `official-research-home-roster` allowlist entries.
 
 For each Beta source:
 
@@ -454,6 +454,7 @@ Suggested starting cadence:
 | `ysm-atoz-index`                   | weekly                            | Entity discovery only.                                                               |
 | `yse-centers-index`                | weekly                            | Entity discovery only.                                                               |
 | `centers-institutes-index`         | weekly or biweekly                | Broad member extraction; stagger separately.                                         |
+| `official-research-home-roster`    | weekly after audit                | Disabled by default; data operations owns refresh and sampled precision review.      |
 | `dept-faculty-roster`              | weekly by department group        | Use source-specific `--only`/config where available.                                 |
 | `yale-directory`                   | weekly                            | Broad directory paging; watch runtime.                                               |
 | `nih-reporter`                     | weekly or monthly                 | Enrichment only; conflicts should remain understood aggregate churn.                 |

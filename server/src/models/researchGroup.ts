@@ -33,16 +33,7 @@ const researchGroupSchema = new mongoose.Schema(
     },
     kind: {
       type: String,
-      enum: [
-        'lab',
-        'center',
-        'institute',
-        'program',
-        'initiative',
-        'group',
-        'individual',
-        'solo',
-      ],
+      enum: ['lab', 'center', 'institute', 'program', 'initiative', 'group', 'individual', 'solo'],
       default: 'lab',
     },
     entityType: {
@@ -273,6 +264,40 @@ const researchGroupSchema = new mongoose.Schema(
     studentDecisionExplanation: {
       type: mongoose.Schema.Types.Mixed,
       required: false,
+    },
+    rosterEnrichment: {
+      type: {
+        state: {
+          type: String,
+          enum: ['current', 'partial', 'empty', 'withheld', 'stale', 'failed'],
+          required: true,
+        },
+        complete: { type: Boolean, default: false },
+        memberCount: { type: Number, min: 0, max: 40, default: 0 },
+        withheldCount: { type: Number, min: 0, max: 1000, default: 0 },
+        duplicateCount: { type: Number, min: 0, max: 1000, default: 0 },
+        memberKeys: { type: [String], default: [] },
+        sourceUrl: { type: String, default: '' },
+        sourcePublishedAt: { type: Date, required: false },
+        observedAt: { type: Date, required: true },
+        freshnessExpiresAt: { type: Date, required: false },
+        refreshOwner: { type: String, default: '' },
+        refreshCadence: { type: String, default: '' },
+        lastSuccessfulSnapshot: {
+          type: {
+            state: { type: String, enum: ['current', 'partial'], required: true },
+            memberKeys: { type: [String], default: [] },
+            sourceUrl: { type: String, required: true },
+            sourcePublishedAt: { type: Date, required: false },
+            observedAt: { type: Date, required: true },
+            freshnessExpiresAt: { type: Date, required: true },
+          },
+          required: false,
+          default: undefined,
+        },
+      },
+      required: false,
+      default: undefined,
     },
     timeCommitmentHoursPerWeek: {
       type: {

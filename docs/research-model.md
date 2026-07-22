@@ -32,6 +32,11 @@ dropped after its data is copied and verified. Empty historical stats and
 paper-entity link collections were removed from the runtime model to avoid
 treating unused collections as launch evidence.
 
+Current non-lead roster membership uses stable source identity fields on `research_entity_members`, including `identityKey`, role-specific `membershipKey`, source provenance, evidence status, and freshness expiry.
+Official roster snapshots update current rows idempotently and archive disappeared rows with `endedAt` instead of deleting provenance.
+Each entity retains the exact member keys, source URL, observation time, and freshness boundary of its last successful current or partial roster snapshot so a failed refresh can provide bounded grace without reviving older membership.
+An unresolved name, ambiguous profile identity, stale source, missing explicitly current section, or failed optional fetch remains hidden and reviewable rather than becoming current membership.
+
 Umbrella affiliations use `research_entity_relationships` with
 `sourceResearchEntityId` as the center, institute, or umbrella entity and
 `targetResearchEntityId` as the member lab, faculty research area, or project.
@@ -420,6 +425,9 @@ Examples:
 - collaborator
 
 This supports STEM labs, social science centers, economics RA programs, digital humanities teams, library/museum projects, and fellowship-supervised independent research.
+
+Student-facing roster groups are intentionally coarse: postdoctoral researchers, graduate students, undergraduate researchers, research staff, faculty, and other current members.
+The exact official title remains visible as source context, and roster membership never becomes a contact recommendation or access claim.
 
 ## Recommended Next Steps
 

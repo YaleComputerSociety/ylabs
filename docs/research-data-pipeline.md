@@ -2,7 +2,7 @@
 
 Status: active operator reference
 
-Last updated: 2026-06-06
+Last updated: 2026-07-21
 
 Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 
@@ -31,6 +31,14 @@ For YSM lab entities, `ysm-atoz-index` uses the current official index at `https
 Research-entity `sourceUrls` are durable home/profile/grant evidence pointers, not a dump of every supporting page. Materialization keeps raw observation evidence intact, but filters article, news, event, blog, podcast, video, and webinar paths out of materialized `sourceUrls` so content pages cannot make a valid lab or center look like a leaked article record.
 
 Research detail membership resolution must not display a `User` whose linked `facultyMemberId` conflicts with the membership row's `facultyMemberId`. In that case, the public detail payload falls back to the scraper-backed `FacultyMember` identity rather than showing the wrong Yale account. The student visibility gate treats `pi_identity_conflict` as a blocking reason routed to the PI identity repair lane, while a membership row with a trusted `facultyMemberId` but no `userId` still counts as attached lead evidence.
+
+The `official-research-home-roster` source acquires non-lead current membership only from an allowlisted official page and explicitly configured current section.
+Each materialized row requires a source-specific official profile identity, an honestly mapped role, a recent page publish date, an observation date, and a bounded refresh-expiry date.
+Names alone never resolve a `User` or merge membership rows.
+A complete non-empty snapshot archives source-owned rows that disappeared while preserving their observation and membership history; empty, stale, withheld, and failed snapshots never trigger cleanup.
+Public detail suppresses expired or conflicting rows, limits roster presentation to 24 members, excludes direct contact data, and discloses that missing roster evidence does not mean an empty team.
+After an optional-source failure, public detail may retain only the exact still-fresh rows from the most recent successful current or partial snapshot, using that snapshot's source and observation metadata for disclosure.
+The source is seeded disabled and owned by Yale Research data operations on a weekly cadence until `research-homes:audit-rosters` reports clean structure and a sampled precision review is recorded.
 
 ## Read-Only Control Plane
 

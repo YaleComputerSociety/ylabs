@@ -45,7 +45,6 @@ import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes'
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
-  toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
@@ -1099,8 +1098,15 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
   }
 };
 
-function publicMemberKeyForResearchDetail(user: any, role?: string): string {
-  return [user?.displayName || [user?.fname, user?.lname].filter(Boolean).join(' '), role]
+function publicMemberKeyForResearchDetail(
+  user: any,
+  role?: string,
+  stableIdentity?: string,
+): string {
+  return [
+    stableIdentity || user?.displayName || [user?.fname, user?.lname].filter(Boolean).join(' '),
+    role,
+  ]
     .filter(Boolean)
     .join(':')
     .toLowerCase()
@@ -1196,7 +1202,138 @@ export function publicMemberUserForRow(
     return publicMemberUserFromFaculty(faculty);
   }
 
-  return publicMemberUserForResearchDetail(user);
+  if (!user && !faculty && isVerifiedOfficialRosterRow(row)) {
+    const nameParts = String(row.name || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const fname = nameParts.shift() || '';
+    const lname = nameParts.join(' ');
+    if (!fname || !lname) return null;
+    return {
+      fname,
+      lname,
+      displayName: publicString(row.name),
+      title: publicString(row.title),
+      imageUrl: '',
+      image_url: '',
+      profileUrls: {},
+      profile_urls: {},
+    };
+  }
+
+  return user ? publicMemberUserForResearchDetail(user) : null;
+}
+
+const OFFICIAL_ROSTER_SOURCE_NAME = 'official-research-home-roster';
+const MAX_PUBLIC_ROSTER_MEMBERS = 24;
+
+export function isFreshVerifiedOfficialRosterRow(
+  row: any,
+  now = new Date(),
+  enrichment?: any,
+): boolean {
+  if (!isVerifiedOfficialRosterRow(row, now)) return false;
+  const publicationSnapshot =
+    enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : enrichment;
+  if (!['current', 'partial'].includes(publicationSnapshot?.state)) return false;
+
+  const snapshotObservedAt = new Date(publicationSnapshot?.observedAt || 0);
+  const rowObservedAt = new Date(row?.lastObservedAt || 0);
+  const memberKeys = Array.isArray(publicationSnapshot?.memberKeys)
+    ? publicationSnapshot.memberKeys
+    : [];
+  return (
+    memberKeys.includes(row.membershipKey) &&
+    row.sourceUrl === publicationSnapshot.sourceUrl &&
+    Number.isFinite(snapshotObservedAt.getTime()) &&
+    snapshotObservedAt.getTime() > 0 &&
+    Number.isFinite(rowObservedAt.getTime()) &&
+    rowObservedAt.getTime() >= snapshotObservedAt.getTime()
+  );
+}
+
+function isVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
+  const expiresAt = new Date(row?.freshnessExpiresAt || 0);
+  return (
+    row?.sourceName === OFFICIAL_ROSTER_SOURCE_NAME &&
+    row?.evidenceStatus === 'verified' &&
+    Boolean(row?.identityKey && row?.membershipKey && row?.name) &&
+    Number.isFinite(expiresAt.getTime()) &&
+    expiresAt.getTime() >= now.getTime()
+  );
+}
+
+export type PublicRosterDisclosureStatus =
+  | 'current'
+  | 'partial'
+  | 'no-verified-data'
+  | 'withheld'
+  | 'optional-source-failure';
+
+export interface PublicRosterDisclosure {
+  status: PublicRosterDisclosureStatus;
+  returned: number;
+  truncated: boolean;
+  withheldCount: number;
+  sourceUrl?: string;
+  observedAt?: unknown;
+  freshnessExpiresAt?: unknown;
+}
+
+export function publicRosterDisclosure(
+  enrichment: any,
+  verifiedMemberCount: number,
+  availableMemberCount: number,
+  retainedRows: any[] = [],
+): PublicRosterDisclosure {
+  const withheldCount = Math.max(0, Number(enrichment?.withheldCount) || 0);
+  let status: PublicRosterDisclosureStatus;
+  if (enrichment?.state === 'failed') {
+    status = 'optional-source-failure';
+  } else if (verifiedMemberCount > 0) {
+    status = withheldCount > 0 || enrichment?.state === 'partial' ? 'partial' : 'current';
+  } else if (withheldCount > 0 || enrichment?.state === 'withheld') {
+    status = 'withheld';
+  } else {
+    status = 'no-verified-data';
+  }
+  const earliestRetainedValue = (field: 'lastObservedAt' | 'freshnessExpiresAt') =>
+    retainedRows
+      .map((row) => row?.[field])
+      .filter((value) => {
+        const time = new Date(value || 0).getTime();
+        return Number.isFinite(time) && time > 0;
+      })
+      .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0];
+  const retainedSnapshot =
+    enrichment?.state === 'failed' ? enrichment?.lastSuccessfulSnapshot : undefined;
+  const useRetainedSnapshot = Boolean(retainedSnapshot);
+  const useRetainedEvidence =
+    !useRetainedSnapshot && enrichment?.state === 'failed' && retainedRows.length > 0;
+  return {
+    status,
+    returned: Math.min(verifiedMemberCount, MAX_PUBLIC_ROSTER_MEMBERS),
+    truncated: availableMemberCount > MAX_PUBLIC_ROSTER_MEMBERS,
+    withheldCount,
+    sourceUrl: publicHttpUrl(
+      useRetainedSnapshot
+        ? retainedSnapshot.sourceUrl
+        : useRetainedEvidence
+          ? retainedRows.find((row) => row?.sourceUrl)?.sourceUrl
+          : enrichment?.sourceUrl,
+    ),
+    observedAt: useRetainedSnapshot
+      ? retainedSnapshot.observedAt
+      : useRetainedEvidence
+        ? earliestRetainedValue('lastObservedAt')
+        : enrichment?.observedAt,
+    freshnessExpiresAt: useRetainedSnapshot
+      ? retainedSnapshot.freshnessExpiresAt
+      : useRetainedEvidence
+        ? earliestRetainedValue('freshnessExpiresAt')
+        : enrichment?.freshnessExpiresAt,
+  };
 }
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
@@ -1396,9 +1533,7 @@ const OFFICIAL_PROFILE_URL_KEYS = [
 const safeProfileUrlObject = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(
-      ([, url]) => publicHttpUrl(url),
-    ),
+    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
   ) as Record<string, string>;
 };
 
@@ -2026,6 +2161,7 @@ const publicResearchDetailGroup = (group: any) => {
     contactPhone: _contactPhone,
     email: _email,
     phone: _phone,
+    rosterEnrichment: _rosterEnrichment,
     ...publicGroup
   } = group || {};
   return publicGroup;
@@ -2042,9 +2178,13 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
 };
 
 /**
- * Detail payload for the lab page: the group itself, member User snapshots
- * (PIs first), the most recent papers across all members, and the group's
- * non-archived listings.
+ * Public research-detail payload.
+ *
+ * Lead members remain first. Non-lead official-roster members are returned only
+ * while their stable identity and snapshot evidence are verified and fresh, are
+ * capped at 24, and carry public source/profile provenance. The separate roster
+ * disclosure distinguishes current, partial, withheld, no-verified-data, and
+ * optional-source-failure states so absence never implies an empty team.
  */
 export async function recordResearchEntityOutreach(
   slug: string,
@@ -2105,6 +2245,7 @@ export async function recordResearchEntityOutreach(
 export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
+  roster: PublicRosterDisclosure;
   recentPapers: any[];
   recentArxivPreprints: any[];
   researchActivityLinks: any[];
@@ -2133,12 +2274,18 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   }).lean();
   if (!group) return null;
 
-  const memberRows: any[] = await ResearchGroupMember.find(
+  const memberRowsRaw: any[] = await ResearchGroupMember.find(
     currentResearchEntityMemberFilter((group as any)._id),
   )
     .sort({ role: 1, updatedAt: -1 })
     .limit(MAX_PUBLIC_DETAIL_MEMBERS)
     .lean();
+  const memberRows = memberRowsRaw.filter(
+    (row) =>
+      idEquals(row.researchEntityId, (group as any)._id) &&
+      (row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+        isFreshVerifiedOfficialRosterRow(row, new Date(), (group as any).rosterEnrichment)),
+  );
 
   const memberUserIds = memberRows
     .map((row) => row.userId)
@@ -2200,6 +2347,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     }))
     .filter((member, index, rows) => {
       const userKey =
+        member.row?.identityKey ||
         member.user.netid ||
         researchGroupDocumentId(member.user._id) ||
         [member.user.fname, member.user.lname].filter(Boolean).join(' ');
@@ -2208,6 +2356,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         index ===
         rows.findIndex((candidate) => {
           const candidateUserKey =
+            candidate.row?.identityKey ||
             candidate.user.netid ||
             researchGroupDocumentId(candidate.user._id) ||
             [candidate.user.fname, candidate.user.lname].filter(Boolean).join(' ');
@@ -2238,7 +2387,12 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     dedupedMembersWithRows
       .map((member) => {
         const id = normalizeResearchGroupObjectId(member.user?._id);
-        return id ? [id, publicMemberKeyForResearchDetail(member.user, member.role)] : undefined;
+        return id
+          ? [
+              id,
+              publicMemberKeyForResearchDetail(member.user, member.role, member.row?.identityKey),
+            ]
+          : undefined;
       })
       .filter((entry): entry is [string, string] => Boolean(entry)),
   );
@@ -2250,15 +2404,44 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         : [];
     }),
   );
-  const members = dedupedMembersWithRows.map(({ row: _row, ...member }) => {
+  const availableRosterMembers = dedupedMembersWithRows.filter((member) =>
+    isFreshVerifiedOfficialRosterRow(member.row, new Date(), (group as any).rosterEnrichment),
+  );
+  const publicRosterMembers = availableRosterMembers.slice(0, MAX_PUBLIC_ROSTER_MEMBERS);
+  const publicRosterMemberRows = new Set(publicRosterMembers.map((member) => member.row));
+  const boundedMembersWithRows = dedupedMembersWithRows.filter(
+    (member) =>
+      member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+      publicRosterMemberRows.has(member.row),
+  );
+  const members = boundedMembersWithRows.map(({ row, ...member }) => {
+    const rosterEvidence = isFreshVerifiedOfficialRosterRow(
+      row,
+      new Date(),
+      (group as any).rosterEnrichment,
+    )
+      ? {
+          sourceUrl: publicHttpUrl(row.sourceUrl),
+          profileUrl: publicHttpUrl(row.profileUrl),
+          observedAt: row.lastObservedAt,
+          freshnessExpiresAt: row.freshnessExpiresAt,
+        }
+      : undefined;
     return {
       ...member,
       user: {
         ...publicMemberUserForResearchDetail(member.user),
-        publicKey: publicMemberKeyForResearchDetail(member.user, member.role),
+        publicKey: publicMemberKeyForResearchDetail(member.user, member.role, row?.identityKey),
       },
+      ...(rosterEvidence ? { rosterEvidence } : {}),
     };
   });
+  const roster = publicRosterDisclosure(
+    (group as any).rosterEnrichment,
+    publicRosterMembers.length,
+    availableRosterMembers.length,
+    availableRosterMembers.map((member) => member.row),
+  );
   const attributionRows = memberDisplayIds.length
     ? await ResearchScholarlyAttribution.find({
         targetUserId: { $in: memberDisplayIds },
@@ -2457,6 +2640,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       studentDecisionExplanation: studentDecisionExplanation || undefined,
     },
     members,
+    roster,
     ...researchActivity,
     recentPapers,
     recentArxivPreprints,
