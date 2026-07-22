@@ -4822,7 +4822,14 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   assert.match(source, /buildResearchGroupFilterString\(safeFilters\)/);
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
-  assert.match(source, /const idEquals = \(left: unknown, right: unknown\): boolean => \{/);
+  assert.match(
+    source,
+    /const idEquals\s*=\s*\(\s*left: unknown,\s*right: unknown\s*\)\s*:\s*boolean\s*=>/,
+  );
+  assert.match(source, /const leftId\s*=\s*normalizeResearchGroupObjectId\(left\)/);
+  assert.match(source, /const rightId\s*=\s*normalizeResearchGroupObjectId\(right\)/);
+  assert.match(source, /leftId\s*===\s*rightId/);
+  assert.match(source, /idEquals\(\s*row\.researchEntityId,\s*\(group as any\)\._id\s*\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(entityId/);
 });

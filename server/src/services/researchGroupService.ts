@@ -1338,6 +1338,12 @@ export function publicRosterDisclosure(
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
+const idEquals = (left: unknown, right: unknown): boolean => {
+  const leftId = normalizeResearchGroupObjectId(left);
+  const rightId = normalizeResearchGroupObjectId(right);
+  return Boolean(leftId && rightId && leftId === rightId);
+};
+
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
   archived: { $ne: true },
@@ -2276,8 +2282,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     .lean();
   const memberRows = memberRowsRaw.filter(
     (row) =>
-      row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
-      isFreshVerifiedOfficialRosterRow(row, new Date(), (group as any).rosterEnrichment),
+      idEquals(row.researchEntityId, (group as any)._id) &&
+      (row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+        isFreshVerifiedOfficialRosterRow(row, new Date(), (group as any).rosterEnrichment)),
   );
 
   const memberUserIds = memberRows

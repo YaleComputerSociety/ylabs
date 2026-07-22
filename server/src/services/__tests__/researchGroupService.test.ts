@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
@@ -696,6 +697,61 @@ describe('getResearchGroupDetail', () => {
       archived: { $ne: true },
       isCurrentMember: { $ne: false },
     });
+  });
+
+  it('keeps only member rows whose normalized research entity id matches the detail entity', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const matchingUserId = '67d8928150621bcef434a1d7';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: new mongoose.Types.ObjectId(entityId),
+        slug: 'entity-isolation-lab',
+        name: 'Entity Isolation Lab',
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'matching-member',
+          researchEntityId: entityId,
+          userId: matchingUserId,
+          role: 'affiliated',
+          archived: false,
+          isCurrentMember: true,
+        },
+        {
+          _id: 'cross-entity-member',
+          researchEntityId: '67d8928150621bcef434a1d6',
+          userId: 'cross-entity-user',
+          role: 'affiliated',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: matchingUserId,
+          fname: 'Matching',
+          lname: 'Scholar',
+          title: 'Research Scholar',
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('entity-isolation-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user).toMatchObject({
+      fname: 'Matching',
+      lname: 'Scholar',
+    });
+    expect(mocks.userFind.mock.calls[0]?.[0]).toEqual({ _id: { $in: [matchingUserId] } });
   });
 
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
