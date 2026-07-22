@@ -89,7 +89,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | ----------------- | ------------------- | ------------------------------------------------- |
 | `/research`       | `researchGroups.ts` | Varies, with public search and detail.            |
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface. |
-| `/opportunities`  | `opportunities.ts`  | Public.                                           |
+| `/opportunities`  | `opportunities.ts`  | Public detail; verified faculty-only authoring.   |
 | `/pathways`       | `pathways.ts`       | Auth required.                                    |
 | `/listings`       | `listings.ts`       | Auth; legacy API remains mounted and functional.  |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.  |
@@ -109,7 +109,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
 | `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts`                                          | Meilisearch index sync and query.                                    |
 | `meiliSyncService.ts`                                                                                                                       | Syncs collection upserts into Meilisearch indexes.                   |
-| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts`  | Product-model access layer.                                          |
+| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` / `facultyOpportunityService.ts`  | Product-model access and faculty opportunity authoring layer.        |
 | `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
 | `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, repair queue, and decision explanations. |

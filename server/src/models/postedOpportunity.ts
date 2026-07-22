@@ -1,8 +1,8 @@
 /**
  * Specific active, rolling, closed, or archived research opportunities.
  *
- * A PostedOpportunity may wrap an existing Listing while the legacy listing
- * flow remains in place.
+ * A PostedOpportunity may be faculty-authored, scraper-derived, or linked to
+ * an existing Listing through the compatibility bridge.
  */
 import mongoose from 'mongoose';
 import { recordReviewSchema } from './modelPrimitives';

@@ -212,7 +212,9 @@ Suggested fields:
 PostedOpportunity {
   id: string;
   entryPathwayId: string;
+  researchEntityId?: string;
   title: string;
+  description: string;
   term?: string;
   deadline?: Date;
   applicationUrl?: string;
@@ -221,6 +223,21 @@ PostedOpportunity {
   payRate?: string;
   eligibility?: string;
   sourceEvidenceIds: string[];
+  origin?: 'FACULTY_SUBMITTED' | 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
+  createdByUserId?: string;
+  ownerMembershipId?: string;
+  idempotencyKey?: string;
+  submissionStatus?: 'DRAFT' | 'PENDING_REVIEW' | 'REVIEWED';
+  revision: number;
+  submittedAt?: Date;
+  closedAt?: Date;
+  archivedAt?: Date;
+  auditHistory: Array<{
+    action: 'DRAFT_CREATED' | 'DRAFT_UPDATED' | 'SUBMITTED' | 'CLOSED' | 'ARCHIVED';
+    actorUserId: string;
+    occurredAt: Date;
+    revision: number;
+  }>;
 }
 ```
 
@@ -234,6 +251,9 @@ Faculty posting note: confirmed faculty with a verified profile and a current le
 The draft creates a linked `POSTED_ROLE` pathway, but neither record is student-publishable until the opportunity is approved.
 Edits revoke approval and return the opportunity to draft, while close and archive actions retain author, ownership, revision, and audit provenance.
 Ownership ambiguity, stale revisions, unsafe application URLs, and incomplete submissions fail closed.
+The faculty account surface lists owned entities and author-owned records through `/api/opportunities/mine`, supports validation-only preview, and uses owner-scoped idempotency keys for creation plus expected revisions for every later mutation.
+Only admin-approved, non-archived `OPEN` opportunities with a future deadline or approved `ROLLING` opportunities are public; pending, rejected, disputed, expired, closed, and archived records are excluded from entity detail, planning context, QA-01 qualification, and pathway search enrichment.
+Admin review of a faculty-submitted opportunity synchronizes its linked pathway review state, while optional Meilisearch synchronization is best effort and cannot roll back the canonical moderation decision.
 
 Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and listing-bridged versus scraper-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
 
@@ -452,7 +472,7 @@ Initial implementation note: `accessSummaryService.ts` computes a compatibility 
 
 Admins need a way to inspect derived access records before deeper editorial workflows are built.
 
-Implementation note: `GET /api/admin/access-review` returns research entities with counts of related `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` rows. `GET /api/admin/access-review/:id` returns the full derived access bundle for one entity. `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status/notes/locks. The admin UI can inspect source evidence, update review state, manage locks, and filter records by review/evidence/contact/archive gaps before Beta.
+Implementation note: `GET /api/admin/access-review` returns research entities with counts of related `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` rows. `GET /api/admin/access-review/:id` returns the full derived access bundle for one entity. `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status/notes/locks. For faculty-submitted opportunities, approval, needs-source, dispute, or reset review also updates the linked pathway and advances the opportunity revision so stale faculty writes conflict. The admin UI can inspect source evidence, update review state, manage locks, and filter records by review/evidence/contact/archive gaps before Beta.
 
 ### Student publication readiness
 
