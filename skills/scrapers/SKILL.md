@@ -45,27 +45,27 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 
 ## Active source scrapers (`server/src/scrapers/sources/`)
 
-| Scraper | Data |
-|---------|------|
-| `nsfAwardScraper.ts` | NSF grant awards |
-| `nihReporterScraper.ts` | NIH Reporter grants |
-| `centersInstitutesScraper.ts` | Yale centers and institutes index |
-| `departmentRosterScraper.ts` | Department faculty roster pages |
-| `ysmAtoZScraper.ts` | Yale School of Medicine A-Z index |
-| `yseCentersScraper.ts` | Yale School of Engineering centers |
-| `arxivPreprintScraper.ts` | arXiv preprints |
-| `openAlexPaperScraper.ts` | OpenAlex paper metadata |
-| `orcidWorksScraper.ts` | ORCID public works with identity-backed authorship |
-| `europePmcPaperScraper.ts` | Europe PMC and PubMed ORCID-backed paper metadata |
-| `crossrefPaperScraper.ts` | Crossref DOI metadata hydration |
-| `departmentUndergradResearchScraper.ts` | Department-level undergrad research opportunity/program pages |
-| `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists |
-| `labMicrositeUndergradLLMExtractor.ts` | LLM extraction of undergrad-access signals from lab microsites |
-| `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites |
-| `centerDirectorLLMExtractor.ts` | LLM extraction of the single named director of an organizational home from its official site + leadership pages |
-| `studentDecisionLLMExtractor.ts` | LLM extraction of student-decision signals from lab microsites |
-| `officialProfilePiBackfillScraper.ts` | Backfill scraper for PI official-profile data |
-| `officialResearchHomeRosterScraper.ts` | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness |
-| `yaleResearchOfficialScraper.ts` | Yale Research (provost/OVPR) official data |
-| `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog |
-| `yaleDirectoryScraper.ts` | Faculty roster via Yalies API (live equivalent of the static bootstrap import) |
+| Scraper                                  | Data                                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `nsfAwardScraper.ts`                     | NSF grant awards                                                                                                                      |
+| `nihReporterScraper.ts`                  | NIH Reporter grants                                                                                                                   |
+| `centersInstitutesScraper.ts`            | Yale centers and institutes index                                                                                                     |
+| `departmentRosterScraper.ts`             | Department faculty roster pages                                                                                                       |
+| `ysmAtoZScraper.ts`                      | Yale School of Medicine A-Z index                                                                                                     |
+| `yseCentersScraper.ts`                   | Yale School of Engineering centers                                                                                                    |
+| `arxivPreprintScraper.ts`                | arXiv preprints                                                                                                                       |
+| `openAlexPaperScraper.ts`                | OpenAlex paper metadata                                                                                                               |
+| `orcidWorksScraper.ts`                   | ORCID public works with identity-backed authorship                                                                                    |
+| `europePmcPaperScraper.ts`               | Europe PMC and PubMed ORCID-backed paper metadata                                                                                     |
+| `crossrefPaperScraper.ts`                | Crossref DOI metadata hydration                                                                                                       |
+| `departmentUndergradResearchScraper.ts`  | Department-level undergrad research opportunity/program pages                                                                         |
+| `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists                                                                                                  |
+| `labMicrositeUndergradLLMExtractor.ts`   | LLM extraction of undergrad-access signals from lab microsites                                                                        |
+| `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites                                                                                |
+| `centerDirectorLLMExtractor.ts`          | LLM extraction of the single named director of an organizational home from its official site + leadership pages                       |
+| `studentDecisionLLMExtractor.ts`         | LLM extraction of student-decision signals from lab microsites                                                                        |
+| `officialProfilePiBackfillScraper.ts`    | Backfill scraper for PI official-profile data                                                                                         |
+| `officialResearchHomeRosterScraper.ts`   | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness |
+| `yaleResearchOfficialScraper.ts`         | Yale Research (provost/OVPR) official data                                                                                            |
+| `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog                                                                                        |
+| `yaleDirectoryScraper.ts`                | Faculty roster via Yalies API (live equivalent of the static bootstrap import)                                                        |
