@@ -822,6 +822,22 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('privacy-lab');
 
+    expect(mocks.entryPathwayFind.mock.calls[0][0]).toMatchObject({
+      archived: false,
+      derivationKey: { $not: /^faculty-opportunity:/ },
+    });
+    expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
+    expect(mocks.postedOpportunityFind.mock.calls[0][0].$or[0]).toEqual({
+      origin: { $ne: 'FACULTY_SUBMITTED' },
+      archived: false,
+    });
+    expect(mocks.postedOpportunityFind.mock.calls[0][0].$or[1]).toMatchObject({
+      origin: 'FACULTY_SUBMITTED',
+      archived: false,
+      status: { $in: ['OPEN', 'ROLLING'] },
+      'review.status': 'approved',
+    });
+
     expect(detail?.activeListings).toEqual([
       expect.objectContaining({
         id: '67d8928150621bcef434a1d6',

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { publicPostedOpportunityMongoMatch } from './studentAccessPublicationPolicy';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -116,7 +117,11 @@ function bestNextStepFor(
 ): string {
   if (hasActivePostedOpportunity || status === 'posted-opening') return 'Apply';
   const exploratory = pathways.find((p) => p.pathwayType === 'EXPLORATORY_CONTACT');
-  if (exploratory) return boundedString(exploratory.bestNextStep, MAX_ACCESS_SUMMARY_TEXT_LENGTH) || 'Plan exploratory outreach';
+  if (exploratory)
+    return (
+      boundedString(exploratory.bestNextStep, MAX_ACCESS_SUMMARY_TEXT_LENGTH) ||
+      'Plan exploratory outreach'
+    );
   if (status === 'not-currently-available') return 'Check back later';
   if (
     signalTypes.has('CREDIT_FORMALIZATION_POSSIBLE') ||
@@ -134,12 +139,10 @@ function bestNextStepFor(
 export async function listAccessSummariesForResearchEntities(
   researchEntityIds: Array<string | mongoose.Types.ObjectId>,
 ): Promise<Map<string, AccessSummary>> {
-  const validIds = researchEntityIds
-    .slice(0, MAX_ACCESS_SUMMARY_ENTITY_IDS)
-    .flatMap((id) => {
-      const normalized = accessSummaryEntityId(id);
-      return normalized ? [normalized] : [];
-    })
+  const validIds = researchEntityIds.slice(0, MAX_ACCESS_SUMMARY_ENTITY_IDS).flatMap((id) => {
+    const normalized = accessSummaryEntityId(id);
+    return normalized ? [normalized] : [];
+  });
   if (validIds.length === 0) return new Map();
 
   const objectIds = validIds.map((id) => new mongoose.Types.ObjectId(id));
@@ -147,11 +150,17 @@ export async function listAccessSummariesForResearchEntities(
     AccessSignal.find({ researchEntityId: { $in: objectIds }, archived: false })
       .sort({ observedAt: -1 })
       .lean(),
-    EntryPathway.find({ researchEntityId: { $in: objectIds }, archived: false }).lean(),
-    PostedOpportunity.find({
+    EntryPathway.find({
       researchEntityId: { $in: objectIds },
       archived: false,
-      status: { $in: ['OPEN', 'ROLLING'] },
+      derivationKey: { $not: /^faculty-opportunity:/ },
+    }).lean(),
+    PostedOpportunity.find({
+      researchEntityId: { $in: objectIds },
+      ...publicPostedOpportunityMongoMatch({
+        archived: false,
+        status: { $in: ['OPEN', 'ROLLING'] },
+      }),
     }).lean(),
   ]);
 
@@ -179,12 +188,10 @@ export async function listAccessSummariesForResearchEntities(
   const out = new Map<string, AccessSummary>();
   for (const id of validIds) {
     const entitySignals = signalsByEntity.get(id) || [];
-    const entityPathways = (pathwaysByEntity.get(id) || []).filter(
-      (pathway) => {
-        const pathwayType = boundedString(pathway.pathwayType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
-        return pathwayType && !FORMALIZATION_ONLY_PATHWAY_TYPES.has(pathwayType);
-      },
-    );
+    const entityPathways = (pathwaysByEntity.get(id) || []).filter((pathway) => {
+      const pathwayType = boundedString(pathway.pathwayType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
+      return pathwayType && !FORMALIZATION_ONLY_PATHWAY_TYPES.has(pathwayType);
+    });
     const signalTypes = new Set(
       entitySignals.flatMap((signal) => {
         const signalType = boundedString(signal.signalType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);

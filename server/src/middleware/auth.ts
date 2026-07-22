@@ -2,10 +2,7 @@
  * Authentication guards and role-based access control middleware.
  */
 import express from 'express';
-import {
-  allowsLegacyAdminUserType,
-  hasActiveAdminGrant,
-} from '../services/adminGrantService';
+import { allowsLegacyAdminUserType, hasActiveAdminGrant } from '../services/adminGrantService';
 
 const AUTH_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
@@ -37,9 +34,7 @@ const sendAuthRequired = (res: express.Response) =>
 const hasAdminAuthority = async (user: AuthenticatedUser): Promise<boolean> => {
   const netid = requestNetid(user);
   if (user.userType !== 'admin' || !netid) return false;
-  return hasActiveAdminGrant(netid).then(
-    (hasGrant) => hasGrant || allowsLegacyAdminUserType(),
-  );
+  return hasActiveAdminGrant(netid).then((hasGrant) => hasGrant || allowsLegacyAdminUserType());
 };
 
 /**
@@ -127,6 +122,46 @@ export const canCreateListing = (
     return res.status(403).json({
       error:
         'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
+    });
+  }
+
+  next();
+};
+
+/**
+ * Faculty opportunity writes are intentionally narrower than legacy listing
+ * creation. Administrators moderate these records through the review queue,
+ * but only verified faculty principals may author them.
+ */
+export const canManagePostedOpportunities = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  const currentUser = req.user as AuthenticatedUser;
+
+  if (!hasAuthenticatedPrincipal(currentUser)) {
+    return sendAuthRequired(res);
+  }
+
+  if (!['professor', 'faculty'].includes(String(currentUser.userType ?? ''))) {
+    return res.status(403).json({
+      error: 'Verified faculty access is required',
+      code: 'FACULTY_ACCESS_REQUIRED',
+    });
+  }
+
+  if (currentUser.userConfirmed !== true) {
+    return res.status(403).json({
+      error: 'Account confirmation is required',
+      code: 'ACCOUNT_CONFIRMATION_REQUIRED',
+    });
+  }
+
+  if (currentUser.profileVerified !== true) {
+    return res.status(403).json({
+      error: 'Faculty profile verification is required',
+      code: 'PROFILE_VERIFICATION_REQUIRED',
     });
   }
 

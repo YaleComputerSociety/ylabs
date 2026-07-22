@@ -22,6 +22,10 @@ vi.mock('../../components/accounts/ProfileEditor', () => ({
   default: () => <section>Profile editor</section>,
 }));
 
+vi.mock('../../components/faculty/FacultyOpportunityManager', () => ({
+  default: () => <section>Faculty opportunity manager</section>,
+}));
+
 vi.mock('../../components/accounts/FavoritesManager', () => {
   const MockFavoritesManager = ({
     onSummaryChange,
@@ -172,11 +176,14 @@ describe('Account page', () => {
     );
 
     expect(screen.getByText('Faculty profile center')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Manage your public research profile' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Manage your public research profile' }),
+    ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'View public profile' }).getAttribute('href')).toBe(
       '/profile/prof1',
     );
     expect(screen.getByText('Favorites manager: professor')).toBeTruthy();
+    expect(screen.getByText('Faculty opportunity manager')).toBeTruthy();
     expect(screen.queryByText('Your plan')).toBeNull();
     expect(screen.queryByText('Saved research plans')).toBeNull();
   });

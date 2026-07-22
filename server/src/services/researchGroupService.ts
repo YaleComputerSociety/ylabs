@@ -45,7 +45,6 @@ import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes'
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
-  toPublicResearchEntityDto,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
@@ -67,8 +66,11 @@ import {
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { studentPathwayMongoMatch } from './studentAccessPublicationPolicy';
-import { isApprovedPublicContactRoute } from './studentAccessPublicationPolicy';
+import {
+  isApprovedPublicContactRoute,
+  publicPostedOpportunityMongoMatch,
+  studentPathwayMongoMatch,
+} from './studentAccessPublicationPolicy';
 import {
   canonicalScholarlyWorkKey,
   evaluateResearchActivityIntegrity,
@@ -1201,12 +1203,6 @@ export function publicMemberUserForRow(
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
-const idEquals = (left: unknown, right: unknown): boolean => {
-  const leftId = normalizeResearchGroupObjectId(left);
-  const rightId = normalizeResearchGroupObjectId(right);
-  return Boolean(leftId && rightId && leftId === rightId);
-};
-
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
   archived: { $ne: true },
@@ -1396,9 +1392,7 @@ const OFFICIAL_PROFILE_URL_KEYS = [
 const safeProfileUrlObject = (value: unknown): Record<string, string> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(
-      ([, url]) => publicHttpUrl(url),
-    ),
+    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
   ) as Record<string, string>;
 };
 
@@ -2007,6 +2001,7 @@ const publicAccessSignalForResearchDetail = (signal: any) => ({
 const publicPostedOpportunityForResearchDetail = (opportunity: any) => ({
   _id: opportunity._id,
   title: publicString(opportunity.title),
+  description: publicString(opportunity.description),
   term: publicString(opportunity.term),
   deadline: opportunity.deadline,
   applicationUrl: publicHttpUrl(opportunity.applicationUrl),
@@ -2358,7 +2353,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ priority: 1 })
       .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
       .lean(),
-    PostedOpportunity.find({ researchEntityId: (group as any)._id, archived: false })
+    PostedOpportunity.find({
+      researchEntityId: (group as any)._id,
+      ...publicPostedOpportunityMongoMatch({ archived: false }),
+    })
       .sort({ deadline: 1 })
       .limit(MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES)
       .lean(),

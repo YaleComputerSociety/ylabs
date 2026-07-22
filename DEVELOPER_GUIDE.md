@@ -386,6 +386,7 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 | `isAuthenticated` | `req.user` exists                                                                             |
 | `isAdmin`         | `userType === 'admin'`                                                                        |
 | `isProfessor`     | `userType` in `['professor', 'faculty', 'admin']`                                             |
+| `canManagePostedOpportunities` | Confirmed, profile-verified professor/faculty principal; excludes admins from authoring |
 
 ---
 
@@ -397,7 +398,7 @@ All mount under `/api`.
 | ----------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment | Varies                                                 |
 | `/programs`       | Programs & Fellowships browse/search and saved-program support                          | Varies                                                 |
-| `/opportunities`  | Real posted opportunity detail workflows                                                | Varies                                                 |
+| `/opportunities`  | Public detail plus owned faculty draft, preview, submission, close, and archive workflows | Public reads; verified faculty writes                  |
 | `/listings`       | Retired legacy API, returns `410 Gone`                                                  | Varies                                                 |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                  | Varies                                                 |
 | `/users`          | User CRUD                                                                               | Yes                                                    |

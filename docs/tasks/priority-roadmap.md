@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-07-15
+Last updated: 2026-07-21
 
 This is the single task source of truth for Yale Research.
 Keep it operational and compact.
@@ -57,6 +57,7 @@ Active themes:
 - Beta is the staging gate.
 - Production promotion requires a human-reviewed Atlas restore point, guarded copy dry-run, rollback posture, and production smoke result.
 - Scraper and repair writes must be evidence-first, dry-run-first, and fail closed on contact data.
+- Faculty-authored opportunities require verified ownership, private drafts, revision-guarded writes, admin moderation, and approved-current publication before search or student-facing enrichment.
 - Do not run production writes, production copies, destructive migrations, retention apply jobs, or data deletion without explicit user direction.
 
 ## Verification Commands
