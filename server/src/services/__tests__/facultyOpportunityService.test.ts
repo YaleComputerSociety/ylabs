@@ -142,6 +142,29 @@ describe('facultyOpportunityService validation and authorization', () => {
     ).toEqual(new Date(expected));
   });
 
+  it.each(['2026-02-29', '2026-02-31', '2026-04-31', '2026-13-01', '2026-00-10'])(
+    'rejects impossible calendar deadline %s',
+    (deadline) => {
+      expect(() =>
+        validateFacultyOpportunityInput(
+          { ...completeInput, deadline },
+          { requireComplete: true, now: new Date('2026-01-01T12:00:00.000Z') },
+        ),
+      ).toThrow(FacultyOpportunityError);
+
+      try {
+        validateFacultyOpportunityInput(
+          { ...completeInput, deadline },
+          { requireComplete: true, now: new Date('2026-01-01T12:00:00.000Z') },
+        );
+      } catch (error) {
+        expect((error as FacultyOpportunityError).fieldErrors).toMatchObject({
+          deadline: 'Enter a valid deadline',
+        });
+      }
+    },
+  );
+
   it('denies an authoritative unverified faculty account even if the session middleware was stale', async () => {
     const deps = baseDeps({
       userModel: {

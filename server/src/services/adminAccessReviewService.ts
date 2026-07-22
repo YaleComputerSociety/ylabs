@@ -629,6 +629,13 @@ export async function updateAccessReviewRecordReview(input: {
     update.archived = true;
   }
 
+  const facultyPathway =
+    isFacultyModerationDecision && facultyOpportunity?.entryPathwayId
+      ? await EntryPathway.findById(facultyOpportunity.entryPathwayId)
+          .select('status archived review.status updatedAt')
+          .lean()
+      : null;
+
   const expectedFacultyState = isFacultyModerationDecision
     ? {
         revision: facultyOpportunity?.revision,
@@ -653,7 +660,14 @@ export async function updateAccessReviewRecordReview(input: {
     );
     try {
       const pathwayResult = await EntryPathway.updateOne(
-        { _id: facultyOpportunity.entryPathwayId },
+        {
+          _id: facultyOpportunity.entryPathwayId,
+          derivationKey: `faculty-opportunity:${id.toHexString()}`,
+          status: facultyPathway?.status,
+          archived: facultyPathway?.archived,
+          'review.status': facultyPathway?.review?.status,
+          updatedAt: facultyPathway?.updatedAt,
+        },
         {
           $set: {
             ...reviewUpdate,
@@ -662,7 +676,7 @@ export async function updateAccessReviewRecordReview(input: {
         },
         { runValidators: true },
       );
-      if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
+      if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway changed');
       if (process.env.PATHWAY_SEARCH_SYNC === 'true') {
         const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
         if (pathwayId) {

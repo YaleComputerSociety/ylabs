@@ -202,12 +202,27 @@ const parseDeadline = (value: unknown, errors: FacultyOpportunityFieldErrors): D
     return undefined;
   }
   const text = typeof value === 'string' ? value.trim() : '';
-  const deadline =
-    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(text)
-      ? endOfYaleCalendarDay(text)
-      : value instanceof Date
-        ? new Date(value)
-        : new Date(text);
+  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (calendarDateMatch) {
+    const [, yearText, monthText, dayText] = calendarDateMatch;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const roundTrip = new Date(Date.UTC(year, month - 1, day));
+    if (
+      roundTrip.getUTCFullYear() !== year ||
+      roundTrip.getUTCMonth() + 1 !== month ||
+      roundTrip.getUTCDate() !== day
+    ) {
+      errors.deadline = 'Enter a valid deadline';
+      return undefined;
+    }
+  }
+  const deadline = calendarDateMatch
+    ? endOfYaleCalendarDay(text)
+    : value instanceof Date
+      ? new Date(value)
+      : new Date(text);
   if (Number.isNaN(deadline.getTime())) {
     errors.deadline = 'Enter a valid deadline';
     return undefined;
@@ -254,7 +269,7 @@ export function validateFacultyOpportunityInput(
   if (!EDITABLE_STATUSES.has(status as PostedOpportunityStatus)) {
     errors.status = 'Choose a dated opening or a rolling opening';
   }
-  if (status === 'OPEN' && requireComplete && !deadline) {
+  if (status === 'OPEN' && requireComplete && !deadline && !errors.deadline) {
     errors.deadline = 'A dated opening needs a deadline';
   }
   if (status === 'ROLLING' && deadline) {

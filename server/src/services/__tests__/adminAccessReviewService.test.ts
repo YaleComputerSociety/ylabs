@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   researchEntityFindByIdAndUpdate: vi.fn(),
   researchEntityAggregate: vi.fn(),
   entryPathwayFindByIdAndUpdate: vi.fn(),
+  entryPathwayFindById: vi.fn(),
   entryPathwayFindOne: vi.fn(),
   entryPathwayUpdateOne: vi.fn(),
   postedOpportunityFindById: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock('../../models/entryPathway', () => ({
   EntryPathway: {
     aggregate: vi.fn(),
     findByIdAndUpdate: mocks.entryPathwayFindByIdAndUpdate,
+    findById: mocks.entryPathwayFindById,
     findOne: mocks.entryPathwayFindOne,
     updateOne: mocks.entryPathwayUpdateOne,
     countDocuments: mocks.countDocuments,
@@ -83,6 +85,7 @@ describe('adminAccessReviewService', () => {
       lean: vi.fn().mockResolvedValue(null),
     };
     mocks.entryPathwayFindOne.mockReturnValue(query);
+    mocks.entryPathwayFindById.mockReturnValue(query);
   });
 
   it('caps access review page before building Mongo skip and limit values', async () => {
@@ -285,6 +288,18 @@ describe('adminAccessReviewService', () => {
       }),
     };
     mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
+    const pathwayUpdatedAt = new Date('2026-07-14T12:00:00.000Z');
+    const pathwayQuery: any = {
+      select: vi.fn(() => pathwayQuery),
+      lean: vi.fn().mockResolvedValue({
+        derivationKey: `faculty-opportunity:${id}`,
+        status: 'ACTIVE',
+        archived: false,
+        review: { status: 'unreviewed' },
+        updatedAt: pathwayUpdatedAt,
+      }),
+    };
+    mocks.entryPathwayFindById.mockReturnValue(pathwayQuery);
     mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
       lean: vi.fn().mockResolvedValue({
         _id: id,
@@ -320,6 +335,14 @@ describe('adminAccessReviewService', () => {
     expect(mocks.postedOpportunityFindOneAndUpdate.mock.calls[0][1].$inc).toEqual({ revision: 1 });
     expect(mocks.entryPathwayUpdateOne.mock.calls[0][1].$set).toMatchObject({
       'review.status': 'approved',
+    });
+    expect(mocks.entryPathwayUpdateOne.mock.calls[0][0]).toMatchObject({
+      _id: pathwayId,
+      derivationKey: `faculty-opportunity:${id}`,
+      status: 'ACTIVE',
+      archived: false,
+      'review.status': 'unreviewed',
+      updatedAt: pathwayUpdatedAt,
     });
   });
 
@@ -375,7 +398,7 @@ describe('adminAccessReviewService', () => {
 
     await expect(
       updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
-    ).rejects.toThrow('Linked pathway not found');
+    ).rejects.toThrow('Linked pathway changed');
 
     expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$set).toEqual({
       submissionStatus: 'PENDING_REVIEW',
@@ -429,6 +452,68 @@ describe('adminAccessReviewService', () => {
 
     expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
       revision: 9,
+      status: 'OPEN',
+      archived: false,
+      submissionStatus: 'REVIEWED',
+      'review.status': 'approved',
+    });
+  });
+
+  it('compensates when the linked pathway changes before moderation propagation', async () => {
+    const id = '64f222222222222222222222';
+    const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
+    const pathwayUpdatedAt = new Date('2026-07-14T12:00:00.000Z');
+    const recordQuery: any = {
+      select: vi.fn(() => recordQuery),
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        createdByUserId: new mongoose.Types.ObjectId(),
+        entryPathwayId: pathwayId,
+        submissionStatus: 'PENDING_REVIEW',
+        review: { status: 'unreviewed' },
+        status: 'OPEN',
+        archived: false,
+        revision: 10,
+      }),
+    };
+    const pathwayQuery: any = {
+      select: vi.fn(() => pathwayQuery),
+      lean: vi.fn().mockResolvedValue({
+        derivationKey: `faculty-opportunity:${id}`,
+        status: 'ACTIVE',
+        archived: false,
+        review: { status: 'unreviewed' },
+        updatedAt: pathwayUpdatedAt,
+      }),
+    };
+    mocks.postedOpportunityFindById.mockReturnValue(recordQuery);
+    mocks.entryPathwayFindById.mockReturnValue(pathwayQuery);
+    mocks.postedOpportunityFindOneAndUpdate.mockReturnValue({
+      lean: vi.fn().mockResolvedValue({
+        _id: id,
+        archived: false,
+        status: 'OPEN',
+        revision: 11,
+        submissionStatus: 'REVIEWED',
+        review: { status: 'approved' },
+      }),
+    });
+    mocks.entryPathwayUpdateOne.mockResolvedValue({ matchedCount: 0, modifiedCount: 0 });
+    mocks.postedOpportunityUpdateOne.mockResolvedValue({ matchedCount: 1, modifiedCount: 1 });
+
+    await expect(
+      updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
+    ).rejects.toThrow('Linked pathway changed');
+
+    expect(mocks.entryPathwayUpdateOne.mock.calls[0][0]).toMatchObject({
+      _id: pathwayId,
+      status: 'ACTIVE',
+      archived: false,
+      'review.status': 'unreviewed',
+      updatedAt: pathwayUpdatedAt,
+    });
+    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
+      revision: 11,
       status: 'OPEN',
       archived: false,
       submissionStatus: 'REVIEWED',
