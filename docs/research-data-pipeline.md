@@ -2,7 +2,7 @@
 
 Status: active operator reference
 
-Last updated: 2026-06-06
+Last updated: 2026-07-21
 
 Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 

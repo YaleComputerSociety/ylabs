@@ -1,6 +1,6 @@
 # Scraper Audit Guide
 
-Last updated: 2026-05-31
+Last updated: 2026-07-21
 
 This guide explains how to audit each scraper before production writes, what each scraper writes, and how the output supports Yale Research.
 
