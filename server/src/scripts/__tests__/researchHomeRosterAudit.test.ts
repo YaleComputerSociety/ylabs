@@ -43,12 +43,12 @@ describe('research-home roster coverage and precision audit', () => {
     const reviewed = buildResearchHomeRosterAudit([verifiedRow], {
       now: new Date('2026-07-15T00:00:00Z'),
       sampledPrecisionReviewed: true,
-      sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+      sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
       expectedSources: [expectedSource],
     });
     expect(reviewed.broadEnablementReady).toBe(true);
     expect(reviewed.counts.entitiesCovered).toBe(1);
-    expect(reviewed.sampledPrecisionReviewedBy).toBe('reviewer@yale.edu');
+    expect(reviewed.sampledPrecisionReviewedBy).toBe('reviewer.fixture@yale.edu');
   });
 
   it('flags stale rows, missing stable identities, unsafe URLs, and identity collisions', () => {
@@ -79,7 +79,7 @@ describe('research-home roster coverage and precision audit', () => {
       const report = buildResearchHomeRosterAudit([verifiedRow], {
         now: new Date('2026-07-15T00:00:00Z'),
         sampledPrecisionReviewed: true,
-        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
         expectedSources: [
           expectedSource,
           {
@@ -140,7 +140,7 @@ describe('research-home roster coverage and precision audit', () => {
         {
           now: new Date('2026-07-15T00:00:00Z'),
           sampledPrecisionReviewed: true,
-          sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+          sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
           expectedSources: [sourceWithTwoMembers],
         },
       );
@@ -154,7 +154,7 @@ describe('research-home roster coverage and precision audit', () => {
     const complete = buildResearchHomeRosterAudit([verifiedRow, secondMember], {
       now: new Date('2026-07-15T00:00:00Z'),
       sampledPrecisionReviewed: true,
-      sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+      sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
       expectedSources: [sourceWithTwoMembers],
     });
     expect(complete.broadEnablementReady).toBe(true);
@@ -182,7 +182,7 @@ describe('research-home roster coverage and precision audit', () => {
       const report = buildResearchHomeRosterAudit([verifiedRow, invalidRow], {
         now: new Date('2026-07-15T00:00:00Z'),
         sampledPrecisionReviewed: true,
-        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
         expectedSources: [expectedSource],
       });
       expect(report.broadEnablementReady).toBe(false);
@@ -206,7 +206,7 @@ describe('research-home roster coverage and precision audit', () => {
       {
         now: new Date('2026-07-15T00:00:00Z'),
         sampledPrecisionReviewed: true,
-        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
         expectedSources: [
           {
             ...expectedSource,
@@ -229,7 +229,7 @@ describe('research-home roster coverage and precision audit', () => {
       {
         now: new Date('2026-07-15T00:00:00Z'),
         sampledPrecisionReviewed: true,
-        sampledPrecisionReviewedBy: 'reviewer@yale.edu',
+        sampledPrecisionReviewedBy: 'reviewer.fixture@yale.edu',
         expectedSources: [expectedSource],
       },
     );
