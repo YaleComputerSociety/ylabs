@@ -154,12 +154,7 @@ const yaleDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
   hourCycle: 'h23',
 });
 
-const yaleDateTimeToUtc = (
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-): Date => {
+const yaleDateTimeToUtc = (year: number, month: number, day: number, hour: number): Date => {
   const target = Date.UTC(year, month - 1, day, hour);
   let instant = target;
   for (let attempt = 0; attempt < 2; attempt += 1) {

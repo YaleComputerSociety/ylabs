@@ -176,7 +176,9 @@ describe('Account page', () => {
     );
 
     expect(screen.getByText('Faculty profile center')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Manage your public research profile' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Manage your public research profile' }),
+    ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'View public profile' }).getAttribute('href')).toBe(
       '/profile/prof1',
     );

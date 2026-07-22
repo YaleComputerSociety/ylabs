@@ -49,12 +49,8 @@ describe('pathwaySearchService', () => {
   });
 
   it('leaves formalization-only pathway values non-actionable', () => {
-    expect(getBestNextStepCategory({ pathwayType: 'COURSE_CREDIT' })).toBe(
-      'save-for-later',
-    );
-    expect(getBestNextStepCategory({ pathwayType: 'SENIOR_THESIS' })).toBe(
-      'save-for-later',
-    );
+    expect(getBestNextStepCategory({ pathwayType: 'COURSE_CREDIT' })).toBe('save-for-later');
+    expect(getBestNextStepCategory({ pathwayType: 'SENIOR_THESIS' })).toBe('save-for-later');
     expect(getBestNextStepCategory({ pathwayType: 'FELLOWSHIP_FUNDED_PROJECT' })).toBe(
       'save-for-later',
     );
@@ -70,21 +66,13 @@ describe('pathwaySearchService', () => {
   });
 
   it('maps exploratory routes without a posted opportunity to plan outreach', () => {
-    expect(getBestNextStepCategory({ pathwayType: 'EXPLORATORY_CONTACT' })).toBe(
-      'plan-outreach',
-    );
-    expect(getBestNextStepCategory({ pathwayType: 'VOLUNTEER_OUTREACH' })).toBe(
-      'plan-outreach',
-    );
-    expect(getBestNextStepCategory({ pathwayType: 'FACULTY_SUPERVISION' })).toBe(
-      'plan-outreach',
-    );
+    expect(getBestNextStepCategory({ pathwayType: 'EXPLORATORY_CONTACT' })).toBe('plan-outreach');
+    expect(getBestNextStepCategory({ pathwayType: 'VOLUNTEER_OUTREACH' })).toBe('plan-outreach');
+    expect(getBestNextStepCategory({ pathwayType: 'FACULTY_SUPERVISION' })).toBe('plan-outreach');
   });
 
   it('keeps unavailable or thin-evidence pathways out of action-oriented CTAs', () => {
-    expect(getBestNextStepCategory({ status: 'NOT_CURRENTLY_AVAILABLE' })).toBe(
-      'check-back-later',
-    );
+    expect(getBestNextStepCategory({ status: 'NOT_CURRENTLY_AVAILABLE' })).toBe('check-back-later');
     expect(getBestNextStepCategory({ status: 'NO_EVIDENCE' })).toBe('save-for-later');
     expect(getBestNextStepCategory({ status: 'HISTORICAL' })).toBe('save-for-later');
   });
@@ -259,10 +247,7 @@ describe('pathwaySearchService', () => {
     });
     const facetStage = pipeline.find((stage: any) => stage.$facet);
     expect(facetStage.$facet.hits).toEqual(
-      expect.arrayContaining([
-        { $skip: 99_900 },
-        { $limit: 100 },
-      ]),
+      expect.arrayContaining([{ $skip: 99_900 }, { $limit: 100 }]),
     );
     expect(result).toMatchObject({
       hits: [],
@@ -291,20 +276,17 @@ describe('pathwaySearchService', () => {
     });
 
     const pipeline = mocks.aggregate.mock.calls[0][0];
-    const entityMatch = pipeline.find(
-      (stage: any) => stage.$match?.['researchEntity.departments'],
-    );
+    const entityMatch = pipeline.find((stage: any) => stage.$match?.['researchEntity.departments']);
     const textMatch = pipeline.find((stage: any) =>
       stage.$match?.$or?.some((clause: any) => clause.studentFacingLabel),
     );
-    const labelRegex = textMatch.$match.$or.find((clause: any) => clause.studentFacingLabel)
-      .studentFacingLabel;
+    const labelRegex = textMatch.$match.$or.find(
+      (clause: any) => clause.studentFacingLabel,
+    ).studentFacingLabel;
 
     expect(entityMatch.$match['researchEntity.departments'].$in).toHaveLength(50);
     expect(entityMatch.$match['researchEntity.departments'].$in[0]).toBe('Computer Science');
-    expect(entityMatch.$match['researchEntity.researchAreas'].$in).toEqual([
-      'x'.repeat(120),
-    ]);
+    expect(entityMatch.$match['researchEntity.researchAreas'].$in).toEqual(['x'.repeat(120)]);
     expect(labelRegex.source).toHaveLength(512);
   });
 
@@ -323,14 +305,10 @@ describe('pathwaySearchService', () => {
     });
 
     const pipeline = mocks.aggregate.mock.calls[0][0];
-    const entityMatch = pipeline.find(
-      (stage: any) => stage.$match?.['researchEntity.departments'],
-    );
+    const entityMatch = pipeline.find((stage: any) => stage.$match?.['researchEntity.departments']);
 
     expect(badFilter.toString).not.toHaveBeenCalled();
-    expect(entityMatch.$match['researchEntity.departments'].$in).toEqual([
-      'Computer Science',
-    ]);
+    expect(entityMatch.$match['researchEntity.departments'].$in).toEqual(['Computer Science']);
   });
 
   it('drops object-shaped pathway id filters before Mongo ObjectId construction', async () => {

@@ -62,9 +62,7 @@ describe('student access publication policy', () => {
   });
 
   it('admits only approved faculty pathways to opportunity-aware Mongo queries', () => {
-    expect(
-      studentPathwayMongoMatch({ includeApprovedFacultyOpportunities: true }),
-    ).toMatchObject({
+    expect(studentPathwayMongoMatch({ includeApprovedFacultyOpportunities: true })).toMatchObject({
       $or: [
         { derivationKey: { $not: /^faculty-opportunity:/ } },
         {
@@ -89,11 +87,7 @@ describe('student access publication policy', () => {
           archived: false,
           status: { $in: ['OPEN', 'ROLLING'] },
           'review.status': 'approved',
-          $or: [
-            { deadline: { $exists: false } },
-            { deadline: null },
-            { deadline: { $gte: now } },
-          ],
+          $or: [{ deadline: { $exists: false } }, { deadline: null }, { deadline: { $gte: now } }],
         },
       ],
     });

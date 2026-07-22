@@ -127,7 +127,10 @@ export interface RebuildPathwaySearchIndexResult {
 }
 
 export interface PathwaySearchIndexSearchAdapter extends PathwaySearchIndexAdapter {
-  search: (query: string, params: Record<string, unknown>) => Promise<{
+  search: (
+    query: string,
+    params: Record<string, unknown>,
+  ) => Promise<{
     hits?: PathwaySearchIndexDocument[];
     estimatedTotalHits?: number;
   }>;
@@ -213,9 +216,7 @@ const toStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return Array.from(
     new Set(
-      value
-        .map((item) => toStringValue(item))
-        .filter((item): item is string => Boolean(item)),
+      value.map((item) => toStringValue(item)).filter((item): item is string => Boolean(item)),
     ),
   );
 };
@@ -277,15 +278,17 @@ const normalizeEvidence = (
   const items = evidence
     .filter(isRecord)
     .slice(0, MAX_EVIDENCE_ITEMS)
-    .map((item): PathwaySearchIndexEvidenceDocument => ({
-      signalType: toStringValue(item.signalType),
-      confidence: toStringValue(item.confidence),
-      confidenceScore: toNumberValue(item.confidenceScore),
-      excerpt: redactAndTrim(item.excerpt),
-      sourceUrl: toPublicHttpUrl(item.sourceUrl),
-      observedAt: toIsoString(item.observedAt),
-      observedAtTimestamp: toTimestamp(item.observedAt),
-    }));
+    .map(
+      (item): PathwaySearchIndexEvidenceDocument => ({
+        signalType: toStringValue(item.signalType),
+        confidence: toStringValue(item.confidence),
+        confidenceScore: toNumberValue(item.confidenceScore),
+        excerpt: redactAndTrim(item.excerpt),
+        sourceUrl: toPublicHttpUrl(item.sourceUrl),
+        observedAt: toIsoString(item.observedAt),
+        observedAtTimestamp: toTimestamp(item.observedAt),
+      }),
+    );
 
   return {
     evidence: items,
@@ -319,7 +322,8 @@ const normalizePublicContactRoute = (
 const uniqueStrings = (...groups: string[][]): string[] =>
   Array.from(new Set(groups.flat().filter(Boolean)));
 
-const quoteFilterValue = (value: string): string => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const quoteFilterValue = (value: string): string =>
+  `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 const boundedSearchQuery = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -362,9 +366,7 @@ const sanitizePathwayMeiliFilters = (
       : undefined,
 });
 
-const sanitizePathwayMeiliSearchInput = (
-  input: PathwaySearchInput,
-): PathwaySearchInput => ({
+const sanitizePathwayMeiliSearchInput = (input: PathwaySearchInput): PathwaySearchInput => ({
   ...input,
   q: boundedSearchQuery(input.q),
   filters: sanitizePathwayMeiliFilters(input.filters || {}),
@@ -383,9 +385,9 @@ function buildPathwayMeiliFilter(filters: PathwaySearchInput['filters'] = {}): s
   const pathwayTypeFilter =
     toStringArray(filters.pathwayType).length > 0
       ? anyFilter('pathwayType', requestedPathwayTypes)
-      : FORMALIZATION_ONLY_PATHWAY_TYPES
-          .map((pathwayType) => `pathwayType != ${quoteFilterValue(pathwayType)}`)
-          .join(' AND ');
+      : FORMALIZATION_ONLY_PATHWAY_TYPES.map(
+          (pathwayType) => `pathwayType != ${quoteFilterValue(pathwayType)}`,
+        ).join(' AND ');
   const parts = [
     'studentPublishable = true',
     anyFilter('status', [...STUDENT_PATHWAY_STATUSES]),
@@ -424,8 +426,7 @@ function buildPathwayMeiliSort(input: PathwaySearchInput): string[] | undefined 
 }
 
 function indexDocumentToHit(doc: PathwaySearchIndexDocument): PathwaySearchHit {
-  const publicResearchEntityKey =
-    doc.entitySlug || doc.entityDisplayName || doc.entityName || '';
+  const publicResearchEntityKey = doc.entitySlug || doc.entityDisplayName || doc.entityName || '';
 
   return {
     _id: doc.pathwayId || doc.id,
@@ -565,7 +566,10 @@ export async function searchPathwaysViaMeili(
 ): Promise<PathwaySearchResult> {
   const safeInput = sanitizePathwayMeiliSearchInput(input);
   const page = Math.min(MAX_SEARCH_PAGE, Math.max(1, Math.floor(safeInput.page || 1)));
-  const pageSize = Math.max(1, Math.min(MAX_SEARCH_PAGE_SIZE, Math.floor(safeInput.pageSize || 24)));
+  const pageSize = Math.max(
+    1,
+    Math.min(MAX_SEARCH_PAGE_SIZE, Math.floor(safeInput.pageSize || 24)),
+  );
   const offset = (page - 1) * pageSize;
   const index = await getIndex(PATHWAY_SEARCH_INDEX_NAME);
   const filter = buildPathwayMeiliFilter(safeInput.filters);

@@ -332,9 +332,7 @@ export async function getOpportunityDetail(
         {
           _id: opportunity.entryPathwayId,
           archived: false,
-          ...(opportunity.origin === 'FACULTY_SUBMITTED'
-            ? { 'review.status': 'approved' }
-            : {}),
+          ...(opportunity.origin === 'FACULTY_SUBMITTED' ? { 'review.status': 'approved' } : {}),
         },
         [
           'pathwayType',

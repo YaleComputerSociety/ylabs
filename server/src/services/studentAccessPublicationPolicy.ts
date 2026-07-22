@@ -9,11 +9,7 @@ const currentFacultyOpportunityMatch = (now: Date): Record<string, unknown> => (
   archived: false,
   status: { $in: ['OPEN', 'ROLLING'] },
   'review.status': 'approved',
-  $or: [
-    { deadline: { $exists: false } },
-    { deadline: null },
-    { deadline: { $gte: now } },
-  ],
+  $or: [{ deadline: { $exists: false } }, { deadline: null }, { deadline: { $gte: now } }],
 });
 
 export const publicPostedOpportunityMongoMatch = (
@@ -52,9 +48,11 @@ export const isStudentPublishablePathway = (pathway: Record<string, unknown>): b
   pathway.confidence >= STUDENT_PATHWAY_MIN_CONFIDENCE &&
   hasPublicUrl(pathway.sourceUrls);
 
-export const studentPathwayMongoMatch = (options: {
-  includeApprovedFacultyOpportunities?: boolean;
-} = {}): Record<string, unknown> => ({
+export const studentPathwayMongoMatch = (
+  options: {
+    includeApprovedFacultyOpportunities?: boolean;
+  } = {},
+): Record<string, unknown> => ({
   ...(options.includeApprovedFacultyOpportunities
     ? {
         $or: [
