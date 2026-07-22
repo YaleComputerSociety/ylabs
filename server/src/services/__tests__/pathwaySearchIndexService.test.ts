@@ -242,11 +242,29 @@ describe('pathwaySearchIndexService', () => {
           _id: '64f666666666666666666666',
           title: 'Research assistant',
           status: 'OPEN',
+          origin: 'FACULTY_SUBMITTED',
         },
       },
     ]);
 
     expect(doc.studentPublishable).toBe(true);
+  });
+
+  it('does not publish a faculty pathway from a linked legacy opportunity', () => {
+    const doc = buildPathwaySearchIndexDocument({
+      derivationKey: 'faculty-opportunity:64f555555555555555555555',
+      status: 'ACTIVE',
+      evidenceStrength: 'DIRECT',
+      confidence: 1,
+      sourceUrls: ['https://example.edu/apply'],
+      review: { status: 'approved' },
+      activePostedOpportunity: {
+        origin: 'SCRAPER_DERIVED',
+        status: 'OPEN',
+      },
+    });
+
+    expect(doc.studentPublishable).toBe(false);
   });
 
   it('indexes public entity visibility tiers and gates Meili searches to those tiers', async () => {

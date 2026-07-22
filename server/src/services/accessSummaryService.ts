@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { publicPostedOpportunityMongoMatch } from './studentAccessPublicationPolicy';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -156,14 +157,10 @@ export async function listAccessSummariesForResearchEntities(
     }).lean(),
     PostedOpportunity.find({
       researchEntityId: { $in: objectIds },
-      archived: false,
-      status: { $in: ['OPEN', 'ROLLING'] },
-      'review.status': 'approved',
-      $or: [
-        { deadline: { $exists: false } },
-        { deadline: null },
-        { deadline: { $gte: new Date() } },
-      ],
+      ...publicPostedOpportunityMongoMatch({
+        archived: false,
+        status: { $in: ['OPEN', 'ROLLING'] },
+      }),
     }).lean(),
   ]);
 

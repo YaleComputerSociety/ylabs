@@ -506,11 +506,22 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
                   { $eq: ['$entryPathwayId', '$$pathwayId'] },
                   { $ne: ['$archived', true] },
                   { $in: ['$status', ['OPEN', 'ROLLING']] },
-                  { $eq: ['$review.status', 'approved'] },
                   {
                     $or: [
-                      { $eq: [{ $ifNull: ['$deadline', null] }, null] },
-                      { $gte: ['$deadline', '$$NOW'] },
+                      {
+                        $ne: [{ $ifNull: ['$origin', null] }, 'FACULTY_SUBMITTED'],
+                      },
+                      {
+                        $and: [
+                          { $eq: ['$review.status', 'approved'] },
+                          {
+                            $or: [
+                              { $eq: [{ $ifNull: ['$deadline', null] }, null] },
+                              { $gte: ['$deadline', '$$NOW'] },
+                            ],
+                          },
+                        ],
+                      },
                     ],
                   },
                 ],
@@ -527,6 +538,7 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
               applicationUrl: 1,
               status: 1,
               term: 1,
+              origin: 1,
             },
           },
         ],
@@ -542,7 +554,10 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
       $match: {
         $or: [
           { derivationKey: { $not: /^faculty-opportunity:/ } },
-          { activePostedOpportunity: { $ne: null } },
+          {
+            derivationKey: /^faculty-opportunity:/,
+            'activePostedOpportunity.origin': 'FACULTY_SUBMITTED',
+          },
         ],
       },
     },

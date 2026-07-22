@@ -67,8 +67,11 @@ import {
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { studentPathwayMongoMatch } from './studentAccessPublicationPolicy';
-import { isApprovedPublicContactRoute } from './studentAccessPublicationPolicy';
+import {
+  isApprovedPublicContactRoute,
+  publicPostedOpportunityMongoMatch,
+  studentPathwayMongoMatch,
+} from './studentAccessPublicationPolicy';
 import {
   canonicalScholarlyWorkKey,
   evaluateResearchActivityIntegrity,
@@ -2359,14 +2362,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .lean(),
     PostedOpportunity.find({
       researchEntityId: (group as any)._id,
-      archived: false,
-      status: { $in: ['OPEN', 'ROLLING'] },
-      'review.status': 'approved',
-      $or: [
-        { deadline: { $exists: false } },
-        { deadline: null },
-        { deadline: { $gte: new Date() } },
-      ],
+      ...publicPostedOpportunityMongoMatch({ archived: false }),
     })
       .sort({ deadline: 1 })
       .limit(MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES)

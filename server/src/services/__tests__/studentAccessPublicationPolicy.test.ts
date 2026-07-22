@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isApprovedPublicContactRoute,
   isStudentPublishablePathway,
+  publicPostedOpportunityMongoMatch,
   studentPathwayMongoMatch,
 } from '../studentAccessPublicationPolicy';
 
@@ -69,6 +70,30 @@ describe('student access publication policy', () => {
         {
           derivationKey: /^faculty-opportunity:/,
           'review.status': 'approved',
+        },
+      ],
+    });
+  });
+
+  it('preserves legacy opportunity visibility while gating faculty submissions', () => {
+    const now = new Date('2026-07-21T12:00:00.000Z');
+
+    expect(publicPostedOpportunityMongoMatch({ archived: false }, now)).toEqual({
+      $or: [
+        {
+          origin: { $ne: 'FACULTY_SUBMITTED' },
+          archived: false,
+        },
+        {
+          origin: 'FACULTY_SUBMITTED',
+          archived: false,
+          status: { $in: ['OPEN', 'ROLLING'] },
+          'review.status': 'approved',
+          $or: [
+            { deadline: { $exists: false } },
+            { deadline: null },
+            { deadline: { $gte: now } },
+          ],
         },
       ],
     });

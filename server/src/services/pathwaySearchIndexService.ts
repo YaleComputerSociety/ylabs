@@ -541,7 +541,7 @@ export function buildPathwaySearchIndexDocument(
     studentPublishable:
       isStudentPublishablePathway(record) &&
       (!String(toStringValue(record.derivationKey) || '').startsWith('faculty-opportunity:') ||
-        Boolean(activePostedOpportunity)),
+        activePostedOpportunity?.origin === 'FACULTY_SUBMITTED'),
   };
 }
 

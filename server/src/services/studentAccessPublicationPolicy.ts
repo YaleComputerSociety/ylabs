@@ -4,6 +4,31 @@ export const STUDENT_PATHWAY_MIN_CONFIDENCE = 0.7;
 export const STUDENT_PATHWAY_STATUSES = ['ACTIVE', 'RECURRING'] as const;
 export const STUDENT_PATHWAY_EVIDENCE_STRENGTHS = ['DIRECT', 'STRONG', 'MODERATE'] as const;
 
+const currentFacultyOpportunityMatch = (now: Date): Record<string, unknown> => ({
+  origin: 'FACULTY_SUBMITTED',
+  archived: false,
+  status: { $in: ['OPEN', 'ROLLING'] },
+  'review.status': 'approved',
+  $or: [
+    { deadline: { $exists: false } },
+    { deadline: null },
+    { deadline: { $gte: now } },
+  ],
+});
+
+export const publicPostedOpportunityMongoMatch = (
+  legacyMatch: Record<string, unknown>,
+  now = new Date(),
+): Record<string, unknown> => ({
+  $or: [
+    {
+      origin: { $ne: 'FACULTY_SUBMITTED' },
+      ...legacyMatch,
+    },
+    currentFacultyOpportunityMatch(now),
+  ],
+});
+
 const hasPublicUrl = (values: unknown): boolean =>
   Array.isArray(values) &&
   values.some((value) => {

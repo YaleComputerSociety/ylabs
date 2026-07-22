@@ -250,7 +250,10 @@ describe('pathwaySearchService', () => {
       $match: {
         $or: [
           { derivationKey: { $not: /^faculty-opportunity:/ } },
-          { activePostedOpportunity: { $ne: null } },
+          {
+            derivationKey: /^faculty-opportunity:/,
+            'activePostedOpportunity.origin': 'FACULTY_SUBMITTED',
+          },
         ],
       },
     });

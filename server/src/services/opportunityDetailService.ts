@@ -6,6 +6,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { publicPostedOpportunityMongoMatch } from './studentAccessPublicationPolicy';
 
 export type OpportunityDetailProvenance =
   | 'FACULTY_SUBMITTED'
@@ -298,14 +299,7 @@ export async function getOpportunityDetail(
     .findOne(
       {
         _id: new Types.ObjectId(safeId),
-        archived: false,
-        status: { $in: ['OPEN', 'ROLLING'] },
-        'review.status': 'approved',
-        $or: [
-          { deadline: { $exists: false } },
-          { deadline: null },
-          { deadline: { $gte: now } },
-        ],
+        ...publicPostedOpportunityMongoMatch({ archived: false }, now),
       },
       [
         'entryPathwayId',
@@ -338,7 +332,9 @@ export async function getOpportunityDetail(
         {
           _id: opportunity.entryPathwayId,
           archived: false,
-          'review.status': 'approved',
+          ...(opportunity.origin === 'FACULTY_SUBMITTED'
+            ? { 'review.status': 'approved' }
+            : {}),
         },
         [
           'pathwayType',

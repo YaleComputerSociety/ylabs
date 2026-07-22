@@ -204,7 +204,7 @@ describe('accessSummaryService', () => {
     expect(mocks.postedOpportunityFind).not.toHaveBeenCalled();
   });
 
-  it('keeps legacy pathways public while requiring approved unexpired opportunities', async () => {
+  it('keeps legacy discovery rules while gating faculty opportunities', async () => {
     const entityId = new Types.ObjectId();
 
     await listAccessSummariesForResearchEntities([entityId]);
@@ -215,14 +215,17 @@ describe('accessSummaryService', () => {
     });
     expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
     const opportunityFilter = mocks.postedOpportunityFind.mock.calls[0][0];
-    expect(opportunityFilter).toMatchObject({
+    expect(opportunityFilter.$or[0]).toEqual({
+      origin: { $ne: 'FACULTY_SUBMITTED' },
+      archived: false,
+      status: { $in: ['OPEN', 'ROLLING'] },
+    });
+    expect(opportunityFilter.$or[1]).toMatchObject({
+      origin: 'FACULTY_SUBMITTED',
       archived: false,
       status: { $in: ['OPEN', 'ROLLING'] },
       'review.status': 'approved',
     });
-    expect(opportunityFilter.$or).toEqual(
-      expect.arrayContaining([{ deadline: { $exists: false } }, { deadline: null }]),
-    );
-    expect(opportunityFilter.$or[2].deadline.$gte).toBeInstanceOf(Date);
+    expect(opportunityFilter.$or[1].$or[2].deadline.$gte).toBeInstanceOf(Date);
   });
 });
