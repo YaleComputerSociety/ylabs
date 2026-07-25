@@ -620,6 +620,8 @@ Each phase must remove a compatibility read before the corresponding legacy stor
 
 ### Phase 0: resolve integration state and measure production
 
+Use the [`Phase 0 runbook`](./research-model-refactor-phase0.md) for the read-only inventory command, report interpretation, and rollback prerequisites.
+
 - Resolve the existing merge conflicts before implementation changes begin.
 - Inventory collection counts, schema versions, field distributions, and reference integrity.
 - Identify actual read paths, index use, and query cost.
@@ -758,5 +760,5 @@ Likely implementation areas include:
 - `docs/decisions.md`;
 - scraper and architecture skills.
 
-After the existing merge is resolved, this document should be linked from the canonical research-model documentation.
+Keep this document linked from the canonical research-model documentation while the phased migration is active.
 When the migration is complete, the stable decisions should be folded into [`research-model.md`](./research-model.md), and this document should either become the concise historical decision record or be removed to avoid maintaining duplicate truth.

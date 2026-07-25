@@ -248,6 +248,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `npx tsc --noEmit -p server/tsconfig.json`                        | Server typecheck                                                                   |
 | `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate                                                        |
 | `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
+| `yarn --cwd server model-refactor:inventory --environment beta`   | Read-only research-model collection, field, and reference inventory                |
 | `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
 | `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |
 
@@ -276,6 +277,9 @@ Use the server workspace scripts for current data flows:
 yarn scrape help
 yarn meili:seed
 ```
+
+The research-model refactor inventory is read-only and uses `MONGODBURL`.
+Follow [`docs/research-model-refactor-phase0.md`](docs/research-model-refactor-phase0.md) for its required environment label, guarded JSON output, report interpretation, and rollback prerequisites.
 
 Historical `data-migration/` scripts remain for one-off migrations only.
 Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:

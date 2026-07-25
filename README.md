@@ -74,6 +74,7 @@ Use Playwright MCP for exploratory browser passes, then codify durable findings 
 
 See **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)** for full setup instructions, architecture details, environment configuration, and contribution guidelines.
 Agents should start with **[AGENTS.md](AGENTS.md)** and the focused skills in **[skills/](skills/)**.
+See **[docs/research-model.md](docs/research-model.md)** for the current model and **[docs/research-model-refactor.md](docs/research-model-refactor.md)** for the accepted target and migration phases.
 See **[docs/scraper-deployment-runbook.md](docs/scraper-deployment-runbook.md)** for scraper rollout and cron posture.
 
 ## Acknowledgements

@@ -4,6 +4,13 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-07-24: Refactor Around Research Navigation And Evidence
+
+The accepted target separates accounts, public people, role assignments, research entities, evidence claims, and private research plans while retaining bounded REST projections.
+Yale Research will own evidence-backed research navigation, not a mirrored professor-profile or publication product.
+Migration will proceed through measured vertical cutovers, beginning with the read-only inventory in [`research-model-refactor.md`](./research-model-refactor.md).
+The current runtime remains authoritative until each phase completes its documented verification gates.
+
 ## 2026-07-12: Bound Embedded Research Entity Summaries
 
 Public research detail responses embed related entities as strict card summaries rather than full public profile DTOs.

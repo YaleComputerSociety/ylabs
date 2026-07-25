@@ -14,7 +14,7 @@ It writes nothing to MongoDB.
 # Print the report to stdout
 yarn --cwd server model-refactor:inventory --environment beta
 
-# Also write a JSON report (guarded to a tmp root)
+# Also write a JSON report under an allowed tmp root
 yarn --cwd server model-refactor:inventory --environment beta --output /tmp/model-inventory.json
 
 # Keep more orphan sample ids per reference edge (default 20)
@@ -30,6 +30,7 @@ Reference checks scan all tracked fields from each source collection once, retai
 The required `--environment` label must describe that target and accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
+The optional output path must end in `.json`, must resolve under the operating-system temp directory or `./tmp` from the runner's working directory, and must have an existing parent directory.
 
 Run the inventory against a restored, immutable copy whenever possible.
 If an immutable copy is unavailable, use a declared low-write or quiescent window and prevent migration or scraper writes for the duration of the export and inventory.
@@ -48,6 +49,7 @@ Implementation:
 Headline counts for a quick read:
 
 - `collectionsPresent` out of `collectionsClassified`.
+- `totalDocuments`: the sum of document counts across classified collections.
 - `legacyResidueCollections`: expected-gone collections that still hold documents, such as `research_groups` or `applications`.
 - `unclassifiedCollections`: live collections the refactor spec does not yet name.
 Investigate each one before trusting a cutover.
@@ -62,6 +64,7 @@ In particular, `totalOrphans: 0` means no orphans were found among the tracked e
 ### `collections`
 
 One row per refactor-relevant collection with its group, owning migration phase, target mapping, document count, and `schemaVersion` distribution.
+The `present` flag distinguishes a missing collection from an empty one, while `residue` is true only when an expected-gone collection still contains documents.
 Each `schemaVersions` bucket records `bsonType`, `value` when present, and `count`.
 The `missing` BSON type distinguishes documents without `schemaVersion` from documents whose value is explicitly `null`, and numeric and string values remain separate.
 
@@ -82,8 +85,10 @@ A present source with a missing target is scanned, and every non-null reference 
 If that scan finds no references, the row remains explicitly `target-missing` with `clean: null` instead of becoming a cutover blocker.
 For a required edge, a source document with a missing or null local reference is also reported as orphaned.
 For an optional edge, a missing or null local reference is skipped.
+The `checked`, `orphaned`, and `orphanRate` fields quantify each edge, and `sampleOrphanIds` contains bounded source-document IDs for investigation.
 Any edge with `clean: false` must be resolved or explained before the referenced collection is migrated.
 
+The top-level `generatedAt` records report creation time, while `options` preserves the parsed CLI settings.
 The top-level `environment` is the required operator-supplied label.
 The `db` field records the connected database name, and `target` records a credential-free host/database label derived from `MONGODBURL`.
 Review all three before preserving an inventory as migration evidence.

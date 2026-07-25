@@ -66,6 +66,7 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd server test`          | Server Vitest suite.                                           |
 | `yarn --cwd server scrape <cmd>`  | Scraper CLI.                                                   |
 | `yarn --cwd server gates:refresh` | Regenerate canonical gate scorecards.                          |
+| `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory. |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 

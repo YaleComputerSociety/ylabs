@@ -1,5 +1,8 @@
 # Research Model
 
+The current runtime model is documented here.
+The accepted target model, phased migration boundaries, and Phase 0 inventory runbook are documented in [`research-model-refactor.md`](./research-model-refactor.md) and [`research-model-refactor-phase0.md`](./research-model-refactor-phase0.md).
+
 ## Current Implementation Context
 
 The current codebase still has some legacy-named files and client components, but
