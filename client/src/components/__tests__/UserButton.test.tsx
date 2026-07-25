@@ -9,7 +9,7 @@ const originalLocation = window.location;
 
 const renderUserButton = () =>
   render(
-    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <MemoryRouter>
       <UserContext.Provider
         value={{
           user: { netId: 'abc123', userType: 'student' },

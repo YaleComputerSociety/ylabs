@@ -51,6 +51,7 @@
   },
   "resolutions": {
     "form-data": "4.0.6",
+    "mongoose": "8.24.1",
     "undici": "6.27.0",
     "axios": "1.18.1",
     "underscore": "1.13.8",

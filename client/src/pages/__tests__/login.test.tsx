@@ -24,7 +24,6 @@ const renderLogin = (from?: string, context: Partial<UserContextValue> = {}) => 
       }}
     >
       <MemoryRouter
-        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
         initialEntries={[{ pathname: '/login', state: from ? { from } : null }]}
       >
         <Login />

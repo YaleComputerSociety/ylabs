@@ -6,7 +6,7 @@ import NotFound from '../notFound';
 
 const renderNotFound = () =>
   render(
-    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <MemoryRouter>
       <NotFound />
     </MemoryRouter>,
   );

@@ -7,7 +7,6 @@ import SignInButton from '../SignInButton';
 const renderSignInButton = (state?: { from?: string }) =>
   render(
     <MemoryRouter
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
       initialEntries={[{ pathname: '/login', state }]}
     >
       <SignInButton />

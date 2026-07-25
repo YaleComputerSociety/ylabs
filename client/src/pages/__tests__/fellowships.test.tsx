@@ -199,7 +199,7 @@ const renderPage = (
   };
 
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -227,7 +227,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
     const [quickFilter, setQuickFilter] = useState<string | null>(null);
 
     return (
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <UserContext.Provider
           value={{
             isLoading: false,

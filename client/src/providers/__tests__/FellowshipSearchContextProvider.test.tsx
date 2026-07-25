@@ -26,7 +26,6 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
   render(
     <MemoryRouter
       initialEntries={['/programs']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <UserContext.Provider
         value={{
