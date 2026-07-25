@@ -23,9 +23,7 @@ const renderLogin = (from?: string, context: Partial<UserContextValue> = {}) => 
         ...context,
       }}
     >
-      <MemoryRouter
-        initialEntries={[{ pathname: '/login', state: from ? { from } : null }]}
-      >
+      <MemoryRouter initialEntries={[{ pathname: '/login', state: from ? { from } : null }]}>
         <Login />
       </MemoryRouter>
     </UserContext.Provider>,
@@ -68,17 +66,19 @@ describe('Login', () => {
   it('keeps opportunity detail context on the CAS gate', () => {
     renderLogin('/opportunities/example-id');
 
+    expect(screen.getByRole('heading', { name: /continue to opportunity details/i })).toBeTruthy();
     expect(
-      screen.getByRole('heading', { name: /continue to opportunity details/i }),
+      screen.getByText(/review the evidence, deadline, and application next step/i),
     ).toBeTruthy();
-    expect(screen.getByText(/review the evidence, deadline, and application next step/i)).toBeTruthy();
   });
 
   it('keeps profile context on the CAS gate', () => {
     renderLogin('/profile/example');
 
     expect(screen.getByRole('heading', { name: /continue to profile/i })).toBeTruthy();
-    expect(screen.getByText(/view research interests, activity, and yale research context/i)).toBeTruthy();
+    expect(
+      screen.getByText(/view research interests, activity, and yale research context/i),
+    ).toBeTruthy();
   });
 
   it('keeps account context on the CAS gate', () => {
@@ -93,9 +93,7 @@ describe('Login', () => {
   it('keeps about page context on the CAS gate', () => {
     renderLogin('/about');
 
-    expect(
-      screen.getByRole('heading', { name: /continue to about yale research/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /continue to about yale research/i })).toBeTruthy();
     expect(screen.getByText(/learn how yale research is built and supported/i)).toBeTruthy();
   });
 

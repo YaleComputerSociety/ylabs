@@ -6,9 +6,7 @@ import SignInButton from '../SignInButton';
 
 const renderSignInButton = (state?: { from?: string }) =>
   render(
-    <MemoryRouter
-      initialEntries={[{ pathname: '/login', state }]}
-    >
+    <MemoryRouter initialEntries={[{ pathname: '/login', state }]}>
       <SignInButton />
     </MemoryRouter>,
   );

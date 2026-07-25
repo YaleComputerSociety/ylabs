@@ -11,12 +11,14 @@ const renderUserButton = () =>
   render(
     <MemoryRouter>
       <UserContext.Provider
-        value={{
-          user: { netId: 'abc123', userType: 'student' },
-          isAuthenticated: true,
-          isLoading: false,
-          refreshUser: vi.fn(),
-        } as any}
+        value={
+          {
+            user: { netId: 'abc123', userType: 'student' },
+            isAuthenticated: true,
+            isLoading: false,
+            refreshUser: vi.fn(),
+          } as any
+        }
       >
         <UserButton />
       </UserContext.Provider>
