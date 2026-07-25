@@ -26,7 +26,7 @@ Models are Mongoose schemas with indexes.
 
 | Layer           | Technology                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v6, MUI v7, styled-components, TailwindCSS v3              |
+| Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v7, MUI v7, styled-components, TailwindCSS v3              |
 | Server          | Express 4, TypeScript 5.3, Passport.js 0.5, Mongoose 8                                                      |
 | Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
 | Database        | MongoDB Atlas, single cluster with separate databases per environment                                       |
