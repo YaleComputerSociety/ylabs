@@ -7,8 +7,8 @@
  * dropped. Writes nothing to the database.
  *
  * Usage:
- *   yarn --cwd server model-refactor:inventory
- *   yarn --cwd server model-refactor:inventory --output /tmp/inventory.json
+ *   yarn --cwd server model-refactor:inventory --environment beta
+ *   yarn --cwd server model-refactor:inventory --environment beta --output /tmp/inventory.json
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import type { Db } from 'mongodb';
 import { initializeConnections } from '../db/connections';
-import { resolveScraperEnvironment, summarizeMongoUrl } from '../scrapers/scraperEnvironment';
+import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -89,7 +89,7 @@ async function probeFieldPresence(
  * the referencing collection. This stays correct whether references are stored
  * as ObjectId or string, unlike a `$lookup` keyed on `_id`.
  */
-async function checkReferenceEdge(
+export async function checkReferenceEdge(
   db: Db,
   edge: (typeof REFERENCE_EDGES)[number],
   presentCollections: Set<string>,
@@ -99,20 +99,24 @@ async function checkReferenceEdge(
     name: edge.name,
     fromCollection: edge.fromCollection,
     toCollection: edge.toCollection,
+    status: 'checked',
     checked: 0,
     orphaned: 0,
     sampleOrphanIds: [],
   };
-  if (!presentCollections.has(edge.fromCollection) || !presentCollections.has(edge.toCollection)) {
-    return base;
+  if (!presentCollections.has(edge.fromCollection)) {
+    return { ...base, status: 'source-missing' };
   }
 
   const targetIds = new Set<string>();
-  const targetCursor = db
-    .collection(edge.toCollection)
-    .find({}, { projection: { _id: 1 } });
-  for await (const doc of targetCursor) {
-    targetIds.add(String(doc._id));
+  const targetPresent = presentCollections.has(edge.toCollection);
+  if (targetPresent) {
+    const targetCursor = db
+      .collection(edge.toCollection)
+      .find({}, { projection: { _id: 1 } });
+    for await (const doc of targetCursor) {
+      targetIds.add(String(doc._id));
+    }
   }
 
   let checked = 0;
@@ -133,7 +137,13 @@ async function checkReferenceEdge(
     }
   }
 
-  return { ...base, checked, orphaned, sampleOrphanIds };
+  return {
+    ...base,
+    status: targetPresent ? 'checked' : 'target-missing',
+    checked,
+    orphaned,
+    sampleOrphanIds,
+  };
 }
 
 async function gatherInventoryFacts(
@@ -179,7 +189,9 @@ async function main(): Promise<void> {
     resolveSafeJsonReportOutputPath(args.output);
   }
 
-  await initializeConnections();
+  await initializeConnections({
+    infoLog: (...values) => console.error(...values),
+  });
   const db = mongoose.connection.db;
   if (!db) {
     throw new Error('MongoDB connection is not available');
@@ -188,8 +200,9 @@ async function main(): Promise<void> {
   const facts = await gatherInventoryFacts(db, args);
   const report = buildResearchModelInventoryReport(facts);
   const output = buildResearchModelInventoryOutput(report, {
-    environment: resolveScraperEnvironment(process.env),
-    db: db.databaseName || mongoose.connection.name || summarizeMongoUrl(process.env.MONGODBURL),
+    environment: args.environment,
+    db: db.databaseName || mongoose.connection.name,
+    target: summarizeMongoUrl(process.env.MONGODBURL),
     options: args,
   });
 

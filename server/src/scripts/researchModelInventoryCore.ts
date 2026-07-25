@@ -50,6 +50,13 @@ export interface ReferenceEdge {
   meaning: string;
 }
 
+export type InventoryEnvironment =
+  | 'development'
+  | 'beta'
+  | 'production-copy'
+  | 'production'
+  | 'test';
+
 /** Refactor-relevant collections, keyed by physical name. */
 export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   { collection: 'users', model: 'User', group: 'dual-truth', phase: 2, target: 'Account + Person (+ StudentProfile, ResearchPlan)' },
@@ -74,6 +81,7 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   { collection: 'observations', model: 'Observation', group: 'evidence', phase: 5, target: 'EvidenceClaim (+ SourceDocument)' },
   { collection: 'sources', model: 'Source', group: 'evidence', phase: 5, target: 'Source + SourceDocument' },
   { collection: 'student_profiles', model: 'StudentProfile', group: 'private', phase: 4, target: 'StudentProfile (retained)' },
+  { collection: 'student_applications', model: 'StudentApplication', group: 'private', phase: 4, target: 'Private student application records (retained, normalized references)' },
   { collection: 'student_trackings', model: 'StudentTracking', group: 'private', phase: 4, target: 'ResearchPlan' },
   { collection: 'student_outreaches', model: 'StudentOutreach', group: 'private', phase: null, target: 'Private outreach state' },
   { collection: 'student_engagement_events', model: 'StudentEngagementEvent', group: 'private', phase: null, target: 'EngagementEvent (append-only analytics)' },
@@ -103,16 +111,28 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
   { collection: 'users', field: 'savedResearchEntities', meaning: 'Saved-entity array', target: 'ResearchPlan' },
   { collection: 'users', field: 'savedResearchEntityPlans', meaning: 'Saved-entity plan map', target: 'ResearchPlan' },
   { collection: 'users', field: 'orcid', meaning: 'External researcher identifier', target: 'Person.identifiers.orcid' },
+  { collection: 'users', field: 'hIndex', meaning: 'Mirrored citation metric', target: 'Remove with professor-profile mirrors' },
+  { collection: 'users', field: 'googleScholarId', meaning: 'Mirrored scholarly identifier', target: 'Remove with professor-profile mirrors' },
+  { collection: 'users', field: 'openAlexId', meaning: 'Mirrored scholarly identifier', target: 'Remove with professor-profile mirrors' },
+  { collection: 'users', field: 'semanticScholarId', meaning: 'Mirrored scholarly identifier', target: 'Remove with professor-profile mirrors' },
+  { collection: 'listings', field: 'researchGroupId', meaning: 'Legacy entity reference', target: 'researchEntityId before Listing retirement' },
+  { collection: 'student_trackings', field: 'researchGroupId', meaning: 'Legacy entity reference', target: 'researchEntityId' },
+  { collection: 'student_outreaches', field: 'researchGroupId', meaning: 'Legacy entity reference', target: 'researchEntityId' },
+  { collection: 'student_engagement_events', field: 'researchGroupId', meaning: 'Legacy entity reference', target: 'researchEntityId' },
 ];
 
 /** Reference edges whose orphans block clean cutover. */
 export const REFERENCE_EDGES: ReferenceEdge[] = [
   { name: 'member_to_entity', fromCollection: 'research_entity_members', localField: 'researchEntityId', toCollection: 'research_entities', meaning: 'Membership rows must resolve to a research entity' },
   { name: 'member_to_user', fromCollection: 'research_entity_members', localField: 'userId', toCollection: 'users', meaning: 'Membership user refs must resolve to a user' },
+  { name: 'member_to_faculty', fromCollection: 'research_entity_members', localField: 'facultyMemberId', toCollection: 'faculty_members', meaning: 'Membership faculty refs must resolve to a faculty member' },
   { name: 'access_signal_to_entity', fromCollection: 'access_signals', localField: 'researchEntityId', toCollection: 'research_entities', meaning: 'Access signals must resolve to a research entity' },
+  { name: 'access_signal_to_pathway', fromCollection: 'access_signals', localField: 'entryPathwayId', toCollection: 'entry_pathways', meaning: 'Access signal pathway refs must resolve to an entry pathway' },
   { name: 'entry_pathway_to_entity', fromCollection: 'entry_pathways', localField: 'researchEntityId', toCollection: 'research_entities', meaning: 'Entry pathways must resolve to a research entity' },
   { name: 'contact_route_to_entity', fromCollection: 'contact_routes', localField: 'researchEntityId', toCollection: 'research_entities', meaning: 'Contact routes must resolve to a research entity' },
+  { name: 'contact_route_to_pathway', fromCollection: 'contact_routes', localField: 'entryPathwayId', toCollection: 'entry_pathways', meaning: 'Contact route pathway refs must resolve to an entry pathway' },
   { name: 'posted_opportunity_to_pathway', fromCollection: 'posted_opportunities', localField: 'entryPathwayId', toCollection: 'entry_pathways', meaning: 'Posted opportunities must resolve to an entry pathway' },
+  { name: 'posted_opportunity_to_entity', fromCollection: 'posted_opportunities', localField: 'researchEntityId', toCollection: 'research_entities', meaning: 'Posted opportunity entity refs must resolve to a research entity' },
   { name: 'relationship_source_to_entity', fromCollection: 'research_entity_relationships', localField: 'sourceResearchEntityId', toCollection: 'research_entities', meaning: 'Relationship source must resolve to a research entity' },
   { name: 'relationship_target_to_entity', fromCollection: 'research_entity_relationships', localField: 'targetResearchEntityId', toCollection: 'research_entities', meaning: 'Relationship target must resolve to a research entity' },
 ];
@@ -146,6 +166,7 @@ export interface ReferenceIntegrityFact {
   name: string;
   fromCollection: string;
   toCollection: string;
+  status: 'checked' | 'target-missing' | 'source-missing';
   checked: number;
   orphaned: number;
   sampleOrphanIds: string[];
@@ -185,10 +206,11 @@ export interface RetirementFieldRow {
   prevalence: number;
 }
 
-export interface ReferenceIntegrityRow extends ReferenceIntegrityFact {
+export interface ReferenceIntegrityRow extends Omit<ReferenceIntegrityFact, 'status'> {
+  status: ReferenceIntegrityFact['status'] | 'not-gathered';
   meaning: string;
   orphanRate: number;
-  clean: boolean;
+  clean: boolean | null;
 }
 
 export interface InventorySummary {
@@ -199,6 +221,7 @@ export interface InventorySummary {
   totalDocuments: number;
   retirementFieldsStillPresent: number;
   referenceEdgesChecked: number;
+  referenceEdgesSkipped: number;
   referenceEdgesWithOrphans: number;
   totalOrphans: number;
 }
@@ -278,18 +301,25 @@ export function buildResearchModelInventoryReport(
 
   const referenceIntegrity: ReferenceIntegrityRow[] = referenceEdges.map((edge) => {
     const fact = referenceFactByName.get(edge.name);
+    const status = fact?.status ?? 'not-gathered';
     const checked = fact?.checked ?? 0;
     const orphaned = fact?.orphaned ?? 0;
     return {
       name: edge.name,
       fromCollection: edge.fromCollection,
       toCollection: edge.toCollection,
+      status,
       meaning: edge.meaning,
       checked,
       orphaned,
       sampleOrphanIds: fact?.sampleOrphanIds ?? [],
       orphanRate: ratio(orphaned, checked),
-      clean: orphaned === 0,
+      clean:
+        status === 'checked'
+          ? orphaned === 0
+          : status === 'target-missing'
+            ? false
+            : null,
     };
   });
 
@@ -304,8 +334,13 @@ export function buildResearchModelInventoryReport(
     unclassifiedCollections: findUnclassifiedCollections(facts.liveCollections, specs),
     totalDocuments: collections.reduce((sum, row) => sum + row.documentCount, 0),
     retirementFieldsStillPresent: retirementFields.filter((row) => row.present > 0).length,
-    referenceEdgesChecked: referenceIntegrity.length,
-    referenceEdgesWithOrphans: referenceIntegrity.filter((row) => !row.clean).length,
+    referenceEdgesChecked: referenceIntegrity.filter(
+      (row) => row.status === 'checked' || row.status === 'target-missing',
+    ).length,
+    referenceEdgesSkipped: referenceIntegrity.filter(
+      (row) => row.status === 'source-missing' || row.status === 'not-gathered',
+    ).length,
+    referenceEdgesWithOrphans: referenceIntegrity.filter((row) => row.orphaned > 0).length,
     totalOrphans: referenceIntegrity.reduce((sum, row) => sum + row.orphaned, 0),
   };
 
@@ -317,6 +352,7 @@ export function buildResearchModelInventoryReport(
 // ---------------------------------------------------------------------------
 
 export interface ResearchModelInventoryArgs {
+  environment: InventoryEnvironment;
   /** Max orphan sample ids retained per reference edge. */
   sampleLimit: number;
   /** Optional .json report output path (guarded to tmp roots). */
@@ -326,12 +362,28 @@ export interface ResearchModelInventoryArgs {
 export function parseResearchModelInventoryArgs(
   argv: string[],
 ): ResearchModelInventoryArgs {
+  let environment: InventoryEnvironment | undefined;
   let sampleLimit = 20;
   let output: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '--sample-limit') {
+    if (arg === '--environment') {
+      const raw = argv[i + 1];
+      if (
+        raw !== 'development'
+        && raw !== 'beta'
+        && raw !== 'production-copy'
+        && raw !== 'production'
+        && raw !== 'test'
+      ) {
+        throw new Error(
+          '--environment requires development, beta, production-copy, production, or test',
+        );
+      }
+      environment = raw;
+      i += 1;
+    } else if (arg === '--sample-limit') {
       const raw = argv[i + 1];
       const parsed = Number(raw);
       if (!Number.isFinite(parsed) || parsed < 0) {
@@ -340,34 +392,45 @@ export function parseResearchModelInventoryArgs(
       sampleLimit = Math.floor(parsed);
       i += 1;
     } else if (arg === '--output') {
-      output = argv[i + 1];
+      const raw = argv[i + 1];
+      if (!raw) {
+        throw new Error('--output requires a path');
+      }
+      output = raw;
       i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
 
-  return { sampleLimit, output };
+  if (!environment) {
+    throw new Error('--environment is required');
+  }
+
+  return { environment, sampleLimit, output };
 }
 
 export function buildResearchModelInventoryOutput(
   report: InventoryReport,
   metadata: {
-    environment?: string;
+    environment: InventoryEnvironment;
     db?: string;
+    target?: string;
     generatedAt?: string;
     options: ResearchModelInventoryArgs;
   },
 ): InventoryReport & {
   generatedAt: string;
-  environment?: string;
+  environment: InventoryEnvironment;
   db?: string;
+  target?: string;
   options: ResearchModelInventoryArgs;
 } {
   return {
     generatedAt: metadata.generatedAt ?? new Date().toISOString(),
-    ...(metadata.environment ? { environment: metadata.environment } : {}),
+    environment: metadata.environment,
     ...(metadata.db ? { db: metadata.db } : {}),
+    ...(metadata.target ? { target: metadata.target } : {}),
     ...report,
     options: metadata.options,
   };

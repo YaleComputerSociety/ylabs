@@ -38,6 +38,44 @@ describe('INVENTORY_COLLECTIONS', () => {
     expect(residue.map((spec) => spec.collection)).toContain('research_groups');
     expect(residue.map((spec) => spec.collection)).toContain('applications');
   });
+
+  it('classifies retained private student applications', () => {
+    expect(
+      INVENTORY_COLLECTIONS.find((spec) => spec.collection === 'student_applications'),
+    ).toMatchObject({
+      group: 'private',
+      phase: 4,
+      target: 'Private student application records (retained, normalized references)',
+    });
+  });
+});
+
+describe('inventory coverage', () => {
+  it('includes current canonical and dual-truth reference edges', () => {
+    expect(REFERENCE_EDGES.map((edge) => `${edge.fromCollection}.${edge.localField}`)).toEqual(
+      expect.arrayContaining([
+        'research_entity_members.facultyMemberId',
+        'access_signals.entryPathwayId',
+        'contact_routes.entryPathwayId',
+        'posted_opportunities.researchEntityId',
+      ]),
+    );
+  });
+
+  it('includes current compatibility and professor-mirror retirement fields', () => {
+    expect(RETIREMENT_FIELD_PROBES.map((probe) => `${probe.collection}.${probe.field}`)).toEqual(
+      expect.arrayContaining([
+        'listings.researchGroupId',
+        'student_trackings.researchGroupId',
+        'student_outreaches.researchGroupId',
+        'student_engagement_events.researchGroupId',
+        'users.hIndex',
+        'users.googleScholarId',
+        'users.openAlexId',
+        'users.semanticScholarId',
+      ]),
+    );
+  });
 });
 
 describe('findUnclassifiedCollections', () => {
@@ -101,6 +139,7 @@ describe('buildResearchModelInventoryReport', () => {
           name: 'member_to_entity',
           fromCollection: 'research_entity_members',
           toCollection: 'research_entities',
+          status: 'checked',
           checked: 100,
           orphaned: 5,
           sampleOrphanIds: ['a', 'b'],
@@ -109,6 +148,7 @@ describe('buildResearchModelInventoryReport', () => {
           name: 'member_to_user',
           fromCollection: 'research_entity_members',
           toCollection: 'users',
+          status: 'checked',
           checked: 100,
           orphaned: 0,
           sampleOrphanIds: [],
@@ -128,7 +168,63 @@ describe('buildResearchModelInventoryReport', () => {
     const report = buildResearchModelInventoryReport(emptyFacts());
     expect(report.referenceIntegrity).toHaveLength(REFERENCE_EDGES.length);
     expect(report.retirementFields).toHaveLength(RETIREMENT_FIELD_PROBES.length);
-    expect(report.summary.referenceEdgesChecked).toBe(REFERENCE_EDGES.length);
+    expect(report.referenceIntegrity.every((row) => row.status === 'not-gathered')).toBe(true);
+    expect(report.referenceIntegrity.every((row) => row.clean === null)).toBe(true);
+    expect(report.summary.referenceEdgesChecked).toBe(0);
+    expect(report.summary.referenceEdgesSkipped).toBe(REFERENCE_EDGES.length);
+  });
+
+  it('marks a missing source collection as skipped and indeterminate', () => {
+    const report = buildResearchModelInventoryReport({
+      ...emptyFacts(),
+      referenceIntegrity: [
+        {
+          name: 'member_to_entity',
+          fromCollection: 'research_entity_members',
+          toCollection: 'research_entities',
+          status: 'source-missing',
+          checked: 0,
+          orphaned: 0,
+          sampleOrphanIds: [],
+        },
+      ],
+    });
+    const edge = report.referenceIntegrity.find((row) => row.name === 'member_to_entity');
+    expect(edge).toMatchObject({
+      status: 'source-missing',
+      clean: null,
+      checked: 0,
+      orphaned: 0,
+    });
+    expect(report.summary.referenceEdgesChecked).toBe(0);
+    expect(report.summary.referenceEdgesSkipped).toBe(REFERENCE_EDGES.length);
+  });
+
+  it('reports references to a missing target as checked orphans', () => {
+    const report = buildResearchModelInventoryReport({
+      ...emptyFacts(),
+      referenceIntegrity: [
+        {
+          name: 'member_to_entity',
+          fromCollection: 'research_entity_members',
+          toCollection: 'research_entities',
+          status: 'target-missing',
+          checked: 3,
+          orphaned: 3,
+          sampleOrphanIds: ['member-1'],
+        },
+      ],
+    });
+    const edge = report.referenceIntegrity.find((row) => row.name === 'member_to_entity');
+    expect(edge).toMatchObject({
+      status: 'target-missing',
+      clean: false,
+      checked: 3,
+      orphaned: 3,
+    });
+    expect(report.summary.referenceEdgesChecked).toBe(1);
+    expect(report.summary.referenceEdgesWithOrphans).toBe(1);
+    expect(report.summary.totalOrphans).toBe(3);
   });
 
   it('surfaces unclassified live collections in the summary', () => {
@@ -141,24 +237,44 @@ describe('buildResearchModelInventoryReport', () => {
 });
 
 describe('parseResearchModelInventoryArgs', () => {
-  it('defaults the sample limit and leaves output undefined', () => {
-    const args = parseResearchModelInventoryArgs([]);
+  it('requires an explicit environment and defaults other options', () => {
+    const args = parseResearchModelInventoryArgs(['--environment', 'beta']);
+    expect(args.environment).toBe('beta');
     expect(args.sampleLimit).toBe(20);
     expect(args.output).toBeUndefined();
   });
 
   it('parses sample limit and output path', () => {
-    const args = parseResearchModelInventoryArgs(['--sample-limit', '5', '--output', '/tmp/x.json']);
+    const args = parseResearchModelInventoryArgs([
+      '--environment',
+      'production-copy',
+      '--sample-limit',
+      '5',
+      '--output',
+      '/tmp/x.json',
+    ]);
+    expect(args.environment).toBe('production-copy');
     expect(args.sampleLimit).toBe(5);
     expect(args.output).toBe('/tmp/x.json');
   });
 
   it('rejects a negative sample limit', () => {
-    expect(() => parseResearchModelInventoryArgs(['--sample-limit', '-1'])).toThrow();
+    expect(() =>
+      parseResearchModelInventoryArgs(['--environment', 'beta', '--sample-limit', '-1']),
+    ).toThrow();
+  });
+
+  it('rejects missing and invalid environments', () => {
+    expect(() => parseResearchModelInventoryArgs([])).toThrow('--environment is required');
+    expect(() => parseResearchModelInventoryArgs(['--environment', 'staging'])).toThrow(
+      '--environment requires',
+    );
   });
 
   it('rejects unknown arguments', () => {
-    expect(() => parseResearchModelInventoryArgs(['--nope'])).toThrow('Unknown argument: --nope');
+    expect(() => parseResearchModelInventoryArgs(['--environment', 'beta', '--nope'])).toThrow(
+      'Unknown argument: --nope',
+    );
   });
 });
 
@@ -168,21 +284,27 @@ describe('buildResearchModelInventoryOutput', () => {
     const output = buildResearchModelInventoryOutput(report, {
       environment: 'beta',
       db: 'ylabs-beta',
+      target: 'example.mongodb.net/ylabs-beta',
       generatedAt: '2026-07-24T00:00:00.000Z',
-      options: { sampleLimit: 20 },
+      options: { environment: 'beta', sampleLimit: 20 },
     });
     expect(output.generatedAt).toBe('2026-07-24T00:00:00.000Z');
     expect(output.environment).toBe('beta');
     expect(output.db).toBe('ylabs-beta');
+    expect(output.target).toBe('example.mongodb.net/ylabs-beta');
     expect(output.options.sampleLimit).toBe(20);
     expect(output.summary.collectionsClassified).toBe(INVENTORY_COLLECTIONS.length);
   });
 
-  it('omits environment and db when not provided', () => {
+  it('omits optional database metadata when not provided', () => {
     const report = buildResearchModelInventoryReport(emptyFacts());
-    const output = buildResearchModelInventoryOutput(report, { options: { sampleLimit: 20 } });
-    expect('environment' in output).toBe(false);
+    const output = buildResearchModelInventoryOutput(report, {
+      environment: 'test',
+      options: { environment: 'test', sampleLimit: 20 },
+    });
+    expect(output.environment).toBe('test');
     expect('db' in output).toBe(false);
+    expect('target' in output).toBe(false);
     expect(typeof output.generatedAt).toBe('string');
   });
 });

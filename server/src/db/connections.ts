@@ -76,13 +76,16 @@ export function triggerReconnect(): void {
   })();
 }
 
-export async function initializeConnections(): Promise<void> {
+export async function initializeConnections(
+  options: { infoLog?: (...values: unknown[]) => void } = {},
+): Promise<void> {
   const mode = getApiMode();
+  const infoLog = options.infoLog ?? ((...values: unknown[]) => console.log(...values));
 
   // Surface connection lifecycle so Render logs show exactly when the driver
   // loses or regains the server — makes the next incident much easier to trace.
   mongoose.connection.on('disconnected', () => console.error('MongoDB: disconnected'));
-  mongoose.connection.on('reconnected', () => console.log('MongoDB: reconnected'));
+  mongoose.connection.on('reconnected', () => infoLog('MongoDB: reconnected'));
   mongoose.connection.on('error', (err: Error) =>
     console.error('MongoDB: error', err?.message ?? err),
   );
@@ -100,10 +103,10 @@ export async function initializeConnections(): Promise<void> {
 
     await mongoose.connect(primaryUrl, mongoOptions);
     productionConnection = mongoose.connection;
-    console.log('Connected to primary database (default) 🚀');
+    infoLog('Connected to primary database (default) 🚀');
 
     migrationConnection = await mongoose.createConnection(migrationUrl, mongoOptions).asPromise();
-    console.log('Connected to migration database (listings) 🔄');
+    infoLog('Connected to migration database (listings) 🔄');
 
     MigrationListing = migrationConnection.model('Listing', listingSchema, 'listings');
   } else {
@@ -112,7 +115,7 @@ export async function initializeConnections(): Promise<void> {
       throw new Error('MONGODBURL is required');
     }
     await mongoose.connect(url, mongoOptions);
-    console.log(`Connected to database 🚀`);
+    infoLog('Connected to database 🚀');
   }
 }
 

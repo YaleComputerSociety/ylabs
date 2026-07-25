@@ -12,17 +12,19 @@ It writes nothing to MongoDB.
 
 ```bash
 # Print the report to stdout
-yarn --cwd server model-refactor:inventory
+yarn --cwd server model-refactor:inventory --environment beta
 
 # Also write a JSON report (guarded to a tmp root)
-yarn --cwd server model-refactor:inventory --output /tmp/model-inventory.json
+yarn --cwd server model-refactor:inventory --environment beta --output /tmp/model-inventory.json
 
 # Keep more orphan sample ids per reference edge (default 20)
-yarn --cwd server model-refactor:inventory --sample-limit 100
+yarn --cwd server model-refactor:inventory --environment beta --sample-limit 100
 ```
 
 The tool connects with the standard `MONGODBURL` from `server/.env`, so point it at the environment you want to measure.
+The required `--environment` label must describe that target and accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
+Connection diagnostics go to stderr, so stdout contains only the JSON report.
 
 Implementation:
 
@@ -40,6 +42,7 @@ Headline counts for a quick read:
 - `unclassifiedCollections`: live collections the refactor spec does not yet name.
 Investigate each one before trusting a cutover.
 - `retirementFieldsStillPresent`: how many legacy fields still appear on live documents.
+- `referenceEdgesChecked` and `referenceEdgesSkipped`: how many reference edges were measurable and how many had no source collection to inspect.
 - `referenceEdgesWithOrphans` and `totalOrphans`: reference-integrity health.
 
 ### `collections`
@@ -57,7 +60,14 @@ A field with high prevalence gates its retirement phase until the canonical repl
 
 Orphan counts for the access and membership graph, for example membership rows whose `researchEntityId` does not resolve to a research entity.
 The check is type-agnostic, so it stays correct whether references are stored as ObjectId or string.
+Each row has a `status`: `checked`, `target-missing`, `source-missing`, or `not-gathered`.
+A missing source is skipped with `clean: null`.
+A present source with a missing target is scanned, and every non-null reference is reported as orphaned with `clean: false`.
 Any edge with `clean: false` must be resolved or explained before the referenced collection is migrated.
+
+The top-level `environment` is the required operator-supplied label.
+The `db` field records the connected database name, and `target` records a credential-free host/database label derived from `MONGODBURL`.
+Review all three before preserving an inventory as migration evidence.
 
 ## Complementary audits
 
