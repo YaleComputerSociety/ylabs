@@ -144,7 +144,7 @@ describe('inventory coverage', () => {
 describe('findUnclassifiedCollections', () => {
   it('returns live collections not in the spec, excluding system collections', () => {
     const live = ['research_entities', 'system.indexes', 'mystery_collection', '__prewarm'];
-    expect(findUnclassifiedCollections(live)).toEqual(['mystery_collection']);
+    expect(findUnclassifiedCollections(live)).toEqual(['__prewarm', 'mystery_collection']);
   });
 
   it('returns empty when all live collections are classified', () => {

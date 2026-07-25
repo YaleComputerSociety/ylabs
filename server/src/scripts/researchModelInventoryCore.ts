@@ -825,7 +825,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
   },
 ];
 
-const SYSTEM_COLLECTION_PATTERN = /^(system\.|__)/;
+const SYSTEM_COLLECTION_PATTERN = /^system\./;
 
 // ---------------------------------------------------------------------------
 // Facts gathered by the runner
