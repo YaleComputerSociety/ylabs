@@ -21,10 +21,13 @@ yarn --cwd server model-refactor:inventory --environment beta --output /tmp/mode
 yarn --cwd server model-refactor:inventory --environment beta --sample-limit 100
 ```
 
-The tool connects with the standard `MONGODBURL` from `server/.env`, so point it at the environment you want to measure.
+The tool uses a dedicated native MongoDB client with the standard `MONGODBURL` from `server/.env`, so point it at the environment you want to measure.
+It does not load Mongoose models, create collections, build indexes, or open the migration database configured by `MONGODBURL_MIGRATION`.
+The client is closed after success or failure.
+Collection scans are capped at four concurrent groups, and retirement-field probes reuse the collection census totals.
 The required `--environment` label must describe that target and accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
-Connection diagnostics go to stderr, so stdout contains only the JSON report.
+Errors go to stderr, so stdout contains only the JSON report.
 
 Implementation:
 
@@ -58,7 +61,7 @@ A field with high prevalence gates its retirement phase until the canonical repl
 
 ### `referenceIntegrity`
 
-Orphan counts for the access and membership graph, for example membership rows whose `researchEntityId` does not resolve to a research entity.
+Orphan counts for the access, membership, and private student-record graph, for example membership rows whose `researchEntityId` does not resolve to a research entity.
 The check is type-agnostic, so it stays correct whether references are stored as ObjectId or string.
 Each row has a `status`: `checked`, `target-missing`, `source-missing`, or `not-gathered`.
 A missing source is skipped with `clean: null`.

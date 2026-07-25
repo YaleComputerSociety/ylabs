@@ -62,6 +62,24 @@ describe('inventory coverage', () => {
     );
   });
 
+  it('includes current private-record reference edges', () => {
+    expect(REFERENCE_EDGES.map((edge) => `${edge.fromCollection}.${edge.localField}`)).toEqual(
+      expect.arrayContaining([
+        'student_applications.postedOpportunityId',
+        'student_applications.researchEntityId',
+        'student_applications.studentUserId',
+        'student_applications.studentProfileId',
+        'student_trackings.studentProfileId',
+        'student_trackings.researchEntityId',
+        'student_outreaches.studentProfileId',
+        'student_outreaches.researchEntityId',
+        'student_outreaches.trackingId',
+        'student_engagement_events.studentProfileId',
+        'student_engagement_events.researchEntityId',
+      ]),
+    );
+  });
+
   it('includes current compatibility and professor-mirror retirement fields', () => {
     expect(RETIREMENT_FIELD_PROBES.map((probe) => `${probe.collection}.${probe.field}`)).toEqual(
       expect.arrayContaining([
@@ -73,6 +91,15 @@ describe('inventory coverage', () => {
         'users.googleScholarId',
         'users.openAlexId',
         'users.semanticScholarId',
+        'users.facultyMemberId',
+        'users.googleScholarMetricsUpdatedAt',
+        'users.openAlexWorksSyncedAt',
+        'users.orcidWorksSyncedAt',
+        'users.europePmcWorksSyncedAt',
+        'users.pubmedWorksSyncedAt',
+        'faculty_members.googleScholarId',
+        'faculty_members.openAlexId',
+        'faculty_members.semanticScholarId',
       ]),
     );
   });
