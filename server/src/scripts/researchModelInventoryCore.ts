@@ -313,6 +313,60 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
   },
   {
     collection: 'research_entities',
+    field: 'opennessSignals',
+    meaning: 'Embedded openness evidence',
+    target: 'AccessSignal',
+  },
+  {
+    collection: 'research_entities',
+    field: 'opennessStatusCache',
+    meaning: 'Derived openness status cache',
+    target: 'Computed access summary',
+  },
+  {
+    collection: 'research_entities',
+    field: 'opennessExplanationCache',
+    meaning: 'Derived openness explanation cache',
+    target: 'Computed access summary',
+  },
+  {
+    collection: 'research_entities',
+    field: 'opennessComputedAt',
+    meaning: 'Derived openness computation timestamp',
+    target: 'Computed access summary',
+  },
+  {
+    collection: 'research_entities',
+    field: 'opennessLastSignalAt',
+    meaning: 'Derived openness evidence timestamp',
+    target: 'AccessSignal',
+  },
+  {
+    collection: 'research_entities',
+    field: 'recentPaperCount',
+    meaning: 'Paper-derived activity count',
+    target: 'Remove with scholarly mirrors',
+  },
+  {
+    collection: 'research_entities',
+    field: 'lastPaperAtCache',
+    meaning: 'Paper-derived activity timestamp',
+    target: 'Remove with scholarly mirrors',
+  },
+  {
+    collection: 'research_entities',
+    field: 'activePaperCount2yCache',
+    meaning: 'Paper-derived recent activity count',
+    target: 'Remove with scholarly mirrors',
+  },
+  {
+    collection: 'research_entities',
+    field: 'featuredPaperIds',
+    meaning: 'Curated paper references',
+    target: 'Remove with scholarly collections',
+  },
+  {
+    collection: 'research_entities',
     field: 'shortDescription',
     meaning: 'Duplicate description field',
     target: 'Single description',
@@ -562,6 +616,22 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     meaning: 'Access signal pathway refs must resolve to an entry pathway',
   },
   {
+    name: 'access_signal_to_source_evidence',
+    fromCollection: 'access_signals',
+    localField: 'sourceEvidenceId',
+    toCollection: 'observations',
+    required: false,
+    meaning: 'Access signal source-evidence refs must resolve to an observation',
+  },
+  {
+    name: 'access_signal_to_observation',
+    fromCollection: 'access_signals',
+    localField: 'observationId',
+    toCollection: 'observations',
+    required: false,
+    meaning: 'Access signal observation refs must resolve to an observation',
+  },
+  {
     name: 'entry_pathway_to_entity',
     fromCollection: 'entry_pathways',
     localField: 'researchEntityId',
@@ -586,6 +656,22 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     meaning: 'Contact route pathway refs must resolve to an entry pathway',
   },
   {
+    name: 'contact_route_to_person',
+    fromCollection: 'contact_routes',
+    localField: 'personId',
+    toCollection: 'users',
+    required: false,
+    meaning: 'Contact route person refs must resolve to a user',
+  },
+  {
+    name: 'contact_route_to_source_evidence',
+    fromCollection: 'contact_routes',
+    localField: 'sourceEvidenceId',
+    toCollection: 'observations',
+    required: false,
+    meaning: 'Contact route source-evidence refs must resolve to an observation',
+  },
+  {
     name: 'posted_opportunity_to_pathway',
     fromCollection: 'posted_opportunities',
     localField: 'entryPathwayId',
@@ -600,6 +686,22 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     toCollection: 'research_entities',
     required: false,
     meaning: 'Posted opportunity entity refs must resolve to a research entity',
+  },
+  {
+    name: 'posted_opportunity_to_listing',
+    fromCollection: 'posted_opportunities',
+    localField: 'listingId',
+    toCollection: 'listings',
+    required: false,
+    meaning: 'Posted opportunity listing refs must resolve to a listing',
+  },
+  {
+    name: 'listing_to_entity',
+    fromCollection: 'listings',
+    localField: 'researchEntityId',
+    toCollection: 'research_entities',
+    required: false,
+    meaning: 'Listing entity refs must resolve to a research entity',
   },
   {
     name: 'relationship_source_to_entity',
@@ -713,6 +815,14 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     required: true,
     meaning: 'Student engagement entity refs must resolve to a research entity',
   },
+  {
+    name: 'observation_to_source',
+    fromCollection: 'observations',
+    localField: 'sourceId',
+    toCollection: 'sources',
+    required: true,
+    meaning: 'Observations must resolve to a source',
+  },
 ];
 
 const SYSTEM_COLLECTION_PATTERN = /^(system\.|__)/;
@@ -722,7 +832,8 @@ const SYSTEM_COLLECTION_PATTERN = /^(system\.|__)/;
 // ---------------------------------------------------------------------------
 
 export interface SchemaVersionBucket {
-  version: string;
+  bsonType: string;
+  value?: unknown;
   count: number;
 }
 
@@ -794,6 +905,7 @@ export interface ReferenceIntegrityRow extends Omit<ReferenceIntegrityFact, 'sta
 }
 
 export interface InventorySummary {
+  coverageScope: string;
   collectionsClassified: number;
   collectionsPresent: number;
   legacyResidueCollections: string[];
@@ -894,7 +1006,12 @@ export function buildResearchModelInventoryReport(
       orphaned,
       sampleOrphanIds: fact?.sampleOrphanIds ?? [],
       orphanRate: ratio(orphaned, checked),
-      clean: status === 'checked' ? orphaned === 0 : status === 'target-missing' ? false : null,
+      clean:
+        status === 'checked'
+          ? orphaned === 0
+          : status === 'target-missing' && checked > 0
+            ? false
+            : null,
     };
   });
 
@@ -903,6 +1020,8 @@ export function buildResearchModelInventoryReport(
     .map((row) => row.collection);
 
   const summary: InventorySummary = {
+    coverageScope:
+      'Curated refactor-relevant collections, fields, and scalar reference edges; totalOrphans counts only tracked edges and is not an exhaustive referential-integrity proof.',
     collectionsClassified: specs.length,
     collectionsPresent: collections.filter((row) => row.present).length,
     legacyResidueCollections,

@@ -51,6 +51,11 @@ describe('INVENTORY_COLLECTIONS', () => {
 });
 
 describe('inventory coverage', () => {
+  it('has unique reference edge names', () => {
+    const names = REFERENCE_EDGES.map((edge) => edge.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it('includes current canonical and dual-truth reference edges', () => {
     expect(REFERENCE_EDGES.map((edge) => `${edge.fromCollection}.${edge.localField}`)).toEqual(
       expect.arrayContaining([
@@ -60,8 +65,15 @@ describe('inventory coverage', () => {
         'faculty_members.userId',
         'student_profiles.userId',
         'access_signals.entryPathwayId',
+        'access_signals.sourceEvidenceId',
+        'access_signals.observationId',
         'contact_routes.entryPathwayId',
+        'contact_routes.personId',
+        'contact_routes.sourceEvidenceId',
         'posted_opportunities.researchEntityId',
+        'posted_opportunities.listingId',
+        'listings.researchEntityId',
+        'observations.sourceId',
       ]),
     );
   });
@@ -87,9 +99,7 @@ describe('inventory coverage', () => {
 
   it('records current schema requiredness for every reference edge', () => {
     expect(REFERENCE_EDGES.every((edge) => typeof edge.required === 'boolean')).toBe(true);
-    expect(
-      REFERENCE_EDGES.find((edge) => edge.name === 'entry_pathway_to_entity'),
-    ).toMatchObject({
+    expect(REFERENCE_EDGES.find((edge) => edge.name === 'entry_pathway_to_entity')).toMatchObject({
       required: true,
     });
     expect(REFERENCE_EDGES.find((edge) => edge.name === 'member_to_entity')).toMatchObject({
@@ -117,6 +127,15 @@ describe('inventory coverage', () => {
         'faculty_members.googleScholarId',
         'faculty_members.openAlexId',
         'faculty_members.semanticScholarId',
+        'research_entities.opennessSignals',
+        'research_entities.opennessStatusCache',
+        'research_entities.opennessExplanationCache',
+        'research_entities.opennessComputedAt',
+        'research_entities.opennessLastSignalAt',
+        'research_entities.recentPaperCount',
+        'research_entities.lastPaperAtCache',
+        'research_entities.activePaperCount2yCache',
+        'research_entities.featuredPaperIds',
       ]),
     );
   });
@@ -271,6 +290,41 @@ describe('buildResearchModelInventoryReport', () => {
     expect(report.summary.referenceEdgesChecked).toBe(1);
     expect(report.summary.referenceEdgesWithOrphans).toBe(1);
     expect(report.summary.totalOrphans).toBe(3);
+  });
+
+  it('keeps a missing unused target explicit without creating a blocker', () => {
+    const report = buildResearchModelInventoryReport({
+      ...emptyFacts(),
+      referenceIntegrity: [
+        {
+          name: 'student_application_to_listing',
+          fromCollection: 'student_applications',
+          toCollection: 'listings',
+          status: 'target-missing',
+          checked: 0,
+          orphaned: 0,
+          sampleOrphanIds: [],
+        },
+      ],
+    });
+    const edge = report.referenceIntegrity.find(
+      (row) => row.name === 'student_application_to_listing',
+    );
+    expect(edge).toMatchObject({
+      status: 'target-missing',
+      clean: null,
+      checked: 0,
+      orphaned: 0,
+    });
+    expect(report.summary.referenceEdgesChecked).toBe(1);
+    expect(report.summary.referenceEdgesWithOrphans).toBe(0);
+  });
+
+  it('states that orphan and field coverage is curated', () => {
+    const report = buildResearchModelInventoryReport(emptyFacts());
+    expect(report.summary.coverageScope).toContain('Curated refactor-relevant');
+    expect(report.summary.coverageScope).toContain('only tracked edges');
+    expect(report.summary.coverageScope).toContain('not an exhaustive');
   });
 
   it('surfaces unclassified live collections in the summary', () => {

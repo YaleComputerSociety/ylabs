@@ -83,12 +83,27 @@ async function censusCollection(
   const documentCount = await coll.countDocuments({});
   const grouped = await coll
     .aggregate<{
-      _id: unknown;
+      _id: {
+        bsonType: string;
+        value?: unknown;
+      };
       count: number;
-    }>([{ $group: { _id: '$schemaVersion', count: { $sum: 1 } } }, { $sort: { count: -1 } }])
+    }>([
+      {
+        $group: {
+          _id: {
+            bsonType: { $type: '$schemaVersion' },
+            value: '$schemaVersion',
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1, '_id.bsonType': 1 } },
+    ])
     .toArray();
   const schemaVersions: SchemaVersionBucket[] = grouped.map((row) => ({
-    version: row._id === null || row._id === undefined ? 'unset' : String(row._id),
+    bsonType: row._id.bsonType,
+    ...(row._id.bsonType === 'missing' ? {} : { value: row._id.value }),
     count: row.count,
   }));
   return { collection, present: true, documentCount, schemaVersions };
@@ -110,17 +125,13 @@ async function probeFieldPresence(
 }
 
 /**
- * Type-agnostic orphan check: build the set of target ids as strings, then scan
- * the referencing collection. This stays correct whether references are stored
- * as ObjectId or string, unlike a `$lookup` keyed on `_id`.
+ * Type-agnostic orphan checks compare string forms so references stored as
+ * ObjectId or string are handled consistently.
  */
-export async function checkReferenceEdge(
-  db: Db,
-  edge: (typeof REFERENCE_EDGES)[number],
-  presentCollections: Set<string>,
-  sampleLimit: number,
-): Promise<ReferenceIntegrityFact> {
-  const base: ReferenceIntegrityFact = {
+type InventoryReferenceEdge = (typeof REFERENCE_EDGES)[number];
+
+function emptyReferenceFact(edge: InventoryReferenceEdge): ReferenceIntegrityFact {
+  return {
     name: edge.name,
     fromCollection: edge.fromCollection,
     toCollection: edge.toCollection,
@@ -129,53 +140,127 @@ export async function checkReferenceEdge(
     orphaned: 0,
     sampleOrphanIds: [],
   };
-  if (!presentCollections.has(edge.fromCollection)) {
-    return { ...base, status: 'source-missing' };
-  }
+}
 
+async function loadTargetIds(db: Db, collection: string): Promise<Set<string>> {
   const targetIds = new Set<string>();
-  const targetPresent = presentCollections.has(edge.toCollection);
-  if (targetPresent) {
-    const targetCursor = db.collection(edge.toCollection).find({}, { projection: { _id: 1 } });
-    for await (const doc of targetCursor) {
-      targetIds.add(String(doc._id));
-    }
+  const targetCursor = db.collection(collection).find({}, { projection: { _id: 1 } });
+  for await (const doc of targetCursor) {
+    targetIds.add(String(doc._id));
+  }
+  return targetIds;
+}
+
+async function gatherReferenceIntegrityFacts(
+  db: Db,
+  edges: InventoryReferenceEdge[],
+  presentCollections: Set<string>,
+  sampleLimit: number,
+): Promise<ReferenceIntegrityFact[]> {
+  const targetCollections = [
+    ...new Set(
+      edges
+        .filter((edge) => presentCollections.has(edge.fromCollection))
+        .map((edge) => edge.toCollection)
+        .filter((collection) => presentCollections.has(collection)),
+    ),
+  ];
+  const targetEntries = await mapWithConcurrency(
+    targetCollections,
+    COLLECTION_SCAN_CONCURRENCY,
+    async (collection) => [collection, await loadTargetIds(db, collection)] as const,
+  );
+  const targetIdsByCollection = new Map(targetEntries);
+
+  const edgesBySource = new Map<string, InventoryReferenceEdge[]>();
+  for (const edge of edges) {
+    const sourceEdges = edgesBySource.get(edge.fromCollection) ?? [];
+    sourceEdges.push(edge);
+    edgesBySource.set(edge.fromCollection, sourceEdges);
   }
 
-  let checked = 0;
-  let orphaned = 0;
-  const sampleOrphanIds: string[] = [];
-  const sourceFilter = edge.required ? {} : { [edge.localField]: { $ne: null } };
-  const fromCursor = db
-    .collection(edge.fromCollection)
-    .find(sourceFilter, { projection: { [edge.localField]: 1 } });
-  for await (const doc of fromCursor) {
-    const ref = (doc as Record<string, unknown>)[edge.localField];
-    if (ref === null || ref === undefined) {
-      if (!edge.required) continue;
-      checked += 1;
-      orphaned += 1;
-      if (sampleOrphanIds.length < sampleLimit) {
-        sampleOrphanIds.push(String(doc._id));
+  const sourceGroups = await mapWithConcurrency(
+    [...edgesBySource.entries()],
+    COLLECTION_SCAN_CONCURRENCY,
+    async ([sourceCollection, sourceEdges]) => {
+      if (!presentCollections.has(sourceCollection)) {
+        return sourceEdges.map((edge) => ({
+          ...emptyReferenceFact(edge),
+          status: 'source-missing' as const,
+        }));
       }
-      continue;
-    }
-    checked += 1;
-    if (!targetIds.has(String(ref))) {
-      orphaned += 1;
-      if (sampleOrphanIds.length < sampleLimit) {
-        sampleOrphanIds.push(String(doc._id));
-      }
-    }
-  }
 
-  return {
-    ...base,
-    status: targetPresent ? 'checked' : 'target-missing',
-    checked,
-    orphaned,
-    sampleOrphanIds,
-  };
+      const factsByName = new Map(
+        sourceEdges.map((edge) => {
+          const targetPresent = presentCollections.has(edge.toCollection);
+          return [
+            edge.name,
+            {
+              ...emptyReferenceFact(edge),
+              status: targetPresent ? ('checked' as const) : ('target-missing' as const),
+            },
+          ];
+        }),
+      );
+      const projection: Record<string, 1> = { _id: 1 };
+      for (const edge of sourceEdges) {
+        projection[edge.localField] = 1;
+      }
+
+      const sourceCursor = db.collection(sourceCollection).find({}, { projection });
+      for await (const doc of sourceCursor) {
+        for (const edge of sourceEdges) {
+          const fact = factsByName.get(edge.name);
+          if (!fact) continue;
+          const ref = (doc as Record<string, unknown>)[edge.localField];
+          if (ref === null || ref === undefined) {
+            if (!edge.required) continue;
+            fact.checked += 1;
+            fact.orphaned += 1;
+            if (fact.sampleOrphanIds.length < sampleLimit) {
+              fact.sampleOrphanIds.push(String(doc._id));
+            }
+            continue;
+          }
+
+          fact.checked += 1;
+          const targetIds = targetIdsByCollection.get(edge.toCollection);
+          if (!targetIds?.has(String(ref))) {
+            fact.orphaned += 1;
+            if (fact.sampleOrphanIds.length < sampleLimit) {
+              fact.sampleOrphanIds.push(String(doc._id));
+            }
+          }
+        }
+      }
+
+      return sourceEdges.map((edge) => {
+        const fact = factsByName.get(edge.name);
+        if (!fact) {
+          throw new Error(`Missing reference fact for ${edge.name}`);
+        }
+        return fact;
+      });
+    },
+  );
+  const factsByName = new Map(sourceGroups.flat().map((fact) => [fact.name, fact]));
+  return edges.map((edge) => {
+    const fact = factsByName.get(edge.name);
+    if (!fact) {
+      throw new Error(`Missing reference fact for ${edge.name}`);
+    }
+    return fact;
+  });
+}
+
+export async function checkReferenceEdge(
+  db: Db,
+  edge: InventoryReferenceEdge,
+  presentCollections: Set<string>,
+  sampleLimit: number,
+): Promise<ReferenceIntegrityFact> {
+  const [fact] = await gatherReferenceIntegrityFacts(db, [edge], presentCollections, sampleLimit);
+  return fact;
 }
 
 export async function gatherInventoryFacts(
@@ -219,10 +304,12 @@ export async function gatherInventoryFacts(
   );
   const fieldPresence = fieldPresenceGroups.flat();
 
-  const referenceIntegrity: ReferenceIntegrityFact[] = [];
-  for (const edge of REFERENCE_EDGES) {
-    referenceIntegrity.push(await checkReferenceEdge(db, edge, liveSet, args.sampleLimit));
-  }
+  const referenceIntegrity = await gatherReferenceIntegrityFacts(
+    db,
+    REFERENCE_EDGES,
+    liveSet,
+    args.sampleLimit,
+  );
 
   return { liveCollections, census, fieldPresence, referenceIntegrity };
 }

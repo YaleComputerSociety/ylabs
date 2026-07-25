@@ -70,6 +70,30 @@ describe('checkReferenceEdge', () => {
     });
   });
 
+  it('keeps a missing target explicit when an optional edge has no references', async () => {
+    const db = {
+      collection(name: string) {
+        if (name !== edge.fromCollection) {
+          throw new Error(`unexpected collection: ${name}`);
+        }
+        return {
+          find() {
+            return asyncCursor([{ _id: 'member-1', researchEntityId: null }]);
+          },
+        };
+      },
+    } as unknown as Db;
+
+    await expect(
+      checkReferenceEdge(db, edge, new Set([edge.fromCollection]), 20),
+    ).resolves.toMatchObject({
+      status: 'target-missing',
+      checked: 0,
+      orphaned: 0,
+      sampleOrphanIds: [],
+    });
+  });
+
   it('reports missing required local references as integrity failures', async () => {
     let sourceFilter: Record<string, unknown> | undefined;
     const db = {
@@ -115,6 +139,68 @@ describe('checkReferenceEdge', () => {
 });
 
 describe('gatherInventoryFacts', () => {
+  it('preserves BSON types and distinguishes missing schema versions from null', async () => {
+    let aggregatePipeline: unknown;
+    const db = {
+      listCollections() {
+        return {
+          async toArray() {
+            return [{ name: 'research_entities' }];
+          },
+        };
+      },
+      collection(name: string) {
+        if (name !== 'research_entities') {
+          throw new Error(`unexpected collection: ${name}`);
+        }
+        return {
+          async countDocuments(query: Record<string, unknown>) {
+            return Object.keys(query).length === 0 ? 4 : 0;
+          },
+          aggregate(pipeline: unknown) {
+            aggregatePipeline = pipeline;
+            return {
+              async toArray() {
+                return [
+                  { _id: { bsonType: 'int', value: 1 }, count: 1 },
+                  { _id: { bsonType: 'string', value: '1' }, count: 1 },
+                  { _id: { bsonType: 'null', value: null }, count: 1 },
+                  { _id: { bsonType: 'missing' }, count: 1 },
+                ];
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Db;
+
+    const facts = await gatherInventoryFacts(db, {
+      environment: 'test',
+      sampleLimit: 1,
+    });
+
+    expect(aggregatePipeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          $group: expect.objectContaining({
+            _id: {
+              bsonType: { $type: '$schemaVersion' },
+              value: '$schemaVersion',
+            },
+          }),
+        }),
+      ]),
+    );
+    expect(
+      facts.census.find((fact) => fact.collection === 'research_entities')?.schemaVersions,
+    ).toEqual([
+      { bsonType: 'int', value: 1, count: 1 },
+      { bsonType: 'string', value: '1', count: 1 },
+      { bsonType: 'null', value: null, count: 1 },
+      { bsonType: 'missing', count: 1 },
+    ]);
+  });
+
   it('reuses census totals and bounds concurrent field scans', async () => {
     const liveCollections = [...new Set(RETIREMENT_FIELD_PROBES.map((probe) => probe.collection))];
     const totalCountCalls = new Map<string, number>();
@@ -167,6 +253,134 @@ describe('gatherInventoryFacts', () => {
     for (const collection of liveCollections) {
       expect(totalCountCalls.get(collection)).toBe(1);
     }
+  });
+
+  it('loads each target set and scans each source collection once', async () => {
+    const liveCollections = [
+      ...new Set(REFERENCE_EDGES.flatMap((edge) => [edge.fromCollection, edge.toCollection])),
+    ];
+    const targetScans = new Map<string, number>();
+    const sourceScans = new Map<string, number>();
+
+    const db = {
+      listCollections() {
+        return {
+          async toArray() {
+            return liveCollections.map((name) => ({ name }));
+          },
+        };
+      },
+      collection(name: string) {
+        return {
+          async countDocuments(query: Record<string, unknown>) {
+            return Object.keys(query).length === 0 ? 1 : 0;
+          },
+          aggregate() {
+            return {
+              async toArray() {
+                return [];
+              },
+            };
+          },
+          find(_query: Record<string, unknown>, options: { projection: Record<string, 1> }) {
+            const calls = Object.keys(options.projection).length === 1 ? targetScans : sourceScans;
+            calls.set(name, (calls.get(name) ?? 0) + 1);
+            return asyncCursor([]);
+          },
+        };
+      },
+    } as unknown as Db;
+
+    await gatherInventoryFacts(db, {
+      environment: 'test',
+      sampleLimit: 1,
+    });
+
+    for (const collection of new Set(REFERENCE_EDGES.map((edge) => edge.toCollection))) {
+      expect(targetScans.get(collection)).toBe(1);
+    }
+    for (const collection of new Set(REFERENCE_EDGES.map((edge) => edge.fromCollection))) {
+      expect(sourceScans.get(collection)).toBe(1);
+    }
+  });
+
+  it('checks all tracked fields from one source scan independently', async () => {
+    const liveCollections = [
+      'access_signals',
+      'entry_pathways',
+      'observations',
+      'research_entities',
+    ];
+    const targetDocuments: Record<string, Record<string, unknown>[]> = {
+      entry_pathways: [{ _id: 'pathway-1' }],
+      observations: [{ _id: 'observation-1' }],
+      research_entities: [{ _id: 'entity-1' }],
+    };
+
+    const db = {
+      listCollections() {
+        return {
+          async toArray() {
+            return liveCollections.map((name) => ({ name }));
+          },
+        };
+      },
+      collection(name: string) {
+        return {
+          async countDocuments(query: Record<string, unknown>) {
+            return Object.keys(query).length === 0 ? 1 : 0;
+          },
+          aggregate() {
+            return {
+              async toArray() {
+                return [];
+              },
+            };
+          },
+          find(_query: Record<string, unknown>, options: { projection: Record<string, 1> }) {
+            if (Object.keys(options.projection).length === 1) {
+              return asyncCursor(targetDocuments[name] ?? []);
+            }
+            if (name === 'access_signals') {
+              return asyncCursor([
+                {
+                  _id: 'signal-1',
+                  researchEntityId: 'entity-1',
+                  entryPathwayId: 'pathway-1',
+                  sourceEvidenceId: 'observation-1',
+                  observationId: 'observation-missing',
+                },
+              ]);
+            }
+            return asyncCursor([]);
+          },
+        };
+      },
+    } as unknown as Db;
+
+    const facts = await gatherInventoryFacts(db, {
+      environment: 'test',
+      sampleLimit: 1,
+    });
+    const byName = new Map(facts.referenceIntegrity.map((fact) => [fact.name, fact]));
+
+    expect(byName.get('access_signal_to_entity')).toMatchObject({
+      checked: 1,
+      orphaned: 0,
+    });
+    expect(byName.get('access_signal_to_pathway')).toMatchObject({
+      checked: 1,
+      orphaned: 0,
+    });
+    expect(byName.get('access_signal_to_source_evidence')).toMatchObject({
+      checked: 1,
+      orphaned: 0,
+    });
+    expect(byName.get('access_signal_to_observation')).toMatchObject({
+      checked: 1,
+      orphaned: 1,
+      sampleOrphanIds: ['signal-1'],
+    });
   });
 });
 

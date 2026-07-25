@@ -24,7 +24,8 @@ yarn --cwd server model-refactor:inventory --environment beta --sample-limit 100
 The tool uses a dedicated native MongoDB client with the standard `MONGODBURL` from `server/.env`, so point it at the environment you want to measure.
 It does not load Mongoose models, create collections, build indexes, or open the migration database configured by `MONGODBURL_MIGRATION`.
 The client is closed after success or failure.
-Collection scans are capped at four concurrent groups, and retirement-field probes reuse the collection census totals.
+Collection scans are capped at four concurrent groups.
+Retirement-field probes reuse the collection census totals, each reference target ID set is loaded once, and all tracked fields from a source collection are checked in one scan.
 The required `--environment` label must describe that target and accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
@@ -52,11 +53,16 @@ Investigate each one before trusting a cutover.
 - `retirementFieldsStillPresent`: how many legacy fields still appear on live documents.
 - `referenceEdgesChecked` and `referenceEdgesSkipped`: how many reference edges were measurable and how many had no source collection to inspect.
 - `referenceEdgesWithOrphans` and `totalOrphans`: reference-integrity health.
+- `coverageScope`: the explicit boundary for interpreting the headline counts.
+
+The collection, retirement-field, and scalar reference-edge sets are curated for this refactor and are not an exhaustive database-integrity proof.
+In particular, `totalOrphans: 0` means no orphans were found among the tracked edges, not that every reference in the database is valid.
 
 ### `collections`
 
 One row per refactor-relevant collection with its group, owning migration phase, target mapping, document count, and `schemaVersion` distribution.
-The `schemaVersions` bucket labels documents with no `schemaVersion` as `unset`, which is expected before Phase 1 versioning lands.
+Each `schemaVersions` bucket records `bsonType`, `value` when present, and `count`.
+The `missing` BSON type distinguishes documents without `schemaVersion` from documents whose value is explicitly `null`, and numeric and string values remain separate.
 
 ### `retirementFields`
 
@@ -72,6 +78,7 @@ Each row has a `status`: `checked`, `target-missing`, `source-missing`, or `not-
 Each row also records the local field and whether the current Mongoose schema requires it.
 A missing source is skipped with `clean: null`.
 A present source with a missing target is scanned, and every non-null reference is reported as orphaned with `clean: false`.
+If that scan finds no references, the row remains explicitly `target-missing` with `clean: null` instead of becoming a cutover blocker.
 For a required edge, a source document with a missing or null local reference is also reported as orphaned.
 For an optional edge, a missing or null local reference is skipped.
 Any edge with `clean: false` must be resolved or explained before the referenced collection is migrated.
