@@ -140,7 +140,7 @@ describe('checkReferenceEdge', () => {
 
 describe('gatherInventoryFacts', () => {
   it('preserves BSON types and distinguishes missing schema versions from null', async () => {
-    let aggregatePipeline: unknown;
+    const aggregatePipelines: unknown[] = [];
     const db = {
       listCollections() {
         return {
@@ -158,9 +158,13 @@ describe('gatherInventoryFacts', () => {
             return Object.keys(query).length === 0 ? 4 : 0;
           },
           aggregate(pipeline: unknown) {
-            aggregatePipeline = pipeline;
+            aggregatePipelines.push(pipeline);
+            const group = (pipeline as Array<{ $group?: { _id: unknown } }>)[0]?.$group;
             return {
               async toArray() {
+                if (group?._id === null) {
+                  return [{ _id: null }];
+                }
                 return [
                   { _id: { bsonType: 'int', value: 1 }, count: 1 },
                   { _id: { bsonType: 'string', value: '1' }, count: 1 },
@@ -179,7 +183,7 @@ describe('gatherInventoryFacts', () => {
       sampleLimit: 1,
     });
 
-    expect(aggregatePipeline).toEqual(
+    expect(aggregatePipelines).toContainEqual(
       expect.arrayContaining([
         expect.objectContaining({
           $group: expect.objectContaining({
@@ -201,9 +205,10 @@ describe('gatherInventoryFacts', () => {
     ]);
   });
 
-  it('reuses census totals and bounds concurrent field scans', async () => {
+  it('reuses census totals and aggregates all field probes once per collection', async () => {
     const liveCollections = [...new Set(RETIREMENT_FIELD_PROBES.map((probe) => probe.collection))];
     const totalCountCalls = new Map<string, number>();
+    const fieldAggregationCalls = new Map<string, number>();
     let activeFieldScans = 0;
     let peakFieldScans = 0;
 
@@ -222,16 +227,26 @@ describe('gatherInventoryFacts', () => {
               totalCountCalls.set(name, (totalCountCalls.get(name) ?? 0) + 1);
               return 12;
             }
-            activeFieldScans += 1;
-            peakFieldScans = Math.max(peakFieldScans, activeFieldScans);
-            await new Promise((resolve) => setTimeout(resolve, 1));
-            activeFieldScans -= 1;
-            return 3;
+            throw new Error('field probes must not use countDocuments');
           },
-          aggregate() {
+          aggregate(pipeline: Array<{ $group?: Record<string, unknown> }>) {
+            const group = pipeline[0]?.$group;
+            const isFieldAggregation = group?._id === null;
             return {
               async toArray() {
-                return [];
+                if (!isFieldAggregation) return [];
+                fieldAggregationCalls.set(name, (fieldAggregationCalls.get(name) ?? 0) + 1);
+                activeFieldScans += 1;
+                peakFieldScans = Math.max(peakFieldScans, activeFieldScans);
+                await new Promise((resolve) => setTimeout(resolve, 1));
+                activeFieldScans -= 1;
+                return [
+                  Object.fromEntries(
+                    Object.keys(group)
+                      .filter((key) => key !== '_id')
+                      .map((key) => [key, 3]),
+                  ),
+                ];
               },
             };
           },
@@ -252,15 +267,19 @@ describe('gatherInventoryFacts', () => {
     expect(peakFieldScans).toBeLessThanOrEqual(4);
     for (const collection of liveCollections) {
       expect(totalCountCalls.get(collection)).toBe(1);
+      expect(fieldAggregationCalls.get(collection)).toBe(1);
     }
+    expect(facts.fieldPresence.every((fact) => fact.present === 3 && fact.total === 12)).toBe(true);
   });
 
-  it('loads each target set and scans each source collection once', async () => {
+  it('scans sources before streaming each referenced target collection once', async () => {
     const liveCollections = [
       ...new Set(REFERENCE_EDGES.flatMap((edge) => [edge.fromCollection, edge.toCollection])),
     ];
     const targetScans = new Map<string, number>();
     const sourceScans = new Map<string, number>();
+    let sourceScansComplete = false;
+    const expectedSourceScans = new Set(REFERENCE_EDGES.map((edge) => edge.fromCollection)).size;
 
     const db = {
       listCollections() {
@@ -283,9 +302,21 @@ describe('gatherInventoryFacts', () => {
             };
           },
           find(_query: Record<string, unknown>, options: { projection: Record<string, 1> }) {
-            const calls = Object.keys(options.projection).length === 1 ? targetScans : sourceScans;
-            calls.set(name, (calls.get(name) ?? 0) + 1);
-            return asyncCursor([]);
+            if (Object.keys(options.projection).length === 1) {
+              expect(sourceScansComplete).toBe(true);
+              targetScans.set(name, (targetScans.get(name) ?? 0) + 1);
+              return asyncCursor([{ _id: name }, { _id: `${name}-unreferenced` }]);
+            }
+
+            sourceScans.set(name, (sourceScans.get(name) ?? 0) + 1);
+            sourceScansComplete = sourceScans.size === expectedSourceScans;
+            const sourceDocument: Record<string, unknown> = { _id: `${name}-source` };
+            for (const edge of REFERENCE_EDGES.filter(
+              (candidate) => candidate.fromCollection === name,
+            )) {
+              sourceDocument[edge.localField] = edge.toCollection;
+            }
+            return asyncCursor([sourceDocument]);
           },
         };
       },
@@ -302,6 +333,56 @@ describe('gatherInventoryFacts', () => {
     for (const collection of new Set(REFERENCE_EDGES.map((edge) => edge.fromCollection))) {
       expect(sourceScans.get(collection)).toBe(1);
     }
+  });
+
+  it('preserves document-level orphan counts while matching distinct string references', async () => {
+    const memberEdge = REFERENCE_EDGES.find(
+      (candidate) => candidate.name === 'member_to_entity',
+    );
+    if (!memberEdge) {
+      throw new Error('member reference edge fixture is required');
+    }
+    const targetId = {
+      toString() {
+        return 'entity-found';
+      },
+    };
+    const db = {
+      collection(name: string) {
+        if (name === memberEdge.fromCollection) {
+          return {
+            find() {
+              return asyncCursor([
+                { _id: 'member-1', researchEntityId: 'entity-found' },
+                { _id: 'member-2', researchEntityId: 'entity-missing' },
+                { _id: 'member-3', researchEntityId: 'entity-missing' },
+              ]);
+            },
+          };
+        }
+        if (name === memberEdge.toCollection) {
+          return {
+            find() {
+              return asyncCursor([{ _id: targetId }, { _id: 'unreferenced-target' }]);
+            },
+          };
+        }
+        throw new Error(`unexpected collection: ${name}`);
+      },
+    } as unknown as Db;
+
+    await expect(
+      checkReferenceEdge(
+        db,
+        memberEdge,
+        new Set([memberEdge.fromCollection, memberEdge.toCollection]),
+        2,
+      ),
+    ).resolves.toMatchObject({
+      checked: 3,
+      orphaned: 2,
+      sampleOrphanIds: ['member-2', 'member-3'],
+    });
   });
 
   it('checks all tracked fields from one source scan independently', async () => {

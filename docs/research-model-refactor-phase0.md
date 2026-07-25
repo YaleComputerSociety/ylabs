@@ -25,7 +25,8 @@ The tool uses a dedicated native MongoDB client with the standard `MONGODBURL` f
 It does not load Mongoose models, create collections, build indexes, or open the migration database configured by `MONGODBURL_MIGRATION`.
 The client is closed after success or failure.
 Collection scans are capped at four concurrent groups.
-Retirement-field probes reuse the collection census totals, each reference target ID set is loaded once, and all tracked fields from a source collection are checked in one scan.
+Retirement-field probes reuse the collection census totals and count all tracked fields in one aggregation per collection.
+Reference checks scan all tracked fields from each source collection once, retain only distinct referenced IDs, and stream each target collection once without materializing all target IDs.
 The required `--environment` label must describe that target and accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.

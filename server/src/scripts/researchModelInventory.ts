@@ -109,19 +109,38 @@ async function censusCollection(
   return { collection, present: true, documentCount, schemaVersions };
 }
 
-async function probeFieldPresence(
+async function probeCollectionFieldPresence(
   db: Db,
   collection: string,
-  field: string,
+  fields: string[],
   present: boolean,
   total: number,
-): Promise<FieldPresenceFact> {
+): Promise<FieldPresenceFact[]> {
   if (!present) {
-    return { collection, field, present: 0, total: 0 };
+    return fields.map((field) => ({ collection, field, present: 0, total: 0 }));
   }
-  const coll = db.collection(collection);
-  const withField = await coll.countDocuments({ [field]: { $exists: true } });
-  return { collection, field, present: withField, total };
+
+  const counters = Object.fromEntries(
+    fields.map((field, index) => [
+      `field_${index}`,
+      {
+        $sum: {
+          $cond: [{ $ne: [{ $type: `$${field}` }, 'missing'] }, 1, 0],
+        },
+      },
+    ]),
+  );
+  const [counts = {}] = await db
+    .collection(collection)
+    .aggregate<Record<string, number>>([{ $group: { _id: null, ...counters } }])
+    .toArray();
+
+  return fields.map((field, index) => ({
+    collection,
+    field,
+    present: counts[`field_${index}`] ?? 0,
+    total,
+  }));
 }
 
 /**
@@ -142,13 +161,19 @@ function emptyReferenceFact(edge: InventoryReferenceEdge): ReferenceIntegrityFac
   };
 }
 
-async function loadTargetIds(db: Db, collection: string): Promise<Set<string>> {
-  const targetIds = new Set<string>();
-  const targetCursor = db.collection(collection).find({}, { projection: { _id: 1 } });
-  for await (const doc of targetCursor) {
-    targetIds.add(String(doc._id));
-  }
-  return targetIds;
+interface OrphanSampleCandidate {
+  sourceOrder: number;
+  sourceId: string;
+}
+
+interface ReferenceScanState {
+  edge: InventoryReferenceEdge;
+  fact: ReferenceIntegrityFact;
+  referencedIds: Set<string>;
+  foundIds: Set<string>;
+  referenceCounts: Map<string, number>;
+  samplesByReference: Map<string, OrphanSampleCandidate[]>;
+  missingRequiredSamples: OrphanSampleCandidate[];
 }
 
 async function gatherReferenceIntegrityFacts(
@@ -157,21 +182,6 @@ async function gatherReferenceIntegrityFacts(
   presentCollections: Set<string>,
   sampleLimit: number,
 ): Promise<ReferenceIntegrityFact[]> {
-  const targetCollections = [
-    ...new Set(
-      edges
-        .filter((edge) => presentCollections.has(edge.fromCollection))
-        .map((edge) => edge.toCollection)
-        .filter((collection) => presentCollections.has(collection)),
-    ),
-  ];
-  const targetEntries = await mapWithConcurrency(
-    targetCollections,
-    COLLECTION_SCAN_CONCURRENCY,
-    async (collection) => [collection, await loadTargetIds(db, collection)] as const,
-  );
-  const targetIdsByCollection = new Map(targetEntries);
-
   const edgesBySource = new Map<string, InventoryReferenceEdge[]>();
   for (const edge of edges) {
     const sourceEdges = edgesBySource.get(edge.fromCollection) ?? [];
@@ -179,25 +189,41 @@ async function gatherReferenceIntegrityFacts(
     edgesBySource.set(edge.fromCollection, sourceEdges);
   }
 
-  const sourceGroups = await mapWithConcurrency(
+  const sourceStateGroups = await mapWithConcurrency(
     [...edgesBySource.entries()],
     COLLECTION_SCAN_CONCURRENCY,
     async ([sourceCollection, sourceEdges]) => {
       if (!presentCollections.has(sourceCollection)) {
-        return sourceEdges.map((edge) => ({
-          ...emptyReferenceFact(edge),
-          status: 'source-missing' as const,
+        return sourceEdges.map<ReferenceScanState>((edge) => ({
+          edge,
+          fact: {
+            ...emptyReferenceFact(edge),
+            status: 'source-missing',
+          },
+          referencedIds: new Set(),
+          foundIds: new Set(),
+          referenceCounts: new Map(),
+          samplesByReference: new Map(),
+          missingRequiredSamples: [],
         }));
       }
 
-      const factsByName = new Map(
-        sourceEdges.map((edge) => {
+      const statesByName = new Map<string, ReferenceScanState>(
+        sourceEdges.map((edge): [string, ReferenceScanState] => {
           const targetPresent = presentCollections.has(edge.toCollection);
           return [
             edge.name,
             {
-              ...emptyReferenceFact(edge),
-              status: targetPresent ? ('checked' as const) : ('target-missing' as const),
+              edge,
+              fact: {
+                ...emptyReferenceFact(edge),
+                status: targetPresent ? ('checked' as const) : ('target-missing' as const),
+              },
+              referencedIds: new Set<string>(),
+              foundIds: new Set<string>(),
+              referenceCounts: new Map<string, number>(),
+              samplesByReference: new Map<string, OrphanSampleCandidate[]>(),
+              missingRequiredSamples: [],
             },
           ];
         }),
@@ -208,42 +234,99 @@ async function gatherReferenceIntegrityFacts(
       }
 
       const sourceCursor = db.collection(sourceCollection).find({}, { projection });
+      let sourceOrder = 0;
       for await (const doc of sourceCursor) {
         for (const edge of sourceEdges) {
-          const fact = factsByName.get(edge.name);
-          if (!fact) continue;
+          const state = statesByName.get(edge.name);
+          if (!state) continue;
           const ref = (doc as Record<string, unknown>)[edge.localField];
           if (ref === null || ref === undefined) {
             if (!edge.required) continue;
-            fact.checked += 1;
-            fact.orphaned += 1;
-            if (fact.sampleOrphanIds.length < sampleLimit) {
-              fact.sampleOrphanIds.push(String(doc._id));
+            state.fact.checked += 1;
+            state.fact.orphaned += 1;
+            if (state.missingRequiredSamples.length < sampleLimit) {
+              state.missingRequiredSamples.push({
+                sourceOrder,
+                sourceId: String(doc._id),
+              });
             }
             continue;
           }
 
-          fact.checked += 1;
-          const targetIds = targetIdsByCollection.get(edge.toCollection);
-          if (!targetIds?.has(String(ref))) {
-            fact.orphaned += 1;
-            if (fact.sampleOrphanIds.length < sampleLimit) {
-              fact.sampleOrphanIds.push(String(doc._id));
-            }
+          state.fact.checked += 1;
+          const referenceId = String(ref);
+          state.referencedIds.add(referenceId);
+          state.referenceCounts.set(
+            referenceId,
+            (state.referenceCounts.get(referenceId) ?? 0) + 1,
+          );
+          const samples = state.samplesByReference.get(referenceId) ?? [];
+          if (samples.length < sampleLimit) {
+            samples.push({
+              sourceOrder,
+              sourceId: String(doc._id),
+            });
+            state.samplesByReference.set(referenceId, samples);
           }
         }
+        sourceOrder += 1;
       }
 
       return sourceEdges.map((edge) => {
-        const fact = factsByName.get(edge.name);
-        if (!fact) {
-          throw new Error(`Missing reference fact for ${edge.name}`);
+        const state = statesByName.get(edge.name);
+        if (!state) {
+          throw new Error(`Missing reference state for ${edge.name}`);
         }
-        return fact;
+        return state;
       });
     },
   );
-  const factsByName = new Map(sourceGroups.flat().map((fact) => [fact.name, fact]));
+  const states = sourceStateGroups.flat();
+
+  const statesByTarget = new Map<string, ReferenceScanState[]>();
+  for (const state of states) {
+    if (
+      state.fact.status !== 'checked' ||
+      state.referencedIds.size === 0 ||
+      !presentCollections.has(state.edge.toCollection)
+    ) {
+      continue;
+    }
+    const targetStates = statesByTarget.get(state.edge.toCollection) ?? [];
+    targetStates.push(state);
+    statesByTarget.set(state.edge.toCollection, targetStates);
+  }
+
+  await mapWithConcurrency(
+    [...statesByTarget.entries()],
+    COLLECTION_SCAN_CONCURRENCY,
+    async ([targetCollection, targetStates]) => {
+      const targetCursor = db.collection(targetCollection).find({}, { projection: { _id: 1 } });
+      for await (const doc of targetCursor) {
+        const targetId = String(doc._id);
+        for (const state of targetStates) {
+          if (state.referencedIds.has(targetId)) {
+            state.foundIds.add(targetId);
+          }
+        }
+      }
+    },
+  );
+
+  for (const state of states) {
+    const orphanSamples = [...state.missingRequiredSamples];
+    for (const referenceId of state.referencedIds) {
+      if (state.foundIds.has(referenceId)) continue;
+      state.fact.orphaned += state.referenceCounts.get(referenceId) ?? 0;
+      orphanSamples.push(...(state.samplesByReference.get(referenceId) ?? []));
+    }
+    state.fact.sampleOrphanIds = orphanSamples
+      .sort((left, right) => left.sourceOrder - right.sourceOrder)
+      .slice(0, sampleLimit)
+      .map((sample) => sample.sourceId);
+  }
+
+  const factsByName = new Map(states.map((state) => [state.fact.name, state.fact]));
   return edges.map((edge) => {
     const fact = factsByName.get(edge.name);
     if (!fact) {
@@ -293,13 +376,13 @@ export async function gatherInventoryFacts(
       const total =
         censusFact?.documentCount ??
         (collectionPresent ? await db.collection(collection).countDocuments({}) : 0);
-      const facts: FieldPresenceFact[] = [];
-      for (const probe of probes) {
-        facts.push(
-          await probeFieldPresence(db, probe.collection, probe.field, collectionPresent, total),
-        );
-      }
-      return facts;
+      return probeCollectionFieldPresence(
+        db,
+        collection,
+        probes.map((probe) => probe.field),
+        collectionPresent,
+        total,
+      );
     },
   );
   const fieldPresence = fieldPresenceGroups.flat();
