@@ -55,6 +55,10 @@ describe('inventory coverage', () => {
     expect(REFERENCE_EDGES.map((edge) => `${edge.fromCollection}.${edge.localField}`)).toEqual(
       expect.arrayContaining([
         'research_entity_members.facultyMemberId',
+        'users.facultyMemberId',
+        'users.studentProfileId',
+        'faculty_members.userId',
+        'student_profiles.userId',
         'access_signals.entryPathwayId',
         'contact_routes.entryPathwayId',
         'posted_opportunities.researchEntityId',
@@ -65,6 +69,7 @@ describe('inventory coverage', () => {
   it('includes current private-record reference edges', () => {
     expect(REFERENCE_EDGES.map((edge) => `${edge.fromCollection}.${edge.localField}`)).toEqual(
       expect.arrayContaining([
+        'student_applications.listingObjectId',
         'student_applications.postedOpportunityId',
         'student_applications.researchEntityId',
         'student_applications.studentUserId',
@@ -78,6 +83,18 @@ describe('inventory coverage', () => {
         'student_engagement_events.researchEntityId',
       ]),
     );
+  });
+
+  it('records current schema requiredness for every reference edge', () => {
+    expect(REFERENCE_EDGES.every((edge) => typeof edge.required === 'boolean')).toBe(true);
+    expect(
+      REFERENCE_EDGES.find((edge) => edge.name === 'entry_pathway_to_entity'),
+    ).toMatchObject({
+      required: true,
+    });
+    expect(REFERENCE_EDGES.find((edge) => edge.name === 'member_to_entity')).toMatchObject({
+      required: false,
+    });
   });
 
   it('includes current compatibility and professor-mirror retirement fields', () => {
@@ -185,6 +202,8 @@ describe('buildResearchModelInventoryReport', () => {
     const memberToEntity = report.referenceIntegrity.find((row) => row.name === 'member_to_entity');
     expect(memberToEntity?.clean).toBe(false);
     expect(memberToEntity?.orphanRate).toBe(0.05);
+    expect(memberToEntity?.localField).toBe('researchEntityId');
+    expect(memberToEntity?.required).toBe(false);
     const memberToUser = report.referenceIntegrity.find((row) => row.name === 'member_to_user');
     expect(memberToUser?.clean).toBe(true);
     expect(report.summary.referenceEdgesWithOrphans).toBe(1);

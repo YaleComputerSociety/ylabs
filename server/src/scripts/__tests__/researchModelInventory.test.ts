@@ -19,9 +19,12 @@ function asyncCursor(rows: Record<string, unknown>[]) {
 
 describe('checkReferenceEdge', () => {
   const edge = REFERENCE_EDGES.find((candidate) => candidate.name === 'member_to_entity');
+  const requiredEdge = REFERENCE_EDGES.find(
+    (candidate) => candidate.name === 'entry_pathway_to_entity',
+  );
 
-  if (!edge) {
-    throw new Error('member_to_entity edge is required');
+  if (!edge || !requiredEdge) {
+    throw new Error('reference edge fixtures are required');
   }
 
   it('skips an edge when its source collection is missing', async () => {
@@ -65,6 +68,49 @@ describe('checkReferenceEdge', () => {
       orphaned: 2,
       sampleOrphanIds: ['member-1'],
     });
+  });
+
+  it('reports missing required local references as integrity failures', async () => {
+    let sourceFilter: Record<string, unknown> | undefined;
+    const db = {
+      collection(name: string) {
+        if (name === requiredEdge.toCollection) {
+          return {
+            find() {
+              return asyncCursor([{ _id: 'entity-1' }]);
+            },
+          };
+        }
+        if (name === requiredEdge.fromCollection) {
+          return {
+            find(query: Record<string, unknown>) {
+              sourceFilter = query;
+              return asyncCursor([
+                { _id: 'pathway-1' },
+                { _id: 'pathway-2', researchEntityId: null },
+                { _id: 'pathway-3', researchEntityId: 'entity-1' },
+              ]);
+            },
+          };
+        }
+        throw new Error(`unexpected collection: ${name}`);
+      },
+    } as unknown as Db;
+
+    await expect(
+      checkReferenceEdge(
+        db,
+        requiredEdge,
+        new Set([requiredEdge.fromCollection, requiredEdge.toCollection]),
+        20,
+      ),
+    ).resolves.toMatchObject({
+      status: 'checked',
+      checked: 3,
+      orphaned: 2,
+      sampleOrphanIds: ['pathway-1', 'pathway-2'],
+    });
+    expect(sourceFilter).toEqual({});
   });
 });
 

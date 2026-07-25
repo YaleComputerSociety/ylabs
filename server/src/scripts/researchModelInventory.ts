@@ -145,12 +145,21 @@ export async function checkReferenceEdge(
   let checked = 0;
   let orphaned = 0;
   const sampleOrphanIds: string[] = [];
+  const sourceFilter = edge.required ? {} : { [edge.localField]: { $ne: null } };
   const fromCursor = db
     .collection(edge.fromCollection)
-    .find({ [edge.localField]: { $ne: null } }, { projection: { [edge.localField]: 1 } });
+    .find(sourceFilter, { projection: { [edge.localField]: 1 } });
   for await (const doc of fromCursor) {
     const ref = (doc as Record<string, unknown>)[edge.localField];
-    if (ref === null || ref === undefined) continue;
+    if (ref === null || ref === undefined) {
+      if (!edge.required) continue;
+      checked += 1;
+      orphaned += 1;
+      if (sampleOrphanIds.length < sampleLimit) {
+        sampleOrphanIds.push(String(doc._id));
+      }
+      continue;
+    }
     checked += 1;
     if (!targetIds.has(String(ref))) {
       orphaned += 1;

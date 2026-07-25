@@ -47,6 +47,7 @@ export interface ReferenceEdge {
   fromCollection: string;
   localField: string;
   toCollection: string;
+  required: boolean;
   meaning: string;
 }
 
@@ -493,6 +494,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'research_entity_members',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: false,
     meaning: 'Membership rows must resolve to a research entity',
   },
   {
@@ -500,6 +502,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'research_entity_members',
     localField: 'userId',
     toCollection: 'users',
+    required: false,
     meaning: 'Membership user refs must resolve to a user',
   },
   {
@@ -507,13 +510,47 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'research_entity_members',
     localField: 'facultyMemberId',
     toCollection: 'faculty_members',
+    required: false,
     meaning: 'Membership faculty refs must resolve to a faculty member',
+  },
+  {
+    name: 'user_to_faculty',
+    fromCollection: 'users',
+    localField: 'facultyMemberId',
+    toCollection: 'faculty_members',
+    required: false,
+    meaning: 'User faculty refs must resolve to a faculty member',
+  },
+  {
+    name: 'user_to_student_profile',
+    fromCollection: 'users',
+    localField: 'studentProfileId',
+    toCollection: 'student_profiles',
+    required: false,
+    meaning: 'User student-profile refs must resolve to a student profile',
+  },
+  {
+    name: 'faculty_to_user',
+    fromCollection: 'faculty_members',
+    localField: 'userId',
+    toCollection: 'users',
+    required: false,
+    meaning: 'Faculty user refs must resolve to a user',
+  },
+  {
+    name: 'student_profile_to_user',
+    fromCollection: 'student_profiles',
+    localField: 'userId',
+    toCollection: 'users',
+    required: true,
+    meaning: 'Student profiles must resolve to a user',
   },
   {
     name: 'access_signal_to_entity',
     fromCollection: 'access_signals',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Access signals must resolve to a research entity',
   },
   {
@@ -521,6 +558,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'access_signals',
     localField: 'entryPathwayId',
     toCollection: 'entry_pathways',
+    required: false,
     meaning: 'Access signal pathway refs must resolve to an entry pathway',
   },
   {
@@ -528,6 +566,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'entry_pathways',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Entry pathways must resolve to a research entity',
   },
   {
@@ -535,6 +574,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'contact_routes',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Contact routes must resolve to a research entity',
   },
   {
@@ -542,6 +582,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'contact_routes',
     localField: 'entryPathwayId',
     toCollection: 'entry_pathways',
+    required: false,
     meaning: 'Contact route pathway refs must resolve to an entry pathway',
   },
   {
@@ -549,6 +590,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'posted_opportunities',
     localField: 'entryPathwayId',
     toCollection: 'entry_pathways',
+    required: true,
     meaning: 'Posted opportunities must resolve to an entry pathway',
   },
   {
@@ -556,6 +598,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'posted_opportunities',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: false,
     meaning: 'Posted opportunity entity refs must resolve to a research entity',
   },
   {
@@ -563,6 +606,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'research_entity_relationships',
     localField: 'sourceResearchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Relationship source must resolve to a research entity',
   },
   {
@@ -570,13 +614,23 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'research_entity_relationships',
     localField: 'targetResearchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Relationship target must resolve to a research entity',
+  },
+  {
+    name: 'student_application_to_listing',
+    fromCollection: 'student_applications',
+    localField: 'listingObjectId',
+    toCollection: 'listings',
+    required: false,
+    meaning: 'Student application listing refs must resolve to a listing',
   },
   {
     name: 'student_application_to_opportunity',
     fromCollection: 'student_applications',
     localField: 'postedOpportunityId',
     toCollection: 'posted_opportunities',
+    required: false,
     meaning: 'Student application opportunity refs must resolve to a posted opportunity',
   },
   {
@@ -584,6 +638,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_applications',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: false,
     meaning: 'Student application entity refs must resolve to a research entity',
   },
   {
@@ -591,6 +646,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_applications',
     localField: 'studentUserId',
     toCollection: 'users',
+    required: false,
     meaning: 'Student application user refs must resolve to a user',
   },
   {
@@ -598,6 +654,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_applications',
     localField: 'studentProfileId',
     toCollection: 'student_profiles',
+    required: false,
     meaning: 'Student application profile refs must resolve to a student profile',
   },
   {
@@ -605,6 +662,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_trackings',
     localField: 'studentProfileId',
     toCollection: 'student_profiles',
+    required: true,
     meaning: 'Student tracking profile refs must resolve to a student profile',
   },
   {
@@ -612,6 +670,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_trackings',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Student tracking entity refs must resolve to a research entity',
   },
   {
@@ -619,6 +678,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_outreaches',
     localField: 'studentProfileId',
     toCollection: 'student_profiles',
+    required: true,
     meaning: 'Student outreach profile refs must resolve to a student profile',
   },
   {
@@ -626,6 +686,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_outreaches',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Student outreach entity refs must resolve to a research entity',
   },
   {
@@ -633,6 +694,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_outreaches',
     localField: 'trackingId',
     toCollection: 'student_trackings',
+    required: true,
     meaning: 'Student outreach tracking refs must resolve to a student tracking record',
   },
   {
@@ -640,6 +702,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_engagement_events',
     localField: 'studentProfileId',
     toCollection: 'student_profiles',
+    required: false,
     meaning: 'Student engagement profile refs must resolve to a student profile',
   },
   {
@@ -647,6 +710,7 @@ export const REFERENCE_EDGES: ReferenceEdge[] = [
     fromCollection: 'student_engagement_events',
     localField: 'researchEntityId',
     toCollection: 'research_entities',
+    required: true,
     meaning: 'Student engagement entity refs must resolve to a research entity',
   },
 ];
@@ -722,6 +786,8 @@ export interface RetirementFieldRow {
 
 export interface ReferenceIntegrityRow extends Omit<ReferenceIntegrityFact, 'status'> {
   status: ReferenceIntegrityFact['status'] | 'not-gathered';
+  localField: string;
+  required: boolean;
   meaning: string;
   orphanRate: number;
   clean: boolean | null;
@@ -821,6 +887,8 @@ export function buildResearchModelInventoryReport(
       fromCollection: edge.fromCollection,
       toCollection: edge.toCollection,
       status,
+      localField: edge.localField,
+      required: edge.required,
       meaning: edge.meaning,
       checked,
       orphaned,

@@ -29,6 +29,11 @@ The required `--environment` label must describe that target and accepts `develo
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
 
+Run the inventory against a restored, immutable copy whenever possible.
+If an immutable copy is unavailable, use a declared low-write or quiescent window and prevent migration or scraper writes for the duration of the export and inventory.
+Record the JSON report alongside the export from the same window so its collection counts, schema-version buckets, and reference checks describe a meaningful point in time.
+The runner intentionally does not add transaction or snapshot read-concern behavior.
+
 Implementation:
 
 - [`server/src/scripts/researchModelInventory.ts`](../server/src/scripts/researchModelInventory.ts) gathers the facts from MongoDB.
@@ -64,8 +69,11 @@ A field with high prevalence gates its retirement phase until the canonical repl
 Orphan counts for the access, membership, and private student-record graph, for example membership rows whose `researchEntityId` does not resolve to a research entity.
 The check is type-agnostic, so it stays correct whether references are stored as ObjectId or string.
 Each row has a `status`: `checked`, `target-missing`, `source-missing`, or `not-gathered`.
+Each row also records the local field and whether the current Mongoose schema requires it.
 A missing source is skipped with `clean: null`.
 A present source with a missing target is scanned, and every non-null reference is reported as orphaned with `clean: false`.
+For a required edge, a source document with a missing or null local reference is also reported as orphaned.
+For an optional edge, a missing or null local reference is skipped.
 Any edge with `clean: false` must be resolved or explained before the referenced collection is migrated.
 
 The top-level `environment` is the required operator-supplied label.

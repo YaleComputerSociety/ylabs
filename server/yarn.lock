@@ -3781,6 +3781,7 @@ __metadata:
     express: "npm:^4.22.2"
     express-rate-limit: "npm:^8.5.2"
     meilisearch: "npm:^0.57.0"
+    mongodb: "npm:~6.20.0"
     mongoose: "npm:^8.9.5"
     passport: "npm:^0.7.0"
     passport-cas: "git+https://github.com/coursetable/passport-cas#79612f1"
