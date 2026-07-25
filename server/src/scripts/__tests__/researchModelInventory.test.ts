@@ -154,8 +154,8 @@ describe('gatherInventoryFacts', () => {
           throw new Error(`unexpected collection: ${name}`);
         }
         return {
-          async countDocuments(query: Record<string, unknown>) {
-            return Object.keys(query).length === 0 ? 4 : 0;
+          async countDocuments() {
+            throw new Error('census must not use countDocuments');
           },
           aggregate(pipeline: unknown) {
             aggregatePipelines.push(pipeline);
@@ -203,11 +203,13 @@ describe('gatherInventoryFacts', () => {
       { bsonType: 'null', value: null, count: 1 },
       { bsonType: 'missing', count: 1 },
     ]);
+    expect(
+      facts.census.find((fact) => fact.collection === 'research_entities')?.documentCount,
+    ).toBe(4);
   });
 
-  it('reuses census totals and aggregates all field probes once per collection', async () => {
+  it('derives census totals and aggregates all field probes once per collection', async () => {
     const liveCollections = [...new Set(RETIREMENT_FIELD_PROBES.map((probe) => probe.collection))];
-    const totalCountCalls = new Map<string, number>();
     const fieldAggregationCalls = new Map<string, number>();
     let activeFieldScans = 0;
     let peakFieldScans = 0;
@@ -222,19 +224,17 @@ describe('gatherInventoryFacts', () => {
       },
       collection(name: string) {
         return {
-          async countDocuments(query: Record<string, unknown>) {
-            if (Object.keys(query).length === 0) {
-              totalCountCalls.set(name, (totalCountCalls.get(name) ?? 0) + 1);
-              return 12;
-            }
-            throw new Error('field probes must not use countDocuments');
+          async countDocuments() {
+            throw new Error('inventory must not use countDocuments for tracked collections');
           },
           aggregate(pipeline: Array<{ $group?: Record<string, unknown> }>) {
             const group = pipeline[0]?.$group;
             const isFieldAggregation = group?._id === null;
             return {
               async toArray() {
-                if (!isFieldAggregation) return [];
+                if (!isFieldAggregation) {
+                  return [{ _id: { bsonType: 'missing' }, count: 12 }];
+                }
                 fieldAggregationCalls.set(name, (fieldAggregationCalls.get(name) ?? 0) + 1);
                 activeFieldScans += 1;
                 peakFieldScans = Math.max(peakFieldScans, activeFieldScans);
@@ -266,7 +266,6 @@ describe('gatherInventoryFacts', () => {
     expect(peakFieldScans).toBeGreaterThan(1);
     expect(peakFieldScans).toBeLessThanOrEqual(4);
     for (const collection of liveCollections) {
-      expect(totalCountCalls.get(collection)).toBe(1);
       expect(fieldAggregationCalls.get(collection)).toBe(1);
     }
     expect(facts.fieldPresence.every((fact) => fact.present === 3 && fact.total === 12)).toBe(true);

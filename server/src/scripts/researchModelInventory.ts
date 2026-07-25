@@ -80,7 +80,6 @@ async function censusCollection(
     return { collection, present: false, documentCount: 0, schemaVersions: [] };
   }
   const coll = db.collection(collection);
-  const documentCount = await coll.countDocuments({});
   const grouped = await coll
     .aggregate<{
       _id: {
@@ -106,6 +105,7 @@ async function censusCollection(
     ...(row._id.bsonType === 'missing' ? {} : { value: row._id.value }),
     count: row.count,
   }));
+  const documentCount = schemaVersions.reduce((total, bucket) => total + bucket.count, 0);
   return { collection, present: true, documentCount, schemaVersions };
 }
 
