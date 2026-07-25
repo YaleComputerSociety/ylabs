@@ -335,9 +335,7 @@ describe('gatherInventoryFacts', () => {
   });
 
   it('preserves document-level orphan counts while matching distinct string references', async () => {
-    const memberEdge = REFERENCE_EDGES.find(
-      (candidate) => candidate.name === 'member_to_entity',
-    );
+    const memberEdge = REFERENCE_EDGES.find((candidate) => candidate.name === 'member_to_entity');
     if (!memberEdge) {
       throw new Error('member reference edge fixture is required');
     }

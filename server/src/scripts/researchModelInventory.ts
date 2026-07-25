@@ -256,10 +256,7 @@ async function gatherReferenceIntegrityFacts(
           state.fact.checked += 1;
           const referenceId = String(ref);
           state.referencedIds.add(referenceId);
-          state.referenceCounts.set(
-            referenceId,
-            (state.referenceCounts.get(referenceId) ?? 0) + 1,
-          );
+          state.referenceCounts.set(referenceId, (state.referenceCounts.get(referenceId) ?? 0) + 1);
           const samples = state.samplesByReference.get(referenceId) ?? [];
           if (samples.length < sampleLimit) {
             samples.push({
