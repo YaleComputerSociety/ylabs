@@ -4,6 +4,7 @@ Status: tooling in place, production measurement pending.
 
 Phase 0 of [`research-model-refactor.md`](./research-model-refactor.md) resolves integration state and measures production before any target collection is written or any legacy storage is dropped.
 This runbook covers the inventory tool, how to read its output, and the export and rollback steps that must exist before later phases run destructive cleanup.
+The tooling PR does not complete Phase 0: reviewed Beta and production-copy inventory evidence, plus verified rollback evidence, remain operational exit work.
 
 ## Inventory tool
 

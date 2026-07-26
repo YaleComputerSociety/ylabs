@@ -648,7 +648,7 @@ Exit condition: new collections and readers can coexist safely with current runt
 ### Phase 2: split account and person identity
 
 - Create canonical people from accepted Yale-confirmed identity evidence.
-- Link accounts to people when a deterministic match exists.
+- Set `Person.accountId` when a deterministic account-person match exists.
 - Quarantine same-name, conflicting-email, and conflicting-identifier cases.
 - Introduce role assignments with canonical entity and person references.
 - Switch public leadership and search-name projections to canonical roles.

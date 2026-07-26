@@ -270,12 +270,14 @@ async function gatherReferenceIntegrityFacts(
             let foundIds = new Set<string>();
             if (presentCollections.has(edge.toCollection)) {
               const referenceIds = [...new Set(pending.map((item) => item.referenceId))];
-              const targetCursor = db.collection<{ _id: string | ObjectId }>(edge.toCollection).find(
-                {
-                  _id: { $in: referenceIdCandidates(referenceIds) },
-                },
-                { projection: { _id: 1 } },
-              );
+              const targetCursor = db
+                .collection<{ _id: string | ObjectId }>(edge.toCollection)
+                .find(
+                  {
+                    _id: { $in: referenceIdCandidates(referenceIds) },
+                  },
+                  { projection: { _id: 1 } },
+                );
               foundIds = new Set<string>();
               for await (const target of targetCursor) {
                 foundIds.add(String(target._id));
