@@ -630,7 +630,7 @@ Each phase must remove a compatibility read before the corresponding legacy stor
 Use the [`Phase 0 runbook`](./research-model-refactor-phase0.md) for the read-only inventory command, report interpretation, and rollback prerequisites.
 
 - Resolve the existing merge conflicts before implementation changes begin.
-- Inventory collection counts, schema versions, field distributions, and reference integrity.
+- Inventory collection counts, schema versions, tracked retirement-field prevalence, and reference integrity.
 - Identify actual read paths, index use, and query cost.
 - Record data collisions and unresolved identity conflicts.
 - Produce recoverable export or Atlas restore instructions before destructive cleanup.
