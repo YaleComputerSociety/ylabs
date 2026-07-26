@@ -38,3 +38,4 @@ export { StudentTracking } from './studentTracking';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';
+export * from './canonicalSchemaVersion';
