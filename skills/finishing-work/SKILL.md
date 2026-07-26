@@ -18,7 +18,7 @@ Before finishing, run the **narrowest relevant** verification command. Prefer fo
 
 Note: the client `tsc --noEmit` is **not** clean (pre-existing type errors) and is not in CI - do not assume it passes unless the task specifically addresses that cleanup.
 
-CI (`.github/workflows/ci.yml`) runs: checkout -> Node 20 -> Corepack -> `yarn install:all` -> server typecheck -> server tests -> client tests -> high-severity dependency audit -> `yarn build`.
+CI (`.github/workflows/ci.yml`) runs: checkout -> Node 20 -> Corepack -> immutable root, server, and client installs -> server typecheck -> server tests -> client tests -> security preflight -> moderate all-environment dependency audits -> `yarn build`.
 
 ## Review the final diff
 

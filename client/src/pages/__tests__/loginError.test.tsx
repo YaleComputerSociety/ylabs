@@ -6,7 +6,7 @@ import LoginError from '../loginError';
 
 const renderLoginError = () =>
   render(
-    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+    <MemoryRouter>
       <LoginError />
     </MemoryRouter>,
   );

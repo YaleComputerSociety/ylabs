@@ -22,7 +22,7 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 | Layer           | Technology                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------ |
-| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3         |
+| Client          | React 19, TypeScript, Vite 6, React Router v7, MUI v7, styled-components, TailwindCSS v3         |
 | Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                                    |
 | Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
@@ -445,12 +445,13 @@ When adding a new reducer:
 
 Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
 
-1. `yarn install:all`
+1. Immutable Yarn installs for the root, server, and client lockfiles
 2. `npx tsc --noEmit -p server/tsconfig.json`
 3. `yarn --cwd server test`
 4. `yarn --cwd client test:ci`
-5. `yarn npm audit --severity high`
-6. `yarn build` (server + client)
+5. `yarn security:preflight`, including production dependency audits at moderate severity
+6. Root, server, and client all-environment dependency audits at moderate severity
+7. `yarn build` (server + client)
 
 The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
 

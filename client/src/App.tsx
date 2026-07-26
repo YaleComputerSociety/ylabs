@@ -32,7 +32,7 @@ const RetiredFellowshipsRedirect = () => <Navigate to="/programs" replace />;
 
 const App = () => {
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <Router>
       <ScrollToTop />
       <ConfigContextProvider>
         <SearchContextProvider>
@@ -69,14 +69,8 @@ const App = () => {
                         path="/programs"
                         element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
                       />
-                      <Route
-                        path="/research"
-                        element={<Research />}
-                      />
-                      <Route
-                        path="/research/:slug"
-                        element={<ResearchDetail />}
-                      />
+                      <Route path="/research" element={<Research />} />
+                      <Route path="/research/:slug" element={<ResearchDetail />} />
                       <Route
                         path="/opportunities/:id"
                         element={

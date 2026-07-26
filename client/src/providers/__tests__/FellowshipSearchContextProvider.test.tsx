@@ -24,10 +24,7 @@ const mockedAxios = axios as unknown as {
 
 const renderProvider = (userType: 'student' | 'admin' = 'student') =>
   render(
-    <MemoryRouter
-      initialEntries={['/programs']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
+    <MemoryRouter initialEntries={['/programs']}>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -49,9 +46,7 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
-                    context.setSelectedStudentVisibilityTier(['operator_review'])
-                  }
+                  onClick={() => context.setSelectedStudentVisibilityTier(['operator_review'])}
                 >
                   Review tier
                 </button>
