@@ -463,13 +463,13 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     collection: 'users',
     field: 'orcid',
     meaning: 'External researcher identifier',
-    target: 'Person.identifiers.orcid',
+    target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
   },
   {
     collection: 'users',
     field: 'facultyMemberId',
     meaning: 'Faculty identity reference',
-    target: 'Account.personId',
+    target: 'Person.accountId after identity reconciliation',
   },
   {
     collection: 'users',
@@ -481,7 +481,7 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     collection: 'users',
     field: 'googleScholarId',
     meaning: 'Legacy Google Scholar profile identifier',
-    target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
+    target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
   },
   {
     collection: 'users',
@@ -527,9 +527,15 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
   },
   {
     collection: 'faculty_members',
+    field: 'orcidId',
+    meaning: 'External researcher identifier',
+    target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
+  },
+  {
+    collection: 'faculty_members',
     field: 'googleScholarId',
     meaning: 'Legacy Google Scholar profile identifier',
-    target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
+    target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
   },
   {
     collection: 'faculty_members',

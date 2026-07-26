@@ -50,15 +50,15 @@ Yale Research should not create a separate internal professor-profile mirror.
 
 ### Student questions and data ownership
 
-| Student question                   | Yale Research record                          | Public attribution                             |
-| ---------------------------------- | --------------------------------------------- | ---------------------------------------------- |
-| What is this research structure?   | `ResearchEntity`                              | Official entity, program, or department source |
-| What does it study?                | Entity description, topics, and methods       | Source link and verification date              |
-| Who leads it?                      | `RoleAssignment` plus `Person`                | Official Yale person profile                   |
-| Have undergraduates participated?  | `AccessSignal`                                | Evidence excerpt, source, and observation date |
-| Is there an active opening?        | `PostedOpportunity`                           | Official posting, status, and deadline source  |
-| How might I approach it?           | `EntryPathway`                                | Supporting evidence and explanation            |
-| What should I do next?             | Computed planning context plus `ContactRoute` | Supporting claims and source route             |
+| Student question                   | Yale Research record                          | Public attribution                              |
+| ---------------------------------- | --------------------------------------------- | ----------------------------------------------- |
+| What is this research structure?   | `ResearchEntity`                              | Official entity, program, or department source  |
+| What does it study?                | Entity description, topics, and methods       | Source link and verification date               |
+| Who leads it?                      | `RoleAssignment` plus `Person`                | Official Yale person profile                    |
+| Have undergraduates participated?  | `AccessSignal`                                | Evidence excerpt, source, and observation date  |
+| Is there an active opening?        | `PostedOpportunity`                           | Official posting, status, and deadline source   |
+| How might I approach it?           | `EntryPathway`                                | Supporting evidence and explanation             |
+| What should I do next?             | Computed planning context plus `ContactRoute` | Supporting claims and source route              |
 | What has this professor published? | Not stored by Yale Research                   | Official Yale, Google Scholar, or ORCID profile |
 
 ## Target Model Overview
@@ -108,25 +108,22 @@ The model may represent faculty, directors, staff, postdoctoral researchers, gra
 Suggested shape:
 
 ```ts
+type PersonProfileLink = {
+  kind: 'YALE_OFFICIAL' | 'LAB_ABOUT' | 'PERSONAL_ACADEMIC' | 'GOOGLE_SCHOLAR' | 'ORCID';
+  purpose: 'PRIMARY_IDENTITY' | 'SCHOLARLY';
+  url: string;
+  verifiedAt: Date;
+  healthStatus: 'HEALTHY' | 'UNAVAILABLE' | 'UNKNOWN';
+};
+
 type Person = {
   id: string;
   schemaVersion: number;
   displayName: string;
   accountId?: string;
-  officialProfile?: {
-    url: string;
-    verifiedAt: Date;
-    healthStatus: 'HEALTHY' | 'UNAVAILABLE' | 'UNKNOWN';
-    lastCheckedAt?: Date;
-  };
+  profileLinks?: PersonProfileLink[];
   identifiers?: {
     orcid?: string;
-  };
-  outboundProfiles?: {
-    googleScholar?: {
-      url: string;
-      verifiedAt: Date;
-    };
   };
   status: 'ACTIVE' | 'DEPARTED' | 'UNKNOWN';
   archived: boolean;
@@ -136,6 +133,8 @@ type Person = {
 `Person` must not become another full professor-profile document.
 It should not store mirrored biographies, publication arrays, citation metrics, h-index values, paper-derived topics, or copied contact information.
 Search may index a person's display name through related research-entity projections so a professor-name query can return the research homes they lead.
+`profileLinks` is a small bounded set with at most one reviewed link of each kind.
+Public projections expose one selected primary profile and a bounded `researchProfiles` array containing only secondary link kind, label, and canonical URL.
 
 Google Scholar and ORCID may enrich or disambiguate a Yale-confirmed person.
 Neither source may create a person record by itself.
@@ -613,10 +612,10 @@ Meilisearch would continue to power search even if GraphQL were introduced.
 | `Listing`                                                           | `EntryPathway` plus `PostedOpportunity`                                         | Preserve real postings and remove legacy listing ownership fields    |
 | `Fellowship`                                                        | `ResearchEntity`, `EntryPathway`, `PostedOpportunity`, or formalization summary | Classify by behavior rather than by legacy collection                |
 | `acceptingUndergrads` and openness caches                           | `AccessSignal` plus computed access summary                                     | Remove binary and duplicated access state                            |
-| Official person profile treated as contact                          | `Person.officialProfile`                                                        | Keep navigation separate from permission to contact                  |
+| Official person profile treated as contact                          | `Person.profileLinks` with `PRIMARY_IDENTITY` purpose                           | Keep navigation separate from permission to contact                  |
 | `User.publications`, `Paper`, `PaperAuthor`, and scholarly sidecars | No target collection                                                            | Remove reads, stop ingestion, archive, then drop                     |
-| ORCID works ingestion                                               | `Person.identifiers.orcid`                                                      | Retain identity and outbound link only                               |
-| `User.googleScholarId` and `FacultyMember.googleScholarId`          | `Person.outboundProfiles.googleScholar`                                          | Migrate the reviewed profile URL, then remove the legacy identifiers |
+| ORCID works ingestion                                               | `Person.identifiers.orcid` plus a verified `PersonProfileLink`                  | Retain identity and outbound link only                               |
+| `User.googleScholarId` and `FacultyMember.googleScholarId`          | Verified `PersonProfileLink` with kind `GOOGLE_SCHOLAR`                         | Migrate the reviewed profile URL, then remove the legacy identifiers |
 | Field-name-based `Observation`                                      | Predicate-based `EvidenceClaim`                                                 | Dual-emit temporarily, reconcile, then cut over                      |
 | Mixed saved-plan maps on `User`                                     | `ResearchPlan`                                                                  | Migrate one plan per account and target                              |
 
@@ -659,7 +658,7 @@ Exit condition: student-facing research reads no longer require `FacultyMember` 
 ### Phase 3: retire professor and publication mirrors
 
 - Switch professor navigation to verified official Yale profile URLs.
-- Migrate reviewed legacy Google Scholar identifiers into canonical verified `Person.outboundProfiles.googleScholar` links.
+- Migrate reviewed legacy Google Scholar identifiers into canonical verified `PersonProfileLink` records with kind `GOOGLE_SCHOLAR`.
 - Expose Google Scholar and ORCID only as optional outbound identity links.
 - Remove professor and research-detail publication sections and compatibility DTO fields.
 - Disable paper, preprint, ORCID-works, and bibliographic hydration scrapers.

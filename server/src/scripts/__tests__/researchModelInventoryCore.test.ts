@@ -153,6 +153,7 @@ describe('inventory coverage', () => {
         'users.orcidWorksSyncedAt',
         'users.europePmcWorksSyncedAt',
         'users.pubmedWorksSyncedAt',
+        'faculty_members.orcidId',
         'faculty_members.googleScholarId',
         'faculty_members.openAlexId',
         'faculty_members.semanticScholarId',
@@ -170,11 +171,28 @@ describe('inventory coverage', () => {
     expect(RETIREMENT_FIELD_PROBES.filter((probe) => probe.field === 'googleScholarId')).toEqual([
       expect.objectContaining({
         collection: 'users',
-        target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
+        target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
       }),
       expect.objectContaining({
         collection: 'faculty_members',
-        target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
+        target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
+      }),
+    ]);
+    expect(RETIREMENT_FIELD_PROBES.filter((probe) => /orcid/i.test(probe.field))).toEqual([
+      expect.objectContaining({
+        collection: 'users',
+        field: 'orcid',
+        target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
+      }),
+      expect.objectContaining({
+        collection: 'users',
+        field: 'orcidWorksSyncedAt',
+        target: 'Remove with publication mirrors',
+      }),
+      expect.objectContaining({
+        collection: 'faculty_members',
+        field: 'orcidId',
+        target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
       }),
     ]);
   });
