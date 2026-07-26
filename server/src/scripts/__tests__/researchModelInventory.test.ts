@@ -1,4 +1,4 @@
-import type { Db } from 'mongodb';
+import { ObjectId, type Db } from 'mongodb';
 import { describe, expect, it, vi } from 'vitest';
 import {
   checkReferenceEdge,
@@ -156,7 +156,7 @@ describe('checkReferenceEdge', () => {
           return {
             find(query: Record<string, unknown>) {
               targetQueries.push(query);
-              const referenceIds = (query.$expr as { $in: [unknown, string[]] }).$in[1];
+              const referenceIds = (query._id as { $in: unknown[] }).$in;
               return asyncCursor(referenceIds.map((_id) => ({ _id })));
             },
           };
@@ -174,6 +174,53 @@ describe('checkReferenceEdge', () => {
       sampleOrphanIds: [],
     });
     expect(targetQueries).toHaveLength(2);
+    expect(targetQueries[0]).toEqual({
+      _id: {
+        $in: expect.arrayContaining(['entity-0', 'entity-999']),
+      },
+    });
+    expect(targetQueries[0]).not.toHaveProperty('$expr');
+  });
+
+  it('queries string and ObjectId reference representations through the _id index', async () => {
+    const objectIdReference = '507f1f77bcf86cd799439011';
+    let targetQuery: Record<string, unknown> | undefined;
+    const db = {
+      collection(name: string) {
+        if (name === edge.fromCollection) {
+          return {
+            find() {
+              return asyncCursor([
+                { _id: 'member-string', researchEntityId: 'string-id' },
+                { _id: 'member-object', researchEntityId: objectIdReference },
+              ]);
+            },
+          };
+        }
+        if (name === edge.toCollection) {
+          return {
+            find(query: Record<string, unknown>) {
+              targetQuery = query;
+              return asyncCursor([{ _id: 'string-id' }, { _id: new ObjectId(objectIdReference) }]);
+            },
+          };
+        }
+        throw new Error(`unexpected collection: ${name}`);
+      },
+    } as unknown as Db;
+
+    await expect(
+      checkReferenceEdge(db, edge, new Set([edge.fromCollection, edge.toCollection]), 20),
+    ).resolves.toMatchObject({
+      checked: 2,
+      orphaned: 0,
+    });
+    expect(targetQuery).toEqual({
+      _id: {
+        $in: ['string-id', objectIdReference, new ObjectId(objectIdReference)],
+      },
+    });
+    expect(targetQuery).not.toHaveProperty('$expr');
   });
 });
 

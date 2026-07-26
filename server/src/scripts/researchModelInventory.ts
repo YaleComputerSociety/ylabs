@@ -14,7 +14,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { MongoClient, type Db } from 'mongodb';
+import { MongoClient, ObjectId, type Db } from 'mongodb';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -173,6 +173,16 @@ interface PendingReference {
   sourceId: string;
 }
 
+function referenceIdCandidates(referenceIds: string[]): (string | ObjectId)[] {
+  const candidates: (string | ObjectId)[] = [...referenceIds];
+  for (const referenceId of referenceIds) {
+    if (ObjectId.isValid(referenceId)) {
+      candidates.push(new ObjectId(referenceId));
+    }
+  }
+  return candidates;
+}
+
 async function gatherReferenceIntegrityFacts(
   db: Db,
   edges: InventoryReferenceEdge[],
@@ -260,11 +270,9 @@ async function gatherReferenceIntegrityFacts(
             let foundIds = new Set<string>();
             if (presentCollections.has(edge.toCollection)) {
               const referenceIds = [...new Set(pending.map((item) => item.referenceId))];
-              const targetCursor = db.collection(edge.toCollection).find(
+              const targetCursor = db.collection<{ _id: string | ObjectId }>(edge.toCollection).find(
                 {
-                  $expr: {
-                    $in: [{ $toString: '$_id' }, referenceIds],
-                  },
+                  _id: { $in: referenceIdCandidates(referenceIds) },
                 },
                 { projection: { _id: 1 } },
               );
