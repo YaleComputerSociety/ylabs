@@ -136,6 +136,52 @@ describe('checkReferenceEdge', () => {
     });
     expect(sourceFilter).toEqual({});
   });
+
+  it('resolves high-cardinality references in bounded batches', async () => {
+    const sourceDocuments = Array.from({ length: 1_001 }, (_, index) => ({
+      _id: `member-${index}`,
+      researchEntityId: `entity-${index}`,
+    }));
+    const targetQueries: Record<string, unknown>[] = [];
+    const db = {
+      collection(name: string) {
+        if (name === edge.fromCollection) {
+          return {
+            find() {
+              return asyncCursor(sourceDocuments);
+            },
+          };
+        }
+        if (name === edge.toCollection) {
+          return {
+            find(query: Record<string, unknown>) {
+              targetQueries.push(query);
+              const referenceIds = (
+                query.$expr as { $in: [unknown, string[]] }
+              ).$in[1];
+              return asyncCursor(referenceIds.map((_id) => ({ _id })));
+            },
+          };
+        }
+        throw new Error(`unexpected collection: ${name}`);
+      },
+    } as unknown as Db;
+
+    await expect(
+      checkReferenceEdge(
+        db,
+        edge,
+        new Set([edge.fromCollection, edge.toCollection]),
+        20,
+      ),
+    ).resolves.toMatchObject({
+      status: 'checked',
+      checked: 1_001,
+      orphaned: 0,
+      sampleOrphanIds: [],
+    });
+    expect(targetQueries).toHaveLength(2);
+  });
 });
 
 describe('gatherInventoryFacts', () => {

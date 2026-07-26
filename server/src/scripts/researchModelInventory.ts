@@ -39,6 +39,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const COLLECTION_SCAN_CONCURRENCY = 4;
+const REFERENCE_SCAN_BATCH_SIZE = 1_000;
 
 interface InventoryMongoClient {
   connect(): Promise<unknown>;
@@ -162,19 +163,14 @@ function emptyReferenceFact(edge: InventoryReferenceEdge): ReferenceIntegrityFac
   };
 }
 
-interface OrphanSampleCandidate {
-  sourceOrder: number;
-  sourceId: string;
-}
-
 interface ReferenceScanState {
   edge: InventoryReferenceEdge;
   fact: ReferenceIntegrityFact;
-  referencedIds: Set<string>;
-  foundIds: Set<string>;
-  referenceCounts: Map<string, number>;
-  samplesByReference: Map<string, OrphanSampleCandidate[]>;
-  missingRequiredSamples: OrphanSampleCandidate[];
+}
+
+interface PendingReference {
+  referenceId: string;
+  sourceId: string;
 }
 
 async function gatherReferenceIntegrityFacts(
@@ -201,11 +197,6 @@ async function gatherReferenceIntegrityFacts(
             ...emptyReferenceFact(edge),
             status: 'source-missing',
           },
-          referencedIds: new Set(),
-          foundIds: new Set(),
-          referenceCounts: new Map(),
-          samplesByReference: new Map(),
-          missingRequiredSamples: [],
         }));
       }
 
@@ -220,11 +211,6 @@ async function gatherReferenceIntegrityFacts(
                 ...emptyReferenceFact(edge),
                 status: targetPresent ? ('checked' as const) : ('target-missing' as const),
               },
-              referencedIds: new Set<string>(),
-              foundIds: new Set<string>(),
-              referenceCounts: new Map<string, number>(),
-              samplesByReference: new Map<string, OrphanSampleCandidate[]>(),
-              missingRequiredSamples: [],
             },
           ];
         }),
@@ -235,40 +221,78 @@ async function gatherReferenceIntegrityFacts(
       }
 
       const sourceCursor = db.collection(sourceCollection).find({}, { projection });
-      let sourceOrder = 0;
-      for await (const doc of sourceCursor) {
-        for (const edge of sourceEdges) {
-          const state = statesByName.get(edge.name);
-          if (!state) continue;
-          const ref = (doc as Record<string, unknown>)[edge.localField];
-          if (ref === null || ref === undefined) {
-            if (!edge.required) continue;
-            state.fact.checked += 1;
-            state.fact.orphaned += 1;
-            if (state.missingRequiredSamples.length < sampleLimit) {
-              state.missingRequiredSamples.push({
-                sourceOrder,
-                sourceId: String(doc._id),
-              });
-            }
-            continue;
-          }
+      let batch: Record<string, unknown>[] = [];
 
-          state.fact.checked += 1;
-          const referenceId = String(ref);
-          state.referencedIds.add(referenceId);
-          state.referenceCounts.set(referenceId, (state.referenceCounts.get(referenceId) ?? 0) + 1);
-          const samples = state.samplesByReference.get(referenceId) ?? [];
-          if (samples.length < sampleLimit) {
-            samples.push({
-              sourceOrder,
+      async function processBatch(): Promise<void> {
+        const pendingByEdge = new Map<string, PendingReference[]>();
+
+        for (const doc of batch) {
+          for (const edge of sourceEdges) {
+            const state = statesByName.get(edge.name);
+            if (!state) continue;
+            const ref = doc[edge.localField];
+            if (ref === null || ref === undefined) {
+              if (!edge.required) continue;
+              state.fact.checked += 1;
+              state.fact.orphaned += 1;
+              if (state.fact.sampleOrphanIds.length < sampleLimit) {
+                state.fact.sampleOrphanIds.push(String(doc._id));
+              }
+              continue;
+            }
+
+            state.fact.checked += 1;
+            const pending = pendingByEdge.get(edge.name) ?? [];
+            pending.push({
+              referenceId: String(ref),
               sourceId: String(doc._id),
             });
-            state.samplesByReference.set(referenceId, samples);
+            pendingByEdge.set(edge.name, pending);
           }
         }
-        sourceOrder += 1;
+
+        await Promise.all(
+          sourceEdges.map(async (edge) => {
+            const state = statesByName.get(edge.name);
+            const pending = pendingByEdge.get(edge.name) ?? [];
+            if (!state || pending.length === 0) return;
+
+            let foundIds = new Set<string>();
+            if (presentCollections.has(edge.toCollection)) {
+              const referenceIds = [...new Set(pending.map((item) => item.referenceId))];
+              const targetCursor = db.collection(edge.toCollection).find(
+                {
+                  $expr: {
+                    $in: [{ $toString: '$_id' }, referenceIds],
+                  },
+                },
+                { projection: { _id: 1 } },
+              );
+              foundIds = new Set<string>();
+              for await (const target of targetCursor) {
+                foundIds.add(String(target._id));
+              }
+            }
+
+            for (const item of pending) {
+              if (foundIds.has(item.referenceId)) continue;
+              state.fact.orphaned += 1;
+              if (state.fact.sampleOrphanIds.length < sampleLimit) {
+                state.fact.sampleOrphanIds.push(item.sourceId);
+              }
+            }
+          }),
+        );
       }
+
+      for await (const doc of sourceCursor) {
+        batch.push(doc as Record<string, unknown>);
+        if (batch.length === REFERENCE_SCAN_BATCH_SIZE) {
+          await processBatch();
+          batch = [];
+        }
+      }
+      if (batch.length > 0) await processBatch();
 
       return sourceEdges.map((edge) => {
         const state = statesByName.get(edge.name);
@@ -280,49 +304,6 @@ async function gatherReferenceIntegrityFacts(
     },
   );
   const states = sourceStateGroups.flat();
-
-  const statesByTarget = new Map<string, ReferenceScanState[]>();
-  for (const state of states) {
-    if (
-      state.fact.status !== 'checked' ||
-      state.referencedIds.size === 0 ||
-      !presentCollections.has(state.edge.toCollection)
-    ) {
-      continue;
-    }
-    const targetStates = statesByTarget.get(state.edge.toCollection) ?? [];
-    targetStates.push(state);
-    statesByTarget.set(state.edge.toCollection, targetStates);
-  }
-
-  await mapWithConcurrency(
-    [...statesByTarget.entries()],
-    COLLECTION_SCAN_CONCURRENCY,
-    async ([targetCollection, targetStates]) => {
-      const targetCursor = db.collection(targetCollection).find({}, { projection: { _id: 1 } });
-      for await (const doc of targetCursor) {
-        const targetId = String(doc._id);
-        for (const state of targetStates) {
-          if (state.referencedIds.has(targetId)) {
-            state.foundIds.add(targetId);
-          }
-        }
-      }
-    },
-  );
-
-  for (const state of states) {
-    const orphanSamples = [...state.missingRequiredSamples];
-    for (const referenceId of state.referencedIds) {
-      if (state.foundIds.has(referenceId)) continue;
-      state.fact.orphaned += state.referenceCounts.get(referenceId) ?? 0;
-      orphanSamples.push(...(state.samplesByReference.get(referenceId) ?? []));
-    }
-    state.fact.sampleOrphanIds = orphanSamples
-      .sort((left, right) => left.sourceOrder - right.sourceOrder)
-      .slice(0, sampleLimit)
-      .map((sample) => sample.sourceId);
-  }
 
   const factsByName = new Map(states.map((state) => [state.fact.name, state.fact]));
   return edges.map((edge) => {

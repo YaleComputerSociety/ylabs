@@ -26,7 +26,8 @@ It does not load Mongoose models, create collections, build indexes, or open the
 The client is closed after success or failure.
 Collection scans are capped at four concurrent groups.
 Retirement-field probes reuse the collection census totals and count all tracked fields in one aggregation per collection.
-Reference checks scan all tracked fields from each source collection once, retain only distinct referenced IDs, and stream each target collection once without materializing all target IDs.
+Reference checks scan all tracked fields from each source collection once and resolve references in batches of 1,000 source documents.
+Client memory remains bounded by the scan concurrency, batch size, tracked edges, and configured orphan sample limit rather than collection cardinality.
 The required `--environment` accepts `development`, `beta`, `production-copy`, `production`, or `test`.
 The runner fails before connecting unless the database named in `MONGODBURL` matches the declared environment, and it validates the database name resolved by MongoDB again after connecting.
 The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Production`; explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
