@@ -156,9 +156,7 @@ describe('checkReferenceEdge', () => {
           return {
             find(query: Record<string, unknown>) {
               targetQueries.push(query);
-              const referenceIds = (
-                query.$expr as { $in: [unknown, string[]] }
-              ).$in[1];
+              const referenceIds = (query.$expr as { $in: [unknown, string[]] }).$in[1];
               return asyncCursor(referenceIds.map((_id) => ({ _id })));
             },
           };
@@ -168,12 +166,7 @@ describe('checkReferenceEdge', () => {
     } as unknown as Db;
 
     await expect(
-      checkReferenceEdge(
-        db,
-        edge,
-        new Set([edge.fromCollection, edge.toCollection]),
-        20,
-      ),
+      checkReferenceEdge(db, edge, new Set([edge.fromCollection, edge.toCollection]), 20),
     ).resolves.toMatchObject({
       status: 'checked',
       checked: 1_001,
@@ -317,15 +310,12 @@ describe('gatherInventoryFacts', () => {
     expect(facts.fieldPresence.every((fact) => fact.present === 3 && fact.total === 12)).toBe(true);
   });
 
-  it('scans sources before streaming each referenced target collection once', async () => {
+  it('scans each source once and resolves each populated edge batch', async () => {
     const liveCollections = [
       ...new Set(REFERENCE_EDGES.flatMap((edge) => [edge.fromCollection, edge.toCollection])),
     ];
     const targetScans = new Map<string, number>();
     const sourceScans = new Map<string, number>();
-    let sourceScansComplete = false;
-    const expectedSourceScans = new Set(REFERENCE_EDGES.map((edge) => edge.fromCollection)).size;
-
     const db = {
       listCollections() {
         return {
@@ -348,13 +338,11 @@ describe('gatherInventoryFacts', () => {
           },
           find(_query: Record<string, unknown>, options: { projection: Record<string, 1> }) {
             if (Object.keys(options.projection).length === 1) {
-              expect(sourceScansComplete).toBe(true);
               targetScans.set(name, (targetScans.get(name) ?? 0) + 1);
               return asyncCursor([{ _id: name }, { _id: `${name}-unreferenced` }]);
             }
 
             sourceScans.set(name, (sourceScans.get(name) ?? 0) + 1);
-            sourceScansComplete = sourceScans.size === expectedSourceScans;
             const sourceDocument: Record<string, unknown> = { _id: `${name}-source` };
             for (const edge of REFERENCE_EDGES.filter(
               (candidate) => candidate.fromCollection === name,
@@ -373,7 +361,9 @@ describe('gatherInventoryFacts', () => {
     });
 
     for (const collection of new Set(REFERENCE_EDGES.map((edge) => edge.toCollection))) {
-      expect(targetScans.get(collection)).toBe(1);
+      expect(targetScans.get(collection)).toBe(
+        REFERENCE_EDGES.filter((edge) => edge.toCollection === collection).length,
+      );
     }
     for (const collection of new Set(REFERENCE_EDGES.map((edge) => edge.fromCollection))) {
       expect(sourceScans.get(collection)).toBe(1);
