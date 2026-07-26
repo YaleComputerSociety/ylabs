@@ -463,6 +463,41 @@ describe('gatherInventoryFacts', () => {
 });
 
 describe('runResearchModelInventory', () => {
+  it('rejects a mislabeled configured target before connecting', async () => {
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      db: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      runResearchModelInventory(
+        { environment: 'beta', sampleLimit: 1 },
+        'mongodb://localhost:27017/Production',
+        client,
+      ),
+    ).rejects.toThrow('Inventory environment beta does not match MongoDB database Production');
+    expect(client.connect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a connected database that differs from the configured target', async () => {
+    const db = { databaseName: 'Production' } as Db;
+    const client = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      db: vi.fn(() => db),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      runResearchModelInventory(
+        { environment: 'beta', sampleLimit: 1 },
+        'mongodb://localhost:27017/Beta',
+        client,
+      ),
+    ).rejects.toThrow('Inventory environment beta does not match MongoDB database Production');
+    expect(client.close).toHaveBeenCalledOnce();
+  });
+
   it('uses the supplied native client and closes it after gathering', async () => {
     const db = {
       databaseName: 'inventory-test',

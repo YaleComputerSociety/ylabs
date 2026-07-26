@@ -27,7 +27,9 @@ The client is closed after success or failure.
 Collection scans are capped at four concurrent groups.
 Retirement-field probes reuse the collection census totals and count all tracked fields in one aggregation per collection.
 Reference checks scan all tracked fields from each source collection once, retain only distinct referenced IDs, and stream each target collection once without materializing all target IDs.
-The required `--environment` label must describe that target and accepts `development`, `beta`, `production-copy`, `production`, or `test`.
+The required `--environment` accepts `development`, `beta`, `production-copy`, `production`, or `test`.
+The runner fails before connecting unless the database named in `MONGODBURL` matches the declared environment, and it validates the database name resolved by MongoDB again after connecting.
+The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Production`; explicit test fixtures may use `Test` or a database name ending in `-test` or `_test`.
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
 The optional output path must end in `.json`, must resolve under the operating-system temp directory or `./tmp` from the runner's working directory, and must have an existing parent directory.
@@ -52,7 +54,7 @@ Headline counts for a quick read:
 - `totalDocuments`: the sum of document counts across classified collections.
 - `legacyResidueCollections`: expected-gone collections that still hold documents, such as `research_groups` or `applications`.
 - `unclassifiedCollections`: live collections the refactor spec does not yet name.
-Investigate each one before trusting a cutover.
+  Investigate each one before trusting a cutover.
 - `retirementFieldsStillPresent`: how many legacy fields still appear on live documents.
 - `referenceEdgesChecked` and `referenceEdgesSkipped`: how many reference edges were measurable and how many had no source collection to inspect.
 - `referenceEdgesWithOrphans` and `totalOrphans`: reference-integrity health.
@@ -89,7 +91,7 @@ The `checked`, `orphaned`, and `orphanRate` fields quantify each edge, and `samp
 Any edge with `clean: false` must be resolved or explained before the referenced collection is migrated.
 
 The top-level `generatedAt` records report creation time, while `options` preserves the parsed CLI settings.
-The top-level `environment` is the required operator-supplied label.
+The top-level `environment` is the required label verified against the configured and connected database names.
 The `db` field records the connected database name, and `target` records a credential-free host/database label derived from `MONGODBURL`.
 Review all three before preserving an inventory as migration evidence.
 

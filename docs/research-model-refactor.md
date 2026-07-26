@@ -18,14 +18,14 @@ The target model follows five principles:
 
 1. Research discovery centers on `ResearchEntity`.
 2. Public people are minimal identity anchors connected to research through dated role assignments.
-3. Official Yale profiles and ORCID remain outbound sources rather than content feeds to mirror.
+3. Official Yale, Google Scholar, and ORCID profiles remain outbound sources rather than content feeds to mirror.
 4. Scrapers preserve source evidence before materializers derive student-facing records.
 5. Public APIs return bounded product projections over REST while keeping the model compatible with a possible future GraphQL read layer.
 
 The intended product boundary is:
 
 > Yale Research owns structured research navigation and evidence-backed next steps.
-> Yale and ORCID own professor presentation and scholarly output.
+> Yale, Google Scholar, and ORCID own professor presentation and scholarly output.
 
 ## Product Experience
 
@@ -50,16 +50,16 @@ Yale Research should not create a separate internal professor-profile mirror.
 
 ### Student questions and data ownership
 
-| Student question | Yale Research record | Public attribution |
-| --- | --- | --- |
-| What is this research structure? | `ResearchEntity` | Official entity, program, or department source |
-| What does it study? | Entity description, topics, and methods | Source link and verification date |
-| Who leads it? | `RoleAssignment` plus `Person` | Official Yale person profile |
-| Have undergraduates participated? | `AccessSignal` | Evidence excerpt, source, and observation date |
-| Is there an active opening? | `PostedOpportunity` | Official posting, status, and deadline source |
-| How might I approach it? | `EntryPathway` | Supporting evidence and explanation |
-| What should I do next? | Computed planning context plus `ContactRoute` | Supporting claims and source route |
-| What has this professor published? | Not stored by Yale Research | Official Yale profile or ORCID |
+| Student question                   | Yale Research record                          | Public attribution                             |
+| ---------------------------------- | --------------------------------------------- | ---------------------------------------------- |
+| What is this research structure?   | `ResearchEntity`                              | Official entity, program, or department source |
+| What does it study?                | Entity description, topics, and methods       | Source link and verification date              |
+| Who leads it?                      | `RoleAssignment` plus `Person`                | Official Yale person profile                   |
+| Have undergraduates participated?  | `AccessSignal`                                | Evidence excerpt, source, and observation date |
+| Is there an active opening?        | `PostedOpportunity`                           | Official posting, status, and deadline source  |
+| How might I approach it?           | `EntryPathway`                                | Supporting evidence and explanation            |
+| What should I do next?             | Computed planning context plus `ContactRoute` | Supporting claims and source route             |
+| What has this professor published? | Not stored by Yale Research                   | Official Yale, Google Scholar, or ORCID profile |
 
 ## Target Model Overview
 
@@ -122,6 +122,12 @@ type Person = {
   identifiers?: {
     orcid?: string;
   };
+  outboundProfiles?: {
+    googleScholar?: {
+      url: string;
+      verifiedAt: Date;
+    };
+  };
   status: 'ACTIVE' | 'DEPARTED' | 'UNKNOWN';
   archived: boolean;
 };
@@ -131,9 +137,9 @@ type Person = {
 It should not store mirrored biographies, publication arrays, citation metrics, h-index values, paper-derived topics, or copied contact information.
 Search may index a person's display name through related research-entity projections so a professor-name query can return the research homes they lead.
 
-ORCID may enrich or disambiguate a Yale-confirmed person.
-ORCID must not create a person record by itself.
-ORCID is an optional outbound researcher link, not a public verification badge and not an undergraduate-access signal.
+Google Scholar and ORCID may enrich or disambiguate a Yale-confirmed person.
+Neither source may create a person record by itself.
+Their verified profiles are optional outbound researcher links, not public verification badges or undergraduate-access signals.
 
 ### `role_assignments`
 
@@ -366,21 +372,21 @@ The following ingestion paths should be retired after their reads and launch gat
 - paper-authorship materialization and audits;
 - professor and research-detail publication DTO fallbacks.
 
-ORCID remains useful as:
+Google Scholar and ORCID remain useful as:
 
 - an external identity signal;
 - a reviewed disambiguation aid;
 - an optional outbound public researcher link.
 
-ORCID is not used as:
+Google Scholar and ORCID are not used as:
 
 - a source that creates Yale people;
 - a feed that rebuilds a publication corpus;
+- input to ranking, visibility, search content, or research-home descriptions;
 - evidence of undergraduate access;
-- a source for public research-home descriptions.
 
 Paper storage should be reconsidered only if Yale Research adopts an explicit product requirement for native publication search, paper-level filtering, offline scholarly browsing, or consistent in-app activity comparison.
-Until then, the official Yale profile is the preferred destination for highlighted publications and ORCID is the optional destination for a broader public works record.
+Until then, the official Yale profile is the preferred destination for highlighted publications, while verified Google Scholar and ORCID profiles are optional outbound identity links.
 
 ## Evidence and Attribution Contract
 
@@ -597,21 +603,22 @@ Meilisearch would continue to power search even if GraphQL were introduced.
 
 ## Current-to-Target Mapping
 
-| Current shape | Target | Migration intent |
-| --- | --- | --- |
-| Auth, student state, and faculty profile fields on `User` | `Account`, `StudentProfile`, `ResearchPlan`, optional `Person` | Split private account state from public research identity |
-| `FacultyMember` plus professor-shaped `User` | `Person` | Deterministically merge accepted identities and quarantine conflicts |
-| `ResearchGroupMember` with dual entity and person references | `RoleAssignment` | Rewrite references to one entity ID and one person ID |
-| `ResearchEntity` registered from `researchGroupSchema` | Clean `ResearchEntity` schema | Cut reads to canonical fields, then remove legacy fields |
-| `ResearchGroup` and `researchGroupId` residue | `ResearchEntity` and `researchEntityId` | Remove compatibility references after verified parity |
-| `Listing` | `EntryPathway` plus `PostedOpportunity` | Preserve real postings and remove legacy listing ownership fields |
-| `Fellowship` | `ResearchEntity`, `EntryPathway`, `PostedOpportunity`, or formalization summary | Classify by behavior rather than by legacy collection |
-| `acceptingUndergrads` and openness caches | `AccessSignal` plus computed access summary | Remove binary and duplicated access state |
-| Official person profile treated as contact | `Person.officialProfile` | Keep navigation separate from permission to contact |
-| `User.publications`, `Paper`, `PaperAuthor`, and scholarly sidecars | No target collection | Remove reads, stop ingestion, archive, then drop |
-| ORCID works ingestion | `Person.identifiers.orcid` | Retain identity and outbound link only |
-| Field-name-based `Observation` | Predicate-based `EvidenceClaim` | Dual-emit temporarily, reconcile, then cut over |
-| Mixed saved-plan maps on `User` | `ResearchPlan` | Migrate one plan per account and target |
+| Current shape                                                       | Target                                                                          | Migration intent                                                     |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Auth, student state, and faculty profile fields on `User`           | `Account`, `StudentProfile`, `ResearchPlan`, optional `Person`                  | Split private account state from public research identity            |
+| `FacultyMember` plus professor-shaped `User`                        | `Person`                                                                        | Deterministically merge accepted identities and quarantine conflicts |
+| `ResearchGroupMember` with dual entity and person references        | `RoleAssignment`                                                                | Rewrite references to one entity ID and one person ID                |
+| `ResearchEntity` registered from `researchGroupSchema`              | Clean `ResearchEntity` schema                                                   | Cut reads to canonical fields, then remove legacy fields             |
+| `ResearchGroup` and `researchGroupId` residue                       | `ResearchEntity` and `researchEntityId`                                         | Remove compatibility references after verified parity                |
+| `Listing`                                                           | `EntryPathway` plus `PostedOpportunity`                                         | Preserve real postings and remove legacy listing ownership fields    |
+| `Fellowship`                                                        | `ResearchEntity`, `EntryPathway`, `PostedOpportunity`, or formalization summary | Classify by behavior rather than by legacy collection                |
+| `acceptingUndergrads` and openness caches                           | `AccessSignal` plus computed access summary                                     | Remove binary and duplicated access state                            |
+| Official person profile treated as contact                          | `Person.officialProfile`                                                        | Keep navigation separate from permission to contact                  |
+| `User.publications`, `Paper`, `PaperAuthor`, and scholarly sidecars | No target collection                                                            | Remove reads, stop ingestion, archive, then drop                     |
+| ORCID works ingestion                                               | `Person.identifiers.orcid`                                                      | Retain identity and outbound link only                               |
+| `User.googleScholarId` and `FacultyMember.googleScholarId`          | `Person.outboundProfiles.googleScholar`                                          | Migrate the reviewed profile URL, then remove the legacy identifiers |
+| Field-name-based `Observation`                                      | Predicate-based `EvidenceClaim`                                                 | Dual-emit temporarily, reconcile, then cut over                      |
+| Mixed saved-plan maps on `User`                                     | `ResearchPlan`                                                                  | Migrate one plan per account and target                              |
 
 ## Migration Strategy
 
@@ -652,7 +659,8 @@ Exit condition: student-facing research reads no longer require `FacultyMember` 
 ### Phase 3: retire professor and publication mirrors
 
 - Switch professor navigation to verified official Yale profile URLs.
-- Expose ORCID only as an optional outbound identity link.
+- Migrate reviewed legacy Google Scholar identifiers into canonical verified `Person.outboundProfiles.googleScholar` links.
+- Expose Google Scholar and ORCID only as optional outbound identity links.
 - Remove professor and research-detail publication sections and compatibility DTO fields.
 - Disable paper, preprint, ORCID-works, and bibliographic hydration scrapers.
 - Remove paper-quality and authorship gates after replacement launch criteria are documented.

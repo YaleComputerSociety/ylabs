@@ -3,12 +3,41 @@ import {
   INVENTORY_COLLECTIONS,
   REFERENCE_EDGES,
   RETIREMENT_FIELD_PROBES,
+  assertInventoryEnvironmentMatchesDatabase,
   buildResearchModelInventoryOutput,
   buildResearchModelInventoryReport,
   findUnclassifiedCollections,
   parseResearchModelInventoryArgs,
   type InventoryFacts,
 } from '../researchModelInventoryCore';
+
+describe('assertInventoryEnvironmentMatchesDatabase', () => {
+  it.each([
+    ['development', 'Development'],
+    ['beta', 'Beta'],
+    ['production-copy', 'ProductionCopy'],
+    ['production-copy', 'production-copy'],
+    ['production', 'Production'],
+    ['test', 'Test'],
+    ['test', 'inventory-test'],
+  ] as const)('accepts %s inventory evidence for %s', (environment, databaseName) => {
+    expect(() =>
+      assertInventoryEnvironmentMatchesDatabase(environment, databaseName),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ['beta', 'Production'],
+    ['production', 'Beta'],
+    ['production-copy', 'Production'],
+    ['development', 'inventory-test'],
+    ['test', 'Beta'],
+  ] as const)('rejects %s inventory evidence for %s', (environment, databaseName) => {
+    expect(() => assertInventoryEnvironmentMatchesDatabase(environment, databaseName)).toThrow(
+      `Inventory environment ${environment} does not match MongoDB database ${databaseName}`,
+    );
+  });
+});
 
 function emptyFacts(): InventoryFacts {
   return {
@@ -138,6 +167,16 @@ describe('inventory coverage', () => {
         'research_entities.featuredPaperIds',
       ]),
     );
+    expect(RETIREMENT_FIELD_PROBES.filter((probe) => probe.field === 'googleScholarId')).toEqual([
+      expect.objectContaining({
+        collection: 'users',
+        target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
+      }),
+      expect.objectContaining({
+        collection: 'faculty_members',
+        target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
+      }),
+    ]);
   });
 });
 

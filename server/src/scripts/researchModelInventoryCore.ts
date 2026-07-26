@@ -58,6 +58,34 @@ export type InventoryEnvironment =
   | 'production'
   | 'test';
 
+const INVENTORY_DATABASE_NAMES: Record<
+  Exclude<InventoryEnvironment, 'test'>,
+  ReadonlySet<string>
+> = {
+  development: new Set(['development']),
+  beta: new Set(['beta']),
+  'production-copy': new Set(['productioncopy']),
+  production: new Set(['production']),
+};
+
+export function assertInventoryEnvironmentMatchesDatabase(
+  environment: InventoryEnvironment,
+  databaseName: string,
+): void {
+  const lowerDatabaseName = databaseName.trim().toLowerCase();
+  const normalizedDatabaseName = lowerDatabaseName.replace(/[-_]/g, '');
+  const matches =
+    environment === 'test'
+      ? lowerDatabaseName === 'test' || /[-_]test$/.test(lowerDatabaseName)
+      : INVENTORY_DATABASE_NAMES[environment].has(normalizedDatabaseName);
+
+  if (!matches) {
+    throw new Error(
+      `Inventory environment ${environment} does not match MongoDB database ${databaseName || '(missing)'}`,
+    );
+  }
+}
+
 /** Refactor-relevant collections, keyed by physical name. */
 export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   {
@@ -452,8 +480,8 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
   {
     collection: 'users',
     field: 'googleScholarId',
-    meaning: 'Mirrored scholarly identifier',
-    target: 'Remove with professor-profile mirrors',
+    meaning: 'Legacy Google Scholar profile identifier',
+    target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
   },
   {
     collection: 'users',
@@ -500,8 +528,8 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
   {
     collection: 'faculty_members',
     field: 'googleScholarId',
-    meaning: 'Mirrored scholarly identifier',
-    target: 'Remove with professor-profile mirrors',
+    meaning: 'Legacy Google Scholar profile identifier',
+    target: 'Person.outboundProfiles.googleScholar, then remove legacy field',
   },
   {
     collection: 'faculty_members',

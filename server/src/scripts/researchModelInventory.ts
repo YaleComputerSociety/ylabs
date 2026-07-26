@@ -22,6 +22,7 @@ import {
   INVENTORY_COLLECTIONS,
   REFERENCE_EDGES,
   RETIREMENT_FIELD_PROBES,
+  assertInventoryEnvironmentMatchesDatabase,
   buildResearchModelInventoryOutput,
   buildResearchModelInventoryReport,
   parseResearchModelInventoryArgs,
@@ -399,9 +400,15 @@ export async function runResearchModelInventory(
   mongoUrl: string,
   client: InventoryMongoClient = new MongoClient(mongoUrl),
 ): Promise<ReturnType<typeof buildResearchModelInventoryOutput>> {
+  const configuredDatabaseName = decodeURIComponent(
+    new URL(mongoUrl).pathname.slice(1).split('/')[0],
+  );
+  assertInventoryEnvironmentMatchesDatabase(args.environment, configuredDatabaseName);
+
   try {
     await client.connect();
     const db = client.db();
+    assertInventoryEnvironmentMatchesDatabase(args.environment, db.databaseName);
     const facts = await gatherInventoryFacts(db, args);
     const report = buildResearchModelInventoryReport(facts);
     return buildResearchModelInventoryOutput(report, {
