@@ -69,11 +69,14 @@ function fakeMongoHarness(
     listError?: Error;
     listFailureCall?: number;
     commandFailure?: (command: Record<string, unknown>, callIndex: number) => boolean;
+    closeError?: Error;
   } = {},
 ): FakeMongoHarness {
   const collectionInfos = (args.collectionInfos ?? []).map(cloneInfo);
   const connect = vi.fn(async () => undefined);
-  const close = vi.fn(async () => undefined);
+  const close = vi.fn(async () => {
+    if (args.closeError) throw args.closeError;
+  });
   let listReadCall = 0;
   const listCollections = vi.fn(() => ({
     toArray: vi.fn(async () => {
@@ -474,6 +477,37 @@ describe('runCanonicalMongoValidators', () => {
       CANONICAL_MONGO_VALIDATOR_COLLECTIONS.slice(1),
     );
     expect(rerun.postApplyPlan?.every(({ action }) => action === 'noop')).toBe(true);
+    expect(harness.close).toHaveBeenCalledOnce();
+  });
+
+  it('preserves partial progress when closing also fails', async () => {
+    const failingCollection = CANONICAL_MONGO_VALIDATOR_COLLECTIONS[1];
+    const harness = fakeMongoHarness({
+      commandFailure: (_command, callIndex) => callIndex === 1,
+    });
+    const dryRun = await reviewedDryRun(harness);
+    harness.close.mockRejectedValue(new Error('injected MongoDB close failure'));
+
+    let applyError: unknown;
+    try {
+      await runCanonicalMongoValidators(applyArgs(), 'mongodb://localhost/development', {
+        client: harness.client,
+        reviewedArtifact: dryRun,
+      });
+    } catch (error) {
+      applyError = error;
+    }
+
+    expect(applyError).toBeInstanceOf(CanonicalMongoValidatorApplyError);
+    expect(applyError).toMatchObject({
+      appliedCollections: [CANONICAL_MONGO_VALIDATOR_COLLECTIONS[0]],
+      failedCollection: failingCollection,
+      unattemptedCollections: CANONICAL_MONGO_VALIDATOR_COLLECTIONS.slice(2),
+    });
+    expect(applyError).toHaveProperty(
+      'message',
+      expect.stringContaining('MongoDB client cleanup also failed: injected MongoDB close failure'),
+    );
     expect(harness.close).toHaveBeenCalledOnce();
   });
 

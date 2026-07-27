@@ -415,6 +415,8 @@ export async function runCanonicalMongoValidators(
   assertOperatorEnvironmentMatchesDatabase(args.environment, configuredDatabaseName);
 
   const client = options.client ?? (new MongoClient(mongoUrl) as unknown as ValidatorMongoClient);
+  let primaryError: unknown;
+  let failed = false;
   try {
     await client.connect();
     const db = client.db();
@@ -494,8 +496,28 @@ export async function runCanonicalMongoValidators(
       applied,
       postApplyPlan,
     };
+  } catch (error) {
+    failed = true;
+    primaryError = error;
+    throw error;
   } finally {
-    await client.close();
+    try {
+      await client.close();
+    } catch (closeError) {
+      if (!failed) throw closeError;
+
+      const closeFailureReason = sanitizeLogValue(
+        closeError instanceof Error ? closeError.message : closeError,
+      );
+      if (primaryError instanceof Error) {
+        primaryError.message = `${primaryError.message}. MongoDB client cleanup also failed: ${closeFailureReason}`;
+      } else {
+        throw new AggregateError(
+          [primaryError, closeError],
+          `Canonical MongoDB validator operation and client cleanup both failed: ${closeFailureReason}`,
+        );
+      }
+    }
   }
 }
 
