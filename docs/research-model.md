@@ -494,6 +494,20 @@ Use the unified Yale Research surface as the primary student-facing experience. 
 5. Teach scrapers to emit source evidence first, then materialize access signals/pathways/routes only when evidence supports them.
 6. Rename or drop legacy physical fields and lab-named files only after Beta proves the canonical model.
 
+### Canonical schema versions and database validators
+
+Each new canonical collection owns an independent positive integer `schemaVersion`.
+New documents default to that collection's current version, while explicitly supported older versions remain readable during a bounded migration.
+Collections must not share one lockstep application-wide schema version.
+
+The shared version field and BSON property builders live in [`server/src/models/canonicalSchemaVersion.ts`](../server/src/models/canonicalSchemaVersion.ts).
+MongoDB validator definitions use `validationLevel: moderate` and `validationAction: error` during migration so new conforming writes are protected without pretending that legacy documents were backfilled.
+Moderate validation does not prove reference integrity, backfill missing versions, or make an old document canonical.
+
+Validator plans must be deterministic, dry-run reviewable, and limited to an explicit desired collection registry.
+The pure planner in [`server/src/scripts/canonicalMongoValidatorsCore.ts`](../server/src/scripts/canonicalMongoValidatorsCore.ts) does not connect to MongoDB or apply commands.
+A later guarded operator command must compare current collection options, require explicit confirmation before writes, and never run during application startup.
+
 Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Runtime paper activity now uses `research_scholarly_links` and `research_scholarly_attributions`; empty stats and paper-entity-link collections are not part of the launch copy set.
 
 The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including Beta seed, Pathway Meili relevance review, source blocker resolution, production scraper rollout, opportunity detail polish, data-quality operations, post-Beta legacy cleanup, and saved/advising workflow expansion.
