@@ -85,6 +85,7 @@ import {
 describe('adminAccessReviewService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.syncPathwaySearchIndexDocument.mockResolvedValue(undefined);
     const query: any = {
       select: vi.fn(() => query),
       lean: vi.fn().mockResolvedValue(null),
