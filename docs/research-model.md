@@ -517,10 +517,14 @@ The existing `Source` and `StudentEngagementEvent` models remain the canonical s
 Notes, checklists, and deadlines are excluded from normal queries, and each export category requires an explicit opt-in preference.
 
 `SourceDocument` stores a source-scoped normalized document key, a content hash, bounded metadata, and an optional protected snapshot pointer.
+Its source metadata and snapshot pointer are excluded from normal queries.
+It may record credential-free HTTP(S) URLs, but storing a URL neither trusts nor fetches it.
+Any later outbound fetch from a stored URL must use [`server/src/utils/ssrfGuard.ts`](../server/src/utils/ssrfGuard.ts).
 It does not embed raw fetched content and it has no automatic TTL because retention decisions depend on source policy.
 
 `EvidenceClaim` accepts only predicates in the versioned registry in [`server/src/models/evidencePredicateRegistry.ts`](../server/src/models/evidencePredicateRegistry.ts).
 Claim values are bounded, excluded from normal queries, and `ADMIN_ONLY` unless a later reviewed workflow explicitly lowers sensitivity.
+Claims retain source evidence separately from the materialized domain records they may later support.
 
 `ReviewDecision` is an append-only audit record with a protected account reviewer.
 A later decision may point backward to one decision it supersedes, while the original decision remains unchanged.
