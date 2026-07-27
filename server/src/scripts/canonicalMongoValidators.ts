@@ -401,6 +401,30 @@ export function assertReviewedCanonicalMongoValidatorPlan(
   }
 }
 
+async function closeValidatorMongoClient(
+  client: ValidatorMongoClient,
+  failed: boolean,
+  primaryError: unknown,
+): Promise<void> {
+  try {
+    await client.close();
+  } catch (closeError) {
+    if (!failed) throw closeError;
+
+    const closeFailureReason = sanitizeLogValue(
+      closeError instanceof Error ? closeError.message : closeError,
+    );
+    if (primaryError instanceof Error) {
+      primaryError.message = `${primaryError.message}. MongoDB client cleanup also failed: ${closeFailureReason}`;
+      return;
+    }
+    throw new AggregateError(
+      [primaryError, closeError],
+      `Canonical MongoDB validator operation and client cleanup both failed: ${closeFailureReason}`,
+    );
+  }
+}
+
 export async function runCanonicalMongoValidators(
   args: CanonicalMongoValidatorArgs,
   mongoUrl: string,
@@ -501,23 +525,7 @@ export async function runCanonicalMongoValidators(
     primaryError = error;
     throw error;
   } finally {
-    try {
-      await client.close();
-    } catch (closeError) {
-      if (!failed) throw closeError;
-
-      const closeFailureReason = sanitizeLogValue(
-        closeError instanceof Error ? closeError.message : closeError,
-      );
-      if (primaryError instanceof Error) {
-        primaryError.message = `${primaryError.message}. MongoDB client cleanup also failed: ${closeFailureReason}`;
-      } else {
-        throw new AggregateError(
-          [primaryError, closeError],
-          `Canonical MongoDB validator operation and client cleanup both failed: ${closeFailureReason}`,
-        );
-      }
-    }
+    await closeValidatorMongoClient(client, failed, primaryError);
   }
 }
 

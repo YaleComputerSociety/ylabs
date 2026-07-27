@@ -486,6 +486,7 @@ describe('runCanonicalMongoValidators', () => {
       commandFailure: (_command, callIndex) => callIndex === 1,
     });
     const dryRun = await reviewedDryRun(harness);
+    harness.close.mockClear();
     harness.close.mockRejectedValue(new Error('injected MongoDB close failure'));
 
     let applyError: unknown;
