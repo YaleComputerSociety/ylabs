@@ -396,7 +396,7 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 | `isAuthenticated` | `req.user` exists                                                                             |
 | `isAdmin`         | `userType === 'admin'`                                                                        |
 | `isProfessor`     | `userType` in `['professor', 'faculty', 'admin']`                                             |
-| `canManagePostedOpportunities` | Confirmed, profile-verified professor/faculty principal; excludes admins from authoring |
+| `canManagePostedOpportunities` | Confirmed, profile-verified professor/faculty; ownership is enforced by the service layer and admins cannot author |
 
 ---
 
