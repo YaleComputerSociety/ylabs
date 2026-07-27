@@ -84,7 +84,10 @@ Description extraction should follow newly discovered official research-home web
 
 Card-copy derivation may treat later official-profile project prose as usable research evidence when the sentence itself is explicit, such as `research aimed at`, `presently working on`, or `Co-Principal Investigator on a grant`. It may also summarize narrow official lab homepage phrasing such as `lab research focus extends through diverse areas...`, `our research program uses...`, `our lab is focused on...`, `mission is to enhance...`, `working group aims to...`, or `seek to decrease...` when the source text names a concrete research method/domain. Keep these patterns narrow: the biography or appointment lead is still ignored, and the derived card should summarize the later research/project sentence rather than copying title, retirement, degree, directory chronology, book pages, teaching-only profiles, or page chrome.
 
-Launch trust is checked with `yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict`. This is a read-only contract audit over the visibility gate, the publication-authorship proof layer, and paper display-quality gates. It fails launch if visible records are not launch-grade, if research activity attached to PI/faculty records still depends on unsupported name-only or orphaned paper links, or if papers lack meaningful titles, inspectable links, usable dates, source labels, or unique stable identifiers. Use the returned repair lanes and commands as the fix plan, then re-run the visibility gate and contract audit.
+Launch trust is checked with `yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict`.
+This is a read-only contract audit over the visibility gate.
+It fails launch if visible records are not launch-grade.
+Use the returned repair lanes and commands as the fix plan, then re-run the visibility gate and contract audit.
 
 YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into `research_entity_members` PI rows so public detail pages and visibility computation share the same lead evidence.
 
