@@ -1,6 +1,6 @@
 # Research Model Refactor
 
-Status: accepted product and architecture direction, implementation pending
+Status: accepted product and architecture direction, implementation in progress
 
 Decision date: 2026-07-24
 
@@ -205,6 +205,20 @@ Suggested fields include:
 Search-specific synonyms may extend this vocabulary in Meilisearch.
 They must not silently create new canonical taxonomy terms.
 
+#### Phase 1 identity and reference schema boundary
+
+The versioned `Account`, `Person`, `RoleAssignment`, `OrgUnit`, and `TaxonomyTerm` schemas are registered in `server/src/models/` with explicit `accounts`, `people`, `role_assignments`, `org_units`, and `taxonomy_terms` collection names.
+They currently coexist empty with legacy runtime collections and have no application readers, writers, routes, migrations, startup hooks, or Meilisearch projections.
+
+`Account` contains CAS identity and lifecycle state but no person pointer or role array.
+`AdminGrant` remains the source of admin authority, research roles belong to `RoleAssignment`, and `Person.accountId` is the only optional account-person relationship.
+`Person.profileLinks` permits at most one verified outbound link for each of the five accepted kinds, with Google Scholar and ORCID restricted to scholarly-purpose links and kind-specific canonical URLs.
+An ORCID identifier may remain non-public until its outbound profile link is reviewed, but any stored ORCID profile link must match the person's canonical ORCID identifier.
+
+`RoleAssignment` stores dated person-to-target relationships and permits repeated historical terms.
+`OrgUnit` and `TaxonomyTerm` are new canonical reference identities, but this phase does not copy from or cut readers over from `Department` or `ResearchArea`.
+Taxonomy uniqueness is scoped by term kind and the normalized canonical label.
+
 ### `research_entities`
 
 `ResearchEntity` remains the central browseable concept.
@@ -253,9 +267,10 @@ Full roles, pathways, signals, routes, and evidence remain first-class records.
 
 Legacy fields such as `kind`, duplicate description fields, `acceptingUndergrads`, `openness`, `acceptanceConfidence`, embedded openness signals, and legacy research-group references must be retired after canonical reads cut over.
 
-### `entity_relationships`
+### `research_entity_relationships`
 
-`EntityRelationship` represents source-backed relationships between research entities.
+`ResearchEntityRelationship` represents source-backed relationships between research entities.
+The existing model and `research_entity_relationships` physical collection remain canonical rather than being duplicated under a renamed model.
 Examples include affiliation, hosting, membership, umbrella structure, and succession.
 
 Relationships remain first-class because they are many-to-many, independently evidenced, and queried in both directions.

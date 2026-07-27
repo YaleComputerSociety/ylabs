@@ -121,7 +121,7 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ResearchEntityRelationship',
     group: 'canonical-domain',
     phase: 4,
-    target: 'EntityRelationship',
+    target: 'ResearchEntityRelationship (retained)',
   },
   {
     collection: 'entry_pathways',

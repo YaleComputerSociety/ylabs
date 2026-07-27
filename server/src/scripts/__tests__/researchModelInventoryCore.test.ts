@@ -77,6 +77,15 @@ describe('INVENTORY_COLLECTIONS', () => {
       target: 'Private student application records (retained, normalized references)',
     });
   });
+
+  it('retains the existing ResearchEntityRelationship identity and collection', () => {
+    expect(
+      INVENTORY_COLLECTIONS.find((spec) => spec.collection === 'research_entity_relationships'),
+    ).toMatchObject({
+      model: 'ResearchEntityRelationship',
+      target: 'ResearchEntityRelationship (retained)',
+    });
+  });
 });
 
 describe('inventory coverage', () => {
