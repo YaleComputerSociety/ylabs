@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-07-21
+Last updated: 2026-07-25
 
 This is the single task source of truth for Yale Research.
 Keep it operational and compact.
@@ -48,6 +48,7 @@ Active themes:
 | P1       | Add URL-backed search state and evidence facets.                                 | Query and filters survive reload/share/back navigation, and facets use evidence/product-model concepts instead of legacy acceptance labels.                             |
 | P2       | Add a minimal E2E smoke in CI or scheduled Beta checks.                          | Browse -> search -> detail -> save is exercised outside manual-only scripts.                                                                                            |
 | P2       | Reduce frontend and API payload weight.                                          | Student routes are split out of the admin bundle path and browse cards use a smaller DTO.                                                                               |
+| P2       | Complete research-model refactor Phase 0.                                        | Beta and production-copy inventories, the phase ownership map, and rollback prerequisites are reviewed under the [Phase 0 runbook](../research-model-refactor-phase0.md). |
 | P2       | Move gate scorecards off fixed `/tmp` paths.                                     | Operator Board scorecards survive deploys/restarts through a durable store or explicitly documented external artifact path.                                             |
 | P2       | Continue surface-area deletion.                                                  | Unused indexes, old listing-era paths, unused deps, and obsolete docs are removed when touched.                                                                         |
 

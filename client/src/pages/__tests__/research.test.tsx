@@ -1018,8 +1018,10 @@ describe('Research page', () => {
         expect.any(Object),
       );
     });
-    expect(screen.getByText('Needs description')).toBeTruthy();
-    expect(screen.getByLabelText('Admin quality flags').textContent).toContain('Missing lead');
+    expect(await screen.findByText('Needs description')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Admin quality flags').textContent).toContain('Missing lead');
+    });
   });
 
   it('does not show the weakest-first browse toggle to non-admin users', async () => {
