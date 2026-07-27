@@ -44,3 +44,8 @@ export * from './person';
 export * from './roleAssignment';
 export * from './orgUnit';
 export * from './taxonomyTerm';
+export * from './evidencePredicateRegistry';
+export * from './sourceDocument';
+export * from './evidenceClaim';
+export * from './researchPlan';
+export * from './reviewDecision';
