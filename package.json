@@ -22,6 +22,7 @@
     "meili:health": "curl http://localhost:7700/health",
     "meili:seed": "yarn --cwd server meili:seed",
     "migrate:mongo-naming": "yarn --cwd server migrate:mongo-naming",
+    "model-refactor:validators": "yarn --cwd server model-refactor:validators",
     "scrape": "yarn --cwd server scrape",
     "scrape:seed-sources": "yarn --cwd server scrape:seed-sources",
     "playwright:run": "bash scripts/with-playwright-libs.sh npx playwright",
@@ -51,14 +52,17 @@
   },
   "resolutions": {
     "form-data": "4.0.6",
+    "mongoose": "8.24.1",
     "undici": "6.27.0",
-    "axios": "1.17.0",
+    "axios": "1.18.1",
     "underscore": "1.13.8",
     "path-to-regexp": "0.1.13",
     "uuid": "11.1.1",
     "xml2js": "0.6.2",
-    "shell-quote": "1.8.4",
-    "brace-expansion": "5.0.6"
+    "shell-quote": "1.10.0",
+    "brace-expansion": "5.0.8",
+    "js-yaml": "4.3.0",
+    "tar": "7.5.22"
   },
   "devDependencies": {
     "eslint": "^9.18.0",

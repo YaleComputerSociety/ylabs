@@ -60,4 +60,4 @@ Prefer official and public URLs.
 Redact scraped emails from public payloads.
 - Prefer first-class collections over embedding pathways, signals, or routes inside `ResearchEntity`.
 
-See `docs/research-model.md` for full schema and migration guidance.
+See `docs/research-model.md` for the current runtime model and `docs/research-model-refactor.md` for the accepted target and phased migration.

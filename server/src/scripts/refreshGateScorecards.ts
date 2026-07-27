@@ -58,13 +58,9 @@ const FEEDERS: Feeder[] = [
   {
     gate: 'launchTrust',
     script: 'launch:trust-contract',
-    args: [
-      '--collection=all',
-      '--mode=student-ready-only',
-      '--include-research-activity',
-      '--include-paper-quality',
-      '--strict',
-    ],
+    // Paper-quality and research-activity checks are retired with the bibliographic
+    // pipeline (issue #207, Phase 3); the launch-trust gate no longer enforces them.
+    args: ['--collection=all', '--mode=student-ready-only', '--strict'],
     output: '/tmp/ylabs-launch-trust-contract.json',
   },
   {

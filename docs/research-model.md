@@ -1,5 +1,8 @@
 # Research Model
 
+The current runtime model is documented here.
+The accepted target model, phased migration boundaries, and Phase 0 inventory runbook are documented in [`research-model-refactor.md`](./research-model-refactor.md) and [`research-model-refactor-phase0.md`](./research-model-refactor-phase0.md).
+
 ## Current Implementation Context
 
 The current codebase still has some legacy-named files and client components, but
@@ -31,6 +34,11 @@ Dependent physical membership data also uses a canonical name after migration:
 dropped after its data is copied and verified. Empty historical stats and
 paper-entity link collections were removed from the runtime model to avoid
 treating unused collections as launch evidence.
+
+Current non-lead roster membership uses stable source identity fields on `research_entity_members`, including `identityKey`, role-specific `membershipKey`, source provenance, evidence status, and freshness expiry.
+Official roster snapshots update current rows idempotently and archive disappeared rows with `endedAt` instead of deleting provenance.
+Each entity retains the exact member keys, source URL, observation time, and freshness boundary of its last successful current or partial roster snapshot so a failed refresh can provide bounded grace without reviving older membership.
+An unresolved name, ambiguous profile identity, stale source, missing explicitly current section, or failed optional fetch remains hidden and reviewable rather than becoming current membership.
 
 Umbrella affiliations use `research_entity_relationships` with
 `sourceResearchEntityId` as the center, institute, or umbrella entity and
@@ -446,6 +454,9 @@ Examples:
 
 This supports STEM labs, social science centers, economics RA programs, digital humanities teams, library/museum projects, and fellowship-supervised independent research.
 
+Student-facing roster groups are intentionally coarse: postdoctoral researchers, graduate students, undergraduate researchers, research staff, faculty, and other current members.
+The exact official title remains visible as source context, and roster membership never becomes a contact recommendation or access claim.
+
 ## Recommended Next Steps
 
 CTA logic may be stored or computed. Start by computing when possible; store only when admins need editorial control.
@@ -507,6 +518,45 @@ Use the unified Yale Research surface as the primary student-facing experience. 
 4. Add explicit `PostedOpportunity` records only for real openings, deadlines, rolling applications, or archived postings.
 5. Teach scrapers to emit source evidence first, then materialize access signals/pathways/routes only when evidence supports them.
 6. Rename or drop legacy physical fields and lab-named files only after Beta proves the canonical model.
+
+### Canonical schema versions and database validators
+
+Each new canonical collection owns an independent positive integer `schemaVersion`.
+New documents default to that collection's current version, while explicitly supported older versions remain readable during a bounded migration.
+Collections must not share one lockstep application-wide schema version.
+
+The shared version field and BSON property builders live in [`server/src/models/canonicalSchemaVersion.ts`](../server/src/models/canonicalSchemaVersion.ts).
+MongoDB validator definitions use `validationLevel: moderate` and `validationAction: error` during migration so new conforming writes are protected without pretending that legacy documents were backfilled.
+Moderate validation does not prove reference integrity, backfill missing versions, or make an old document canonical.
+
+Validator plans must be deterministic, dry-run reviewable, and limited to an explicit desired collection registry.
+The pure planner in [`server/src/scripts/canonicalMongoValidatorsCore.ts`](../server/src/scripts/canonicalMongoValidatorsCore.ts) does not connect to MongoDB or apply commands.
+The guarded operator command compares current collection options, requires a reviewed dry-run artifact plus environment-bound confirmation before writes, and never runs during application startup.
+Use the exact environment workflow and rollback guidance in the [`Canonical MongoDB Validator Runbook`](./canonical-mongodb-validator-runbook.md).
+
+### Phase 1 evidence and planning schema foundation
+
+The versioned `ResearchPlan`, `SourceDocument`, `EvidenceClaim`, and `ReviewDecision` schemas establish storage contracts without adding runtime routes, scraper writers, materializers, Meilisearch documents, or migrations.
+The existing `Source` and `StudentEngagementEvent` models remain the canonical source registry and analytics event model.
+
+`ResearchPlan` is account-owned and private by default.
+Notes, checklists, and deadlines are excluded from normal queries, and each export category requires an explicit opt-in preference.
+
+`SourceDocument` stores a source-scoped normalized document key, a content hash, bounded metadata, and an optional protected snapshot pointer.
+Its source metadata and snapshot pointer are excluded from normal queries.
+It may record credential-free HTTP(S) URLs, but storing a URL neither trusts nor fetches it.
+Any later outbound fetch from a stored URL must use [`server/src/utils/ssrfGuard.ts`](../server/src/utils/ssrfGuard.ts).
+It does not embed raw fetched content and it has no automatic TTL because retention decisions depend on source policy.
+
+`EvidenceClaim` accepts only predicates in the versioned registry in [`server/src/models/evidencePredicateRegistry.ts`](../server/src/models/evidencePredicateRegistry.ts).
+Claim values are bounded, excluded from normal queries, and `ADMIN_ONLY` unless a later reviewed workflow explicitly lowers sensitivity.
+Claims retain source evidence separately from the materialized domain records they may later support.
+
+`ReviewDecision` is an append-only audit record with a protected account reviewer.
+A later decision may point backward to one decision it supersedes, while the original decision remains unchanged.
+
+These collections may coexist empty with the current runtime.
+No current scraper or public read path should write or consume them until a later cutover phase adds reconciliation and explicit operational gates.
 
 Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Runtime paper activity now uses `research_scholarly_links` and `research_scholarly_attributions`; empty stats and paper-entity-link collections are not part of the launch copy set.
 

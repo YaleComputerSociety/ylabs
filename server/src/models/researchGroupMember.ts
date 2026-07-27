@@ -34,6 +34,10 @@ const researchGroupMemberSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    title: {
+      type: String,
+      default: '',
+    },
     role: {
       type: String,
       enum: [
@@ -90,6 +94,39 @@ const researchGroupMemberSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    sourceName: {
+      type: String,
+      default: '',
+    },
+    profileUrl: {
+      type: String,
+      default: '',
+    },
+    identityKey: {
+      type: String,
+      default: '',
+    },
+    membershipKey: {
+      type: String,
+      default: '',
+    },
+    evidenceStatus: {
+      type: String,
+      enum: ['verified', 'under-review', 'historical'],
+      default: 'under-review',
+    },
+    sectionLabel: {
+      type: String,
+      default: '',
+    },
+    sourcePublishedAt: {
+      type: Date,
+      required: false,
+    },
+    freshnessExpiresAt: {
+      type: Date,
+      required: false,
+    },
     fieldProvenance: {
       type: Map,
       of: fieldProvenanceSchema,
@@ -118,6 +155,8 @@ researchGroupMemberSchema.index({ researchGroupId: 1, role: 1 });
 researchGroupMemberSchema.index({ researchEntityId: 1, userId: 1 });
 researchGroupMemberSchema.index({ researchEntityId: 1, facultyMemberId: 1, role: 1 });
 researchGroupMemberSchema.index({ researchEntityId: 1, role: 1 });
+researchGroupMemberSchema.index({ researchEntityId: 1, membershipKey: 1, isCurrentMember: 1 });
+researchGroupMemberSchema.index({ sourceName: 1, evidenceStatus: 1, freshnessExpiresAt: 1 });
 
 export const ResearchGroupMember = mongoose.model(
   'ResearchGroupMember',

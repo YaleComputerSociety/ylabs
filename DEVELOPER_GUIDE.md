@@ -22,7 +22,7 @@ The server follows: **Routes → Middleware → Controllers → Services → Mod
 
 | Layer           | Technology                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------ |
-| Client          | React 19, TypeScript, Vite 6, React Router v6, MUI v7, styled-components, TailwindCSS v3         |
+| Client          | React 19, TypeScript, Vite 6, React Router v7, MUI v7, styled-components, TailwindCSS v3         |
 | Server          | Express 4, TypeScript, Passport.js (CAS strategy), Mongoose 8                                    |
 | Search          | Meilisearch (keyword plus semantic search via OpenAI `text-embedding-3-small` where appropriate) |
 | Database        | MongoDB Atlas (single cluster, separate databases per environment)                               |
@@ -157,6 +157,12 @@ When a `/research` browse has no search query, results are ordered "best first" 
 
 Organizational research homes (centers, institutes, initiatives, core facilities) have no single PI, so their scraped rosters list everyone as core faculty and the public "Principal Investigator" panel shows nothing. The `center-director-llm` scraper reads each home's official site and leadership pages, extracts the single named **director**, and the materializer resolves that name to a Yale user before promoting them to a director (lead) member. New scrape/materialize runs apply this automatically; to fill in the existing corpus run `yarn --cwd server research-homes:backfill-center-directors --apply --confirm-center-directors --limit <n>` (dry-run by default, lists eligible homes without calling the LLM; apply needs `OPENAI_API_KEY`).
 
+Non-lead current-team context comes only from the disabled-by-default `official-research-home-roster` source and its reviewed entity/page/section allowlist.
+Run a bounded dry run with `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1`, materialize only after reviewing the source output, and then run `yarn --cwd server research-homes:audit-rosters --strict`.
+Broad enablement requires a clean structural audit plus an attributable sampled review using `--sampled-precision-reviewed-by=<reviewer>`.
+The public detail API returns at most 24 fresh verified roster members, grouped by coarse role, along with a `roster` disclosure whose status is `current`, `partial`, `withheld`, `no-verified-data`, or `optional-source-failure`.
+Failed, empty, stale, or ambiguous refreshes do not imply an empty team and do not archive the last verified roster.
+
 ### 6. Start dev servers
 
 ```bash
@@ -242,6 +248,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `npx tsc --noEmit -p server/tsconfig.json`                        | Server typecheck                                                                   |
 | `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate                                                        |
 | `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
+| `yarn --cwd server model-refactor:inventory --environment beta`   | Read-only research-model collection, field, and reference inventory                |
 | `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
 | `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |
 
@@ -270,6 +277,9 @@ Use the server workspace scripts for current data flows:
 yarn scrape help
 yarn meili:seed
 ```
+
+The research-model refactor inventory is read-only and uses `MONGODBURL`.
+Follow [`docs/research-model-refactor-phase0.md`](docs/research-model-refactor-phase0.md) for its required environment label, guarded JSON output, report interpretation, and rollback prerequisites.
 
 Historical `data-migration/` scripts remain for one-off migrations only.
 Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:
@@ -440,12 +450,13 @@ When adding a new reducer:
 
 Pull requests into `main` or `beta` trigger [.github/workflows/ci.yml](.github/workflows/ci.yml), which runs:
 
-1. `yarn install:all`
+1. Immutable Yarn installs for the root, server, and client lockfiles
 2. `npx tsc --noEmit -p server/tsconfig.json`
 3. `yarn --cwd server test`
 4. `yarn --cwd client test:ci`
-5. `yarn npm audit --severity high`
-6. `yarn build` (server + client)
+5. `yarn security:preflight`, including production dependency audits at moderate severity
+6. Root, server, and client all-environment dependency audits at moderate severity
+7. `yarn build` (server + client)
 
 The workflow also accepts `workflow_dispatch` so it can be run manually from the Actions tab. Branch protection (configured in GitHub repo settings → Branches) requires this check to pass before merging.
 
@@ -479,12 +490,12 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 
 ## Troubleshooting
 
-| Issue                                          | Solution                                                                                                                                                                                                                                           |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CAS login not working locally                  | Use dev-login: `http://localhost:4000/api/dev-login`                                                                                                                                                                                               |
-| Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                                                                                                                                  |
-| Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                                                                                                                                       |
-| CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                                                                                                                              |
-| `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                                                                                                                                             |
-| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning.                                                                                                               |
+| Issue                                          | Solution                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CAS login not working locally                  | Use dev-login: `http://localhost:4000/api/dev-login`                                                                                                                                                                                                                                                                                                                                           |
+| Search returns no results                      | Check Meilisearch is running: `curl http://localhost:7700/health`                                                                                                                                                                                                                                                                                                                              |
+| Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                                                                                                                                                                                                                                                                                   |
+| CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                                                                                                                                                                                                                                                                          |
+| `/api/listings` returns `410`                  | Expected; Listings is retired. Use Research, Programs, or PostedOpportunity workflows.                                                                                                                                                                                                                                                                                                         |
+| Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning.                                                                                                                                                                                                                                                           |
 | A client needs pathway data                    | Use `/api/research/search` or research detail. Saved planning uses entity-owned `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans`; legacy pathway-owned endpoints are compatibility support, not a new client contract. Fall back only when a canonical endpoint returns `404`, `405`, or `501`, and track saved-item and plan-detail endpoint modes independently. |

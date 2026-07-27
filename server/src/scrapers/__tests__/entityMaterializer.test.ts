@@ -4,9 +4,11 @@ import {
   buildInferredPiMemberUpsert,
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
+  rosterEnrichmentWithRetainedSuccessfulSnapshot,
   buildOfficialProfileScholarlyLinkUpserts,
   buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
+  buildOfficialRosterArchiveFilter,
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
   mergeUniqueArrayValues,
@@ -39,9 +41,7 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('normalizes DOI values for paper identity matching', () => {
-    expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe(
-      '10.1000/abc',
-    );
+    expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe('10.1000/abc');
     expect(normalizeDoiForMaterialization('')).toBeNull();
     expect(normalizeDoiForMaterialization(undefined)).toBeNull();
   });
@@ -73,10 +73,9 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('adds a department-scoped name lookup for inferred department PI keys', () => {
-    const filters = userLookupFiltersForInferredPiUserKey(
-      'dept:econ:timothy-christensen',
-      ['Economics'],
-    );
+    const filters = userLookupFiltersForInferredPiUserKey('dept:econ:timothy-christensen', [
+      'Economics',
+    ]);
 
     expect(filters).toEqual([
       { netid: 'dept:econ:timothy-christensen' },
@@ -185,11 +184,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     };
 
     expect(
-      selectOfficialProfileObservationUserMatch(
-        observations,
-        [alias, canonical],
-        'ari.match',
-      ),
+      selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'ari.match'),
     ).toBe(canonical);
     expect(
       selectOfficialProfileObservationUserMatch(observations, [alias, canonical], 'az248'),
@@ -197,26 +192,16 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('preserves existing non-initial user names over roster initials', () => {
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(
-      true,
-    );
-    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(
-      true,
-    );
-    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(
-      false,
-    );
+    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'AZ' })).toBe(true);
+    expect(shouldPreserveExistingUserIdentityField('fname', 'A.', { fname: 'Anna' })).toBe(true);
+    expect(shouldPreserveExistingUserIdentityField('fname', 'Anna', { fname: 'AZ' })).toBe(false);
     expect(shouldPreserveExistingUserIdentityField('lname', 'Zayaruznaya', { fname: 'AZ' })).toBe(
       false,
     );
   });
 
   it('unions set-like paper fields without duplicating values', () => {
-    expect(mergeUniqueArrayValues(['u1', 'u2'], ['u2', 'u3'])).toEqual([
-      'u1',
-      'u2',
-      'u3',
-    ]);
+    expect(mergeUniqueArrayValues(['u1', 'u2'], ['u2', 'u3'])).toEqual(['u1', 'u2', 'u3']);
     expect(mergeUniqueArrayValues(undefined, 'arxiv')).toEqual(['arxiv']);
   });
 
@@ -234,9 +219,9 @@ describe('entityMaterializer post-materialization metrics', () => {
       'https://ysph.yale.edu/profile/amy-bei/',
       'https://reporter.nih.gov/project-details/11380220',
     ]);
-    expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news')).toBe(
-      'https://example.yale.edu/news',
-    );
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news'),
+    ).toBe('https://example.yale.edu/news');
   });
 
   it('builds paper bulk updates that union repeated set-like metadata observations', () => {
@@ -654,16 +639,13 @@ describe('entityMaterializer post-materialization metrics', () => {
   });
 
   it('builds a PI membership upsert from inferredPiUserId observations', () => {
-    const patch = buildInferredPiMemberUpsert(
-      '64f000000000000000000010',
-      {
-        value: '64f000000000000000000020',
-        sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
-        sourceName: 'ysm-atoz-index',
-        confidence: 0.84,
-        observedAt: new Date('2026-05-25T00:00:00Z'),
-      },
-    );
+    const patch = buildInferredPiMemberUpsert('64f000000000000000000010', {
+      value: '64f000000000000000000020',
+      sourceUrl: 'https://medicine.yale.edu/lab/yachiho/',
+      sourceName: 'ysm-atoz-index',
+      confidence: 0.84,
+      observedAt: new Date('2026-05-25T00:00:00Z'),
+    });
 
     expect(patch).toEqual({
       filter: {
@@ -770,6 +752,122 @@ describe('entityMaterializer post-materialization metrics', () => {
         $setOnInsert: { startedAt: observedAt },
       },
     });
+  });
+
+  it('materializes official roster membership idempotently from stable source identity', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt,
+      hasConflict: false,
+      contributingSources: ['official-research-home-roster'],
+    });
+    const resolved = {
+      role: field('grad-student'),
+      name: field('Fixture Scholar'),
+      title: field('Graduate Student'),
+      profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
+      identityKey: field('official-profile:fixture-scholar'),
+      membershipKey: field('official-profile:fixture-scholar|grad-student'),
+      currentStatus: field('current'),
+      evidenceStatus: field('verified'),
+      freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
+    };
+
+    const first = buildResearchGroupMemberUpsert('64f000000000000000000010', resolved);
+    const second = buildResearchGroupMemberUpsert('64f000000000000000000010', resolved);
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      filter: {
+        researchEntityId: '64f000000000000000000010',
+        membershipKey: 'official-profile:fixture-scholar|grad-student',
+        role: 'grad-student',
+        isCurrentMember: true,
+      },
+      update: {
+        $set: {
+          sourceName: 'official-research-home-roster',
+          profileUrl: 'https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/',
+          evidenceStatus: 'verified',
+        },
+      },
+    });
+  });
+
+  it('refuses name-only roster identity and any stable-identity collision', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown, hasConflict = false) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      observedAt,
+      hasConflict,
+      contributingSources: ['official-research-home-roster'],
+    });
+    expect(
+      buildResearchGroupMemberUpsert('64f000000000000000000010', {
+        role: field('staff'),
+        name: field('Same Name'),
+        currentStatus: field('current'),
+        evidenceStatus: field('verified'),
+      }),
+    ).toBeNull();
+    expect(
+      buildResearchGroupMemberUpsert('64f000000000000000000010', {
+        role: field('staff'),
+        name: field('Conflicted Name', true),
+        identityKey: field('official-profile:collision', true),
+        membershipKey: field('official-profile:collision|staff'),
+        currentStatus: field('current'),
+        evidenceStatus: field('verified'),
+      }),
+    ).toBeNull();
+  });
+
+  it('archives only missing members after a non-empty complete roster snapshot', () => {
+    expect(
+      buildOfficialRosterArchiveFilter('64f000000000000000000010', {
+        complete: true,
+        memberKeys: ['official-profile:current|staff'],
+      }),
+    ).toEqual({
+      researchEntityId: '64f000000000000000000010',
+      sourceName: 'official-research-home-roster',
+      archived: { $ne: true },
+      isCurrentMember: { $ne: false },
+      membershipKey: { $nin: ['official-profile:current|staff'] },
+    });
+    expect(
+      buildOfficialRosterArchiveFilter('64f000000000000000000010', {
+        complete: false,
+        memberKeys: [],
+      }),
+    ).toBeNull();
+  });
+
+  it('retains the exact last successful roster snapshot across a failed refresh', () => {
+    const partial = {
+      state: 'partial',
+      memberKeys: ['official-profile:retained|staff'],
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt: new Date('2026-07-14T00:00:00Z'),
+      freshnessExpiresAt: new Date('2026-08-04T00:00:00Z'),
+    };
+    const materializedPartial = rosterEnrichmentWithRetainedSuccessfulSnapshot(partial);
+    const failed = rosterEnrichmentWithRetainedSuccessfulSnapshot(
+      {
+        state: 'failed',
+        memberKeys: [],
+        sourceUrl: partial.sourceUrl,
+        observedAt: new Date('2026-07-15T00:00:00Z'),
+      },
+      materializedPartial,
+    );
+
+    expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
   });
 
   it('builds official-profile scholarly link upserts from user observations', () => {
@@ -963,14 +1061,17 @@ describe('entityMaterializer post-materialization metrics', () => {
 
 describe('center relationship type + label resolution', () => {
   it('chooses AFFILIATED_LAB when the resolved target is a real research home', () => {
-    expect(
-      centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA'),
-    ).toBe('AFFILIATED_LAB');
+    expect(centerRelationshipTypeForResolvedTarget('amy-arnsten-lab', 'MEMBER_RESEARCH_AREA')).toBe(
+      'AFFILIATED_LAB',
+    );
   });
 
   it('keeps the fallback type for a generated faculty-research-area target', () => {
     expect(
-      centerRelationshipTypeForResolvedTarget('faculty-research-area-amy-arnsten', 'MEMBER_RESEARCH_AREA'),
+      centerRelationshipTypeForResolvedTarget(
+        'faculty-research-area-amy-arnsten',
+        'MEMBER_RESEARCH_AREA',
+      ),
     ).toBe('MEMBER_RESEARCH_AREA');
   });
 

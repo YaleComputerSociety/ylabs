@@ -3,11 +3,6 @@
  * can dispatch them by name.
  */
 import { ScraperOrchestrator } from './orchestrator';
-import { ArxivPreprintScraper } from './sources/arxivPreprintScraper';
-import { OpenAlexPaperScraper } from './sources/openAlexPaperScraper';
-import { OrcidWorksScraper } from './sources/orcidWorksScraper';
-import { EuropePmcPaperScraper, PubMedPaperScraper } from './sources/europePmcPaperScraper';
-import { CrossrefPaperScraper } from './sources/crossrefPaperScraper';
 import { YsmAtoZScraper } from './sources/ysmAtoZScraper';
 import { YseCentersScraper } from './sources/yseCentersScraper';
 import { YaleResearchOfficialScraper } from './sources/yaleResearchOfficialScraper';
@@ -25,15 +20,15 @@ import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExt
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
 import { StudentDecisionLLMExtractor } from './sources/studentDecisionLLMExtractor';
+import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
-  o.register(new ArxivPreprintScraper());
-  o.register(new OpenAlexPaperScraper());
-  o.register(new OrcidWorksScraper());
-  o.register(new EuropePmcPaperScraper());
-  o.register(new PubMedPaperScraper());
-  o.register(new CrossrefPaperScraper());
+  // The bibliographic paper pipeline (arXiv, OpenAlex, ORCID works, Europe PMC,
+  // PubMed, Crossref) is deprecated and no longer registered, so it cannot run via
+  // the CLI, cron, or a sweep. Source files and stored collections are retained for
+  // rollback; verified Google Scholar and ORCID profile identity links are kept on
+  // Person. See issue #207 (Phase 3) and docs/research-model-refactor.md.
   o.register(new YsmAtoZScraper());
   o.register(new YseCentersScraper());
   o.register(new YaleResearchOfficialScraper());
@@ -51,5 +46,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CenterDirectorLLMExtractor());
   o.register(new OfficialProfilePiBackfillScraper());
   o.register(new StudentDecisionLLMExtractor());
+  o.register(new OfficialResearchHomeRosterScraper());
   return o;
 }

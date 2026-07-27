@@ -40,12 +40,13 @@ Rebuild scripts do full repopulation.
 The `researchentities` index prioritizes name, professor, research-area, keyword, and `studentSearchTerms` attributes before summary or description text.
 Its settings also include curated synonyms and typo guards for short aliases such as `ai`, `ml`, `nlp`, and `cv`, so rebuild or sync the index after changing alias or relevance settings.
 
-## Rebuild commands
+## Data commands
 
 | Command                                                 | Effect                                                               |
 | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
 | `yarn --cwd server meili:rebuild-pathways`              | Rebuild the Pathway index.                                           |
+| `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
 

@@ -176,6 +176,12 @@ export function normalizeResearchEntityDetailPayload(
     researchEntity: normalizedResearchEntity,
     group: normalizedGroup,
     members: payload.members ?? [],
+    roster: payload.roster ?? {
+      status: 'no-verified-data',
+      returned: 0,
+      truncated: false,
+      withheldCount: 0,
+    },
     researchActivityLinks: payload.researchActivityLinks ?? [],
     earlierResearchActivityLinks: payload.earlierResearchActivityLinks ?? [],
     scholarlyLinks: payload.scholarlyLinks ?? [],

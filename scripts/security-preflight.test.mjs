@@ -2382,10 +2382,15 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
   assert.match(source, /SAFE_REGEX_OPTIONS\.has\(option\)/);
   assert.match(source, /return normalized \|\| 'i'/);
   assert.match(source, /escapeRegex\(input\.trim\(\)\.slice\(0, MAX_SEARCH_LEN\)\)/);
-  assert.match(
-    opportunitiesRouteSource,
-    /import \{ asyncHandler, validateObjectId \} from '\.\.\/middleware\/index'/,
+  const middlewareImport = opportunitiesRouteSource.match(
+    /import\s*\{([\s\S]*?)\}\s*from '\.\.\/middleware\/index'/,
   );
+  assert.ok(middlewareImport, 'opportunity routes must import the shared middleware boundary');
+  assert.match(middlewareImport[1], /\basyncHandler\b/);
+  assert.match(middlewareImport[1], /\bcanManagePostedOpportunities\b/);
+  assert.match(middlewareImport[1], /\bisAuthenticated\b/);
+  assert.match(middlewareImport[1], /\brequireBody\b/);
+  assert.match(middlewareImport[1], /\bvalidateObjectId\b/);
   assert.match(
     opportunitiesRouteSource,
     /router\.get\(\s*'\/:id',\s*setPublicDetailCacheHeaders,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/,
@@ -4822,7 +4827,14 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   assert.match(source, /buildResearchGroupFilterString\(safeFilters\)/);
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
-  assert.match(source, /const idEquals = \(left: unknown, right: unknown\): boolean => \{/);
+  assert.match(
+    source,
+    /const idEquals\s*=\s*\(\s*left: unknown,\s*right: unknown\s*\)\s*:\s*boolean\s*=>/,
+  );
+  assert.match(source, /const leftId\s*=\s*normalizeResearchGroupObjectId\(left\)/);
+  assert.match(source, /const rightId\s*=\s*normalizeResearchGroupObjectId\(right\)/);
+  assert.match(source, /leftId\s*===\s*rightId/);
+  assert.match(source, /idEquals\(\s*row\.researchEntityId,\s*\(group as any\)\._id\s*\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(entityId/);
 });
@@ -7070,7 +7082,7 @@ test('public PI official profile routes reject credential-bearing URLs', () => {
   assert.match(source, /if \(!isPublicHttpUrl\(trimmed\)\) return false/);
   assert.match(
     source,
-    /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => publicHttpUrl\(url\),/,
+    /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => publicHttpUrl\(url\)\s*,?\s*\)/,
   );
   assert.match(
     source,
