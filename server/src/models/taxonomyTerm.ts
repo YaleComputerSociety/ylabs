@@ -27,7 +27,7 @@ export interface TaxonomyTermRecord {
   archived: boolean;
 }
 
-const MAX_TAXONOMY_ALIASES = 30;
+export const MAX_TAXONOMY_ALIASES = 30;
 
 export function normalizeTaxonomyLabel(value: string): string {
   return value.normalize('NFKC').trim().toLocaleLowerCase().replace(/\s+/g, ' ');

@@ -23,7 +23,7 @@ export interface OrgUnitRecord {
   archived: boolean;
 }
 
-const MAX_ORG_UNIT_ALIASES = 20;
+export const MAX_ORG_UNIT_ALIASES = 20;
 
 function hasBoundedUniqueAliases(values: readonly string[]): boolean {
   const normalized = values.map((value) => value.trim().toLocaleLowerCase());

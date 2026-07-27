@@ -506,7 +506,8 @@ Moderate validation does not prove reference integrity, backfill missing version
 
 Validator plans must be deterministic, dry-run reviewable, and limited to an explicit desired collection registry.
 The pure planner in [`server/src/scripts/canonicalMongoValidatorsCore.ts`](../server/src/scripts/canonicalMongoValidatorsCore.ts) does not connect to MongoDB or apply commands.
-A later guarded operator command must compare current collection options, require explicit confirmation before writes, and never run during application startup.
+The guarded operator command compares current collection options, requires a reviewed dry-run artifact plus environment-bound confirmation before writes, and never runs during application startup.
+Use the exact environment workflow and rollback guidance in the [`Canonical MongoDB Validator Runbook`](./canonical-mongodb-validator-runbook.md).
 
 ### Phase 1 evidence and planning schema foundation
 

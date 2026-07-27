@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   canonicalSchemaVersionBsonProperty,
   defineCanonicalSchemaVersion,
@@ -51,6 +52,12 @@ export interface CanonicalMongoValidatorPlanItem {
   action: CanonicalMongoValidatorPlanAction;
   reasons: CanonicalMongoValidatorPlanReason[];
   command?: Record<string, unknown>;
+}
+
+export interface CanonicalMongoValidatorRollbackItem {
+  collectionName: string;
+  reason: 'restore-previous-validation' | 'disable-created-collection-validator';
+  command: Record<string, unknown>;
 }
 
 const MONGO_COLLECTION_NAME_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
@@ -128,8 +135,14 @@ function stableValue(value: unknown): unknown {
   );
 }
 
-function valuesEqual(left: unknown, right: unknown): boolean {
+export function canonicalMongoValidatorValuesEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+}
+
+export function canonicalMongoValidatorFingerprint(value: unknown): string {
+  return createHash('sha256')
+    .update(JSON.stringify(stableValue(value)))
+    .digest('hex');
 }
 
 function indexCurrentCollections(
@@ -184,7 +197,7 @@ export function planCanonicalMongoValidators(
     }
 
     const reasons: CanonicalMongoValidatorPlanReason[] = [];
-    if (!valuesEqual(current.validator, desired.validator)) {
+    if (!canonicalMongoValidatorValuesEqual(current.validator, desired.validator)) {
       reasons.push('validator-drift');
     }
     if (current.validationLevel !== desired.validationLevel) {
@@ -213,5 +226,70 @@ export function planCanonicalMongoValidators(
         validationAction: desired.validationAction,
       },
     };
+  });
+}
+
+function previousValidationLevel(current: CurrentMongoCollectionValidation): string {
+  if (
+    current.validationLevel === 'strict' ||
+    current.validationLevel === 'moderate' ||
+    current.validationLevel === 'off'
+  ) {
+    return current.validationLevel;
+  }
+  return 'strict';
+}
+
+function previousValidationAction(current: CurrentMongoCollectionValidation): string {
+  return current.validationAction === 'warn' || current.validationAction === 'error'
+    ? current.validationAction
+    : 'error';
+}
+
+export function buildCanonicalMongoValidatorRollbackPlan(
+  plan: readonly CanonicalMongoValidatorPlanItem[],
+  currentCollections: readonly CurrentMongoCollectionValidation[],
+): CanonicalMongoValidatorRollbackItem[] {
+  const currentByName = new Map(
+    currentCollections.map((current) => [current.collectionName, current] as const),
+  );
+
+  return plan.flatMap((item): CanonicalMongoValidatorRollbackItem[] => {
+    if (item.action === 'noop') return [];
+
+    const current = currentByName.get(item.collectionName);
+    if (item.action === 'createCollection') {
+      return [
+        {
+          collectionName: item.collectionName,
+          reason: 'disable-created-collection-validator',
+          command: {
+            collMod: item.collectionName,
+            validator: {},
+            validationLevel: 'off',
+            validationAction: 'error',
+          },
+        },
+      ];
+    }
+
+    if (!current?.exists) {
+      throw new Error(
+        `Missing current validation state for collMod rollback: ${item.collectionName}`,
+      );
+    }
+
+    return [
+      {
+        collectionName: item.collectionName,
+        reason: 'restore-previous-validation',
+        command: {
+          collMod: item.collectionName,
+          validator: structuredClone(current.validator ?? {}),
+          validationLevel: previousValidationLevel(current),
+          validationAction: previousValidationAction(current),
+        },
+      },
+    ];
   });
 }
