@@ -90,7 +90,7 @@ const validProfileLinks = [
   {
     kind: 'ORCID',
     purpose: 'SCHOLARLY',
-    url: 'https://orcid.org/0000-0002-1825-0097',
+    url: 'https://orcid.org/9999-9999-9999-9994',
     verifiedAt,
     healthStatus: 'HEALTHY',
   },
@@ -191,7 +191,7 @@ describe('canonical identity and reference models', () => {
 
   it('accepts one verified profile link of every supported kind', () => {
     const person = validPerson({
-      identifiers: { orcid: '0000-0002-1825-0097' },
+      identifiers: { orcid: '9999-9999-9999-9994' },
       profileLinks: validProfileLinks,
     });
 
@@ -231,7 +231,7 @@ describe('canonical identity and reference models', () => {
     ['YALE_OFFICIAL', 'PRIMARY_IDENTITY', 'https://example.org/profile/person'],
     ['GOOGLE_SCHOLAR', 'SCHOLARLY', 'https://example.org/citations?user=abcdefghijkl'],
     ['GOOGLE_SCHOLAR', 'SCHOLARLY', 'http://scholar.google.com/citations?user=abcdefghijkl'],
-    ['ORCID', 'SCHOLARLY', 'https://orcid.org/0000-0002-1825-0098'],
+    ['ORCID', 'SCHOLARLY', 'https://orcid.org/9999-9999-9999-9995'],
   ])('rejects an invalid verified %s URL', (kind, purpose, url) => {
     const person = validPerson({
       profileLinks: [{ kind, purpose, url, verifiedAt }],
@@ -268,7 +268,7 @@ describe('canonical identity and reference models', () => {
 
   it('requires an ORCID profile URL to match the canonical identifier', () => {
     const person = validPerson({
-      identifiers: { orcid: '0000-0003-1419-2405' },
+      identifiers: { orcid: '1234-5678-9012-3451' },
       profileLinks: [validProfileLinks[4]],
     });
 
@@ -277,7 +277,7 @@ describe('canonical identity and reference models', () => {
 
   it('allows a valid ORCID identifier to remain private until a profile link is reviewed', () => {
     const person = validPerson({
-      identifiers: { orcid: '0000-0002-1825-0097' },
+      identifiers: { orcid: '9999-9999-9999-9994' },
     });
 
     expect(person.validateSync()).toBeUndefined();
@@ -288,7 +288,7 @@ describe('canonical identity and reference models', () => {
       validPerson({ displayName: 'x'.repeat(241) }).validateSync()?.errors.displayName,
     ).toBeTruthy();
     expect(
-      validPerson({ identifiers: { orcid: '0000-0002-1825-0098' } }).validateSync()?.errors[
+      validPerson({ identifiers: { orcid: '9999-9999-9999-9995' } }).validateSync()?.errors[
         'identifiers.orcid'
       ],
     ).toBeTruthy();
