@@ -505,7 +505,13 @@ async function runOptionalPathwaySync(
   deps: FacultyOpportunityServiceDeps,
 ): Promise<void> {
   if (!pathwayId) return;
-  if (!deps.syncPathway && process.env.PATHWAY_SEARCH_SYNC !== 'true') return;
+  if (
+    !deps.syncPathway &&
+    process.env.PATHWAY_SEARCH_SYNC !== 'true' &&
+    process.env.PATHWAY_SEARCH_BACKEND !== 'meili'
+  ) {
+    return;
+  }
   const sync = deps.syncPathway || syncPathwaySearchIndexDocument;
   await sync(pathwayId).catch((error) => {
     console.error('Faculty opportunity pathway sync failed:', sanitizeLogValue(error));

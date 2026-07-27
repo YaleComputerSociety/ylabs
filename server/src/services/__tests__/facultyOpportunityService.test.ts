@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import mongoose from 'mongoose';
+
+const mocks = vi.hoisted(() => ({
+  syncPathwaySearchIndexDocument: vi.fn(),
+}));
+
+vi.mock('../pathwaySearchIndexService', () => ({
+  syncPathwaySearchIndexDocument: mocks.syncPathwaySearchIndexDocument,
+}));
+
 import {
   archiveFacultyOpportunity,
   closeFacultyOpportunity,
@@ -219,6 +228,10 @@ describe('facultyOpportunityService validation and authorization', () => {
 
 describe('facultyOpportunityService lifecycle', () => {
   it('persists one private draft, keeps retries idempotent, and tolerates optional index failure', async () => {
+    const originalBackend = process.env.PATHWAY_SEARCH_BACKEND;
+    const originalSync = process.env.PATHWAY_SEARCH_SYNC;
+    process.env.PATHWAY_SEARCH_BACKEND = 'meili';
+    delete process.env.PATHWAY_SEARCH_SYNC;
     const pathwayModel: any = {
       create: vi.fn(async (value) => value),
       deleteOne: vi.fn(async () => ({})),
@@ -239,10 +252,10 @@ describe('facultyOpportunityService lifecycle', () => {
       findOne: vi.fn().mockReturnValueOnce(chain(null)).mockReturnValueOnce(chain(createdDoc)),
       create: vi.fn(async () => createdDoc),
     };
-    const syncPathway = vi.fn(async () => {
-      throw new Error('optional Meilisearch outage');
-    });
-    const deps = baseDeps({ opportunityModel, pathwayModel, syncPathway });
+    mocks.syncPathwaySearchIndexDocument.mockRejectedValueOnce(
+      new Error('optional Meilisearch outage'),
+    );
+    const deps = baseDeps({ opportunityModel, pathwayModel });
 
     const first = await createFacultyOpportunityDraft(
       'faculty1',
@@ -262,7 +275,11 @@ describe('facultyOpportunityService lifecycle', () => {
     expect(first.opportunity.workflowState).toBe('DRAFT');
     expect(pathwayModel.create).toHaveBeenCalledTimes(1);
     expect(opportunityModel.create).toHaveBeenCalledTimes(1);
-    expect(syncPathway).toHaveBeenCalledTimes(1);
+    expect(mocks.syncPathwaySearchIndexDocument).toHaveBeenCalledTimes(1);
+    if (originalBackend === undefined) delete process.env.PATHWAY_SEARCH_BACKEND;
+    else process.env.PATHWAY_SEARCH_BACKEND = originalBackend;
+    if (originalSync === undefined) delete process.env.PATHWAY_SEARCH_SYNC;
+    else process.env.PATHWAY_SEARCH_SYNC = originalSync;
   });
 
   it('submits with a revision CAS and activates the private linked pathway for review', async () => {

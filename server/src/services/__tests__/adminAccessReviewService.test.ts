@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   postedOpportunityFindOneAndUpdate: vi.fn(),
   postedOpportunityUpdateOne: vi.fn(),
   countDocuments: vi.fn(),
+  syncPathwaySearchIndexDocument: vi.fn(),
 }));
 
 vi.mock('../../models/researchEntity', () => ({
@@ -66,6 +67,10 @@ vi.mock('../../models/observation', () => ({
   Observation: {
     find: vi.fn(),
   },
+}));
+
+vi.mock('../pathwaySearchIndexService', () => ({
+  syncPathwaySearchIndexDocument: mocks.syncPathwaySearchIndexDocument,
 }));
 
 import {
@@ -271,6 +276,10 @@ describe('adminAccessReviewService', () => {
   });
 
   it('approves only a submitted faculty opportunity and its linked pathway', async () => {
+    const originalBackend = process.env.PATHWAY_SEARCH_BACKEND;
+    const originalSync = process.env.PATHWAY_SEARCH_SYNC;
+    process.env.PATHWAY_SEARCH_BACKEND = 'meili';
+    delete process.env.PATHWAY_SEARCH_SYNC;
     const id = '64f222222222222222222222';
     const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
     const facultyId = new mongoose.Types.ObjectId('64f444444444444444444444');
@@ -344,6 +353,11 @@ describe('adminAccessReviewService', () => {
       'review.status': 'unreviewed',
       updatedAt: pathwayUpdatedAt,
     });
+    expect(mocks.syncPathwaySearchIndexDocument).toHaveBeenCalledWith(pathwayId.toHexString());
+    if (originalBackend === undefined) delete process.env.PATHWAY_SEARCH_BACKEND;
+    else process.env.PATHWAY_SEARCH_BACKEND = originalBackend;
+    if (originalSync === undefined) delete process.env.PATHWAY_SEARCH_SYNC;
+    else process.env.PATHWAY_SEARCH_SYNC = originalSync;
   });
 
   it('does not let an administrator approve an unsubmitted faculty draft', async () => {

@@ -677,7 +677,10 @@ export async function updateAccessReviewRecordReview(input: {
         { runValidators: true },
       );
       if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway changed');
-      if (process.env.PATHWAY_SEARCH_SYNC === 'true') {
+      if (
+        process.env.PATHWAY_SEARCH_SYNC === 'true' ||
+        process.env.PATHWAY_SEARCH_BACKEND === 'meili'
+      ) {
         const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
         if (pathwayId) {
           await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
