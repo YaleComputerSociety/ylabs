@@ -53,11 +53,6 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 | `departmentRosterScraper.ts`             | Department faculty roster pages                                                                                                       |
 | `ysmAtoZScraper.ts`                      | Yale School of Medicine A-Z index                                                                                                     |
 | `yseCentersScraper.ts`                   | Yale School of Engineering centers                                                                                                    |
-| `arxivPreprintScraper.ts`                | arXiv preprints                                                                                                                       |
-| `openAlexPaperScraper.ts`                | OpenAlex paper metadata                                                                                                               |
-| `orcidWorksScraper.ts`                   | ORCID public works with identity-backed authorship                                                                                    |
-| `europePmcPaperScraper.ts`               | Europe PMC and PubMed ORCID-backed paper metadata                                                                                     |
-| `crossrefPaperScraper.ts`                | Crossref DOI metadata hydration                                                                                                       |
 | `departmentUndergradResearchScraper.ts`  | Department-level undergrad research opportunity/program pages                                                                         |
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists                                                                                                  |
 | `labMicrositeUndergradLLMExtractor.ts`   | LLM extraction of undergrad-access signals from lab microsites                                                                        |
@@ -69,3 +64,10 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 | `yaleResearchOfficialScraper.ts`         | Yale Research (provost/OVPR) official data                                                                                            |
 | `yaleCollegeFellowshipsOfficeScraper.ts` | Yale College Fellowships Office public catalog                                                                                        |
 | `yaleDirectoryScraper.ts`                | Faculty roster via Yalies API (live equivalent of the static bootstrap import)                                                        |
+
+## Deprecated: bibliographic paper pipeline
+
+The bibliographic ingestion scrapers (`arxivPreprintScraper.ts`, `openAlexPaperScraper.ts`, `orcidWorksScraper.ts`, `europePmcPaperScraper.ts` / `pubmed`, `crossrefPaperScraper.ts`) are deprecated and no longer registered in `registry.ts`, so they cannot run via the CLI, cron, or a sweep.
+The launch-trust gate no longer enforces paper-quality or research-activity checks.
+Source files, `paperAuthorshipPolicy.ts`, and the stored paper/scholarly collections are retained temporarily for rollback; verified Google Scholar and ORCID identity links stay on `Person`.
+Readers, storage, and remaining references are removed incrementally under issue #207 (Phase 3); see `docs/research-model-refactor.md`.
