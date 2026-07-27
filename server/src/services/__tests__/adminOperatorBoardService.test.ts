@@ -150,7 +150,7 @@ describe('adminOperatorBoardService', () => {
     });
     expect(deriveLaunchTrustGate()).toMatchObject({
       command:
-        'SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict',
+        'SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict',
     });
     expect(deriveLaunchAcquisitionGate()).toMatchObject({
       command:
