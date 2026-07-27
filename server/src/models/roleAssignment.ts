@@ -95,12 +95,6 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: String,
       enum: [...roleAssignmentStates],
       default: 'UNKNOWN',
-      validate: {
-        validator: function (this: { endedAt?: Date }, value: RoleAssignmentState) {
-          return value !== 'HISTORICAL' || this.endedAt !== undefined;
-        },
-        message: 'HISTORICAL role assignments require endedAt.',
-      },
     },
     startedAt: {
       type: Date,

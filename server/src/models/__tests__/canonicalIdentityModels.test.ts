@@ -319,7 +319,7 @@ describe('canonical identity and reference models', () => {
         endedAt: new Date('2026-07-03T00:00:00.000Z'),
       }).validateSync()?.errors.endedAt,
     ).toBeTruthy();
-    expect(validRoleAssignment({ state: 'HISTORICAL' }).validateSync()?.errors.state).toBeTruthy();
+    expect(validRoleAssignment({ state: 'HISTORICAL' }).validateSync()).toBeUndefined();
     expect(
       validRoleAssignment({
         evidenceClaimIds: [duplicateEvidenceId, duplicateEvidenceId],

@@ -89,6 +89,41 @@ export function assertInventoryEnvironmentMatchesDatabase(
 /** Refactor-relevant collections, keyed by physical name. */
 export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   {
+    collection: 'accounts',
+    model: 'Account',
+    group: 'canonical-domain',
+    phase: 1,
+    target: 'Account',
+  },
+  {
+    collection: 'people',
+    model: 'Person',
+    group: 'canonical-domain',
+    phase: 1,
+    target: 'Person',
+  },
+  {
+    collection: 'role_assignments',
+    model: 'RoleAssignment',
+    group: 'canonical-domain',
+    phase: 1,
+    target: 'RoleAssignment',
+  },
+  {
+    collection: 'org_units',
+    model: 'OrgUnit',
+    group: 'canonical-domain',
+    phase: 1,
+    target: 'OrgUnit',
+  },
+  {
+    collection: 'taxonomy_terms',
+    model: 'TaxonomyTerm',
+    group: 'canonical-domain',
+    phase: 1,
+    target: 'TaxonomyTerm',
+  },
+  {
     collection: 'users',
     model: 'User',
     group: 'dual-truth',

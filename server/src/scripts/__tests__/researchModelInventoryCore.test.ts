@@ -54,6 +54,30 @@ describe('INVENTORY_COLLECTIONS', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('classifies every phase 1 canonical identity collection', () => {
+    expect(
+      INVENTORY_COLLECTIONS.filter((spec) => spec.phase === 1).map(
+        ({ collection, model, group, target }) => ({ collection, model, group, target }),
+      ),
+    ).toEqual([
+      { collection: 'accounts', model: 'Account', group: 'canonical-domain', target: 'Account' },
+      { collection: 'people', model: 'Person', group: 'canonical-domain', target: 'Person' },
+      {
+        collection: 'role_assignments',
+        model: 'RoleAssignment',
+        group: 'canonical-domain',
+        target: 'RoleAssignment',
+      },
+      { collection: 'org_units', model: 'OrgUnit', group: 'canonical-domain', target: 'OrgUnit' },
+      {
+        collection: 'taxonomy_terms',
+        model: 'TaxonomyTerm',
+        group: 'canonical-domain',
+        target: 'TaxonomyTerm',
+      },
+    ]);
+  });
+
   it('marks every scholarly collection for phase 3 retirement', () => {
     const scholarly = INVENTORY_COLLECTIONS.filter((spec) => spec.group === 'scholarly-retire');
     expect(scholarly.length).toBeGreaterThan(0);
