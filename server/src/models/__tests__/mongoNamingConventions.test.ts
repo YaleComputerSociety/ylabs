@@ -7,6 +7,7 @@ import { AnalyticsEvent } from '../analytics';
 import { ContactRoute } from '../contactRoute';
 import { Department } from '../department';
 import { EntryPathway } from '../entryPathway';
+import { EvidenceClaim } from '../evidenceClaim';
 import { FacultyMember } from '../facultyMember';
 import { Fellowship } from '../fellowship';
 import { Grant } from '../grant';
@@ -21,9 +22,12 @@ import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
 import { ResearchGroupMember } from '../researchGroupMember';
 import { RoleAssignment } from '../roleAssignment';
+import { ResearchPlan } from '../researchPlan';
+import { ReviewDecision } from '../reviewDecision';
 import { ScrapeRun } from '../scrapeRun';
 import { ScrapeSnapshot } from '../scrapeSnapshot';
 import { Source } from '../source';
+import { SourceDocument } from '../sourceDocument';
 import { StudentApplication } from '../studentApplication';
 import { StudentEngagementEvent } from '../studentEngagementEvent';
 import { StudentOutreach } from '../studentOutreach';
@@ -40,6 +44,7 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [ContactRoute, 'contact_routes'],
   [Department, 'departments'],
   [EntryPathway, 'entry_pathways'],
+  [EvidenceClaim, 'evidence_claims'],
   [FacultyMember, 'faculty_members'],
   [Fellowship, 'fellowships'],
   [Grant, 'grants'],
@@ -54,9 +59,12 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [ResearchEntity, 'research_entities'],
   [ResearchGroupMember, 'research_entity_members'],
   [RoleAssignment, 'role_assignments'],
+  [ResearchPlan, 'research_plans'],
+  [ReviewDecision, 'review_decisions'],
   [ScrapeRun, 'scrape_runs'],
   [ScrapeSnapshot, 'scrape_snapshots'],
   [Source, 'sources'],
+  [SourceDocument, 'source_documents'],
   [StudentApplication, 'student_applications'],
   [StudentEngagementEvent, 'student_engagement_events'],
   [StudentOutreach, 'student_outreaches'],

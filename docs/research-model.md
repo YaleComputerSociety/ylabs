@@ -508,6 +508,26 @@ Validator plans must be deterministic, dry-run reviewable, and limited to an exp
 The pure planner in [`server/src/scripts/canonicalMongoValidatorsCore.ts`](../server/src/scripts/canonicalMongoValidatorsCore.ts) does not connect to MongoDB or apply commands.
 A later guarded operator command must compare current collection options, require explicit confirmation before writes, and never run during application startup.
 
+### Phase 1 evidence and planning schema foundation
+
+The versioned `ResearchPlan`, `SourceDocument`, `EvidenceClaim`, and `ReviewDecision` schemas establish storage contracts without adding runtime routes, scraper writers, materializers, Meilisearch documents, or migrations.
+The existing `Source` and `StudentEngagementEvent` models remain the canonical source registry and analytics event model.
+
+`ResearchPlan` is account-owned and private by default.
+Notes, checklists, and deadlines are excluded from normal queries, and each export category requires an explicit opt-in preference.
+
+`SourceDocument` stores a source-scoped normalized document key, a content hash, bounded metadata, and an optional protected snapshot pointer.
+It does not embed raw fetched content and it has no automatic TTL because retention decisions depend on source policy.
+
+`EvidenceClaim` accepts only predicates in the versioned registry in [`server/src/models/evidencePredicateRegistry.ts`](../server/src/models/evidencePredicateRegistry.ts).
+Claim values are bounded, excluded from normal queries, and `ADMIN_ONLY` unless a later reviewed workflow explicitly lowers sensitivity.
+
+`ReviewDecision` is an append-only audit record with a protected account reviewer.
+A later decision may point backward to one decision it supersedes, while the original decision remains unchanged.
+
+These collections may coexist empty with the current runtime.
+No current scraper or public read path should write or consume them until a later cutover phase adds reconciliation and explicit operational gates.
+
 Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Runtime paper activity now uses `research_scholarly_links` and `research_scholarly_attributions`; empty stats and paper-entity-link collections are not part of the launch copy set.
 
 The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including Beta seed, Pathway Meili relevance review, source blocker resolution, production scraper rollout, opportunity detail polish, data-quality operations, post-Beta legacy cleanup, and saved/advising workflow expansion.
