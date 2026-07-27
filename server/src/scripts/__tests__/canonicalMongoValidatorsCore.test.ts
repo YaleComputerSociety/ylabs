@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { defineCanonicalSchemaVersion } from '../../models/canonicalSchemaVersion';
 import {
   buildCanonicalCollectionValidator,
+  buildCanonicalMongoValidatorRollbackPlan,
+  canonicalMongoValidatorFingerprint,
   planCanonicalMongoValidators,
 } from '../canonicalMongoValidatorsCore';
 
@@ -219,5 +221,93 @@ describe('canonical MongoDB validators', () => {
         ],
       ),
     ).toThrow('Duplicate current collection validation state');
+  });
+
+  it('fingerprints equivalent validator objects independently of key order', () => {
+    expect(
+      canonicalMongoValidatorFingerprint({
+        validator: {
+          properties: {
+            displayName: { maxLength: 240, bsonType: 'string' },
+          },
+          required: ['schemaVersion', 'displayName'],
+        },
+      }),
+    ).toBe(
+      canonicalMongoValidatorFingerprint({
+        validator: {
+          required: ['schemaVersion', 'displayName'],
+          properties: {
+            displayName: { bsonType: 'string', maxLength: 240 },
+          },
+        },
+      }),
+    );
+  });
+
+  it('captures exact existing validation options for collMod rollback', () => {
+    const current = [
+      {
+        collectionName: 'people',
+        exists: true,
+        validator: { $jsonSchema: { bsonType: 'object', required: ['legacyId'] } },
+        validationLevel: 'strict',
+        validationAction: 'warn',
+      },
+    ];
+    const plan = planCanonicalMongoValidators([peopleValidator], current);
+
+    expect(buildCanonicalMongoValidatorRollbackPlan(plan, current)).toEqual([
+      {
+        collectionName: 'people',
+        reason: 'restore-previous-validation',
+        command: {
+          collMod: 'people',
+          validator: current[0].validator,
+          validationLevel: 'strict',
+          validationAction: 'warn',
+        },
+      },
+    ]);
+  });
+
+  it('uses safe MongoDB defaults when prior validation options are absent', () => {
+    const current = [
+      {
+        collectionName: 'people',
+        exists: true,
+      },
+    ];
+    const plan = planCanonicalMongoValidators([peopleValidator], current);
+
+    expect(buildCanonicalMongoValidatorRollbackPlan(plan, current)).toEqual([
+      {
+        collectionName: 'people',
+        reason: 'restore-previous-validation',
+        command: {
+          collMod: 'people',
+          validator: {},
+          validationLevel: 'strict',
+          validationAction: 'error',
+        },
+      },
+    ]);
+  });
+
+  it('disables a validator instead of dropping a newly created collection during rollback', () => {
+    const plan = planCanonicalMongoValidators([peopleValidator], []);
+
+    expect(buildCanonicalMongoValidatorRollbackPlan(plan, [])).toEqual([
+      {
+        collectionName: 'people',
+        reason: 'disable-created-collection-validator',
+        command: {
+          collMod: 'people',
+          validator: {},
+          validationLevel: 'off',
+          validationAction: 'error',
+        },
+      },
+    ]);
   });
 });

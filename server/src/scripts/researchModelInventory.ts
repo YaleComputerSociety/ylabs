@@ -18,6 +18,7 @@ import { MongoClient, ObjectId, type Db } from 'mongodb';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { databaseNameFromMongoUrl } from './operatorDatabaseEnvironment';
 import {
   INVENTORY_COLLECTIONS,
   REFERENCE_EDGES,
@@ -391,9 +392,7 @@ export async function runResearchModelInventory(
   mongoUrl: string,
   client: InventoryMongoClient = new MongoClient(mongoUrl),
 ): Promise<ReturnType<typeof buildResearchModelInventoryOutput>> {
-  const configuredDatabaseName = decodeURIComponent(
-    new URL(mongoUrl).pathname.slice(1).split('/')[0],
-  );
+  const configuredDatabaseName = databaseNameFromMongoUrl(mongoUrl);
   assertInventoryEnvironmentMatchesDatabase(args.environment, configuredDatabaseName);
 
   try {

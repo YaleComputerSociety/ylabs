@@ -48,7 +48,7 @@ export interface RoleAssignmentRecord {
   archived: boolean;
 }
 
-const MAX_EVIDENCE_CLAIMS_PER_ROLE = 100;
+export const MAX_EVIDENCE_CLAIMS_PER_ROLE = 100;
 
 function hasBoundedUniqueObjectIds(values: readonly mongoose.Types.ObjectId[]): boolean {
   return (

@@ -8,6 +8,10 @@
  * reference-integrity orphans. Keeping the shaping here means it can be unit
  * tested without a database, matching the other audit scripts in this folder.
  */
+import {
+  assertOperatorEnvironmentMatchesDatabase,
+  type OperatorDatabaseEnvironment,
+} from './operatorDatabaseEnvironment';
 
 export type InventoryGroup =
   | 'canonical-domain'
@@ -51,35 +55,15 @@ export interface ReferenceEdge {
   meaning: string;
 }
 
-export type InventoryEnvironment =
-  | 'development'
-  | 'beta'
-  | 'production-copy'
-  | 'production'
-  | 'test';
-
-const INVENTORY_DATABASE_NAMES: Record<
-  Exclude<InventoryEnvironment, 'test'>,
-  ReadonlySet<string>
-> = {
-  development: new Set(['development']),
-  beta: new Set(['beta']),
-  'production-copy': new Set(['productioncopy']),
-  production: new Set(['production']),
-};
+export type InventoryEnvironment = OperatorDatabaseEnvironment;
 
 export function assertInventoryEnvironmentMatchesDatabase(
   environment: InventoryEnvironment,
   databaseName: string,
 ): void {
-  const lowerDatabaseName = databaseName.trim().toLowerCase();
-  const normalizedDatabaseName = lowerDatabaseName.replace(/[-_]/g, '');
-  const matches =
-    environment === 'test'
-      ? lowerDatabaseName === 'test' || /[-_]test$/.test(lowerDatabaseName)
-      : INVENTORY_DATABASE_NAMES[environment].has(normalizedDatabaseName);
-
-  if (!matches) {
+  try {
+    assertOperatorEnvironmentMatchesDatabase(environment, databaseName);
+  } catch {
     throw new Error(
       `Inventory environment ${environment} does not match MongoDB database ${databaseName || '(missing)'}`,
     );
