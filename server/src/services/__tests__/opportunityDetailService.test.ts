@@ -59,7 +59,7 @@ describe('opportunityDetailService', () => {
     expect(calls).toEqual([]);
   });
 
-  it('queries only non-archived PostedOpportunity records and returns null when missing', async () => {
+  it('preserves legacy detail visibility while gating faculty submissions', async () => {
     const calls: any[] = [];
     const id = new Types.ObjectId().toString();
 
@@ -69,7 +69,17 @@ describe('opportunityDetailService', () => {
 
     expect(detail).toBeNull();
     expect(String(calls[0].filter._id)).toBe(id);
-    expect(calls[0].filter.archived).toBe(false);
+    expect(calls[0].filter.$or[0]).toEqual({
+      origin: { $ne: 'FACULTY_SUBMITTED' },
+      archived: false,
+    });
+    expect(calls[0].filter.$or[1]).toMatchObject({
+      origin: 'FACULTY_SUBMITTED',
+      archived: false,
+      status: { $in: ['OPEN', 'ROLLING'] },
+      'review.status': 'approved',
+    });
+    expect(calls[0].filter.$or[1].$or[2].deadline.$gte).toBeInstanceOf(Date);
   });
 
   it('requires public student visibility for the host research entity', async () => {
@@ -118,6 +128,7 @@ describe('opportunityDetailService', () => {
       entryPathwayId: pathwayId,
       researchEntityId: entityId,
       title: 'Spring RA role',
+      description: 'Work with hidden@example.edu on image analysis and research documentation.',
       term: 'Spring 2026',
       deadline: new Date('2026-02-01T00:00:00.000Z'),
       applicationUrl: 'https://apply.example.edu/role',
@@ -212,6 +223,9 @@ describe('opportunityDetailService', () => {
     });
     expect(detail?.evidence[0]).not.toHaveProperty('_id');
     expect(detail?.eligibility).toBe('Open to Yale undergraduates. Questions: [email redacted]');
+    expect(detail?.description).toBe(
+      'Work with [email redacted] on image analysis and research documentation.',
+    );
     expect(JSON.stringify(detail)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(detail)).not.toContain(pathwayId.toString());
     expect(JSON.stringify(detail)).not.toContain(entityId.toString());

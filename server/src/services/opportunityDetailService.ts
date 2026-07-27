@@ -6,8 +6,12 @@ import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { publicPostedOpportunityMongoMatch } from './studentAccessPublicationPolicy';
 
-export type OpportunityDetailProvenance = 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
+export type OpportunityDetailProvenance =
+  | 'FACULTY_SUBMITTED'
+  | 'LISTING_BRIDGED'
+  | 'SCRAPER_DERIVED';
 export type OpportunityDetailDeadlineState =
   | 'NO_DEADLINE'
   | 'UPCOMING'
@@ -57,6 +61,7 @@ export interface OpportunityDetailEvidence {
 
 export interface OpportunityDetail {
   title: string;
+  description?: string;
   term?: string;
   deadline?: Date;
   deadlineState: OpportunityDetailDeadlineState;
@@ -98,8 +103,8 @@ const compactStrings = (values: unknown[]): string[] =>
       values
         .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
         .flatMap((value) =>
-      Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
-    )
+          Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
+        )
         .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
         .map((value) => value.slice(0, MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH).trim()),
     ),
@@ -135,8 +140,8 @@ const publicHttpUrls = (values: unknown[]): string[] =>
       values
         .slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS)
         .flatMap((value) =>
-      Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
-    )
+          Array.isArray(value) ? value.slice(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS) : [value],
+        )
         .map(publicHttpUrl)
         .filter((value): value is string => Boolean(value)),
     ),
@@ -292,12 +297,16 @@ export async function getOpportunityDetail(
 
   const opportunity = await opportunityModel
     .findOne(
-      { _id: new Types.ObjectId(safeId), archived: false },
+      {
+        _id: new Types.ObjectId(safeId),
+        ...publicPostedOpportunityMongoMatch({ archived: false }, now),
+      },
       [
         'entryPathwayId',
         'researchEntityId',
         'listingId',
         'title',
+        'description',
         'term',
         'deadline',
         'applicationUrl',
@@ -308,6 +317,7 @@ export async function getOpportunityDetail(
         'eligibility',
         'sourceEvidenceIds',
         'sourceUrls',
+        'origin',
       ].join(' '),
     )
     .lean();
@@ -319,7 +329,11 @@ export async function getOpportunityDetail(
   const [pathway, researchEntityRaw] = await Promise.all([
     pathwayModel
       .findOne(
-        { _id: opportunity.entryPathwayId, archived: false },
+        {
+          _id: opportunity.entryPathwayId,
+          archived: false,
+          ...(opportunity.origin === 'FACULTY_SUBMITTED' ? { 'review.status': 'approved' } : {}),
+        },
         [
           'pathwayType',
           'status',
@@ -398,10 +412,13 @@ export async function getOpportunityDetail(
   );
   const provenance: OpportunityDetailProvenance = opportunity.listingId
     ? 'LISTING_BRIDGED'
-    : 'SCRAPER_DERIVED';
+    : opportunity.origin === 'FACULTY_SUBMITTED'
+      ? 'FACULTY_SUBMITTED'
+      : 'SCRAPER_DERIVED';
 
   return {
     title: publicText(opportunity.title) || '',
+    description: publicText(opportunity.description),
     term: publicText(opportunity.term),
     deadline: opportunity.deadline || undefined,
     deadlineState,
@@ -411,7 +428,11 @@ export async function getOpportunityDetail(
     status: opportunity.status,
     provenance,
     provenanceLabel:
-      provenance === 'LISTING_BRIDGED' ? 'YLabs listing bridge' : 'Scraper-derived posting',
+      provenance === 'LISTING_BRIDGED'
+        ? 'YLabs listing bridge'
+        : provenance === 'FACULTY_SUBMITTED'
+          ? 'Verified faculty submission'
+          : 'Scraper-derived posting',
     hoursPerWeek:
       typeof opportunity.hoursPerWeek === 'number' ? opportunity.hoursPerWeek : undefined,
     payRate: publicText(opportunity.payRate),

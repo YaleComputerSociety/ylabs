@@ -17,7 +17,7 @@ The server follows a layered architecture: **Routes -> Middleware -> Controllers
 4. Apply **auth middleware** (`isAuthenticated`, `isProfessor`, `isAdmin`, etc.) and **validation middleware** in the route.
 5. Add tests where risk justifies them.
 
-Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, `isConfirmed`, `canCreateListing`.
+Auth middleware (`server/src/middleware/auth.ts`): `isAuthenticated`, `isAdmin`, `isProfessor` (professor/faculty/admin), `isTrustworthy`, `isConfirmed`, `canCreateListing`, and the faculty-only `canManagePostedOpportunities`.
 
 Validation middleware: `validateObjectId(paramName?)`, `validateNetid(paramName?)`, `requireBody()`, `requireFields(fields[])`, `validatePagination()`, `validateSort(allowedFields[])`, `validateQuery(allowedParams[])`.
 

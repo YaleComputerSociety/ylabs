@@ -4,6 +4,27 @@ export const STUDENT_PATHWAY_MIN_CONFIDENCE = 0.7;
 export const STUDENT_PATHWAY_STATUSES = ['ACTIVE', 'RECURRING'] as const;
 export const STUDENT_PATHWAY_EVIDENCE_STRENGTHS = ['DIRECT', 'STRONG', 'MODERATE'] as const;
 
+const currentFacultyOpportunityMatch = (now: Date): Record<string, unknown> => ({
+  origin: 'FACULTY_SUBMITTED',
+  archived: false,
+  status: { $in: ['OPEN', 'ROLLING'] },
+  'review.status': 'approved',
+  $or: [{ deadline: { $exists: false } }, { deadline: null }, { deadline: { $gte: now } }],
+});
+
+export const publicPostedOpportunityMongoMatch = (
+  legacyMatch: Record<string, unknown>,
+  now = new Date(),
+): Record<string, unknown> => ({
+  $or: [
+    {
+      origin: { $ne: 'FACULTY_SUBMITTED' },
+      ...legacyMatch,
+    },
+    currentFacultyOpportunityMatch(now),
+  ],
+});
+
 const hasPublicUrl = (values: unknown): boolean =>
   Array.isArray(values) &&
   values.some((value) => {
@@ -14,14 +35,35 @@ const hasPublicUrl = (values: unknown): boolean =>
     }
   });
 
+const isFacultyOpportunityPathway = (pathway: Record<string, unknown>): boolean =>
+  typeof pathway.derivationKey === 'string' &&
+  pathway.derivationKey.startsWith('faculty-opportunity:');
+
 export const isStudentPublishablePathway = (pathway: Record<string, unknown>): boolean =>
+  (!isFacultyOpportunityPathway(pathway) ||
+    (pathway.review as Record<string, unknown> | undefined)?.status === 'approved') &&
   STUDENT_PATHWAY_STATUSES.includes(pathway.status as any) &&
   STUDENT_PATHWAY_EVIDENCE_STRENGTHS.includes(pathway.evidenceStrength as any) &&
   typeof pathway.confidence === 'number' &&
   pathway.confidence >= STUDENT_PATHWAY_MIN_CONFIDENCE &&
   hasPublicUrl(pathway.sourceUrls);
 
-export const studentPathwayMongoMatch = (): Record<string, unknown> => ({
+export const studentPathwayMongoMatch = (
+  options: {
+    includeApprovedFacultyOpportunities?: boolean;
+  } = {},
+): Record<string, unknown> => ({
+  ...(options.includeApprovedFacultyOpportunities
+    ? {
+        $or: [
+          { derivationKey: { $not: /^faculty-opportunity:/ } },
+          {
+            derivationKey: /^faculty-opportunity:/,
+            'review.status': 'approved',
+          },
+        ],
+      }
+    : { derivationKey: { $not: /^faculty-opportunity:/ } }),
   status: { $in: [...STUDENT_PATHWAY_STATUSES] },
   evidenceStrength: { $in: [...STUDENT_PATHWAY_EVIDENCE_STRENGTHS] },
   confidence: { $gte: STUDENT_PATHWAY_MIN_CONFIDENCE },

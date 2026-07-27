@@ -45,6 +45,7 @@ Defined in `server/src/middleware/auth.ts`.
 | `isTrustworthy` | confirmed admin, professor, or faculty. |
 | `isConfirmed` | `userConfirmed === true`. |
 | `canCreateListing` | professor, faculty, or admin plus confirmed user and verified profile. |
+| `canManagePostedOpportunities` | professor or faculty plus confirmed user and verified profile; admins moderate but cannot author. |
 
 Client route guards:
 
@@ -92,6 +93,9 @@ All limiters are skipped in CI, development, and test.
 | `apiLimiter` | All `/api` except `/api/cas` and public discovery mounts. | 200 per 15 minutes. |
 | `publicDiscoveryLimiter` | `/api/research` and `/api/opportunities`. | 300 per 15 minutes. |
 | `writeLimiter` | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes. |
+
+Faculty opportunity routes repeat ownership and conflict checks in the service layer.
+Only current, non-archived PI, co-PI, director, or co-director memberships tied to the authenticated user qualify, and identity conflicts fail closed.
 
 ## Error handling
 

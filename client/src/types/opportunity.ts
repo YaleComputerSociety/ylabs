@@ -46,10 +46,11 @@ export type OpportunityApplicationState =
   | 'ARCHIVED'
   | 'NO_APPLICATION_URL';
 
-export type OpportunityProvenance = 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
+export type OpportunityProvenance = 'FACULTY_SUBMITTED' | 'LISTING_BRIDGED' | 'SCRAPER_DERIVED';
 
 export interface OpportunityDetailPayload {
   title: string;
+  description?: string;
   term?: string;
   deadline?: string;
   deadlineState: OpportunityDeadlineState;

@@ -66,8 +66,11 @@ import {
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { studentPathwayMongoMatch } from './studentAccessPublicationPolicy';
-import { isApprovedPublicContactRoute } from './studentAccessPublicationPolicy';
+import {
+  isApprovedPublicContactRoute,
+  publicPostedOpportunityMongoMatch,
+  studentPathwayMongoMatch,
+} from './studentAccessPublicationPolicy';
 import {
   canonicalScholarlyWorkKey,
   evaluateResearchActivityIntegrity,
@@ -2142,6 +2145,7 @@ const publicAccessSignalForResearchDetail = (signal: any) => ({
 const publicPostedOpportunityForResearchDetail = (opportunity: any) => ({
   _id: opportunity._id,
   title: publicString(opportunity.title),
+  description: publicString(opportunity.description),
   term: publicString(opportunity.term),
   deadline: opportunity.deadline,
   applicationUrl: publicHttpUrl(opportunity.applicationUrl),
@@ -2541,7 +2545,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ priority: 1 })
       .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
       .lean(),
-    PostedOpportunity.find({ researchEntityId: (group as any)._id, archived: false })
+    PostedOpportunity.find({
+      researchEntityId: (group as any)._id,
+      ...publicPostedOpportunityMongoMatch({ archived: false }),
+    })
       .sort({ deadline: 1 })
       .limit(MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES)
       .lean(),

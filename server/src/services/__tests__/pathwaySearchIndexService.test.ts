@@ -89,27 +89,19 @@ describe('pathwaySearchIndexService', () => {
       publicContactRouteType: 'OFFICIAL_APPLICATION',
       publicContactPolicy: 'APPLICATION_ONLY',
     });
-    expect(doc.studentFacingLabel).toBe(
-      'Summer RA role with questions to [email redacted]',
-    );
+    expect(doc.studentFacingLabel).toBe('Summer RA role with questions to [email redacted]');
     expect(doc.explanation).toBe(
       'Work with the lab on imaging analysis. Call [phone redacted] first.',
     );
-    expect(doc.bestNextStep).toBe(
-      'Apply through the official form, not [email redacted].',
-    );
-    expect(doc.lastObservedAtTimestamp).toBe(
-      new Date('2026-02-03T04:05:06.000Z').getTime(),
-    );
+    expect(doc.bestNextStep).toBe('Apply through the official form, not [email redacted].');
+    expect(doc.lastObservedAtTimestamp).toBe(new Date('2026-02-03T04:05:06.000Z').getTime());
     expect(doc.postedOpportunityDeadlineTimestamp).toBe(
       new Date('2026-03-15T12:00:00.000Z').getTime(),
     );
     expect(doc.sourceUrls).toEqual(['https://example.yale.edu/pathway']);
     expect(doc.evidenceSnippets[0]).toContain('[email redacted]');
     expect(doc.evidenceSnippets[0]).toContain('[phone redacted]');
-    expect(doc.publicContactRoute?.label).toBe(
-      'Official form, not [email redacted]',
-    );
+    expect(doc.publicContactRoute?.label).toBe('Official form, not [email redacted]');
     expect(doc.publicContactRoute?.url).toBe('https://example.yale.edu/apply');
     expect(doc.publicContactRoute?.rationale).toContain('[phone redacted]');
   });
@@ -203,6 +195,70 @@ describe('pathwaySearchIndexService', () => {
     expect(JSON.stringify(result.hits[0])).not.toContain('javascript:');
   });
 
+  it('does not independently publish an opportunity-managed pathway to Meilisearch', () => {
+    const doc = buildPathwaySearchIndexDocument({
+      _id: 'faculty-opportunity-pathway',
+      derivationKey: 'faculty-opportunity:64f555555555555555555555',
+      pathwayType: 'POSTED_ROLE',
+      status: 'ACTIVE',
+      evidenceStrength: 'DIRECT',
+      confidence: 1,
+      sourceUrls: ['https://research.yale.edu/forms/apply'],
+      review: { status: 'approved' },
+      researchEntity: {
+        _id: 'faculty-opportunity-entity',
+        name: 'Verified Lab',
+        studentVisibilityTier: 'student_ready',
+      },
+    });
+
+    expect(doc.studentPublishable).toBe(false);
+  });
+
+  it('publishes an approved faculty pathway only with a current linked opportunity', () => {
+    const [doc] = buildPathwaySearchIndexDocuments([
+      {
+        _id: 'faculty-opportunity-pathway',
+        derivationKey: 'faculty-opportunity:64f555555555555555555555',
+        status: 'ACTIVE',
+        evidenceStrength: 'DIRECT',
+        confidence: 1,
+        sourceUrls: ['https://example.edu/apply'],
+        review: { status: 'approved' },
+        researchEntity: {
+          _id: 'faculty-opportunity-entity',
+          departments: [],
+          researchAreas: [],
+        },
+        activePostedOpportunity: {
+          _id: '64f666666666666666666666',
+          title: 'Research assistant',
+          status: 'OPEN',
+          origin: 'FACULTY_SUBMITTED',
+        },
+      },
+    ]);
+
+    expect(doc.studentPublishable).toBe(true);
+  });
+
+  it('does not publish a faculty pathway from a linked legacy opportunity', () => {
+    const doc = buildPathwaySearchIndexDocument({
+      derivationKey: 'faculty-opportunity:64f555555555555555555555',
+      status: 'ACTIVE',
+      evidenceStrength: 'DIRECT',
+      confidence: 1,
+      sourceUrls: ['https://example.edu/apply'],
+      review: { status: 'approved' },
+      activePostedOpportunity: {
+        origin: 'SCRAPER_DERIVED',
+        status: 'OPEN',
+      },
+    });
+
+    expect(doc.studentPublishable).toBe(false);
+  });
+
   it('indexes public entity visibility tiers and gates Meili searches to those tiers', async () => {
     const studentReadyDoc = buildPathwaySearchIndexDocument({
       _id: 'pathway-student-ready',
@@ -271,9 +327,7 @@ describe('pathwaySearchIndexService', () => {
         'postedOpportunityStatus',
       ]),
     );
-    expect(getPathwaySearchIndexSettings().filterableAttributes).not.toContain(
-      'mutated',
-    );
+    expect(getPathwaySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getPathwaySearchIndexSettings().sortableAttributes).toEqual(
       expect.arrayContaining([
         'confidence',
@@ -420,25 +474,17 @@ describe('pathwaySearchIndexService', () => {
         }),
       },
     ]);
-    expect(String(searches[0].params.filter)).toContain(
-      'pathwayType = "EXPLORATORY_CONTACT"',
-    );
+    expect(String(searches[0].params.filter)).toContain('pathwayType = "EXPLORATORY_CONTACT"');
     expect(String(searches[0].params.filter)).not.toContain('COURSE_CREDIT');
-    expect(String(searches[0].params.filter)).toContain(
-      'entityDepartments = "Computer Science"',
-    );
-    expect(String(searches[0].params.filter)).toContain(
-      'entityResearchAreas = "Machine Learning"',
-    );
+    expect(String(searches[0].params.filter)).toContain('entityDepartments = "Computer Science"');
+    expect(String(searches[0].params.filter)).toContain('entityResearchAreas = "Machine Learning"');
     expect(String(searches[0].params.filter)).toContain(
       'entityStudentVisibilityTier = "student_ready"',
     );
     expect(String(searches[0].params.filter)).not.toContain(
       'entityStudentVisibilityTier = "limited_but_safe"',
     );
-    expect(String(searches[0].params.filter)).toContain(
-      'hasActivePostedOpportunity = false',
-    );
+    expect(String(searches[0].params.filter)).toContain('hasActivePostedOpportunity = false');
     expect(result.hits[0]).toMatchObject({
       _id: 'pathway-1',
       bestNextStepCategory: 'plan-outreach',

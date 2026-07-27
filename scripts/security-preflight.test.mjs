@@ -2382,10 +2382,15 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
   assert.match(source, /SAFE_REGEX_OPTIONS\.has\(option\)/);
   assert.match(source, /return normalized \|\| 'i'/);
   assert.match(source, /escapeRegex\(input\.trim\(\)\.slice\(0, MAX_SEARCH_LEN\)\)/);
-  assert.match(
-    opportunitiesRouteSource,
-    /import \{ asyncHandler, validateObjectId \} from '\.\.\/middleware\/index'/,
+  const middlewareImport = opportunitiesRouteSource.match(
+    /import\s*\{([\s\S]*?)\}\s*from '\.\.\/middleware\/index'/,
   );
+  assert.ok(middlewareImport, 'opportunity routes must import the shared middleware boundary');
+  assert.match(middlewareImport[1], /\basyncHandler\b/);
+  assert.match(middlewareImport[1], /\bcanManagePostedOpportunities\b/);
+  assert.match(middlewareImport[1], /\bisAuthenticated\b/);
+  assert.match(middlewareImport[1], /\brequireBody\b/);
+  assert.match(middlewareImport[1], /\bvalidateObjectId\b/);
   assert.match(
     opportunitiesRouteSource,
     /router\.get\(\s*'\/:id',\s*setPublicDetailCacheHeaders,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/,

@@ -74,6 +74,9 @@ Implementation note: the separate practical-routes page has been retired because
 
 Implementation note: legacy listings now bridge into `PostedOpportunity` records. Public CTAs should prefer official application URLs, source review, saved planning, and public source routes over raw emails or yLabs-hosted outreach promises. Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
 
+Confirmed, profile-verified faculty can manage real opportunities from their account only for canonical research entities where they hold a current, non-conflicting lead membership.
+Their drafts and previews are private, submission requires complete bounded fields and a safe official HTTPS application route, and admin approval is required before any student-facing publication or search enrichment.
+
 ## Entity Page Questions
 
 Each research entity page should answer:
