@@ -1443,7 +1443,7 @@ export function deriveLaunchTrustGate(
   reviewExceptionArtifact?: LaunchReviewExceptionsArtifact,
 ) {
   const command = betaTargetCommand(
-    'yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --include-research-activity --include-paper-quality --strict',
+    'yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict',
   );
   const reviewExceptionDecisionValidation =
     launchReviewExceptionDecisionValidationForGate(reviewExceptionArtifact);

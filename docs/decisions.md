@@ -4,6 +4,13 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-07-26: Retire The Bibliographic Paper Pipeline
+
+The bibliographic ingestion sources (OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref) are deprecated: they are deregistered so they cannot run, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.
+Yale Research navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
+This is the reversible first increment of Phase 3 (#207): stored paper and scholarly collections are retained for rollback, and readers, storage, and downstream references are removed in later increments once replacement launch criteria are documented.
+Retiring the curated official-profile scholarly-activity surface is a separate one-way-door decision and is not included here.
+
 ## 2026-07-24: Refactor Around Research Navigation And Evidence
 
 The accepted target separates accounts, public people, role assignments, research entities, evidence claims, and private research plans while retaining bounded REST projections.
@@ -77,10 +84,10 @@ Malformed or oversized stored payloads should be removed instead of repeatedly r
 Beta repair and launch gates should distinguish automatic deterministic repair, human review, and blocked states.
 Operator Board recommendations should expose concrete next commands but should not imply production readiness without true production evidence.
 
-## 2026-05-25: Launch Trust Contract Includes Research Activity
+## 2026-05-25: Launch Trust Contract Included Research Activity
 
-Launch trust is not only visibility and source health.
-It also includes research activity, paper quality, source-backed access evidence, PI identity quality, and public visibility safety.
+Superseded in part by [Retire The Bibliographic Paper Pipeline](#2026-07-26-retire-the-bibliographic-paper-pipeline).
+At the time, launch trust included research activity, paper quality, source-backed access evidence, PI identity quality, and public visibility safety in addition to visibility and source health.
 
 ## 2026-05-14: Student-Facing Routes Should Not Use URL Versioning
 
