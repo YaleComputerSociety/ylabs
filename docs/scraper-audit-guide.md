@@ -449,13 +449,12 @@ Project impact:
 - Broadens "Explore Research" beyond labs.
 - Feeds later microsite, pathway, and admin review workflows.
 
-### Funding And Publication Enrichment
+### Funding Enrichment
 
 Sources:
 
 - `nih-reporter`
 - `nsf-award-search`
-- `openalex`
 
 Expected collections:
 
@@ -463,16 +462,12 @@ Expected collections:
 - `users`
 - `research_entities`
 - `grants`
-- `papers`
-- `paper_authors`
-- `research_scholarly_links`
-- `research_scholarly_attributions`
 
 Audit focus:
 
 - External IDs dedupe correctly.
 - PI/faculty matching is conservative.
-- Topics/funding/publication context enriches research entities without creating access claims.
+- Topics and funding context enrich research entities without creating access claims.
 
 Project impact:
 

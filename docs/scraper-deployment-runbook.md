@@ -182,7 +182,6 @@ Required before any production copy or write:
 - The operator can name the exact restore point and the person who can restore it.
 - Source readiness is recorded in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
 - The Beta trust-audit caveats in the roadmap are either fixed or explicitly accepted for this release.
-- Production storage posture is decided: provision enough Atlas storage for raw OpenAlex observations, or keep compact retention after saved reports.
 - Promotion lane is chosen and recorded: accepted Beta copy or guarded production delta.
 - Promotion dataset version is recorded and tied to accepted reports or source run IDs.
 - Privacy payload gate is accepted for public student routes.
@@ -398,10 +397,7 @@ Current admin UI limitation: the client does not expose `/admin/operator-board` 
 
 These are not automatic blockers if still accurate and accepted in the roadmap, but the operator must re-read them before production promotion:
 
-- OpenAlex raw observations were pruned in Beta after report capture to stay inside the 5GB Atlas tier.
-- `dept-faculty-roster` and `arxiv` had reviewed non-fatal materialization conflicts.
-- The final accepted `arxiv` run hit rate limits/timeouts and should not be rerun immediately without backoff.
-- Some papers have missing `year` values or duplicate DOI groups, while identifier duplicates and unsupported name-only faculty links are cleared.
+- `dept-faculty-roster` had reviewed non-fatal materialization conflicts.
 - Eight logged-in placeholder accounts remain for account repair, not deletion.
 - Many entities still lack public contact routes or pathways; this is sparse coverage, not broken referential integrity.
 - Local Meili may lack the semantic `default` embedder; production Meili must be checked independently.
@@ -459,8 +455,6 @@ Suggested starting cadence:
 | `yale-directory`                   | weekly                            | Broad directory paging; watch runtime.                                               |
 | `nih-reporter`                     | weekly or monthly                 | Enrichment only; conflicts should remain understood aggregate churn.                 |
 | `nsf-award-search`                 | weekly or monthly                 | Enrichment only.                                                                     |
-| `openalex`                         | weekly after WorkPlanner          | Keep name-only discovery opt-in and page-capped.                                     |
-| `arxiv`                            | weekly with `--since`             | Recent research activity only.                                                       |
 | `lab-microsite-undergrad-llm`      | weekly after WorkPlanner          | Paid/LLM source; use stale-only work planning before recurring cron.                 |
 | `student-decision-llm`             | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
 | `undergrad-fellowships-recipients` | monthly/manual                    | Requires accepted real CSV/manual data.                                              |
