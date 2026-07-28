@@ -272,9 +272,7 @@ function boundedPositiveInteger(value: string, flag: string, maximum: number): n
   return parsed;
 }
 
-export function parsePhase0HotPathQueryCostArgs(
-  argv: string[],
-): Phase0HotPathQueryCostCliOptions {
+export function parsePhase0HotPathQueryCostArgs(argv: string[]): Phase0HotPathQueryCostCliOptions {
   let environment: Phase0SummaryOnlyEnvironment | undefined;
   let output: string | undefined;
   let maxTimeMS = DEFAULT_DIAGNOSTIC_TIME_MS;
@@ -343,13 +341,13 @@ function canonicalize(value: unknown): unknown {
 }
 
 function fingerprint(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex');
 }
 
 function finiteCount(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? Math.floor(value)
-    : 0;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
 }
 
 function walk(value: unknown, visit: (record: Record<string, unknown>) => void): void {
@@ -486,9 +484,10 @@ export function summarizePhase0HotPathExplain(explain: Document): Phase0HotPathP
     if (Array.isArray(record.rejectedPlans)) rejectedPlansRaw.push(...record.rejectedPlans);
   });
   const rejectedPlans = rejectedPlansRaw.map(planParts);
-  const blockingSort = parts.stages.some((stage) => stage === 'SORT' || stage === 'SORT_KEY_GENERATOR');
-  const collectionScan =
-    parts.stages.includes('COLLSCAN') || collectionScanCount > 0;
+  const blockingSort = parts.stages.some(
+    (stage) => stage === 'SORT' || stage === 'SORT_KEY_GENERATOR',
+  );
+  const collectionScan = parts.stages.includes('COLLSCAN') || collectionScanCount > 0;
 
   return {
     nReturned,
@@ -535,8 +534,7 @@ export function summarizePhase0HotPathIndexDefinition(
   definition: Document,
 ): Phase0HotPathIndexDefinition {
   const partial =
-    definition.partialFilterExpression &&
-    typeof definition.partialFilterExpression === 'object'
+    definition.partialFilterExpression && typeof definition.partialFilterExpression === 'object'
       ? (definition.partialFilterExpression as Record<string, unknown>)
       : {};
   return {
@@ -633,10 +631,7 @@ export function safePhase0HotPathErrorCode(error: unknown): string {
     error && typeof error === 'object' && typeof (error as { name?: unknown }).name === 'string'
       ? (error as { name: string }).name
       : 'Error';
-  const code =
-    error && typeof error === 'object'
-      ? (error as { code?: unknown }).code
-      : undefined;
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
   return typeof code === 'number' || typeof code === 'string'
     ? `${name}:${String(code).slice(0, 40)}`
     : name.slice(0, 80);

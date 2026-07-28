@@ -87,11 +87,7 @@ function publicOpportunityFilter(now: Date): Document {
         archived: false,
         status: { $in: ['OPEN', 'ROLLING'] },
         'review.status': 'approved',
-        $or: [
-          { deadline: { $exists: false } },
-          { deadline: null },
-          { deadline: { $gte: now } },
-        ],
+        $or: [{ deadline: { $exists: false } }, { deadline: null }, { deadline: { $gte: now } }],
       },
     ],
   };
@@ -273,10 +269,7 @@ function accessReviewPipeline(input: {
                 input: inputName,
                 as: 'record',
                 cond: {
-                  $in: [
-                    { $ifNull: ['$$record.status', 'unreviewed'] },
-                    ['unreviewed', null],
-                  ],
+                  $in: [{ $ifNull: ['$$record.status', 'unreviewed'] }, ['unreviewed', null]],
                 },
               },
             },
@@ -295,9 +288,7 @@ function accessReviewPipeline(input: {
         },
       },
     },
-    ...(input.hasUnreviewed === true
-        ? [{ $match: { totalUnreviewed: { $gt: 0 } } }]
-        : []),
+    ...(input.hasUnreviewed === true ? [{ $match: { totalUnreviewed: { $gt: 0 } } }] : []),
     {
       $sort:
         input.sort === 'updated'

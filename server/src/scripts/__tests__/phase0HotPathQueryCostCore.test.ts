@@ -77,10 +77,7 @@ describe('Phase 0 hot-path query-cost core', () => {
     });
 
     expect(() =>
-      parsePhase0HotPathQueryCostArgs([
-        '--environment=production',
-        '--output=/tmp/forbidden.json',
-      ]),
+      parsePhase0HotPathQueryCostArgs(['--environment=production', '--output=/tmp/forbidden.json']),
     ).toThrow(/development, beta, or production-copy/);
     expect(() =>
       parsePhase0HotPathQueryCostArgs([

@@ -415,5 +415,5 @@ The complete protected object versions and recovery procedures remain inside the
 
 ## Exit condition
 
-Phase 0 exits on a reviewed inventory, an ownership map of which phase owns each collection and field, and a rollback plan.
+Phase 0 exits on reviewed Development, Beta, and ProductionCopy inventory, search-baseline, and MongoDB query-cost evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
 The collection spec in `researchModelInventoryCore.ts` is the machine-readable form of that ownership map, and should be extended whenever the report surfaces an unclassified collection.

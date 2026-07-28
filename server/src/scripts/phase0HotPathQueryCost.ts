@@ -233,11 +233,14 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
       {
         $set: {
           _fanout: {
-            $add: ['_entry_pathways', '_access_signals', '_contact_routes', '_posted_opportunities'].map(
-              (field) => ({
-                $ifNull: [{ $arrayElemAt: [`$${field}.count`, 0] }, 0],
-              }),
-            ),
+            $add: [
+              '_entry_pathways',
+              '_access_signals',
+              '_contact_routes',
+              '_posted_opportunities',
+            ].map((field) => ({
+              $ifNull: [{ $arrayElemAt: [`$${field}.count`, 0] }, 0],
+            })),
           },
         },
       },
@@ -368,7 +371,9 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
     'posted_opportunities',
     'ordinary-opportunity',
     [
-      { $match: { archived: false, entryPathwayId: { $ne: null }, researchEntityId: { $ne: null } } },
+      {
+        $match: { archived: false, entryPathwayId: { $ne: null }, researchEntityId: { $ne: null } },
+      },
       { $sort: { updatedAt: -1, _id: 1 } },
       { $limit: 1 },
       {
@@ -392,10 +397,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
                   {
                     $slice: [
                       {
-                        $ifNull: [
-                          { $arrayElemAt: ['$_pathway.sourceEvidenceIds', 0] },
-                          [],
-                        ],
+                        $ifNull: [{ $arrayElemAt: ['$_pathway.sourceEvidenceIds', 0] }, []],
                       },
                       50,
                     ],
@@ -415,7 +417,9 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
     'posted_opportunities',
     'high-evidence-opportunity',
     [
-      { $match: { archived: false, entryPathwayId: { $ne: null }, researchEntityId: { $ne: null } } },
+      {
+        $match: { archived: false, entryPathwayId: { $ne: null }, researchEntityId: { $ne: null } },
+      },
       {
         $lookup: {
           from: 'entry_pathways',
@@ -432,10 +436,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
               {
                 $slice: [
                   {
-                    $ifNull: [
-                      { $arrayElemAt: ['$_pathway.sourceEvidenceIds', 0] },
-                      [],
-                    ],
+                    $ifNull: [{ $arrayElemAt: ['$_pathway.sourceEvidenceIds', 0] }, []],
                   },
                   50,
                 ],
@@ -656,7 +657,8 @@ function assertPrivateArtifactParent(output: string): void {
       : parent === projectTemp || parent.startsWith(`${projectTemp}${path.sep}`)
         ? projectTemp
         : undefined;
-  if (!approvedRoot) throw new Error('--output parent is outside the approved temporary directory.');
+  if (!approvedRoot)
+    throw new Error('--output parent is outside the approved temporary directory.');
 
   if (!fs.existsSync(approvedRoot)) fs.mkdirSync(approvedRoot, { mode: 0o700 });
   const rootStat = fs.lstatSync(approvedRoot);
