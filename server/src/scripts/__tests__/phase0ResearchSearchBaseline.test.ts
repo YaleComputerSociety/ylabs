@@ -62,4 +62,21 @@ describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
       /EEXIST|symbolic link/i,
     );
   });
+
+  it('refuses a symlink parent before creating descendants through it', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-search-parent-'));
+    const outside = fs.mkdtempSync(path.join(process.cwd(), 'phase0-search-outside-'));
+    const linkedParent = path.join(directory, 'linked');
+    const output = path.join(linkedParent, 'new', 'baseline.json');
+    fs.symlinkSync(outside, linkedParent);
+
+    try {
+      expect(() => writePhase0ResearchSearchBaseline(fixtureReport(), output)).toThrow(
+        /real directories/,
+      );
+      expect(fs.existsSync(path.join(outside, 'new'))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true });
+    }
+  });
 });

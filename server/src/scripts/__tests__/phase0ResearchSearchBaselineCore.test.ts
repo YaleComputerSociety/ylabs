@@ -112,7 +112,28 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
         environment: 'development',
         host: 'https://search.example.test',
       }),
-    ).toThrow(/unprefixed Development index/);
+    ).toThrow(/requires a local Meilisearch host/);
+    expect(() =>
+      assertPhase0ResearchSearchMeiliTarget({
+        environment: 'development',
+        host: 'https://search.example.test',
+        indexPrefix: 'development',
+      }),
+    ).toThrow(/requires a local Meilisearch host/);
+    expect(() =>
+      assertPhase0ResearchSearchMeiliTarget({
+        environment: 'beta',
+        host: 'http://localhost:7700',
+        indexPrefix: 'beta',
+      }),
+    ).toThrow(/requires a remote Meilisearch host/);
+    expect(() =>
+      assertPhase0ResearchSearchMeiliTarget({
+        environment: 'production-copy',
+        host: 'http://localhost:7700',
+        indexPrefix: 'production-copy-july',
+      }),
+    ).toThrow(/requires a remote Meilisearch host/);
     expect(() =>
       assertPhase0ResearchSearchMeiliTarget({
         environment: 'production-copy',

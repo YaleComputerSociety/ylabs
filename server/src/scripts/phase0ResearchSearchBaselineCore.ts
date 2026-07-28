@@ -292,6 +292,9 @@ export function assertPhase0ResearchSearchMeiliTarget(input: {
   }
 
   if (input.environment === 'development') {
+    if (targetKind !== 'local') {
+      throw new Error('Development search evidence requires a local Meilisearch host.');
+    }
     if (prefix === '' && targetKind !== 'local') {
       throw new Error(
         'An unprefixed Development index is allowed only on a local Meilisearch host.',
@@ -301,13 +304,21 @@ export function assertPhase0ResearchSearchMeiliTarget(input: {
       throw new Error('Development requires an unprefixed local index or a development prefix.');
     }
   } else if (input.environment === 'beta') {
+    if (targetKind !== 'remote') {
+      throw new Error('Beta search evidence requires a remote Meilisearch host.');
+    }
     if (lowerPrefix !== 'beta') {
       throw new Error('Beta search evidence requires MEILISEARCH_INDEX_PREFIX=beta.');
     }
-  } else if (!PRODUCTION_COPY_PREFIX_RE.test(prefix)) {
-    throw new Error(
-      'ProductionCopy search evidence requires a dedicated production-copy Meilisearch prefix.',
-    );
+  } else {
+    if (targetKind !== 'remote') {
+      throw new Error('ProductionCopy search evidence requires a remote Meilisearch host.');
+    }
+    if (!PRODUCTION_COPY_PREFIX_RE.test(prefix)) {
+      throw new Error(
+        'ProductionCopy search evidence requires a dedicated production-copy Meilisearch prefix.',
+      );
+    }
   }
 
   return {
