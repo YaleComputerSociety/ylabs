@@ -129,6 +129,7 @@ export interface Phase0HotPathQueryCostReport {
     readPreference: 'secondaryPreferred';
     maxTimeMS: number;
     commentPrefix: 'ylabs-phase0-hotpath';
+    amplificationThreshold: 100;
   };
   fixtures: {
     browseEntityCount: number;
@@ -522,6 +523,7 @@ export function buildPhase0HotPathQueryCostReport(input: {
       readPreference: 'secondaryPreferred',
       maxTimeMS: input.maxTimeMS,
       commentPrefix: 'ylabs-phase0-hotpath',
+      amplificationThreshold: DEFAULT_AMPLIFICATION_THRESHOLD,
     },
     fixtures: {
       browseEntityCount: input.fixtures.browseEntityIds.length,

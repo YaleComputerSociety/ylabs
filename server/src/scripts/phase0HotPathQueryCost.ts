@@ -235,7 +235,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
             { $limit: 1 },
           ],
           nearLimit: [
-            { $match: { _saveCount: { $gte: 80 } } },
+            { $match: { _saveCount: { $gte: 1 } } },
             { $sort: { _saveCount: -1, _id: 1 } },
             { $limit: 1 },
           ],

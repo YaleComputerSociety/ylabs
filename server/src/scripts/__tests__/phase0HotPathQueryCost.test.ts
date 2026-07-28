@@ -18,6 +18,7 @@ function fixtureReport(): Phase0HotPathQueryCostReport {
       readPreference: 'secondaryPreferred',
       maxTimeMS: 5000,
       commentPrefix: 'ylabs-phase0-hotpath',
+      amplificationThreshold: 100,
     },
     fixtures: {
       browseEntityCount: 0,
@@ -71,5 +72,22 @@ describe('Phase 0 hot-path query-cost artifact writer', () => {
     expect(() => writePhase0HotPathQueryCostReport(fixtureReport(), output)).toThrow(
       /EEXIST|symbolic link/i,
     );
+  });
+
+  it('refuses a symlink parent before creating descendants through it', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-query-cost-parent-'));
+    const outside = fs.mkdtempSync(path.join(process.cwd(), 'phase0-query-cost-outside-'));
+    const linkedParent = path.join(directory, 'linked');
+    const output = path.join(linkedParent, 'new', 'query-cost.json');
+    fs.symlinkSync(outside, linkedParent);
+
+    try {
+      expect(() => writePhase0HotPathQueryCostReport(fixtureReport(), output)).toThrow(
+        /real directories/,
+      );
+      expect(fs.existsSync(path.join(outside, 'new'))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true });
+    }
   });
 });

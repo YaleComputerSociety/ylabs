@@ -3,8 +3,8 @@
 Status: tooling in place, production measurement pending.
 
 Phase 0 of [`research-model-refactor.md`](./research-model-refactor.md) resolves integration state and measures production before any target collection is written or any legacy storage is dropped.
-This runbook covers the inventory tool, how to read its output, and the export and rollback steps that must exist before later phases run destructive cleanup.
-The tooling PR does not complete Phase 0: reviewed Beta and production-copy inventory evidence, plus verified rollback evidence, remain operational exit work.
+This runbook covers the inventory, search-baseline, and MongoDB query-cost tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
+The tooling PR does not complete Phase 0: reviewed Beta and ProductionCopy inventory, search-baseline, and query-cost evidence, plus verified rollback evidence, remain operational exit work.
 
 ## Inventory tool
 
@@ -310,6 +310,70 @@ Compare estimated totals and ordered result fingerprints per case.
 Treat any degraded sample, unstable ordered result set, unexpected count change, or ranking change as review-required evidence rather than silently accepting it.
 `--strict` writes the artifact and then exits nonzero when a degraded or unstable sample requires review.
 Latency is diagnostic only unless the environments use comparable network and compute conditions.
+
+## Private MongoDB hot-path query-cost evidence
+
+The query-cost audit measures deployed MongoDB indexes and redacted `executionStats` for every representative query shape in the [Phase 0 hot-path audit](./research-model-refactor-phase0-hot-paths.md).
+It covers Research browse and detail, opportunity detail, account planning, and admin access review.
+It does not call HTTP routes, execute application writes, retain fixture identifiers, or replace the separate Meilisearch baseline.
+
+The runner uses a native MongoDB client with `secondaryPreferred` read preference, disables retryable writes, limits the pool to two connections, applies a `maxTimeMS` ceiling to every fixture and diagnostic query, and adds a `ylabs-phase0-hotpath:*` query comment.
+It rejects primary Production before connecting by requiring `development`, `beta`, or `production-copy` and verifies the connected database name again after connecting.
+Beta and ProductionCopy runs are accepted only through the hardened external inventory-profile contract documented above.
+The profile launcher accepts no arbitrary child command and fixes the per-query ceiling at 5 seconds.
+
+The private artifact contains credential-free index definitions, index fingerprints, fixture availability classes, and aggregate plan statistics.
+It retains plan stages, rejected-plan stages, index names, returned rows, elapsed time, keys and documents examined, amplification ratios, blocking sorts, disk use, spills, and lookup subplan summaries.
+It never retains IDs, names, slugs, netids, notes, contact details, evidence text, raw filters, raw pipelines, or raw explain output.
+Account fixtures are aggregate-selected as zero-save, bounded typical-save, and highest-observed-save representatives, with the highest observed row serving as the nearest available near-limit shape.
+Every output must be a new `.json` path under the system temporary directory.
+The writer uses mode `0600`, refuses symlink outputs, and refuses overwrite.
+
+Run Development from a clean Beta worktree with an explicitly injected Development database URL:
+
+```bash
+umask 077
+
+export YLABS_SKIP_LOCAL_DOTENV=true
+export MONGODBURL
+
+yarn model-refactor:query-cost \
+  --environment=development \
+  --max-time-ms=5000 \
+  --strict \
+  --output=/tmp/ylabs-phase0-query-cost-development.json
+```
+
+Run Beta with the same external mode-`0600` profile used by the inventory:
+
+```bash
+umask 077
+
+yarn model-refactor:query-cost:beta \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-phase0-query-cost-beta.json
+```
+
+Run ProductionCopy only after the approved restore is available and its recovery evidence has been validated:
+
+```bash
+umask 077
+
+yarn model-refactor:query-cost:production-copy \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-phase0-query-cost-production-copy.json
+```
+
+Unset `MONGODBURL` and `YLABS_SKIP_LOCAL_DOTENV` after the Development run.
+Do not attach any generated query-cost artifact to an issue or pull request.
+Preserve it only in the approved access-controlled evidence location alongside the matching inventory, source commit, and recovery manifest.
+
+Review every `collection-scan`, `blocking-sort`, `disk-spill`, `keys-amplification`, `documents-amplification`, measurement error, missing index collection, and unavailable fixture before Phase 0 closes.
+The default amplification threshold is 100 keys or documents examined per returned row.
+A zero-row plan is also flagged when it examines more than 100 keys or documents.
+`--strict` writes the artifact first and then exits nonzero whenever any finding, missing fixture, measurement error, index-collection gap, or uncovered query label requires review.
+An expected collection scan or blocking sort still needs a recorded owner and disposition instead of being silently accepted.
+Compare the same query label and index fingerprint across Development, Beta, and ProductionCopy, and investigate plan-stage or amplification drift before later model phases redirect readers.
 
 ## Export and rollback prerequisites
 
