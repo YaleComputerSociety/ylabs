@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
-import { getMeiliIndex } from '../utils/meiliClient';
+import { getMeiliClient, getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -36,28 +36,293 @@ if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
   dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 }
 
+const protectedSearchProfileSpecs = {
+  beta: {
+    name: 'beta-inventory',
+    inventoryFile: 'beta-inventory.env',
+    searchFile: 'beta-search.env',
+    databaseName: 'Beta',
+    indexPrefix: 'beta',
+  },
+  'production-copy': {
+    name: 'production-copy-inventory',
+    inventoryFile: 'production-copy-inventory.env',
+    searchFile: 'production-copy-search.env',
+    databaseName: 'ProductionCopy',
+    indexPrefix: /^(?:production[-_]?copy|prod[-_]?copy)(?:[-_][a-z0-9-]+)?$/i,
+  },
+} as const;
+const protectedProfilePlaceholderPattern =
+  /[<>]|\b(?:change[-_ ]?me|placeholder|replace[-_ ]?me|todo)\b|your[-_ ]|example\.(?:com|net|org)|example\.mongodb\.net/i;
+const indexMutationTaskTypes = [
+  'documentAdditionOrUpdate',
+  'documentEdition',
+  'documentDeletion',
+  'settingsUpdate',
+  'indexCreation',
+  'indexDeletion',
+  'indexUpdate',
+  'indexSwap',
+] as const;
+
+interface SearchBaselineTaskBoundary {
+  latestTaskUid: number | null;
+  activeTaskCount: number;
+  watermarkChangedDuringBoundary: boolean;
+}
+
+interface SearchBaselineTaskClient {
+  tasks: {
+    getTasks: (query: Record<string, unknown>) => Promise<{
+      results: Array<{ uid: number }>;
+      total: number;
+    }>;
+  };
+}
+
+export async function captureSearchBaselineTaskBoundary(
+  client: SearchBaselineTaskClient,
+  indexName: string,
+): Promise<SearchBaselineTaskBoundary> {
+  const baseQuery = {
+    indexUids: [indexName],
+    types: [...indexMutationTaskTypes],
+  };
+  const latestBeforeActiveCheck = await client.tasks.getTasks({ ...baseQuery, limit: 1 });
+  const active = await client.tasks.getTasks({
+    ...baseQuery,
+    statuses: ['enqueued', 'processing'],
+    limit: 1,
+  });
+  const latestAfterActiveCheck = await client.tasks.getTasks({ ...baseQuery, limit: 1 });
+  const latestBeforeTaskUid = latestBeforeActiveCheck.results[0]?.uid ?? null;
+  const latestTaskUid = latestAfterActiveCheck.results[0]?.uid ?? null;
+  if (
+    (latestBeforeTaskUid !== null && !Number.isSafeInteger(latestBeforeTaskUid)) ||
+    (latestTaskUid !== null && !Number.isSafeInteger(latestTaskUid)) ||
+    !Number.isSafeInteger(active.total) ||
+    active.total < 0
+  ) {
+    throw new Error('Meilisearch returned an invalid index task boundary.');
+  }
+  return {
+    latestTaskUid,
+    activeTaskCount: active.total,
+    watermarkChangedDuringBoundary: latestBeforeTaskUid !== latestTaskUid,
+  };
+}
+
+export function searchBaselineTaskActivityDetected(
+  initial: SearchBaselineTaskBoundary,
+  final: SearchBaselineTaskBoundary,
+): boolean {
+  return (
+    initial.activeTaskCount > 0 ||
+    final.activeTaskCount > 0 ||
+    initial.watermarkChangedDuringBoundary ||
+    final.watermarkChangedDuringBoundary ||
+    initial.latestTaskUid !== final.latestTaskUid
+  );
+}
+
+export function assertHardenedSearchBaselineProfile(environment: string): void {
+  if (environment === 'development') return;
+  const expected =
+    protectedSearchProfileSpecs[environment as keyof typeof protectedSearchProfileSpecs];
+  const profileName = process.env.YLABS_INVENTORY_PROFILE_NAME;
+  const inventoryPathValue = process.env.YLABS_INVENTORY_PROFILE_PATH;
+  const searchPathValue = process.env.YLABS_SEARCH_BASELINE_PROFILE_PATH;
+  if (
+    !expected ||
+    process.env.YLABS_SEARCH_BASELINE_PROFILE_ACTIVE !== 'true' ||
+    profileName !== expected.name ||
+    !inventoryPathValue ||
+    !searchPathValue ||
+    !path.isAbsolute(inventoryPathValue) ||
+    !path.isAbsolute(searchPathValue)
+  ) {
+    throw new Error(
+      'Beta and ProductionCopy search baselines must run through hardened external profiles.',
+    );
+  }
+
+  const inventoryPath = path.resolve(inventoryPathValue);
+  const searchPath = path.resolve(searchPathValue);
+  const profileDirectory = path.dirname(inventoryPath);
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const relativeToRepo = path.relative(repoRoot, profileDirectory);
+  if (
+    relativeToRepo === '' ||
+    (!relativeToRepo.startsWith(`..${path.sep}`) &&
+      relativeToRepo !== '..' &&
+      !path.isAbsolute(relativeToRepo))
+  ) {
+    throw new Error('Protected search baseline profiles must be outside the repository.');
+  }
+  if (
+    path.basename(inventoryPath) !== expected.inventoryFile ||
+    path.basename(searchPath) !== expected.searchFile ||
+    path.dirname(searchPath) !== profileDirectory ||
+    fs.realpathSync.native(profileDirectory) !== profileDirectory ||
+    fs.realpathSync.native(inventoryPath) !== inventoryPath ||
+    fs.realpathSync.native(searchPath) !== searchPath
+  ) {
+    throw new Error('Protected search baseline profile paths are invalid or contain symlinks.');
+  }
+
+  const directoryStat = fs.lstatSync(profileDirectory);
+  const inventoryStat = fs.lstatSync(inventoryPath);
+  const searchStat = fs.lstatSync(searchPath);
+  if (!directoryStat.isDirectory() || (directoryStat.mode & 0o077) !== 0) {
+    throw new Error('The protected search baseline profile directory must be private.');
+  }
+  if (
+    !inventoryStat.isFile() ||
+    !searchStat.isFile() ||
+    (inventoryStat.mode & 0o777) !== 0o600 ||
+    (searchStat.mode & 0o777) !== 0o600
+  ) {
+    throw new Error('Protected search baseline profiles must be mode-0600 regular files.');
+  }
+  if (
+    typeof process.getuid === 'function' &&
+    (directoryStat.uid !== process.getuid() ||
+      inventoryStat.uid !== process.getuid() ||
+      searchStat.uid !== process.getuid())
+  ) {
+    throw new Error('Protected search baseline profiles must be owned by the current user.');
+  }
+
+  const inventoryValues = dotenv.parse(fs.readFileSync(inventoryPath));
+  if (Object.keys(inventoryValues).length !== 1 || !inventoryValues.MONGODBURL) {
+    throw new Error('The inventory profile may contain only MONGODBURL.');
+  }
+  if (inventoryValues.MONGODBURL !== process.env.MONGODBURL) {
+    throw new Error('MONGODBURL must exactly match the protected inventory profile.');
+  }
+  let mongoUrl: URL;
+  let databaseName: string;
+  let username: string;
+  let password: string;
+  try {
+    mongoUrl = new URL(inventoryValues.MONGODBURL);
+    databaseName = decodeURIComponent(mongoUrl.pathname.slice(1));
+    username = decodeURIComponent(mongoUrl.username);
+    password = decodeURIComponent(mongoUrl.password);
+  } catch {
+    throw new Error('The inventory profile must contain a valid encoded Atlas URL.');
+  }
+  const tlsDisabled =
+    mongoUrl.searchParams.getAll('tls').some((value) => value.toLowerCase() === 'false') ||
+    mongoUrl.searchParams.getAll('ssl').some((value) => value.toLowerCase() === 'false');
+  const directConnection = mongoUrl.searchParams
+    .getAll('directConnection')
+    .some((value) => value.toLowerCase() === 'true');
+  if (
+    mongoUrl.protocol !== 'mongodb+srv:' ||
+    !mongoUrl.hostname.toLowerCase().endsWith('.mongodb.net') ||
+    !username ||
+    !password ||
+    databaseName !== expected.databaseName ||
+    protectedProfilePlaceholderPattern.test(username) ||
+    protectedProfilePlaceholderPattern.test(password) ||
+    tlsDisabled ||
+    directConnection
+  ) {
+    throw new Error('The inventory profile no longer satisfies the protected Atlas contract.');
+  }
+
+  const searchValues = dotenv.parse(fs.readFileSync(searchPath));
+  const expectedSearchKeys = [
+    'MEILISEARCH_API_KEY',
+    'MEILISEARCH_HOST',
+    'MEILISEARCH_INDEX_PREFIX',
+    'PHASE0_SEARCH_BASELINE_SALT',
+  ];
+  if (
+    Object.keys(searchValues).sort().join(',') !== expectedSearchKeys.sort().join(',') ||
+    expectedSearchKeys.some((key) => !searchValues[key])
+  ) {
+    throw new Error('The protected search profile has unexpected or missing keys.');
+  }
+  for (const key of expectedSearchKeys) {
+    if (searchValues[key] !== process.env[key]) {
+      throw new Error(`${key} must exactly match the protected search profile.`);
+    }
+  }
+  let meiliHost: URL;
+  try {
+    meiliHost = new URL(searchValues.MEILISEARCH_HOST);
+  } catch {
+    throw new Error('The protected search profile must contain a valid Meilisearch URL.');
+  }
+  const indexPrefix = searchValues.MEILISEARCH_INDEX_PREFIX;
+  const prefixMatches =
+    typeof expected.indexPrefix === 'string'
+      ? indexPrefix.toLowerCase() === expected.indexPrefix
+      : expected.indexPrefix.test(indexPrefix);
+  if (
+    meiliHost.protocol !== 'https:' ||
+    meiliHost.username ||
+    meiliHost.password ||
+    ['localhost', '127.0.0.1', '::1'].includes(meiliHost.hostname.toLowerCase()) ||
+    protectedProfilePlaceholderPattern.test(meiliHost.hostname) ||
+    protectedProfilePlaceholderPattern.test(searchValues.MEILISEARCH_API_KEY) ||
+    searchValues.PHASE0_SEARCH_BASELINE_SALT.length < 32 ||
+    protectedProfilePlaceholderPattern.test(searchValues.PHASE0_SEARCH_BASELINE_SALT) ||
+    !prefixMatches
+  ) {
+    throw new Error('The search profile no longer satisfies the protected target contract.');
+  }
+}
+
 function roundedMilliseconds(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function sourceCommit(): string {
+export function sourceCommit(
+  runCommand: typeof execFileSync = execFileSync,
+  environment: NodeJS.ProcessEnv = process.env,
+): string {
+  const worktreeRoot = path.resolve(__dirname, '../../..');
   const declared =
-    process.env.SOURCE_COMMIT || process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT;
-  if (declared && /^[a-f0-9]{7,64}$/i.test(declared.trim())) {
-    return declared.trim().toLowerCase();
-  }
+    environment.SOURCE_COMMIT || environment.RENDER_GIT_COMMIT || environment.GIT_COMMIT;
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: path.resolve(__dirname, '../../..'),
+    const status = runCommand('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+      cwd: worktreeRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    if (status.trim()) {
+      throw new Error('Search baseline evidence requires a clean source worktree.');
+    }
+    const head = runCommand('git', ['rev-parse', 'HEAD'], {
+      cwd: worktreeRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     })
       .trim()
       .toLowerCase();
-  } catch {
-    throw new Error(
-      'Unable to resolve the source commit. Set SOURCE_COMMIT to the exact commit under audit.',
-    );
+    if (!/^[a-f0-9]{40}$/.test(head)) {
+      throw new Error('Unable to resolve a full source commit.');
+    }
+    if (declared) {
+      const normalizedDeclared = declared.trim().toLowerCase();
+      if (!/^[a-f0-9]{40}$/.test(normalizedDeclared) || normalizedDeclared !== head) {
+        throw new Error('Declared source commit does not match the clean worktree HEAD.');
+      }
+    }
+    return head;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('clean source worktree') ||
+        error.message.includes('Declared source commit') ||
+        error.message.includes('full source commit'))
+    ) {
+      throw error;
+    }
+    throw new Error('Unable to verify a clean source commit for the search baseline.');
   }
 }
 
@@ -138,6 +403,8 @@ export function writePhase0ResearchSearchBaseline(
 
 async function main(): Promise<void> {
   const options = parsePhase0ResearchSearchBaselineArgs(process.argv.slice(2));
+  const initialSourceCommit = sourceCommit();
+  assertHardenedSearchBaselineProfile(options.environment);
   const salt = requirePhase0ResearchSearchSalt(process.env.PHASE0_SEARCH_BASELINE_SALT);
   assertPhase0SummaryOnlyConfiguredTarget({
     summaryOnly: true,
@@ -160,8 +427,16 @@ async function main(): Promise<void> {
     scriptName: 'model-refactor:search-baseline',
   });
 
+  const client = await getMeiliClient();
   const index = await getMeiliIndex('researchentities');
-  const [meiliSettings, meiliStats] = await Promise.all([index.getSettings(), index.getStats()]);
+  const initialTaskBoundary = await captureSearchBaselineTaskBoundary(
+    client,
+    meiliTarget.indexName,
+  );
+  const [meiliSettings, initialMeiliStats] = await Promise.all([
+    index.getSettings(),
+    index.getStats(),
+  ]);
   const cases = [];
   for (const searchCase of PHASE0_RESEARCH_SEARCH_CASES) {
     const samples: Phase0ResearchSearchSample[] = [];
@@ -188,33 +463,57 @@ async function main(): Promise<void> {
     }
     cases.push(summarizePhase0ResearchSearchCase(searchCase, samples));
   }
+  const finalMeiliStats = await index.getStats();
+  const finalTaskBoundary = await captureSearchBaselineTaskBoundary(client, meiliTarget.indexName);
+  const taskActivityDuringCapture = searchBaselineTaskActivityDetected(
+    initialTaskBoundary,
+    finalTaskBoundary,
+  );
+  const meiliStats = {
+    ...finalMeiliStats,
+    isIndexing: initialMeiliStats.isIndexing === true || finalMeiliStats.isIndexing === true,
+  };
+  const finalSourceCommit = sourceCommit();
+  if (finalSourceCommit !== initialSourceCommit) {
+    throw new Error('Source commit changed while the search baseline was running.');
+  }
 
   const report = buildPhase0ResearchSearchBaselineReport({
     generatedAt: new Date().toISOString(),
-    sourceCommit: sourceCommit(),
+    sourceCommit: initialSourceCommit,
     environment: options.environment,
     databaseName,
     salt,
     meiliTarget,
     meiliSettings,
     meiliStats,
+    taskActivityDuringCapture,
     iterations: options.iterations,
     topK: options.topK,
     cases,
   });
   const receipt = writePhase0ResearchSearchBaseline(report, options.output);
+  const protectedProfileActive = options.environment !== 'development';
   console.log(
     JSON.stringify(
-      {
-        artifactType: report.artifactType,
-        environment: report.environment,
-        databaseName: report.databaseName,
-        sourceCommit: report.sourceCommit,
-        output: receipt.output,
-        sha256: receipt.sha256,
-        bytes: receipt.bytes,
-        reviewRequired: report.summary.reviewRequired,
-      },
+      protectedProfileActive
+        ? {
+            artifactType: report.artifactType,
+            environment: report.environment,
+            databaseName: report.databaseName,
+            sourceCommit: report.sourceCommit,
+            reviewRequired: report.summary.reviewRequired,
+          }
+        : {
+            artifactType: report.artifactType,
+            environment: report.environment,
+            databaseName: report.databaseName,
+            sourceCommit: report.sourceCommit,
+            output: receipt.output,
+            sha256: receipt.sha256,
+            bytes: receipt.bytes,
+            reviewRequired: report.summary.reviewRequired,
+          },
       null,
       2,
     ),

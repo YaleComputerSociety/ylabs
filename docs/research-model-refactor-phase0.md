@@ -48,11 +48,13 @@ Implementation:
 - [`server/src/scripts/researchModelInventory.ts`](../server/src/scripts/researchModelInventory.ts) gathers the facts from MongoDB.
 - [`server/src/scripts/researchModelInventoryCore.ts`](../server/src/scripts/researchModelInventoryCore.ts) holds the collection spec, field probes, reference edges, and report shaping, and is unit tested without a database.
 
-## Read-only Beta and ProductionCopy profiles
+## Protected Beta and ProductionCopy profiles
 
 Preserved Phase 0 evidence must use the root profile commands instead of editing `server/.env`.
-The commands accept no arbitrary child command and always invoke the inventory with `--sample-limit 0`.
-They load only `MONGODBURL` from a current-user-owned external directory, skip `server/.env`, and pass a minimal child environment without migration, promotion, production-write, Meilisearch, OpenAI, or scraper credentials.
+The commands accept no arbitrary child command and invoke fixed read-only inventory, query-cost, or search-baseline suites.
+Inventory and query-cost launchers load only `MONGODBURL`.
+The search launcher combines the matching inventory profile with a separate protected Meilisearch and comparison-salt profile.
+Every launcher skips `server/.env`, binds evidence to a clean source commit, and passes a minimal child environment without migration, promotion, production-write, OpenAI, or scraper credentials.
 
 Create the operator directory outside every repository worktree.
 The directory must be absolute, owned by the current operating-system user, contain no symlink path components, and grant no group or other permissions.
@@ -69,13 +71,25 @@ install -m 600 \
 install -m 600 \
   server/.env.production-copy-inventory.example \
   "$YLABS_INVENTORY_PROFILE_DIRECTORY/production-copy-inventory.env"
+
+install -m 600 \
+  server/.env.beta-search.example \
+  "$YLABS_INVENTORY_PROFILE_DIRECTORY/beta-search.env"
+
+install -m 600 \
+  server/.env.production-copy-search.example \
+  "$YLABS_INVENTORY_PROFILE_DIRECTORY/production-copy-search.env"
 ```
 
 Replace every placeholder before use.
-Each file may contain only `MONGODBURL`.
+Each inventory file may contain only `MONGODBURL`.
+Each search file must contain exactly `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`, `MEILISEARCH_INDEX_PREFIX`, and `PHASE0_SEARCH_BASELINE_SALT`.
+Use the same high-entropy salt in Development, Beta, and ProductionCopy so ordered pseudonymous results remain comparable.
 Provision a separate Atlas user with the `read` role scoped only to the named database.
 The launcher requires a remote `mongodb+srv` Atlas URL with credentials and the exact `Beta` or `ProductionCopy` database name.
 It rejects local hosts, placeholders, insecure connection options, database mismatches, and the primary `Production` database before the inventory process can connect.
+Protected search launchers additionally require an HTTPS remote Meilisearch host, a non-placeholder API key, and the exact `beta` or dedicated ProductionCopy index prefix.
+The Meilisearch key must be read-only and allow search plus index, settings, stats, and task inspection for only the dedicated evidence index.
 
 Run Beta inventory from a clean Beta worktree:
 
@@ -233,13 +247,14 @@ The artifact is still private operational evidence because counts and stable cro
 Do not attach it to an issue or pull request.
 
 Use the same high-entropy salt for every environment that will be compared.
-Store the salt in the team secret manager and inject it through `PHASE0_SEARCH_BASELINE_SALT`.
+Store the salt in the team secret manager, copy it only into the protected search profiles, and inject it directly only for Development.
 Never pass the salt as a command-line argument or write it into a worktree.
 Every output must be a new `.json` path under the system temporary directory.
 The writer creates the file with mode `0600`, refuses symlink outputs, and refuses overwrite.
 
-Load the exact target credentials from an approved operator secret store before each command.
-Set `YLABS_SKIP_LOCAL_DOTENV=true` so a checkout-local `server/.env` cannot replace an omitted target setting.
+The Development command requires explicit target credentials from the approved operator secret store and `YLABS_SKIP_LOCAL_DOTENV=true`.
+Beta and ProductionCopy must use the matching protected root profile command from the external mode-`0700` directory above.
+The protected launcher refuses extra profile keys, inherited sensitive environment variables, dirty worktrees, arbitrary child arguments, and private receipt metadata on stdout.
 The command verifies the configured and connected MongoDB database name before search.
 It rejects primary Production and a Production Meilisearch prefix.
 Beta requires `MEILISEARCH_INDEX_PREFIX=beta`.
@@ -264,24 +279,14 @@ yarn model-refactor:search-baseline \
   --output=/tmp/ylabs-phase0-search-development.json
 ```
 
-Run the Beta baseline from the same source commit with the read-only Beta MongoDB user and private Beta Meilisearch credentials:
+Run the Beta baseline from the same clean source commit with the protected Beta profiles:
 
 ```bash
 umask 077
 
-export YLABS_SKIP_LOCAL_DOTENV=true
-export PHASE0_SEARCH_BASELINE_SALT
-export MONGODBURL
-export MEILISEARCH_HOST
-export MEILISEARCH_API_KEY
-export MEILISEARCH_INDEX_PREFIX=beta
-
-yarn model-refactor:search-baseline \
-  --environment=beta \
-  --iterations=3 \
-  --top-k=10 \
-  --strict \
-  --output=/tmp/ylabs-phase0-search-beta.json
+yarn model-refactor:search-baseline:beta \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-phase0-search-beta.json
 ```
 
 Run ProductionCopy only after the approved MongoDB restore and a dedicated non-production Meilisearch index copy exist:
@@ -289,26 +294,16 @@ Run ProductionCopy only after the approved MongoDB restore and a dedicated non-p
 ```bash
 umask 077
 
-export YLABS_SKIP_LOCAL_DOTENV=true
-export PHASE0_SEARCH_BASELINE_SALT
-export MONGODBURL
-export MEILISEARCH_HOST
-export MEILISEARCH_API_KEY
-export MEILISEARCH_INDEX_PREFIX=production-copy-july
-
-yarn model-refactor:search-baseline \
-  --environment=production-copy \
-  --iterations=3 \
-  --top-k=10 \
-  --strict \
-  --output=/tmp/ylabs-phase0-search-production-copy.json
+yarn model-refactor:search-baseline:production-copy \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-phase0-search-production-copy.json
 ```
 
-Unset the injected credentials and salt after each run.
+Unset the directly injected Development credentials and salt after that run.
 Preserve the source commit, salt fingerprint, query suite, iteration count, top-K, and settings fingerprint with the comparison.
 Compare estimated totals and ordered result fingerprints per case.
-Treat any degraded sample, unstable ordered result set, unexpected count change, or ranking change as review-required evidence rather than silently accepting it.
-`--strict` writes the artifact and then exits nonzero when a degraded or unstable sample requires review.
+Treat any degraded sample, active indexing, index task activity during capture, unstable estimated total, unstable ordered result set, unexpected cross-environment count change, or ranking change as review-required evidence rather than silently accepting it.
+`--strict` writes the artifact and then exits nonzero when indexing, index task activity, degradation, or within-run instability requires review.
 Latency is diagnostic only unless the environments use comparable network and compute conditions.
 
 ## Private MongoDB hot-path query-cost evidence

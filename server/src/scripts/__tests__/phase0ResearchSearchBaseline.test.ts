@@ -2,12 +2,18 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { writePhase0ResearchSearchBaseline } from '../phase0ResearchSearchBaseline';
+import {
+  assertHardenedSearchBaselineProfile,
+  captureSearchBaselineTaskBoundary,
+  searchBaselineTaskActivityDetected,
+  sourceCommit,
+  writePhase0ResearchSearchBaseline,
+} from '../phase0ResearchSearchBaseline';
 import type { Phase0ResearchSearchBaselineReport } from '../phase0ResearchSearchBaselineCore';
 
 function fixtureReport(): Phase0ResearchSearchBaselineReport {
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     artifactType: 'phase0-research-search-baseline',
     generatedAt: '2026-07-28T12:00:00.000Z',
     sourceCommit: '5d4b09617ed96c963c1e28011075a941d1307b13',
@@ -24,14 +30,176 @@ function fixtureReport(): Phase0ResearchSearchBaselineReport {
       embedderNames: ['default'],
       numberOfDocuments: 1,
       indexing: false,
+      taskActivityDuringCapture: false,
     },
     suite: { iterations: 1, topK: 1, caseCount: 0 },
-    summary: { degradedSamples: 0, unstableCases: 0, reviewRequired: false },
+    summary: {
+      degradedSamples: 0,
+      unstableCases: 0,
+      indexing: false,
+      taskActivityDuringCapture: false,
+      reviewRequired: false,
+    },
     cases: [],
   };
 }
 
 describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
+  it('captures the latest watermark and active index mutation tasks', async () => {
+    const queries: Array<Record<string, unknown>> = [];
+    const client = {
+      tasks: {
+        getTasks: async (query: Record<string, unknown>) => {
+          queries.push(query);
+          return { results: [{ uid: 41 }], total: 1 };
+        },
+      },
+    };
+    const initial = await captureSearchBaselineTaskBoundary(client, 'beta_researchentities');
+    expect(initial).toEqual({
+      latestTaskUid: 41,
+      activeTaskCount: 1,
+      watermarkChangedDuringBoundary: false,
+    });
+    expect(queries).toHaveLength(3);
+    expect(queries[0]).toMatchObject({
+      indexUids: ['beta_researchentities'],
+      limit: 1,
+    });
+    expect(queries[1]).toMatchObject({
+      statuses: ['enqueued', 'processing'],
+      limit: 1,
+    });
+    expect(queries[2]).toMatchObject({
+      indexUids: ['beta_researchentities'],
+      limit: 1,
+    });
+  });
+
+  it('fails closed on active or changed task boundaries and accepts idle stability', async () => {
+    const idleBoundary = {
+      latestTaskUid: 41,
+      activeTaskCount: 0,
+      watermarkChangedDuringBoundary: false,
+    };
+    expect(
+      searchBaselineTaskActivityDetected(idleBoundary, {
+        latestTaskUid: 42,
+        activeTaskCount: 0,
+        watermarkChangedDuringBoundary: false,
+      }),
+    ).toBe(true);
+    expect(
+      searchBaselineTaskActivityDetected(idleBoundary, {
+        latestTaskUid: 41,
+        activeTaskCount: 1,
+        watermarkChangedDuringBoundary: false,
+      }),
+    ).toBe(true);
+    expect(
+      searchBaselineTaskActivityDetected(idleBoundary, {
+        latestTaskUid: 41,
+        activeTaskCount: 0,
+        watermarkChangedDuringBoundary: true,
+      }),
+    ).toBe(true);
+    expect(searchBaselineTaskActivityDetected(idleBoundary, idleBoundary)).toBe(false);
+
+    const noPriorTasks = await captureSearchBaselineTaskBoundary(
+      {
+        tasks: {
+          getTasks: async () => ({ results: [], total: 0 }),
+        },
+      },
+      'beta_researchentities',
+    );
+    expect(noPriorTasks).toEqual({
+      latestTaskUid: null,
+      activeTaskCount: 0,
+      watermarkChangedDuringBoundary: false,
+    });
+    expect(searchBaselineTaskActivityDetected(noPriorTasks, noPriorTasks)).toBe(false);
+  });
+
+  it('revalidates both protected profiles at the executable boundary', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-search-executable-profile-'));
+    const inventoryPath = path.join(directory, 'beta-inventory.env');
+    const searchPath = path.join(directory, 'beta-search.env');
+    const mongoCredentials = ['search-reader', 'unit-test-password'].join(':');
+    const mongoUrl = [
+      'mongodb+srv://',
+      mongoCredentials,
+      '@cluster.unit-test.mongodb.net/Beta',
+    ].join('');
+    const searchValues = {
+      MEILISEARCH_HOST: 'https://private-search.internal.test',
+      MEILISEARCH_API_KEY: 'private-search-key-value',
+      MEILISEARCH_INDEX_PREFIX: 'beta',
+      PHASE0_SEARCH_BASELINE_SALT: '7decbd7cf96d4edca5e46dbe1d06f4a1b64b5846209f2bce',
+    };
+    fs.chmodSync(directory, 0o700);
+    fs.writeFileSync(inventoryPath, `MONGODBURL=${mongoUrl}\n`, { mode: 0o600 });
+    fs.writeFileSync(
+      searchPath,
+      `${Object.entries(searchValues)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n')}\n`,
+      { mode: 0o600 },
+    );
+    const keys = [
+      'YLABS_SEARCH_BASELINE_PROFILE_ACTIVE',
+      'YLABS_INVENTORY_PROFILE_NAME',
+      'YLABS_INVENTORY_PROFILE_PATH',
+      'YLABS_SEARCH_BASELINE_PROFILE_PATH',
+      'MONGODBURL',
+      ...Object.keys(searchValues),
+    ] as const;
+    const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      process.env.YLABS_SEARCH_BASELINE_PROFILE_ACTIVE = 'true';
+      expect(() => assertHardenedSearchBaselineProfile('beta')).toThrow(
+        /hardened external profiles/,
+      );
+
+      process.env.YLABS_INVENTORY_PROFILE_NAME = 'beta-inventory';
+      process.env.YLABS_INVENTORY_PROFILE_PATH = inventoryPath;
+      process.env.YLABS_SEARCH_BASELINE_PROFILE_PATH = searchPath;
+      process.env.MONGODBURL = mongoUrl;
+      Object.assign(process.env, searchValues);
+      expect(() => assertHardenedSearchBaselineProfile('beta')).not.toThrow();
+
+      process.env.MEILISEARCH_API_KEY = 'forged-value';
+      expect(() => assertHardenedSearchBaselineProfile('beta')).toThrow(/exactly match/);
+    } finally {
+      for (const key of keys) {
+        const value = original[key];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fs.rmSync(directory, { recursive: true });
+    }
+  });
+
+  it('binds evidence to a clean full source commit', () => {
+    const cleanHead = 'a'.repeat(40);
+    const runCommand = ((_command: string, args: readonly string[]) =>
+      args[0] === 'status' ? '' : `${cleanHead}\n`) as typeof import('child_process').execFileSync;
+
+    expect(sourceCommit(runCommand, { SOURCE_COMMIT: cleanHead })).toBe(cleanHead);
+    expect(() =>
+      sourceCommit(
+        ((_command: string, args: readonly string[]) =>
+          args[0] === 'status'
+            ? ' M server/src/index.ts\n'
+            : `${cleanHead}\n`) as typeof import('child_process').execFileSync,
+        {},
+      ),
+    ).toThrow(/clean source worktree/);
+    expect(() => sourceCommit(runCommand, { SOURCE_COMMIT: 'b'.repeat(40) })).toThrow(
+      /does not match/,
+    );
+  });
+
   it('writes a new mode-0600 artifact and refuses overwrite', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-search-baseline-'));
     const output = path.join(directory, 'baseline.json');

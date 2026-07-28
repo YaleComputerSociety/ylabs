@@ -239,24 +239,25 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 
 ## Common Commands
 
-| Command                                                           | Description                                                                        |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `yarn install:all`                                                | Install deps in root + server + client                                             |
-| `yarn dev:client`                                                 | Vite dev server (port 3000)                                                        |
-| `yarn dev:server`                                                 | Express with nodemon (port 4000)                                                   |
-| `yarn build`                                                      | Full production build                                                              |
-| `yarn start`                                                      | Run both servers in production mode                                                |
-| `yarn clean:all`                                                  | Remove all node_modules                                                            |
-| `yarn --cwd client test`                                          | Run Vitest in watch mode                                                           |
-| `yarn --cwd client test:ci`                                       | Run Vitest once (used by CI)                                                       |
-| `yarn --cwd server test`                                          | Run server Vitest tests                                                            |
-| `npx tsc --noEmit -p server/tsconfig.json`                        | Server typecheck                                                                   |
-| `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate                                                        |
-| `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
+| Command                                                                                                                                    | Description                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `yarn install:all`                                                                                                                         | Install deps in root + server + client                                                |
+| `yarn dev:client`                                                                                                                          | Vite dev server (port 3000)                                                           |
+| `yarn dev:server`                                                                                                                          | Express with nodemon (port 4000)                                                      |
+| `yarn build`                                                                                                                               | Full production build                                                                 |
+| `yarn start`                                                                                                                               | Run both servers in production mode                                                   |
+| `yarn clean:all`                                                                                                                           | Remove all node_modules                                                               |
+| `yarn --cwd client test`                                                                                                                   | Run Vitest in watch mode                                                              |
+| `yarn --cwd client test:ci`                                                                                                                | Run Vitest once (used by CI)                                                          |
+| `yarn --cwd server test`                                                                                                                   | Run server Vitest tests                                                               |
+| `npx tsc --noEmit -p server/tsconfig.json`                                                                                                 | Server typecheck                                                                      |
+| `yarn --cwd server beta:readiness --confirm-beta-backup --strict`                                                                          | Read-only Beta release gate                                                           |
+| `yarn --cwd server beta:data-quality --include-samples`                                                                                    | Read-only Beta data-quality scorecard                                                 |
 | `yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json` | Audit the post-sanitization description invariant for student-ready research entities |
-| `yarn --cwd server model-refactor:inventory --environment beta`   | Read-only research-model collection, field, and reference inventory                |
-| `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
-| `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |
+| `yarn --cwd server model-refactor:inventory --environment beta`                                                                            | Read-only research-model collection, field, and reference inventory                   |
+| `yarn model-refactor:search-baseline:beta --profile-dir <dir> --output <new-tmp-json>`                                                     | Protected read-only Beta ResearchEntity search baseline                               |
+| `yarn --cwd server scraper:integrity-gate --include-samples`                                                                               | Read-only scraper materialization integrity gate                                      |
+| `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                                                                                         | Regenerate every canonical gate scorecard the operator board reads (single writer)    |
 
 ### Operator board Gate Status - keeping it honest and current
 
@@ -284,8 +285,8 @@ yarn scrape help
 yarn meili:seed
 ```
 
-The research-model refactor inventory is read-only and uses `MONGODBURL`.
-Follow [`docs/research-model-refactor-phase0.md`](docs/research-model-refactor-phase0.md) for its required environment label, guarded JSON output, report interpretation, and rollback prerequisites.
+The research-model refactor inventory, search-baseline, and query-cost tools are read-only.
+Follow [`docs/research-model-refactor-phase0.md`](docs/research-model-refactor-phase0.md) for protected Beta and ProductionCopy profiles, required environment labels, guarded JSON output, report interpretation, and rollback prerequisites.
 
 Historical `data-migration/` scripts remain for one-off migrations only.
 Run them through the `data-migration` package scripts when available, so dry-run defaults, target validation, and JSON summaries stay in place:
@@ -396,12 +397,12 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 
 ### Auth Middleware (`server/src/middleware/auth.ts`)
 
-| Middleware        | Check                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| `localAuthBypass` | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes |
-| `isAuthenticated` | `req.user` exists                                                                             |
-| `isAdmin`         | `userType === 'admin'`                                                                        |
-| `isProfessor`     | `userType` in `['professor', 'faculty', 'admin']`                                             |
+| Middleware                     | Check                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `localAuthBypass`              | Optional local/test-only `req.user` injection when `LOCAL_AUTH_BYPASS=true`; skips CAS routes                      |
+| `isAuthenticated`              | `req.user` exists                                                                                                  |
+| `isAdmin`                      | `userType === 'admin'`                                                                                             |
+| `isProfessor`                  | `userType` in `['professor', 'faculty', 'admin']`                                                                  |
 | `canManagePostedOpportunities` | Confirmed, profile-verified professor/faculty; ownership is enforced by the service layer and admins cannot author |
 
 ---
@@ -410,20 +411,20 @@ The public browse surfaces (`/api/research`, `/api/opportunities`) follow the sa
 
 All mount under `/api`.
 
-| Prefix            | Description                                                                             | Auth                                                   |
-| ----------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment | Varies                                                 |
-| `/programs`       | Programs & Fellowships browse/search and saved-program support                          | Varies                                                 |
+| Prefix            | Description                                                                               | Auth                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
+| `/programs`       | Programs & Fellowships browse/search and saved-program support                            | Varies                                                 |
 | `/opportunities`  | Public detail plus owned faculty draft, preview, submission, close, and archive workflows | Public reads; verified faculty writes                  |
-| `/listings`       | Retired legacy API, returns `410 Gone`                                                  | Varies                                                 |
-| `/fellowships`    | Compatibility alias around program/fellowship storage during migration                  | Varies                                                 |
-| `/users`          | User CRUD                                                                               | Yes                                                    |
-| `/profiles`       | Faculty profiles                                                                        | Varies                                                 |
-| `/analytics`      | Analytics dashboard + research event writes                                             | Admin for dashboard, authenticated for research writes |
-| `/config`         | Departments + research areas                                                            | No                                                     |
-| `/research-areas` | Research area CRUD                                                                      | Admin for writes                                       |
-| `/admin`          | Admin operations                                                                        | Admin                                                  |
-| `/seed`           | Dev seeding routes                                                                      | Dev mode only                                          |
+| `/listings`       | Retired legacy API, returns `410 Gone`                                                    | Varies                                                 |
+| `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
+| `/users`          | User CRUD                                                                                 | Yes                                                    |
+| `/profiles`       | Faculty profiles                                                                          | Varies                                                 |
+| `/analytics`      | Analytics dashboard + research event writes                                               | Admin for dashboard, authenticated for research writes |
+| `/config`         | Departments + research areas                                                              | No                                                     |
+| `/research-areas` | Research area CRUD                                                                        | Admin for writes                                       |
+| `/admin`          | Admin operations                                                                          | Admin                                                  |
+| `/seed`           | Dev seeding routes                                                                        | Dev mode only                                          |
 
 ---
 

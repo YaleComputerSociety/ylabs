@@ -81,10 +81,16 @@ import { listPlanningContextsForResearchEntities } from './planningContextServic
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
-    return await listPlanningContextsForResearchEntities(entityIds);
+    return {
+      contexts: await listPlanningContextsForResearchEntities(entityIds),
+      degraded: false,
+    };
   } catch (error) {
     console.error('Optional research planning-context enrichment failed:', sanitizeLogValue(error));
-    return new Map();
+    return {
+      contexts: new Map(),
+      degraded: true,
+    };
   }
 };
 
@@ -594,7 +600,7 @@ export async function searchResearchGroupsViaMeili(
     const activeListingGroupIdSet = new Set(
       activeListingGroupIds.map((id: any) => researchGroupDocumentId(id)).filter(Boolean),
     );
-    const [accessSummaries, planningContexts] = await Promise.all([
+    const [accessSummaries, planningContextResult] = await Promise.all([
       listAccessSummariesForResearchEntities(pageEntityIds),
       optionalPlanningContexts(pageEntityIds),
     ]);
@@ -605,11 +611,12 @@ export async function searchResearchGroupsViaMeili(
           _id: researchGroupDocumentId(entity._id),
           hasActiveListing: activeListingGroupIdSet.has(researchGroupDocumentId(entity._id)),
           accessSummary: accessSummaries.get(researchGroupDocumentId(entity._id)),
-          planningContext: planningContexts.get(researchGroupDocumentId(entity._id)),
+          planningContext: planningContextResult.contexts.get(researchGroupDocumentId(entity._id)),
         })),
         estimatedTotalHits: filteredCandidates.length,
         page: safePage,
         pageSize: safePageSize,
+        degraded: planningContextResult.degraded,
       },
       { includeOperatorFields: safeOptions.includeNonPublic },
     );
@@ -749,7 +756,7 @@ export async function searchResearchGroupsViaMeili(
   );
 
   // Map Meilisearch's `id` back to `_id` for client backward compatibility.
-  const [accessSummaries, planningContexts] = await Promise.all([
+  const [accessSummaries, planningContextResult] = await Promise.all([
     listAccessSummariesForResearchEntities(visibleHitIds),
     optionalPlanningContexts(visibleHitIds),
   ]);
@@ -763,7 +770,7 @@ export async function searchResearchGroupsViaMeili(
       _id: id,
       hasActiveListing: activeListingGroupIdSet.has(entityId),
       accessSummary: accessSummaries.get(entityId),
-      planningContext: planningContexts.get(entityId),
+      planningContext: planningContextResult.contexts.get(entityId),
       ...(hit.searchMatch ? { searchMatch: hit.searchMatch } : {}),
     };
   });
@@ -775,7 +782,7 @@ export async function searchResearchGroupsViaMeili(
       page: safePage,
       pageSize: safePageSize,
       facetDistribution,
-      degraded,
+      degraded: degraded || planningContextResult.degraded,
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
   );
@@ -2733,7 +2740,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       ...publicGroupForResponse,
       ...leadIdentity,
       accessSummary,
-      planningContext: planningContexts.get(researchGroupDocumentId((group as any)._id)),
+      planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
       studentDecisionExplanation: studentDecisionExplanation || undefined,
     },
     members,
