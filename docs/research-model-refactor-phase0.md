@@ -72,6 +72,30 @@ The `present` flag distinguishes a missing collection from an empty one, while `
 Each `schemaVersions` bucket records `bsonType`, `value` when present, and `count`.
 The `missing` BSON type distinguishes documents without `schemaVersion` from documents whose value is explicitly `null`, and numeric and string values remain separate.
 
+#### Classified operational and residue collections
+
+The Development inventory surfaced the following existing collections outside the initial domain map.
+They are now classified by their current runtime owner and migration posture.
+Counts remain environment-specific evidence and do not belong in this runbook.
+
+| Collection                       | Current owner                                             | Group                | Phase    | Target or retirement posture                                                                                                  |
+| -------------------------------- | --------------------------------------------------------- | -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `analytics_events`               | `AnalyticsEvent` and `analyticsService.ts`                | Private              | Deferred | Retain as append-only `EngagementEvent` analytics with independent retention; never treat it as research evidence.            |
+| `listingclaimrequests`           | `ListingClaimRequest` and `listingClaimRequestService.ts` | Legacy residue       | 4        | Archive or migrate reviewed submissions before retiring `Listing`; these requests do not grant canonical ownership authority. |
+| `paper_entity_links`             | Retired `PaperEntityLink` surface                         | Scholarly retirement | 3        | No target collection; any documents are expected-gone publication-link residue.                                               |
+| `research_entity_stats`          | Retired `ResearchEntityStats` surface                     | Legacy residue       | 0        | No target collection; any documents are expected-gone derived-statistics residue.                                             |
+| `researchareas`                  | Legacy physical name for `ResearchArea`                   | Legacy residue       | 0        | Rename to `research_areas`; Phase 4 then migrates reference identity to `TaxonomyTerm`.                                       |
+| `scrape_job_locks`               | `ScrapeJobLock`                                           | Operational          | Deferred | Retain as environment-local leases and never promote them between environments.                                               |
+| `scrape_runs`                    | `ScrapeRun`                                               | Evidence             | 5        | Retain source-run audit metadata through the `EvidenceClaim` cutover.                                                         |
+| `scrape_snapshots`               | `ScrapeSnapshot`                                          | Evidence             | 5        | Treat as a regenerable fetch cache; move retained evidence behind `SourceDocument` retention policy.                          |
+| `visibility_release_queue_items` | `VisibilityReleaseQueueItem`                              | Operational          | 5        | Retain as an environment-local, rebuildable visibility repair queue over canonical projections.                               |
+
+The Phase 1 storage contracts are also classified before they receive live data.
+`research_plans` belongs to the Phase 4 private-planning cutover.
+`source_documents`, `evidence_claims`, and `review_decisions` belong to the Phase 5 evidence cutover.
+Schema introduction does not make an empty collection a completed migration.
+The durable names remain `research_entity_relationships` and `student_engagement_events`; the inventory does not invent parallel `entity_relationships` or `engagement_events` storage.
+
 ### `retirementFields`
 
 Prevalence of each legacy field slated for removal, for example `research_entities.acceptingUndergrads` or `users.publications`.

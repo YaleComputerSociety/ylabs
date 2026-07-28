@@ -20,7 +20,8 @@ export type InventoryGroup =
   | 'scholarly-retire'
   | 'evidence'
   | 'private'
-  | 'reference-data';
+  | 'reference-data'
+  | 'operational';
 
 export interface CollectionSpec {
   /** Physical MongoDB collection name. */
@@ -248,11 +249,32 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     target: 'EvidenceClaim (+ SourceDocument)',
   },
   {
+    collection: 'evidence_claims',
+    model: 'EvidenceClaim',
+    group: 'evidence',
+    phase: 5,
+    target: 'EvidenceClaim (canonical predicate-based evidence)',
+  },
+  {
     collection: 'sources',
     model: 'Source',
     group: 'evidence',
     phase: 5,
     target: 'Source + SourceDocument',
+  },
+  {
+    collection: 'source_documents',
+    model: 'SourceDocument',
+    group: 'evidence',
+    phase: 5,
+    target: 'SourceDocument (canonical fetched-resource identity and retention boundary)',
+  },
+  {
+    collection: 'review_decisions',
+    model: 'ReviewDecision',
+    group: 'evidence',
+    phase: 5,
+    target: 'ReviewDecision (canonical append-only manual-resolution audit)',
   },
   {
     collection: 'student_profiles',
@@ -276,6 +298,13 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     target: 'ResearchPlan',
   },
   {
+    collection: 'research_plans',
+    model: 'ResearchPlan',
+    group: 'private',
+    phase: 4,
+    target: 'ResearchPlan (canonical private planning state)',
+  },
+  {
     collection: 'student_outreaches',
     model: 'StudentOutreach',
     group: 'private',
@@ -288,6 +317,50 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'private',
     phase: null,
     target: 'EngagementEvent (append-only analytics)',
+  },
+  {
+    collection: 'analytics_events',
+    model: 'AnalyticsEvent',
+    group: 'private',
+    phase: null,
+    target: 'EngagementEvent (append-only analytics with independent retention; never evidence)',
+  },
+  {
+    collection: 'listingclaimrequests',
+    model: 'ListingClaimRequest',
+    group: 'legacy-residue',
+    phase: 4,
+    target:
+      'Archive or migrate reviewed submissions before Listing retirement; no canonical ownership authority',
+  },
+  {
+    collection: 'scrape_job_locks',
+    model: 'ScrapeJobLock',
+    group: 'operational',
+    phase: null,
+    target: 'Environment-local scraper leases (retained; never promoted between environments)',
+  },
+  {
+    collection: 'scrape_runs',
+    model: 'ScrapeRun',
+    group: 'evidence',
+    phase: 5,
+    target: 'Retained source-run audit metadata for the EvidenceClaim cutover',
+  },
+  {
+    collection: 'scrape_snapshots',
+    model: 'ScrapeSnapshot',
+    group: 'evidence',
+    phase: 5,
+    target:
+      'Regenerable fetch cache; retained evidence moves behind SourceDocument retention policy',
+  },
+  {
+    collection: 'visibility_release_queue_items',
+    model: 'VisibilityReleaseQueueItem',
+    group: 'operational',
+    phase: 5,
+    target: 'Environment-local rebuildable visibility repair queue over canonical projections',
   },
   // Expected already retired by the earlier hard-pivot; presence is residue.
   {
@@ -328,6 +401,30 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'legacy-residue',
     phase: 0,
     target: 'student_applications (should be dropped)',
+    expectPresent: false,
+  },
+  {
+    collection: 'paper_entity_links',
+    model: 'PaperEntityLink (retired)',
+    group: 'scholarly-retire',
+    phase: 3,
+    target: 'No target collection (expected-gone publication-link residue)',
+    expectPresent: false,
+  },
+  {
+    collection: 'research_entity_stats',
+    model: 'ResearchEntityStats (retired)',
+    group: 'legacy-residue',
+    phase: 0,
+    target: 'No target collection (expected-gone derived-statistics residue)',
+    expectPresent: false,
+  },
+  {
+    collection: 'researchareas',
+    model: 'ResearchArea (legacy physical name)',
+    group: 'legacy-residue',
+    phase: 0,
+    target: 'research_areas, then TaxonomyTerm in Phase 4',
     expectPresent: false,
   },
 ];
