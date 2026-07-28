@@ -499,7 +499,7 @@ Student pathway search uses a deterministic minimum quality bar.
 A pathway must be `ACTIVE` or `RECURRING`, have `DIRECT`, `STRONG`, or `MODERATE` evidence, have confidence of at least `0.70`, and cite at least one safe public HTTP source.
 This threshold excludes the large 0.50-confidence exploratory-contact population while retaining stronger volunteer, recurring, and source-backed pathways for review in search.
 
-Before enabling or promoting the differentiator in an environment, administrators should work the contact-route queue in `/admin/access-review`, confirm that qualifying pathway counts are nonzero, rebuild the pathway index with `yarn --cwd server meili:rebuild-pathways`, and smoke-test `/research` plus one approved profile route.
+Before enabling or promoting the differentiator in an environment, administrators should work the contact-route queue from the Access Review tab on `/analytics`, confirm that qualifying pathway counts are nonzero, rebuild the pathway index with `yarn --cwd server meili:rebuild-pathways`, and smoke-test `/research` plus one approved profile route.
 An empty result is a valid fail-closed state and should not be interpreted as proof that no undergraduate route exists.
 
 ## Product Vocabulary
