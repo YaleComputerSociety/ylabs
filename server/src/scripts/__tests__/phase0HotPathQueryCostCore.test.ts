@@ -179,6 +179,61 @@ describe('Phase 0 hot-path query-cost core', () => {
     expect(JSON.stringify(summary)).not.toContain('PRIVATE-VALUE');
   });
 
+  it('collects aggregate cursor and lookup execution metrics without raw pipeline data', () => {
+    const summary = summarizePhase0HotPathExplain({
+      stages: [
+        {
+          $cursor: {
+            queryPlanner: {
+              winningPlan: { stage: 'IXSCAN', indexName: 'archived_1' },
+              rejectedPlans: [{ stage: 'COLLSCAN', filter: { name: 'PRIVATE PERSON' } }],
+            },
+            executionStats: {
+              nReturned: 30,
+              executionTimeMillis: 7,
+              totalKeysExamined: 30,
+              totalDocsExamined: 30,
+            },
+          },
+          nReturned: 30,
+          executionTimeMillisEstimate: 7,
+        },
+        {
+          $lookup: { from: 'access_signals', as: '_privateRows' },
+          indexesUsed: ['researchEntityId_1'],
+          totalKeysExamined: 90,
+          totalDocsExamined: 90,
+          collectionScans: 0,
+          nReturned: 30,
+          executionTimeMillisEstimate: 11,
+        },
+        {
+          $facet: { rows: [], meta: [] },
+          nReturned: 1,
+          executionTimeMillisEstimate: 12,
+        },
+      ],
+    });
+
+    expect(summary).toMatchObject({
+      nReturned: 1,
+      executionTimeMillis: 12,
+      totalKeysExamined: 120,
+      totalDocsExamined: 120,
+      keysPerResult: 120,
+      docsPerResult: 120,
+      collectionScan: false,
+    });
+    expect(summary.indexNames).toEqual(
+      expect.arrayContaining(['archived_1', 'researchEntityId_1']),
+    );
+    expect(summary.rejectedPlans).toContainEqual({
+      stages: ['COLLSCAN'],
+      indexNames: [],
+    });
+    expect(JSON.stringify(summary)).not.toContain('PRIVATE PERSON');
+  });
+
   it('covers every audited query label without retaining fixture values in the report', () => {
     const fixtures = completeFixtures();
     const specs = buildPhase0HotPathQuerySpecs(fixtures, new Date('2026-07-28T12:00:00.000Z'));

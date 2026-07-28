@@ -360,6 +360,16 @@ function planParts(value: unknown): { stages: string[]; indexNames: string[] } {
   return { stages: [...stages].sort(), indexNames: [...indexNames].sort() };
 }
 
+function withoutRejectedPlans(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutRejectedPlans);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== 'rejectedPlans')
+      .map(([key, nested]) => [key, withoutRejectedPlans(nested)]),
+  );
+}
+
 export function summarizePhase0HotPathExplain(explain: Document): Phase0HotPathPlanSummary {
   const executionStats =
     explain.executionStats && typeof explain.executionStats === 'object'
@@ -369,11 +379,11 @@ export function summarizePhase0HotPathExplain(explain: Document): Phase0HotPathP
     explain.queryPlanner && typeof explain.queryPlanner === 'object'
       ? (explain.queryPlanner as Record<string, unknown>)
       : {};
-  const winningEvidence = [
+  const winningEvidence = withoutRejectedPlans([
     executionStats,
     queryPlanner.winningPlan,
     Array.isArray(explain.stages) ? explain.stages : [],
-  ];
+  ]) as unknown[];
   const parts = planParts(winningEvidence);
   let usedDisk = false;
   let spills = 0;
@@ -401,13 +411,61 @@ export function summarizePhase0HotPathExplain(explain: Document): Phase0HotPathP
     }),
   );
 
-  const nReturned = finiteCount(executionStats.nReturned);
-  const totalKeysExamined = finiteCount(executionStats.totalKeysExamined);
-  const totalDocsExamined = finiteCount(executionStats.totalDocsExamined);
-  const rejectedPlansRaw =
-    Array.isArray(queryPlanner.rejectedPlans)
-      ? (queryPlanner.rejectedPlans as unknown[])
-      : [];
+  const aggregateStages = Array.isArray(explain.stages)
+    ? (explain.stages as Array<Record<string, unknown>>)
+    : [];
+  const aggregateMetricSources = aggregateStages.flatMap((stage) => {
+    const cursor =
+      stage.$cursor && typeof stage.$cursor === 'object'
+        ? (stage.$cursor as Record<string, unknown>)
+        : undefined;
+    const cursorStats =
+      cursor?.executionStats && typeof cursor.executionStats === 'object'
+        ? (cursor.executionStats as Record<string, unknown>)
+        : undefined;
+    return cursorStats ? [cursorStats] : [stage];
+  });
+  const rootHasExecutionStats = Object.keys(executionStats).length > 0;
+  const lastAggregateStage = aggregateStages.at(-1);
+  const nReturned = rootHasExecutionStats
+    ? finiteCount(executionStats.nReturned)
+    : finiteCount(lastAggregateStage?.nReturned);
+  const totalKeysExamined = rootHasExecutionStats
+    ? finiteCount(executionStats.totalKeysExamined)
+    : aggregateMetricSources.reduce(
+        (total, source) => total + finiteCount(source.totalKeysExamined),
+        0,
+      );
+  const totalDocsExamined = rootHasExecutionStats
+    ? finiteCount(executionStats.totalDocsExamined)
+    : aggregateMetricSources.reduce(
+        (total, source) => total + finiteCount(source.totalDocsExamined),
+        0,
+      );
+  const executionTimeMillis = rootHasExecutionStats
+    ? finiteCount(executionStats.executionTimeMillis)
+    : Math.max(
+        0,
+        ...aggregateStages.map((stage) =>
+          Math.max(
+            finiteCount(stage.executionTimeMillis),
+            finiteCount(stage.executionTimeMillisEstimate),
+            stage.$cursor && typeof stage.$cursor === 'object'
+              ? finiteCount(
+                  (
+                    (stage.$cursor as Record<string, unknown>).executionStats as
+                      | Record<string, unknown>
+                      | undefined
+                  )?.executionTimeMillis,
+                )
+              : 0,
+          ),
+        ),
+      );
+  const rejectedPlansRaw: unknown[] = [];
+  walk(explain, (record) => {
+    if (Array.isArray(record.rejectedPlans)) rejectedPlansRaw.push(...record.rejectedPlans);
+  });
   const rejectedPlans = rejectedPlansRaw.map(planParts);
   const blockingSort = parts.stages.some((stage) => stage === 'SORT' || stage === 'SORT_KEY_GENERATOR');
   const collectionScan =
@@ -415,7 +473,7 @@ export function summarizePhase0HotPathExplain(explain: Document): Phase0HotPathP
 
   return {
     nReturned,
-    executionTimeMillis: finiteCount(executionStats.executionTimeMillis),
+    executionTimeMillis,
     totalKeysExamined,
     totalDocsExamined,
     keysPerResult: nReturned > 0 ? totalKeysExamined / nReturned : null,
