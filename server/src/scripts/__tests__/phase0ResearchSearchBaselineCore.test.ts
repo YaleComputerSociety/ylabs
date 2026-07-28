@@ -202,6 +202,7 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
     ]);
     expect(summarized.latencyMs).toEqual({ min: 5, p50: 9, p95: 18, max: 18 });
     expect(summarized.degradedSamples).toBe(1);
+    expect(summarized.distinctEstimatedTotals).toBe(1);
     expect(summarized.distinctOrderedResultSets).toBe(2);
 
     const privateId = '507f1f77bcf86cd799439011';
@@ -237,6 +238,7 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
     expect(report.summary).toEqual({
       degradedSamples: 1,
       unstableCases: 1,
+      indexing: false,
       reviewRequired: true,
     });
     expect(report.meilisearch).toMatchObject({
@@ -250,6 +252,48 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
     expect(JSON.stringify(report)).not.toContain(privateId);
     expect(JSON.stringify(report)).not.toContain(privateName);
     expect(JSON.stringify(report)).not.toContain(salt);
+  });
+
+  it('requires review when totals drift or the index is still indexing', () => {
+    const searchCase = PHASE0_RESEARCH_SEARCH_CASES[0];
+    const summarized = summarizePhase0ResearchSearchCase(searchCase, [
+      {
+        latencyMs: 5,
+        estimatedTotalHits: 10,
+        degraded: false,
+        topResultFingerprints: ['stable-result'],
+      },
+      {
+        latencyMs: 6,
+        estimatedTotalHits: 11,
+        degraded: false,
+        topResultFingerprints: ['stable-result'],
+      },
+    ]);
+    expect(summarized.distinctEstimatedTotals).toBe(2);
+    expect(summarized.distinctOrderedResultSets).toBe(1);
+
+    const report = buildPhase0ResearchSearchBaselineReport({
+      generatedAt: '2026-07-28T12:00:00.000Z',
+      sourceCommit: '5d4b09617ed96c963c1e28011075a941d1307b13',
+      environment: 'development',
+      databaseName: 'Development',
+      salt: '7decbd7cf96d4edca5e46dbe1d06f4a1b64b5846209f2bce',
+      meiliTarget: { targetKind: 'local', indexName: 'researchentities' },
+      meiliSettings: {},
+      meiliStats: { numberOfDocuments: 11, isIndexing: true },
+      iterations: 2,
+      topK: 10,
+      cases: [summarized],
+    });
+
+    expect(report.schemaVersion).toBe(2);
+    expect(report.summary).toEqual({
+      degradedSamples: 0,
+      unstableCases: 1,
+      indexing: true,
+      reviewRequired: true,
+    });
   });
 
   it('fingerprints settings independent of object key order', () => {

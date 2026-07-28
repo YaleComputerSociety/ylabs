@@ -56,11 +56,12 @@ export interface Phase0ResearchSearchCaseResult {
     max: number;
   };
   degradedSamples: number;
+  distinctEstimatedTotals: number;
   distinctOrderedResultSets: number;
 }
 
 export interface Phase0ResearchSearchBaselineReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   artifactType: 'phase0-research-search-baseline';
   generatedAt: string;
   sourceCommit: string;
@@ -86,6 +87,7 @@ export interface Phase0ResearchSearchBaselineReport {
   summary: {
     degradedSamples: number;
     unstableCases: number;
+    indexing: boolean;
     reviewRequired: boolean;
   };
   cases: Phase0ResearchSearchCaseResult[];
@@ -396,6 +398,7 @@ export function summarizePhase0ResearchSearchCase(
       max: latencies[latencies.length - 1] || 0,
     },
     degradedSamples: samples.filter((sample) => sample.degraded).length,
+    distinctEstimatedTotals: new Set(samples.map((sample) => sample.estimatedTotalHits)).size,
     distinctOrderedResultSets: orderedResultSets.size,
   };
 }
@@ -427,8 +430,10 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
     0,
   );
   const unstableCases = input.cases.filter(
-    (searchCase) => searchCase.distinctOrderedResultSets > 1,
+    (searchCase) =>
+      searchCase.distinctOrderedResultSets > 1 || searchCase.distinctEstimatedTotals > 1,
   ).length;
+  const indexing = input.meiliStats.isIndexing === true;
   const embedders =
     input.meiliSettings.embedders &&
     typeof input.meiliSettings.embedders === 'object' &&
@@ -437,7 +442,7 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
       : [];
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     artifactType: 'phase0-research-search-baseline',
     generatedAt: input.generatedAt,
     sourceCommit: input.sourceCommit,
@@ -452,7 +457,7 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
       sortableAttributes: safeStringArray(input.meiliSettings.sortableAttributes),
       embedderNames: embedders,
       numberOfDocuments: safeNonNegativeInteger(input.meiliStats.numberOfDocuments),
-      indexing: input.meiliStats.isIndexing === true,
+      indexing,
     },
     suite: {
       iterations: input.iterations,
@@ -462,7 +467,8 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
     summary: {
       degradedSamples,
       unstableCases,
-      reviewRequired: degradedSamples > 0 || unstableCases > 0,
+      indexing,
+      reviewRequired: indexing || degradedSamples > 0 || unstableCases > 0,
     },
     cases: input.cases,
   };
