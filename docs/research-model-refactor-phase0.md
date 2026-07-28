@@ -3,8 +3,8 @@
 Status: tooling in place, production measurement pending.
 
 Phase 0 of [`research-model-refactor.md`](./research-model-refactor.md) resolves integration state and measures production before any target collection is written or any legacy storage is dropped.
-This runbook covers the inventory, search-baseline, and MongoDB query-cost tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
-The tooling PR does not complete Phase 0: reviewed Beta and ProductionCopy inventory, search-baseline, and query-cost evidence, plus verified rollback evidence, remain operational exit work.
+This runbook covers the inventory, identity-collision, search-baseline, and MongoDB query-cost tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
+The tooling PR does not complete Phase 0: reviewed Development, Beta, and ProductionCopy identity-collision evidence and collision-class decisions, reviewed Beta and ProductionCopy inventory, search-baseline, and query-cost evidence, plus verified rollback evidence, remain operational exit work.
 
 ## Inventory tool
 
@@ -185,9 +185,77 @@ The inventory is a census.
 Deeper collision and identity analysis already lives in dedicated scripts and should be run alongside it:
 
 - `yarn --cwd server users:dedupe-by-identity` for same-person user shells.
+- `yarn --cwd server model-refactor:identity-collisions` for bounded shared-identity and same-name-only evidence.
 - `yarn --cwd server research-entity-members:audit-user-refs` for membership reference integrity.
 - `yarn --cwd server research-entity:duplicate-name-review` for duplicate entity identities.
 - `yarn --cwd server research-entity:coverage-audit` for entity evidence coverage.
+
+### Private identity-collision evidence
+
+The Phase 0 identity-collision audit is a separate read-only evidence command.
+It does not run repair, merge, migration, promotion, or deletion code.
+It reads active compatibility `users` through a native MongoDB snapshot session configured with `secondaryPreferred`, `retryWrites=false`, a pool of two connections, a five-second query ceiling, and the `ylabs-phase0:identity-collision-audit` query comment.
+If the target cannot provide snapshot read concern, the command fails instead of combining identities from different database states.
+The command accepts only Development, Beta, or ProductionCopy and rejects the primary Production database before reading.
+
+The report covers the governed current identity keys `netid`, `email`, `orcid`, `openAlexId`, and `googleScholarId`.
+A same-name-only group is a normalized-name group whose members are not already joined by any of those strong identity keys.
+This definition keeps a shared stable identifier from being misreported as name-only evidence.
+If one normalized-name group contains both a shared-identity component and another distinct component, the report keeps it as `same_name_mixed_identity_components` instead of clearing the whole name.
+ORCID URLs and bare ORCIDs, OpenAlex URLs and bare author IDs, and Google Scholar profile URLs and bare user IDs are canonicalized before component construction.
+
+Every measured collision class is emitted with `reviewRequired: true` and pending `owner` and `disposition` values.
+The report does not assign or accept a human owner or disposition.
+The private reviewer must record those decisions separately in the protected Phase 0 review package, including an explicit preserve-separate or independently-evidenced merge decision for every same-name-only group.
+Issue #239 remains open until Development, Beta, and ProductionCopy evidence is reviewed and every nonzero class has an accepted owner and disposition.
+
+The private artifact retains only the raw shared identity or normalized name and MongoDB record ID needed to locate and adjudicate a review group.
+Non-group identity values are replaced with per-artifact secret-salted fingerprints.
+The random fingerprint salt is not written to disk, so fingerprints support grouping within one artifact but are not stable identifiers across runs.
+Do not attach the artifact, its counts, lookup values, fingerprints, path, hash, or storage reference to a public issue or pull request.
+Protected stdout contains only completion status, environment, database name, and source commit.
+
+The scan is bounded by document, group, member-detail, and query-time limits.
+Each bound has a separate truncation flag.
+`--strict` writes the private artifact and exits nonzero when any bound truncates evidence, so truncated output cannot satisfy the Phase 0 review.
+Every output is created once with mode `0600`, and an existing file is never overwritten.
+
+Run Development from a clean Beta worktree with an explicitly injected Development database URL:
+
+```bash
+umask 077
+
+export MONGODBURL
+
+yarn --cwd server model-refactor:identity-collisions \
+  --environment=development \
+  --document-limit=100000 \
+  --group-limit=10000 \
+  --group-member-limit=100 \
+  --max-time-ms=5000 \
+  --strict \
+  --output=/tmp/ylabs-phase0-identity-development.json
+
+unset MONGODBURL
+```
+
+Beta and ProductionCopy reuse the existing external inventory profiles and their database-scoped read-only Atlas users.
+The fixed launchers reject arbitrary child arguments, dirty worktrees, forged profile metadata, local or primary Production targets, inherited write credentials, symlinked profiles, permissive profile modes, and output paths outside the system temporary directory.
+
+```bash
+umask 077
+
+yarn model-refactor:identity-collisions:beta \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-phase0-identity-beta.json
+
+yarn model-refactor:identity-collisions:production-copy \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-phase0-identity-production-copy.json
+```
+
+Run all three environments from the same clean source commit used by the matching inventory evidence package.
+Keep the artifacts and the separate human review record only in the approved protected evidence location.
 
 ### Aggregate-only Development evidence
 
@@ -412,5 +480,5 @@ The complete protected object versions and recovery procedures remain inside the
 
 ## Exit condition
 
-Phase 0 exits on reviewed Development, Beta, and ProductionCopy inventory, search-baseline, and MongoDB query-cost evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
+Phase 0 exits on reviewed Development, Beta, and ProductionCopy identity-collision evidence with accepted owners and dispositions for every nonzero class, reviewed Development, Beta, and ProductionCopy inventory, search-baseline, and MongoDB query-cost evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
 The collection spec in `researchModelInventoryCore.ts` is the machine-readable form of that ownership map, and should be extended whenever the report surfaces an unclassified collection.
