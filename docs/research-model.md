@@ -558,6 +558,27 @@ A later decision may point backward to one decision it supersedes, while the ori
 These collections may coexist empty with the current runtime.
 No current scraper or public read path should write or consume them until a later cutover phase adds reconciliation and explicit operational gates.
 
+### Phase 1 bounded canonical read contracts
+
+[`canonicalDomainLoaders.ts`](../server/src/services/canonicalDomainLoaders.ts) defines reusable, read-only loaders for public person identity, current approved roles, active organizations, approved taxonomy terms, public evidence metadata, and account-owned research plans.
+Every batch is capped at 100 identifiers or results, accepts only primitive or real `ObjectId` identifiers, selects an explicit field list, and preserves the owning account boundary for research plans.
+The default research-plan read excludes private notes, checklists, and deadlines, and selecting those fields requires an explicit owner-scoped request.
+
+[`canonicalPublicProjections.ts`](../server/src/services/canonicalPublicProjections.ts) defines the only Phase 1 public `Person` projection, bounded public evidence metadata, and the bounded `ResearchEntity.discovery` projection.
+The public person projection includes a selected reviewed primary profile and at most two reviewed researcher-profile links whose health is not known to be unavailable.
+It omits account links, identifiers without reviewed public links, direct contact data, mirrored profile fields, and unavailable or future-verified candidates.
+An `UNKNOWN` person requires a current approved role to render, while `DEPARTED` always fails closed even if a stale role remains current.
+Public evidence projection omits claim values, excerpts, source-document references, raw source documents, review notes, rejected claims, and diagnostics.
+
+`ResearchEntity.discovery` contains no more than eight deduplicated leads, 120-character summary fields, an active-opportunity count capped at 9,999, a bounded browse-rank score, a controlled visibility state, and `computedAt`.
+It is a rebuildable cache, not canonical evidence.
+`accessState` remains bounded text in Phase 1 because the accepted model has not established a governed access-summary vocabulary.
+The later runtime cutover must govern it before using it as a filter or facet.
+Every successful canonical materializer commit or moderated canonical write that changes an input must recompute affected entities after the authoritative write commits.
+A reconciliation pass must run at least every six hours to repair missed invalidations, projection construction rejects future timestamps, and readers require recomputation for missing, previously persisted future-dated, or more-than-24-hour-old projections.
+
+These loaders and projections are not wired to live REST routes, Meilisearch, materializer writes, or migration code in Phase 1.
+
 Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Runtime paper activity now uses `research_scholarly_links` and `research_scholarly_attributions`; empty stats and paper-entity-link collections are not part of the launch copy set.
 
 The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including Beta seed, Pathway Meili relevance review, source blocker resolution, production scraper rollout, opportunity detail polish, data-quality operations, post-Beta legacy cleanup, and saved/advising workflow expansion.
