@@ -39,7 +39,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` - populates the `Source` collection from the coverage registry
 - `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people/papers, current members on archived entities, duplicate routes/signals, active artifacts on archived entities), with recommended CLI repair commands
-- `paperAuthorshipPolicy.ts` - policy for which paper authorships are accepted/attributed
+- `paperAuthorshipPolicy.ts` - rollback-only policy code retained with legacy paper storage
 - `cliHelpers.ts` / `scraperCliOutput.ts` / `types.ts` - CLI parsing, output formatting, shared types
 - `scraplingBridge.py` - Python bridge for utilities requiring Python tooling
 
@@ -70,4 +70,5 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 The bibliographic ingestion scrapers (`arxivPreprintScraper.ts`, `openAlexPaperScraper.ts`, `orcidWorksScraper.ts`, `europePmcPaperScraper.ts` / `pubmed`, `crossrefPaperScraper.ts`) are deprecated and no longer registered in `registry.ts`, so they cannot run via the CLI, cron, or a sweep.
 The launch-trust gate no longer enforces paper-quality or research-activity checks.
 Source files, `paperAuthorshipPolicy.ts`, and the stored paper/scholarly collections are retained temporarily for rollback; verified Google Scholar and ORCID identity links stay on `Person`.
+The legacy `paperAuthorshipAudit.ts` has no package-script entry point and requires `RETIRED_PAPER_PIPELINE_ROLLBACK=true` for direct execution as part of an approved rollback plan.
 Readers, storage, and remaining references are removed incrementally under issue #207 (Phase 3); see `docs/research-model-refactor.md`.

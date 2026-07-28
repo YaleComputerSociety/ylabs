@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertPaperAuthorshipAuditApplyAllowed,
+  assertRetiredPaperPipelineRollbackEnabled,
   buildPaperAuthorshipAuditOutput,
   countPaperAuthorshipAuditPlannedChanges,
   normalizePaperAuthorshipAuditObjectId,
@@ -14,15 +15,26 @@ import {
 } from '../paperAuthorshipAudit';
 
 describe('paperAuthorshipAudit CLI helpers', () => {
+  it('quarantines direct execution behind an explicit rollback opt-in', () => {
+    expect(() => assertRetiredPaperPipelineRollbackEnabled({} as NodeJS.ProcessEnv)).toThrow(
+      /quarantined with the retired bibliographic pipeline/,
+    );
+    expect(() =>
+      assertRetiredPaperPipelineRollbackEnabled({
+        RETIRED_PAPER_PIPELINE_ROLLBACK: 'true',
+      } as NodeJS.ProcessEnv),
+    ).not.toThrow();
+  });
+
   it('rejects object-shaped ids without coercion', () => {
     const objectShapedId = {
       toString: () => '507f1f77bcf86cd799439011',
     };
 
     expect(normalizePaperAuthorshipAuditObjectId(objectShapedId)).toBeUndefined();
-    expect(
-      normalizePaperAuthorshipAuditObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString(),
-    ).toBe('507f1f77bcf86cd799439011');
+    expect(normalizePaperAuthorshipAuditObjectId(' 507f1f77bcf86cd799439011 ')?.toHexString()).toBe(
+      '507f1f77bcf86cd799439011',
+    );
   });
 
   it('parses apply, backfill, sample-limit, and output flags', () => {
@@ -178,7 +190,7 @@ describe('paperAuthorshipAudit CLI helpers', () => {
 
   it('includes the explicit confirmation flag in paper authorship fix guidance', () => {
     expect(paperAuthorshipAuditFixCommand(7)).toBe(
-      'SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit --apply --max-apply=7 --confirm-paper-authorship-apply',
+      'SCRAPER_ENV=beta RETIRED_PAPER_PIPELINE_ROLLBACK=true yarn --cwd server tsx src/scripts/paperAuthorshipAudit.ts --apply --max-apply=7 --confirm-paper-authorship-apply',
     );
   });
 

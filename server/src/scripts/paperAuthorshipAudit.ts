@@ -1,3 +1,10 @@
+/**
+ * Rollback-only audit for the retired bibliographic pipeline.
+ *
+ * This file is retained while legacy paper storage remains recoverable, but it
+ * has no package-script entry point and refuses direct execution unless an
+ * operator explicitly enables the retired-pipeline rollback path.
+ */
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -50,9 +57,19 @@ const METADATA_ONLY_SOURCES = ['arxiv', 'crossref'] as const;
 const DIRECT_AUTHOR_FIELD_KEEP_SOURCES = ['manual-admin-edit', 'manual-pi-edit'] as const;
 const PAPER_AUTHORSHIP_AUDIT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
+export function assertRetiredPaperPipelineRollbackEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (env.RETIRED_PAPER_PIPELINE_ROLLBACK !== 'true') {
+    throw new Error(
+      'Paper authorship audit is quarantined with the retired bibliographic pipeline. Set RETIRED_PAPER_PIPELINE_ROLLBACK=true only as part of an approved rollback plan.',
+    );
+  }
+}
+
 export function paperAuthorshipAuditFixCommand(maxApply?: number): string {
   const maxApplyArg = typeof maxApply === 'number' ? ` --max-apply=${maxApply}` : '';
-  return `SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit --apply${maxApplyArg} --confirm-paper-authorship-apply`;
+  return `SCRAPER_ENV=beta RETIRED_PAPER_PIPELINE_ROLLBACK=true yarn --cwd server tsx src/scripts/paperAuthorshipAudit.ts --apply${maxApplyArg} --confirm-paper-authorship-apply`;
 }
 
 export function normalizePaperAuthorshipAuditObjectId(
@@ -501,15 +518,12 @@ async function applyIntegrityCleanup(apply: boolean): Promise<{
     ...noDenormalizedYaleAuthorsFilter(),
   };
 
-  const [
-    directAuthorFieldObservationCount,
-    unidentifiedUnlinkedPaperCount,
-    reconciliationPlan,
-  ] = await Promise.all([
-    Observation.countDocuments(directAuthorFieldFilter),
-    Paper.countDocuments(unidentifiedUnlinkedFilter),
-    reconcileDenormalizedPaperAuthors(false),
-  ]);
+  const [directAuthorFieldObservationCount, unidentifiedUnlinkedPaperCount, reconciliationPlan] =
+    await Promise.all([
+      Observation.countDocuments(directAuthorFieldFilter),
+      Paper.countDocuments(unidentifiedUnlinkedFilter),
+      reconcileDenormalizedPaperAuthors(false),
+    ]);
 
   if (!apply) {
     return {
@@ -524,23 +538,27 @@ async function applyIntegrityCleanup(apply: boolean): Promise<{
   const invalidPaperAuthorObjectIds = Array.from(invalidIds)
     .map((id) => normalizePaperAuthorshipAuditObjectId(id))
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  const [paperAuthorDeleteResult, observationResult, unidentifiedPaperResult, reconciliationResult] =
-    await Promise.all([
-      invalidPaperAuthorObjectIds.length > 0
-        ? PaperAuthor.deleteMany({
-            _id: { $in: invalidPaperAuthorObjectIds },
-          })
-        : { deletedCount: 0 },
-      directAuthorFieldObservationCount > 0
-        ? Observation.updateMany(directAuthorFieldFilter, { $set: { superseded: true } })
-        : { modifiedCount: 0 },
-      unidentifiedUnlinkedPaperCount > 0
-        ? Paper.deleteMany(unidentifiedUnlinkedFilter)
-        : { deletedCount: 0 },
-      reconciliationPlan.candidates > 0
-        ? reconcileDenormalizedPaperAuthors(true)
-        : { candidates: 0, updated: 0 },
-    ]);
+  const [
+    paperAuthorDeleteResult,
+    observationResult,
+    unidentifiedPaperResult,
+    reconciliationResult,
+  ] = await Promise.all([
+    invalidPaperAuthorObjectIds.length > 0
+      ? PaperAuthor.deleteMany({
+          _id: { $in: invalidPaperAuthorObjectIds },
+        })
+      : { deletedCount: 0 },
+    directAuthorFieldObservationCount > 0
+      ? Observation.updateMany(directAuthorFieldFilter, { $set: { superseded: true } })
+      : { modifiedCount: 0 },
+    unidentifiedUnlinkedPaperCount > 0
+      ? Paper.deleteMany(unidentifiedUnlinkedFilter)
+      : { deletedCount: 0 },
+    reconciliationPlan.candidates > 0
+      ? reconcileDenormalizedPaperAuthors(true)
+      : { candidates: 0, updated: 0 },
+  ]);
 
   return {
     invalidPaperAuthors: invalidIds.size,
@@ -595,7 +613,8 @@ async function backfillOpenAlexPaperAuthors(apply: boolean): Promise<{
       if (!userObjectId) continue;
       const user = usersById.get(userId);
       if (!user) continue;
-      const displayName = `${String(user.fname || '').trim()} ${String(user.lname || '').trim()}`.trim();
+      const displayName =
+        `${String(user.fname || '').trim()} ${String(user.lname || '').trim()}`.trim();
       if (!displayName) continue;
       ops.push({
         updateOne: {
@@ -926,6 +945,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
+  assertRetiredPaperPipelineRollbackEnabled();
   main()
     .catch((error) => {
       console.error(sanitizeLogValue(error));

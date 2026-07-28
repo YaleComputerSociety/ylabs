@@ -6,6 +6,7 @@ import {
   buildBetaReadinessCommands,
   buildBetaReadinessGateOutput,
   parseBetaReadinessGateArgs,
+  summarizeReviewedProfileLinkInput,
   writeBetaReadinessGateOutput,
 } from '../betaReadinessGate';
 import { DEFAULT_ACCEPTED_INPUT_ROOT } from '../acceptedInputsCore';
@@ -36,9 +37,7 @@ describe('betaReadinessGate CLI helpers', () => {
     expect(() => parseBetaReadinessGateArgs(['--root', '--strict'])).toThrow(
       /--root requires a path/,
     );
-    expect(() => parseBetaReadinessGateArgs(['--root=--strict'])).toThrow(
-      /--root requires a path/,
-    );
+    expect(() => parseBetaReadinessGateArgs(['--root=--strict'])).toThrow(/--root requires a path/);
     expect(() => parseBetaReadinessGateArgs(['--output', '--strict'])).toThrow(
       /--output requires a path/,
     );
@@ -62,6 +61,33 @@ describe('betaReadinessGate CLI helpers', () => {
     });
   });
 
+  it('reports reviewed Scholar profile links without making them a scraper gate', () => {
+    expect(
+      summarizeReviewedProfileLinkInput(
+        { status: 'ready', readyRows: 3, blockedRows: 0 },
+        'Profile links are ready.',
+        'Profile links are optional.',
+      ),
+    ).toEqual({
+      status: 'ready',
+      message: 'Profile links are ready.',
+      readyRows: 3,
+      blockedRows: 0,
+    });
+    expect(
+      summarizeReviewedProfileLinkInput(
+        { status: 'blocked', readyRows: 1, blockedRows: 2 },
+        'Profile links are ready.',
+        'Profile links are optional.',
+      ),
+    ).toEqual({
+      status: 'deferred',
+      message: 'Profile links are optional.',
+      readyRows: 1,
+      blockedRows: 2,
+    });
+  });
+
   it('writes the beta readiness artifact when output is provided', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-beta-readiness-'));
     const output = path.join(dir, 'beta-readiness.json');
@@ -81,9 +107,9 @@ describe('betaReadinessGate CLI helpers', () => {
         betaBackup: { status: 'blocked' },
       },
     });
-    expect(() => writeBetaReadinessGateOutput({ ready: true }, '/var/tmp/beta-readiness.json')).toThrow(
-      /--output must write under/,
-    );
+    expect(() =>
+      writeBetaReadinessGateOutput({ ready: true }, '/var/tmp/beta-readiness.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('wraps beta readiness artifacts with target metadata and parsed options', () => {
@@ -132,7 +158,6 @@ describe('betaReadinessGate CLI helpers', () => {
         'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
       pathwayRelevance:
         'SCRAPER_ENV=beta PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review',
-      paperAuthorshipAudit: 'SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit',
       meiliRebuild:
         'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-pathways --clear --confirm-meili-rebuild && SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
       acceptedMeiliReadiness:
