@@ -301,7 +301,7 @@ function boundedBrowseRank(value: unknown): number {
 
 function discoveryLead(value: Record<string, unknown>): ResearchEntityDiscoveryLead | undefined {
   const personId = canonicalId(value.personId);
-  const displayName = boundedPublicText(value.displayName, MAX_PUBLIC_PERSON_NAME_LENGTH);
+  const displayName = boundedPublicText(value.displayName, MAX_PUBLIC_DISCOVERY_TEXT_LENGTH);
   if (
     !personId ||
     !displayName ||

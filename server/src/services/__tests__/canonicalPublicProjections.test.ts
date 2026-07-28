@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_PUBLIC_DISCOVERY_LEADS,
   MAX_PUBLIC_DISCOVERY_OPPORTUNITY_COUNT,
+  MAX_PUBLIC_DISCOVERY_TEXT_LENGTH,
   MAX_PUBLIC_EVIDENCE_ITEMS,
   MAX_PUBLIC_PERSON_NAME_LENGTH,
   RESEARCH_ENTITY_DISCOVERY_RECONCILIATION_INTERVAL_MS,
@@ -202,7 +203,8 @@ describe('canonical public projections', () => {
       personId: new mongoose.Types.ObjectId(
         `507f191e810c19729de86${String(200 + index).slice(-3)}`,
       ),
-      displayName: `Lead ${index} lead${index}@yale.edu`,
+      displayName:
+        index === 1 ? `Lead ${index} ${'x'.repeat(200)}` : `Lead ${index} lead${index}@yale.edu`,
       role: 'PI',
       officialProfileUrl:
         index === 0
@@ -234,6 +236,7 @@ describe('canonical public projections', () => {
       officialProfileUrl: 'https://medicine.yale.edu/profile/lead-zero',
     });
     expect(discovery?.leads[1]).not.toHaveProperty('officialProfileUrl');
+    expect(discovery?.leads[1]?.displayName.length).toBe(MAX_PUBLIC_DISCOVERY_TEXT_LENGTH);
     expect(discovery?.leads[0]).not.toHaveProperty('accountId');
     expect(discovery?.leads[0]).not.toHaveProperty('reviewNotes');
     expect(discovery?.accessState).not.toContain('private@yale.edu');
