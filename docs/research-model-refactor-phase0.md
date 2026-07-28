@@ -3,8 +3,8 @@
 Status: tooling in place, production measurement pending.
 
 Phase 0 of [`research-model-refactor.md`](./research-model-refactor.md) resolves integration state and measures production before any target collection is written or any legacy storage is dropped.
-This runbook covers the inventory, search-baseline, and MongoDB query-cost tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
-The tooling PR does not complete Phase 0: reviewed Beta and ProductionCopy inventory, search-baseline, and query-cost evidence, plus verified rollback evidence, remain operational exit work.
+This runbook covers the inventory, identity-collision, search-baseline, and MongoDB query-cost tools, how to read their output, and the export and rollback steps that must exist before later phases run destructive cleanup.
+The tooling PR does not complete Phase 0: reviewed Development, Beta, and ProductionCopy identity-collision evidence and collision-class decisions, reviewed Beta and ProductionCopy inventory, search-baseline, and query-cost evidence, plus verified rollback evidence, remain operational exit work.
 
 ## Inventory tool
 
@@ -480,5 +480,5 @@ The complete protected object versions and recovery procedures remain inside the
 
 ## Exit condition
 
-Phase 0 exits on reviewed Development, Beta, and ProductionCopy inventory, search-baseline, and MongoDB query-cost evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
+Phase 0 exits on reviewed Development, Beta, and ProductionCopy identity-collision evidence with accepted owners and dispositions for every nonzero class, reviewed Development, Beta, and ProductionCopy inventory, search-baseline, and MongoDB query-cost evidence, plus an ownership map of which phase owns each collection and field and verified rollback evidence.
 The collection spec in `researchModelInventoryCore.ts` is the machine-readable form of that ownership map, and should be extended whenever the report surfaces an unclassified collection.

@@ -237,6 +237,16 @@ describe('phase0IdentityCollisionAudit CLI', () => {
     expect(serialized).not.toContain(sentinel);
   });
 
+  it('keeps generic validation failures path-safe without emitting error stacks', () => {
+    const sentinel = '/tmp/private-phase0-package/sentinel-inventory.env';
+    const serialized = serializePhase0IdentityCollisionAuditError(
+      new Error(`Invalid protected profile at ${sentinel}`),
+    );
+    expect(serialized).toBe('Identity-collision audit failed during protected validation.');
+    expect(serialized).not.toContain(sentinel);
+    expect(serialized).not.toContain('\n');
+  });
+
   it('reports numeric Mongo errors as database failures instead of filesystem failures', () => {
     const serialized = serializePhase0IdentityCollisionAuditError(
       Object.assign(new Error('snapshot read concern is unavailable'), {

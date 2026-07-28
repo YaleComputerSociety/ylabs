@@ -13,7 +13,6 @@ import {
 } from 'mongodb';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertOperatorEnvironmentMatchesDatabase,
   databaseNameFromMongoUrl,
@@ -476,7 +475,7 @@ export function serializePhase0IdentityCollisionAuditError(error: unknown): stri
   ) {
     return 'Identity-collision audit failed during the protected database read.';
   }
-  return sanitizeLogValue(error);
+  return 'Identity-collision audit failed during protected validation.';
 }
 
 export function assertStrictIdentityCollisionAuditComplete(
