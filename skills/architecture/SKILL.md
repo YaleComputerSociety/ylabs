@@ -53,20 +53,23 @@ Models are Mongoose schemas with indexes.
 
 ## Commands
 
-| Command                           | Effect                                                         |
-| --------------------------------- | -------------------------------------------------------------- |
-| `yarn install:all`                | Install deps in root, server, and client.                      |
-| `yarn dev:client`                 | Vite dev server on port 3000.                                  |
-| `yarn dev:server`                 | Express with nodemon on port 4000.                             |
-| `yarn build`                      | Corepack enable, install all deps, build server, build client. |
-| `yarn start`                      | Run both servers in production.                                |
-| `yarn clean:all`                  | Remove all `node_modules` directories.                         |
-| `yarn --cwd client test`          | Client Vitest watch mode.                                      |
-| `yarn --cwd client test:ci`       | Client Vitest once.                                            |
-| `yarn --cwd server test`          | Server Vitest suite.                                           |
-| `yarn --cwd server scrape <cmd>`  | Scraper CLI.                                                   |
-| `yarn --cwd server gates:refresh` | Regenerate canonical gate scorecards.                          |
-| `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory. |
+| Command                                                          | Effect                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `yarn install:all`                                               | Install deps in root, server, and client.                                                    |
+| `yarn dev:client`                                                | Vite dev server on port 3000.                                                                |
+| `yarn dev:server`                                                | Express with nodemon on port 4000.                                                           |
+| `yarn build`                                                     | Corepack enable, install all deps, build server, build client.                               |
+| `yarn start`                                                     | Run both servers in production.                                                              |
+| `yarn clean:all`                                                 | Remove all `node_modules` directories.                                                       |
+| `yarn --cwd client test`                                         | Client Vitest watch mode.                                                                    |
+| `yarn --cwd client test:ci`                                      | Client Vitest once.                                                                          |
+| `yarn --cwd server test`                                         | Server Vitest suite.                                                                         |
+| `yarn --cwd server scrape <cmd>`                                 | Scraper CLI.                                                                                 |
+| `yarn --cwd server gates:refresh`                                | Regenerate canonical gate scorecards.                                                        |
+| `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory.                                          |
+| `yarn model-refactor:inventory:beta`                             | Run aggregate-only Beta inventory through the external read-only profile.                    |
+| `yarn model-refactor:inventory:production-copy`                  | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
+| `yarn model-refactor:inventory:validate-evidence`                | Validate a private inventory against its versioned recovery manifest.                        |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
@@ -104,19 +107,19 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 
 ## Key services
 
-| Service                                                                                                                                     | Responsibility                                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
-| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
-| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts`                                          | Meilisearch index sync and query.                                    |
-| `meiliSyncService.ts`                                                                                                                       | Syncs collection upserts into Meilisearch indexes.                   |
-| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` / `facultyOpportunityService.ts`  | Product-model access and faculty opportunity authoring layer.        |
-| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
-| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
-| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, repair queue, and decision explanations. |
-| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts`                                    | Fellowship matching, cycle evidence, and program classification.     |
-| `listingResearchEntityProfile.ts`                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
-| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
+| Service                                                                                                                                                                     | Responsibility                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
+| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
+| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts`                                                                          | Meilisearch index sync and query.                                    |
+| `meiliSyncService.ts`                                                                                                                                                       | Syncs collection upserts into Meilisearch indexes.                   |
+| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` / `facultyOpportunityService.ts` | Product-model access and faculty opportunity authoring layer.        |
+| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                                                     | Operator board, access review, and admin grants.                     |
+| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                                                    | Scraper/source health and paper-quality scoring.                     |
+| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts`                                 | Student visibility tiering, repair queue, and decision explanations. |
+| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts`                                                                    | Fellowship matching, cycle evidence, and program classification.     |
+| `listingResearchEntityProfile.ts`                                                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
+| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                                                        | External integrations.                                               |
 
 ## Naming conventions
 

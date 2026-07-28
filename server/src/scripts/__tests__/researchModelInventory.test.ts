@@ -1,11 +1,47 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { ObjectId, type Db } from 'mongodb';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  assertResearchModelInventoryCompletionMetadata,
+  assertResearchModelInventoryOutputAvailable,
   checkReferenceEdge,
   gatherInventoryFacts,
   runResearchModelInventory,
+  serializeResearchModelInventoryCompletion,
+  writeResearchModelInventoryOutput,
 } from '../researchModelInventory';
 import { REFERENCE_EDGES, RETIREMENT_FIELD_PROBES } from '../researchModelInventoryCore';
+
+describe('protected inventory output', () => {
+  it('requires database metadata before emitting a completion summary', () => {
+    expect(() => assertResearchModelInventoryCompletionMetadata({})).toThrow(
+      'Protected inventory output requires database metadata.',
+    );
+    expect(() => assertResearchModelInventoryCompletionMetadata({ db: '   ' })).toThrow(
+      'Protected inventory output requires database metadata.',
+    );
+  });
+
+  it('serializes only credential-free completion metadata', () => {
+    const serialized = serializeResearchModelInventoryCompletion({
+      environment: 'beta',
+      db: 'Beta',
+      sourceCommit: 'a'.repeat(40),
+      privateCounts: { totalDocuments: 42 },
+    } as Parameters<typeof serializeResearchModelInventoryCompletion>[0] & {
+      privateCounts: { totalDocuments: number };
+    });
+    expect(JSON.parse(serialized)).toEqual({
+      status: 'complete',
+      environment: 'beta',
+      databaseName: 'Beta',
+      sourceCommit: 'a'.repeat(40),
+    });
+    expect(serialized).not.toContain('totalDocuments');
+  });
+});
 
 function asyncCursor(rows: Record<string, unknown>[]) {
   return {
@@ -542,6 +578,26 @@ describe('gatherInventoryFacts', () => {
       orphaned: 1,
       sampleOrphanIds: ['signal-1'],
     });
+  });
+});
+
+describe('writeResearchModelInventoryOutput', () => {
+  it('creates private evidence once and refuses to overwrite it', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-model-inventory-'));
+    const output = path.join(directory, 'inventory.json');
+    try {
+      writeResearchModelInventoryOutput({ environment: 'test' }, output);
+      expect(fs.statSync(output).mode & 0o777).toBe(0o600);
+      expect(() => assertResearchModelInventoryOutputAvailable(output)).toThrow(
+        'never overwritten',
+      );
+      expect(() => writeResearchModelInventoryOutput({ environment: 'changed' }, output)).toThrow();
+      expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toEqual({
+        environment: 'test',
+      });
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 

@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yalelabs.io/schemas/model-inventory-recovery-manifest-v1.json",
+  "title": "Yale Research model inventory recovery manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "issue",
+    "environment",
+    "databaseName",
+    "credentialFreeTarget",
+    "sourceCommit",
+    "providerControls",
+    "captureWindow",
+    "recoveryArtifact",
+    "inventory",
+    "rollback",
+    "review"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "issue": { "const": 204 },
+    "environment": { "enum": ["beta", "production-copy"] },
+    "databaseName": { "enum": ["Beta", "ProductionCopy"] },
+    "credentialFreeTarget": { "type": "string", "minLength": 3 },
+    "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "providerControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atlasReadOnlyRole", "immutableStorage"],
+      "properties": {
+        "atlasReadOnlyRole": {
+          "$ref": "#/$defs/atlasReadOnlyRoleAttestation"
+        },
+        "immutableStorage": {
+          "$ref": "#/$defs/immutableStorageAttestation"
+        }
+      }
+    },
+    "captureWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startedAt", "completedAt", "writePosture"],
+      "properties": {
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "writePosture": {
+          "enum": ["immutable-restored-copy", "quiescent"]
+        }
+      }
+    },
+    "recoveryArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "artifactId",
+        "createdAt",
+        "verifiedAt",
+        "retentionExpiresAt",
+        "owner",
+        "procedureReference",
+        "storage"
+      ],
+      "properties": {
+        "provider": { "const": "mongodb-atlas" },
+        "artifactId": { "type": "string", "minLength": 8 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "retentionExpiresAt": { "type": "string", "format": "date-time" },
+        "owner": { "type": "string", "minLength": 3 },
+        "procedureReference": { "$ref": "#/$defs/privateReference" },
+        "storage": { "$ref": "#/$defs/storage" }
+      }
+    },
+    "restoreVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceEnvironment",
+        "sourceDatabaseName",
+        "targetDatabaseName",
+        "completedAt",
+        "verifiedBy"
+      ],
+      "properties": {
+        "sourceEnvironment": { "const": "production" },
+        "sourceDatabaseName": { "const": "Production" },
+        "targetDatabaseName": { "const": "ProductionCopy" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "verifiedBy": { "type": "string", "minLength": 3 }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generatedAt", "sha256", "bytes", "sampleLimit", "storage"],
+      "properties": {
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sampleLimit": { "const": 0 },
+        "storage": { "$ref": "#/$defs/storage" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "trigger", "procedureReference", "drillVerifiedAt"],
+      "properties": {
+        "owner": { "type": "string", "minLength": 3 },
+        "trigger": { "type": "string", "minLength": 8 },
+        "procedureReference": { "$ref": "#/$defs/privateReference" },
+        "drillVerifiedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acceptedBy", "acceptedAt"],
+      "properties": {
+        "acceptedBy": { "type": "string", "minLength": 3 },
+        "acceptedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "$defs": {
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control", "verifiedBy", "verifiedAt", "evidenceReference"],
+      "properties": {
+        "control": { "type": "string" },
+        "verifiedBy": { "type": "string", "minLength": 3 },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "evidenceReference": { "$ref": "#/$defs/privateReference" }
+      }
+    },
+    "atlasReadOnlyRoleAttestation": {
+      "allOf": [
+        { "$ref": "#/$defs/attestation" },
+        {
+          "properties": {
+            "control": { "const": "atlas-current-user-read-only-role" }
+          }
+        }
+      ]
+    },
+    "immutableStorageAttestation": {
+      "allOf": [
+        { "$ref": "#/$defs/attestation" },
+        {
+          "properties": {
+            "control": { "const": "protected-object-version-immutability" }
+          }
+        }
+      ]
+    },
+    "privateReference": {
+      "type": "string",
+      "minLength": 8,
+      "pattern": "^(?!https?:|file:)[a-z][a-z0-9+.-]*://"
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactReference", "objectVersion", "storageClass"],
+      "properties": {
+        "artifactReference": { "$ref": "#/$defs/privateReference" },
+        "objectVersion": { "type": "string", "minLength": 4 },
+        "storageClass": { "enum": ["versioned", "write-once"] }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "environment": { "const": "beta" } },
+        "required": ["environment"]
+      },
+      "then": {
+        "properties": {
+          "databaseName": { "const": "Beta" },
+          "captureWindow": {
+            "properties": {
+              "writePosture": {
+                "enum": ["immutable-restored-copy", "quiescent"]
+              }
+            }
+          }
+        },
+        "not": { "required": ["restoreVerification"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "environment": { "const": "production-copy" } },
+        "required": ["environment"]
+      },
+      "then": {
+        "required": ["restoreVerification"],
+        "properties": {
+          "databaseName": { "const": "ProductionCopy" },
+          "captureWindow": {
+            "properties": {
+              "writePosture": { "const": "immutable-restored-copy" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

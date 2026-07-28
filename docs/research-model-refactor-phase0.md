@@ -35,6 +35,8 @@ The deployed database names are `Development`, `Beta`, `ProductionCopy`, and `Pr
 Run it against beta first, then against a production copy once access and rollback artifacts are in place.
 Errors go to stderr, so stdout contains only the JSON report.
 The optional output path must end in `.json`, must resolve under the operating-system temp directory or `./tmp` from the runner's working directory, and must have an existing parent directory.
+Inventory output creation is exclusive and mode `0600`.
+The runner refuses to overwrite an existing report.
 
 Run the inventory against a restored, immutable copy whenever possible.
 If an immutable copy is unavailable, use a declared low-write or quiescent window and prevent migration or scraper writes for the duration of the export and inventory.
@@ -45,6 +47,60 @@ Implementation:
 
 - [`server/src/scripts/researchModelInventory.ts`](../server/src/scripts/researchModelInventory.ts) gathers the facts from MongoDB.
 - [`server/src/scripts/researchModelInventoryCore.ts`](../server/src/scripts/researchModelInventoryCore.ts) holds the collection spec, field probes, reference edges, and report shaping, and is unit tested without a database.
+
+## Read-only Beta and ProductionCopy profiles
+
+Preserved Phase 0 evidence must use the root profile commands instead of editing `server/.env`.
+The commands accept no arbitrary child command and always invoke the inventory with `--sample-limit 0`.
+They load only `MONGODBURL` from a current-user-owned external directory, skip `server/.env`, and pass a minimal child environment without migration, promotion, production-write, Meilisearch, OpenAI, or scraper credentials.
+
+Create the operator directory outside every repository worktree.
+The directory must be absolute, owned by the current operating-system user, contain no symlink path components, and grant no group or other permissions.
+Each profile must be a regular current-user-owned file with mode `0600`.
+
+```bash
+YLABS_INVENTORY_PROFILE_DIRECTORY=/absolute/path/to/ylabs-inventory-profiles
+install -d -m 700 "$YLABS_INVENTORY_PROFILE_DIRECTORY"
+
+install -m 600 \
+  server/.env.beta-inventory.example \
+  "$YLABS_INVENTORY_PROFILE_DIRECTORY/beta-inventory.env"
+
+install -m 600 \
+  server/.env.production-copy-inventory.example \
+  "$YLABS_INVENTORY_PROFILE_DIRECTORY/production-copy-inventory.env"
+```
+
+Replace every placeholder before use.
+Each file may contain only `MONGODBURL`.
+Provision a separate Atlas user with the `read` role scoped only to the named database.
+The launcher requires a remote `mongodb+srv` Atlas URL with credentials and the exact `Beta` or `ProductionCopy` database name.
+It rejects local hosts, placeholders, insecure connection options, database mismatches, and the primary `Production` database before the inventory process can connect.
+
+Run Beta inventory from a clean Beta worktree:
+
+```bash
+umask 077
+
+yarn model-refactor:inventory:beta \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-model-inventory-beta.json
+```
+
+Run ProductionCopy only after the Production restore has completed and an independent operator has verified the restored database:
+
+```bash
+umask 077
+
+yarn model-refactor:inventory:production-copy \
+  --profile-dir "$YLABS_INVENTORY_PROFILE_DIRECTORY" \
+  --output /tmp/ylabs-model-inventory-production-copy.json
+```
+
+Every output path must be a new absolute `.json` file below the system temp directory.
+Protected profile runs require that output and print only credential-free completion metadata to stdout, never the report body or private counts.
+Move no real profile into a worktree.
+Named environment files are ignored as a final defense, while placeholder-only examples remain tracked.
 
 ## What the report contains
 
@@ -264,6 +320,34 @@ No later phase may drop or overwrite a collection until these exist and are veri
 3. A written rollback plan naming the exact collections touched and the restore command for each.
 
 Record the inventory JSON alongside the export so the pre-change state is auditable.
+
+### Versioned recovery manifest
+
+The machine-readable contract is [`model-inventory-recovery-manifest.schema.json`](./model-inventory-recovery-manifest.schema.json).
+Start from the tracked [`Beta example`](./model-inventory-recovery-manifest.beta.example.json) or [`ProductionCopy example`](./model-inventory-recovery-manifest.production-copy.example.json), copy it to a new mode-`0600` path under the system temp directory, and replace every placeholder.
+It binds the exact inventory bytes to the source commit, credential-free target, capture window, Atlas recovery artifact, retention expiry, rollback owner and procedure, protected object versions, and independent review.
+ProductionCopy evidence additionally binds the completed `Production` to `ProductionCopy` restore and requires the immutable-restored-copy capture posture.
+
+The schema cannot itself prove that an Atlas user has only the declared role or that an external object store is immutable.
+The manifest therefore requires separate pre-capture attestations from two different operators for the Atlas current-user read-only role and protected object-version immutability, including each verifier, verification time, and protected evidence reference.
+The recovery artifact must be created and verified before inventory capture starts.
+The rollback drill must be verified before acceptance, and the accepting reviewer must be different from the recorded recovery and rollback owners.
+The validator fails closed on missing fields, placeholders, target mismatches, invalid time ordering, nonzero sample limits, identifier samples, digest or byte drift, public or local artifact references, and absent ProductionCopy restore verification.
+
+Keep the inventory and manifest as mode-`0600` regular files under the system temp directory while validating them.
+Upload the inventory, recovery record, manifest, and validation receipt to access-controlled storage with a retained version or write-once object identifier.
+Do not post the artifacts, private counts, object references, restore identifiers, or document identifiers in a public issue or pull request.
+
+```bash
+yarn model-refactor:inventory:validate-evidence \
+  --manifest /tmp/ylabs-model-inventory-production-copy-manifest.json \
+  --inventory /tmp/ylabs-model-inventory-production-copy.json \
+  --receipt-output /tmp/ylabs-model-inventory-production-copy-receipt.json
+```
+
+The validator refuses to overwrite a receipt.
+Its stdout and receipt contain only the environment, database name, source commit, and SHA-256 plus byte counts for the inventory and manifest.
+The complete protected object versions and recovery procedures remain inside the private manifest.
 
 ## Exit condition
 

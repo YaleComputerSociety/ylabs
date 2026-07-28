@@ -606,6 +606,7 @@ describe('buildResearchModelInventoryOutput', () => {
       environment: 'beta',
       db: 'ylabs-beta',
       target: 'example.mongodb.net/ylabs-beta',
+      sourceCommit: 'a'.repeat(40),
       generatedAt: '2026-07-24T00:00:00.000Z',
       options: { environment: 'beta', sampleLimit: 20 },
     });
@@ -613,6 +614,7 @@ describe('buildResearchModelInventoryOutput', () => {
     expect(output.environment).toBe('beta');
     expect(output.db).toBe('ylabs-beta');
     expect(output.target).toBe('example.mongodb.net/ylabs-beta');
+    expect(output.sourceCommit).toBe('a'.repeat(40));
     expect(output.options.sampleLimit).toBe(20);
     expect(output.summary.collectionsClassified).toBe(INVENTORY_COLLECTIONS.length);
   });
@@ -626,6 +628,7 @@ describe('buildResearchModelInventoryOutput', () => {
     expect(output.environment).toBe('test');
     expect('db' in output).toBe(false);
     expect('target' in output).toBe(false);
+    expect('sourceCommit' in output).toBe(false);
     expect(typeof output.generatedAt).toBe('string');
   });
 });

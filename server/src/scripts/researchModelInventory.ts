@@ -37,7 +37,9 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+if (process.env.YLABS_INVENTORY_PROFILE_ACTIVE !== 'true') {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
 
 const COLLECTION_SCAN_CONCURRENCY = 4;
 const REFERENCE_SCAN_BATCH_SIZE = 1_000;
@@ -391,6 +393,7 @@ export async function runResearchModelInventory(
   args: ResearchModelInventoryArgs,
   mongoUrl: string,
   client: InventoryMongoClient = new MongoClient(mongoUrl),
+  metadata: { sourceCommit?: string } = {},
 ): Promise<ReturnType<typeof buildResearchModelInventoryOutput>> {
   const configuredDatabaseName = databaseNameFromMongoUrl(mongoUrl);
   assertInventoryEnvironmentMatchesDatabase(args.environment, configuredDatabaseName);
@@ -405,6 +408,7 @@ export async function runResearchModelInventory(
       environment: args.environment,
       db: db.databaseName,
       target: summarizeMongoUrl(mongoUrl),
+      sourceCommit: metadata.sourceCommit,
       options: args,
     });
   } finally {
@@ -418,14 +422,51 @@ export function writeResearchModelInventoryOutput(
 ): void {
   if (!target) return;
   const safeOutput = resolveSafeJsonReportOutputPath(target);
-  fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`);
+  fs.writeFileSync(safeOutput, `${JSON.stringify(output, null, 2)}\n`, {
+    encoding: 'utf8',
+    flag: 'wx',
+    mode: 0o600,
+  });
+}
+
+export function assertResearchModelInventoryOutputAvailable(target: string): string {
+  const safeOutput = resolveSafeJsonReportOutputPath(target);
+  if (fs.existsSync(safeOutput)) {
+    throw new Error('--output already exists; preserved inventory evidence is never overwritten.');
+  }
+  return safeOutput;
+}
+
+export function serializeResearchModelInventoryCompletion(output: {
+  environment: string;
+  db: string;
+  sourceCommit?: string;
+}): string {
+  return JSON.stringify({
+    status: 'complete',
+    environment: output.environment,
+    databaseName: output.db,
+    sourceCommit: output.sourceCommit,
+  });
+}
+
+export function assertResearchModelInventoryCompletionMetadata(output: {
+  db?: string;
+}): asserts output is { db: string } {
+  if (typeof output.db !== 'string' || output.db.trim().length === 0) {
+    throw new Error('Protected inventory output requires database metadata.');
+  }
 }
 
 async function main(): Promise<void> {
   const args = parseResearchModelInventoryArgs(process.argv.slice(2));
+  const protectedProfileActive = process.env.YLABS_INVENTORY_PROFILE_ACTIVE === 'true';
+  if (protectedProfileActive && !args.output) {
+    throw new Error('Protected inventory profiles require a private --output artifact.');
+  }
   // Validate the output path before touching the database so a bad flag fails fast.
   if (args.output) {
-    resolveSafeJsonReportOutputPath(args.output);
+    assertResearchModelInventoryOutputAvailable(args.output);
   }
 
   const mongoUrl = process.env.MONGODBURL;
@@ -433,9 +474,16 @@ async function main(): Promise<void> {
     throw new Error('MONGODBURL is required');
   }
 
-  const output = await runResearchModelInventory(args, mongoUrl);
-  console.log(JSON.stringify(output, null, 2));
+  const output = await runResearchModelInventory(args, mongoUrl, undefined, {
+    sourceCommit: process.env.YLABS_INVENTORY_SOURCE_COMMIT,
+  });
   writeResearchModelInventoryOutput(output, args.output);
+  if (protectedProfileActive) {
+    assertResearchModelInventoryCompletionMetadata(output);
+    console.log(serializeResearchModelInventoryCompletion(output));
+  } else {
+    console.log(JSON.stringify(output, null, 2));
+  }
 }
 
 const isDirectRun = process.argv[1]

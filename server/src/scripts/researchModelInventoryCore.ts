@@ -1258,6 +1258,7 @@ export function buildResearchModelInventoryOutput(
     environment: InventoryEnvironment;
     db?: string;
     target?: string;
+    sourceCommit?: string;
     generatedAt?: string;
     options: ResearchModelInventoryArgs;
   },
@@ -1266,6 +1267,7 @@ export function buildResearchModelInventoryOutput(
   environment: InventoryEnvironment;
   db?: string;
   target?: string;
+  sourceCommit?: string;
   options: ResearchModelInventoryArgs;
 } {
   return {
@@ -1273,6 +1275,7 @@ export function buildResearchModelInventoryOutput(
     environment: metadata.environment,
     ...(metadata.db ? { db: metadata.db } : {}),
     ...(metadata.target ? { target: metadata.target } : {}),
+    ...(metadata.sourceCommit ? { sourceCommit: metadata.sourceCommit } : {}),
     ...report,
     options: metadata.options,
   };
