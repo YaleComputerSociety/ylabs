@@ -40,6 +40,7 @@
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:audit-public-descriptions": "tsx src/scripts/publicResearchEntityDescriptionAudit.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
+    "model-refactor:identity-collisions": "tsx src/scripts/phase0IdentityCollisionAudit.ts",
     "model-refactor:search-baseline": "tsx src/scripts/phase0ResearchSearchBaseline.ts",
     "model-refactor:query-cost": "tsx src/scripts/phase0HotPathQueryCost.ts",
     "model-refactor:validators": "tsx src/scripts/canonicalMongoValidators.ts",
