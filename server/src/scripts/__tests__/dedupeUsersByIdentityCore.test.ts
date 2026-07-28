@@ -509,15 +509,15 @@ describe('buildUserIdentityDedupeSummary', () => {
         identityValue: 'first.person@example.test',
         users: [
           { id: 'first-canonical', fname: 'First', lname: 'Person', userConfirmed: true },
-          { id: 'first-duplicate', fname: 'F.', lname: 'Person' },
+          { id: 'first-duplicate', fname: 'First', lname: 'Person' },
         ],
       },
       {
         identityField: 'email',
-        identityValue: 'second.fixture@example.test',
+        identityValue: 'second.person@example.test',
         users: [
           { id: 'second-canonical', fname: 'Second', lname: 'Person', userConfirmed: true },
-          { id: 'second-duplicate', fname: 'S.', lname: 'Person' },
+          { id: 'second-duplicate', fname: 'Second', lname: 'Person' },
         ],
       },
     ]);
@@ -542,15 +542,15 @@ describe('buildUserIdentityDedupeSummary', () => {
         identityValue: 'first.person@example.test',
         users: [
           { id: 'first-canonical', fname: 'First', lname: 'Person', userConfirmed: true },
-          { id: 'first-duplicate', fname: 'F.', lname: 'Person' },
+          { id: 'first-duplicate', fname: 'First', lname: 'Person' },
         ],
       },
       {
         identityField: 'email',
-        identityValue: 'second.fixture@example.test',
+        identityValue: 'second.person@example.test',
         users: [
           { id: 'second-canonical', fname: 'Second', lname: 'Person', userConfirmed: true },
-          { id: 'second-duplicate', fname: 'S.', lname: 'Person' },
+          { id: 'second-duplicate', fname: 'Second', lname: 'Person' },
         ],
       },
     ]);

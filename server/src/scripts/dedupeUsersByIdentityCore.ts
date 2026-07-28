@@ -506,9 +506,10 @@ export function buildUserIdentityDedupeSummary(input: {
   applied: Record<string, unknown>[];
 }): UserIdentityDedupeSummary {
   const uniqueGroups = uniquePlannedUserIdentityDedupeGroups(input.plan.groups);
-  const plannedGroups = input.apply && input.maxApplyGroups
-    ? uniqueGroups.slice(0, input.maxApplyGroups)
-    : uniqueGroups;
+  const plannedGroups =
+    input.apply && input.maxApplyGroups
+      ? uniqueGroups.slice(0, input.maxApplyGroups)
+      : uniqueGroups;
   const warnings = [...input.plan.warningGroups].sort(compareWarningGroups);
 
   return {
