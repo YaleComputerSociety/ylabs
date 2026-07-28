@@ -18,7 +18,7 @@ import {
 } from '../phase0IdentityCollisionAudit';
 
 function atlasUrl(database: string): string {
-  return `mongodb+srv://identity-reader:unit-test-password@cluster.unit-test.mongodb.net/${database}`;
+  return `mongodb+srv://user:pass@cluster.unit-test.mongodb.net/${database}`;
 }
 
 describe('phase0IdentityCollisionAudit CLI', () => {

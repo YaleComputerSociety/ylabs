@@ -42,7 +42,7 @@ test('adds only fixed identity-profile metadata to the sanitized inventory envir
     buildIdentityCollisionChildEnvironment({
       baseEnvironment: {
         PATH: '/usr/bin',
-        MONGODBURL: 'mongodb+srv://reader:secret@cluster.mongodb.net/Beta',
+        MONGODBURL: 'mongodb+srv://user:pass@cluster.mongodb.net/Beta',
         YLABS_INVENTORY_PROFILE_ACTIVE: 'true',
         YLABS_INVENTORY_SOURCE_COMMIT: 'a'.repeat(40),
       },
@@ -51,7 +51,7 @@ test('adds only fixed identity-profile metadata to the sanitized inventory envir
     }),
     {
       PATH: '/usr/bin',
-      MONGODBURL: 'mongodb+srv://reader:secret@cluster.mongodb.net/Beta',
+      MONGODBURL: 'mongodb+srv://user:pass@cluster.mongodb.net/Beta',
       YLABS_INVENTORY_PROFILE_ACTIVE: 'true',
       YLABS_INVENTORY_SOURCE_COMMIT: 'a'.repeat(40),
       YLABS_IDENTITY_AUDIT_PROFILE_ACTIVE: 'true',

@@ -43,13 +43,13 @@ describe('buildPhase0IdentityCollisionAuditReport', () => {
           id: 'joined-one',
           fname: 'Jordan',
           lname: 'Lee',
-          orcid: '0000-0002-1825-0097',
+          orcid: '9999-9999-9999-9994',
         },
         {
           id: 'joined-two',
           fname: 'Jordan',
           lname: 'Lee',
-          orcid: '0000-0002-1825-0097',
+          orcid: '9999-9999-9999-9994',
         },
       ],
     });
@@ -183,14 +183,14 @@ describe('buildPhase0IdentityCollisionAuditReport', () => {
   });
 
   it('canonicalizes governed ORCID, OpenAlex, and Google Scholar identity forms', () => {
-    expect(normalizePhase0IdentityValue('orcid', 'https://orcid.org/0000-0002-1825-0097/')).toBe(
-      '0000-0002-1825-0097',
+    expect(normalizePhase0IdentityValue('orcid', 'https://orcid.org/9999-9999-9999-9994/')).toBe(
+      '9999-9999-9999-9994',
     );
-    expect(normalizePhase0IdentityValue('orcid', '0000-0002-1825-0097')).toBe(
-      '0000-0002-1825-0097',
+    expect(normalizePhase0IdentityValue('orcid', '9999-9999-9999-9994')).toBe(
+      '9999-9999-9999-9994',
     );
-    expect(normalizePhase0IdentityValue('orcid', 'orcid:0000-0002-1825-0097')).toBe(
-      '0000-0002-1825-0097',
+    expect(normalizePhase0IdentityValue('orcid', 'orcid:9999-9999-9999-9994')).toBe(
+      '9999-9999-9999-9994',
     );
     expect(normalizePhase0IdentityValue('openAlexId', 'https://openalex.org/A12345')).toBe(
       'a12345',
@@ -212,13 +212,13 @@ describe('buildPhase0IdentityCollisionAuditReport', () => {
           id: 'orcid-url',
           fname: 'Alex',
           lname: 'Rivera',
-          orcid: 'https://orcid.org/0000-0002-1825-0097',
+          orcid: 'https://orcid.org/9999-9999-9999-9994',
         },
         {
           id: 'orcid-bare',
           fname: 'Alex',
           lname: 'Rivera',
-          orcid: 'orcid:0000-0002-1825-0097',
+          orcid: 'orcid:9999-9999-9999-9994',
         },
       ],
     });
