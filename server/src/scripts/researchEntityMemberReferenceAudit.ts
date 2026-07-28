@@ -8,6 +8,10 @@ import { initializeConnections } from '../db/connections';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertPhase0SummaryOnlyConfiguredTarget,
+  assertPhase0SummaryOnlyConnectedTarget,
+} from './phase0SummaryOnlyAudit';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -438,10 +442,22 @@ async function main() {
     process.env,
     process.env.MONGODBURL,
   );
+  assertPhase0SummaryOnlyConfiguredTarget({
+    summaryOnly: Boolean(args.summaryOnly),
+    environment: args.environment,
+    mongoUrl: process.env.MONGODBURL,
+    scriptName: 'research-entity-members:audit-user-refs',
+  });
   await initializeConnections();
+  assertPhase0SummaryOnlyConnectedTarget({
+    summaryOnly: Boolean(args.summaryOnly),
+    environment: args.environment,
+    databaseName: mongoose.connection.db?.databaseName,
+    scriptName: 'research-entity-members:audit-user-refs',
+  });
   const summary = await runResearchEntityMemberReferenceAudit(args);
   const metadata = {
-    environment: guard.environment,
+    environment: args.summaryOnly ? args.environment : guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options: args,
   };

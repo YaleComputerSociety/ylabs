@@ -60,17 +60,23 @@ describe('parseDedupeUsersByIdentityArgs', () => {
   });
 
   it('parses summary-only without changing default output options', () => {
-    expect(parseDedupeUsersByIdentityArgs(['--summary-only'])).toEqual({
-      apply: false,
-      summaryOnly: true,
-      confirmUserIdentityDedupe: false,
-      limit: 100,
-      limitProvided: false,
-      sampleSize: 25,
-    });
+    expect(parseDedupeUsersByIdentityArgs(['--summary-only', '--environment=development'])).toEqual(
+      {
+        apply: false,
+        summaryOnly: true,
+        environment: 'development',
+        confirmUserIdentityDedupe: false,
+        limit: 100,
+        limitProvided: false,
+        sampleSize: 25,
+      },
+    );
     expect(() => parseDedupeUsersByIdentityArgs(['--summary-only=true'])).toThrow(
       '--summary-only does not accept a value',
     );
+    expect(() =>
+      parseDedupeUsersByIdentityArgs(['--summary-only', '--environment=production']),
+    ).toThrow('--environment requires development, beta, or production-copy');
   });
 
   it('rejects non-positive sample-size and max-apply-groups values', () => {

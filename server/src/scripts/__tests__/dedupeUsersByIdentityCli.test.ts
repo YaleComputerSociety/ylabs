@@ -142,15 +142,14 @@ describe('dedupeUsersByIdentity CLI wrapper', () => {
         collisionLimitPerIdentityField: 100,
         identityFieldsScanned: 5,
         possibleCollisionTruncation: false,
-        planLimit: null,
-        possiblePlanTruncation: false,
+        applyGroupLimit: null,
         countSemantics: 'complete-within-scanned-collisions',
       },
     });
     expect(JSON.stringify(payload)).not.toContain('private');
   });
 
-  it('marks identity collision counts as a possible lower bound when the scan limit is reached', () => {
+  it('separates collision truncation from the optional apply group bound', () => {
     const payload = buildDedupeUsersByIdentitySummaryOnlyOutput(
       {
         mode: 'dry-run',
@@ -170,8 +169,7 @@ describe('dedupeUsersByIdentity CLI wrapper', () => {
       collisionLimitPerIdentityField: 25,
       identityFieldsScanned: 1,
       possibleCollisionTruncation: true,
-      planLimit: 10,
-      possiblePlanTruncation: true,
+      applyGroupLimit: 10,
       countSemantics: 'bounded-lower-bound',
     });
   });

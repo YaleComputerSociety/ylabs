@@ -2,12 +2,15 @@ import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scr
 import {
   assertPhase0SummaryOnlyDryRun,
   buildPhase0SummaryOnlyOutput,
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
   type Phase0SummaryOnlyMetadata,
 } from './phase0SummaryOnlyAudit';
 
 export interface ResearchEntityMemberReferenceAuditArgs {
   apply: boolean;
   summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   confirmExactRelink: boolean;
   limit: number;
   limitProvided: boolean;
@@ -104,7 +107,7 @@ function consumeValue(
   argv: string[],
   index: number,
   flag: string,
-  noun: 'number' | 'path',
+  noun: 'number' | 'path' | 'value',
 ): { value: string; nextIndex: number } {
   const value = argv[index + 1];
   if (value === undefined || value.trim() === '' || value.startsWith('--')) {
@@ -113,7 +116,7 @@ function consumeValue(
   return { value, nextIndex: index + 1 };
 }
 
-function consumeInlineValue(arg: string, flag: string, noun: 'number' | 'path'): string {
+function consumeInlineValue(arg: string, flag: string, noun: 'number' | 'path' | 'value'): string {
   const value = arg.slice(`${flag}=`.length);
   if (value.trim() === '' || value.startsWith('--')) {
     throw new Error(`${flag} requires a ${noun}`);
@@ -144,6 +147,18 @@ export function parseResearchEntityMemberReferenceAuditArgs(
     }
     if (arg.startsWith('--summary-only=')) {
       throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment') {
+      const { value, nextIndex } = consumeValue(argv, index, '--environment', 'value');
+      args.environment = parsePhase0SummaryOnlyEnvironment(value);
+      index = nextIndex;
+      continue;
+    }
+    if (arg.startsWith('--environment=')) {
+      args.environment = parsePhase0SummaryOnlyEnvironment(
+        consumeInlineValue(arg, '--environment', 'value'),
+      );
+      continue;
     }
     if (arg === '--confirm-exact-relink') {
       args.confirmExactRelink = true;

@@ -6,6 +6,11 @@ import {
   buildResearchEntityMemberReferenceAuditSummary,
   buildResearchEntityMemberReferenceSummaryOnlyOutput,
 } from '../researchEntityMemberReferenceAuditCore';
+import {
+  assertPhase0SummaryOnlyConfiguredTarget,
+  assertPhase0SummaryOnlyConnectedTarget,
+  parsePhase0SummaryOnlyEnvironment,
+} from '../phase0SummaryOnlyAudit';
 
 const PRIVATE = 'PRIVATE_RECORD_VALUE';
 const FORBIDDEN_KEYS = new Set([
@@ -63,6 +68,59 @@ function expectAggregateOnlyContract(output: unknown): void {
 }
 
 describe('Phase 0 summary-only audit output security contract', () => {
+  it('fails closed on missing, production, configured, and connected environment mismatches', () => {
+    expect(() =>
+      assertPhase0SummaryOnlyConfiguredTarget({
+        summaryOnly: true,
+        mongoUrl: 'mongodb://example.test/Development',
+        scriptName: 'test-audit',
+      }),
+    ).toThrow('--summary-only requires --environment');
+    expect(() =>
+      assertPhase0SummaryOnlyConfiguredTarget({
+        summaryOnly: false,
+        environment: 'development',
+        mongoUrl: 'mongodb://example.test/Development',
+        scriptName: 'test-audit',
+      }),
+    ).toThrow('--environment is only valid with --summary-only');
+    expect(() => parsePhase0SummaryOnlyEnvironment('production')).toThrow(
+      '--environment requires development, beta, or production-copy',
+    );
+    expect(() =>
+      assertPhase0SummaryOnlyConfiguredTarget({
+        summaryOnly: true,
+        environment: 'development',
+        mongoUrl: 'mongodb://example.test/Beta',
+        scriptName: 'test-audit',
+      }),
+    ).toThrow(/environment development does not match MongoDB database Beta/);
+    expect(() =>
+      assertPhase0SummaryOnlyConfiguredTarget({
+        summaryOnly: true,
+        environment: 'development',
+        mongoUrl: 'mongodb://example.test/Development',
+        scriptName: 'test-audit',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertPhase0SummaryOnlyConnectedTarget({
+        summaryOnly: true,
+        environment: 'beta',
+        databaseName: 'ProductionCopy',
+        scriptName: 'test-audit',
+      }),
+    ).toThrow(/environment beta does not match MongoDB database ProductionCopy/);
+    expect(() =>
+      assertPhase0SummaryOnlyConnectedTarget({
+        summaryOnly: true,
+        environment: 'production-copy',
+        databaseName: 'ProductionCopy',
+        scriptName: 'test-audit',
+      }),
+    ).not.toThrow();
+  });
+
   it('recursively excludes sensitive keys and values from all four audit outputs', () => {
     const userIdentity = buildDedupeUsersByIdentitySummaryOnlyOutput(
       {

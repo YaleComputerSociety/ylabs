@@ -19,6 +19,8 @@ import {
 } from './dedupeUsersByIdentityCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  assertPhase0SummaryOnlyConfiguredTarget,
+  assertPhase0SummaryOnlyConnectedTarget,
   assertPhase0SummaryOnlyDryRun,
   buildPhase0SummaryOnlyOutput,
   type Phase0SummaryOnlyMetadata,
@@ -202,10 +204,7 @@ export function buildDedupeUsersByIdentitySummaryOnlyOutput(
         collisionLimitPerIdentityField: options.limit,
         identityFieldsScanned: options.identityField ? 1 : IDENTITY_FIELDS.length,
         possibleCollisionTruncation,
-        planLimit: options.maxApplyGroups ?? null,
-        possiblePlanTruncation: Boolean(
-          options.maxApplyGroups && summary.plannedGroups >= options.maxApplyGroups,
-        ),
+        applyGroupLimit: options.maxApplyGroups ?? null,
         countSemantics: possibleCollisionTruncation
           ? 'bounded-lower-bound'
           : 'complete-within-scanned-collisions',
@@ -730,10 +729,22 @@ function uniqueNonEmptyValues(value: unknown): unknown[] {
 async function main() {
   const args = parseDedupeUsersByIdentityArgs(process.argv.slice(2));
   const guard = assertDedupeUsersByIdentityApplyAllowed(args, process.env, process.env.MONGODBURL);
+  assertPhase0SummaryOnlyConfiguredTarget({
+    summaryOnly: Boolean(args.summaryOnly),
+    environment: args.environment,
+    mongoUrl: process.env.MONGODBURL,
+    scriptName: 'users:dedupe-by-identity',
+  });
   await initializeConnections();
+  assertPhase0SummaryOnlyConnectedTarget({
+    summaryOnly: Boolean(args.summaryOnly),
+    environment: args.environment,
+    databaseName: mongoose.connection.db?.databaseName,
+    scriptName: 'users:dedupe-by-identity',
+  });
   const summary = await runDedupeUsersByIdentity(args);
   const metadata = {
-    environment: guard.environment,
+    environment: args.summaryOnly ? args.environment : guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options: args,
   };

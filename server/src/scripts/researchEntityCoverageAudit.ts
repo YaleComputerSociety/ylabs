@@ -22,7 +22,11 @@ import {
 } from './researchEntityCoverageAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  assertPhase0SummaryOnlyConfiguredTarget,
+  assertPhase0SummaryOnlyConnectedTarget,
   buildPhase0SummaryOnlyOutput,
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
   type Phase0SummaryOnlyMetadata,
 } from './phase0SummaryOnlyAudit';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -34,6 +38,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 export interface ResearchEntityCoverageAuditCliOptions {
   slug?: string;
   summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   limit: number;
   minScore: number;
   includeArchived: boolean;
@@ -113,6 +118,19 @@ export function parseResearchEntityCoverageAuditArgs(
     }
     if (arg.startsWith('--summary-only=')) {
       throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment') {
+      const value = argv[i + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('--environment requires a value');
+      }
+      options.environment = parsePhase0SummaryOnlyEnvironment(value);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--environment=')) {
+      options.environment = parsePhase0SummaryOnlyEnvironment(arg.slice('--environment='.length));
+      continue;
     }
     if (arg.startsWith('--slug=')) {
       const value = arg.slice('--slug='.length).trim();
@@ -552,12 +570,24 @@ async function main(): Promise<void> {
     scriptName: 'research-entity:coverage-audit',
     mongoUrl: process.env.MONGODBURL,
   });
+  assertPhase0SummaryOnlyConfiguredTarget({
+    summaryOnly: Boolean(options.summaryOnly),
+    environment: options.environment,
+    mongoUrl: process.env.MONGODBURL,
+    scriptName: 'research-entity:coverage-audit',
+  });
   await initializeConnections();
+  assertPhase0SummaryOnlyConnectedTarget({
+    summaryOnly: Boolean(options.summaryOnly),
+    environment: options.environment,
+    databaseName: mongoose.connection.db?.databaseName,
+    scriptName: 'research-entity:coverage-audit',
+  });
 
   const result = options.slug ? await buildSlugAudit(options.slug) : await buildBulkAudit(options);
 
   const metadata = {
-    environment: guard.environment,
+    environment: options.summaryOnly ? options.environment : guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options,
   };

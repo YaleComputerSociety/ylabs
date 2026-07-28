@@ -3390,6 +3390,12 @@ test('Phase 0 complementary audits enforce fail-closed summary-only output', () 
       /--summary-only does not accept a value/,
       `${name} must reject assigned summary-only values`,
     );
+    assert.match(parserSource, /--environment/, `${name} must parse an explicit environment`);
+    assert.match(
+      parserSource,
+      /parsePhase0SummaryOnlyEnvironment/,
+      `${name} must use the shared summary environment parser`,
+    );
     assert.match(
       builderSource,
       new RegExp(`export function ${summaryBuilder}`),
@@ -3400,6 +3406,16 @@ test('Phase 0 complementary audits enforce fail-closed summary-only output', () 
       new RegExp(`summaryOnly[\\s\\S]{0,160}\\? ${summaryBuilder}\\(`),
       `${name} must select the aggregate serializer before stdout and file output`,
     );
+    assert.match(
+      wrapperSource,
+      /assertPhase0SummaryOnlyConfiguredTarget/,
+      `${name} must validate the configured database before connecting`,
+    );
+    assert.match(
+      wrapperSource,
+      /assertPhase0SummaryOnlyConnectedTarget/,
+      `${name} must validate the connected database before querying`,
+    );
   }
 
   const sharedSource = fs.readFileSync(
@@ -3408,6 +3424,10 @@ test('Phase 0 complementary audits enforce fail-closed summary-only output', () 
   );
   assert.match(sharedSource, /args\.summaryOnly && args\.apply/);
   assert.match(sharedSource, /--summary-only cannot be combined with --apply/);
+  assert.match(sharedSource, /databaseNameFromMongoUrl/);
+  assert.match(sharedSource, /assertOperatorEnvironmentMatchesDatabase/);
+  assert.match(sharedSource, /--summary-only requires --environment/);
+  assert.match(sharedSource, /--environment requires development, beta, or production-copy/);
 
   const duplicateSource = fs.readFileSync(
     new URL('../server/src/scripts/duplicateEntityNameReview.ts', import.meta.url),

@@ -180,9 +180,14 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
   });
 
   it('parses summary-only and rejects slug targeting before connecting', () => {
-    const options = parseResearchEntityCoverageAuditArgs(['--summary-only', '--all']);
+    const options = parseResearchEntityCoverageAuditArgs([
+      '--summary-only',
+      '--environment=development',
+      '--all',
+    ]);
     expect(options).toEqual({
       summaryOnly: true,
+      environment: 'development',
       includeAll: true,
       includeArchived: false,
       limit: 50,
@@ -191,6 +196,9 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(() => parseResearchEntityCoverageAuditArgs(['--summary-only=true'])).toThrow(
       '--summary-only does not accept a value',
     );
+    expect(() =>
+      parseResearchEntityCoverageAuditArgs(['--summary-only', '--environment=production']),
+    ).toThrow('--environment requires development, beta, or production-copy');
     expect(() =>
       assertResearchEntityCoverageSummaryOnlyAllowed(
         parseResearchEntityCoverageAuditArgs(['--summary-only', '--slug=private-entity-slug']),

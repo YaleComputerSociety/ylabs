@@ -202,9 +202,16 @@ describe('research entity member reference audit core', () => {
   });
 
   it('parses summary-only as a literal flag', () => {
-    expect(parseResearchEntityMemberReferenceAuditArgs(['--summary-only'])).toEqual({
+    expect(
+      parseResearchEntityMemberReferenceAuditArgs([
+        '--summary-only',
+        '--environment',
+        'development',
+      ]),
+    ).toEqual({
       apply: false,
       summaryOnly: true,
+      environment: 'development',
       confirmExactRelink: false,
       limit: 1000,
       limitProvided: false,
@@ -213,6 +220,9 @@ describe('research entity member reference audit core', () => {
     expect(() => parseResearchEntityMemberReferenceAuditArgs(['--summary-only=true'])).toThrow(
       '--summary-only does not accept a value',
     );
+    expect(() =>
+      parseResearchEntityMemberReferenceAuditArgs(['--summary-only', '--environment=production']),
+    ).toThrow('--environment requires development, beta, or production-copy');
   });
 
   it('rejects malformed paired CLI values before running the member reference audit', () => {

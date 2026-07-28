@@ -84,9 +84,12 @@ describe('duplicate entity name review CLI helpers', () => {
   });
 
   it('parses summary-only as a literal flag', () => {
-    expect(parseDuplicateEntityNameReviewArgs(['--summary-only'])).toEqual({
+    expect(
+      parseDuplicateEntityNameReviewArgs(['--summary-only', '--environment=development']),
+    ).toEqual({
       apply: false,
       summaryOnly: true,
+      environment: 'development',
       confirmDuplicateEntityNameReview: false,
       limit: 10000,
       limitProvided: false,
@@ -96,6 +99,9 @@ describe('duplicate entity name review CLI helpers', () => {
     expect(() => parseDuplicateEntityNameReviewArgs(['--summary-only=true'])).toThrow(
       '--summary-only does not accept a value',
     );
+    expect(() =>
+      parseDuplicateEntityNameReviewArgs(['--summary-only', '--environment=test']),
+    ).toThrow('--environment requires development, beta, or production-copy');
   });
 
   it('rejects summary-only write and decision artifact options before connecting', () => {

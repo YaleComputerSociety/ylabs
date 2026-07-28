@@ -117,27 +117,32 @@ umask 077
 
 SCRAPER_ENV=development yarn --cwd server users:dedupe-by-identity \
   --summary-only \
+  --environment=development \
   --limit=10000 \
   --output /tmp/ylabs-development-user-identity-summary.json
 
 SCRAPER_ENV=development yarn --cwd server research-entity-members:audit-user-refs \
   --summary-only \
+  --environment=development \
   --limit=10000 \
   --output /tmp/ylabs-development-member-reference-summary.json
 
 SCRAPER_ENV=development yarn --cwd server research-entity:duplicate-name-review \
   --summary-only \
+  --environment=development \
   --limit=10000 \
   --plan-limit=10000 \
   --output /tmp/ylabs-development-duplicate-name-summary.json
 
 SCRAPER_ENV=development yarn --cwd server research-entity:coverage-audit \
   --summary-only \
+  --environment=development \
   --all \
   --output /tmp/ylabs-development-coverage-summary.json
 ```
 
 `--summary-only` is incompatible with `--apply`.
+It requires an explicit `--environment` of `development`, `beta`, or `production-copy`, rejects primary production, and verifies both the configured and connected database names before any audit query.
 The duplicate-name audit also rejects accepted-decision and decision-template options in summary-only mode.
 The coverage audit rejects `--slug` because a slug-targeted report is record-specific.
 User-identity collision limits apply per identity field, and duplicate-name limits apply to normalized-name clusters.

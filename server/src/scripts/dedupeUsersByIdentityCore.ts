@@ -1,4 +1,8 @@
 import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
+import {
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
+} from './phase0SummaryOnlyAudit';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type UserIdentityField = DuplicatePersonGroup['identityField'];
@@ -6,6 +10,7 @@ export type UserIdentityField = DuplicatePersonGroup['identityField'];
 export interface DedupeUsersByIdentityArgs {
   apply: boolean;
   summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   confirmUserIdentityDedupe: boolean;
   limit: number;
   limitProvided: boolean;
@@ -104,6 +109,7 @@ function consumeValue(
 export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIdentityArgs {
   let apply = false;
   let summaryOnly = false;
+  let environment: Phase0SummaryOnlyEnvironment | undefined;
   let confirmUserIdentityDedupe = false;
   let limit = 100;
   let limitProvided = false;
@@ -136,6 +142,12 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
     }
     if (arg.startsWith('--summary-only=')) {
       throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment' || arg.startsWith('--environment=')) {
+      const { value, nextIndex } = consumeValue(argv, index, '--environment');
+      environment = parsePhase0SummaryOnlyEnvironment(value);
+      index = nextIndex;
+      continue;
     }
     if (arg === '--confirm-user-identity-dedupe') {
       confirmUserIdentityDedupe = true;
@@ -198,6 +210,7 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
   return {
     apply,
     ...(summaryOnly ? { summaryOnly: true } : {}),
+    ...(environment ? { environment } : {}),
     confirmUserIdentityDedupe,
     limit,
     limitProvided,

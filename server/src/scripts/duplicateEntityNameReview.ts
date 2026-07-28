@@ -19,8 +19,12 @@ import {
 } from './dedupeResearchEntitiesByPi';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  assertPhase0SummaryOnlyConfiguredTarget,
+  assertPhase0SummaryOnlyConnectedTarget,
   assertPhase0SummaryOnlyDryRun,
   buildPhase0SummaryOnlyOutput,
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
   type Phase0SummaryOnlyMetadata,
 } from './phase0SummaryOnlyAudit';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -127,6 +131,7 @@ const REFERENCE_IMPACT_COLLECTIONS: Array<{
 export interface DuplicateEntityNameReviewArgs {
   apply: boolean;
   summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   confirmDuplicateEntityNameReview: boolean;
   limit: number;
   limitProvided: boolean;
@@ -337,6 +342,18 @@ export function parseDuplicateEntityNameReviewArgs(argv: string[]): DuplicateEnt
     }
     if (arg.startsWith('--summary-only=')) {
       throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment') {
+      const { value, nextIndex } = consumeValue(argv, index, '--environment', 'value');
+      args.environment = parsePhase0SummaryOnlyEnvironment(value);
+      index = nextIndex;
+      continue;
+    }
+    if (arg.startsWith('--environment=')) {
+      args.environment = parsePhase0SummaryOnlyEnvironment(
+        consumeInlineValue(arg, '--environment', 'value'),
+      );
+      continue;
     }
     if (arg === '--confirm-duplicate-entity-name-review') {
       args.confirmDuplicateEntityNameReview = true;
@@ -918,16 +935,30 @@ async function main(): Promise<void> {
     scriptName: 'research-entity:duplicate-name-review',
     mongoUrl: process.env.MONGODBURL,
   });
+  assertPhase0SummaryOnlyConfiguredTarget({
+    summaryOnly: Boolean(args.summaryOnly),
+    environment: args.environment,
+    mongoUrl: process.env.MONGODBURL,
+    scriptName: 'research-entity:duplicate-name-review',
+  });
   await initializeConnections();
+  assertPhase0SummaryOnlyConnectedTarget({
+    summaryOnly: Boolean(args.summaryOnly),
+    environment: args.environment,
+    databaseName: mongoose.connection.db?.databaseName,
+    scriptName: 'research-entity:duplicate-name-review',
+  });
   const report = await buildDuplicateEntityNameReviewReport(args);
-  const metadata = {
-    environment: guard.environment,
-    db: guard.dbLabel,
-    options: args,
-  };
   const outputReport = args.summaryOnly
-    ? buildDuplicateEntityNameReviewSummaryOnlyOutput(report, metadata)
-    : buildDuplicateEntityNameReviewOutput(report, metadata);
+    ? buildDuplicateEntityNameReviewSummaryOnlyOutput(report, {
+        environment: args.environment,
+        db: mongoose.connection.db?.databaseName,
+      })
+    : buildDuplicateEntityNameReviewOutput(report, {
+        environment: guard.environment,
+        db: guard.dbLabel,
+        options: args,
+      });
   console.log(JSON.stringify(outputReport, null, 2));
   writeDuplicateEntityNameReviewOutput(outputReport, args.output);
   if (!args.summaryOnly) {
