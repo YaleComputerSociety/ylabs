@@ -1,9 +1,14 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { ObjectId, type Db } from 'mongodb';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  assertResearchModelInventoryOutputAvailable,
   checkReferenceEdge,
   gatherInventoryFacts,
   runResearchModelInventory,
+  writeResearchModelInventoryOutput,
 } from '../researchModelInventory';
 import { REFERENCE_EDGES, RETIREMENT_FIELD_PROBES } from '../researchModelInventoryCore';
 
@@ -542,6 +547,26 @@ describe('gatherInventoryFacts', () => {
       orphaned: 1,
       sampleOrphanIds: ['signal-1'],
     });
+  });
+});
+
+describe('writeResearchModelInventoryOutput', () => {
+  it('creates private evidence once and refuses to overwrite it', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-model-inventory-'));
+    const output = path.join(directory, 'inventory.json');
+    try {
+      writeResearchModelInventoryOutput({ environment: 'test' }, output);
+      expect(fs.statSync(output).mode & 0o777).toBe(0o600);
+      expect(() => assertResearchModelInventoryOutputAvailable(output)).toThrow(
+        'never overwritten',
+      );
+      expect(() => writeResearchModelInventoryOutput({ environment: 'changed' }, output)).toThrow();
+      expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toEqual({
+        environment: 'test',
+      });
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 

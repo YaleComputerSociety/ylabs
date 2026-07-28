@@ -44,6 +44,9 @@ jobs:
       - name: Run server tests
         run: yarn --cwd server test
 
+      - name: Run model inventory operator tests
+        run: yarn model-refactor:inventory:test-operator-tools
+
       - name: Run client tests
         run: yarn --cwd client test:ci
 

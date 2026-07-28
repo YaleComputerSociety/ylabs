@@ -67,6 +67,9 @@ Models are Mongoose schemas with indexes.
 | `yarn --cwd server scrape <cmd>`  | Scraper CLI.                                                   |
 | `yarn --cwd server gates:refresh` | Regenerate canonical gate scorecards.                          |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Run the read-only research-model Phase 0 inventory. |
+| `yarn model-refactor:inventory:beta` | Run aggregate-only Beta inventory through the external read-only profile. |
+| `yarn model-refactor:inventory:production-copy` | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
+| `yarn model-refactor:inventory:validate-evidence` | Validate a private inventory against its versioned recovery manifest. |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
