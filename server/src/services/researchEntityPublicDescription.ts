@@ -33,6 +33,7 @@ function memberDisplayName(member: Record<string, any>): string {
     member.facultyMember?.name,
     [member.facultyMember?.firstName, member.facultyMember?.lastName].filter(Boolean).join(' '),
     member.displayName,
+    member.name,
   ];
   return candidates.map(textValue).find(Boolean) || '';
 }

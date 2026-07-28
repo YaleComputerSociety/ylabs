@@ -3,6 +3,7 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
+import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
@@ -289,6 +290,10 @@ export function computeResearchEntityStudentVisibility({
   exactUrlDuplicateRisk = false,
   contentPageRisk = false,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity,
+    leadMembers,
+  });
   const quality = buildResearchEntityQualitySummary({ entity, leadMembers });
   const reasons: string[] = [];
   const hasActionEvidence =
@@ -343,6 +348,7 @@ export function computeResearchEntityStudentVisibility({
   ) {
     computedTier = 'suppressed';
   } else if (
+    publicDescription.invariant.pass &&
     quality.descriptionState === 'source_backed' &&
     quality.cardState === 'complete' &&
     (!requiresLead || quality.leadState === 'lead_attached') &&
@@ -366,7 +372,7 @@ export function computeResearchEntityStudentVisibility({
   const result = withOverride(entity, computedTier, Array.from(new Set(reasons)));
   if (
     result.tier === 'student_ready' &&
-    (quality.descriptionState !== 'source_backed' || quality.cardState !== 'complete')
+    !publicDescription.invariant.pass
   ) {
     return {
       tier: result.computedTier,

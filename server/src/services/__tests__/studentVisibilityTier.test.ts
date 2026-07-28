@@ -74,6 +74,26 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
+  it('requires a useful full description for student-ready visibility', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'missing-public-full-description',
+        name: 'Correct Person Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription:
+          'Studies molecular dynamics, protein folding, and cellular signaling.',
+        fullDescription: '',
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [{ role: 'pi', name: 'Correct Person' }],
+      accessSignalCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.computedTier).not.toBe('student_ready');
+  });
+
   it('blocks student-ready visibility for same-person profile-area shell duplicates', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

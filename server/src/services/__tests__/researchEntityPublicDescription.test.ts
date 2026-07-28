@@ -63,4 +63,10 @@ describe('researchEntityPublicDescription', () => {
       ]),
     ).toEqual(['Correct Person']);
   });
+
+  it('uses a name-only member row as a lead identity', () => {
+    expect(publicDescriptionLeadMemberNames([{ name: 'Correct Person' }])).toEqual([
+      'Correct Person',
+    ]);
+  });
 });
