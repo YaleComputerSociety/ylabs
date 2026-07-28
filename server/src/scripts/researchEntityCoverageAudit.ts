@@ -21,6 +21,10 @@ import {
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  buildPhase0SummaryOnlyOutput,
+  type Phase0SummaryOnlyMetadata,
+} from './phase0SummaryOnlyAudit';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,6 +33,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export interface ResearchEntityCoverageAuditCliOptions {
   slug?: string;
+  summaryOnly?: boolean;
   limit: number;
   minScore: number;
   includeArchived: boolean;
@@ -65,6 +70,20 @@ interface ObservationHint {
   confidence?: number;
 }
 
+const SUMMARY_ONLY_COVERAGE_ISSUES = [
+  'BLANK_DETAIL_RISK',
+  'MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS',
+  'INFERRED_PI_WITHOUT_MEMBERSHIP',
+  'NO_ACTIONABLE_ACCESS',
+  'MISSING_DESCRIPTION',
+  'NO_MEMBERS',
+  'NO_PATHWAYS',
+  'NO_PUBLIC_CONTACT_ROUTE',
+  'SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED',
+  'NO_RESEARCH_AREAS',
+  'MISSING_WEBSITE_URL',
+] as const;
+
 export function parseResearchEntityCoverageAuditArgs(
   argv: string[],
 ): ResearchEntityCoverageAuditCliOptions {
@@ -87,6 +106,13 @@ export function parseResearchEntityCoverageAuditArgs(
     if (arg === '--all') {
       options.includeAll = true;
       continue;
+    }
+    if (arg === '--summary-only') {
+      options.summaryOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--summary-only=')) {
+      throw new Error('--summary-only does not accept a value');
     }
     if (arg.startsWith('--slug=')) {
       const value = arg.slice('--slug='.length).trim();
@@ -153,6 +179,16 @@ export function buildResearchEntityCoverageAuditOutput<T extends object>(
     ...(metadata.db ? { db: metadata.db } : {}),
     options: metadata.options,
   };
+}
+
+export function assertResearchEntityCoverageSummaryOnlyAllowed(
+  options: ResearchEntityCoverageAuditCliOptions,
+): void {
+  if (options.summaryOnly && options.slug) {
+    throw new Error(
+      'research-entity:coverage-audit --summary-only cannot be combined with --slug.',
+    );
+  }
 }
 
 function stringId(value: unknown): string {
@@ -343,6 +379,44 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
   };
 }
 
+export function buildResearchEntityCoverageSummaryOnlyOutput(
+  result: {
+    generatedAt: string;
+    scope: string;
+    totalEntitiesScanned: number;
+    flaggedEntities: number;
+    filters: {
+      includeArchived: boolean;
+      includeAll: boolean;
+      minScore: number;
+    };
+    issueCounts: Record<string, number>;
+  },
+  metadata: Phase0SummaryOnlyMetadata,
+) {
+  return buildPhase0SummaryOnlyOutput(
+    {
+      generatedAt: result.generatedAt,
+      scope: result.scope,
+      applyBlocked: true,
+      totalEntitiesScanned: result.totalEntitiesScanned,
+      flaggedEntities: result.flaggedEntities,
+      filters: {
+        includeArchived: result.filters.includeArchived,
+        includeAll: result.filters.includeAll,
+        minScore: result.filters.minScore,
+      },
+      issueCounts: Object.fromEntries(
+        SUMMARY_ONLY_COVERAGE_ISSUES.flatMap((issue) => {
+          const count = result.issueCounts[issue];
+          return Number.isSafeInteger(count) && count >= 0 ? [[issue, count]] : [];
+        }),
+      ),
+    },
+    metadata,
+  );
+}
+
 async function buildSlugAudit(slug: string) {
   const entity = (await ResearchEntity.findOne({ slug })
     .select(
@@ -358,44 +432,43 @@ async function buildSlugAudit(slug: string) {
   }
 
   const entityId = stringId(entity._id);
-  const [
-    members,
-    pathways,
-    signals,
-    routes,
-    opportunities,
-    listings,
-    observations,
-  ] = await Promise.all([
-    ResearchGroupMember.find({ researchEntityId: entity._id })
-      .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
-      .lean(),
-    EntryPathway.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey')
-      .lean(),
-    AccessSignal.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('signalType confidence confidenceScore excerpt sourceName sourceUrl observedAt derivationKey')
-      .sort({ observedAt: -1 })
-      .lean(),
-    ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('routeType label name role url visibility contactPolicy rationale sourceName sourceUrl observedAt derivationKey')
-      .sort({ priority: 1, observedAt: -1 })
-      .lean(),
-    PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title term status applicationUrl sourceUrls derivationKey')
-      .lean(),
-    Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
-      .select('title deadline website')
-      .lean(),
-    Observation.find({
-      entityType: { $in: ['researchEntity', 'researchGroup'] },
-      superseded: false,
-      $or: [{ entityId: entity._id }, { entityKey: slug }],
-    })
-      .select('field value sourceName sourceUrl confidence observedAt entityKey')
-      .sort({ observedAt: -1 })
-      .lean(),
-  ]);
+  const [members, pathways, signals, routes, opportunities, listings, observations] =
+    await Promise.all([
+      ResearchGroupMember.find({ researchEntityId: entity._id })
+        .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
+        .lean(),
+      EntryPathway.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select(
+          'pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey',
+        )
+        .lean(),
+      AccessSignal.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select(
+          'signalType confidence confidenceScore excerpt sourceName sourceUrl observedAt derivationKey',
+        )
+        .sort({ observedAt: -1 })
+        .lean(),
+      ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select(
+          'routeType label name role url visibility contactPolicy rationale sourceName sourceUrl observedAt derivationKey',
+        )
+        .sort({ priority: 1, observedAt: -1 })
+        .lean(),
+      PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select('title term status applicationUrl sourceUrls derivationKey')
+        .lean(),
+      Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
+        .select('title deadline website')
+        .lean(),
+      Observation.find({
+        entityType: { $in: ['researchEntity', 'researchGroup'] },
+        superseded: false,
+        $or: [{ entityId: entity._id }, { entityKey: slug }],
+      })
+        .select('field value sourceName sourceUrl confidence observedAt entityKey')
+        .sort({ observedAt: -1 })
+        .lean(),
+    ]);
 
   const observationHints = observations as ObservationHint[];
   const coverageFacts: CoverageAuditFacts = {
@@ -473,6 +546,7 @@ async function buildSlugAudit(slug: string) {
 
 async function main(): Promise<void> {
   const options = parseResearchEntityCoverageAuditArgs(process.argv.slice(2));
+  assertResearchEntityCoverageSummaryOnlyAllowed(options);
   const guard = assertScriptApplyAllowed({
     apply: false,
     scriptName: 'research-entity:coverage-audit',
@@ -480,15 +554,17 @@ async function main(): Promise<void> {
   });
   await initializeConnections();
 
-  const result = options.slug
-    ? await buildSlugAudit(options.slug)
-    : await buildBulkAudit(options);
+  const result = options.slug ? await buildSlugAudit(options.slug) : await buildBulkAudit(options);
 
-  const output = buildResearchEntityCoverageAuditOutput(result, {
+  const metadata = {
     environment: guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options,
-  });
+  };
+  const output =
+    options.summaryOnly && 'totalEntitiesScanned' in result
+      ? buildResearchEntityCoverageSummaryOnlyOutput(result, metadata)
+      : buildResearchEntityCoverageAuditOutput(result, metadata);
   console.log(JSON.stringify(output, null, 2));
   writeResearchEntityCoverageAuditOutput(output, options.output);
 }

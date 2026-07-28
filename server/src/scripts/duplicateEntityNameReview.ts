@@ -18,6 +18,11 @@ import {
   type ResearchEntityDedupeMergeGroup,
 } from './dedupeResearchEntitiesByPi';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertPhase0SummaryOnlyDryRun,
+  buildPhase0SummaryOnlyOutput,
+  type Phase0SummaryOnlyMetadata,
+} from './phase0SummaryOnlyAudit';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -121,6 +126,7 @@ const REFERENCE_IMPACT_COLLECTIONS: Array<{
 
 export interface DuplicateEntityNameReviewArgs {
   apply: boolean;
+  summaryOnly?: boolean;
   confirmDuplicateEntityNameReview: boolean;
   limit: number;
   limitProvided: boolean;
@@ -301,11 +307,7 @@ function consumeValue(
   return { value, nextIndex: index + 1 };
 }
 
-function consumeInlineValue(
-  arg: string,
-  flag: string,
-  noun: 'number' | 'path' | 'value',
-): string {
+function consumeInlineValue(arg: string, flag: string, noun: 'number' | 'path' | 'value'): string {
   const value = arg.slice(`${flag}=`.length);
   if (value.trim() === '' || value.startsWith('--')) {
     throw new Error(`${flag} requires a ${noun}`);
@@ -313,9 +315,7 @@ function consumeInlineValue(
   return value;
 }
 
-export function parseDuplicateEntityNameReviewArgs(
-  argv: string[],
-): DuplicateEntityNameReviewArgs {
+export function parseDuplicateEntityNameReviewArgs(argv: string[]): DuplicateEntityNameReviewArgs {
   const args: DuplicateEntityNameReviewArgs = {
     apply: false,
     confirmDuplicateEntityNameReview: false,
@@ -331,6 +331,13 @@ export function parseDuplicateEntityNameReviewArgs(
       args.apply = true;
       continue;
     }
+    if (arg === '--summary-only') {
+      args.summaryOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--summary-only=')) {
+      throw new Error('--summary-only does not accept a value');
+    }
     if (arg === '--confirm-duplicate-entity-name-review') {
       args.confirmDuplicateEntityNameReview = true;
       continue;
@@ -343,7 +350,10 @@ export function parseDuplicateEntityNameReviewArgs(
       continue;
     }
     if (arg.startsWith('--limit=')) {
-      args.limit = parsePositiveIntegerValue(consumeInlineValue(arg, '--limit', 'number'), '--limit');
+      args.limit = parsePositiveIntegerValue(
+        consumeInlineValue(arg, '--limit', 'number'),
+        '--limit',
+      );
       args.limitProvided = true;
       continue;
     }
@@ -420,12 +430,7 @@ export function parseDuplicateEntityNameReviewArgs(
       continue;
     }
     if (arg === '--decision-template-output') {
-      const { value, nextIndex } = consumeValue(
-        argv,
-        index,
-        '--decision-template-output',
-        'path',
-      );
+      const { value, nextIndex } = consumeValue(argv, index, '--decision-template-output', 'path');
       args.decisionTemplateOutput = resolveSafeJsonReportOutputPath(
         value,
         '--decision-template-output',
@@ -476,10 +481,7 @@ export function buildDuplicateEntityNameReviewPlans(
   };
 }
 
-export function writeDuplicateEntityNameReviewOutput(
-  report: DuplicateEntityNameReviewReport,
-  output?: string,
-): void {
+export function writeDuplicateEntityNameReviewOutput(report: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
@@ -504,6 +506,85 @@ export function buildDuplicateEntityNameReviewOutput(
     options: metadata.options,
     ...report,
   };
+}
+
+export function assertDuplicateEntityNameReviewSummaryOnlyAllowed(
+  args: DuplicateEntityNameReviewArgs,
+): void {
+  assertPhase0SummaryOnlyDryRun({
+    summaryOnly: Boolean(args.summaryOnly),
+    apply: args.apply,
+    scriptName: 'research-entity:duplicate-name-review',
+  });
+  if (!args.summaryOnly) return;
+  if (
+    args.acceptedDecisions ||
+    args.allowEmptyDecisions ||
+    args.decisionTemplateOutput ||
+    args.confirmDuplicateEntityNameReview
+  ) {
+    throw new Error(
+      'research-entity:duplicate-name-review --summary-only cannot be combined with decision input, decision-template output, allow-empty-decisions, or apply confirmation options.',
+    );
+  }
+}
+
+export function buildDuplicateEntityNameReviewSummaryOnlyOutput(
+  report: DuplicateEntityNameReviewReport,
+  metadata: Phase0SummaryOnlyMetadata,
+) {
+  const safeCategories = new Set<DuplicateEntityReviewCategory>([
+    'shared_website_merge_review',
+    'cross_department_same_person_review',
+    'same_label_disambiguation',
+    'manual_review',
+  ]);
+  return buildPhase0SummaryOnlyOutput(
+    {
+      generatedAt: report.generatedAt,
+      mode: report.mode,
+      applyBlocked: true,
+      clusterLimit: report.clusterLimit,
+      clusterCount: report.clusterCount,
+      entityCountInClusters: report.entityCountInClusters,
+      possibleClusterTruncation: report.clusterCount >= report.clusterLimit,
+      countSemantics:
+        report.clusterCount >= report.clusterLimit
+          ? 'bounded-lower-bound'
+          : 'complete-within-normalized-name-scan',
+      reviewSummary: {
+        totalClusters: report.reviewSummary.totalClusters,
+        byCategory: report.reviewSummary.byCategory
+          .filter(
+            ({ category, count }) =>
+              safeCategories.has(category) && Number.isSafeInteger(count) && count >= 0,
+          )
+          .map(({ category, count }) => ({ category, count })),
+      },
+      planSummary: {
+        planLimit: report.planSummary.planLimit,
+        plannedClusterCount: report.planSummary.plannedClusterCount,
+        plannedEntityCount: report.planSummary.plannedEntityCount,
+        planTruncated: report.planSummary.planTruncated,
+        preflightSummary: {
+          mergePreflightReadyForReview:
+            report.planSummary.preflightSummary.mergePreflightReadyForReview,
+          manualDisambiguationRequired:
+            report.planSummary.preflightSummary.manualDisambiguationRequired,
+          withReferenceRewrite: report.planSummary.preflightSummary.withReferenceRewrite,
+          totalReferencesImpacted: report.planSummary.preflightSummary.totalReferencesImpacted,
+          requiredReviewerDecisionCount:
+            report.planSummary.preflightSummary.requiredReviewerDecisions.reduce(
+              (total, { count }) =>
+                Number.isSafeInteger(count) && count >= 0 ? total + count : total,
+              0,
+            ),
+        },
+      },
+      appliedCount: report.applied?.length || 0,
+    },
+    metadata,
+  );
 }
 
 export function writeDuplicateEntityNameReviewDecisionTemplate(
@@ -630,14 +711,18 @@ export function selectDuplicateEntityNamePlansForAcceptedMergeApply(
   }
   const planById = new Map(plans.map((plan) => [plan.planId, plan]));
   return validation.decisions
-    .filter((decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical')
+    .filter(
+      (decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical',
+    )
     .map((decision) => {
       const plan = planById.get(decision.planId);
       if (!plan || !decision.canonicalEntityId) return undefined;
       return { plan, canonicalEntityId: decision.canonicalEntityId };
     })
     .filter(
-      (selection): selection is { plan: DuplicateEntityNameReviewPlan; canonicalEntityId: string } =>
+      (
+        selection,
+      ): selection is { plan: DuplicateEntityNameReviewPlan; canonicalEntityId: string } =>
         Boolean(selection),
     );
 }
@@ -656,9 +741,7 @@ export function buildDuplicateEntityNameMergeGroups(
       canonicalEntityId,
       duplicateEntityIds,
       mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity?.departments || [])),
-      mergedResearchAreas: uniqueStrings(
-        entities.flatMap((entity) => entity?.researchAreas || []),
-      ),
+      mergedResearchAreas: uniqueStrings(entities.flatMap((entity) => entity?.researchAreas || [])),
       mergedSourceUrls: uniqueStrings(
         entities.flatMap((entity) => [
           ...(entity?.sourceUrls || []),
@@ -821,6 +904,7 @@ async function buildDuplicateEntityNameReviewReport(
 
 async function main(): Promise<void> {
   const args = parseDuplicateEntityNameReviewArgs(process.argv.slice(2));
+  assertDuplicateEntityNameReviewSummaryOnlyAllowed(args);
   assertDuplicateEntityNameReviewApplyAllowed({
     apply: args.apply,
     confirmDuplicateEntityNameReview: args.confirmDuplicateEntityNameReview,
@@ -836,17 +920,22 @@ async function main(): Promise<void> {
   });
   await initializeConnections();
   const report = await buildDuplicateEntityNameReviewReport(args);
-  const outputReport = buildDuplicateEntityNameReviewOutput(report, {
+  const metadata = {
     environment: guard.environment,
     db: guard.dbLabel,
     options: args,
-  });
+  };
+  const outputReport = args.summaryOnly
+    ? buildDuplicateEntityNameReviewSummaryOnlyOutput(report, metadata)
+    : buildDuplicateEntityNameReviewOutput(report, metadata);
   console.log(JSON.stringify(outputReport, null, 2));
   writeDuplicateEntityNameReviewOutput(outputReport, args.output);
-  writeDuplicateEntityNameReviewDecisionTemplate(
-    buildDuplicateEntityNameReviewDecisionTemplate(report.planSummary.plans, report.generatedAt),
-    args.decisionTemplateOutput,
-  );
+  if (!args.summaryOnly) {
+    writeDuplicateEntityNameReviewDecisionTemplate(
+      buildDuplicateEntityNameReviewDecisionTemplate(report.planSummary.plans, report.generatedAt),
+      args.decisionTemplateOutput,
+    );
+  }
 }
 
 function collection(name: string): Collection<Document> {
@@ -1100,9 +1189,7 @@ function validateDuplicateEntityNameReviewDecision(
     decision.decision !== 'mark_distinct_homes' &&
     decision.decision !== 'defer_review'
   ) {
-    errors.push(
-      'Decision must be merge_into_canonical, mark_distinct_homes, or defer_review.',
-    );
+    errors.push('Decision must be merge_into_canonical, mark_distinct_homes, or defer_review.');
   }
 
   if (decision.decision === 'merge_into_canonical') {
@@ -1176,10 +1263,7 @@ function buildReferenceImpactPipeline(
     [field]: { $in: objectIds },
   };
   if (!array) {
-    return [
-      { $match: match },
-      { $group: { _id: `$${field}`, count: { $sum: 1 } } },
-    ];
+    return [{ $match: match }, { $group: { _id: `$${field}`, count: { $sum: 1 } } }];
   }
 
   return [
@@ -1214,7 +1298,9 @@ function totalReferenceCount(counts: DuplicateEntityReferenceImpactCounts): numb
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(
-    new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
+    new Set(
+      values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)),
+    ),
   );
 }
 
@@ -1237,7 +1323,11 @@ function normalizedWebsiteKey(value?: string): string {
     const urlPath = parsed.pathname.replace(/\/+$/, '').toLowerCase();
     return `${host}${urlPath}`;
   } catch {
-    return value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+    return value
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/+$/, '')
+      .toLowerCase();
   }
 }
 

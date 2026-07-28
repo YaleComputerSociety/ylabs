@@ -10,7 +10,9 @@ import {
   type CoverageAuditFacts,
 } from '../researchEntityCoverageAuditCore';
 import {
+  assertResearchEntityCoverageSummaryOnlyAllowed,
   buildResearchEntityCoverageAuditOutput,
+  buildResearchEntityCoverageSummaryOnlyOutput,
   parseResearchEntityCoverageAuditArgs,
   writeResearchEntityCoverageAuditOutput,
 } from '../researchEntityCoverageAudit';
@@ -160,9 +162,9 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(() => parseResearchEntityCoverageAuditArgs(['--min-score=bad'])).toThrow(
       /--min-score requires a non-negative integer/,
     );
-    expect(() =>
-      parseResearchEntityCoverageAuditArgs(['--min-score=9007199254740992']),
-    ).toThrow(/--min-score requires a non-negative integer/);
+    expect(() => parseResearchEntityCoverageAuditArgs(['--min-score=9007199254740992'])).toThrow(
+      /--min-score requires a non-negative integer/,
+    );
     expect(() => parseResearchEntityCoverageAuditArgs(['--output', '--all'])).toThrow(
       /--output requires a path/,
     );
@@ -175,6 +177,25 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
     expect(() =>
       parseResearchEntityCoverageAuditArgs(['--output', '/tmp/research-entity-coverage.txt']),
     ).toThrow(/--output must point to a \.json report file/);
+  });
+
+  it('parses summary-only and rejects slug targeting before connecting', () => {
+    const options = parseResearchEntityCoverageAuditArgs(['--summary-only', '--all']);
+    expect(options).toEqual({
+      summaryOnly: true,
+      includeAll: true,
+      includeArchived: false,
+      limit: 50,
+      minScore: 1,
+    });
+    expect(() => parseResearchEntityCoverageAuditArgs(['--summary-only=true'])).toThrow(
+      '--summary-only does not accept a value',
+    );
+    expect(() =>
+      assertResearchEntityCoverageSummaryOnlyAllowed(
+        parseResearchEntityCoverageAuditArgs(['--summary-only', '--slug=private-entity-slug']),
+      ),
+    ).toThrow(/--summary-only cannot be combined with --slug/);
   });
 
   it('writes the coverage audit artifact when output is provided', () => {
@@ -236,5 +257,46 @@ describe('researchEntityCoverageAudit CLI helpers', () => {
         output: '/tmp/ylabs-research-entity-coverage.json',
       },
     });
+  });
+
+  it('builds a fail-closed aggregate-only coverage report', () => {
+    const payload = buildResearchEntityCoverageSummaryOnlyOutput(
+      {
+        generatedAt: '2026-07-28T00:00:00.000Z',
+        scope: 'bulk',
+        totalEntitiesScanned: 10,
+        flaggedEntities: 4,
+        filters: {
+          includeArchived: false,
+          includeAll: true,
+          minScore: 0,
+        },
+        issueCounts: {
+          NO_MEMBERS: 3,
+          'private-entity-slug': 999,
+        },
+      },
+      { environment: 'development', db: 'Development' },
+    );
+
+    expect(payload).toEqual({
+      summaryOnly: true,
+      environment: 'development',
+      db: 'Development',
+      generatedAt: '2026-07-28T00:00:00.000Z',
+      scope: 'bulk',
+      applyBlocked: true,
+      totalEntitiesScanned: 10,
+      flaggedEntities: 4,
+      filters: {
+        includeArchived: false,
+        includeAll: true,
+        minScore: 0,
+      },
+      issueCounts: {
+        NO_MEMBERS: 3,
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain('private');
   });
 });

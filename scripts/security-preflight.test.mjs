@@ -3348,6 +3348,82 @@ test('identity cleanup report outputs are constrained to safe JSON roots', () =>
   }
 });
 
+test('Phase 0 complementary audits enforce fail-closed summary-only output', () => {
+  const contracts = [
+    [
+      'user identity dedupe',
+      '../server/src/scripts/dedupeUsersByIdentityCore.ts',
+      '../server/src/scripts/dedupeUsersByIdentity.ts',
+      '../server/src/scripts/dedupeUsersByIdentity.ts',
+      'buildDedupeUsersByIdentitySummaryOnlyOutput',
+    ],
+    [
+      'member reference audit',
+      '../server/src/scripts/researchEntityMemberReferenceAuditCore.ts',
+      '../server/src/scripts/researchEntityMemberReferenceAudit.ts',
+      '../server/src/scripts/researchEntityMemberReferenceAuditCore.ts',
+      'buildResearchEntityMemberReferenceSummaryOnlyOutput',
+    ],
+    [
+      'duplicate entity name review',
+      '../server/src/scripts/duplicateEntityNameReview.ts',
+      '../server/src/scripts/duplicateEntityNameReview.ts',
+      '../server/src/scripts/duplicateEntityNameReview.ts',
+      'buildDuplicateEntityNameReviewSummaryOnlyOutput',
+    ],
+    [
+      'research entity coverage audit',
+      '../server/src/scripts/researchEntityCoverageAudit.ts',
+      '../server/src/scripts/researchEntityCoverageAudit.ts',
+      '../server/src/scripts/researchEntityCoverageAudit.ts',
+      'buildResearchEntityCoverageSummaryOnlyOutput',
+    ],
+  ];
+
+  for (const [name, parserFile, wrapperFile, builderFile, summaryBuilder] of contracts) {
+    const parserSource = fs.readFileSync(new URL(parserFile, import.meta.url), 'utf8');
+    const wrapperSource = fs.readFileSync(new URL(wrapperFile, import.meta.url), 'utf8');
+    const builderSource = fs.readFileSync(new URL(builderFile, import.meta.url), 'utf8');
+    assert.match(parserSource, /arg === '--summary-only'/, `${name} must parse --summary-only`);
+    assert.match(
+      parserSource,
+      /--summary-only does not accept a value/,
+      `${name} must reject assigned summary-only values`,
+    );
+    assert.match(
+      builderSource,
+      new RegExp(`export function ${summaryBuilder}`),
+      `${name} must expose an explicit aggregate-only serializer`,
+    );
+    assert.match(
+      wrapperSource,
+      new RegExp(`summaryOnly[\\s\\S]{0,160}\\? ${summaryBuilder}\\(`),
+      `${name} must select the aggregate serializer before stdout and file output`,
+    );
+  }
+
+  const sharedSource = fs.readFileSync(
+    new URL('../server/src/scripts/phase0SummaryOnlyAudit.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(sharedSource, /args\.summaryOnly && args\.apply/);
+  assert.match(sharedSource, /--summary-only cannot be combined with --apply/);
+
+  const duplicateSource = fs.readFileSync(
+    new URL('../server/src/scripts/duplicateEntityNameReview.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(duplicateSource, /args\.decisionTemplateOutput/);
+  assert.match(duplicateSource, /cannot be combined with decision input/);
+
+  const coverageSource = fs.readFileSync(
+    new URL('../server/src/scripts/researchEntityCoverageAudit.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(coverageSource, /options\.summaryOnly && options\.slug/);
+  assert.match(coverageSource, /--summary-only cannot be combined with --slug/);
+});
+
 test('Mongo sanitizer rejects operator-shaped requests and bounds recursive traversal', () => {
   const source = fs.readFileSync(
     new URL('../server/src/middleware/sanitizeMongo.ts', import.meta.url),

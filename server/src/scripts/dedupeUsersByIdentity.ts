@@ -18,6 +18,11 @@ import {
   type UserIdentityField,
 } from './dedupeUsersByIdentityCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertPhase0SummaryOnlyDryRun,
+  buildPhase0SummaryOnlyOutput,
+  type Phase0SummaryOnlyMetadata,
+} from './phase0SummaryOnlyAudit';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -108,10 +113,7 @@ export function buildUserIdentityCollisionPipeline(
   ];
 }
 
-export function writeDedupeUsersByIdentityOutput(
-  summary: UserIdentityDedupeSummary,
-  output?: string,
-): void {
+export function writeDedupeUsersByIdentityOutput(summary: unknown, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
@@ -124,6 +126,11 @@ export function assertDedupeUsersByIdentityApplyAllowed(
   mongoUrl?: string,
   plannedGroups?: number,
 ) {
+  assertPhase0SummaryOnlyDryRun({
+    summaryOnly: Boolean(args.summaryOnly),
+    apply: args.apply,
+    scriptName: 'users:dedupe-by-identity',
+  });
   if (args.apply) {
     if (!args.confirmUserIdentityDedupe) {
       throw new Error(
@@ -174,6 +181,38 @@ export function buildDedupeUsersByIdentityOutput<T extends object>(
     ...(metadata.db ? { db: metadata.db } : {}),
     options: metadata.options,
   };
+}
+
+export function buildDedupeUsersByIdentitySummaryOnlyOutput(
+  summary: UserIdentityDedupeSummary,
+  metadata: Phase0SummaryOnlyMetadata,
+  options: Pick<DedupeUsersByIdentityArgs, 'limit' | 'identityField' | 'maxApplyGroups'>,
+) {
+  const possibleCollisionTruncation = summary.candidateGroups >= options.limit;
+  return buildPhase0SummaryOnlyOutput(
+    {
+      mode: summary.mode,
+      applyBlocked: true,
+      candidateGroups: summary.candidateGroups,
+      plannedGroups: summary.plannedGroups,
+      duplicateUsers: summary.duplicateUsers,
+      warningGroups: summary.warningGroups,
+      appliedCount: summary.applied.length,
+      scan: {
+        collisionLimitPerIdentityField: options.limit,
+        identityFieldsScanned: options.identityField ? 1 : IDENTITY_FIELDS.length,
+        possibleCollisionTruncation,
+        planLimit: options.maxApplyGroups ?? null,
+        possiblePlanTruncation: Boolean(
+          options.maxApplyGroups && summary.plannedGroups >= options.maxApplyGroups,
+        ),
+        countSemantics: possibleCollisionTruncation
+          ? 'bounded-lower-bound'
+          : 'complete-within-scanned-collisions',
+      },
+    },
+    metadata,
+  );
 }
 
 async function loadCollisions(args: DedupeUsersByIdentityArgs): Promise<UserIdentityCollision[]> {
@@ -320,7 +359,9 @@ async function applyUserIdentityDedupeGroups(
         },
       );
       if (archiveResult.modifiedCount !== 1) {
-        throw new Error(`Failed to archive duplicate user ${duplicateUserId}; row may have changed.`);
+        throw new Error(
+          `Failed to archive duplicate user ${duplicateUserId}; row may have changed.`,
+        );
       }
 
       applied.push({
@@ -461,7 +502,9 @@ async function rewriteResearchEntityMemberReferences(
         },
       );
       if (result.modifiedCount !== 1) {
-        throw new Error(`Failed to archive duplicate member ${serializedDocumentId(member._id) || ''}.`);
+        throw new Error(
+          `Failed to archive duplicate member ${serializedDocumentId(member._id) || ''}.`,
+        );
       }
       archivedDuplicateCount += 1;
       continue;
@@ -492,14 +535,22 @@ async function rewriteScalarObjectIdReferences(
   const rewrites: ReferenceRewriteCount[] = [];
   for (const { collection, field } of USER_SCALAR_OBJECT_ID_REFERENCE_FIELDS) {
     const filter: Record<string, unknown> = { [field]: duplicateObjectId };
-    if (collection === 'research_scholarly_links' || collection === 'research_scholarly_attributions') {
+    if (
+      collection === 'research_scholarly_links' ||
+      collection === 'research_scholarly_attributions'
+    ) {
       filter.archived = { $ne: true };
     }
     const result = await db
       .collection(collection)
       .updateMany(filter, { $set: { [field]: canonicalObjectId } });
     if (result.matchedCount > 0 || result.modifiedCount > 0) {
-      rewrites.push({ collection, field, matchedCount: result.matchedCount, modifiedCount: result.modifiedCount });
+      rewrites.push({
+        collection,
+        field,
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount,
+      });
     }
   }
   return rewrites;
@@ -540,7 +591,9 @@ async function archiveDuplicateUniqueUserReferences(
       },
     );
     if (result.modifiedCount !== 1) {
-      throw new Error(`Failed to archive duplicate scholarly link ${serializedDocumentId(row._id) || ''}.`);
+      throw new Error(
+        `Failed to archive duplicate scholarly link ${serializedDocumentId(row._id) || ''}.`,
+      );
     }
     archivedDuplicateCount += 1;
   }
@@ -569,7 +622,12 @@ async function rewriteScalarStringReferences(
       .collection(collection)
       .updateMany({ [field]: duplicateUserId }, { $set: { [field]: canonicalUserId } });
     if (result.matchedCount > 0 || result.modifiedCount > 0) {
-      rewrites.push({ collection, field, matchedCount: result.matchedCount, modifiedCount: result.modifiedCount });
+      rewrites.push({
+        collection,
+        field,
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount,
+      });
     }
   }
   return rewrites;
@@ -587,10 +645,7 @@ async function rewriteArrayObjectIdReferences(
       .updateMany({ [field]: duplicateObjectId }, { $addToSet: { [field]: canonicalObjectId } });
     const pullResult = await db
       .collection(collection)
-      .updateMany(
-        { [field]: duplicateObjectId },
-        { $pull: { [field]: duplicateObjectId } } as any,
-      );
+      .updateMany({ [field]: duplicateObjectId }, { $pull: { [field]: duplicateObjectId } } as any);
     if (addResult.matchedCount > 0 || addResult.modifiedCount > 0 || pullResult.modifiedCount > 0) {
       rewrites.push({
         collection,
@@ -615,10 +670,7 @@ async function rewriteArrayStringReferences(
       .updateMany({ [field]: duplicateUserId }, { $addToSet: { [field]: canonicalUserId } });
     const pullResult = await db
       .collection(collection)
-      .updateMany(
-        { [field]: duplicateUserId },
-        { $pull: { [field]: duplicateUserId } } as any,
-      );
+      .updateMany({ [field]: duplicateUserId }, { $pull: { [field]: duplicateUserId } } as any);
     if (addResult.matchedCount > 0 || addResult.modifiedCount > 0 || pullResult.modifiedCount > 0) {
       rewrites.push({
         collection,
@@ -680,11 +732,14 @@ async function main() {
   const guard = assertDedupeUsersByIdentityApplyAllowed(args, process.env, process.env.MONGODBURL);
   await initializeConnections();
   const summary = await runDedupeUsersByIdentity(args);
-  const output = buildDedupeUsersByIdentityOutput(summary, {
+  const metadata = {
     environment: guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options: args,
-  });
+  };
+  const output = args.summaryOnly
+    ? buildDedupeUsersByIdentitySummaryOnlyOutput(summary, metadata, args)
+    : buildDedupeUsersByIdentityOutput(summary, metadata);
   console.log(JSON.stringify(output, null, 2));
   writeDedupeUsersByIdentityOutput(output, args.output);
 }

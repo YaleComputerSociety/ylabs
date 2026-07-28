@@ -5,6 +5,7 @@ export type UserIdentityField = DuplicatePersonGroup['identityField'];
 
 export interface DedupeUsersByIdentityArgs {
   apply: boolean;
+  summaryOnly?: boolean;
   confirmUserIdentityDedupe: boolean;
   limit: number;
   limitProvided: boolean;
@@ -86,7 +87,11 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function consumeValue(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -98,6 +103,7 @@ function consumeValue(argv: string[], index: number, flag: string): { value: str
 
 export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIdentityArgs {
   let apply = false;
+  let summaryOnly = false;
   let confirmUserIdentityDedupe = false;
   let limit = 100;
   let limitProvided = false;
@@ -123,6 +129,13 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
     if (arg === '--apply') {
       apply = true;
       continue;
+    }
+    if (arg === '--summary-only') {
+      summaryOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--summary-only=')) {
+      throw new Error('--summary-only does not accept a value');
     }
     if (arg === '--confirm-user-identity-dedupe') {
       confirmUserIdentityDedupe = true;
@@ -184,6 +197,7 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
 
   return {
     apply,
+    ...(summaryOnly ? { summaryOnly: true } : {}),
     confirmUserIdentityDedupe,
     limit,
     limitProvided,
@@ -422,7 +436,10 @@ export function buildUserIdentityDedupePlan(
   return {
     candidateGroups: collisions.length,
     groups: plannedGroups,
-    duplicateUsers: plannedGroups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
+    duplicateUsers: plannedGroups.reduce(
+      (count, group) => count + group.duplicateUserIds.length,
+      0,
+    ),
     warningGroups: sortedWarnings,
   };
 }
@@ -485,7 +502,10 @@ export function buildUserIdentityDedupeSummary(input: {
     mode: input.apply ? 'apply' : 'dry-run',
     candidateGroups: input.plan.candidateGroups,
     plannedGroups: plannedGroups.length,
-    duplicateUsers: plannedGroups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
+    duplicateUsers: plannedGroups.reduce(
+      (count, group) => count + group.duplicateUserIds.length,
+      0,
+    ),
     warningGroups: warnings.length,
     plan: plannedGroups.slice(0, input.sampleSize),
     warnings: warnings.slice(0, input.sampleSize),

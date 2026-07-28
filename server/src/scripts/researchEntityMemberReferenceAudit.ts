@@ -7,9 +7,7 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
-import {
-  resolveSafeJsonReportOutputPath,
-} from './scriptWriteGuards';
+import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -18,6 +16,7 @@ import {
   assertResearchEntityMemberReferenceTargetAllowed,
   buildResearchEntityMemberReferenceAuditOutput,
   buildResearchEntityMemberReferenceAuditSummary,
+  buildResearchEntityMemberReferenceSummaryOnlyOutput,
   inferMemberReferenceNames,
   parseResearchEntityMemberReferenceAuditArgs,
   type ExistingMemberMatch,
@@ -161,7 +160,7 @@ export function buildExistingMemberMatchQuery(
 }
 
 export function writeResearchEntityMemberReferenceAuditOutput(
-  summary: ResearchEntityMemberReferenceAuditSummary,
+  summary: unknown,
   output?: string,
 ): void {
   if (!output) return;
@@ -172,9 +171,10 @@ export function writeResearchEntityMemberReferenceAuditOutput(
 
 async function loadOrphanRows(args: ResearchEntityMemberReferenceAuditArgs): Promise<{
   totalOrphanedRefs: number;
+  totalCurrentMembersOnArchivedEntities: number;
   rows: MemberReferenceAuditRow[];
 }> {
-  const [countRows, rawRows, _archivedCountRows, archivedRows] = await Promise.all([
+  const [countRows, rawRows, archivedCountRows, archivedRows] = await Promise.all([
     ResearchGroupMember.aggregate<{ count: number }>([
       ...ORPHAN_USER_REF_STAGES,
       { $count: 'count' },
@@ -213,6 +213,7 @@ async function loadOrphanRows(args: ResearchEntityMemberReferenceAuditArgs): Pro
 
   return {
     totalOrphanedRefs: countRows[0]?.count || 0,
+    totalCurrentMembersOnArchivedEntities: archivedCountRows[0]?.count || 0,
     rows: [...rows, ...archivedEntityRows],
   };
 }
@@ -272,10 +273,7 @@ async function loadExistingCanonicalMemberMatches(
 ): Promise<ExistingMemberMatch[]> {
   const canonicalGroupId = normalizeMemberReferenceObjectId(row.entity?.canonicalGroupId);
   const userId = normalizeMemberReferenceObjectId(row.member.userId);
-  if (
-    !canonicalGroupId ||
-    !userId
-  ) {
+  if (!canonicalGroupId || !userId) {
     return [];
   }
   const query: Record<string, unknown> = {
@@ -302,8 +300,13 @@ async function loadExistingCanonicalMemberMatches(
 export async function runResearchEntityMemberReferenceAudit(
   args: ResearchEntityMemberReferenceAuditArgs,
 ): Promise<ResearchEntityMemberReferenceAuditSummary> {
-  const { totalOrphanedRefs, rows } = await loadOrphanRows(args);
-  const summary = buildResearchEntityMemberReferenceAuditSummary({ totalOrphanedRefs, rows });
+  const { totalOrphanedRefs, totalCurrentMembersOnArchivedEntities, rows } =
+    await loadOrphanRows(args);
+  const summary = buildResearchEntityMemberReferenceAuditSummary({
+    totalOrphanedRefs,
+    totalCurrentMembersOnArchivedEntities,
+    rows,
+  });
   assertResearchEntityMemberReferenceApplyAllowed(args, summary);
   if (!args.apply) {
     return summary;
@@ -437,11 +440,14 @@ async function main() {
   );
   await initializeConnections();
   const summary = await runResearchEntityMemberReferenceAudit(args);
-  const output = buildResearchEntityMemberReferenceAuditOutput(summary, {
+  const metadata = {
     environment: guard.environment,
     db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
     options: args,
-  });
+  };
+  const output = args.summaryOnly
+    ? buildResearchEntityMemberReferenceSummaryOnlyOutput(summary, metadata, args)
+    : buildResearchEntityMemberReferenceAuditOutput(summary, metadata);
   console.log(JSON.stringify(output, null, 2));
   writeResearchEntityMemberReferenceAuditOutput(output, args.output);
 }

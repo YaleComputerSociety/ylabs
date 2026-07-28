@@ -14,6 +14,7 @@ import {
   assertResearchEntityMemberReferenceTargetAllowed,
   buildResearchEntityMemberReferenceAuditOutput,
   buildResearchEntityMemberReferenceAuditSummary,
+  buildResearchEntityMemberReferenceSummaryOnlyOutput,
   inferMemberReferenceNames,
   parseResearchEntityMemberReferenceAuditArgs,
 } from '../researchEntityMemberReferenceAuditCore';
@@ -150,6 +151,35 @@ describe('research entity member reference audit core', () => {
     });
   });
 
+  it('keeps the full archived-entity member count when detail rows are limit-capped', () => {
+    const summary = buildResearchEntityMemberReferenceAuditSummary({
+      totalOrphanedRefs: 0,
+      totalCurrentMembersOnArchivedEntities: 7,
+      rows: [
+        {
+          member: {
+            id: 'member-1',
+            userId: 'user-1',
+            researchEntityId: 'archived-entity',
+          },
+          entity: {
+            id: 'archived-entity',
+            archived: true,
+            canonicalGroupId: 'canonical-entity',
+          },
+          candidateUsers: [],
+        },
+      ],
+    });
+
+    expect(summary).toMatchObject({
+      currentMembersOnArchivedEntities: 7,
+      plannedCanonicalEntityRelinks: 1,
+      plannedArchivedEntityMemberArchives: 0,
+    });
+    expect(summary.plan).toHaveLength(1);
+  });
+
   it('parses bounds, output, and guarded apply flags', () => {
     expect(
       parseResearchEntityMemberReferenceAuditArgs([
@@ -171,10 +201,24 @@ describe('research entity member reference audit core', () => {
     });
   });
 
+  it('parses summary-only as a literal flag', () => {
+    expect(parseResearchEntityMemberReferenceAuditArgs(['--summary-only'])).toEqual({
+      apply: false,
+      summaryOnly: true,
+      confirmExactRelink: false,
+      limit: 1000,
+      limitProvided: false,
+      maxApply: 10,
+    });
+    expect(() => parseResearchEntityMemberReferenceAuditArgs(['--summary-only=true'])).toThrow(
+      '--summary-only does not accept a value',
+    );
+  });
+
   it('rejects malformed paired CLI values before running the member reference audit', () => {
-    expect(() =>
-      parseResearchEntityMemberReferenceAuditArgs(['--output', '--apply']),
-    ).toThrow('--output requires a path');
+    expect(() => parseResearchEntityMemberReferenceAuditArgs(['--output', '--apply'])).toThrow(
+      '--output requires a path',
+    );
     expect(() =>
       parseResearchEntityMemberReferenceAuditArgs(['--output=/etc/members.json']),
     ).toThrow(/--output must write under/);
@@ -184,15 +228,15 @@ describe('research entity member reference audit core', () => {
     expect(() =>
       parseResearchEntityMemberReferenceAuditArgs(['--limit', '--confirm-exact-relink']),
     ).toThrow('--limit requires a number');
-    expect(() =>
-      parseResearchEntityMemberReferenceAuditArgs(['--limit=1e3']),
-    ).toThrow('--limit must be a positive integer');
-    expect(() =>
-      parseResearchEntityMemberReferenceAuditArgs(['--max-apply=bad']),
-    ).toThrow('--max-apply must be a positive integer');
-    expect(() =>
-      parseResearchEntityMemberReferenceAuditArgs(['--max-apply=1e3']),
-    ).toThrow('--max-apply must be a positive integer');
+    expect(() => parseResearchEntityMemberReferenceAuditArgs(['--limit=1e3'])).toThrow(
+      '--limit must be a positive integer',
+    );
+    expect(() => parseResearchEntityMemberReferenceAuditArgs(['--max-apply=bad'])).toThrow(
+      '--max-apply must be a positive integer',
+    );
+    expect(() => parseResearchEntityMemberReferenceAuditArgs(['--max-apply=1e3'])).toThrow(
+      '--max-apply must be a positive integer',
+    );
     expect(() => parseResearchEntityMemberReferenceAuditArgs(['prod'])).toThrow(
       'Unknown research-entity-members:audit-user-refs option: prod',
     );
@@ -260,11 +304,29 @@ describe('research entity member reference audit core', () => {
     ).not.toThrow();
   });
 
+  it('rejects summary-only apply before connecting', () => {
+    const summary = buildResearchEntityMemberReferenceAuditSummary({
+      totalOrphanedRefs: 0,
+      rows: [],
+    });
+
+    expect(() =>
+      assertResearchEntityMemberReferenceApplyAllowed(
+        {
+          apply: true,
+          summaryOnly: true,
+          confirmExactRelink: true,
+          limit: 1000,
+          limitProvided: true,
+          maxApply: 10,
+        },
+        summary,
+      ),
+    ).toThrow(/--summary-only cannot be combined with --apply/);
+  });
+
   it('requires an explicit limit before member-reference apply can run', () => {
-    const args = parseResearchEntityMemberReferenceAuditArgs([
-      '--apply',
-      '--confirm-exact-relink',
-    ]);
+    const args = parseResearchEntityMemberReferenceAuditArgs(['--apply', '--confirm-exact-relink']);
     const exactSummary = buildResearchEntityMemberReferenceAuditSummary({
       totalOrphanedRefs: 1,
       rows: [
@@ -282,9 +344,9 @@ describe('research entity member reference audit core', () => {
       limit: 1000,
       limitProvided: false,
     });
-    expect(() =>
-      assertResearchEntityMemberReferenceApplyAllowed(args, exactSummary),
-    ).toThrow(/--limit is required/);
+    expect(() => assertResearchEntityMemberReferenceApplyAllowed(args, exactSummary)).toThrow(
+      /--limit is required/,
+    );
   });
 
   it('blocks member-reference apply against production without confirmation', () => {
@@ -362,20 +424,18 @@ describe('research entity member reference audit core', () => {
       ],
     });
 
-    expect(summary).toMatchObject(
-      {
-        mode: 'apply',
-        applied: [
-          {
-            action: 'relink_user_id_to_exact_name_match',
-            memberId: 'member-1',
-            previousUserId: 'missing-user',
-            replacementUserId: 'user-1',
-            replacementNetid: 'nb653',
-          },
-        ],
-      },
-    );
+    expect(summary).toMatchObject({
+      mode: 'apply',
+      applied: [
+        {
+          action: 'relink_user_id_to_exact_name_match',
+          memberId: 'member-1',
+          previousUserId: 'missing-user',
+          replacementUserId: 'user-1',
+          replacementNetid: 'nb653',
+        },
+      ],
+    });
   });
 
   it('marks apply summaries with applied duplicate archives', () => {
@@ -475,9 +535,9 @@ describe('research entity member reference audit CLI wrapper', () => {
       orphanedMemberUserRefs: 0,
       plan: [],
     });
-    expect(() => writeResearchEntityMemberReferenceAuditOutput(payload, '/etc/summary.json')).toThrow(
-      /--output must write under/,
-    );
+    expect(() =>
+      writeResearchEntityMemberReferenceAuditOutput(payload, '/etc/summary.json'),
+    ).toThrow(/--output must write under/);
   });
 
   it('adds target metadata to member-reference audit artifacts', () => {
@@ -514,6 +574,65 @@ describe('research entity member reference audit CLI wrapper', () => {
         output: '/tmp/ylabs-member-reference-audit.json',
       },
     });
+  });
+
+  it('builds a fail-closed aggregate-only member-reference report', () => {
+    const summary = buildResearchEntityMemberReferenceAuditSummary({
+      totalOrphanedRefs: 1,
+      rows: [
+        {
+          member: {
+            id: 'private-member-id',
+            userId: 'private-user-id',
+            researchEntityId: 'private-entity-id',
+            name: 'Private Person',
+            sourceUrl: 'https://private.example.test',
+          },
+          entity: {
+            id: 'private-entity-id',
+            name: 'Private Lab',
+            slug: 'private-lab',
+          },
+          candidateUsers: [
+            {
+              id: 'candidate-user-id',
+              netid: 'private1',
+              name: 'Private Person',
+            },
+          ],
+        },
+      ],
+    });
+    const payload = buildResearchEntityMemberReferenceSummaryOnlyOutput(
+      summary,
+      {
+        environment: 'development',
+        db: 'Development',
+      },
+      { limit: 1000 },
+    );
+
+    expect(payload).toEqual({
+      summaryOnly: true,
+      environment: 'development',
+      db: 'Development',
+      mode: 'dry-run',
+      orphanedMemberUserRefs: 1,
+      plannedExactRelinks: 1,
+      plannedDuplicateArchives: 0,
+      currentMembersOnArchivedEntities: 0,
+      plannedCanonicalEntityRelinks: 0,
+      plannedArchivedEntityMemberArchives: 0,
+      manualReviewCount: 0,
+      applyBlocked: true,
+      appliedCount: 0,
+      scan: {
+        detailRowLimitPerCategory: 1000,
+        plannedRows: 1,
+        possiblePlanTruncation: false,
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain('private');
   });
 
   it('exposes the dry-run command in server package scripts', () => {

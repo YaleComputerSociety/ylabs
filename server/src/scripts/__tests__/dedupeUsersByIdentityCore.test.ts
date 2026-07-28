@@ -59,6 +59,20 @@ describe('parseDedupeUsersByIdentityArgs', () => {
     });
   });
 
+  it('parses summary-only without changing default output options', () => {
+    expect(parseDedupeUsersByIdentityArgs(['--summary-only'])).toEqual({
+      apply: false,
+      summaryOnly: true,
+      confirmUserIdentityDedupe: false,
+      limit: 100,
+      limitProvided: false,
+      sampleSize: 25,
+    });
+    expect(() => parseDedupeUsersByIdentityArgs(['--summary-only=true'])).toThrow(
+      '--summary-only does not accept a value',
+    );
+  });
+
   it('rejects non-positive sample-size and max-apply-groups values', () => {
     expect(() => parseDedupeUsersByIdentityArgs(['--sample-size=0'])).toThrow(
       '--sample-size must be a positive integer',
