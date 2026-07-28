@@ -422,6 +422,7 @@ describe('searchResearchGroupsViaMeili', () => {
 
     expect(result.researchEntities).toHaveLength(1);
     expect(result.researchEntities[0]).not.toHaveProperty('planningContext');
+    expect(result.degraded).toBe(true);
     expect(consoleError).toHaveBeenCalledWith(
       'Optional research planning-context enrichment failed:',
       expect.any(String),

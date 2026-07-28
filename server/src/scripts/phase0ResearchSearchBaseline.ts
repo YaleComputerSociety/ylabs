@@ -333,6 +333,7 @@ export function writePhase0ResearchSearchBaseline(
 
 async function main(): Promise<void> {
   const options = parsePhase0ResearchSearchBaselineArgs(process.argv.slice(2));
+  const initialSourceCommit = sourceCommit();
   assertHardenedSearchBaselineProfile(options.environment);
   const salt = requirePhase0ResearchSearchSalt(process.env.PHASE0_SEARCH_BASELINE_SALT);
   assertPhase0SummaryOnlyConfiguredTarget({
@@ -357,7 +358,10 @@ async function main(): Promise<void> {
   });
 
   const index = await getMeiliIndex('researchentities');
-  const [meiliSettings, meiliStats] = await Promise.all([index.getSettings(), index.getStats()]);
+  const [meiliSettings, initialMeiliStats] = await Promise.all([
+    index.getSettings(),
+    index.getStats(),
+  ]);
   const cases = [];
   for (const searchCase of PHASE0_RESEARCH_SEARCH_CASES) {
     const samples: Phase0ResearchSearchSample[] = [];
@@ -384,10 +388,19 @@ async function main(): Promise<void> {
     }
     cases.push(summarizePhase0ResearchSearchCase(searchCase, samples));
   }
+  const finalMeiliStats = await index.getStats();
+  const meiliStats = {
+    ...finalMeiliStats,
+    isIndexing: initialMeiliStats.isIndexing === true || finalMeiliStats.isIndexing === true,
+  };
+  const finalSourceCommit = sourceCommit();
+  if (finalSourceCommit !== initialSourceCommit) {
+    throw new Error('Source commit changed while the search baseline was running.');
+  }
 
   const report = buildPhase0ResearchSearchBaselineReport({
     generatedAt: new Date().toISOString(),
-    sourceCommit: sourceCommit(),
+    sourceCommit: initialSourceCommit,
     environment: options.environment,
     databaseName,
     salt,
