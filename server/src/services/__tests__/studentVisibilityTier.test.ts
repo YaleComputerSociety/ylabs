@@ -7,6 +7,89 @@ import {
 } from '../studentVisibilityTier';
 
 describe('computeResearchEntityStudentVisibility', () => {
+  it('blocks raw descriptions that become empty after lead-aware public sanitization', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'public-empty-fixture',
+        name: 'Correct Person Faculty Research',
+        slug: 'correct-person-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'correct-person',
+          user: { fname: 'Correct', lname: 'Person' },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['missing_description', 'missing_card_description']),
+    );
+  });
+
+  it('does not let a student-ready override bypass the public description invariant', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'overridden-public-empty-fixture',
+        name: 'Correct Person Faculty Research',
+        slug: 'correct-person-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        studentVisibilityOverrideTier: 'student_ready',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          user: { fname: 'Correct', lname: 'Person' },
+        },
+      ],
+      accessSignalCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['operator_override', 'public_description_invariant_failed']),
+    );
+  });
+
+  it('requires a useful full description for student-ready visibility', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'missing-public-full-description',
+        name: 'Correct Person Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        shortDescription: 'Studies molecular dynamics, protein folding, and cellular signaling.',
+        fullDescription: '',
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+      },
+      leadMembers: [{ role: 'pi', name: 'Correct Person' }],
+      accessSignalCount: 1,
+    });
+
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.computedTier).not.toBe('student_ready');
+  });
+
   it('blocks student-ready visibility for same-person profile-area shell duplicates', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
@@ -187,10 +270,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'non_owner_grant_shell',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['non_owner_grant_shell', 'missing_action_evidence']),
     );
   });
 
@@ -425,9 +505,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('operator_review');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['missing_lead', 'missing_source_url']),
-    );
+    expect(result.reasons).toEqual(expect.arrayContaining(['missing_lead', 'missing_source_url']));
   });
 
   it('keeps records with conflicting PI identity out of public tiers', () => {

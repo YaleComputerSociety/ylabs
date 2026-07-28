@@ -251,6 +251,7 @@ The auth flow's verbose tracing (per-request deserialization, the find-or-create
 | `npx tsc --noEmit -p server/tsconfig.json`                        | Server typecheck                                                                   |
 | `yarn --cwd server beta:readiness --confirm-beta-backup --strict` | Read-only Beta release gate                                                        |
 | `yarn --cwd server beta:data-quality --include-samples`           | Read-only Beta data-quality scorecard                                              |
+| `yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json` | Audit the post-sanitization description invariant for student-ready research entities |
 | `yarn --cwd server model-refactor:inventory --environment beta`   | Read-only research-model collection, field, and reference inventory                |
 | `yarn --cwd server scraper:integrity-gate --include-samples`      | Read-only scraper materialization integrity gate                                   |
 | `SCRAPER_ENV=beta yarn --cwd server gates:refresh`                | Regenerate every canonical gate scorecard the operator board reads (single writer) |

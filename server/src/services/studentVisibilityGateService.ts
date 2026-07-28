@@ -1,5 +1,6 @@
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
+import { FacultyMember } from '../models/facultyMember';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -38,7 +39,8 @@ export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection |
 const MAX_RELEASE_QUEUE_PAGE = 1000;
 const MAX_RELEASE_QUEUE_FILTER_LENGTH = 120;
 const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-const studentVisibilityGateDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
+const studentVisibilityGateDocumentId = (value: unknown): string =>
+  serializedDocumentId(value) || '';
 const studentVisibilityGateEntityIdKey = (entity: any): string =>
   studentVisibilityGateDocumentId(entity?._id) || studentVisibilityGateDocumentId(entity?.id);
 const studentVisibilityGateEntitySortKey = (entity: any): string =>
@@ -168,7 +170,7 @@ const suppressionRepairReasons = new Set([
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas fullDescription shortDescription studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas description shortDescription fullDescription profileSynthesisDescription descriptionSource studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -223,7 +225,8 @@ const uniqueStrings = (values: unknown[]): string[] =>
     ),
   );
 
-const sortedStrings = (values: string[]): string[] => [...values].sort((a, b) => a.localeCompare(b));
+const sortedStrings = (values: string[]): string[] =>
+  [...values].sort((a, b) => a.localeCompare(b));
 
 const stringSetsEqual = (left: string[], right: string[]): boolean => {
   if (left.length !== right.length) return false;
@@ -236,10 +239,7 @@ export function isStudentVisibilityGatePlanMateriallyChanged(
   plan: StudentVisibilityGatePlan,
 ): boolean {
   if (plan.currentTier !== plan.tier) return true;
-  if (
-    plan.currentComputedTier !== undefined &&
-    plan.currentComputedTier !== plan.computedTier
-  ) {
+  if (plan.currentComputedTier !== undefined && plan.currentComputedTier !== plan.computedTier) {
     return true;
   }
   if (Array.isArray(plan.currentReasons) && !stringSetsEqual(plan.currentReasons, plan.reasons)) {
@@ -296,15 +296,26 @@ function isSpecificDuplicateSignalUrl(value: string): boolean {
 }
 
 const entityDuplicateUrls = (entity: any): string[] =>
-  uniqueStrings([entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])])
+  uniqueStrings([
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ])
     .map(normalizedExactDuplicateUrl)
     .filter(isSpecificDuplicateSignalUrl);
 
-function exactDuplicateCanonicalScore(entity: any, leadCountsByEntityId: Map<string, number>): number {
+function exactDuplicateCanonicalScore(
+  entity: any,
+  leadCountsByEntityId: Map<string, number>,
+): number {
   const id = studentVisibilityGateEntityIdKey(entity);
   const textScore =
-    (typeof entity.fullDescription === 'string' && entity.fullDescription.trim().length >= 80 ? 35 : 0) +
-    (typeof entity.shortDescription === 'string' && entity.shortDescription.trim().length >= 40 ? 20 : 0);
+    (typeof entity.fullDescription === 'string' && entity.fullDescription.trim().length >= 80
+      ? 35
+      : 0) +
+    (typeof entity.shortDescription === 'string' && entity.shortDescription.trim().length >= 40
+      ? 20
+      : 0);
   return (
     (PUBLIC_TIERS.has(String(entity.studentVisibilityTier || '')) ? 80 : 0) +
     (isConcreteResearchHomeEntity(entity) ? 35 : 0) +
@@ -340,7 +351,9 @@ export function selectExactUrlDuplicateRiskEntityIds(
         exactDuplicateCanonicalScore(b, leadCountsByEntityId) -
         exactDuplicateCanonicalScore(a, leadCountsByEntityId);
       if (byScore !== 0) return byScore;
-      return studentVisibilityGateEntitySortKey(a).localeCompare(studentVisibilityGateEntitySortKey(b));
+      return studentVisibilityGateEntitySortKey(a).localeCompare(
+        studentVisibilityGateEntitySortKey(b),
+      );
     })[0];
     const canonicalId = studentVisibilityGateEntityIdKey(canonical);
     for (const entity of group) {
@@ -387,7 +400,9 @@ function buildSamePiVisibilityDedupeRows(args: {
   leadRows: any[];
   extraEntitiesByUserId?: Map<string, any[]>;
 }): ResearchEntityPiDedupeRow[] {
-  const entityById = new Map(args.entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]));
+  const entityById = new Map(
+    args.entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
+  );
   const leadRowsByUserId = new Map<string, any[]>();
   for (const row of args.leadRows) {
     const userId = studentVisibilityGateDocumentId(row.userId);
@@ -399,7 +414,9 @@ function buildSamePiVisibilityDedupeRows(args: {
     .map(([userId, rows]) => {
       const entityIds = new Set<string>();
       const entities = [
-        ...rows.map((row) => entityById.get(studentVisibilityGateDocumentId(row.researchEntityId))).filter(Boolean),
+        ...rows
+          .map((row) => entityById.get(studentVisibilityGateDocumentId(row.researchEntityId)))
+          .filter(Boolean),
         ...(args.extraEntitiesByUserId?.get(userId) || []),
       ]
         .filter((entity: any) => {
@@ -476,9 +493,9 @@ function buildNameOnlyVisibilityDedupeRows(args: {
       const [normalizedName, entities] = entry;
       const piUserIds = new Set<string>();
       for (const entity of entities) {
-        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) || []) {
-          const userId =
-            studentVisibilityGateDocumentId(lead.userId);
+        for (const lead of args.leadsByEntityId.get(studentVisibilityGateDocumentId(entity._id)) ||
+          []) {
+          const userId = studentVisibilityGateDocumentId(lead.userId);
           if (lead.role === 'pi' && userId) piUserIds.add(userId);
         }
       }
@@ -577,7 +594,9 @@ async function resolveArchivedResearchQueueItems(now = new Date()): Promise<numb
   })
     .select('_id')
     .lean();
-  const archivedRecordIds = archivedEntities.map((entity) => studentVisibilityGateDocumentId(entity._id));
+  const archivedRecordIds = archivedEntities.map((entity) =>
+    studentVisibilityGateDocumentId(entity._id),
+  );
   if (archivedRecordIds.length === 0) return 0;
 
   const result = await VisibilityReleaseQueueItem.updateMany(
@@ -794,8 +813,12 @@ export async function applyStudentVisibilityGatePlans(
   }
 
   await Promise.all([
-    researchOps.length > 0 ? (ResearchEntity as any).bulkWrite(researchOps, { ordered: false }) : undefined,
-    programOps.length > 0 ? (Fellowship as any).bulkWrite(programOps, { ordered: false }) : undefined,
+    researchOps.length > 0
+      ? (ResearchEntity as any).bulkWrite(researchOps, { ordered: false })
+      : undefined,
+    programOps.length > 0
+      ? (Fellowship as any).bulkWrite(programOps, { ordered: false })
+      : undefined,
     queueOps.length > 0
       ? (VisibilityReleaseQueueItem as any).bulkWrite(queueOps, { ordered: false })
       : undefined,
@@ -830,7 +853,8 @@ async function planResearchEntityGateUpdates(
     const sourceEntityIds = [...accessEntityIds, ...observationEntityIds];
     const sourceClauses: Record<string, any>[] = [];
     if (sourceEntityIds.length > 0) sourceClauses.push({ _id: { $in: sourceEntityIds } });
-    if (observationEntityKeys.length > 0) sourceClauses.push({ slug: { $in: observationEntityKeys } });
+    if (observationEntityKeys.length > 0)
+      sourceClauses.push({ slug: { $in: observationEntityKeys } });
     if (match._id) {
       match._id = {
         $in: sourceEntityIds.filter((id: any) => {
@@ -864,6 +888,7 @@ async function planResearchEntityGateUpdates(
   const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
+      archived: { $ne: true },
       isCurrentMember: { $ne: false },
       role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
     })
@@ -908,11 +933,33 @@ async function planResearchEntityGateUpdates(
     ]),
   ]);
 
-  const leadUserIds = uniqueStrings((leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)));
-  const leadUsers = leadUserIds.length
-    ? await User.find({ _id: { $in: leadUserIds } }).select('facultyMemberId fname lname title').lean()
-    : [];
-  const leadUsersById = new Map((leadUsers as any[]).map((user) => [studentVisibilityGateDocumentId(user._id), user]));
+  const leadUserIds = uniqueStrings(
+    (leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)),
+  );
+  const leadFacultyMemberIds = uniqueStrings(
+    (leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.facultyMemberId)),
+  );
+  const [leadUsers, leadFacultyMembers] = await Promise.all([
+    leadUserIds.length
+      ? User.find({ _id: { $in: leadUserIds } })
+          .select('facultyMemberId displayName name fname lname title')
+          .lean()
+      : [],
+    leadFacultyMemberIds.length
+      ? FacultyMember.find({ _id: { $in: leadFacultyMemberIds } })
+          .select('name firstName lastName')
+          .lean()
+      : [],
+  ]);
+  const leadUsersById = new Map(
+    (leadUsers as any[]).map((user) => [studentVisibilityGateDocumentId(user._id), user]),
+  );
+  const leadFacultyMembersById = new Map(
+    (leadFacultyMembers as any[]).map((facultyMember) => [
+      studentVisibilityGateDocumentId(facultyMember._id),
+      facultyMember,
+    ]),
+  );
   const profileAreaNamesByUserId = new Map<string, string[]>();
   const profileAreaNames = uniqueStrings(
     (leadUsers as any[]).flatMap((user) => {
@@ -935,8 +982,14 @@ async function planResearchEntityGateUpdates(
 
   const leadsByEntityId = new Map<string, any[]>();
   for (const row of leadRows as any[]) {
-    const user = row.userId ? leadUsersById.get(studentVisibilityGateDocumentId(row.userId)) : undefined;
+    const user = row.userId
+      ? leadUsersById.get(studentVisibilityGateDocumentId(row.userId))
+      : undefined;
     if (user) row.user = user;
+    const facultyMember = row.facultyMemberId
+      ? leadFacultyMembersById.get(studentVisibilityGateDocumentId(row.facultyMemberId))
+      : undefined;
+    if (facultyMember) row.facultyMember = facultyMember;
     const key = studentVisibilityGateDocumentId(row.researchEntityId);
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
@@ -944,22 +997,25 @@ async function planResearchEntityGateUpdates(
   const pathwayCounts = countByEntityId(pathwayRows as any[]);
   const postedCounts = countByEntityId(postedRows as any[]);
   const sourceNamesByEntityId = new Map(
-    (accessRows as any[]).map((row) => [studentVisibilityGateDocumentId(row._id), uniqueStrings(row.sourceNames || [])]),
+    (accessRows as any[]).map((row) => [
+      studentVisibilityGateDocumentId(row._id),
+      uniqueStrings(row.sourceNames || []),
+    ]),
   );
-  const entityById = new Map((entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]));
-  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds(
-    [
-      ...buildSamePiVisibilityDedupeRows({
-        entities: entities as any[],
-        leadRows: leadRows as any[],
-        extraEntitiesByUserId: profileAreaEntitiesByUserId,
-      }),
-      ...buildNameOnlyVisibilityDedupeRows({
-        entities: entities as any[],
-        leadsByEntityId,
-      }),
-    ],
+  const entityById = new Map(
+    (entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
   );
+  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds([
+    ...buildSamePiVisibilityDedupeRows({
+      entities: entities as any[],
+      leadRows: leadRows as any[],
+      extraEntitiesByUserId: profileAreaEntitiesByUserId,
+    }),
+    ...buildNameOnlyVisibilityDedupeRows({
+      entities: entities as any[],
+      leadsByEntityId,
+    }),
+  ]);
   const exactUrlDuplicateRiskEntityIds = selectExactUrlDuplicateRiskEntityIds(
     duplicateReferenceEntities as any[],
     leadRows as any[],
@@ -987,11 +1043,12 @@ async function planResearchEntityGateUpdates(
       accessSignalCount: accessCounts.get(recordId) || 0,
       actionablePathwayCount: pathwayCounts.get(recordId) || 0,
       openPostedOpportunityCount: postedCounts.get(recordId) || 0,
-      duplicateRisk: hasProfileAreaShellDuplicateRisk({
-        entity,
-        leadMembers,
-        concreteLeadEntityUserIds,
-      }) || samePiDuplicateRiskEntityIds.has(recordId),
+      duplicateRisk:
+        hasProfileAreaShellDuplicateRisk({
+          entity,
+          leadMembers,
+          concreteLeadEntityUserIds,
+        }) || samePiDuplicateRiskEntityIds.has(recordId),
       exactUrlDuplicateRisk: exactUrlDuplicateRiskEntityIds.has(recordId),
     });
     return {

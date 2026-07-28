@@ -60,9 +60,9 @@ import {
 } from '../scripts/profileImageQualityAuditCore';
 import {
   sanitizeResearchEntityPublicDescriptionFields,
-  sanitizeFacultyResearchEntityCopyFields,
   sanitizeFacultyResearchEntityText,
 } from '../utils/researchEntityDescriptionText';
+import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -2378,6 +2378,12 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
     .map((member) => memberDisplayName(member))
     .filter((name): name is string => Boolean(name));
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity: group as any,
+    leadMemberNames,
+  });
+  if (!publicDescription.invariant.pass) return null;
+  const publicGroup = publicDescription.entity;
   const memberDisplayIds = Array.from(
     new Set(
       dedupedMembersWithRows
@@ -2607,13 +2613,9 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   });
 
   const activeListings = activeListingsRaw.map(publicListingForResearchDetail);
-  const publicGroup = sanitizeFacultyResearchEntityCopyFields(
-    sanitizeResearchEntityPublicDescriptionFields(group as any, leadMemberNames),
-    leadMemberNames,
-  );
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
   const publicEntryPathways = (entryPathways as any[]).map((pathway) =>
-    publicEntryPathwayForResearchDetail(pathway, publicGroup),
+    publicEntryPathwayForResearchDetail(pathway, publicGroupForResponse),
   );
   const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
   const publicPostedOpportunities = (postedOpportunities as any[]).map(

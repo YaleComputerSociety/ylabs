@@ -156,6 +156,13 @@ const selectSortLimitLeanResult = <T>(value: T) => queryResult(value);
 
 const selectLeanResult = <T>(value: T) => queryResult(value);
 
+const validPublicDescriptions = {
+  shortDescription:
+    'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+  fullDescription:
+    'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+};
+
 beforeEach(() => {
   mocks.search.mockReset();
   mocks.listingDistinct.mockReset();
@@ -691,6 +698,57 @@ describe('getResearchGroupDetail', () => {
     });
   });
 
+  it('fails closed when a student-ready record becomes description-empty at the public boundary', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const userId = '67d8928150621bcef434a1d6';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'correct-person-research',
+        name: 'Correct Person Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        shortDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling.",
+        fullDescription:
+          "Wrong Person's expertise lies in molecular dynamics, protein folding, and cellular signaling across complex biological systems.",
+        sourceUrls: ['https://example.yale.edu/profile/correct-person'],
+        departments: [],
+        researchAreas: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId,
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: userId,
+          fname: 'Correct',
+          lname: 'Person',
+          displayName: 'Correct Person',
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('correct-person-research');
+
+    expect(detail).toBeNull();
+    expect(mocks.paperFind).not.toHaveBeenCalled();
+    expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
+  });
+
   it('uses only current non-archived members for public detail pages', () => {
     expect(currentResearchEntityMemberFilter('entity-1')).toEqual({
       researchEntityId: 'entity-1',
@@ -707,6 +765,7 @@ describe('getResearchGroupDetail', () => {
         _id: new mongoose.Types.ObjectId(entityId),
         slug: 'entity-isolation-lab',
         name: 'Entity Isolation Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: [],
@@ -890,6 +949,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'privacy-lab',
         name: 'Privacy Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: [],
@@ -1106,6 +1166,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'member-privacy-lab',
         name: 'Member Privacy Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: [],
@@ -1191,6 +1252,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'member-internal-profile-lab',
         name: 'Member Internal Profile Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: [],
@@ -1242,6 +1304,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'paper-privacy-lab',
         name: 'Paper Privacy Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: [],
@@ -1365,6 +1428,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'duplicate-route-lab',
         name: 'Duplicate Route Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: [],
@@ -1445,6 +1509,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'glahn-lab-dcg32',
         name: 'Glahn Lab',
+        ...validPublicDescriptions,
         kind: 'lab',
         entityType: 'LAB',
         departments: [],
@@ -1498,6 +1563,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'glahn-lab-dcg32',
         name: 'Glahn Lab',
+        ...validPublicDescriptions,
         kind: 'lab',
         entityType: 'LAB',
         departments: [],

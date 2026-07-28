@@ -6,6 +6,7 @@ import LabDetail from '../labDetail';
 import axios from '../../utils/axios';
 import { LabDetailPayload } from '../../types/labDetail';
 import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
+import { captureClientError } from '../../utils/errorTracking';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -14,6 +15,10 @@ vi.mock('../../utils/axios', () => ({
     delete: vi.fn(),
     post: vi.fn(),
   },
+}));
+
+vi.mock('../../utils/errorTracking', () => ({
+  captureClientError: vi.fn(),
 }));
 
 const mockedAxios = axios as unknown as {
@@ -1462,7 +1467,9 @@ describe('LabDetail page', () => {
     const text = container.textContent || '';
     expect(text).not.toContain('PI research interests');
     expect(text).not.toContain('Fixture Care Pathway Design');
-    expect(text).toContain('A Yale research profile with limited public description.');
+    expect(text).not.toContain('A Yale research profile with limited public description.');
+    expect(screen.queryByText('Research summary')).toBeNull();
+    await waitFor(() => expect(captureClientError).toHaveBeenCalledWith(expect.any(Error)));
     expect(text).not.toContain('Research connected to Fixture Care Pathway Design');
     expect(text).not.toContain('Research connected to Behavioral Studies.');
     expect(screen.queryByText('Plan your next step')).toBeNull();
@@ -1643,7 +1650,9 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     expect(screen.getAllByText('Public Policy')).toHaveLength(1);
-    expect(text).toContain('A Yale research profile with limited public description.');
+    expect(text).not.toContain('A Yale research profile with limited public description.');
+    expect(screen.queryByText('Research summary')).toBeNull();
+    await waitFor(() => expect(captureClientError).toHaveBeenCalledWith(expect.any(Error)));
     expect(text).not.toContain('Research connected to Public Policy.');
   });
 

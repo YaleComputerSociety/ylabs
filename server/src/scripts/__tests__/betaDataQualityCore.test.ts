@@ -216,7 +216,9 @@ describe('reference-integrity sample pipelines', () => {
       },
     });
 
-    expect(buildArrayRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3, activeFilter)[0]).toEqual({
+    expect(
+      buildArrayRefOrphanSamplePipeline('sourceEvidenceIds', 'observations', 3, activeFilter)[0],
+    ).toEqual({
       $match: activeFilter,
     });
   });
@@ -324,7 +326,11 @@ describe('duplicate research entity review classification', () => {
         normalizedName: 'rothman lab',
         count: 2,
         entities: [
-          { id: 'medicine', name: 'Rothman Lab', websiteUrl: 'https://medicine.yale.edu/lab/rothman/' },
+          {
+            id: 'medicine',
+            name: 'Rothman Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/rothman/',
+          },
           { id: 'engineering', name: 'Rothman Lab' },
         ],
       }),
@@ -375,16 +381,20 @@ describe('duplicate research entity review classification', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-duplicate-name-validation-'));
     const acceptedDecisionsPath = path.join(dir, 'accepted-decisions.json');
     const validationOutputPath = path.join(dir, 'decision-validation.json');
-    const planReview = buildDuplicateEntityPlanReviewSummary({
-      totalClusters: 3,
-      byCategory: [
-        { category: 'shared_website_merge_review', count: 2 },
-        { category: 'same_label_disambiguation', count: 1 },
-      ],
-    }, 20, {
-      acceptedDecisionValidationInputPath: acceptedDecisionsPath,
-      acceptedDecisionValidationOutputPath: validationOutputPath,
-    });
+    const planReview = buildDuplicateEntityPlanReviewSummary(
+      {
+        totalClusters: 3,
+        byCategory: [
+          { category: 'shared_website_merge_review', count: 2 },
+          { category: 'same_label_disambiguation', count: 1 },
+        ],
+      },
+      20,
+      {
+        acceptedDecisionValidationInputPath: acceptedDecisionsPath,
+        acceptedDecisionValidationOutputPath: validationOutputPath,
+      },
+    );
 
     expect(planReview).toEqual({
       applyBlocked: true,
@@ -400,8 +410,7 @@ describe('duplicate research entity review classification', () => {
         sharedWebsiteReview: {
           category: 'shared_website_merge_review',
           clusterCount: 2,
-          outputPath:
-            '/tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
+          outputPath: '/tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
           expectedStatus: 'merge_preflight_ready_for_review',
           requiredReviewerDecisions: [
             'Confirm the shared website represents one research home.',
@@ -417,8 +426,7 @@ describe('duplicate research entity review classification', () => {
           },
         ],
         acceptedDecisionTemplate: {
-          outputPath:
-            '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json',
+          outputPath: '/tmp/ylabs-duplicate-entity-name-review-accepted-decisions-template.json',
           expectedArtifactFields: [
             'decisions[].planId',
             'decisions[].entityIds',
@@ -434,8 +442,7 @@ describe('duplicate research entity review classification', () => {
           expectedArtifactField: 'reviewDecisionValidation',
           acceptedDecisionFields: ['planId', 'decision', 'canonicalEntityId', 'reviewedBy'],
           artifactAvailable: false,
-          command:
-            `SCRAPER_ENV=beta yarn --cwd server research-entity:duplicate-name-review --limit=10000 --plan-limit=20 --accepted-decisions=${acceptedDecisionsPath} --allow-empty-decisions --output ${validationOutputPath}`,
+          command: `SCRAPER_ENV=beta yarn --cwd server research-entity:duplicate-name-review --limit=10000 --plan-limit=20 --accepted-decisions=${acceptedDecisionsPath} --allow-empty-decisions --output ${validationOutputPath}`,
         },
       },
       recommendedCommands: [
@@ -450,8 +457,7 @@ describe('duplicate research entity review classification', () => {
           label: 'shared_website_merge_review',
           category: 'shared_website_merge_review',
           clusterCount: 2,
-          outputPath:
-            '/tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
+          outputPath: '/tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
           command:
             'SCRAPER_ENV=beta yarn --cwd server research-entity:duplicate-name-review --limit=10000 --category=shared_website_merge_review --plan-limit=20 --output /tmp/ylabs-duplicate-entity-name-review-shared-website-plan.json',
         },
@@ -459,8 +465,7 @@ describe('duplicate research entity review classification', () => {
           label: 'same_label_disambiguation',
           category: 'same_label_disambiguation',
           clusterCount: 1,
-          outputPath:
-            '/tmp/ylabs-duplicate-entity-name-review-same-label-disambiguation-plan.json',
+          outputPath: '/tmp/ylabs-duplicate-entity-name-review-same-label-disambiguation-plan.json',
           command:
             'SCRAPER_ENV=beta yarn --cwd server research-entity:duplicate-name-review --limit=10000 --category=same_label_disambiguation --plan-limit=20 --output /tmp/ylabs-duplicate-entity-name-review-same-label-disambiguation-plan.json',
         },
@@ -482,16 +487,14 @@ describe('duplicate research entity review classification', () => {
     });
 
     expect(planReview.planLimit).toBe(34);
-    expect(
-      planReview.preflightGuidance.acceptedDecisionTemplate.command,
-    ).toContain('--plan-limit=34');
-    expect(
-      planReview.preflightGuidance.acceptedDecisionValidation.command,
-    ).toContain('--plan-limit=34');
+    expect(planReview.preflightGuidance.acceptedDecisionTemplate.command).toContain(
+      '--plan-limit=34',
+    );
+    expect(planReview.preflightGuidance.acceptedDecisionValidation.command).toContain(
+      '--plan-limit=34',
+    );
     expect(planReview.recommendedCommands.map((command) => command.command)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('--plan-limit=34'),
-      ]),
+      expect.arrayContaining([expect.stringContaining('--plan-limit=34')]),
     );
   });
 
@@ -726,6 +729,38 @@ describe('buildBetaDataQualitySummary', () => {
     expect(shouldStrictModeFail(summary)).toBe(false);
   });
 
+  it('makes a public description invariant violation a strict Beta error', () => {
+    const summary = buildBetaDataQualitySummary({
+      referenceHardFailures: 0,
+      invalidUrlCount: 0,
+      expiredOpenOpportunityCount: 0,
+      paperAuthorshipIntegrityFailures: 0,
+      sourceHealthErrors: 0,
+      sourceHealthWarnings: 0,
+      duplicateEntityClusterCount: 0,
+      missingShortDescriptionCount: 0,
+      weakShortDescriptionCount: 0,
+      publicDescriptionInvariantViolationCount: 1,
+      suspiciousUserEmailCount: 0,
+      retentionCandidateCount: 0,
+      coverageGaps: {
+        withoutPathways: 0,
+        withoutAccessSignals: 0,
+        withoutContactRoutes: 0,
+      },
+    });
+
+    expect(summary.status).toBe('error');
+    expect(summary.errors).toEqual([
+      expect.objectContaining({
+        name: 'publicDescriptionInvariant',
+        count: 1,
+        owner: 'content-quality operator',
+      }),
+    ]);
+    expect(shouldStrictModeFail(summary)).toBe(true);
+  });
+
   it('accepts suspicious user email warnings when Lane A exclusion covers the full suspicious set', () => {
     const summary = buildBetaDataQualitySummary({
       referenceHardFailures: 0,
@@ -853,7 +888,8 @@ describe('buildBetaDataQualitySummary', () => {
           name: 'sourceHealthWarnings',
           classification: 'must_fix_before_promotion',
           owner: 'scraper-source operator',
-          nextCommand: 'SCRAPER_ENV=beta yarn --cwd server source:health --output /tmp/ylabs-source-health.json',
+          nextCommand:
+            'SCRAPER_ENV=beta yarn --cwd server source:health --output /tmp/ylabs-source-health.json',
         }),
         expect.objectContaining({
           name: 'duplicateEntityNames',
@@ -936,7 +972,7 @@ describe('buildSuspiciousUserEmailScorecardSummary', () => {
       productionCopyExclusion: {
         lane: 'Lane A accepted Beta copy',
         strategy:
-          "The guarded Lane A copy excludes known dev/test users from the users collection and separately blocks copied records that still reference excluded users.",
+          'The guarded Lane A copy excludes known dev/test users from the users collection and separately blocks copied records that still reference excluded users.',
         sampledExcludedByDefault: 1,
         sampledNeedsReviewBeforeCopy: 1,
         sampledCoverageComplete: false,
@@ -1041,9 +1077,9 @@ describe('parseBetaDataQualityArgs', () => {
     expect(() => parseBetaDataQualityArgs(['--days=9007199254740992'])).toThrow(
       /--days must be a positive integer/,
     );
-    expect(() =>
-      parseBetaDataQualityArgs(['--link-sample-size=9007199254740992']),
-    ).toThrow(/--link-sample-size must be a positive integer/);
+    expect(() => parseBetaDataQualityArgs(['--link-sample-size=9007199254740992'])).toThrow(
+      /--link-sample-size must be a positive integer/,
+    );
   });
 });
 

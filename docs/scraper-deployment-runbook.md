@@ -221,6 +221,7 @@ Safe pre-gate commands are read-only or local-smoke only:
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json
+SCRAPER_ENV=beta yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json
 SCRAPER_ENV=beta yarn --cwd server scraper:integrity-gate --include-samples
 SCRAPER_ENV=beta yarn --cwd server launch:trust-contract --collection=all --mode=student-ready-only --strict
 SCRAPER_ENV=beta yarn --cwd server launch:acquisition-report --stage=all --limit=250 --sample-limit=10

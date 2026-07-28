@@ -25,7 +25,9 @@ import {
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 
-const safePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
+const safePlan = (
+  overrides: Partial<StudentVisibilityGatePlan> = {},
+): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-safe',
   label: 'Safe Lab',
@@ -38,7 +40,9 @@ const safePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVi
   ...overrides,
 });
 
-const heldPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
+const heldPlan = (
+  overrides: Partial<StudentVisibilityGatePlan> = {},
+): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-held',
   label: 'Held Lab',
@@ -64,8 +68,17 @@ describe('studentVisibilityGateService', () => {
     ).toBeUndefined();
   });
 
-  it('loads manual visibility overrides when planning research entity gates', () => {
-    expect(researchEntityGateProjection.split(/\s+/)).toContain('studentVisibilityOverrideTier');
+  it('loads public description and override fields when planning research entity gates', () => {
+    expect(researchEntityGateProjection.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        'description',
+        'shortDescription',
+        'fullDescription',
+        'profileSynthesisDescription',
+        'descriptionSource',
+        'studentVisibilityOverrideTier',
+      ]),
+    );
   });
 
   it('caps release queue page before building Mongo skip and limit values', async () => {
