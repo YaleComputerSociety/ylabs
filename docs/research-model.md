@@ -374,9 +374,10 @@ Lab-microsite LLM evidence is now shaped as observations first. It may emit `und
 
 Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `AccessSignal.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
 
-Publication and preprint evidence should enrich research activity, topics, methods, recency, and readable source context. OpenAlex, Google Scholar, and arXiv paper observations should not create undergraduate-access signals by themselves. arXiv preprints are especially useful as early evidence of active research before journal publication, but a preprint only supports access/pathway claims when combined with separate evidence such as join instructions, course/project supervision, undergrad participation, or official application routes.
-
-Professor/lab research activity lists read from `research_scholarly_links` plus `research_scholarly_attributions` at runtime. Attribution rows are the launch proof surface for connecting a scholarly link to a Yale faculty/PI profile; entity-linked scholarly links are valid for research-entity activity without a person target. Selected publications extracted from official faculty profile pages should materialize into `research_scholarly_links` with `discoveredVia: OFFICIAL_PROFILE` and are prioritized in profile activity lists. Empty legacy paper/authorship collections, `faculty_members`, or embedded `User.publications` should not be treated as evidence. arXiv name search, Crossref DOI hydration, and Semantic Scholar paper lookup by DOI/title are metadata-only unless a populated attribution row or accepted identity proof connects the work to the Yale person.
+The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
+Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
+Legacy source files and stored paper and scholarly collections remain temporarily available for an explicit rollback under issue #207.
+See [Retire The Bibliographic Paper Pipeline](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) for the authoritative product decision and [Publication and Professor-Profile Decision](./research-model-refactor.md#publication-and-professor-profile-decision) for the target model.
 
 ## Source Coverage Metadata
 
@@ -386,11 +387,13 @@ This metadata is a planning and review contract, not a substitute for evidence. 
 
 ## Researcher Identity Signals
 
-ORCID should help resolve and enrich Yale researchers, not act as an account-creation shortcut. Treat ORCID as a high-confidence external researcher identifier that can improve paper, grant, Scholar, center-roster, and faculty-page matching when it is attached to a Yale-confirmed person.
+ORCID may disambiguate a Yale-confirmed researcher and support a reviewed outbound profile link, but it must not act as an account-creation shortcut or a works feed.
 
-Create or promote `User` records only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile. External sources such as ORCID, OpenAlex, Google Scholar, NIH, and NSF can strengthen confidence, add identifiers, and enrich research activity, but should not by themselves create a Yale user.
+Create or promote `User` records only from Yale-controlled or Yale-corroborated identity evidence such as netid, Yale email, Yalies/Directory records, or an official Yale profile.
+Reviewed ORCID and Google Scholar profiles may support disambiguation and outbound navigation, while NIH and NSF may enrich grant context, but none should create a Yale user by itself.
 
-Scrapers should emit ORCID and related identifiers as observations with source provenance. Resolver/materializer logic can then persist fields such as `orcid` and `openAlexId`, derive confidence, and use those identifiers to reduce name-match ambiguity.
+Official Yale sources may emit ORCID identity observations with source provenance.
+The retired OpenAlex pipeline must not supply new researcher identity or activity data.
 
 Student-facing UI may surface ORCID as a low-prominence researcher profile link labeled `ORCID`. Do not frame it as "Verified by ORCID", do not use it as undergraduate-access evidence, and do not promote raw ORCID identifiers on search or pathway cards.
 

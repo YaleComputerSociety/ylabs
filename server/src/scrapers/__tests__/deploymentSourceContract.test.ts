@@ -45,7 +45,9 @@ function renderScheduledSourceNames(): string[] {
     .map((command) => {
       const source = command.match(/(?:^|\s)--source(?:\s+|=)([a-z0-9-]+)(?=\s|$)/)?.[1];
       if (!source) {
-        throw new Error(`Render scrape cron command is missing a valid --source: ${command.trim()}`);
+        throw new Error(
+          `Render scrape cron command is missing a valid --source: ${command.trim()}`,
+        );
       }
       return source;
     });
