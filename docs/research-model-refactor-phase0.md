@@ -326,7 +326,9 @@ The private artifact contains credential-free index definitions, index fingerpri
 It retains plan stages, rejected-plan stages, index names, returned rows, elapsed time, keys and documents examined, amplification ratios, blocking sorts, disk use, spills, and lookup subplan summaries.
 It never retains IDs, names, slugs, netids, notes, contact details, evidence text, raw filters, raw pipelines, or raw explain output.
 Account fixtures are aggregate-selected as zero-save, bounded typical-save, and highest-observed-save representatives, with the highest observed row serving as the nearest available near-limit shape.
-Every output must be a new `.json` path under the system temporary directory.
+Queries that depend on an empty fixture-ID set are omitted instead of measuring a synthetic empty `$in` shape.
+Their expected labels are recorded as `fixture-unavailable`, which makes strict evidence fail closed.
+Every output must be a new `.json` path under the system temporary directory or the invoking server working directory's `tmp/` directory.
 The writer uses mode `0600`, refuses symlink outputs, and refuses overwrite.
 
 Run Development from a clean Beta worktree with an explicitly injected Development database URL:

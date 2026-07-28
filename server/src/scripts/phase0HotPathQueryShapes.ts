@@ -851,10 +851,7 @@ export function buildPhase0HotPathQuerySpecs(
     ['research-detail-published-papers', fixtures.detailUserIds.length],
     ['research-detail-arxiv-preprints', fixtures.detailUserIds.length],
     ['research-detail-related-entities', fixtures.detailRelatedEntityIds.length],
-    [
-      'opportunity-detail-observations',
-      fixtures.ordinaryOpportunity?.evidenceIds.length || 0,
-    ],
+    ['opportunity-detail-observations', fixtures.ordinaryOpportunity?.evidenceIds.length || 0],
     [
       'opportunity-detail-high-evidence-observations',
       fixtures.highEvidenceOpportunity?.evidenceIds.length || 0,
