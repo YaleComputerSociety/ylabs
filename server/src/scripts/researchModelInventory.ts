@@ -450,6 +450,14 @@ export function serializeResearchModelInventoryCompletion(output: {
   });
 }
 
+export function assertResearchModelInventoryCompletionMetadata(output: {
+  db?: string;
+}): asserts output is { db: string } {
+  if (typeof output.db !== 'string' || output.db.trim().length === 0) {
+    throw new Error('Protected inventory output requires database metadata.');
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseResearchModelInventoryArgs(process.argv.slice(2));
   const protectedProfileActive = process.env.YLABS_INVENTORY_PROFILE_ACTIVE === 'true';
@@ -471,6 +479,7 @@ async function main(): Promise<void> {
   });
   writeResearchModelInventoryOutput(output, args.output);
   if (protectedProfileActive) {
+    assertResearchModelInventoryCompletionMetadata(output);
     console.log(serializeResearchModelInventoryCompletion(output));
   } else {
     console.log(JSON.stringify(output, null, 2));

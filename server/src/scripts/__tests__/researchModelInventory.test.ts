@@ -4,6 +4,7 @@ import path from 'path';
 import { ObjectId, type Db } from 'mongodb';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  assertResearchModelInventoryCompletionMetadata,
   assertResearchModelInventoryOutputAvailable,
   checkReferenceEdge,
   gatherInventoryFacts,
@@ -14,6 +15,15 @@ import {
 import { REFERENCE_EDGES, RETIREMENT_FIELD_PROBES } from '../researchModelInventoryCore';
 
 describe('protected inventory output', () => {
+  it('requires database metadata before emitting a completion summary', () => {
+    expect(() => assertResearchModelInventoryCompletionMetadata({})).toThrow(
+      'Protected inventory output requires database metadata.',
+    );
+    expect(() => assertResearchModelInventoryCompletionMetadata({ db: '   ' })).toThrow(
+      'Protected inventory output requires database metadata.',
+    );
+  });
+
   it('serializes only credential-free completion metadata', () => {
     const serialized = serializeResearchModelInventoryCompletion({
       environment: 'beta',
