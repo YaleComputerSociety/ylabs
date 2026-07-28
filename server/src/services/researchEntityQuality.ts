@@ -39,8 +39,11 @@ const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
 const hasSourceUrl = (entity: Record<string, any>): boolean =>
-  [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])]
-    .some((value) => /^https?:\/\//i.test(textValue(value)));
+  [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].some((value) => /^https?:\/\//i.test(textValue(value)));
 
 const visibilityReasonsForEntity = (entity: Record<string, any>): string[] =>
   [
@@ -53,11 +56,11 @@ const visibilityReasonsForEntity = (entity: Record<string, any>): string[] =>
 const hasStrongLead = (member: Record<string, any>): boolean =>
   Boolean(
     member.userId ||
-      member.user?._id ||
-      member.facultyMemberId ||
-      member.facultyMember?._id ||
-      textValue(member.name) ||
-      textValue(member.user?.netid),
+    member.user?._id ||
+    member.facultyMemberId ||
+    member.facultyMember?._id ||
+    textValue(member.name) ||
+    textValue(member.user?.netid),
   );
 
 const hasLeadIdentityConflict = (member: Record<string, any>): boolean => {
@@ -118,7 +121,8 @@ export function buildResearchEntityQualitySummary({
   if (leadState === 'lead_conflict') repairFlags.push('pi_identity_conflict');
   if (leadState !== 'lead_attached') repairFlags.push('missing_lead');
   if (!hasSourceUrl(entity)) repairFlags.push('missing_source_url');
-  if (visibilityReasonsForEntity(entity).includes('duplicate_risk')) repairFlags.push('duplicate_risk');
+  if (visibilityReasonsForEntity(entity).includes('duplicate_risk'))
+    repairFlags.push('duplicate_risk');
 
   let score = 0;
   if (descriptionState === 'missing') score += 45;

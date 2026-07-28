@@ -228,8 +228,7 @@ export async function buildBetaDataQualityScorecard(
     researchEntityContentPageLeakCount: researchEntityContentPageLeaks.count,
     missingShortDescriptionCount: descriptionQuality.missingCount,
     weakShortDescriptionCount: descriptionQuality.weakCount,
-    publicDescriptionInvariantViolationCount:
-      publicDescriptionInvariant.counts.violations,
+    publicDescriptionInvariantViolationCount: publicDescriptionInvariant.counts.violations,
     suspiciousUserEmailCount: emailHygiene.suspiciousUserEmails.count,
     suspiciousUserEmailsProductionCopyExclusionComplete:
       options.includeSamples &&
@@ -298,14 +297,78 @@ async function buildReferenceIntegrity(
   includeSamples: boolean,
 ): Promise<ReturnType<typeof buildReferenceIntegritySummary>> {
   const audits: Array<Promise<ReferenceAuditInput>> = [
-    referenceAudit('observations.sourceId', 'observations', 'sourceId', 'sources', true, false, includeSamples),
-    referenceAudit('scrape_runs.sourceId', 'scrape_runs', 'sourceId', 'sources', true, false, includeSamples),
-    referenceAudit('research_entities.canonicalGroupId', 'research_entities', 'canonicalGroupId', 'research_entities', false, false, includeSamples),
-    referenceAudit('research_entities.primaryDepartmentId', 'research_entities', 'primaryDepartmentId', 'departments', false, false, includeSamples),
-    referenceAudit('research_entities.departmentIds', 'research_entities', 'departmentIds', 'departments', false, true, includeSamples),
-    referenceAudit('research_entities.researchAreaIds', 'research_entities', 'researchAreaIds', 'research_areas', false, true, includeSamples),
-    referenceAudit('research_entities.featuredPaperIds', 'research_entities', 'featuredPaperIds', 'papers', false, true, includeSamples),
-    referenceAudit('research_entities.claimedByUserId', 'research_entities', 'claimedByUserId', 'users', false, false, includeSamples),
+    referenceAudit(
+      'observations.sourceId',
+      'observations',
+      'sourceId',
+      'sources',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'scrape_runs.sourceId',
+      'scrape_runs',
+      'sourceId',
+      'sources',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'research_entities.canonicalGroupId',
+      'research_entities',
+      'canonicalGroupId',
+      'research_entities',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'research_entities.primaryDepartmentId',
+      'research_entities',
+      'primaryDepartmentId',
+      'departments',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'research_entities.departmentIds',
+      'research_entities',
+      'departmentIds',
+      'departments',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'research_entities.researchAreaIds',
+      'research_entities',
+      'researchAreaIds',
+      'research_areas',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'research_entities.featuredPaperIds',
+      'research_entities',
+      'featuredPaperIds',
+      'papers',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'research_entities.claimedByUserId',
+      'research_entities',
+      'claimedByUserId',
+      'users',
+      false,
+      false,
+      includeSamples,
+    ),
     referenceAudit(
       'research_entities.studentVisibilityReviewedByUserId',
       'research_entities',
@@ -324,8 +387,24 @@ async function buildReferenceIntegrity(
       false,
       includeSamples,
     ),
-    referenceAudit('entry_pathways.researchEntityId', 'entry_pathways', 'researchEntityId', 'research_entities', true, false, includeSamples),
-    referenceAudit('entry_pathways.sourceEvidenceIds', 'entry_pathways', 'sourceEvidenceIds', 'observations', false, true, includeSamples),
+    referenceAudit(
+      'entry_pathways.researchEntityId',
+      'entry_pathways',
+      'researchEntityId',
+      'research_entities',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'entry_pathways.sourceEvidenceIds',
+      'entry_pathways',
+      'sourceEvidenceIds',
+      'observations',
+      false,
+      true,
+      includeSamples,
+    ),
     referenceAudit(
       'entry_pathways.review.reviewedByUserId',
       'entry_pathways',
@@ -335,10 +414,42 @@ async function buildReferenceIntegrity(
       false,
       includeSamples,
     ),
-    referenceAudit('access_signals.researchEntityId', 'access_signals', 'researchEntityId', 'research_entities', true, false, includeSamples),
-    referenceAudit('access_signals.entryPathwayId', 'access_signals', 'entryPathwayId', 'entry_pathways', false, false, includeSamples),
-    referenceAudit('access_signals.sourceEvidenceId', 'access_signals', 'sourceEvidenceId', 'observations', false, false, includeSamples),
-    referenceAudit('access_signals.observationId', 'access_signals', 'observationId', 'observations', false, false, includeSamples),
+    referenceAudit(
+      'access_signals.researchEntityId',
+      'access_signals',
+      'researchEntityId',
+      'research_entities',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'access_signals.entryPathwayId',
+      'access_signals',
+      'entryPathwayId',
+      'entry_pathways',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'access_signals.sourceEvidenceId',
+      'access_signals',
+      'sourceEvidenceId',
+      'observations',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'access_signals.observationId',
+      'access_signals',
+      'observationId',
+      'observations',
+      false,
+      false,
+      includeSamples,
+    ),
     referenceAudit(
       'access_signals.review.reviewedByUserId',
       'access_signals',
@@ -348,9 +459,33 @@ async function buildReferenceIntegrity(
       false,
       includeSamples,
     ),
-    referenceAudit('contact_routes.researchEntityId', 'contact_routes', 'researchEntityId', 'research_entities', true, false, includeSamples),
-    referenceAudit('contact_routes.entryPathwayId', 'contact_routes', 'entryPathwayId', 'entry_pathways', false, false, includeSamples),
-    referenceAudit('contact_routes.personId', 'contact_routes', 'personId', 'users', false, false, includeSamples),
+    referenceAudit(
+      'contact_routes.researchEntityId',
+      'contact_routes',
+      'researchEntityId',
+      'research_entities',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'contact_routes.entryPathwayId',
+      'contact_routes',
+      'entryPathwayId',
+      'entry_pathways',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'contact_routes.personId',
+      'contact_routes',
+      'personId',
+      'users',
+      false,
+      false,
+      includeSamples,
+    ),
     referenceAudit(
       'contact_routes.review.reviewedByUserId',
       'contact_routes',
@@ -360,11 +495,51 @@ async function buildReferenceIntegrity(
       false,
       includeSamples,
     ),
-    referenceAudit('contact_routes.sourceEvidenceId', 'contact_routes', 'sourceEvidenceId', 'observations', false, false, includeSamples),
-    referenceAudit('contact_routes.sourceEvidenceIds', 'contact_routes', 'sourceEvidenceIds', 'observations', false, true, includeSamples),
-    referenceAudit('posted_opportunities.entryPathwayId', 'posted_opportunities', 'entryPathwayId', 'entry_pathways', true, false, includeSamples),
-    referenceAudit('posted_opportunities.researchEntityId', 'posted_opportunities', 'researchEntityId', 'research_entities', false, false, includeSamples),
-    referenceAudit('posted_opportunities.listingId', 'posted_opportunities', 'listingId', 'listings', false, false, includeSamples),
+    referenceAudit(
+      'contact_routes.sourceEvidenceId',
+      'contact_routes',
+      'sourceEvidenceId',
+      'observations',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'contact_routes.sourceEvidenceIds',
+      'contact_routes',
+      'sourceEvidenceIds',
+      'observations',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'posted_opportunities.entryPathwayId',
+      'posted_opportunities',
+      'entryPathwayId',
+      'entry_pathways',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'posted_opportunities.researchEntityId',
+      'posted_opportunities',
+      'researchEntityId',
+      'research_entities',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'posted_opportunities.listingId',
+      'posted_opportunities',
+      'listingId',
+      'listings',
+      false,
+      false,
+      includeSamples,
+    ),
     referenceAudit(
       'posted_opportunities.review.reviewedByUserId',
       'posted_opportunities',
@@ -374,7 +549,15 @@ async function buildReferenceIntegrity(
       false,
       includeSamples,
     ),
-    referenceAudit('posted_opportunities.sourceEvidenceIds', 'posted_opportunities', 'sourceEvidenceIds', 'observations', false, true, includeSamples),
+    referenceAudit(
+      'posted_opportunities.sourceEvidenceIds',
+      'posted_opportunities',
+      'sourceEvidenceIds',
+      'observations',
+      false,
+      true,
+      includeSamples,
+    ),
     referenceAudit(
       'research_entity_members.userId',
       'research_entity_members',
@@ -403,14 +586,78 @@ async function buildReferenceIntegrity(
       false,
       includeSamples,
     ),
-    referenceAudit('paper_authors.paperId', 'paper_authors', 'paperId', 'papers', true, false, includeSamples),
-    referenceAudit('paper_authors.userId', 'paper_authors', 'userId', 'users', false, false, includeSamples),
-    referenceAudit('paper_authors.facultyMemberId', 'paper_authors', 'facultyMemberId', 'faculty_members', false, false, includeSamples),
-    referenceAudit('papers.yaleAuthorIds', 'papers', 'yaleAuthorIds', 'users', false, true, includeSamples),
-    referenceAudit('papers.facultyMemberIds', 'papers', 'facultyMemberIds', 'faculty_members', false, true, includeSamples),
-    referenceAudit('papers.researchEntityIds', 'papers', 'researchEntityIds', 'research_entities', false, true, includeSamples),
-    referenceAudit('listings.researchEntityId', 'listings', 'researchEntityId', 'research_entities', false, false, includeSamples),
-    referenceAudit('listings.createdByUserId', 'listings', 'createdByUserId', 'users', false, false, includeSamples),
+    referenceAudit(
+      'paper_authors.paperId',
+      'paper_authors',
+      'paperId',
+      'papers',
+      true,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'paper_authors.userId',
+      'paper_authors',
+      'userId',
+      'users',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'paper_authors.facultyMemberId',
+      'paper_authors',
+      'facultyMemberId',
+      'faculty_members',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'papers.yaleAuthorIds',
+      'papers',
+      'yaleAuthorIds',
+      'users',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'papers.facultyMemberIds',
+      'papers',
+      'facultyMemberIds',
+      'faculty_members',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'papers.researchEntityIds',
+      'papers',
+      'researchEntityIds',
+      'research_entities',
+      false,
+      true,
+      includeSamples,
+    ),
+    referenceAudit(
+      'listings.researchEntityId',
+      'listings',
+      'researchEntityId',
+      'research_entities',
+      false,
+      false,
+      includeSamples,
+    ),
+    referenceAudit(
+      'listings.createdByUserId',
+      'listings',
+      'createdByUserId',
+      'users',
+      false,
+      false,
+      includeSamples,
+    ),
   ];
 
   return buildReferenceIntegritySummary(await Promise.all(audits));
@@ -581,13 +828,25 @@ async function countArrayRefOrphans(
 async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSummary> {
   return scanStringFields({
     specs: [
-      { collection: 'research_entities', scalarFields: ['website', 'websiteUrl'], arrayFields: ['sourceUrls'] },
-      { collection: 'users', scalarFields: ['website', 'imageUrl'], arrayFields: ['scholarCandidateProfileUrls'] },
+      {
+        collection: 'research_entities',
+        scalarFields: ['website', 'websiteUrl'],
+        arrayFields: ['sourceUrls'],
+      },
+      {
+        collection: 'users',
+        scalarFields: ['website', 'imageUrl'],
+        arrayFields: ['scholarCandidateProfileUrls'],
+      },
       { collection: 'listings', scalarFields: [], arrayFields: ['websites'] },
       { collection: 'entry_pathways', scalarFields: [], arrayFields: ['sourceUrls'] },
       { collection: 'access_signals', scalarFields: ['sourceUrl'], arrayFields: [] },
       { collection: 'contact_routes', scalarFields: ['url', 'sourceUrl'], arrayFields: [] },
-      { collection: 'posted_opportunities', scalarFields: ['applicationUrl'], arrayFields: ['sourceUrls'] },
+      {
+        collection: 'posted_opportunities',
+        scalarFields: ['applicationUrl'],
+        arrayFields: ['sourceUrls'],
+      },
       {
         collection: 'papers',
         scalarFields: ['url', 'openAccessUrl', 'landingPageUrl', 'pdfUrl'],
@@ -718,7 +977,10 @@ async function buildStudentAnalyticsContamination(
   };
 }
 
-async function buildOpportunityState(includeSamples: boolean, now: Date): Promise<{
+async function buildOpportunityState(
+  includeSamples: boolean,
+  now: Date,
+): Promise<{
   expiredOpenCount: number;
   samples?: Array<{ id: string; title: string; status: string; deadline: string }>;
 }> {
@@ -744,7 +1006,8 @@ async function buildOpportunityState(includeSamples: boolean, now: Date): Promis
             id: stringifyId(row._id),
             title: asString(row.title),
             status: asString(row.status),
-            deadline: row.deadline instanceof Date ? row.deadline.toISOString() : asString(row.deadline),
+            deadline:
+              row.deadline instanceof Date ? row.deadline.toISOString() : asString(row.deadline),
           })),
         }
       : {}),
@@ -777,7 +1040,10 @@ async function buildPaperAuthorshipSummary(includeSamples: boolean): Promise<{
   ] = await Promise.all([
     collection('papers').countDocuments({ archived: { $ne: true } }),
     collection('paper_authors').countDocuments({}),
-    collection('papers').countDocuments({ yaleAuthorIds: { $exists: true, $ne: [] }, archived: { $ne: true } }),
+    collection('papers').countDocuments({
+      yaleAuthorIds: { $exists: true, $ne: [] },
+      archived: { $ne: true },
+    }),
     countFromAggregate('paper_authors', [{ $group: { _id: '$paperId' } }, { $count: 'count' }]),
     collection('paper_authors').countDocuments({
       $or: [
@@ -910,7 +1176,10 @@ async function countUnsupportedDirectAuthorLinks(): Promise<number> {
   ]);
 }
 
-async function buildSourceHealthSummary(days: number, includeSamples: boolean): Promise<{
+async function buildSourceHealthSummary(
+  days: number,
+  includeSamples: boolean,
+): Promise<{
   windowDays: number;
   sources: number;
   riskCounts: Record<'ok' | 'warn' | 'error', number>;
@@ -991,12 +1260,13 @@ async function buildResearchEntityCoverage(): Promise<{
   withContactRoutes: number;
   withoutContactRoutes: number;
 }> {
-  const [activeEntities, withoutPathways, withoutAccessSignals, withoutContactRoutes] = await Promise.all([
-    collection('research_entities').countDocuments(ACTIVE_FILTER),
-    countEntitiesMissingChild('entry_pathways'),
-    countEntitiesMissingChild('access_signals'),
-    countEntitiesMissingChild('contact_routes'),
-  ]);
+  const [activeEntities, withoutPathways, withoutAccessSignals, withoutContactRoutes] =
+    await Promise.all([
+      collection('research_entities').countDocuments(ACTIVE_FILTER),
+      countEntitiesMissingChild('entry_pathways'),
+      countEntitiesMissingChild('access_signals'),
+      countEntitiesMissingChild('contact_routes'),
+    ]);
 
   return {
     activeEntities,
@@ -1078,7 +1348,11 @@ async function buildDescriptionQuality(includeSamples: boolean): Promise<{
     collection('research_entities')
       .find({
         ...ACTIVE_FILTER,
-        $or: [{ shortDescription: { $exists: false } }, { shortDescription: null }, { shortDescription: '' }],
+        $or: [
+          { shortDescription: { $exists: false } },
+          { shortDescription: null },
+          { shortDescription: '' },
+        ],
       })
       .project({ name: 1, departments: 1 })
       .sort({ name: 1 })
@@ -1108,7 +1382,10 @@ async function buildDescriptionQuality(includeSamples: boolean): Promise<{
           name: asString(row.name),
           shortDescription: asString(row.shortDescription).trim(),
         }))
-        .filter((row) => row.shortDescription.length > 0 && row.shortDescription.length < weakThresholdChars)
+        .filter(
+          (row) =>
+            row.shortDescription.length > 0 && row.shortDescription.length < weakThresholdChars,
+        )
         .slice(0, 25),
     },
   };
@@ -1193,7 +1470,9 @@ async function buildDuplicateEntityNames(includeSamples: boolean): Promise<{
   };
 }
 
-async function buildResearchEntityContentPageLeaks(): Promise<ReturnType<typeof buildResearchEntityContentPageLeakSummary>> {
+async function buildResearchEntityContentPageLeaks(): Promise<
+  ReturnType<typeof buildResearchEntityContentPageLeakSummary>
+> {
   const rows = await collection('research_entities')
     .find(ACTIVE_FILTER)
     .project({
@@ -1236,7 +1515,10 @@ async function buildLiveLinkCheck(options: BetaDataQualityOptions): Promise<Live
     };
   }
 
-  const candidates = selectLiveLinkCandidates(await collectLinkCandidateInputs(options.linkSampleSize * 6), options.linkSampleSize);
+  const candidates = selectLiveLinkCandidates(
+    await collectLinkCandidateInputs(options.linkSampleSize * 6),
+    options.linkSampleSize,
+  );
   const failures: LiveLinkCheckResult['failures'] = [];
   let ok = 0;
 
@@ -1300,20 +1582,23 @@ async function collectLinkCandidateInputs(limit: number): Promise<LinkCandidateI
   return inputs;
 }
 
-async function checkLiveLink(url: string): Promise<{ ok: boolean; status?: number; error?: string }> {
+async function checkLiveLink(
+  url: string,
+): Promise<{ ok: boolean; status?: number; error?: string }> {
   try {
     const safeUrl = await assertPublicHttpUrl(url);
     const agents = ssrfSafeAgents();
-    const request = async (method: 'HEAD' | 'GET') => axios.request({
-      url: safeUrl.toString(),
-      method,
-      maxRedirects: 5,
-      timeout: 7000,
-      httpAgent: agents.httpAgent,
-      httpsAgent: agents.httpsAgent,
-      responseType: method === 'GET' ? 'stream' : 'json',
-      validateStatus: () => true,
-    });
+    const request = async (method: 'HEAD' | 'GET') =>
+      axios.request({
+        url: safeUrl.toString(),
+        method,
+        maxRedirects: 5,
+        timeout: 7000,
+        httpAgent: agents.httpAgent,
+        httpsAgent: agents.httpsAgent,
+        responseType: method === 'GET' ? 'stream' : 'json',
+        validateStatus: () => true,
+      });
 
     let response = await request('HEAD');
     if (response.status === 405 || response.status === 403) {
@@ -1330,7 +1615,10 @@ async function checkLiveLink(url: string): Promise<{ ok: boolean; status?: numbe
 
 async function scanStringFields(input: {
   specs: Array<{ collection: string; scalarFields: string[]; arrayFields: string[] }>;
-  validator: (value: unknown, context: { collection: string; field: string; isArray: boolean }) => boolean;
+  validator: (
+    value: unknown,
+    context: { collection: string; field: string; isArray: boolean },
+  ) => boolean;
   includeSamples: boolean;
 }): Promise<FieldIssueSummary> {
   const byField: FieldIssueSummary['byField'] = [];
@@ -1343,12 +1631,17 @@ async function scanStringFields(input: {
         collectionName: spec.collection,
         field,
         isArray: false,
-        validator: (value) => input.validator(value, { collection: spec.collection, field, isArray: false }),
+        validator: (value) =>
+          input.validator(value, { collection: spec.collection, field, isArray: false }),
         sampleLimit: input.includeSamples ? 25 : 0,
       });
       invalidTotal += invalidRows.invalidCount;
       if (invalidRows.invalidCount > 0) {
-        byField.push({ collection: spec.collection, field, invalidCount: invalidRows.invalidCount });
+        byField.push({
+          collection: spec.collection,
+          field,
+          invalidCount: invalidRows.invalidCount,
+        });
         samples.push(...invalidRows.samples);
       }
     }
@@ -1358,12 +1651,17 @@ async function scanStringFields(input: {
         collectionName: spec.collection,
         field,
         isArray: true,
-        validator: (value) => input.validator(value, { collection: spec.collection, field, isArray: true }),
+        validator: (value) =>
+          input.validator(value, { collection: spec.collection, field, isArray: true }),
         sampleLimit: input.includeSamples ? 25 : 0,
       });
       invalidTotal += invalidRows.invalidCount;
       if (invalidRows.invalidCount > 0) {
-        byField.push({ collection: spec.collection, field, invalidCount: invalidRows.invalidCount });
+        byField.push({
+          collection: spec.collection,
+          field,
+          invalidCount: invalidRows.invalidCount,
+        });
         samples.push(...invalidRows.samples);
       }
     }
@@ -1390,7 +1688,8 @@ async function collectInvalidFieldRows(input: {
   const samples: FieldIssueSample[] = [];
 
   for await (const row of cursor) {
-    const values = input.isArray && Array.isArray(row[input.field]) ? row[input.field] : [row[input.field]];
+    const values =
+      input.isArray && Array.isArray(row[input.field]) ? row[input.field] : [row[input.field]];
     for (const value of values) {
       if (!input.validator(value)) {
         continue;
@@ -1463,7 +1762,9 @@ function asStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const strings = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const strings = value.filter(
+    (item): item is string => typeof item === 'string' && item.trim().length > 0,
+  );
   return strings.length > 0 ? strings : undefined;
 }
 

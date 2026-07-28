@@ -131,7 +131,9 @@ function isProfileBiographyShell({
 }
 
 function hasUsefulResearchAreas(entity: Record<string, any>): boolean {
-  return Array.isArray(entity.researchAreas) && entity.researchAreas.some((area) => textValue(area));
+  return (
+    Array.isArray(entity.researchAreas) && entity.researchAreas.some((area) => textValue(area))
+  );
 }
 
 function isProgramLikeResearchEntity(entity: Record<string, any>): boolean {
@@ -141,12 +143,7 @@ function isProgramLikeResearchEntity(entity: Record<string, any>): boolean {
   );
 }
 
-const ORGANIZATIONAL_ENTITY_TYPES = new Set([
-  'CENTER',
-  'INSTITUTE',
-  'INITIATIVE',
-  'CORE_FACILITY',
-]);
+const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
 
 /**
  * Organizational research homes (centers, institutes, initiatives, core
@@ -243,7 +240,8 @@ function isFormalizationOnlyProgram(program: ProgramStudentVisibilityInput): boo
   if (ENTRY_PROGRAM_KINDS.has(kind)) return false;
   if (ENTRY_PROGRAM_MODES.has(entryMode)) return false;
   if (FORMALIZATION_PROGRAM_KINDS.has(kind)) return true;
-  if (entryMode === 'SECURE_MENTOR_THEN_APPLY' || program.requiresMentorBeforeApply === true) return true;
+  if (entryMode === 'SECURE_MENTOR_THEN_APPLY' || program.requiresMentorBeforeApply === true)
+    return true;
   return formalizationCategoryPattern.test(category);
 }
 
@@ -315,7 +313,9 @@ export function computeResearchEntityStudentVisibility({
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
-  if (textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')) {
+  if (
+    textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
+  ) {
     reasons.push('research_infrastructure_only');
   }
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
@@ -325,7 +325,8 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (quality.repairFlags.includes('missing_card_description')) reasons.push('missing_card_description');
+  if (quality.repairFlags.includes('missing_card_description'))
+    reasons.push('missing_card_description');
   if (quality.repairFlags.includes('pi_identity_conflict')) reasons.push('pi_identity_conflict');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
@@ -370,16 +371,11 @@ export function computeResearchEntityStudentVisibility({
   }
 
   const result = withOverride(entity, computedTier, Array.from(new Set(reasons)));
-  if (
-    result.tier === 'student_ready' &&
-    !publicDescription.invariant.pass
-  ) {
+  if (result.tier === 'student_ready' && !publicDescription.invariant.pass) {
     return {
       tier: result.computedTier,
       computedTier: result.computedTier,
-      reasons: Array.from(
-        new Set([...result.reasons, 'public_description_invariant_failed']),
-      ),
+      reasons: Array.from(new Set([...result.reasons, 'public_description_invariant_failed'])),
     };
   }
   return result;
@@ -399,9 +395,8 @@ export function computeProgramStudentVisibility(
   const sourceUrls = [sourceUrl, ...routeUrls];
   const hasOfficialSource = hasHttpUrl(sourceUrl);
   const hasApplicationRoute = hasAnyHttpUrl(routeUrls);
-  const sourceIsApplicationPortal = /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(
-    sourceUrl,
-  );
+  const sourceIsApplicationPortal =
+    /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(sourceUrl);
   const isArchiveReview = category === 'Archive / review';
   const graduateOnly = program.undergraduateOnly === false;
   const formalizationOnly = isFormalizationOnlyProgram(program);
@@ -418,7 +413,8 @@ export function computeProgramStudentVisibility(
   else reasons.push('missing_application_route');
   if (isArchiveReview) reasons.push('archive_review');
   if (graduateOnly || catalogOrAdmin) reasons.push('not_undergraduate_relevant');
-  const undergraduateRelevant = program.undergraduateOnly === true || program.yaleCollegeOnly === true;
+  const undergraduateRelevant =
+    program.undergraduateOnly === true || program.yaleCollegeOnly === true;
   if (undergraduateRelevant) {
     reasons.push('undergraduate_relevant');
   }

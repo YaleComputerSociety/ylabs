@@ -295,11 +295,8 @@ export interface SuspiciousUserEmailScorecardSampleInput {
   productionCopyExcludedByDefault: boolean;
 }
 
-export interface SuspiciousUserEmailScorecardSample
-  extends SuspiciousUserEmailScorecardSampleInput {
-  productionCopyDisposition:
-    | 'excluded_from_lane_a_users_copy'
-    | 'review_before_lane_a_copy';
+export interface SuspiciousUserEmailScorecardSample extends SuspiciousUserEmailScorecardSampleInput {
+  productionCopyDisposition: 'excluded_from_lane_a_users_copy' | 'review_before_lane_a_copy';
 }
 
 export interface SuspiciousUserEmailScorecardSummary {
@@ -334,7 +331,9 @@ const BETA_CHECK_OPERATOR_METADATA: Record<
   sourceHealthWarnings: {
     classification: 'must_fix_before_promotion',
     owner: 'scraper-source operator',
-    nextCommand: betaCommand('yarn --cwd server source:health --output /tmp/ylabs-source-health.json'),
+    nextCommand: betaCommand(
+      'yarn --cwd server source:health --output /tmp/ylabs-source-health.json',
+    ),
   },
   duplicateEntityNames: {
     classification: 'must_fix_before_promotion',
@@ -410,8 +409,7 @@ export function buildBetaDataQualityRecommendedCommands() {
     strictAudit: betaCommand(
       'yarn --cwd server beta:data-quality --strict --include-samples --progress',
     ),
-    retentionDryRun:
-      `SCRAPER_ENV=beta yarn --cwd server scrape prune-observations --source ${retentionOptions.sourceName} --older-than-days ${retentionOptions.olderThanDays} --keep-runs ${retentionOptions.keepRuns} --output /tmp/ylabs-openalex-prune-dry-run.json`,
+    retentionDryRun: `SCRAPER_ENV=beta yarn --cwd server scrape prune-observations --source ${retentionOptions.sourceName} --older-than-days ${retentionOptions.olderThanDays} --keep-runs ${retentionOptions.keepRuns} --output /tmp/ylabs-openalex-prune-dry-run.json`,
   };
 }
 
@@ -425,18 +423,16 @@ export function buildBetaDataQualityDiagnostics(
     ]),
   );
   const phaseEntries = Object.entries(normalizedDurations);
-  const slowestPhase = phaseEntries.reduce<
-    BetaDataQualityDiagnostics['slowestPhase']
-  >((slowest, [name, durationMs]) => {
-    if (!slowest || durationMs > slowest.durationMs) return { name, durationMs };
-    return slowest;
-  }, undefined);
+  const slowestPhase = phaseEntries.reduce<BetaDataQualityDiagnostics['slowestPhase']>(
+    (slowest, [name, durationMs]) => {
+      if (!slowest || durationMs > slowest.durationMs) return { name, durationMs };
+      return slowest;
+    },
+    undefined,
+  );
 
   return {
-    totalMeasuredDurationMs: phaseEntries.reduce(
-      (total, [, durationMs]) => total + durationMs,
-      0,
-    ),
+    totalMeasuredDurationMs: phaseEntries.reduce((total, [, durationMs]) => total + durationMs, 0),
     ...(slowestPhase ? { slowestPhase } : {}),
     phaseDurationsMs: normalizedDurations,
   };
@@ -521,9 +517,7 @@ export function parseBetaDataQualityArgs(argv: string[]): BetaDataQualityOptions
   return options;
 }
 
-export function formatBetaDataQualityProgressEvent(
-  event: BetaDataQualityProgressEvent,
-): string {
+export function formatBetaDataQualityProgressEvent(event: BetaDataQualityProgressEvent): string {
   if (event.status === 'started') {
     return `[beta:data-quality] ${event.phase} started`;
   }
@@ -880,7 +874,7 @@ export function buildSuspiciousUserEmailScorecardSummary(input: {
     productionCopyExclusion: {
       lane: 'Lane A accepted Beta copy',
       strategy:
-        "The guarded Lane A copy excludes known dev/test users from the users collection and separately blocks copied records that still reference excluded users.",
+        'The guarded Lane A copy excludes known dev/test users from the users collection and separately blocks copied records that still reference excluded users.',
       sampledExcludedByDefault,
       sampledNeedsReviewBeforeCopy,
       sampledCoverageComplete:
@@ -981,7 +975,11 @@ function normalizedWebsiteKey(value: string | undefined): string {
     const urlPath = parsed.pathname.replace(/\/+$/, '').toLowerCase();
     return `${host}${urlPath}`;
   } catch {
-    return value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase();
+    return value
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/+$/, '')
+      .toLowerCase();
   }
 }
 
@@ -995,7 +993,9 @@ function normalizedNameTokens(value: string): string[] {
 
 function hasSingleSharedWebsite(cluster: DuplicateEntityReviewCluster): boolean {
   const websiteKeys = cluster.entities
-    .map((entity) => normalizedWebsiteKey(entity.websiteUrl) || normalizedWebsiteKey(entity.website))
+    .map(
+      (entity) => normalizedWebsiteKey(entity.websiteUrl) || normalizedWebsiteKey(entity.website),
+    )
     .filter(Boolean);
   return websiteKeys.length >= 2 && new Set(websiteKeys).size === 1;
 }
@@ -1041,7 +1041,9 @@ export function buildDuplicateEntityReviewSummary(
     totalClusters: clusters.length,
     byCategory: Array.from(counts.entries())
       .map(([category, count]) => ({ category, count }))
-      .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category)),
+      .sort(
+        (left, right) => right.count - left.count || left.category.localeCompare(right.category),
+      ),
   };
 }
 
@@ -1178,12 +1180,12 @@ function duplicateEntityAcceptedDecisionValidationCommand(
     inputPath,
     outputPath,
     expectedArtifactField: 'reviewDecisionValidation' as const,
-    acceptedDecisionFields: [
+    acceptedDecisionFields: ['planId', 'decision', 'canonicalEntityId', 'reviewedBy'] as [
       'planId',
       'decision',
       'canonicalEntityId',
       'reviewedBy',
-    ] as ['planId', 'decision', 'canonicalEntityId', 'reviewedBy'],
+    ],
     command: betaCommand(
       `yarn --cwd server research-entity:duplicate-name-review --limit=10000` +
         ` --plan-limit=${planLimit} --accepted-decisions=${inputPath}` +
@@ -1213,9 +1215,7 @@ function duplicateEntityPlanReviewCommand(input: {
   };
 }
 
-function readDuplicateEntityDecisionValidationStatus(
-  outputPath: string,
-): {
+function readDuplicateEntityDecisionValidationStatus(outputPath: string): {
   artifactAvailable: boolean;
   totalDecisions?: number;
   validDecisionCount?: number;
@@ -1239,8 +1239,7 @@ function readDuplicateEntityDecisionValidationStatus(
       (parsed as { reviewDecisionValidation?: unknown }).reviewDecisionValidation &&
       typeof (parsed as { reviewDecisionValidation?: unknown }).reviewDecisionValidation ===
         'object'
-        ? ((parsed as { reviewDecisionValidation: Record<string, unknown> })
-            .reviewDecisionValidation)
+        ? (parsed as { reviewDecisionValidation: Record<string, unknown> }).reviewDecisionValidation
         : undefined;
     if (!validation) {
       return { artifactAvailable: false };
@@ -1260,8 +1259,7 @@ function readDuplicateEntityDecisionValidationStatus(
 export function buildSamePiDedupeReviewSummary(
   options: SamePiDedupeReviewOptions = {},
 ): SamePiDedupeReviewSummary {
-  const reviewArtifactPath =
-    options.reviewArtifactPath || '/tmp/ylabs-research-entity-dedupe.json';
+  const reviewArtifactPath = options.reviewArtifactPath || '/tmp/ylabs-research-entity-dedupe.json';
   const acceptedDecisionInputPath =
     options.acceptedDecisionInputPath ||
     '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json';
@@ -1304,8 +1302,10 @@ export function buildSamePiDedupeReviewSummary(
     }
     const record = parsed as Record<string, unknown>;
     const validation = extractValidationCounts(record.reviewDecisionValidation);
-    const applyBlockedReason =
-      extractStringField(record.reviewDecisionValidation, 'applyBlockedReason');
+    const applyBlockedReason = extractStringField(
+      record.reviewDecisionValidation,
+      'applyBlockedReason',
+    );
     const applyStatus =
       extractStringField(record.reviewDecisionValidation, 'applyStatus') || base.applyStatus;
     return {
@@ -1364,9 +1364,7 @@ function copyFiniteNumericField(
   return typeof raw === 'number' && Number.isFinite(raw) ? { [field]: raw } : {};
 }
 
-function duplicateEntityCategoryPlanOutputPath(
-  category: DuplicateEntityReviewCategory,
-): string {
+function duplicateEntityCategoryPlanOutputPath(category: DuplicateEntityReviewCategory): string {
   const suffixByCategory: Record<DuplicateEntityReviewCategory, string> = {
     shared_website_merge_review: 'shared-website',
     cross_department_same_person_review: 'cross-department-same-person',
@@ -1445,7 +1443,9 @@ function buildCheck(
   count: number,
   message: string,
   target: number | string,
-  metadataOverride?: Partial<Pick<BetaDataQualityCheck, 'classification' | 'owner' | 'nextCommand'>>,
+  metadataOverride?: Partial<
+    Pick<BetaDataQualityCheck, 'classification' | 'owner' | 'nextCommand'>
+  >,
 ): BetaDataQualityCheck | null {
   if (count <= 0) {
     return null;
