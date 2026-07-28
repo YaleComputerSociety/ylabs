@@ -64,8 +64,17 @@ describe('studentVisibilityGateService', () => {
     ).toBeUndefined();
   });
 
-  it('loads manual visibility overrides when planning research entity gates', () => {
-    expect(researchEntityGateProjection.split(/\s+/)).toContain('studentVisibilityOverrideTier');
+  it('loads public description and override fields when planning research entity gates', () => {
+    expect(researchEntityGateProjection.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        'description',
+        'shortDescription',
+        'fullDescription',
+        'profileSynthesisDescription',
+        'descriptionSource',
+        'studentVisibilityOverrideTier',
+      ]),
+    );
   });
 
   it('caps release queue page before building Mongo skip and limit values', async () => {

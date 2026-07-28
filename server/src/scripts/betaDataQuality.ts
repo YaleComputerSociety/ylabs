@@ -52,6 +52,7 @@ import {
   isExcludedByLaneAProductionCopy,
   isSuspiciousUserEmail,
 } from './userEmailHygieneCore';
+import { auditStudentReadyPublicDescriptions } from '../services/researchEntityPublicDescriptionAuditService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -185,6 +186,7 @@ export async function buildBetaDataQualityScorecard(
     sourceHealth,
     coverage,
     descriptionQuality,
+    publicDescriptionInvariant,
     duplicateEntityNames,
     researchEntityContentPageLeaks,
     studentAnalyticsContamination,
@@ -200,6 +202,9 @@ export async function buildBetaDataQualityScorecard(
     timed('sourceHealth', () => buildSourceHealthSummary(options.days, options.includeSamples)),
     timed('researchEntityCoverage', () => buildResearchEntityCoverage()),
     timed('descriptionQuality', () => buildDescriptionQuality(options.includeSamples)),
+    timed('publicDescriptionInvariant', () =>
+      auditStudentReadyPublicDescriptions({ includeSamples: options.includeSamples }),
+    ),
     timed('duplicateEntityNames', () => buildDuplicateEntityNames(options.includeSamples)),
     timed('researchEntityContentPageLeaks', () => buildResearchEntityContentPageLeaks()),
     timed('studentAnalyticsContamination', () =>
@@ -223,6 +228,8 @@ export async function buildBetaDataQualityScorecard(
     researchEntityContentPageLeakCount: researchEntityContentPageLeaks.count,
     missingShortDescriptionCount: descriptionQuality.missingCount,
     weakShortDescriptionCount: descriptionQuality.weakCount,
+    publicDescriptionInvariantViolationCount:
+      publicDescriptionInvariant.counts.violations,
     suspiciousUserEmailCount: emailHygiene.suspiciousUserEmails.count,
     suspiciousUserEmailsProductionCopyExclusionComplete:
       options.includeSamples &&
@@ -256,6 +263,7 @@ export async function buildBetaDataQualityScorecard(
     sourceHealth,
     researchEntityCoverage: coverage,
     descriptionQuality,
+    publicDescriptionInvariant,
     duplicateEntityNames,
     samePiDedupeReview: buildSamePiDedupeReviewSummary(),
     researchEntityContentPageLeaks,

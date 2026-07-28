@@ -363,7 +363,20 @@ export function computeResearchEntityStudentVisibility({
     computedTier = 'limited_but_safe';
   }
 
-  return withOverride(entity, computedTier, Array.from(new Set(reasons)));
+  const result = withOverride(entity, computedTier, Array.from(new Set(reasons)));
+  if (
+    result.tier === 'student_ready' &&
+    (quality.descriptionState !== 'source_backed' || quality.cardState !== 'complete')
+  ) {
+    return {
+      tier: result.computedTier,
+      computedTier: result.computedTier,
+      reasons: Array.from(
+        new Set([...result.reasons, 'public_description_invariant_failed']),
+      ),
+    };
+  }
+  return result;
 }
 
 export function computeProgramStudentVisibility(

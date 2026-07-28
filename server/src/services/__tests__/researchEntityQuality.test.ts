@@ -19,6 +19,7 @@ describe('buildResearchEntityQualitySummary', () => {
     expect(summary.leadState).toBe('lead_missing');
     expect(summary.repairFlags).toEqual([
       'missing_description',
+      'missing_card_description',
       'missing_lead',
       'missing_source_url',
     ]);
@@ -40,7 +41,10 @@ describe('buildResearchEntityQualitySummary', () => {
 
     expect(summary.descriptionState).toBe('profile_synthesis');
     expect(summary.leadState).toBe('lead_attached');
-    expect(summary.repairFlags).toEqual(['profile_fallback_only']);
+    expect(summary.repairFlags).toEqual([
+      'profile_fallback_only',
+      'missing_card_description',
+    ]);
     expect(summary.score).toBeLessThan(90);
   });
 

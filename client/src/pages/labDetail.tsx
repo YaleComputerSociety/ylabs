@@ -68,6 +68,7 @@ import {
   trackResearchEvent,
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
+import { captureClientError } from '../utils/errorTracking';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
@@ -597,12 +598,18 @@ const DecisionSummary = ({
       }
     : null;
   const rawDescription =
-    (usesProfileSynthesis ? group.profileSynthesisDescription : '') ||
-    sourceBackedDescription ||
-    (topics.length > 0
-      ? `Research connected to ${topics.slice(0, 3).join(', ')}.`
-      : 'A Yale research profile with limited public description.');
+    (usesProfileSynthesis ? group.profileSynthesisDescription : '') || sourceBackedDescription;
   const description = sanitizeFacultyResearchCopy(rawDescription, group);
+  useEffect(() => {
+    if (description) return;
+    captureClientError(
+      new Error(
+        `Public research description invariant failed for ${String(
+          group.slug || group._id || 'unknown',
+        )}`,
+      ),
+    );
+  }, [description, group._id, group.slug]);
   const { verdict, evidence } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
   const evidenceLevel = verdictLabel(verdict);
   const grantSummary = formatGrantSummary(group);
@@ -620,13 +627,20 @@ const DecisionSummary = ({
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
         <div>
-          <SectionHeading>Research summary</SectionHeading>
-          <h2 className="text-lg font-semibold text-gray-950">
-            {usesFacultyResearchWording
-              ? 'What this faculty research area covers'
-              : decisionHeadingLabel(group)}
-          </h2>
-          <LongText text={description} className="mt-2 text-base leading-relaxed text-gray-800" />
+          {description && (
+            <>
+              <SectionHeading>Research summary</SectionHeading>
+              <h2 className="text-lg font-semibold text-gray-950">
+                {usesFacultyResearchWording
+                  ? 'What this faculty research area covers'
+                  : decisionHeadingLabel(group)}
+              </h2>
+              <LongText
+                text={description}
+                className="mt-2 text-base leading-relaxed text-gray-800"
+              />
+            </>
+          )}
           {displayStudentDecisionExplanation && (
             <div className="mt-5 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
               <SectionHeading>Student decision</SectionHeading>

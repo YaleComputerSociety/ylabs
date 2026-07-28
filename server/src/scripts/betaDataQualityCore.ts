@@ -114,6 +114,7 @@ export interface BetaDataQualitySummaryInput {
   sourceHealthWarnings: number;
   duplicateEntityClusterCount: number;
   researchEntityContentPageLeakCount?: number;
+  publicDescriptionInvariantViolationCount?: number;
   missingShortDescriptionCount: number;
   weakShortDescriptionCount: number;
   suspiciousUserEmailCount: number;
@@ -322,6 +323,12 @@ const BETA_CHECK_OPERATOR_METADATA: Record<
     owner: 'data-quality operator',
     nextCommand: betaCommand(
       'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+    ),
+  },
+  publicDescriptionInvariant: {
+    owner: 'content-quality operator',
+    nextCommand: betaCommand(
+      'yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json',
     ),
   },
   sourceHealthWarnings: {
@@ -720,6 +727,13 @@ export function buildBetaDataQualitySummary(
       'error',
       input.sourceHealthErrors,
       'Source health has error-risk sources.',
+      0,
+    ),
+    buildCheck(
+      'publicDescriptionInvariant',
+      'error',
+      input.publicDescriptionInvariantViolationCount ?? 0,
+      'Student-ready research entities fail the post-sanitization public full or card description invariant.',
       0,
     ),
   ]);

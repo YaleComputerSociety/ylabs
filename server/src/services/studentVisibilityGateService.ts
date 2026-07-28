@@ -1,5 +1,6 @@
 import { AccessSignal } from '../models/accessSignal';
 import { EntryPathway } from '../models/entryPathway';
+import { FacultyMember } from '../models/facultyMember';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -168,7 +169,7 @@ const suppressionRepairReasons = new Set([
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas fullDescription shortDescription studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas description shortDescription fullDescription profileSynthesisDescription descriptionSource studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -864,6 +865,7 @@ async function planResearchEntityGateUpdates(
   const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
+      archived: { $ne: true },
       isCurrentMember: { $ne: false },
       role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
     })
@@ -909,10 +911,28 @@ async function planResearchEntityGateUpdates(
   ]);
 
   const leadUserIds = uniqueStrings((leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)));
-  const leadUsers = leadUserIds.length
-    ? await User.find({ _id: { $in: leadUserIds } }).select('facultyMemberId fname lname title').lean()
-    : [];
+  const leadFacultyMemberIds = uniqueStrings(
+    (leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.facultyMemberId)),
+  );
+  const [leadUsers, leadFacultyMembers] = await Promise.all([
+    leadUserIds.length
+      ? User.find({ _id: { $in: leadUserIds } })
+          .select('facultyMemberId displayName name fname lname title')
+          .lean()
+      : [],
+    leadFacultyMemberIds.length
+      ? FacultyMember.find({ _id: { $in: leadFacultyMemberIds } })
+          .select('name firstName lastName')
+          .lean()
+      : [],
+  ]);
   const leadUsersById = new Map((leadUsers as any[]).map((user) => [studentVisibilityGateDocumentId(user._id), user]));
+  const leadFacultyMembersById = new Map(
+    (leadFacultyMembers as any[]).map((facultyMember) => [
+      studentVisibilityGateDocumentId(facultyMember._id),
+      facultyMember,
+    ]),
+  );
   const profileAreaNamesByUserId = new Map<string, string[]>();
   const profileAreaNames = uniqueStrings(
     (leadUsers as any[]).flatMap((user) => {
@@ -937,6 +957,10 @@ async function planResearchEntityGateUpdates(
   for (const row of leadRows as any[]) {
     const user = row.userId ? leadUsersById.get(studentVisibilityGateDocumentId(row.userId)) : undefined;
     if (user) row.user = user;
+    const facultyMember = row.facultyMemberId
+      ? leadFacultyMembersById.get(studentVisibilityGateDocumentId(row.facultyMemberId))
+      : undefined;
+    if (facultyMember) row.facultyMember = facultyMember;
     const key = studentVisibilityGateDocumentId(row.researchEntityId);
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }

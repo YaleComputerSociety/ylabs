@@ -726,6 +726,38 @@ describe('buildBetaDataQualitySummary', () => {
     expect(shouldStrictModeFail(summary)).toBe(false);
   });
 
+  it('makes a public description invariant violation a strict Beta error', () => {
+    const summary = buildBetaDataQualitySummary({
+      referenceHardFailures: 0,
+      invalidUrlCount: 0,
+      expiredOpenOpportunityCount: 0,
+      paperAuthorshipIntegrityFailures: 0,
+      sourceHealthErrors: 0,
+      sourceHealthWarnings: 0,
+      duplicateEntityClusterCount: 0,
+      missingShortDescriptionCount: 0,
+      weakShortDescriptionCount: 0,
+      publicDescriptionInvariantViolationCount: 1,
+      suspiciousUserEmailCount: 0,
+      retentionCandidateCount: 0,
+      coverageGaps: {
+        withoutPathways: 0,
+        withoutAccessSignals: 0,
+        withoutContactRoutes: 0,
+      },
+    });
+
+    expect(summary.status).toBe('error');
+    expect(summary.errors).toEqual([
+      expect.objectContaining({
+        name: 'publicDescriptionInvariant',
+        count: 1,
+        owner: 'content-quality operator',
+      }),
+    ]);
+    expect(shouldStrictModeFail(summary)).toBe(true);
+  });
+
   it('accepts suspicious user email warnings when Lane A exclusion covers the full suspicious set', () => {
     const summary = buildBetaDataQualitySummary({
       referenceHardFailures: 0,

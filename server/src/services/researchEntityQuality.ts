@@ -1,4 +1,4 @@
-import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 
 export type ResearchEntityDescriptionState =
   | 'source_backed'
@@ -73,18 +73,10 @@ const hasLeadIdentityConflict = (member: Record<string, any>): boolean => {
   return false;
 };
 
-function descriptionQualityForEntity(entity: Record<string, any>) {
-  return assessResearchEntityDescriptionQuality({
-    fullDescription: entity.fullDescription,
-    shortDescription: entity.shortDescription,
-    sourceUrls: entity.sourceUrls,
-    website: entity.website,
-    websiteUrl: entity.websiteUrl,
-  });
-}
-
-function descriptionStateForEntity(entity: Record<string, any>): ResearchEntityDescriptionState {
-  const quality = descriptionQualityForEntity(entity);
+function descriptionStateForEntity(
+  entity: Record<string, any>,
+  quality: ReturnType<typeof buildResearchEntityPublicDescriptionRepresentation>['quality'],
+): ResearchEntityDescriptionState {
   if (quality.full.isUseful || quality.short.isUseful) return 'source_backed';
   if (textValue(entity.profileSynthesisDescription)) return 'profile_synthesis';
   if (
@@ -108,8 +100,13 @@ export function buildResearchEntityQualitySummary({
   entity,
   leadMembers = [],
 }: ResearchEntityQualityInput): ResearchEntityQualitySummary {
-  const descriptionQuality = descriptionQualityForEntity(entity);
-  const descriptionState = descriptionStateForEntity(entity);
+  const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
+    entity,
+    leadMembers,
+  });
+  const publicEntity = publicDescription.entity;
+  const descriptionQuality = publicDescription.quality;
+  const descriptionState = descriptionStateForEntity(publicEntity, descriptionQuality);
   const cardState = descriptionQuality.cardState;
   const leadState = leadStateForMembers(leadMembers);
   const repairFlags: ResearchEntityRepairFlag[] = [];
@@ -117,9 +114,7 @@ export function buildResearchEntityQualitySummary({
   if (descriptionState === 'missing') repairFlags.push('missing_description');
   if (descriptionState === 'thin') repairFlags.push('thin_description');
   if (descriptionState === 'profile_synthesis') repairFlags.push('profile_fallback_only');
-  if (descriptionState === 'source_backed' && cardState !== 'complete') {
-    repairFlags.push('missing_card_description');
-  }
+  if (cardState !== 'complete') repairFlags.push('missing_card_description');
   if (leadState === 'lead_conflict') repairFlags.push('pi_identity_conflict');
   if (leadState !== 'lead_attached') repairFlags.push('missing_lead');
   if (!hasSourceUrl(entity)) repairFlags.push('missing_source_url');
