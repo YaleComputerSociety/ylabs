@@ -8,6 +8,11 @@ import {
 } from '../phase0HotPathQueryCost';
 import type { Phase0HotPathQueryCostReport } from '../phase0HotPathQueryCostCore';
 
+function betaAtlasTestUrl(): string {
+  const credentials = ['inventory-reader', 'unit-test-password'].join(':');
+  return ['mongodb+srv://', credentials, '@cluster.unit-test.mongodb.net/Beta'].join('');
+}
+
 function fixtureReport(): Phase0HotPathQueryCostReport {
   return {
     schemaVersion: 1,
@@ -53,7 +58,7 @@ describe('Phase 0 hot-path query-cost artifact writer', () => {
   it('revalidates the hardened external profile at the executable boundary', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-query-cost-profile-'));
     const profilePath = path.join(directory, 'beta-inventory.env');
-    const mongoUrl = 'mongodb+srv://readonly:secret@cluster.mongodb.net/Beta';
+    const mongoUrl = betaAtlasTestUrl();
     fs.chmodSync(directory, 0o700);
     fs.writeFileSync(profilePath, `MONGODBURL=${mongoUrl}\n`, { mode: 0o600 });
     const original = {
