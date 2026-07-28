@@ -646,6 +646,7 @@ Each phase must remove a compatibility read before the corresponding legacy stor
 ### Phase 0: resolve integration state and measure production
 
 Use the [`Phase 0 runbook`](./research-model-refactor-phase0.md) for the read-only inventory command, report interpretation, and rollback prerequisites.
+Use the [`Phase 0 hot-path audit`](./research-model-refactor-phase0-hot-paths.md) for source-backed runtime ownership, boundedness, declared-index findings, and the exact live query-plan evidence still required.
 
 - Resolve the existing merge conflicts before implementation changes begin.
 - Inventory collection counts, schema versions, tracked retirement-field prevalence, and reference integrity.
