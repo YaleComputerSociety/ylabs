@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
-dotenv.config();
+if (process.env.YLABS_SKIP_LOCAL_DOTENV !== 'true') {
+  dotenv.config();
+}
 
 // Default to a common local meilisearch host if not provided
 const MEILISEARCH_HOST = process.env.MEILISEARCH_HOST || 'http://localhost:7700';

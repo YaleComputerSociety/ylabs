@@ -692,7 +692,10 @@ export async function searchResearchGroupsViaMeili(
   try {
     searchResult = await searchWithFallbacks();
   } catch (error) {
-    console.error('ResearchEntity Meilisearch failed; falling back to Mongo search:', error);
+    console.error(
+      'ResearchEntity Meilisearch failed; falling back to Mongo search:',
+      sanitizeLogValue(error),
+    );
     return searchResearchGroupsViaMongoFallback(
       normalizedQuery.raw,
       safeFilters,
