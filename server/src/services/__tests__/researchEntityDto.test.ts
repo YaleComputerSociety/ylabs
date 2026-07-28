@@ -193,16 +193,19 @@ describe('researchEntityDto', () => {
       enumerable: true,
     });
 
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-dto-bounds',
-      slug: 'dto-bounds-lab',
-      name: 'DTO Bounds Lab',
-      description: 'x'.repeat(6000),
-      researchAreas,
-      sourceUrls,
-      studentDecisionExplanation: { reasons },
-      qualitySummary,
-    }, { includeOperatorFields: true });
+    const dto = toPublicResearchEntityDto(
+      {
+        id: 'entity-dto-bounds',
+        slug: 'dto-bounds-lab',
+        name: 'DTO Bounds Lab',
+        description: 'x'.repeat(6000),
+        researchAreas,
+        sourceUrls,
+        studentDecisionExplanation: { reasons },
+        qualitySummary,
+      },
+      { includeOperatorFields: true },
+    );
 
     expect(dto.description).toHaveLength(5000);
     expect(dto.researchAreas).toHaveLength(100);
@@ -288,5 +291,21 @@ describe('researchEntityDto', () => {
     expect(detail).not.toHaveProperty('group');
     expect(detail.researchEntity.entityType).toBe('INDIVIDUAL_RESEARCH');
     expect(detail.members).toEqual([]);
+  });
+
+  it('exposes only safe public lead identity fields', () => {
+    const dto = toPublicResearchEntityDto({
+      slug: 'lead-review-lab',
+      name: 'Lead Review Lab',
+      leadIdentityStatus: 'under_review',
+      leadProfessorPublicKey: 'reviewed-professor-pi',
+      qualitySummary: { repairFlags: ['pi_identity_conflict'], privateNote: 'operator only' },
+    });
+
+    expect(dto).toMatchObject({
+      leadIdentityStatus: 'under_review',
+      leadProfessorPublicKey: 'reviewed-professor-pi',
+    });
+    expect(dto).not.toHaveProperty('qualitySummary');
   });
 });

@@ -571,7 +571,7 @@ const DecisionSummary = ({
   postedOpportunities,
   fallbackSourceUrl,
   hasActivePostedOpportunity,
-  leadProfessor,
+  principalInvestigator,
 }: {
   group: any;
   pathways: LabEntryPathway[];
@@ -579,7 +579,7 @@ const DecisionSummary = ({
   postedOpportunities: LabPostedOpportunity[];
   fallbackSourceUrl?: string;
   hasActivePostedOpportunity: boolean;
-  leadProfessor?: LabMember;
+  principalInvestigator?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
   const usesProfileSynthesis = hasProfileSynthesisDescription(group) && !detailDescription(group);
@@ -618,11 +618,6 @@ const DecisionSummary = ({
   const profileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes, group);
   const officialRoute = resolveDecisionOfficialRoute(profileUrl, contactRoutes, group);
   const officialRouteUrl = safeHttpUrl(officialRoute?.url);
-  const leadProfessorName = leadProfessor ? memberDisplayName(leadProfessor) : '';
-  const leadProfessorMeta = uniqueCompact(
-    [leadProfessor?.user.title, leadProfessor?.user.primary_department],
-    2,
-  ).join(' · ');
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -740,18 +735,11 @@ const DecisionSummary = ({
               )}
             </div>
           )}
-          {leadProfessor && (
+          {principalInvestigator && (
             <div className="mt-4 border-t border-[var(--yr-line)] pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Lead professor
-              </p>
-              <div className="mt-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm">
-                <p className="font-semibold text-gray-900">{leadProfessorName}</p>
-                {leadProfessorMeta && (
-                  <p className="mt-0.5 text-xs leading-relaxed text-gray-600">
-                    {leadProfessorMeta}
-                  </p>
-                )}
+              <SectionHeading>Principal Investigator</SectionHeading>
+              <div>
+                <LabMembersList members={[principalInvestigator]} singleColumn />
               </div>
             </div>
           )}
@@ -1144,6 +1132,12 @@ const LabDetail = () => {
   );
   const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
+  const singlePrincipalInvestigator =
+    !leadIdentityUnderReview && principalInvestigators.length === 1
+      ? principalInvestigators[0]
+      : undefined;
+  const showDedicatedPrincipalInvestigatorSection =
+    leadIdentityUnderReview || principalInvestigators.length !== 1;
   const membersById = new Map(members.map((member) => [memberId(member), member]));
   const primaryRecentWorkMember =
     memberRecentWorkLinks
@@ -1243,7 +1237,7 @@ const LabDetail = () => {
             postedOpportunities={postedOpportunities}
             fallbackSourceUrl={fallbackSourceUrl}
             hasActivePostedOpportunity={hasActivePostedOpportunity}
-            leadProfessor={principalInvestigators[0]}
+            principalInvestigator={singlePrincipalInvestigator}
           />
 
           <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
@@ -1278,23 +1272,29 @@ const LabDetail = () => {
             )}
           </section>
 
-          <section>
-            <SectionHeading>Principal Investigator</SectionHeading>
-            {leadIdentityUnderReview ? (
-              <div
-                className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-                role="status"
-              >
-                <p className="font-semibold">Lead identity under review</p>
-                <p className="mt-1">
-                  The research information remains available, but this lead and profile link are not
-                  shown until their sources agree.
-                </p>
-              </div>
-            ) : (
-              <LabMembersList members={principalInvestigators} />
-            )}
-          </section>
+          {showDedicatedPrincipalInvestigatorSection && (
+            <section>
+              <SectionHeading>
+                {principalInvestigators.length > 1
+                  ? 'Principal Investigators'
+                  : 'Principal Investigator'}
+              </SectionHeading>
+              {leadIdentityUnderReview ? (
+                <div
+                  className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                  role="status"
+                >
+                  <p className="font-semibold">Lead identity under review</p>
+                  <p className="mt-1">
+                    The research information remains available, but this lead and profile link are
+                    not shown until their sources agree.
+                  </p>
+                </div>
+              ) : (
+                <LabMembersList members={principalInvestigators} />
+              )}
+            </section>
+          )}
 
           <ResearchTeamSection members={members} roster={roster} />
 

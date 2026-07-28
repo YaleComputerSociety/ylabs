@@ -130,6 +130,7 @@ import {
   publicMemberUserForRow,
   isFreshVerifiedOfficialRosterRow,
   publicRosterDisclosure,
+  researchDetailLeadIdentity,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
@@ -1315,6 +1316,73 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('netid');
   });
 
+  it('derives PI identity review from raw records before public member replacement', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const wrongUserId = '67d8928150621bcef434a1d6';
+    const correctUserId = '67d8928150621bcef434a1d7';
+    const wrongFacultyId = '67d8928150621bcef434a1d8';
+    const correctFacultyId = '67d8928150621bcef434a1d9';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'disputed-pi-lab',
+        name: 'Disputed PI Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: ['https://medicine.yale.edu/profile/correct-scholar/'],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.researchGroupMemberFind.mockReturnValue(
+      sortLimitLeanResult([
+        {
+          _id: 'member-1',
+          researchEntityId: entityId,
+          userId: wrongUserId,
+          facultyMemberId: correctFacultyId,
+          role: 'pi',
+          archived: false,
+          isCurrentMember: true,
+        },
+      ]),
+    );
+    mocks.userFind.mockReturnValue(
+      leanResult([
+        {
+          _id: wrongUserId,
+          fname: 'Wrong',
+          lname: 'Person',
+          facultyMemberId: wrongFacultyId,
+        },
+      ]),
+    );
+    mocks.facultyMemberFind.mockReturnValue(
+      selectLeanResult([
+        {
+          _id: correctFacultyId,
+          userId: correctUserId,
+          firstName: 'Correct',
+          lastName: 'Scholar',
+          profileUrls: {
+            official: 'https://medicine.yale.edu/profile/correct-scholar/',
+          },
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('disputed-pi-lab');
+
+    expect(detail?.researchEntity).toMatchObject({ leadIdentityStatus: 'under_review' });
+    expect(detail?.researchEntity).not.toHaveProperty('leadProfessorPublicKey');
+    expect(detail?.members[0].user).toMatchObject({
+      fname: 'Correct',
+      lname: 'Scholar',
+    });
+    expect(detail?.members[0].user).not.toHaveProperty('facultyMemberId');
+    expect(detail?.members[0].user).not.toHaveProperty('userId');
+  });
+
   it('minimizes public research detail paper payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(
@@ -2160,6 +2228,57 @@ describe('publicMemberUserForRow', () => {
       lname: 'Collaborator',
     });
     expect(publicUser).not.toHaveProperty('email');
+  });
+});
+
+describe('researchDetailLeadIdentity', () => {
+  const members = [
+    {
+      role: 'pi',
+      user: {
+        displayName: 'First Investigator',
+        profileUrls: { official: 'https://medicine.yale.edu/profile/first-investigator/' },
+      },
+      row: { facultyMemberId: 'faculty-1' },
+    },
+    {
+      role: 'co-pi',
+      user: {
+        displayName: 'Second Investigator',
+        profileUrls: { official: 'https://medicine.yale.edu/profile/second-investigator/' },
+      },
+      row: { facultyMemberId: 'faculty-2', identityKey: 'faculty:second-investigator' },
+    },
+  ];
+
+  it('identifies a unique lead only from entity-owned official profile evidence', () => {
+    expect(
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://medicine.yale.edu/profile/second-investigator/'] },
+        members,
+      ),
+    ).toEqual({
+      leadIdentityStatus: 'verified',
+      leadProfessorPublicKey: 'faculty-second-investigator-co-pi',
+    });
+  });
+
+  it('omits the lead when entity evidence does not uniquely match a member', () => {
+    expect(researchDetailLeadIdentity({ sourceUrls: [] }, members)).toEqual({
+      leadIdentityStatus: 'verified',
+    });
+  });
+
+  it('derives the public review state from canonical PI identity conflicts', () => {
+    expect(
+      researchDetailLeadIdentity({}, [
+        {
+          role: 'pi',
+          user: { displayName: 'Disputed Investigator', facultyMemberId: 'faculty-user' },
+          row: { userId: 'user-1', facultyMemberId: 'faculty-row' },
+        },
+      ]),
+    ).toEqual({ leadIdentityStatus: 'under_review' });
   });
 });
 
