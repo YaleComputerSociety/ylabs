@@ -1659,6 +1659,7 @@ export function researchDetailLeadIdentity(
           leadProfessorPublicKey: publicMemberKeyForResearchDetail(
             matchingMembers[0].user,
             matchingMembers[0].role,
+            matchingMembers[0].row?.identityKey,
           ),
         }
       : {}),

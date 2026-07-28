@@ -2247,7 +2247,7 @@ describe('researchDetailLeadIdentity', () => {
         displayName: 'Second Investigator',
         profileUrls: { official: 'https://medicine.yale.edu/profile/second-investigator/' },
       },
-      row: { facultyMemberId: 'faculty-2' },
+      row: { facultyMemberId: 'faculty-2', identityKey: 'faculty:second-investigator' },
     },
   ];
 
@@ -2259,7 +2259,7 @@ describe('researchDetailLeadIdentity', () => {
       ),
     ).toEqual({
       leadIdentityStatus: 'verified',
-      leadProfessorPublicKey: 'second-investigator-co-pi',
+      leadProfessorPublicKey: 'faculty-second-investigator-co-pi',
     });
   });
 
