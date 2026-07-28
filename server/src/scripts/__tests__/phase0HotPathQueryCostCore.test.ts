@@ -240,27 +240,45 @@ describe('Phase 0 hot-path query-cost core', () => {
   it('covers every audited query label without retaining fixture values in the report', () => {
     const fixtures = completeFixtures();
     const specs = buildPhase0HotPathQuerySpecs(fixtures, new Date('2026-07-28T12:00:00.000Z'));
+    const fixtureUnavailableLabels = [
+      'account-planning-visible-entities-zero-saves',
+      'account-planning-pathway-hydration-zero-saves',
+    ];
     expect(new Set(specs.map((spec) => spec.label))).toEqual(
-      new Set(PHASE0_HOT_PATH_EXPECTED_LABELS),
+      new Set(
+        PHASE0_HOT_PATH_EXPECTED_LABELS.filter(
+          (label) => !fixtureUnavailableLabels.includes(label),
+        ),
+      ),
     );
 
-    const queries = specs.map((spec) => ({
-      label: spec.label,
-      surface: spec.surface,
-      collection: spec.collection,
-      operation: spec.operation,
-      status: 'measured' as const,
-      plan: summarizePhase0HotPathExplain({
-        executionStats: {
-          nReturned: 1,
-          executionTimeMillis: 1,
-          totalKeysExamined: 1,
-          totalDocsExamined: 1,
-        },
-        queryPlanner: { winningPlan: { stage: 'IXSCAN', indexName: '_id_' } },
-      }),
-      findings: [],
-    }));
+    const queries = [
+      ...specs.map((spec) => ({
+        label: spec.label,
+        surface: spec.surface,
+        collection: spec.collection,
+        operation: spec.operation,
+        status: 'measured' as const,
+        plan: summarizePhase0HotPathExplain({
+          executionStats: {
+            nReturned: 1,
+            executionTimeMillis: 1,
+            totalKeysExamined: 1,
+            totalDocsExamined: 1,
+          },
+          queryPlanner: { winningPlan: { stage: 'IXSCAN', indexName: '_id_' } },
+        }),
+        findings: [],
+      })),
+      ...fixtureUnavailableLabels.map((label) => ({
+        label,
+        surface: 'account-planning' as const,
+        collection: 'fixture-dependent',
+        operation: 'find' as const,
+        status: 'fixture-unavailable' as const,
+        findings: [],
+      })),
+    ];
     const report = buildPhase0HotPathQueryCostReport({
       generatedAt: '2026-07-28T12:00:00.000Z',
       sourceCommit: 'c2478017eddeeb289f834d1498ce24375a0175c6',
@@ -275,8 +293,8 @@ describe('Phase 0 hot-path query-cost core', () => {
 
     expect(report.summary).toMatchObject({
       expectedQueryShapes: PHASE0_HOT_PATH_EXPECTED_LABELS.length,
-      measuredQueryShapes: PHASE0_HOT_PATH_EXPECTED_LABELS.length,
-      fixtureUnavailableQueryShapes: 0,
+      measuredQueryShapes: PHASE0_HOT_PATH_EXPECTED_LABELS.length - 2,
+      fixtureUnavailableQueryShapes: 2,
       errorQueryShapes: 0,
       uncoveredLabels: [],
     });
@@ -297,6 +315,8 @@ describe('Phase 0 hot-path query-cost core', () => {
     fixtures.detailRelatedEntityIds = [];
     fixtures.ordinaryOpportunity!.evidenceIds = [];
     fixtures.highEvidenceOpportunity!.evidenceIds = [];
+    fixtures.accounts[1].savedResearchEntityIds = [];
+    fixtures.accounts[2].pathwayIds = [];
 
     const dependentLabels = [
       'research-detail-users',
@@ -309,12 +329,18 @@ describe('Phase 0 hot-path query-cost core', () => {
       'research-detail-related-entities',
       'opportunity-detail-observations',
       'opportunity-detail-high-evidence-observations',
+      'account-planning-visible-entities-zero-saves',
+      'account-planning-pathway-hydration-zero-saves',
+      'account-planning-visible-entities-typical-saves',
+      'account-planning-pathway-hydration-near-limit-saves',
     ];
     const specs = buildPhase0HotPathQuerySpecs(fixtures, new Date('2026-07-28T12:00:00.000Z'));
     const emittedLabels = new Set(specs.map((spec) => spec.label));
     dependentLabels.forEach((label) => expect(emittedLabels.has(label)).toBe(false));
     expect(emittedLabels.has('research-detail-current-members')).toBe(true);
     expect(emittedLabels.has('opportunity-detail-opportunity')).toBe(true);
+    expect(emittedLabels.has('account-planning-pathway-hydration-typical-saves')).toBe(true);
+    expect(emittedLabels.has('account-planning-visible-entities-near-limit-saves')).toBe(true);
 
     const report = buildPhase0HotPathQueryCostReport({
       generatedAt: '2026-07-28T12:00:00.000Z',

@@ -699,23 +699,31 @@ export function buildPhase0HotPathQuerySpecs(
         },
         { limit: 1, projection: { _id: 1 } },
       ),
-      findSpec(
-        `account-planning-visible-entities-${suffix}`,
-        'account-planning',
-        'research_entities',
-        {
-          _id: { $in: account.savedResearchEntityIds },
-          ...PUBLIC_ENTITY_FILTER,
-        },
-        { limit: 100, projection: { _id: 1 } },
-      ),
-      aggregateSpec(
-        `account-planning-pathway-hydration-${suffix}`,
-        'account-planning',
-        'entry_pathways',
-        pathwayHydrationPipeline(account.pathwayIds),
-      ),
     );
+    if (account.savedResearchEntityIds.length > 0) {
+      specs.push(
+        findSpec(
+          `account-planning-visible-entities-${suffix}`,
+          'account-planning',
+          'research_entities',
+          {
+            _id: { $in: account.savedResearchEntityIds },
+            ...PUBLIC_ENTITY_FILTER,
+          },
+          { limit: 100, projection: { _id: 1 } },
+        ),
+      );
+    }
+    if (account.pathwayIds.length > 0) {
+      specs.push(
+        aggregateSpec(
+          `account-planning-pathway-hydration-${suffix}`,
+          'account-planning',
+          'entry_pathways',
+          pathwayHydrationPipeline(account.pathwayIds),
+        ),
+      );
+    }
   }
   specs.push(
     findSpec(
