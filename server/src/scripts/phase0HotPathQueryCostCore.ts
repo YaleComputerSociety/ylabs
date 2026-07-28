@@ -34,6 +34,12 @@ export interface Phase0HotPathFixtureState {
   typicalEntitySlug?: string;
   highFanoutEntityId?: unknown;
   detailMemberUserIds: unknown[];
+  detailUserIds: unknown[];
+  detailFacultyIds: unknown[];
+  detailImageUrls: unknown[];
+  detailAttributedScholarlyLinkIds: unknown[];
+  detailEntryPathwayIds: unknown[];
+  detailRelatedEntityIds: unknown[];
   ordinaryOpportunity?: {
     id: unknown;
     entryPathwayId?: unknown;
@@ -184,16 +190,28 @@ export const PHASE0_HOT_PATH_EXPECTED_LABELS = [
   'research-browse-contact-routes',
   'research-detail-entity-by-slug',
   'research-detail-current-members',
+  'research-detail-users',
+  'research-detail-faculty-members',
+  'research-detail-shared-images',
   'research-detail-member-attributions',
-  'research-detail-papers',
-  'research-detail-scholarly-links',
+  'research-detail-attributed-scholarly-links',
+  'research-detail-published-papers',
+  'research-detail-arxiv-preprints',
+  'research-detail-entity-scholarly-links',
   'research-detail-listings',
   'research-detail-entry-pathways',
   'research-detail-access-signals',
   'research-detail-contact-routes',
   'research-detail-posted-opportunities',
+  'research-detail-access-summary-entry-pathways',
+  'research-detail-access-summary-access-signals',
+  'research-detail-access-summary-posted-opportunities',
+  'research-detail-planning-entry-pathways',
+  'research-detail-planning-contact-routes',
+  'research-detail-planning-posted-opportunities',
   'research-detail-relationships-outbound',
   'research-detail-relationships-inbound',
+  'research-detail-related-entities',
   'opportunity-detail-opportunity',
   'opportunity-detail-pathway',
   'opportunity-detail-entity',
@@ -213,7 +231,7 @@ export const PHASE0_HOT_PATH_EXPECTED_LABELS = [
   'admin-access-review-official-application',
   'admin-access-review-updated',
   'admin-access-review-search',
-  'admin-access-review-reviewed-only',
+  'admin-access-review-has-unreviewed-false',
   'admin-access-review-progress-entry-pathways-remaining',
   'admin-access-review-progress-entry-pathways-reviewed-today',
   'admin-access-review-progress-access-signals-remaining',
@@ -350,6 +368,7 @@ function planParts(value: unknown): { stages: string[]; indexNames: string[] } {
   const indexNames = new Set<string>();
   walk(value, (record) => {
     if (typeof record.stage === 'string') stages.add(record.stage);
+    if ('$sort' in record) stages.add('SORT');
     if (typeof record.indexName === 'string') indexNames.add(record.indexName);
     if (Array.isArray(record.indexesUsed)) {
       record.indexesUsed

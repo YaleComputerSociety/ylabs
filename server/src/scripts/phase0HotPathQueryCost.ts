@@ -70,6 +70,109 @@ function comment(label: string): string {
   return `${COMMENT_PREFIX}:${label}`.slice(0, 120);
 }
 
+export function assertHardenedQueryCostProfile(environment: string): void {
+  if (environment === 'development') return;
+  const expected =
+    environment === 'beta'
+      ? { name: 'beta-inventory', file: 'beta-inventory.env', database: 'Beta' }
+      : {
+          name: 'production-copy-inventory',
+          file: 'production-copy-inventory.env',
+          database: 'ProductionCopy',
+        };
+  const profileName = process.env.YLABS_INVENTORY_PROFILE_NAME;
+  const profilePathValue = process.env.YLABS_INVENTORY_PROFILE_PATH;
+  if (
+    process.env.YLABS_INVENTORY_PROFILE_ACTIVE !== 'true' ||
+    profileName !== expected.name ||
+    !profilePathValue ||
+    !path.isAbsolute(profilePathValue)
+  ) {
+    throw new Error(
+      'Beta and ProductionCopy query-cost evidence must run through a hardened inventory profile.',
+    );
+  }
+  const profilePath = path.resolve(profilePathValue);
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const relativeToRepo = path.relative(repoRoot, profilePath);
+  if (
+    relativeToRepo === '' ||
+    (!relativeToRepo.startsWith(`..${path.sep}`) &&
+      relativeToRepo !== '..' &&
+      !path.isAbsolute(relativeToRepo))
+  ) {
+    throw new Error('The inventory profile must be outside the repository.');
+  }
+  if (
+    path.basename(profilePath) !== expected.file ||
+    fs.realpathSync.native(profilePath) !== profilePath
+  ) {
+    throw new Error('The inventory profile path is invalid or contains symlinks.');
+  }
+  const directory = path.dirname(profilePath);
+  if (fs.realpathSync.native(directory) !== directory) {
+    throw new Error('The inventory profile directory must not contain symlinks.');
+  }
+  const directoryStat = fs.lstatSync(directory);
+  const profileStat = fs.lstatSync(profilePath);
+  if (!directoryStat.isDirectory() || (directoryStat.mode & 0o077) !== 0) {
+    throw new Error('The inventory profile directory must be private.');
+  }
+  if (!profileStat.isFile() || (profileStat.mode & 0o777) !== 0o600) {
+    throw new Error('The inventory profile must be a mode-0600 regular file.');
+  }
+  if (
+    typeof process.getuid === 'function' &&
+    (directoryStat.uid !== process.getuid() || profileStat.uid !== process.getuid())
+  ) {
+    throw new Error('The inventory profile must be owned by the current operating-system user.');
+  }
+  const values = dotenv.parse(fs.readFileSync(profilePath));
+  if (Object.keys(values).length !== 1 || !values.MONGODBURL) {
+    throw new Error('The inventory profile may contain only MONGODBURL.');
+  }
+  if (values.MONGODBURL !== process.env.MONGODBURL) {
+    throw new Error('MONGODBURL must exactly match the validated inventory profile.');
+  }
+  let mongoUrl: URL;
+  let databaseName: string;
+  let username: string;
+  let password: string;
+  try {
+    mongoUrl = new URL(values.MONGODBURL);
+    databaseName = decodeURIComponent(mongoUrl.pathname.slice(1));
+    username = decodeURIComponent(mongoUrl.username);
+    password = decodeURIComponent(mongoUrl.password);
+  } catch {
+    throw new Error('The inventory profile must contain a valid encoded Atlas URL.');
+  }
+  const placeholder =
+    /[<>]|\b(?:change[-_ ]?me|placeholder|replace[-_ ]?me)\b|your[-_]|example\.(?:com|net|org)|example\.mongodb\.net/i;
+  const tlsDisabled =
+    mongoUrl.searchParams.getAll('tls').some((value) => value.toLowerCase() === 'false') ||
+    mongoUrl.searchParams.getAll('ssl').some((value) => value.toLowerCase() === 'false');
+  const directConnection = mongoUrl.searchParams
+    .getAll('directConnection')
+    .some((value) => value.toLowerCase() === 'true');
+  if (
+    mongoUrl.protocol !== 'mongodb+srv:' ||
+    !mongoUrl.hostname.toLowerCase().endsWith('.mongodb.net') ||
+    !username ||
+    !password ||
+    placeholder.test(values.MONGODBURL) ||
+    placeholder.test(username) ||
+    placeholder.test(password) ||
+    tlsDisabled ||
+    directConnection ||
+    !databaseName ||
+    databaseName.includes('/') ||
+    databaseName !== expected.database ||
+    databaseName.toLowerCase() === 'production'
+  ) {
+    throw new Error('The inventory profile does not resolve to the dedicated Atlas target.');
+  }
+}
+
 async function aggregateFixture(
   db: Db,
   collection: string,
@@ -140,7 +243,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
       },
       { $sort: { _fanout: -1, _id: 1 } },
       { $limit: 1 },
-      { $project: { _id: 1 } },
+      { $project: { _id: 1, slug: 1 } },
     ],
     maxTimeMS,
   );
@@ -167,6 +270,98 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
   const detailMemberUserIds = memberRows.flatMap((row) =>
     [row.userId, row.facultyMemberId].filter(Boolean),
   );
+  const detailUserIds = memberRows.map((row) => row.userId).filter(Boolean);
+  const detailFacultyIds = memberRows.map((row) => row.facultyMemberId).filter(Boolean);
+  const memberHydrationRows = await aggregateFixture(
+    db,
+    'users',
+    'detail-member-hydration',
+    [
+      { $match: { _id: { $in: detailUserIds } } },
+      { $project: { _id: 0, imageUrl: 1 } },
+      { $limit: 100 },
+    ],
+    maxTimeMS,
+  );
+  const facultyHydrationRows = await aggregateFixture(
+    db,
+    'faculty_members',
+    'detail-faculty-hydration',
+    [
+      { $match: { _id: { $in: detailFacultyIds }, archived: { $ne: true } } },
+      { $project: { _id: 0, photoUrl: 1 } },
+      { $limit: 100 },
+    ],
+    maxTimeMS,
+  );
+  const detailImageUrls = [...memberHydrationRows, ...facultyHydrationRows]
+    .flatMap((row) => [row.imageUrl, row.photoUrl])
+    .filter((value) => typeof value === 'string')
+    .slice(0, 100);
+  const attributionFixtureRows = await aggregateFixture(
+    db,
+    'research_scholarly_attributions',
+    'detail-attributed-links',
+    [
+      {
+        $match: {
+          targetUserId: { $in: detailMemberUserIds },
+          archived: { $ne: true },
+        },
+      },
+      { $sort: { observedAt: -1, updatedAt: -1 } },
+      { $limit: 80 },
+      { $project: { _id: 0, scholarlyLinkId: 1 } },
+    ],
+    maxTimeMS,
+  );
+  const detailAttributedScholarlyLinkIds = attributionFixtureRows
+    .map((row) => row.scholarlyLinkId)
+    .filter(Boolean);
+  const detailPathwayRows = highFanoutEntityId
+    ? await aggregateFixture(
+        db,
+        'entry_pathways',
+        'detail-planning-pathways',
+        [
+          { $match: { researchEntityId: highFanoutEntityId, archived: false } },
+          { $limit: 100 },
+          { $project: { _id: 1 } },
+        ],
+        maxTimeMS,
+      )
+    : [];
+  const detailRelationshipRows = highFanoutEntityId
+    ? await aggregateFixture(
+        db,
+        'research_entity_relationships',
+        'detail-related-entities',
+        [
+          {
+            $match: {
+              archived: { $ne: true },
+              $or: [
+                { sourceResearchEntityId: highFanoutEntityId },
+                { targetResearchEntityId: highFanoutEntityId },
+              ],
+            },
+          },
+          { $limit: 102 },
+          {
+            $project: {
+              _id: 0,
+              sourceResearchEntityId: 1,
+              targetResearchEntityId: 1,
+            },
+          },
+        ],
+        maxTimeMS,
+      )
+    : [];
+  const detailRelatedEntityIds = detailRelationshipRows
+    .flatMap((row) => [row.sourceResearchEntityId, row.targetResearchEntityId])
+    .filter((id) => id && String(id) !== String(highFanoutEntityId))
+    .slice(0, 100);
 
   const opportunityRows = await aggregateFixture(
     db,
@@ -177,11 +372,39 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
       { $sort: { updatedAt: -1, _id: 1 } },
       { $limit: 1 },
       {
+        $lookup: {
+          from: 'entry_pathways',
+          localField: 'entryPathwayId',
+          foreignField: '_id',
+          as: '_pathway',
+        },
+      },
+      {
         $project: {
           _id: 1,
           entryPathwayId: 1,
           researchEntityId: 1,
-          sourceEvidenceIds: { $slice: [{ $ifNull: ['$sourceEvidenceIds', []] }, 100] },
+          sourceEvidenceIds: {
+            $slice: [
+              {
+                $setUnion: [
+                  { $slice: [{ $ifNull: ['$sourceEvidenceIds', []] }, 50] },
+                  {
+                    $slice: [
+                      {
+                        $ifNull: [
+                          { $arrayElemAt: ['$_pathway.sourceEvidenceIds', 0] },
+                          [],
+                        ],
+                      },
+                      50,
+                    ],
+                  },
+                ],
+              },
+              100,
+            ],
+          },
         },
       },
     ],
@@ -193,7 +416,35 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
     'high-evidence-opportunity',
     [
       { $match: { archived: false, entryPathwayId: { $ne: null }, researchEntityId: { $ne: null } } },
-      { $set: { _evidenceCount: { $size: { $ifNull: ['$sourceEvidenceIds', []] } } } },
+      {
+        $lookup: {
+          from: 'entry_pathways',
+          localField: 'entryPathwayId',
+          foreignField: '_id',
+          as: '_pathway',
+        },
+      },
+      {
+        $set: {
+          _combinedEvidenceIds: {
+            $setUnion: [
+              { $slice: [{ $ifNull: ['$sourceEvidenceIds', []] }, 50] },
+              {
+                $slice: [
+                  {
+                    $ifNull: [
+                      { $arrayElemAt: ['$_pathway.sourceEvidenceIds', 0] },
+                      [],
+                    ],
+                  },
+                  50,
+                ],
+              },
+            ],
+          },
+        },
+      },
+      { $set: { _evidenceCount: { $size: '$_combinedEvidenceIds' } } },
       { $sort: { _evidenceCount: -1, _id: 1 } },
       { $limit: 1 },
       {
@@ -201,7 +452,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
           _id: 1,
           entryPathwayId: 1,
           researchEntityId: 1,
-          sourceEvidenceIds: { $slice: [{ $ifNull: ['$sourceEvidenceIds', []] }, 100] },
+          sourceEvidenceIds: { $slice: ['$_combinedEvidenceIds', 100] },
         },
       },
     ],
@@ -281,9 +532,19 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
     browseEntityIds: browseRows.map((row) => row._id).filter(Boolean),
     typicalEntityId: typicalEntity?._id,
     typicalEntitySlug:
-      typeof typicalEntity?.slug === 'string' ? typicalEntity.slug : undefined,
+      typeof highFanoutRows[0]?.slug === 'string'
+        ? highFanoutRows[0].slug
+        : typeof typicalEntity?.slug === 'string'
+          ? typicalEntity.slug
+          : undefined,
     highFanoutEntityId,
     detailMemberUserIds,
+    detailUserIds,
+    detailFacultyIds,
+    detailImageUrls,
+    detailAttributedScholarlyLinkIds,
+    detailEntryPathwayIds: detailPathwayRows.map((row) => row._id).filter(Boolean),
+    detailRelatedEntityIds,
     ordinaryOpportunity: toOpportunity(opportunityRows[0]),
     highEvidenceOpportunity: toOpportunity(highEvidenceRows[0]),
     accounts,
@@ -450,11 +711,7 @@ export function writePhase0HotPathQueryCostReport(
 
 async function main(): Promise<void> {
   const options = parsePhase0HotPathQueryCostArgs(process.argv.slice(2));
-  if (options.environment !== 'development' && !protectedProfileActive) {
-    throw new Error(
-      'Beta and ProductionCopy query-cost evidence must run through a hardened inventory profile.',
-    );
-  }
+  assertHardenedQueryCostProfile(options.environment);
   assertPhase0SummaryOnlyConfiguredTarget({
     summaryOnly: true,
     environment: options.environment,

@@ -295,9 +295,7 @@ function accessReviewPipeline(input: {
         },
       },
     },
-    ...(input.hasUnreviewed === false
-      ? [{ $match: { totalUnreviewed: 0 } }]
-      : input.hasUnreviewed === true
+    ...(input.hasUnreviewed === true
         ? [{ $match: { totalUnreviewed: { $gt: 0 } } }]
         : []),
     {
@@ -439,6 +437,27 @@ export function buildPhase0HotPathQuerySpecs(
         { sort: { role: 1, updatedAt: -1 }, limit: 100, projection: { _id: 1 } },
       ),
       findSpec(
+        'research-detail-users',
+        'research-detail',
+        'users',
+        { _id: { $in: fixtures.detailUserIds } },
+        { limit: 100, projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-faculty-members',
+        'research-detail',
+        'faculty_members',
+        { _id: { $in: fixtures.detailFacultyIds }, archived: { $ne: true } },
+        { limit: 100, projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-shared-images',
+        'research-detail',
+        'users',
+        { imageUrl: { $in: fixtures.detailImageUrls } },
+        { limit: 500, projection: { _id: 1 } },
+      ),
+      findSpec(
         'research-detail-member-attributions',
         'research-detail',
         'research_scholarly_attributions',
@@ -449,14 +468,49 @@ export function buildPhase0HotPathQuerySpecs(
         { sort: { observedAt: -1, updatedAt: -1 }, limit: 80, projection: { _id: 1 } },
       ),
       findSpec(
-        'research-detail-papers',
+        'research-detail-attributed-scholarly-links',
+        'research-detail',
+        'research_scholarly_links',
+        {
+          _id: { $in: fixtures.detailAttributedScholarlyLinkIds },
+          archived: { $ne: true },
+        },
+        {
+          sort: { observedAt: -1, year: -1, updatedAt: -1 },
+          limit: 20,
+          projection: { _id: 1 },
+        },
+      ),
+      findSpec(
+        'research-detail-published-papers',
         'research-detail',
         'papers',
-        { yaleAuthorIds: { $in: fixtures.detailMemberUserIds } },
+        {
+          yaleAuthorIds: { $in: fixtures.detailUserIds },
+          $or: [
+            { publicationStage: { $exists: false } },
+            { publicationStage: { $ne: 'PREPRINT' } },
+          ],
+        },
         { sort: { publishedAt: -1 }, limit: 10, projection: { _id: 1 } },
       ),
       findSpec(
-        'research-detail-scholarly-links',
+        'research-detail-arxiv-preprints',
+        'research-detail',
+        'papers',
+        {
+          archived: false,
+          yaleAuthorIds: { $in: fixtures.detailUserIds },
+          $or: [{ preprintServer: 'arxiv' }, { publicationStage: 'PREPRINT' }],
+        },
+        {
+          sort: { postedAt: -1, versionDate: -1, publishedAt: -1 },
+          limit: 10,
+          projection: { _id: 1 },
+        },
+      ),
+      findSpec(
+        'research-detail-entity-scholarly-links',
         'research-detail',
         'research_scholarly_links',
         { researchEntityId: detailEntityId, archived: { $ne: true } },
@@ -503,6 +557,67 @@ export function buildPhase0HotPathQuerySpecs(
         { sort: { deadline: 1 }, limit: 50, projection: { _id: 1 } },
       ),
       findSpec(
+        'research-detail-access-summary-entry-pathways',
+        'research-detail',
+        'entry_pathways',
+        {
+          researchEntityId: { $in: [detailEntityId] },
+          archived: false,
+          derivationKey: { $not: /^faculty-opportunity:/ },
+        },
+        { projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-access-summary-access-signals',
+        'research-detail',
+        'access_signals',
+        { researchEntityId: { $in: [detailEntityId] }, archived: false },
+        { sort: { observedAt: -1 }, projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-access-summary-posted-opportunities',
+        'research-detail',
+        'posted_opportunities',
+        {
+          researchEntityId: { $in: [detailEntityId] },
+          ...publicOpportunityFilter(now),
+          status: { $in: ['OPEN', 'ROLLING'] },
+        },
+        { projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-planning-entry-pathways',
+        'research-detail',
+        'entry_pathways',
+        { researchEntityId: { $in: [detailEntityId] }, archived: false },
+        { projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-planning-contact-routes',
+        'research-detail',
+        'contact_routes',
+        {
+          researchEntityId: { $in: [detailEntityId] },
+          archived: false,
+          'review.status': 'approved',
+        },
+        { projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-planning-posted-opportunities',
+        'research-detail',
+        'posted_opportunities',
+        {
+          $or: [
+            { researchEntityId: { $in: [detailEntityId] } },
+            { entryPathwayId: { $in: fixtures.detailEntryPathwayIds } },
+          ],
+          archived: false,
+          status: { $in: ['OPEN', 'ROLLING'] },
+        },
+        { projection: { _id: 1 } },
+      ),
+      findSpec(
         'research-detail-relationships-outbound',
         'research-detail',
         'research_entity_relationships',
@@ -515,6 +630,17 @@ export function buildPhase0HotPathQuerySpecs(
         'research_entity_relationships',
         { targetResearchEntityId: detailEntityId, archived: { $ne: true } },
         { sort: { confidence: -1, updatedAt: -1 }, limit: 51, projection: { _id: 1 } },
+      ),
+      findSpec(
+        'research-detail-related-entities',
+        'research-detail',
+        'research_entities',
+        {
+          _id: { $in: fixtures.detailRelatedEntityIds },
+          archived: { $ne: true },
+          studentVisibilityTier: { $in: ['student_ready'] },
+        },
+        { projection: { _id: 1 } },
       ),
     );
   }
@@ -547,7 +673,7 @@ export function buildPhase0HotPathQuerySpecs(
         'opportunity-detail-observations',
         'opportunity-detail',
         'observations',
-        { _id: { $in: opportunity.evidenceIds.slice(0, 100) } },
+        { _id: { $in: opportunity.evidenceIds.slice(0, 100) }, superseded: { $ne: true } },
         { sort: { observedAt: -1 }, limit: 100, projection: { _id: 1 } },
       ),
     );
@@ -558,7 +684,10 @@ export function buildPhase0HotPathQuerySpecs(
         'opportunity-detail-high-evidence-observations',
         'opportunity-detail',
         'observations',
-        { _id: { $in: fixtures.highEvidenceOpportunity.evidenceIds.slice(0, 100) } },
+        {
+          _id: { $in: fixtures.highEvidenceOpportunity.evidenceIds.slice(0, 100) },
+          superseded: { $ne: true },
+        },
         { sort: { observedAt: -1 }, limit: 100, projection: { _id: 1 } },
       ),
     );
@@ -627,7 +756,7 @@ export function buildPhase0HotPathQuerySpecs(
       accessReviewPipeline({ sort: 'updated' }),
     ),
     aggregateSpec(
-      'admin-access-review-reviewed-only',
+      'admin-access-review-has-unreviewed-false',
       'admin-access-review',
       'research_entities',
       accessReviewPipeline({ sort: 'unreviewed', hasUnreviewed: false }),

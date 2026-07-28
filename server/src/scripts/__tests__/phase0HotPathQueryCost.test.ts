@@ -2,7 +2,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import { writePhase0HotPathQueryCostReport } from '../phase0HotPathQueryCost';
+import {
+  assertHardenedQueryCostProfile,
+  writePhase0HotPathQueryCostReport,
+} from '../phase0HotPathQueryCost';
 import type { Phase0HotPathQueryCostReport } from '../phase0HotPathQueryCostCore';
 
 function fixtureReport(): Phase0HotPathQueryCostReport {
@@ -47,6 +50,43 @@ function fixtureReport(): Phase0HotPathQueryCostReport {
 }
 
 describe('Phase 0 hot-path query-cost artifact writer', () => {
+  it('revalidates the hardened external profile at the executable boundary', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-query-cost-profile-'));
+    const profilePath = path.join(directory, 'beta-inventory.env');
+    const mongoUrl = 'mongodb+srv://readonly:secret@cluster.mongodb.net/Beta';
+    fs.chmodSync(directory, 0o700);
+    fs.writeFileSync(profilePath, `MONGODBURL=${mongoUrl}\n`, { mode: 0o600 });
+    const original = {
+      active: process.env.YLABS_INVENTORY_PROFILE_ACTIVE,
+      name: process.env.YLABS_INVENTORY_PROFILE_NAME,
+      profilePath: process.env.YLABS_INVENTORY_PROFILE_PATH,
+      mongoUrl: process.env.MONGODBURL,
+    };
+    try {
+      process.env.YLABS_INVENTORY_PROFILE_ACTIVE = 'true';
+      process.env.YLABS_INVENTORY_PROFILE_NAME = 'beta-inventory';
+      process.env.YLABS_INVENTORY_PROFILE_PATH = profilePath;
+      process.env.MONGODBURL = mongoUrl;
+      expect(() => assertHardenedQueryCostProfile('beta')).not.toThrow();
+      process.env.MONGODBURL = `${mongoUrl}?retryWrites=true`;
+      expect(() => assertHardenedQueryCostProfile('beta')).toThrow(/exactly match/);
+      process.env.MONGODBURL = mongoUrl;
+      process.env.YLABS_INVENTORY_PROFILE_PATH = '';
+      expect(() => assertHardenedQueryCostProfile('beta')).toThrow(/hardened inventory profile/);
+    } finally {
+      for (const [key, value] of Object.entries({
+        YLABS_INVENTORY_PROFILE_ACTIVE: original.active,
+        YLABS_INVENTORY_PROFILE_NAME: original.name,
+        YLABS_INVENTORY_PROFILE_PATH: original.profilePath,
+        MONGODBURL: original.mongoUrl,
+      })) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      fs.rmSync(directory, { recursive: true });
+    }
+  });
+
   it('writes a new mode-0600 artifact and refuses overwrite', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-phase0-query-cost-'));
     const output = path.join(directory, 'query-cost.json');

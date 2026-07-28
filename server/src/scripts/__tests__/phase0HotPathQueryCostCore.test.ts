@@ -18,6 +18,12 @@ function completeFixtures(): Phase0HotPathFixtureState {
     typicalEntitySlug: 'private-slug',
     highFanoutEntityId: 'private-entity-2',
     detailMemberUserIds: ['private-user-1'],
+    detailUserIds: ['private-user-1'],
+    detailFacultyIds: ['private-faculty-1'],
+    detailImageUrls: ['https://private.invalid/image.jpg'],
+    detailAttributedScholarlyLinkIds: ['private-link-1'],
+    detailEntryPathwayIds: ['private-pathway-1'],
+    detailRelatedEntityIds: ['private-entity-3'],
     ordinaryOpportunity: {
       id: 'private-opportunity-1',
       entryPathwayId: 'private-pathway-1',
@@ -121,7 +127,7 @@ describe('Phase 0 hot-path query-cost core', () => {
           usedDisk: false,
           spills: 0,
         },
-        { stage: 'SORT', usedDisk: true, spills: 1 },
+        { $sort: { updatedAt: -1 }, usedDisk: true, spills: 1 },
       ],
     };
 

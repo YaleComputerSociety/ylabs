@@ -52,6 +52,8 @@ export function run(argv = process.argv.slice(2), parentEnvironment = process.en
     mongoUrl: validated.mongoUrl,
     sourceCommit: commit,
   });
+  childEnvironment.YLABS_INVENTORY_PROFILE_NAME = invocation.profileName;
+  childEnvironment.YLABS_INVENTORY_PROFILE_PATH = profilePath;
 
   console.log(
     `Query-cost profile: ${invocation.profileName}; Mongo target: ${validated.target}; source commit: ${commit}; max time: ${MAX_TIME_MS}ms`,
