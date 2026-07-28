@@ -3,8 +3,8 @@
  *
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
- *   npx tsx server/src/scrapers/cli.ts run --source openalex [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts cron --source openalex --release
+ *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
+ *   npx tsx server/src/scrapers/cli.ts cron --source nih-reporter --release
  *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
@@ -79,10 +79,6 @@ Run flags:
   --offset <n>         Skip first n ordered entities
   --only <keys>        Comma-separated source-specific keys/netids
   --since <date>       Restrict scrapers that support recency filters
-  --discover-openalex-authors
-                       For openalex, allow expensive name-only author discovery
-  --max-openalex-pages-per-author <n>
-                       For openalex, cap cursor pages per resolved author
   --manual-recipient-csv-dir <path>
                        For undergrad-fellowships-recipients, read <programKey>.csv files
   --ignore-work-planner
@@ -140,9 +136,7 @@ Environment guardrails:
 
   try {
     const connectedDbLabel = (): string =>
-      mongoose.connection.db?.databaseName ||
-      mongoose.connection.name ||
-      summarizeMongoUrl(url);
+      mongoose.connection.db?.databaseName || mongoose.connection.name || summarizeMongoUrl(url);
 
     if (command === 'run') {
       if (preflight.command !== 'run') throw new Error('Invalid run preflight state.');
@@ -264,7 +258,9 @@ Environment guardrails:
       let visibilityGate: unknown | undefined;
       if (!guard.options.dryRun && result.errors === 0) {
         const sourceName = (report as any).run?.sourceName;
-        console.log(`\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`);
+        console.log(
+          `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
+        );
         visibilityGate = await runStudentVisibilityGate({
           collection: 'all',
           mode: 'apply',

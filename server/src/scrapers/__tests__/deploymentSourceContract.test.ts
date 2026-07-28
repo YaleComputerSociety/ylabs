@@ -16,6 +16,7 @@ const serverPackage = JSON.parse(
 ) as {
   scripts?: Record<string, string>;
 };
+const scraperCli = fs.readFileSync(new URL('../cli.ts', import.meta.url), 'utf8');
 
 const RETIRED_BIBLIOGRAPHIC_SOURCES = [
   'arxiv',
@@ -82,5 +83,7 @@ describe('deployed scraper source contract', () => {
       expect(readinessSources.has(sourceName)).toBe(false);
     }
     expect(serverPackage.scripts?.['papers:authorship-audit']).toBeUndefined();
+    expect(scraperCli).not.toMatch(/--discover-openalex-authors|--max-openalex-pages-per-author/);
+    expect(scraperCli).not.toMatch(/--source openalex/);
   });
 });
