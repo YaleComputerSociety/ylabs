@@ -65,7 +65,6 @@
     "pathways:dedupe-exploratory": "tsx src/scripts/dedupeExploratoryContactPathways.ts",
     "access-signals:repair-duplicates": "tsx src/scripts/repairDuplicateAccessSignals.ts",
     "research:quality-search-review": "tsx src/scripts/researchQualitySearchReview.ts",
-    "papers:authorship-audit": "tsx src/scripts/paperAuthorshipAudit.ts",
     "papers:quality-audit": "tsx src/scripts/paperQualityAudit.ts",
     "profiles:data-quality-audit": "tsx src/scripts/profileDataQualityAudit.ts",
     "profiles:image-audit": "tsx src/scripts/profileImageQualityAudit.ts",

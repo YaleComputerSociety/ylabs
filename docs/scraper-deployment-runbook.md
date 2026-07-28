@@ -135,9 +135,13 @@ Then run accepted sources in rollout order:
 
 1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
 2. Profile metadata: `yale-directory`.
-3. Enrichment: `openalex`, `nih-reporter`, `nsf-award-search`, `arxiv` where relevant.
+3. Enrichment: `nih-reporter` and `nsf-award-search`.
 4. Access evidence: bounded `lab-microsite-undergrad-llm` source lists.
 5. Gated sources only after blockers clear: `undergrad-fellowships-recipients` and bounded `official-research-home-roster` allowlist entries.
+
+OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid Beta or Render schedule targets.
+Researcher profiles may expose reviewed Google Scholar and ORCID links for outbound navigation, but those links do not rebuild a local publication corpus.
+Retain the retired source files and stored scholarly collections only for an approved rollback while issue #207 remains open.
 
 For each Beta source:
 
@@ -501,9 +505,6 @@ No future deadline is synthesized.
 Successful execute runs write aggregate freshness state to `fellowship_refresh_runs`; alert when no successful run exists within 45 days or when every discovered row requires review.
 | `lab-microsite-undergrad-llm` | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
 | `student-decision-llm` | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
-| `openalex` | Production storage posture is accepted, compact-retention/report-save policy is recorded, and identifier-backed candidate rules are confirmed. | Weekly or monthly, bounded by identifiers/offsets; save reports before pruning observations. | Name-only discovery is enabled unintentionally, Atlas storage is insufficient, or materialization creates unsupported authorship links. |
-| `arxiv` | Accepted ORCID/input target list is current, backoff window has cleared, and metadata-only behavior does not create name-only Yale author links. | Weekly with `--since` or bounded accepted targets. | Rate limits/timeouts recur, ORCID input is stale, or the source attempts unsupported faculty links. |
-
 ### Compact Observation Retention
 
 Run retention as its own scheduled job only after inspecting a dry-run:
@@ -528,7 +529,6 @@ Use these controls before spending cloud or API money:
 
 - Run the initial backfill locally against Beta when practical.
 - Use `--limit`, `--only`, `--since`, and source-specific caps during the first pass.
-- Keep `--discover-openalex-authors` opt-in.
 - Keep LLM sources gated until the exact target list is accepted.
 - Use `--use-cache` for development reruns only.
 - Complete the WorkPlanner cost-control tasks in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md) before unattended recurring paid/broad jobs.

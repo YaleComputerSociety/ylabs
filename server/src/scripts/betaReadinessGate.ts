@@ -20,13 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const EXPECTED_SOURCE_NAMES = [
-  'arxiv',
-  'openalex',
-  'orcid',
-  'europe-pmc',
-  'pubmed',
-  'crossref',
+export const EXPECTED_SOURCE_NAMES = [
   'ysm-atoz-index',
   'yse-centers-index',
   'yale-directory',
@@ -38,24 +32,18 @@ const EXPECTED_SOURCE_NAMES = [
   'lab-microsite-undergrad-llm',
 ] as const;
 
-const BETA_ROLLOUT_ORDER = [
+export const BETA_ROLLOUT_ORDER = [
   'ysm-atoz-index',
   'yse-centers-index',
   'centers-institutes-index',
   'dept-faculty-roster',
   'yale-directory',
-  'openalex',
-  'orcid',
-  'europe-pmc',
-  'pubmed',
-  'crossref',
   'nih-reporter',
   'nsf-award-search',
-  'arxiv',
   'lab-microsite-undergrad-llm',
 ] as const;
 
-const GATED_SOURCES = ['undergrad-fellowships-recipients'] as const;
+export const GATED_SOURCES = ['undergrad-fellowships-recipients'] as const;
 
 const LEGACY_COLLECTIONS = [
   'research_groups',
@@ -171,7 +159,6 @@ export function buildBetaReadinessCommands() {
       'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
     pathwayRelevance:
       'SCRAPER_ENV=beta PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review',
-    paperAuthorshipAudit: 'SCRAPER_ENV=beta yarn --cwd server papers:authorship-audit',
     meiliRebuild:
       'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-pathways --clear --confirm-meili-rebuild && SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
     acceptedMeiliReadiness:
@@ -276,8 +263,7 @@ async function main(): Promise<void> {
   );
   const runtimeBackend = process.env.PATHWAY_SEARCH_BACKEND || 'mongo';
   const pathwayRuntimeReady =
-    runtimeBackend === 'mongo' ||
-    (runtimeBackend === 'meili' && options.acceptPathwayMeili);
+    runtimeBackend === 'mongo' || (runtimeBackend === 'meili' && options.acceptPathwayMeili);
 
   const gates = {
     betaBackup: {
@@ -318,41 +304,39 @@ async function main(): Promise<void> {
       'Accepted Google Scholar IDs are ready.',
       'Scholar accepted IDs remain manual-review metadata; no Scholar scraper blocks Beta.',
     ),
-    broaderArxivInput: summarizeFileGate(
-      acceptedInputs.arxiv,
-      'Broader arXiv ORCID targets are ready.',
-      'Broader Math/Physics/Stats arXiv coverage is deferred until an accepted ORCID list validates.',
-    ),
   };
 
   const blockingGateNames = Object.entries(gates)
     .filter(([, gate]) => gate.status === 'blocked')
     .map(([name]) => name);
 
-  const result = buildBetaReadinessGateOutput({
-    generatedAt: new Date().toISOString(),
-    mongoTarget,
-    acceptedInputRoot: options.root,
-    readyForUnblockedBetaSeed: blockingGateNames.length === 0,
-    blockingGateNames,
-    gates,
-    counts: {
-      users: users.length,
-      researchEntities: await ResearchEntity.countDocuments({ archived: { $ne: true } }),
-      entryPathways: await EntryPathway.countDocuments({ archived: { $ne: true } }),
-      postedOpportunities: await PostedOpportunity.countDocuments({ archived: { $ne: true } }),
+  const result = buildBetaReadinessGateOutput(
+    {
+      generatedAt: new Date().toISOString(),
+      mongoTarget,
+      acceptedInputRoot: options.root,
+      readyForUnblockedBetaSeed: blockingGateNames.length === 0,
+      blockingGateNames,
+      gates,
+      counts: {
+        users: users.length,
+        researchEntities: await ResearchEntity.countDocuments({ archived: { $ne: true } }),
+        entryPathways: await EntryPathway.countDocuments({ archived: { $ne: true } }),
+        postedOpportunities: await PostedOpportunity.countDocuments({ archived: { $ne: true } }),
+      },
+      rollout: {
+        unblockedOrder: [...BETA_ROLLOUT_ORDER],
+        gatedSources: [...GATED_SOURCES],
+        note: 'Run sources one at a time, inspect each report, and materialize only accepted runs.',
+      },
+      commands: buildBetaReadinessCommands(),
     },
-    rollout: {
-      unblockedOrder: [...BETA_ROLLOUT_ORDER],
-      gatedSources: [...GATED_SOURCES],
-      note: 'Run sources one at a time, inspect each report, and materialize only accepted runs.',
+    {
+      environment: guard.environment,
+      db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
+      options,
     },
-    commands: buildBetaReadinessCommands(),
-  }, {
-    environment: guard.environment,
-    db: mongoose.connection.db?.databaseName || mongoose.connection.name || guard.dbLabel,
-    options,
-  });
+  );
 
   console.log(JSON.stringify(result, null, 2));
   writeBetaReadinessGateOutput(result, options.output);
