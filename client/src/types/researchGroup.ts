@@ -186,6 +186,8 @@ export interface ResearchGroup {
   accessSummary?: AccessSummary;
   planningContext?: ResearchPlanningContext;
   studentDecisionExplanation?: StudentDecisionExplanation;
+  leadIdentityStatus?: 'verified' | 'under_review';
+  leadProfessorPublicKey?: string;
   studentVisibilityTier?: 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 }
 

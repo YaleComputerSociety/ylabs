@@ -439,6 +439,7 @@ describe('LabDetail page', () => {
             displayName: 'Jordan Researcher',
             title: 'Professor of Example Studies',
             primary_department: 'Example Studies',
+            image_url: 'https://example.test/jordan-researcher.jpg',
             profileUrls: {
               official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
             },
@@ -458,10 +459,20 @@ describe('LabDetail page', () => {
     expect(screen.queryAllByRole('link', { name: /Jordan Researcher/ })).toHaveLength(0);
     expect(screen.getAllByText('Jordan Researcher')).toHaveLength(1);
     expect(
+      within(principalInvestigatorSection as HTMLElement).getByRole('img', {
+        name: 'Jordan Researcher',
+      }),
+    ).toBeTruthy();
+    expect(
       within(principalInvestigatorSection as HTMLElement).queryByRole('link', {
         name: /Jordan Researcher/,
       }),
     ).toBeNull();
+    expect(
+      within(principalInvestigatorSection as HTMLElement).getAllByText(
+        'Principal Investigator',
+      ).length,
+    ).toBeGreaterThan(1);
     expect(screen.getByText('Professor of Example Studies')).toBeTruthy();
     expect(screen.getByText('Example Studies')).toBeTruthy();
     expect(screen.getByText('Recommended next step')).toBeTruthy();
@@ -516,11 +527,11 @@ describe('LabDetail page', () => {
     expect(within(section as HTMLElement).getByText('First Investigator')).toBeTruthy();
     expect(within(section as HTMLElement).getByText('Second Investigator')).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Principal Investigator' })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Lead professor' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Lead professor' })).toBeNull();
     expect(screen.getAllByText('First Investigator')).toHaveLength(1);
-    expect(screen.getAllByText('Second Investigator')).toHaveLength(2);
-    expect(screen.getAllByText('Professor of Example Studies')).toHaveLength(2);
-    expect(screen.getAllByText('Example Studies')).toHaveLength(2);
+    expect(screen.getAllByText('Second Investigator')).toHaveLength(1);
+    expect(screen.getAllByText('Professor of Example Studies')).toHaveLength(1);
+    expect(screen.getAllByText('Example Studies')).toHaveLength(1);
   });
 
   it('does not choose an arbitrary lead professor when no PI matches the official profile', async () => {
@@ -1145,16 +1156,12 @@ describe('LabDetail page', () => {
       ],
       relatedResearchEntities: [
         {
-          ...basePayload.group,
-          _id: 'entity-2',
           id: 'entity-2',
           slug: 'faculty-research-area-example-member',
           name: 'Example Member Research',
           kind: 'individual',
           entityType: 'FACULTY_RESEARCH_AREA',
           departments: ['Applied Physics'],
-          researchAreas: ['Quantum error correction'],
-          sourceUrls: [],
         },
       ],
     });
@@ -1187,16 +1194,12 @@ describe('LabDetail page', () => {
       ],
       affiliatedResearchEntities: [
         {
-          ...basePayload.group,
-          _id: 'entity-umbrella',
           id: 'entity-umbrella',
           slug: 'center-yale-cancer-center',
           name: 'Yale Cancer Center',
           kind: 'center',
           entityType: 'CENTER',
           departments: ['Neuroscience'],
-          researchAreas: [],
-          sourceUrls: [],
         },
       ],
     });
@@ -1222,16 +1225,12 @@ describe('LabDetail page', () => {
       },
       affiliatedResearchEntities: [
         {
-          ...basePayload.group,
-          _id: 'entity-umbrella',
           id: 'entity-umbrella',
           slug: '',
           name: 'Yale Quantum Institute',
           kind: 'institute',
           entityType: 'INSTITUTE',
           departments: ['Physics'],
-          researchAreas: [],
-          sourceUrls: [],
         },
       ],
     });

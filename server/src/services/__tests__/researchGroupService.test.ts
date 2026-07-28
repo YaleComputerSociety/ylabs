@@ -1327,6 +1327,7 @@ describe('getResearchGroupDetail', () => {
         _id: entityId,
         slug: 'disputed-pi-lab',
         name: 'Disputed PI Lab',
+        ...validPublicDescriptions,
         departments: [],
         researchAreas: [],
         sourceUrls: ['https://medicine.yale.edu/profile/correct-scholar/'],

@@ -69,7 +69,6 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
-import { principalInvestigatorLinkFromMemberUser } from '../utils/principalInvestigatorLinks';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
@@ -573,7 +572,6 @@ const DecisionSummary = ({
   fallbackSourceUrl,
   hasActivePostedOpportunity,
   principalInvestigator,
-  leadProfessor,
 }: {
   group: any;
   pathways: LabEntryPathway[];
@@ -582,7 +580,6 @@ const DecisionSummary = ({
   fallbackSourceUrl?: string;
   hasActivePostedOpportunity: boolean;
   principalInvestigator?: LabMember;
-  leadProfessor?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
   const usesProfileSynthesis = hasProfileSynthesisDescription(group) && !detailDescription(group);
@@ -743,14 +740,6 @@ const DecisionSummary = ({
               <SectionHeading>Principal Investigator</SectionHeading>
               <div>
                 <LabMembersList members={[principalInvestigator]} singleColumn />
-              </div>
-            </div>
-          )}
-          {leadProfessor && (
-            <div className="mt-4 border-t border-[var(--yr-line)] pt-4">
-              <SectionHeading>Lead professor</SectionHeading>
-              <div>
-                <LabMembersList members={[leadProfessor]} singleColumn />
               </div>
             </div>
           )}
@@ -1147,12 +1136,6 @@ const LabDetail = () => {
     !leadIdentityUnderReview && principalInvestigators.length === 1
       ? principalInvestigators[0]
       : undefined;
-  const officialProfileLeadProfessor =
-    !leadIdentityUnderReview && principalInvestigators.length > 1 && group.leadProfessorPublicKey
-      ? principalInvestigators.find(
-          (member) => member.user.publicKey === group.leadProfessorPublicKey,
-        )
-      : undefined;
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
   const membersById = new Map(members.map((member) => [memberId(member), member]));
@@ -1255,7 +1238,6 @@ const LabDetail = () => {
             fallbackSourceUrl={fallbackSourceUrl}
             hasActivePostedOpportunity={hasActivePostedOpportunity}
             principalInvestigator={singlePrincipalInvestigator}
-            leadProfessor={officialProfileLeadProfessor}
           />
 
           <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
