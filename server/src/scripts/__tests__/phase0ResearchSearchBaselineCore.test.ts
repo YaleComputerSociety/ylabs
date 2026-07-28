@@ -222,6 +222,7 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
         embedders: { default: { source: 'openAi', privateName } },
       },
       meiliStats: { numberOfDocuments: 200, isIndexing: false },
+      taskActivityDuringCapture: false,
       iterations: 3,
       topK: 10,
       cases: [
@@ -239,6 +240,7 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
       degradedSamples: 1,
       unstableCases: 1,
       indexing: false,
+      taskActivityDuringCapture: false,
       reviewRequired: true,
     });
     expect(report.meilisearch).toMatchObject({
@@ -248,6 +250,7 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
       embedderNames: ['default'],
       numberOfDocuments: 200,
       indexing: false,
+      taskActivityDuringCapture: false,
     });
     expect(JSON.stringify(report)).not.toContain(privateId);
     expect(JSON.stringify(report)).not.toContain(privateName);
@@ -282,16 +285,18 @@ describe('Phase 0 ResearchEntity search baseline core', () => {
       meiliTarget: { targetKind: 'local', indexName: 'researchentities' },
       meiliSettings: {},
       meiliStats: { numberOfDocuments: 11, isIndexing: true },
+      taskActivityDuringCapture: true,
       iterations: 2,
       topK: 10,
       cases: [summarized],
     });
 
-    expect(report.schemaVersion).toBe(2);
+    expect(report.schemaVersion).toBe(3);
     expect(report.summary).toEqual({
       degradedSamples: 0,
       unstableCases: 1,
       indexing: true,
+      taskActivityDuringCapture: true,
       reviewRequired: true,
     });
   });

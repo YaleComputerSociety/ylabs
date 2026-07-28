@@ -89,6 +89,7 @@ Provision a separate Atlas user with the `read` role scoped only to the named da
 The launcher requires a remote `mongodb+srv` Atlas URL with credentials and the exact `Beta` or `ProductionCopy` database name.
 It rejects local hosts, placeholders, insecure connection options, database mismatches, and the primary `Production` database before the inventory process can connect.
 Protected search launchers additionally require an HTTPS remote Meilisearch host, a non-placeholder API key, and the exact `beta` or dedicated ProductionCopy index prefix.
+The Meilisearch key must be read-only and allow search plus index, settings, stats, and task inspection for only the dedicated evidence index.
 
 Run Beta inventory from a clean Beta worktree:
 
@@ -301,8 +302,8 @@ yarn model-refactor:search-baseline:production-copy \
 Unset the directly injected Development credentials and salt after that run.
 Preserve the source commit, salt fingerprint, query suite, iteration count, top-K, and settings fingerprint with the comparison.
 Compare estimated totals and ordered result fingerprints per case.
-Treat any degraded sample, active indexing, unstable estimated total, unstable ordered result set, unexpected cross-environment count change, or ranking change as review-required evidence rather than silently accepting it.
-`--strict` writes the artifact and then exits nonzero when indexing, degradation, or within-run instability requires review.
+Treat any degraded sample, active indexing, index task activity during capture, unstable estimated total, unstable ordered result set, unexpected cross-environment count change, or ranking change as review-required evidence rather than silently accepting it.
+`--strict` writes the artifact and then exits nonzero when indexing, index task activity, degradation, or within-run instability requires review.
 Latency is diagnostic only unless the environments use comparable network and compute conditions.
 
 ## Private MongoDB hot-path query-cost evidence

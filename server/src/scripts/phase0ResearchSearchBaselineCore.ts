@@ -61,7 +61,7 @@ export interface Phase0ResearchSearchCaseResult {
 }
 
 export interface Phase0ResearchSearchBaselineReport {
-  schemaVersion: 2;
+  schemaVersion: 3;
   artifactType: 'phase0-research-search-baseline';
   generatedAt: string;
   sourceCommit: string;
@@ -78,6 +78,7 @@ export interface Phase0ResearchSearchBaselineReport {
     embedderNames: string[];
     numberOfDocuments: number;
     indexing: boolean;
+    taskActivityDuringCapture: boolean;
   };
   suite: {
     iterations: number;
@@ -88,6 +89,7 @@ export interface Phase0ResearchSearchBaselineReport {
     degradedSamples: number;
     unstableCases: number;
     indexing: boolean;
+    taskActivityDuringCapture: boolean;
     reviewRequired: boolean;
   };
   cases: Phase0ResearchSearchCaseResult[];
@@ -421,6 +423,7 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
   meiliTarget: { targetKind: 'local' | 'remote'; indexName: string };
   meiliSettings: Record<string, unknown>;
   meiliStats: Record<string, unknown>;
+  taskActivityDuringCapture: boolean;
   iterations: number;
   topK: number;
   cases: Phase0ResearchSearchCaseResult[];
@@ -442,7 +445,7 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
       : [];
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     artifactType: 'phase0-research-search-baseline',
     generatedAt: input.generatedAt,
     sourceCommit: input.sourceCommit,
@@ -458,6 +461,7 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
       embedderNames: embedders,
       numberOfDocuments: safeNonNegativeInteger(input.meiliStats.numberOfDocuments),
       indexing,
+      taskActivityDuringCapture: input.taskActivityDuringCapture,
     },
     suite: {
       iterations: input.iterations,
@@ -468,7 +472,9 @@ export function buildPhase0ResearchSearchBaselineReport(input: {
       degradedSamples,
       unstableCases,
       indexing,
-      reviewRequired: indexing || degradedSamples > 0 || unstableCases > 0,
+      taskActivityDuringCapture: input.taskActivityDuringCapture,
+      reviewRequired:
+        indexing || input.taskActivityDuringCapture || degradedSamples > 0 || unstableCases > 0,
     },
     cases: input.cases,
   };

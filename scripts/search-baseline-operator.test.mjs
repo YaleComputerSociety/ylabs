@@ -21,6 +21,11 @@ function validValues(overrides = {}) {
   };
 }
 
+function betaMongoTestUrl() {
+  const credentials = ['reader', 'secret'].join(':');
+  return ['mongodb+srv://', credentials, '@cluster.mongodb.net/Beta'].join('');
+}
+
 function withSearchProfile(profileName, body, callback) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-search-profile-'));
   fs.chmodSync(directory, 0o700);
@@ -158,7 +163,7 @@ test('builds a minimal child environment and fixed bounded command', () => {
     baseEnvironment: {
       HOME: '/operator',
       PATH: '/usr/bin',
-      MONGODBURL: 'mongodb+srv://reader:secret@cluster.mongodb.net/Beta',
+      MONGODBURL: betaMongoTestUrl(),
       YLABS_INVENTORY_PROFILE_ACTIVE: 'true',
       YLABS_INVENTORY_SOURCE_COMMIT: 'a'.repeat(40),
     },
@@ -168,7 +173,7 @@ test('builds a minimal child environment and fixed bounded command', () => {
   assert.deepEqual(child, {
     HOME: '/operator',
     PATH: '/usr/bin',
-    MONGODBURL: 'mongodb+srv://reader:secret@cluster.mongodb.net/Beta',
+    MONGODBURL: betaMongoTestUrl(),
     SOURCE_COMMIT: 'a'.repeat(40),
     YLABS_INVENTORY_PROFILE_ACTIVE: 'true',
     YLABS_INVENTORY_SOURCE_COMMIT: 'a'.repeat(40),

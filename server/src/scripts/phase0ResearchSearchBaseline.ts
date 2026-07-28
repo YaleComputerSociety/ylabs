@@ -10,7 +10,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
-import { getMeiliIndex } from '../utils/meiliClient';
+import { getMeiliClient, getMeiliIndex } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -54,6 +54,76 @@ const protectedSearchProfileSpecs = {
 } as const;
 const protectedProfilePlaceholderPattern =
   /[<>]|\b(?:change[-_ ]?me|placeholder|replace[-_ ]?me|todo)\b|your[-_ ]|example\.(?:com|net|org)|example\.mongodb\.net/i;
+const indexMutationTaskTypes = [
+  'documentAdditionOrUpdate',
+  'documentEdition',
+  'documentDeletion',
+  'settingsUpdate',
+  'indexCreation',
+  'indexDeletion',
+  'indexUpdate',
+  'indexSwap',
+] as const;
+
+interface SearchBaselineTaskBoundary {
+  latestTaskUid: number | null;
+  activeTaskCount: number;
+  watermarkChangedDuringBoundary: boolean;
+}
+
+interface SearchBaselineTaskClient {
+  tasks: {
+    getTasks: (query: Record<string, unknown>) => Promise<{
+      results: Array<{ uid: number }>;
+      total: number;
+    }>;
+  };
+}
+
+export async function captureSearchBaselineTaskBoundary(
+  client: SearchBaselineTaskClient,
+  indexName: string,
+): Promise<SearchBaselineTaskBoundary> {
+  const baseQuery = {
+    indexUids: [indexName],
+    types: [...indexMutationTaskTypes],
+  };
+  const latestBeforeActiveCheck = await client.tasks.getTasks({ ...baseQuery, limit: 1 });
+  const active = await client.tasks.getTasks({
+    ...baseQuery,
+    statuses: ['enqueued', 'processing'],
+    limit: 1,
+  });
+  const latestAfterActiveCheck = await client.tasks.getTasks({ ...baseQuery, limit: 1 });
+  const latestBeforeTaskUid = latestBeforeActiveCheck.results[0]?.uid ?? null;
+  const latestTaskUid = latestAfterActiveCheck.results[0]?.uid ?? null;
+  if (
+    (latestBeforeTaskUid !== null && !Number.isSafeInteger(latestBeforeTaskUid)) ||
+    (latestTaskUid !== null && !Number.isSafeInteger(latestTaskUid)) ||
+    !Number.isSafeInteger(active.total) ||
+    active.total < 0
+  ) {
+    throw new Error('Meilisearch returned an invalid index task boundary.');
+  }
+  return {
+    latestTaskUid,
+    activeTaskCount: active.total,
+    watermarkChangedDuringBoundary: latestBeforeTaskUid !== latestTaskUid,
+  };
+}
+
+export function searchBaselineTaskActivityDetected(
+  initial: SearchBaselineTaskBoundary,
+  final: SearchBaselineTaskBoundary,
+): boolean {
+  return (
+    initial.activeTaskCount > 0 ||
+    final.activeTaskCount > 0 ||
+    initial.watermarkChangedDuringBoundary ||
+    final.watermarkChangedDuringBoundary ||
+    initial.latestTaskUid !== final.latestTaskUid
+  );
+}
 
 export function assertHardenedSearchBaselineProfile(environment: string): void {
   if (environment === 'development') return;
@@ -357,7 +427,12 @@ async function main(): Promise<void> {
     scriptName: 'model-refactor:search-baseline',
   });
 
+  const client = await getMeiliClient();
   const index = await getMeiliIndex('researchentities');
+  const initialTaskBoundary = await captureSearchBaselineTaskBoundary(
+    client,
+    meiliTarget.indexName,
+  );
   const [meiliSettings, initialMeiliStats] = await Promise.all([
     index.getSettings(),
     index.getStats(),
@@ -389,6 +464,11 @@ async function main(): Promise<void> {
     cases.push(summarizePhase0ResearchSearchCase(searchCase, samples));
   }
   const finalMeiliStats = await index.getStats();
+  const finalTaskBoundary = await captureSearchBaselineTaskBoundary(client, meiliTarget.indexName);
+  const taskActivityDuringCapture = searchBaselineTaskActivityDetected(
+    initialTaskBoundary,
+    finalTaskBoundary,
+  );
   const meiliStats = {
     ...finalMeiliStats,
     isIndexing: initialMeiliStats.isIndexing === true || finalMeiliStats.isIndexing === true,
@@ -407,6 +487,7 @@ async function main(): Promise<void> {
     meiliTarget,
     meiliSettings,
     meiliStats,
+    taskActivityDuringCapture,
     iterations: options.iterations,
     topK: options.topK,
     cases,
