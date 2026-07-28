@@ -224,6 +224,6 @@ For `/research/:slug`, separately retain per-collection returned counts so bound
 
 Source inspection is complete for these five surfaces.
 The repeatable private ResearchEntity search-baseline tooling is implemented, but reviewed Development, Beta, and ProductionCopy artifacts are still required.
-Measured MongoDB query cost and deployed index use remain open.
+The repeatable private MongoDB query-cost tooling is implemented, but reviewed Development, Beta, and ProductionCopy artifacts are still required.
 The highest-priority live checks are the full-scan `/research` fallbacks, missing scholarly-link and attribution indexes, account planning's concurrent mutation-capable reads, fellowship all-record matching, and admin access-review's pre-pagination lookups and unbounded detail.
 No later migration phase should remove compatibility fields or redirect these readers until the live evidence is reviewed and an owner accepts the resulting index and cutover work.

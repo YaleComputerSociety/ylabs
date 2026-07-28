@@ -70,6 +70,7 @@ Models are Mongoose schemas with indexes.
 | `yarn model-refactor:inventory:beta`                             | Run aggregate-only Beta inventory through the external read-only profile.                    |
 | `yarn model-refactor:inventory:production-copy`                  | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
 | `yarn model-refactor:inventory:validate-evidence`                | Validate a private inventory against its versioned recovery manifest.                        |
+| `yarn --cwd server model-refactor:query-cost`                    | Run the bounded Phase 0 MongoDB hot-path audit described in the Phase 0 runbook.              |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
 
