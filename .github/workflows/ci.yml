@@ -50,7 +50,6 @@ jobs:
       - name: Run client tests
         run: yarn --cwd client test:ci
 
-
       - name: Run deploy security preflight
         run: yarn security:preflight
 
