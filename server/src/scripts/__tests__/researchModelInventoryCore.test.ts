@@ -110,6 +110,122 @@ describe('INVENTORY_COLLECTIONS', () => {
       target: 'ResearchEntityRelationship (retained)',
     });
   });
+
+  it('classifies Phase 1 storage contracts under their owning cutover phases', () => {
+    expect(
+      INVENTORY_COLLECTIONS.filter((spec) =>
+        ['research_plans', 'source_documents', 'evidence_claims', 'review_decisions'].includes(
+          spec.collection,
+        ),
+      ).map(({ collection, model, group, phase }) => ({
+        collection,
+        model,
+        group,
+        phase,
+      })),
+    ).toEqual([
+      {
+        collection: 'evidence_claims',
+        model: 'EvidenceClaim',
+        group: 'evidence',
+        phase: 5,
+      },
+      {
+        collection: 'source_documents',
+        model: 'SourceDocument',
+        group: 'evidence',
+        phase: 5,
+      },
+      {
+        collection: 'review_decisions',
+        model: 'ReviewDecision',
+        group: 'evidence',
+        phase: 5,
+      },
+      {
+        collection: 'research_plans',
+        model: 'ResearchPlan',
+        group: 'private',
+        phase: 4,
+      },
+    ]);
+  });
+
+  it('uses the durable relationship and engagement collection names without aliases', () => {
+    const names = INVENTORY_COLLECTIONS.map((spec) => spec.collection);
+    expect(names).toContain('research_entity_relationships');
+    expect(names).toContain('student_engagement_events');
+    expect(names).not.toContain('entity_relationships');
+    expect(names).not.toContain('engagement_events');
+  });
+
+  it('classifies every collection found by the Development Phase 0 inventory', () => {
+    const expected = [
+      {
+        collection: 'analytics_events',
+        model: 'AnalyticsEvent',
+        group: 'private',
+        phase: null,
+      },
+      {
+        collection: 'listingclaimrequests',
+        model: 'ListingClaimRequest',
+        group: 'legacy-residue',
+        phase: 4,
+      },
+      {
+        collection: 'paper_entity_links',
+        model: 'PaperEntityLink (retired)',
+        group: 'scholarly-retire',
+        phase: 3,
+        expectPresent: false,
+      },
+      {
+        collection: 'research_entity_stats',
+        model: 'ResearchEntityStats (retired)',
+        group: 'legacy-residue',
+        phase: 0,
+        expectPresent: false,
+      },
+      {
+        collection: 'researchareas',
+        model: 'ResearchArea (legacy physical name)',
+        group: 'legacy-residue',
+        phase: 0,
+        expectPresent: false,
+      },
+      {
+        collection: 'scrape_job_locks',
+        model: 'ScrapeJobLock',
+        group: 'operational',
+        phase: null,
+      },
+      {
+        collection: 'scrape_runs',
+        model: 'ScrapeRun',
+        group: 'evidence',
+        phase: 5,
+      },
+      {
+        collection: 'scrape_snapshots',
+        model: 'ScrapeSnapshot',
+        group: 'evidence',
+        phase: 5,
+      },
+      {
+        collection: 'visibility_release_queue_items',
+        model: 'VisibilityReleaseQueueItem',
+        group: 'operational',
+        phase: 5,
+      },
+    ];
+
+    for (const expectedSpec of expected) {
+      expect(
+        INVENTORY_COLLECTIONS.find((spec) => spec.collection === expectedSpec.collection),
+      ).toMatchObject(expectedSpec);
+    }
+  });
 });
 
 describe('inventory coverage', () => {
@@ -239,6 +355,21 @@ describe('findUnclassifiedCollections', () => {
 
   it('returns empty when all live collections are classified', () => {
     const live = INVENTORY_COLLECTIONS.map((spec) => spec.collection);
+    expect(findUnclassifiedCollections(live)).toEqual([]);
+  });
+
+  it('does not report the Development inventory collections as unclassified', () => {
+    const live = [
+      'analytics_events',
+      'listingclaimrequests',
+      'paper_entity_links',
+      'research_entity_stats',
+      'researchareas',
+      'scrape_job_locks',
+      'scrape_runs',
+      'scrape_snapshots',
+      'visibility_release_queue_items',
+    ];
     expect(findUnclassifiedCollections(live)).toEqual([]);
   });
 });

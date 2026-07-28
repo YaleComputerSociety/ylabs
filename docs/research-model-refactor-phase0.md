@@ -72,6 +72,18 @@ The `present` flag distinguishes a missing collection from an empty one, while `
 Each `schemaVersions` bucket records `bsonType`, `value` when present, and `count`.
 The `missing` BSON type distinguishes documents without `schemaVersion` from documents whose value is explicitly `null`, and numeric and string values remain separate.
 
+#### Collection classification
+
+The collection spec in `researchModelInventoryCore.ts` is the authoritative map of each collection to its current runtime owner, classification group, owning cutover phase, and target or retirement posture.
+It includes every collection surfaced by the Development census and the empty canonical storage contracts introduced in Phase 1.
+Counts remain environment-specific evidence and do not belong in source or this runbook.
+
+Interpret operational queues and leases as environment-local state rather than canonical domain data.
+Treat regenerable caches and independently retained analytics according to their recorded posture rather than as canonical research evidence.
+Interpret expected-gone collections as residue even when an environment still contains documents.
+Schema introduction does not make an empty canonical collection a completed migration.
+The inventory preserves the durable `research_entity_relationships` and `student_engagement_events` names instead of inventing parallel storage.
+
 ### `retirementFields`
 
 Prevalence of each legacy field slated for removal, for example `research_entities.acceptingUndergrads` or `users.publications`.
