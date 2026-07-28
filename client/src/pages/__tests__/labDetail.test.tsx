@@ -469,9 +469,8 @@ describe('LabDetail page', () => {
       }),
     ).toBeNull();
     expect(
-      within(principalInvestigatorSection as HTMLElement).getAllByText(
-        'Principal Investigator',
-      ).length,
+      within(principalInvestigatorSection as HTMLElement).getAllByText('Principal Investigator')
+        .length,
     ).toBeGreaterThan(1);
     expect(screen.getByText('Professor of Example Studies')).toBeTruthy();
     expect(screen.getByText('Example Studies')).toBeTruthy();
@@ -479,8 +478,7 @@ describe('LabDetail page', () => {
   });
 
   it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
-    const secondInvestigatorProfileUrl =
-      'https://medicine.yale.edu/profile/second-investigator/';
+    const secondInvestigatorProfileUrl = 'https://medicine.yale.edu/profile/second-investigator/';
     renderLabDetail({
       ...basePayload,
       group: {

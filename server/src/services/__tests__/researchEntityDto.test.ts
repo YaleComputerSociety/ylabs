@@ -193,16 +193,19 @@ describe('researchEntityDto', () => {
       enumerable: true,
     });
 
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-dto-bounds',
-      slug: 'dto-bounds-lab',
-      name: 'DTO Bounds Lab',
-      description: 'x'.repeat(6000),
-      researchAreas,
-      sourceUrls,
-      studentDecisionExplanation: { reasons },
-      qualitySummary,
-    }, { includeOperatorFields: true });
+    const dto = toPublicResearchEntityDto(
+      {
+        id: 'entity-dto-bounds',
+        slug: 'dto-bounds-lab',
+        name: 'DTO Bounds Lab',
+        description: 'x'.repeat(6000),
+        researchAreas,
+        sourceUrls,
+        studentDecisionExplanation: { reasons },
+        qualitySummary,
+      },
+      { includeOperatorFields: true },
+    );
 
     expect(dto.description).toHaveLength(5000);
     expect(dto.researchAreas).toHaveLength(100);
