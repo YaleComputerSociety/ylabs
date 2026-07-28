@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-07-25
+Last updated: 2026-07-28
 
 This is the single task source of truth for Yale Research.
 Keep it operational and compact.
@@ -27,21 +27,31 @@ Keep runtime centered on canonical `ResearchEntity` infrastructure and avoid add
 
 Active themes:
 
-- Make public research discovery reliable when Meilisearch or hybrid search is degraded.
+- Exercise the completed MongoDB research-search fallback in launch-like outage checks and retain private operational evidence.
 - Decide and implement the logged-out read-only discovery posture for `/research`, `/research/:slug`, and `/about`.
-- Validate launch observability across the client error boundary, server/client error tracking, and claim-specific research journey analytics.
+- Validate configured-environment delivery across the completed client error boundary, server/client Sentry integrations, and claim-specific research journey analytics.
 - Improve evidence trust: dedupe repeated evidence, distinguish synthesized fallback from observed access evidence, and show observed/freshness dates.
 - Keep the operator gate flow compact and artifact-driven without committing transient reports.
 - Reduce maintenance surface by deleting obsolete docs, screenshots, proposals, dead routes, dead indexes, and unused dependencies.
+
+## Completed Repository Foundations
+
+These foundations are present in current Beta source and focused tests.
+They do not claim configured private environments, delivered telemetry, outage exercises, or other operational acceptance.
+
+| Priority | Repository foundation                                                                                                                                   | Source and test evidence                                                                                                                                                                                                                         | Remaining operational evidence                                                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Research discovery falls back from failed Meilisearch requests to a visibility-filtered, paginated MongoDB search and reports the response as degraded. | `server/src/services/researchGroupService.ts` preserves bounded filters, facets, pagination, and visibility in the MongoDB path; focused service tests exercise total failure, fallback matching, and bounded hybrid/sort degradation.           | Exercise a controlled launch-like outage against a configured environment and retain the private smoke and monitoring result.                                                    |
+| P0       | The React root has a recovery error boundary, and client/server Sentry adapters support environment and release context.                                | `client/src/index.tsx`, `client/src/components/ErrorBoundary.tsx`, both error-tracking utilities, the server startup/global error paths, and their focused tests cover initialization, capture, recovery UI, request context, and startup flush. | Configure the deployment-owned Sentry settings and privately verify one client render error and one server route error arrive with the expected environment and release context. |
 
 ## Active Priority Queue
 
 | Priority | Work                                                                             | Done When                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P0       | Remove repo-root scratch/PII/secrets exposure and strengthen the secret scanner. | Scratch credential/PII files are gone, ignored by pattern, any exposed keys are rotated, and the scanner catches representative high-entropy/Yalies-style tokens.                                                                                                                                                                                                                                                |
-| P0       | Make `/research` degrade instead of failing closed on Meilisearch/hybrid errors. | Killing or misconfiguring Meilisearch locally leaves browse/search usable through a degraded path or shows an honest failure state, not "no matches."                                                                                                                                                                                                                                                            |
+| P0       | Validate degraded research discovery operationally.                              | A controlled launch-like Meilisearch outage confirms that visible browse/search results, filters, facets, and pagination remain usable through the completed MongoDB fallback, and private monitoring evidence distinguishes degraded service from an honest empty result.                                                                                                                                       |
 | P0       | Decide logged-out discovery.                                                     | Logged-out users can read public research/about pages, or `docs/decisions.md` records why Yale-only access is intentional for the current phase.                                                                                                                                                                                                                                                                 |
-| P0       | Add error tracking and a top-level React error boundary.                         | A client render error and a server route error are captured with release/environment context, and the SPA shows a recovery UI instead of a white screen.                                                                                                                                                                                                                                                         |
+| P0       | Validate launch observability operationally.                                     | In configured private environments, one client render error and one server route error reach Sentry with expected release/environment context, the completed recovery UI is exercised, and claim-specific research journey events are confirmed without publishing payloads or environment evidence.                                                                                                             |
 | P1       | Fix evidence trust UI.                                                           | Duplicate evidence chips are removed, synthesized access fallback is visually distinct from source-observed evidence, and evidence dates/freshness are visible.                                                                                                                                                                                                                                                  |
 | P1       | Add a faculty/student correction loop.                                           | Detail pages offer a claim/correction/report path that feeds an admin review queue with authenticated reporter context.                                                                                                                                                                                                                                                                                          |
 | P1       | Validate and enable trustworthy current research-home rosters.                   | The disabled-by-default official roster source passes its structural audit and attributable sampled-precision review, then only reviewed allowlist entries are enabled.                                                                                                                                                                                                                                          |
@@ -60,6 +70,8 @@ Active themes:
 - Production promotion requires a human-reviewed Atlas restore point, guarded copy dry-run, rollback posture, and production smoke result.
 - Scraper and repair writes must be evidence-first, dry-run-first, and fail closed on contact data.
 - Faculty-authored opportunities require verified ownership, private drafts, revision-guarded writes, admin moderation, and approved-current publication before search or student-facing enrichment.
+- Bibliographic ingestion and publication-derived ranking are retired.
+  Official Yale, Google Scholar, and ORCID profiles are outbound links under the accepted research-model boundary, and later cleanup remains gated by the migration execution status.
 - Do not run production writes, production copies, destructive migrations, retention apply jobs, or data deletion without explicit user direction.
 
 ## Verification Commands
