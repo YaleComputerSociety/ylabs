@@ -11,6 +11,7 @@ import {
   resolveSecureInventoryProfile,
   validateInventoryProfileValues,
 } from './model-inventory-operator-core.mjs';
+import { sourceCommit } from './run-model-inventory-profile.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
@@ -289,4 +290,29 @@ test('inventory output must be a new non-symlinked JSON path under the system te
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('binds inventory evidence only to a clean source commit', () => {
+  const cleanCalls = [];
+  const cleanCommit = sourceCommit((_command, args) => {
+    cleanCalls.push(args);
+    return args[0] === 'status'
+      ? { status: 0, stdout: '' }
+      : { status: 0, stdout: `${'a'.repeat(40)}\n` };
+  });
+  assert.equal(cleanCommit, 'a'.repeat(40));
+  assert.deepEqual(cleanCalls, [
+    ['status', '--porcelain=v1', '--untracked-files=all'],
+    ['rev-parse', 'HEAD'],
+  ]);
+
+  assert.throws(
+    () =>
+      sourceCommit((_command, args) =>
+        args[0] === 'status'
+          ? { status: 0, stdout: ' M scripts/run-model-inventory-profile.mjs\n' }
+          : { status: 0, stdout: `${'a'.repeat(40)}\n` },
+      ),
+    /clean worktree/,
+  );
 });

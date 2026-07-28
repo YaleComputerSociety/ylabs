@@ -98,6 +98,7 @@ yarn model-refactor:inventory:production-copy \
 ```
 
 Every output path must be a new absolute `.json` file below the system temp directory.
+Protected profile runs require that output and print only credential-free completion metadata to stdout, never the report body or private counts.
 Move no real profile into a worktree.
 Named environment files are ignored as a final defense, while placeholder-only examples remain tracked.
 
@@ -327,8 +328,8 @@ Start from the tracked [`Beta example`](./model-inventory-recovery-manifest.beta
 It binds the exact inventory bytes to the source commit, credential-free target, capture window, Atlas recovery artifact, retention expiry, rollback owner and procedure, protected object versions, and independent review.
 ProductionCopy evidence additionally binds the completed `Production` to `ProductionCopy` restore and requires the immutable-restored-copy capture posture.
 
-The schema cannot prove that an Atlas user has only the declared role or that an external object store is immutable.
-Two operators must verify those provider-side controls.
+The schema cannot itself prove that an Atlas user has only the declared role or that an external object store is immutable.
+The manifest therefore requires separate pre-capture attestations from two different operators for the Atlas current-user read-only role and protected object-version immutability, including each verifier, verification time, and protected evidence reference.
 The recovery artifact must be created and verified before inventory capture starts.
 The rollback drill must be verified before acceptance, and the accepting reviewer must be different from the recorded recovery and rollback owners.
 The validator fails closed on missing fields, placeholders, target mismatches, invalid time ordering, nonzero sample limits, identifier samples, digest or byte drift, public or local artifact references, and absent ProductionCopy restore verification.

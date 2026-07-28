@@ -437,8 +437,25 @@ export function assertResearchModelInventoryOutputAvailable(target: string): str
   return safeOutput;
 }
 
+export function serializeResearchModelInventoryCompletion(output: {
+  environment: string;
+  db: string;
+  sourceCommit?: string;
+}): string {
+  return JSON.stringify({
+    status: 'complete',
+    environment: output.environment,
+    databaseName: output.db,
+    sourceCommit: output.sourceCommit,
+  });
+}
+
 async function main(): Promise<void> {
   const args = parseResearchModelInventoryArgs(process.argv.slice(2));
+  const protectedProfileActive = process.env.YLABS_INVENTORY_PROFILE_ACTIVE === 'true';
+  if (protectedProfileActive && !args.output) {
+    throw new Error('Protected inventory profiles require a private --output artifact.');
+  }
   // Validate the output path before touching the database so a bad flag fails fast.
   if (args.output) {
     assertResearchModelInventoryOutputAvailable(args.output);
@@ -452,8 +469,12 @@ async function main(): Promise<void> {
   const output = await runResearchModelInventory(args, mongoUrl, undefined, {
     sourceCommit: process.env.YLABS_INVENTORY_SOURCE_COMMIT,
   });
-  console.log(JSON.stringify(output, null, 2));
   writeResearchModelInventoryOutput(output, args.output);
+  if (protectedProfileActive) {
+    console.log(serializeResearchModelInventoryCompletion(output));
+  } else {
+    console.log(JSON.stringify(output, null, 2));
+  }
 }
 
 const isDirectRun = process.argv[1]

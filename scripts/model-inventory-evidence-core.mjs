@@ -121,6 +121,7 @@ export function validateModelInventoryRecoveryManifest(manifestValue, inventoryB
       'databaseName',
       'credentialFreeTarget',
       'sourceCommit',
+      'providerControls',
       'captureWindow',
       'recoveryArtifact',
       'inventory',
@@ -161,6 +162,52 @@ export function validateModelInventoryRecoveryManifest(manifestValue, inventoryB
     pattern: COMMIT_PATTERN,
   });
 
+  const providerControls = objectValue(manifest.providerControls, 'manifest.providerControls');
+  assertExactKeys(
+    providerControls,
+    ['atlasReadOnlyRole', 'immutableStorage'],
+    [],
+    'manifest.providerControls',
+  );
+  const validateAttestation = (value, label, expectedControl) => {
+    const attestation = objectValue(value, label);
+    assertExactKeys(
+      attestation,
+      ['control', 'verifiedBy', 'verifiedAt', 'evidenceReference'],
+      [],
+      label,
+    );
+    if (stringValue(attestation.control, `${label}.control`) !== expectedControl) {
+      throw new Error(`${label}.control must be ${expectedControl}.`);
+    }
+    return {
+      verifiedBy: stringValue(attestation.verifiedBy, `${label}.verifiedBy`, {
+        minimumLength: 3,
+      }),
+      verifiedAt: timestampValue(attestation.verifiedAt, `${label}.verifiedAt`),
+      evidenceReference: privateReference(
+        attestation.evidenceReference,
+        `${label}.evidenceReference`,
+      ),
+    };
+  };
+  const atlasRoleAttestation = validateAttestation(
+    providerControls.atlasReadOnlyRole,
+    'manifest.providerControls.atlasReadOnlyRole',
+    'atlas-current-user-read-only-role',
+  );
+  const immutableStorageAttestation = validateAttestation(
+    providerControls.immutableStorage,
+    'manifest.providerControls.immutableStorage',
+    'protected-object-version-immutability',
+  );
+  if (
+    atlasRoleAttestation.verifiedBy.toLowerCase() ===
+    immutableStorageAttestation.verifiedBy.toLowerCase()
+  ) {
+    throw new Error('Provider controls must be verified by two different operators.');
+  }
+
   const captureWindow = objectValue(manifest.captureWindow, 'manifest.captureWindow');
   assertExactKeys(
     captureWindow,
@@ -178,6 +225,12 @@ export function validateModelInventoryRecoveryManifest(manifestValue, inventoryB
   );
   if (captureCompleted.milliseconds < captureStarted.milliseconds) {
     throw new Error('manifest.captureWindow.completedAt must not precede startedAt.');
+  }
+  if (
+    atlasRoleAttestation.verifiedAt.milliseconds > captureStarted.milliseconds ||
+    immutableStorageAttestation.verifiedAt.milliseconds > captureStarted.milliseconds
+  ) {
+    throw new Error('Provider controls must be verified before the capture window starts.');
   }
   const writePosture = stringValue(
     captureWindow.writePosture,

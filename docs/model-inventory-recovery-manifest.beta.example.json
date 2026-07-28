@@ -5,6 +5,20 @@
   "databaseName": "Beta",
   "credentialFreeTarget": "<atlas-host>/Beta",
   "sourceCommit": "<40-character-git-commit>",
+  "providerControls": {
+    "atlasReadOnlyRole": {
+      "control": "atlas-current-user-read-only-role",
+      "verifiedBy": "<atlas-role-reviewer>",
+      "verifiedAt": "<ISO-8601-role-verification>",
+      "evidenceReference": "private-store://<protected-atlas-role-evidence>"
+    },
+    "immutableStorage": {
+      "control": "protected-object-version-immutability",
+      "verifiedBy": "<storage-controls-reviewer>",
+      "verifiedAt": "<ISO-8601-immutability-verification>",
+      "evidenceReference": "private-store://<protected-immutability-evidence>"
+    }
+  },
   "captureWindow": {
     "startedAt": "<ISO-8601-start>",
     "completedAt": "<ISO-8601-completion>",

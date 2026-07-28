@@ -11,6 +11,7 @@
     "databaseName",
     "credentialFreeTarget",
     "sourceCommit",
+    "providerControls",
     "captureWindow",
     "recoveryArtifact",
     "inventory",
@@ -24,6 +25,19 @@
     "databaseName": { "enum": ["Beta", "ProductionCopy"] },
     "credentialFreeTarget": { "type": "string", "minLength": 3 },
     "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "providerControls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atlasReadOnlyRole", "immutableStorage"],
+      "properties": {
+        "atlasReadOnlyRole": {
+          "$ref": "#/$defs/atlasReadOnlyRoleAttestation"
+        },
+        "immutableStorage": {
+          "$ref": "#/$defs/immutableStorageAttestation"
+        }
+      }
+    },
     "captureWindow": {
       "type": "object",
       "additionalProperties": false,
@@ -112,6 +126,37 @@
     }
   },
   "$defs": {
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control", "verifiedBy", "verifiedAt", "evidenceReference"],
+      "properties": {
+        "control": { "type": "string" },
+        "verifiedBy": { "type": "string", "minLength": 3 },
+        "verifiedAt": { "type": "string", "format": "date-time" },
+        "evidenceReference": { "$ref": "#/$defs/privateReference" }
+      }
+    },
+    "atlasReadOnlyRoleAttestation": {
+      "allOf": [
+        { "$ref": "#/$defs/attestation" },
+        {
+          "properties": {
+            "control": { "const": "atlas-current-user-read-only-role" }
+          }
+        }
+      ]
+    },
+    "immutableStorageAttestation": {
+      "allOf": [
+        { "$ref": "#/$defs/attestation" },
+        {
+          "properties": {
+            "control": { "const": "protected-object-version-immutability" }
+          }
+        }
+      ]
+    },
     "privateReference": {
       "type": "string",
       "minLength": 8,

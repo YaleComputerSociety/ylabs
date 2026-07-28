@@ -17,8 +17,20 @@ import {
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function sourceCommit() {
-  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+export function sourceCommit(runCommand = spawnSync) {
+  const status = runCommand('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (status.status !== 0) {
+    throw new Error('Unable to verify that the inventory source worktree is clean.');
+  }
+  if (status.stdout?.trim()) {
+    throw new Error('Inventory evidence requires a clean worktree with no uncommitted files.');
+  }
+
+  const result = runCommand('git', ['rev-parse', 'HEAD'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],

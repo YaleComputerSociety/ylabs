@@ -42,6 +42,20 @@ function manifestFor(inventoryBuffer, environment = 'beta') {
     databaseName,
     credentialFreeTarget: `cluster.mongodb.net/${databaseName}`,
     sourceCommit: SOURCE_COMMIT,
+    providerControls: {
+      atlasReadOnlyRole: {
+        control: 'atlas-current-user-read-only-role',
+        verifiedBy: 'atlas access reviewer',
+        verifiedAt: '2026-07-28T01:40:00.000Z',
+        evidenceReference: 'private-store://phase0/atlas-role-review',
+      },
+      immutableStorage: {
+        control: 'protected-object-version-immutability',
+        verifiedBy: 'storage controls reviewer',
+        verifiedAt: '2026-07-28T01:50:00.000Z',
+        evidenceReference: 'private-store://phase0/storage-control-review',
+      },
+    },
     captureWindow: {
       startedAt: '2026-07-28T02:00:00.000Z',
       completedAt: '2026-07-28T02:10:00.000Z',
@@ -180,6 +194,31 @@ test('binds recovery and rollback verification to the capture and review timelin
   assert.throws(
     () => validateModelInventoryRecoveryManifest(selfReviewed, inventoryBuffer),
     /someone other than the recovery and rollback owners/,
+  );
+});
+
+test('requires distinct pre-capture provider-control attestations', () => {
+  const inventoryBuffer = Buffer.from(`${JSON.stringify(inventoryReport(), null, 2)}\n`);
+  const missing = manifestFor(inventoryBuffer);
+  delete missing.providerControls.atlasReadOnlyRole;
+  assert.throws(
+    () => validateModelInventoryRecoveryManifest(missing, inventoryBuffer),
+    /atlasReadOnlyRole/,
+  );
+
+  const sameReviewer = manifestFor(inventoryBuffer);
+  sameReviewer.providerControls.immutableStorage.verifiedBy =
+    sameReviewer.providerControls.atlasReadOnlyRole.verifiedBy;
+  assert.throws(
+    () => validateModelInventoryRecoveryManifest(sameReviewer, inventoryBuffer),
+    /two different operators/,
+  );
+
+  const late = manifestFor(inventoryBuffer);
+  late.providerControls.immutableStorage.verifiedAt = '2026-07-28T02:01:00.000Z';
+  assert.throws(
+    () => validateModelInventoryRecoveryManifest(late, inventoryBuffer),
+    /before the capture window/,
   );
 });
 

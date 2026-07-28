@@ -8,9 +8,30 @@ import {
   checkReferenceEdge,
   gatherInventoryFacts,
   runResearchModelInventory,
+  serializeResearchModelInventoryCompletion,
   writeResearchModelInventoryOutput,
 } from '../researchModelInventory';
 import { REFERENCE_EDGES, RETIREMENT_FIELD_PROBES } from '../researchModelInventoryCore';
+
+describe('protected inventory output', () => {
+  it('serializes only credential-free completion metadata', () => {
+    const serialized = serializeResearchModelInventoryCompletion({
+      environment: 'beta',
+      db: 'Beta',
+      sourceCommit: 'a'.repeat(40),
+      privateCounts: { totalDocuments: 42 },
+    } as Parameters<typeof serializeResearchModelInventoryCompletion>[0] & {
+      privateCounts: { totalDocuments: number };
+    });
+    expect(JSON.parse(serialized)).toEqual({
+      status: 'complete',
+      environment: 'beta',
+      databaseName: 'Beta',
+      sourceCommit: 'a'.repeat(40),
+    });
+    expect(serialized).not.toContain('totalDocuments');
+  });
+});
 
 function asyncCursor(rows: Record<string, unknown>[]) {
   return {
