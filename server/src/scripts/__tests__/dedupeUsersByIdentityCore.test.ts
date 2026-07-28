@@ -534,6 +534,39 @@ describe('buildUserIdentityDedupeSummary', () => {
     expect(summary.duplicateUsers).toBe(1);
     expect(summary.plan).toHaveLength(1);
   });
+
+  it('does not apply the apply group bound to dry-run summaries', () => {
+    const plan = buildUserIdentityDedupePlan([
+      {
+        identityField: 'email',
+        identityValue: 'first.person@example.test',
+        users: [
+          { id: 'first-canonical', fname: 'First', lname: 'Person', userConfirmed: true },
+          { id: 'first-duplicate', fname: 'F.', lname: 'Person' },
+        ],
+      },
+      {
+        identityField: 'email',
+        identityValue: 'second.fixture@example.test',
+        users: [
+          { id: 'second-canonical', fname: 'Second', lname: 'Person', userConfirmed: true },
+          { id: 'second-duplicate', fname: 'S.', lname: 'Person' },
+        ],
+      },
+    ]);
+
+    const summary = buildUserIdentityDedupeSummary({
+      apply: false,
+      plan,
+      sampleSize: 25,
+      maxApplyGroups: 1,
+      applied: [],
+    });
+
+    expect(summary.plannedGroups).toBe(2);
+    expect(summary.duplicateUsers).toBe(2);
+    expect(summary.plan).toHaveLength(2);
+  });
 });
 
 describe('post-materialization identity warning classification', () => {
