@@ -35,10 +35,20 @@ function registeredSourceNames(): Set<string> {
 }
 
 function renderScheduledSourceNames(): string[] {
-  return Array.from(
-    renderBlueprint.matchAll(/scrape cron --source ([a-z0-9-]+) --release/g),
-    (match) => match[1],
-  );
+  const commands = Array.from(
+    renderBlueprint.matchAll(/^\s*startCommand:\s*>-\s*$((?:\n {6,}\S.*)*)/gm),
+    (match) => match[1].replace(/\s+/g, ' '),
+  ).flatMap((commandBlock) => commandBlock.split(';'));
+
+  return commands
+    .filter((command) => /\bscrape\s+cron\b/.test(command))
+    .map((command) => {
+      const source = command.match(/(?:^|\s)--source(?:\s+|=)([a-z0-9-]+)(?=\s|$)/)?.[1];
+      if (!source) {
+        throw new Error(`Render scrape cron command is missing a valid --source: ${command.trim()}`);
+      }
+      return source;
+    });
 }
 
 describe('deployed scraper source contract', () => {

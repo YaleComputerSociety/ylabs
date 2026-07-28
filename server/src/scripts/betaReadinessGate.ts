@@ -177,29 +177,6 @@ function describeMongoTarget(rawUrl: string | undefined): string {
   }
 }
 
-function summarizeFileGate(
-  value: unknown,
-  readyMessage: string,
-  missingMessage: string,
-): GateStatus {
-  const record = (value || {}) as Record<string, unknown>;
-  const status = String(record.status || 'missing');
-  if (status === 'ready') {
-    return {
-      status: 'ready',
-      message: readyMessage,
-      readyRows: Number(record.readyRows || 0),
-      blockedRows: Number(record.blockedRows || 0),
-    };
-  }
-  return {
-    status: 'deferred',
-    message: missingMessage,
-    readyRows: Number(record.readyRows || 0),
-    blockedRows: Number(record.blockedRows || 0),
-  };
-}
-
 function summarizeFellowshipGate(status: Record<string, unknown>): GateStatus {
   const programs = Array.isArray(status.fellowship) ? status.fellowship : [];
   const readyPrograms = programs.filter((program) => program?.status === 'ready');
@@ -299,11 +276,6 @@ async function main(): Promise<void> {
       backend: runtimeBackend,
     },
     fellowshipInput: summarizeFellowshipGate(acceptedInputs),
-    scholarInput: summarizeFileGate(
-      acceptedInputs.scholar,
-      'Accepted Google Scholar IDs are ready.',
-      'Scholar accepted IDs remain manual-review metadata; no Scholar scraper blocks Beta.',
-    ),
   };
 
   const blockingGateNames = Object.entries(gates)
