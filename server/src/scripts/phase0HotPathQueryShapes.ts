@@ -831,5 +831,30 @@ export function buildPhase0HotPathQuerySpecs(
     );
   }
 
-  return specs;
+  const dependentFixtureSizes = new Map<string, number>([
+    ['research-detail-users', fixtures.detailUserIds.length],
+    ['research-detail-faculty-members', fixtures.detailFacultyIds.length],
+    ['research-detail-shared-images', fixtures.detailImageUrls.length],
+    ['research-detail-member-attributions', fixtures.detailMemberUserIds.length],
+    [
+      'research-detail-attributed-scholarly-links',
+      fixtures.detailAttributedScholarlyLinkIds.length,
+    ],
+    ['research-detail-published-papers', fixtures.detailUserIds.length],
+    ['research-detail-arxiv-preprints', fixtures.detailUserIds.length],
+    ['research-detail-related-entities', fixtures.detailRelatedEntityIds.length],
+    [
+      'opportunity-detail-observations',
+      fixtures.ordinaryOpportunity?.evidenceIds.length || 0,
+    ],
+    [
+      'opportunity-detail-high-evidence-observations',
+      fixtures.highEvidenceOpportunity?.evidenceIds.length || 0,
+    ],
+  ]);
+
+  return specs.filter((spec) => {
+    const fixtureSize = dependentFixtureSizes.get(spec.label);
+    return fixtureSize === undefined || fixtureSize > 0;
+  });
 }

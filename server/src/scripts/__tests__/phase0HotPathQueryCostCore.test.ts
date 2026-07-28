@@ -287,6 +287,70 @@ describe('Phase 0 hot-path query-cost core', () => {
     expect(serialized).not.toContain('private-observation');
   });
 
+  it('marks runtime-dependent empty fixtures unavailable instead of measuring empty $in shapes', () => {
+    const fixtures = completeFixtures();
+    fixtures.detailMemberUserIds = [];
+    fixtures.detailUserIds = [];
+    fixtures.detailFacultyIds = [];
+    fixtures.detailImageUrls = [];
+    fixtures.detailAttributedScholarlyLinkIds = [];
+    fixtures.detailRelatedEntityIds = [];
+    fixtures.ordinaryOpportunity!.evidenceIds = [];
+    fixtures.highEvidenceOpportunity!.evidenceIds = [];
+
+    const dependentLabels = [
+      'research-detail-users',
+      'research-detail-faculty-members',
+      'research-detail-shared-images',
+      'research-detail-member-attributions',
+      'research-detail-attributed-scholarly-links',
+      'research-detail-published-papers',
+      'research-detail-arxiv-preprints',
+      'research-detail-related-entities',
+      'opportunity-detail-observations',
+      'opportunity-detail-high-evidence-observations',
+    ];
+    const specs = buildPhase0HotPathQuerySpecs(fixtures, new Date('2026-07-28T12:00:00.000Z'));
+    const emittedLabels = new Set(specs.map((spec) => spec.label));
+    dependentLabels.forEach((label) => expect(emittedLabels.has(label)).toBe(false));
+    expect(emittedLabels.has('research-detail-current-members')).toBe(true);
+    expect(emittedLabels.has('opportunity-detail-opportunity')).toBe(true);
+
+    const report = buildPhase0HotPathQueryCostReport({
+      generatedAt: '2026-07-28T12:00:00.000Z',
+      sourceCommit: 'c2478017eddeeb289f834d1498ce24375a0175c6',
+      environment: 'beta',
+      databaseName: 'Beta',
+      serverVersion: '8.0.0',
+      maxTimeMS: 5000,
+      fixtures,
+      indexes: [],
+      queries: [
+        ...specs.map((spec) => ({
+          label: spec.label,
+          surface: spec.surface,
+          collection: spec.collection,
+          operation: spec.operation,
+          status: 'measured' as const,
+          findings: [],
+        })),
+        ...dependentLabels.map((label) => ({
+          label,
+          surface: 'research-detail' as const,
+          collection: 'fixture-dependent',
+          operation: 'find' as const,
+          status: 'fixture-unavailable' as const,
+          findings: [],
+        })),
+      ],
+    });
+    expect(report.summary).toMatchObject({
+      fixtureUnavailableQueryShapes: dependentLabels.length,
+      uncoveredLabels: [],
+      reviewRequired: true,
+    });
+  });
+
   it('reduces runtime errors to a bounded non-message code', () => {
     const error = Object.assign(new Error('private host and credential detail'), {
       name: 'MongoServerError',
