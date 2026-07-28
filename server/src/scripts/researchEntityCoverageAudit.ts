@@ -16,7 +16,7 @@ import { sourceCoverageRegistry } from '../scrapers/sourceCoverageRegistry';
 import {
   buildCoverageAuditRow,
   extractSuspiciousConstraintQuotes,
-  summarizeIssueCounts,
+  selectCoverageAuditRows,
   type CoverageAuditFacts,
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
@@ -349,51 +349,53 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
     observationsBySlug.set(slug, list);
   }
 
-  const rows = entities
-    .map((entity) => {
-      const entityId = stringId(entity._id);
-      const facts: CoverageAuditFacts = {
-        slug: entity.slug,
-        name: entity.name,
-        kind: entity.kind,
-        school: entity.school,
-        websiteUrl: entity.websiteUrl,
-        description: entity.description,
-        shortDescription: entity.shortDescription,
-        fullDescription: entity.fullDescription,
-        counts: {
-          researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
-          sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
-          members: memberCounts.get(entityId) || 0,
-          pathways: pathwayCounts.get(entityId) || 0,
-          publicContactRoutes: publicRouteCounts.get(entityId) || 0,
-          totalContactRoutes: totalRouteCounts.get(entityId) || 0,
-          accessSignals: signalCounts.get(entityId) || 0,
-          postedOpportunities: opportunityCounts.get(entityId) || 0,
-          activeListings: listingCounts.get(entityId) || 0,
-        },
-        observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
-      };
-      return buildCoverageAuditRow(facts);
-    })
-    .filter((row) => (options.includeAll ? true : row.issueScore >= options.minScore))
-    .sort((a, b) => b.issueScore - a.issueScore || a.name.localeCompare(b.name));
+  const rows = entities.map((entity) => {
+    const entityId = stringId(entity._id);
+    const facts: CoverageAuditFacts = {
+      slug: entity.slug,
+      name: entity.name,
+      kind: entity.kind,
+      school: entity.school,
+      websiteUrl: entity.websiteUrl,
+      description: entity.description,
+      shortDescription: entity.shortDescription,
+      fullDescription: entity.fullDescription,
+      counts: {
+        researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
+        sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
+        members: memberCounts.get(entityId) || 0,
+        pathways: pathwayCounts.get(entityId) || 0,
+        publicContactRoutes: publicRouteCounts.get(entityId) || 0,
+        totalContactRoutes: totalRouteCounts.get(entityId) || 0,
+        accessSignals: signalCounts.get(entityId) || 0,
+        postedOpportunities: opportunityCounts.get(entityId) || 0,
+        activeListings: listingCounts.get(entityId) || 0,
+      },
+      observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
+    };
+    return buildCoverageAuditRow(facts);
+  });
+  const rowLimit = options.slug ? rows.length : options.limit;
+  const selection = selectCoverageAuditRows(rows, {
+    includeAll: options.includeAll,
+    minScore: options.minScore,
+    limit: rowLimit,
+  });
 
-  const limitedRows = options.slug ? rows : rows.slice(0, options.limit);
   return {
     generatedAt: new Date().toISOString(),
     scope: options.slug ? 'detail-candidate' : 'bulk',
     totalEntitiesScanned: entities.length,
-    flaggedEntities: rows.length,
+    flaggedEntities: selection.flaggedEntities,
     filters: {
       slug: options.slug || null,
       includeArchived: options.includeArchived,
       includeAll: options.includeAll,
-      limit: options.slug ? rows.length : options.limit,
+      limit: rowLimit,
       minScore: options.minScore,
     },
-    issueCounts: summarizeIssueCounts(rows),
-    rows: limitedRows,
+    issueCounts: selection.issueCounts,
+    rows: selection.rows,
   };
 }
 

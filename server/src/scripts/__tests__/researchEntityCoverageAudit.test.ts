@@ -6,6 +6,7 @@ import {
   buildCoverageAuditRow,
   buildCoverageIssues,
   extractSuspiciousConstraintQuotes,
+  selectCoverageAuditRows,
   summarizeIssueCounts,
   type CoverageAuditFacts,
 } from '../researchEntityCoverageAuditCore';
@@ -127,6 +128,78 @@ describe('summarizeIssueCounts', () => {
 
     expect(summary.MISSING_DESCRIPTION).toBe(1);
     expect(summary.BLANK_DETAIL_RISK).toBe(1);
+  });
+});
+
+describe('selectCoverageAuditRows', () => {
+  const flaggedRow = buildCoverageAuditRow(baseFacts());
+  const belowThresholdRow = buildCoverageAuditRow({
+    ...baseFacts(),
+    slug: 'missing-website-only',
+    name: 'Missing Website Only',
+    websiteUrl: '',
+    description: 'Complete description.',
+    counts: {
+      ...baseFacts().counts,
+      researchAreas: 2,
+      members: 2,
+      pathways: 1,
+      publicContactRoutes: 1,
+      totalContactRoutes: 1,
+      accessSignals: 2,
+    },
+    observationFlags: {
+      hasMicrositeObservation: false,
+      hasInferredPiObservation: false,
+      suspiciousConstraintQuotes: [],
+    },
+  });
+  const cleanRow = buildCoverageAuditRow({
+    ...baseFacts(),
+    slug: 'complete-entity',
+    name: 'Complete Entity',
+    websiteUrl: 'https://example.test/',
+    description: 'Complete description.',
+    counts: {
+      ...baseFacts().counts,
+      researchAreas: 2,
+      members: 2,
+      pathways: 1,
+      publicContactRoutes: 1,
+      totalContactRoutes: 1,
+      accessSignals: 2,
+    },
+    observationFlags: {
+      hasMicrositeObservation: false,
+      hasInferredPiObservation: false,
+      suspiciousConstraintQuotes: [],
+    },
+  });
+
+  it('includes all bounded rows without changing threshold-based aggregates', () => {
+    const selection = selectCoverageAuditRows([cleanRow, belowThresholdRow, flaggedRow], {
+      includeAll: true,
+      minScore: 2,
+      limit: 10,
+    });
+
+    expect(selection.flaggedEntities).toBe(1);
+    expect(selection.rows).toHaveLength(3);
+    expect(selection.issueCounts.MISSING_DESCRIPTION).toBe(1);
+    expect(selection.issueCounts.MISSING_WEBSITE_URL).toBeUndefined();
+  });
+
+  it('includes only threshold-flagged rows when all-row inclusion is disabled', () => {
+    const selection = selectCoverageAuditRows([cleanRow, belowThresholdRow, flaggedRow], {
+      includeAll: false,
+      minScore: 2,
+      limit: 10,
+    });
+
+    expect(selection.flaggedEntities).toBe(1);
+    expect(selection.rows).toEqual([flaggedRow]);
+    expect(selection.issueCounts.MISSING_DESCRIPTION).toBe(1);
+    expect(selection.issueCounts.MISSING_WEBSITE_URL).toBeUndefined();
   });
 });
 

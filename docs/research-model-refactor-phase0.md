@@ -137,7 +137,6 @@ SCRAPER_ENV=development yarn --cwd server research-entity:duplicate-name-review 
 SCRAPER_ENV=development yarn --cwd server research-entity:coverage-audit \
   --summary-only \
   --environment=development \
-  --all \
   --output /tmp/ylabs-development-coverage-summary.json
 ```
 
@@ -148,7 +147,10 @@ The coverage audit rejects `--slug` because a slug-targeted report is record-spe
 User-identity collision limits apply per identity field, and duplicate-name limits apply to normalized-name clusters.
 Their summary reports include explicit possible-truncation indicators and label limit-reached counts as bounded lower-bound evidence rather than full coverage.
 The member-reference summary preserves full orphan and archived-entity-member totals, while its proposed repair classifications remain detail-limit bounded and carry a separate possible-plan-truncation indicator.
-Coverage totals and issue counts are computed over all entities selected by the aggregate filters; its row limit does not cap summary-only counts.
+Coverage `totalEntitiesScanned` is computed over all entities selected by the aggregate filters.
+`flaggedEntities` and `issueCounts` are computed from entities whose issue score meets `--min-score`.
+`--all` controls detailed row inclusion only and is unnecessary in summary-only mode.
+The row limit does not cap summary-only counts.
 Use the default detailed dry-run modes only inside an approved private review workflow.
 
 ## Export and rollback prerequisites
