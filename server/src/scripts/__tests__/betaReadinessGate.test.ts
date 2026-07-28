@@ -6,6 +6,7 @@ import {
   buildBetaReadinessCommands,
   buildBetaReadinessGateOutput,
   parseBetaReadinessGateArgs,
+  summarizeReviewedProfileLinkInput,
   writeBetaReadinessGateOutput,
 } from '../betaReadinessGate';
 import { DEFAULT_ACCEPTED_INPUT_ROOT } from '../acceptedInputsCore';
@@ -57,6 +58,33 @@ describe('betaReadinessGate CLI helpers', () => {
       strict: false,
       confirmBetaBackup: false,
       acceptPathwayMeili: false,
+    });
+  });
+
+  it('reports reviewed Scholar profile links without making them a scraper gate', () => {
+    expect(
+      summarizeReviewedProfileLinkInput(
+        { status: 'ready', readyRows: 3, blockedRows: 0 },
+        'Profile links are ready.',
+        'Profile links are optional.',
+      ),
+    ).toEqual({
+      status: 'ready',
+      message: 'Profile links are ready.',
+      readyRows: 3,
+      blockedRows: 0,
+    });
+    expect(
+      summarizeReviewedProfileLinkInput(
+        { status: 'blocked', readyRows: 1, blockedRows: 2 },
+        'Profile links are ready.',
+        'Profile links are optional.',
+      ),
+    ).toEqual({
+      status: 'deferred',
+      message: 'Profile links are optional.',
+      readyRows: 1,
+      blockedRows: 2,
     });
   });
 

@@ -177,6 +177,29 @@ function describeMongoTarget(rawUrl: string | undefined): string {
   }
 }
 
+export function summarizeReviewedProfileLinkInput(
+  value: unknown,
+  readyMessage: string,
+  missingMessage: string,
+): GateStatus {
+  const record = (value || {}) as Record<string, unknown>;
+  const status = String(record.status || 'missing');
+  if (status === 'ready') {
+    return {
+      status: 'ready',
+      message: readyMessage,
+      readyRows: Number(record.readyRows || 0),
+      blockedRows: Number(record.blockedRows || 0),
+    };
+  }
+  return {
+    status: 'deferred',
+    message: missingMessage,
+    readyRows: Number(record.readyRows || 0),
+    blockedRows: Number(record.blockedRows || 0),
+  };
+}
+
 function summarizeFellowshipGate(status: Record<string, unknown>): GateStatus {
   const programs = Array.isArray(status.fellowship) ? status.fellowship : [];
   const readyPrograms = programs.filter((program) => program?.status === 'ready');
@@ -276,6 +299,11 @@ async function main(): Promise<void> {
       backend: runtimeBackend,
     },
     fellowshipInput: summarizeFellowshipGate(acceptedInputs),
+    scholarInput: summarizeReviewedProfileLinkInput(
+      acceptedInputs.scholar,
+      'Accepted Google Scholar profile links are ready for reviewed outbound navigation.',
+      'Accepted Google Scholar profile links remain optional manual-review metadata; no Scholar scraper or publication ingestion blocks Beta.',
+    ),
   };
 
   const blockingGateNames = Object.entries(gates)
