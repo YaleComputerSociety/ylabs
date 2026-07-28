@@ -208,7 +208,8 @@ They must not silently create new canonical taxonomy terms.
 #### Phase 1 identity and reference schema boundary
 
 The versioned `Account`, `Person`, `RoleAssignment`, `OrgUnit`, and `TaxonomyTerm` schemas are registered in `server/src/models/` with explicit `accounts`, `people`, `role_assignments`, `org_units`, and `taxonomy_terms` collection names.
-They currently coexist empty with legacy runtime collections and have no application readers, writers, routes, migrations, startup hooks, or Meilisearch projections.
+They currently coexist empty with legacy runtime collections and have no live route consumers, writers, migrations, startup hooks, or Meilisearch projections.
+The isolated Phase 1 readers and projections are documented in [`research-model.md`](./research-model.md#phase-1-bounded-canonical-read-contracts).
 
 `Account` contains CAS identity and lifecycle state but no person pointer or role array.
 `AdminGrant` remains the source of admin authority, research roles belong to `RoleAssignment`, and `Person.accountId` is the only optional account-person relationship.
@@ -262,13 +263,9 @@ type ResearchEntity = {
 
 The `discovery` object is a bounded computed projection for read-heavy research cards and search indexing.
 It is not a second source of truth.
-The reusable projection contract caps leads at eight records, text fields at 120 characters, active-opportunity counts at 9,999, and browse-rank scores to the supported numeric range.
 `accessState` remains bounded text in Phase 1 because the accepted target declares it as a string and no governed canonical access-summary vocabulary exists yet.
 The later vertical cutover must govern that vocabulary before it becomes a public filter or search facet instead of introducing a competing classification here.
-Every successful canonical materializer commit or moderated canonical write that changes a discovery input must recompute each affected entity after the authoritative records commit.
-A reconciliation pass must run at least every six hours as the missed-invalidation repair path, and a projection older than 24 hours is stale and must not be treated as current.
-Projection construction rejects future `computedAt` values, while readers still classify previously persisted future-dated summaries as invalid and requiring recomputation.
-Missing and stale projections also require recomputation.
+The authoritative bounds, invalidation triggers, reconciliation interval, and staleness behavior are documented in [`research-model.md`](./research-model.md#phase-1-bounded-canonical-read-contracts).
 Full roles, pathways, signals, routes, and evidence remain first-class records.
 
 Legacy fields such as `kind`, duplicate description fields, `acceptingUndergrads`, `openness`, `acceptanceConfidence`, embedded openness signals, and legacy research-group references must be retired after canonical reads cut over.
@@ -616,8 +613,7 @@ REST remains appropriate for the current bounded student experiences:
 
 Services should expose reusable domain loaders and projection functions so a future GraphQL layer could call the same logic.
 Public REST DTOs should remain purpose-built, bounded, contact-safe, and visibility-aware.
-The Phase 1 read contracts live in `canonicalDomainLoaders.ts` and `canonicalPublicProjections.ts`.
-They are not connected to current REST routes or Meilisearch during Phase 1.
+The Phase 1 implementation and cutover boundary are documented in [`research-model.md`](./research-model.md#phase-1-bounded-canonical-read-contracts).
 
 GraphQL should be reconsidered only if clients need materially different combinations of the graph or operator tools require frequent ad hoc traversal.
 A future GraphQL layer would require field-level authorization, query-cost limits, batching, persisted-query or caching policy, and strict protection against arbitrary evidence traversal.
