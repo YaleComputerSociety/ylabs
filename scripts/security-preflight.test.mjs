@@ -2609,11 +2609,14 @@ test('student visibility gate ObjectId model work is primitive-normalized', () =
     new URL('../server/src/services/studentVisibilityGateService.ts', import.meta.url),
     'utf8',
   );
+  const normalizedSource = source.replace(/\s+/g, ' ');
 
   assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const studentVisibilityGateDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
+  assert.ok(
+    normalizedSource.includes(
+      "const studentVisibilityGateDocumentId = (value: unknown): string => serializedDocumentId(value) || ''",
+    ),
+    'student visibility gate document IDs must use the safe primitive serializer',
   );
   assert.match(source, /studentVisibilityGateDocumentId\(row\._id\)/);
   assert.match(source, /studentVisibilityGateDocumentId\(entity\._id\)/);
