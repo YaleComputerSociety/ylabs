@@ -59,6 +59,26 @@ describe('parseDedupeUsersByIdentityArgs', () => {
     });
   });
 
+  it('parses summary-only without changing default output options', () => {
+    expect(parseDedupeUsersByIdentityArgs(['--summary-only', '--environment=development'])).toEqual(
+      {
+        apply: false,
+        summaryOnly: true,
+        environment: 'development',
+        confirmUserIdentityDedupe: false,
+        limit: 100,
+        limitProvided: false,
+        sampleSize: 25,
+      },
+    );
+    expect(() => parseDedupeUsersByIdentityArgs(['--summary-only=true'])).toThrow(
+      '--summary-only does not accept a value',
+    );
+    expect(() =>
+      parseDedupeUsersByIdentityArgs(['--summary-only', '--environment=production']),
+    ).toThrow('--environment requires development, beta, or production-copy');
+  });
+
   it('rejects non-positive sample-size and max-apply-groups values', () => {
     expect(() => parseDedupeUsersByIdentityArgs(['--sample-size=0'])).toThrow(
       '--sample-size must be a positive integer',
@@ -489,15 +509,15 @@ describe('buildUserIdentityDedupeSummary', () => {
         identityValue: 'first.person@example.test',
         users: [
           { id: 'first-canonical', fname: 'First', lname: 'Person', userConfirmed: true },
-          { id: 'first-duplicate', fname: 'F.', lname: 'Person' },
+          { id: 'first-duplicate', fname: 'First', lname: 'Person' },
         ],
       },
       {
         identityField: 'email',
-        identityValue: 'second.fixture@example.test',
+        identityValue: 'second.person@example.test',
         users: [
           { id: 'second-canonical', fname: 'Second', lname: 'Person', userConfirmed: true },
-          { id: 'second-duplicate', fname: 'S.', lname: 'Person' },
+          { id: 'second-duplicate', fname: 'Second', lname: 'Person' },
         ],
       },
     ]);
@@ -513,6 +533,39 @@ describe('buildUserIdentityDedupeSummary', () => {
     expect(summary.plannedGroups).toBe(1);
     expect(summary.duplicateUsers).toBe(1);
     expect(summary.plan).toHaveLength(1);
+  });
+
+  it('does not apply the apply group bound to dry-run summaries', () => {
+    const plan = buildUserIdentityDedupePlan([
+      {
+        identityField: 'email',
+        identityValue: 'first.person@example.test',
+        users: [
+          { id: 'first-canonical', fname: 'First', lname: 'Person', userConfirmed: true },
+          { id: 'first-duplicate', fname: 'First', lname: 'Person' },
+        ],
+      },
+      {
+        identityField: 'email',
+        identityValue: 'second.person@example.test',
+        users: [
+          { id: 'second-canonical', fname: 'Second', lname: 'Person', userConfirmed: true },
+          { id: 'second-duplicate', fname: 'Second', lname: 'Person' },
+        ],
+      },
+    ]);
+
+    const summary = buildUserIdentityDedupeSummary({
+      apply: false,
+      plan,
+      sampleSize: 25,
+      maxApplyGroups: 1,
+      applied: [],
+    });
+
+    expect(summary.plannedGroups).toBe(2);
+    expect(summary.duplicateUsers).toBe(2);
+    expect(summary.plan).toHaveLength(2);
   });
 });
 

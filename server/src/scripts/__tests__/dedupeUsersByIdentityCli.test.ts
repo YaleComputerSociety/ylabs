@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertDedupeUsersByIdentityApplyAllowed,
   buildDedupeUsersByIdentityOutput,
+  buildDedupeUsersByIdentitySummaryOnlyOutput,
   buildUserIdentityCollisionPipeline,
   writeDedupeUsersByIdentityOutput,
 } from '../dedupeUsersByIdentity';
@@ -83,15 +84,108 @@ describe('dedupeUsersByIdentity CLI wrapper', () => {
       candidateGroups: 2,
       environment: 'beta',
       db: 'Beta',
-        options: {
-          apply: false,
-          confirmUserIdentityDedupe: false,
-          limit: 100,
-          limitProvided: false,
-          sampleSize: 25,
-          output: '/tmp/ylabs-user-identity-dedupe.json',
+      options: {
+        apply: false,
+        confirmUserIdentityDedupe: false,
+        limit: 100,
+        limitProvided: false,
+        sampleSize: 25,
+        output: '/tmp/ylabs-user-identity-dedupe.json',
       },
     });
+  });
+
+  it('builds a fail-closed aggregate-only identity report', () => {
+    const payload = buildDedupeUsersByIdentitySummaryOnlyOutput(
+      {
+        mode: 'dry-run',
+        candidateGroups: 4,
+        plannedGroups: 2,
+        duplicateUsers: 3,
+        warningGroups: 1,
+        plan: [
+          {
+            identityField: 'email',
+            identityValue: 'private@example.test',
+            canonicalUserId: 'user-private',
+            duplicateUserIds: ['user-duplicate'],
+            normalizedName: 'private person',
+          },
+        ],
+        warnings: [
+          {
+            identityField: 'email',
+            identityValue: 'private@example.test',
+            reason: 'identity-shared-by-different-names',
+            normalizedNames: ['private person'],
+            userIds: ['user-private'],
+          },
+        ],
+        applied: [],
+      },
+      { environment: 'development', db: 'Development' },
+      { limit: 100 },
+    );
+
+    expect(payload).toEqual({
+      summaryOnly: true,
+      environment: 'development',
+      db: 'Development',
+      mode: 'dry-run',
+      applyBlocked: true,
+      candidateGroups: 4,
+      plannedGroups: 2,
+      duplicateUsers: 3,
+      warningGroups: 1,
+      appliedCount: 0,
+      scan: {
+        collisionLimitPerIdentityField: 100,
+        identityFieldsScanned: 5,
+        possibleCollisionTruncation: false,
+        applyGroupLimit: null,
+        countSemantics: 'complete-within-scanned-collisions',
+      },
+    });
+    expect(JSON.stringify(payload)).not.toContain('private');
+  });
+
+  it('separates collision truncation from the optional apply group bound', () => {
+    const payload = buildDedupeUsersByIdentitySummaryOnlyOutput(
+      {
+        mode: 'dry-run',
+        candidateGroups: 25,
+        plannedGroups: 12,
+        duplicateUsers: 12,
+        warningGroups: 0,
+        plan: [],
+        warnings: [],
+        applied: [],
+      },
+      { environment: 'development', db: 'Development' },
+      { limit: 25, identityField: 'email', maxApplyGroups: 10 },
+    );
+
+    expect(payload.scan).toEqual({
+      collisionLimitPerIdentityField: 25,
+      identityFieldsScanned: 1,
+      possibleCollisionTruncation: true,
+      applyGroupLimit: 10,
+      countSemantics: 'bounded-lower-bound',
+    });
+  });
+
+  it('rejects summary-only apply before connecting', () => {
+    expect(() =>
+      assertDedupeUsersByIdentityApplyAllowed({
+        apply: true,
+        summaryOnly: true,
+        confirmUserIdentityDedupe: true,
+        limit: 100,
+        limitProvided: true,
+        sampleSize: 25,
+        maxApplyGroups: 1,
+      }),
+    ).toThrow(/--summary-only cannot be combined with --apply/);
   });
 
   it('tracks whether the scan limit was explicitly supplied', () => {

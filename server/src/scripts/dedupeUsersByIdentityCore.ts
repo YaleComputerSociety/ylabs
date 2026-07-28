@@ -1,10 +1,16 @@
 import type { DuplicatePersonGroup } from '../scrapers/integrityGate';
+import {
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
+} from './phase0SummaryOnlyAudit';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 export type UserIdentityField = DuplicatePersonGroup['identityField'];
 
 export interface DedupeUsersByIdentityArgs {
   apply: boolean;
+  summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   confirmUserIdentityDedupe: boolean;
   limit: number;
   limitProvided: boolean;
@@ -86,7 +92,11 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function consumeValue(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -98,6 +108,8 @@ function consumeValue(argv: string[], index: number, flag: string): { value: str
 
 export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIdentityArgs {
   let apply = false;
+  let summaryOnly = false;
+  let environment: Phase0SummaryOnlyEnvironment | undefined;
   let confirmUserIdentityDedupe = false;
   let limit = 100;
   let limitProvided = false;
@@ -122,6 +134,19 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
     if (arg === '--') continue;
     if (arg === '--apply') {
       apply = true;
+      continue;
+    }
+    if (arg === '--summary-only') {
+      summaryOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--summary-only=')) {
+      throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment' || arg.startsWith('--environment=')) {
+      const { value, nextIndex } = consumeValue(argv, index, '--environment');
+      environment = parsePhase0SummaryOnlyEnvironment(value);
+      index = nextIndex;
       continue;
     }
     if (arg === '--confirm-user-identity-dedupe') {
@@ -184,6 +209,8 @@ export function parseDedupeUsersByIdentityArgs(argv: string[]): DedupeUsersByIde
 
   return {
     apply,
+    ...(summaryOnly ? { summaryOnly: true } : {}),
+    ...(environment ? { environment } : {}),
     confirmUserIdentityDedupe,
     limit,
     limitProvided,
@@ -422,7 +449,10 @@ export function buildUserIdentityDedupePlan(
   return {
     candidateGroups: collisions.length,
     groups: plannedGroups,
-    duplicateUsers: plannedGroups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
+    duplicateUsers: plannedGroups.reduce(
+      (count, group) => count + group.duplicateUserIds.length,
+      0,
+    ),
     warningGroups: sortedWarnings,
   };
 }
@@ -476,16 +506,20 @@ export function buildUserIdentityDedupeSummary(input: {
   applied: Record<string, unknown>[];
 }): UserIdentityDedupeSummary {
   const uniqueGroups = uniquePlannedUserIdentityDedupeGroups(input.plan.groups);
-  const plannedGroups = input.maxApplyGroups
-    ? uniqueGroups.slice(0, input.maxApplyGroups)
-    : uniqueGroups;
+  const plannedGroups =
+    input.apply && input.maxApplyGroups
+      ? uniqueGroups.slice(0, input.maxApplyGroups)
+      : uniqueGroups;
   const warnings = [...input.plan.warningGroups].sort(compareWarningGroups);
 
   return {
     mode: input.apply ? 'apply' : 'dry-run',
     candidateGroups: input.plan.candidateGroups,
     plannedGroups: plannedGroups.length,
-    duplicateUsers: plannedGroups.reduce((count, group) => count + group.duplicateUserIds.length, 0),
+    duplicateUsers: plannedGroups.reduce(
+      (count, group) => count + group.duplicateUserIds.length,
+      0,
+    ),
     warningGroups: warnings.length,
     plan: plannedGroups.slice(0, input.sampleSize),
     warnings: warnings.slice(0, input.sampleSize),

@@ -1,7 +1,16 @@
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  assertPhase0SummaryOnlyDryRun,
+  buildPhase0SummaryOnlyOutput,
+  parsePhase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyEnvironment,
+  type Phase0SummaryOnlyMetadata,
+} from './phase0SummaryOnlyAudit';
 
 export interface ResearchEntityMemberReferenceAuditArgs {
   apply: boolean;
+  summaryOnly?: boolean;
+  environment?: Phase0SummaryOnlyEnvironment;
   confirmExactRelink: boolean;
   limit: number;
   limitProvided: boolean;
@@ -98,7 +107,7 @@ function consumeValue(
   argv: string[],
   index: number,
   flag: string,
-  noun: 'number' | 'path',
+  noun: 'number' | 'path' | 'value',
 ): { value: string; nextIndex: number } {
   const value = argv[index + 1];
   if (value === undefined || value.trim() === '' || value.startsWith('--')) {
@@ -107,7 +116,7 @@ function consumeValue(
   return { value, nextIndex: index + 1 };
 }
 
-function consumeInlineValue(arg: string, flag: string, noun: 'number' | 'path'): string {
+function consumeInlineValue(arg: string, flag: string, noun: 'number' | 'path' | 'value'): string {
   const value = arg.slice(`${flag}=`.length);
   if (value.trim() === '' || value.startsWith('--')) {
     throw new Error(`${flag} requires a ${noun}`);
@@ -132,12 +141,34 @@ export function parseResearchEntityMemberReferenceAuditArgs(
       args.apply = true;
       continue;
     }
+    if (arg === '--summary-only') {
+      args.summaryOnly = true;
+      continue;
+    }
+    if (arg.startsWith('--summary-only=')) {
+      throw new Error('--summary-only does not accept a value');
+    }
+    if (arg === '--environment') {
+      const { value, nextIndex } = consumeValue(argv, index, '--environment', 'value');
+      args.environment = parsePhase0SummaryOnlyEnvironment(value);
+      index = nextIndex;
+      continue;
+    }
+    if (arg.startsWith('--environment=')) {
+      args.environment = parsePhase0SummaryOnlyEnvironment(
+        consumeInlineValue(arg, '--environment', 'value'),
+      );
+      continue;
+    }
     if (arg === '--confirm-exact-relink') {
       args.confirmExactRelink = true;
       continue;
     }
     if (arg.startsWith('--limit=')) {
-      args.limit = parsePositiveIntegerValue(consumeInlineValue(arg, '--limit', 'number'), '--limit');
+      args.limit = parsePositiveIntegerValue(
+        consumeInlineValue(arg, '--limit', 'number'),
+        '--limit',
+      );
       args.limitProvided = true;
       continue;
     }
@@ -188,6 +219,7 @@ export function inferMemberReferenceNames(row: MemberReferenceAuditRow): string[
 export function buildResearchEntityMemberReferenceAuditSummary(input: {
   mode?: 'dry-run' | 'apply';
   totalOrphanedRefs: number;
+  totalCurrentMembersOnArchivedEntities?: number;
   rows: MemberReferenceAuditRow[];
   applied?: ResearchEntityMemberReferenceAuditSummary['applied'];
 }): ResearchEntityMemberReferenceAuditSummary {
@@ -212,7 +244,9 @@ export function buildResearchEntityMemberReferenceAuditSummary(input: {
         inferredNames: inferMemberReferenceNames(row),
         candidateUsers: row.candidateUsers,
         replacementResearchEntityId: row.entity.canonicalGroupId,
-        ...(existingCanonicalMemberMatch ? { existingMemberId: existingCanonicalMemberMatch.id } : {}),
+        ...(existingCanonicalMemberMatch
+          ? { existingMemberId: existingCanonicalMemberMatch.id }
+          : {}),
         reason: existingCanonicalMemberMatch
           ? 'Canonical entity already has this current member; archive the stale member row on the archived entity.'
           : 'Current member points at an archived entity; relink to canonicalGroupId.',
@@ -267,11 +301,13 @@ export function buildResearchEntityMemberReferenceAuditSummary(input: {
   const plannedDuplicateArchives = plan.filter(
     (item) => item.action === 'archive_orphan_duplicate_member',
   ).length;
-  const currentMembersOnArchivedEntities = plan.filter(
+  const plannedCurrentMembersOnArchivedEntities = plan.filter(
     (item) =>
       item.action === 'relink_member_to_canonical_entity' ||
       item.action === 'archive_current_member_on_archived_entity',
   ).length;
+  const currentMembersOnArchivedEntities =
+    input.totalCurrentMembersOnArchivedEntities ?? plannedCurrentMembersOnArchivedEntities;
   const plannedCanonicalEntityRelinks = plan.filter(
     (item) => item.action === 'relink_member_to_canonical_entity',
   ).length;
@@ -329,12 +365,19 @@ export function assertResearchEntityMemberReferenceApplyAllowed(
 export function assertResearchEntityMemberReferenceApplyPreflightAllowed(
   args: ResearchEntityMemberReferenceAuditArgs,
 ): void {
+  assertPhase0SummaryOnlyDryRun({
+    summaryOnly: Boolean(args.summaryOnly),
+    apply: args.apply,
+    scriptName: 'research-entity-members:audit-user-refs',
+  });
   if (!args.apply) return;
   if (!args.confirmExactRelink) {
     throw new Error('Apply requires --confirm-exact-relink.');
   }
   if (!args.limitProvided) {
-    throw new Error('--limit is required when --apply is set for research-entity-members:audit-user-refs.');
+    throw new Error(
+      '--limit is required when --apply is set for research-entity-members:audit-user-refs.',
+    );
   }
 }
 
@@ -369,6 +412,35 @@ export function buildResearchEntityMemberReferenceAuditOutput<T extends object>(
     ...(metadata.db ? { db: metadata.db } : {}),
     options: metadata.options,
   };
+}
+
+export function buildResearchEntityMemberReferenceSummaryOnlyOutput(
+  summary: ResearchEntityMemberReferenceAuditSummary,
+  metadata: Phase0SummaryOnlyMetadata,
+  options: Pick<ResearchEntityMemberReferenceAuditArgs, 'limit'>,
+) {
+  return buildPhase0SummaryOnlyOutput(
+    {
+      mode: summary.mode,
+      orphanedMemberUserRefs: summary.orphanedMemberUserRefs,
+      plannedExactRelinks: summary.plannedExactRelinks,
+      plannedDuplicateArchives: summary.plannedDuplicateArchives,
+      currentMembersOnArchivedEntities: summary.currentMembersOnArchivedEntities,
+      plannedCanonicalEntityRelinks: summary.plannedCanonicalEntityRelinks,
+      plannedArchivedEntityMemberArchives: summary.plannedArchivedEntityMemberArchives,
+      manualReviewCount: summary.manualReviewCount,
+      applyBlocked: true,
+      appliedCount: summary.applied.length,
+      scan: {
+        detailRowLimitPerCategory: options.limit,
+        plannedRows: summary.plan.length,
+        possiblePlanTruncation:
+          summary.orphanedMemberUserRefs + summary.currentMembersOnArchivedEntities >
+          summary.plan.length,
+      },
+    },
+    metadata,
+  );
 }
 
 function findExistingMemberMatch(

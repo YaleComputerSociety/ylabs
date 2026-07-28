@@ -119,6 +119,52 @@ Deeper collision and identity analysis already lives in dedicated scripts and sh
 - `yarn --cwd server research-entity:duplicate-name-review` for duplicate entity identities.
 - `yarn --cwd server research-entity:coverage-audit` for entity evidence coverage.
 
+### Aggregate-only Development evidence
+
+Run these commands from the repository root after confirming `server/.env` points to the `Development` database.
+They retain aggregate collision, repair, category, reference-impact, and coverage counts without emitting record-level rows, identifiers, names, contact identities, slugs, URLs, or samples.
+
+```bash
+umask 077
+
+SCRAPER_ENV=development yarn --cwd server users:dedupe-by-identity \
+  --summary-only \
+  --environment=development \
+  --limit=10000 \
+  --output /tmp/ylabs-development-user-identity-summary.json
+
+SCRAPER_ENV=development yarn --cwd server research-entity-members:audit-user-refs \
+  --summary-only \
+  --environment=development \
+  --limit=10000 \
+  --output /tmp/ylabs-development-member-reference-summary.json
+
+SCRAPER_ENV=development yarn --cwd server research-entity:duplicate-name-review \
+  --summary-only \
+  --environment=development \
+  --limit=10000 \
+  --plan-limit=10000 \
+  --output /tmp/ylabs-development-duplicate-name-summary.json
+
+SCRAPER_ENV=development yarn --cwd server research-entity:coverage-audit \
+  --summary-only \
+  --environment=development \
+  --output /tmp/ylabs-development-coverage-summary.json
+```
+
+`--summary-only` is incompatible with `--apply`.
+It requires an explicit `--environment` of `development`, `beta`, or `production-copy`, rejects primary production, and verifies both the configured and connected database names before any audit query.
+The duplicate-name audit also rejects accepted-decision and decision-template options in summary-only mode.
+The coverage audit rejects `--slug` because a slug-targeted report is record-specific.
+User-identity collision limits apply per identity field, and duplicate-name limits apply to normalized-name clusters.
+Their summary reports include explicit possible-truncation indicators and label limit-reached counts as bounded lower-bound evidence rather than full coverage.
+The member-reference summary preserves full orphan and archived-entity-member totals, while its proposed repair classifications remain detail-limit bounded and carry a separate possible-plan-truncation indicator.
+Coverage `totalEntitiesScanned` is computed over all entities selected by the aggregate filters.
+`flaggedEntities` and `issueCounts` are computed from entities whose issue score meets `--min-score`.
+`--all` controls detailed row inclusion only and is unnecessary in summary-only mode.
+The row limit does not cap summary-only counts.
+Use the default detailed dry-run modes only inside an approved private review workflow.
+
 ## Export and rollback prerequisites
 
 No later phase may drop or overwrite a collection until these exist and are verified:

@@ -44,6 +44,12 @@ export interface CoverageAuditRow {
   issueScore: number;
 }
 
+export interface CoverageAuditRowSelection {
+  flaggedEntities: number;
+  issueCounts: Record<string, number>;
+  rows: CoverageAuditRow[];
+}
+
 const ISSUE_SCORES: Record<string, number> = {
   BLANK_DETAIL_RISK: 5,
   MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS: 4,
@@ -65,7 +71,9 @@ export function textLength(value: string | undefined | null): number {
   return typeof value === 'string' ? value.trim().length : 0;
 }
 
-export function extractSuspiciousConstraintQuotes(quotes: Array<string | undefined | null>): string[] {
+export function extractSuspiciousConstraintQuotes(
+  quotes: Array<string | undefined | null>,
+): string[] {
   return quotes
     .map((quote) => (typeof quote === 'string' ? quote.trim() : ''))
     .filter((quote) => quote.length > 0 && SUSPICIOUS_CONSTRAINT_RE.test(quote));
@@ -169,4 +177,25 @@ export function summarizeIssueCounts(rows: CoverageAuditRow[]): Record<string, n
     }
     return summary;
   }, {});
+}
+
+export function selectCoverageAuditRows(
+  rows: CoverageAuditRow[],
+  options: {
+    includeAll: boolean;
+    minScore: number;
+    limit: number;
+  },
+): CoverageAuditRowSelection {
+  const sortedRows = [...rows].sort(
+    (a, b) => b.issueScore - a.issueScore || a.name.localeCompare(b.name),
+  );
+  const flaggedRows = sortedRows.filter((row) => row.issueScore >= options.minScore);
+  const includedRows = options.includeAll ? sortedRows : flaggedRows;
+
+  return {
+    flaggedEntities: flaggedRows.length,
+    issueCounts: summarizeIssueCounts(flaggedRows),
+    rows: includedRows.slice(0, options.limit),
+  };
 }
