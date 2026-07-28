@@ -653,20 +653,28 @@ export async function searchResearchGroupsViaMeili(
   // the running index has not yet had it added to sortableAttributes. Each
   // degradation is applied at most once; anything else propagates.
   const searchWithFallbacks = async (): Promise<{
-    hits?: any[];
-    estimatedTotalHits?: number;
-    facetDistribution?: Record<string, Record<string, number>>;
+    result: {
+      hits?: any[];
+      estimatedTotalHits?: number;
+      facetDistribution?: Record<string, Record<string, number>>;
+    };
+    degraded: boolean;
   }> => {
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
     let params: Record<string, any> = searchParams;
+    let degraded = false;
     while (true) {
       try {
-        return await index.search(trimmedQuery, params);
+        return {
+          result: await index.search(trimmedQuery, params),
+          degraded,
+        };
       } catch (error) {
         if (params.hybrid && isMissingMeiliEmbedderError(error)) {
           params = { ...params };
           delete params.hybrid;
+          degraded = true;
           continue;
         }
         if (Array.isArray(params.sort) && isUnsortableAttributeError(error)) {
@@ -677,6 +685,7 @@ export async function searchResearchGroupsViaMeili(
             params = { ...params };
             if (filtered.length > 0) params.sort = filtered;
             else delete params.sort;
+            degraded = true;
             continue;
           }
         }
@@ -689,10 +698,16 @@ export async function searchResearchGroupsViaMeili(
     estimatedTotalHits?: number;
     facetDistribution?: Record<string, Record<string, number>>;
   };
+  let degraded = false;
   try {
-    searchResult = await searchWithFallbacks();
+    const outcome = await searchWithFallbacks();
+    searchResult = outcome.result;
+    degraded = outcome.degraded;
   } catch (error) {
-    console.error('ResearchEntity Meilisearch failed; falling back to Mongo search:', error);
+    console.error(
+      'ResearchEntity Meilisearch failed; falling back to Mongo search:',
+      sanitizeLogValue(error),
+    );
     return searchResearchGroupsViaMongoFallback(
       normalizedQuery.raw,
       safeFilters,
@@ -760,6 +775,7 @@ export async function searchResearchGroupsViaMeili(
       page: safePage,
       pageSize: safePageSize,
       facetDistribution,
+      degraded,
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
   );

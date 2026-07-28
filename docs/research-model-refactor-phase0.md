@@ -165,6 +165,96 @@ Coverage `totalEntitiesScanned` is computed over all entities selected by the ag
 The row limit does not cap summary-only counts.
 Use the default detailed dry-run modes only inside an approved private review workflow.
 
+## Private ResearchEntity search baseline
+
+The search baseline is read-only and exercises the current public ResearchEntity search service.
+That means each case includes Meilisearch candidate retrieval, MongoDB visibility verification, and the current access and planning enrichment reads.
+The bounded suite covers blank browse, keyword search, a short alias, a semantic phrase, department and research-area filters, and a deep allowed page.
+
+The artifact contains query labels and inputs, deployed settings and salt fingerprints, safe settings field names, index document count, latency samples, degradation state, estimated totals, and ordered HMAC result fingerprints.
+It never contains entity IDs, names, slugs, URLs, contact data, or the HMAC salt.
+The artifact is still private operational evidence because counts and stable cross-run fingerprints can reveal internal state.
+Do not attach it to an issue or pull request.
+
+Use the same high-entropy salt for every environment that will be compared.
+Store the salt in the team secret manager and inject it through `PHASE0_SEARCH_BASELINE_SALT`.
+Never pass the salt as a command-line argument or write it into a worktree.
+Every output must be a new `.json` path under the system temporary directory.
+The writer creates the file with mode `0600`, refuses symlink outputs, and refuses overwrite.
+
+Load the exact target credentials from an approved operator secret store before each command.
+Set `YLABS_SKIP_LOCAL_DOTENV=true` so a checkout-local `server/.env` cannot replace an omitted target setting.
+The command verifies the configured and connected MongoDB database name before search.
+It rejects primary Production and a Production Meilisearch prefix.
+Beta requires `MEILISEARCH_INDEX_PREFIX=beta`.
+ProductionCopy requires a dedicated prefix such as `production-copy-july`; it must never point at `prod_researchentities`.
+
+Run the Development baseline from a clean Beta worktree with `MONGODBURL` targeting `Development` and local Meilisearch:
+
+```bash
+umask 077
+
+export YLABS_SKIP_LOCAL_DOTENV=true
+export PHASE0_SEARCH_BASELINE_SALT
+export MONGODBURL
+export MEILISEARCH_HOST=http://localhost:7700
+unset MEILISEARCH_INDEX_PREFIX
+
+yarn model-refactor:search-baseline \
+  --environment=development \
+  --iterations=3 \
+  --top-k=10 \
+  --strict \
+  --output=/tmp/ylabs-phase0-search-development.json
+```
+
+Run the Beta baseline from the same source commit with the read-only Beta MongoDB user and private Beta Meilisearch credentials:
+
+```bash
+umask 077
+
+export YLABS_SKIP_LOCAL_DOTENV=true
+export PHASE0_SEARCH_BASELINE_SALT
+export MONGODBURL
+export MEILISEARCH_HOST
+export MEILISEARCH_API_KEY
+export MEILISEARCH_INDEX_PREFIX=beta
+
+yarn model-refactor:search-baseline \
+  --environment=beta \
+  --iterations=3 \
+  --top-k=10 \
+  --strict \
+  --output=/tmp/ylabs-phase0-search-beta.json
+```
+
+Run ProductionCopy only after the approved MongoDB restore and a dedicated non-production Meilisearch index copy exist:
+
+```bash
+umask 077
+
+export YLABS_SKIP_LOCAL_DOTENV=true
+export PHASE0_SEARCH_BASELINE_SALT
+export MONGODBURL
+export MEILISEARCH_HOST
+export MEILISEARCH_API_KEY
+export MEILISEARCH_INDEX_PREFIX=production-copy-july
+
+yarn model-refactor:search-baseline \
+  --environment=production-copy \
+  --iterations=3 \
+  --top-k=10 \
+  --strict \
+  --output=/tmp/ylabs-phase0-search-production-copy.json
+```
+
+Unset the injected credentials and salt after each run.
+Preserve the source commit, salt fingerprint, query suite, iteration count, top-K, and settings fingerprint with the comparison.
+Compare estimated totals and ordered result fingerprints per case.
+Treat any degraded sample, unstable ordered result set, unexpected count change, or ranking change as review-required evidence rather than silently accepting it.
+`--strict` writes the artifact and then exits nonzero when a degraded or unstable sample requires review.
+Latency is diagnostic only unless the environments use comparable network and compute conditions.
+
 ## Export and rollback prerequisites
 
 No later phase may drop or overwrite a collection until these exist and are verified:

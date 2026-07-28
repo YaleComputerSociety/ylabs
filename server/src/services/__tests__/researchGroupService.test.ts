@@ -285,8 +285,26 @@ describe('searchResearchGroupsViaMeili', () => {
       estimatedTotalHits: 1,
       page: 1,
       pageSize: 1,
+      degraded: true,
       researchEntities: [{ _id: 'reilly-lab', slug: 'reilly-lab', name: 'Reilly Lab' }],
     });
+  });
+
+  it('marks browse results degraded when Meili cannot sort by browse rank', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'invalid_search_sort',
+        message: 'Attribute `browseRankScore` is not sortable.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ sort: ['lastObservedAt:desc'] }),
+    );
+    expect(result.degraded).toBe(true);
   });
 
   it('expands AI and restricts short alias searches to topic fields', async () => {

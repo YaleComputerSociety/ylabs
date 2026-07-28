@@ -188,6 +188,10 @@ The following evidence must be collected read-only in Development, Beta, and the
 Do not run these diagnostics against the primary Production database unless the operator runbook explicitly authorizes the environment and load window.
 Reports must contain aggregate plan statistics and redacted query labels, not user IDs, entity names, notes, contact details, or raw evidence.
 
+The private ResearchEntity search-baseline command is documented in the [Phase 0 runbook](./research-model-refactor-phase0.md#private-researchentity-search-baseline).
+It covers the representative ResearchEntity query suite, deployed Meilisearch settings fingerprint, end-to-end latency samples, degradation state, estimated totals, and pseudonymous ordered result fingerprints.
+It does not replace the MongoDB `executionStats` evidence below.
+
 ### Environment and index drift
 
 1. Record MongoDB server version, collection document counts, and `getIndexes()` output for every collection named in this audit.
@@ -218,6 +222,8 @@ For `/research/:slug`, separately retain per-collection returned counts so bound
 
 ## Phase 0 disposition
 
-Source inspection is complete for these five surfaces, but measured query cost and deployed index use remain open.
+Source inspection is complete for these five surfaces.
+The repeatable private ResearchEntity search-baseline tooling is implemented, but reviewed Development, Beta, and ProductionCopy artifacts are still required.
+Measured MongoDB query cost and deployed index use remain open.
 The highest-priority live checks are the full-scan `/research` fallbacks, missing scholarly-link and attribution indexes, account planning's concurrent mutation-capable reads, fellowship all-record matching, and admin access-review's pre-pagination lookups and unbounded detail.
 No later migration phase should remove compatibility fields or redirect these readers until the live evidence is reviewed and an owner accepts the resulting index and cutover work.

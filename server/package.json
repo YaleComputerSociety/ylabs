@@ -40,6 +40,7 @@
     "research-entity:coverage-audit": "tsx src/scripts/researchEntityCoverageAudit.ts",
     "research-entity:audit-public-descriptions": "tsx src/scripts/publicResearchEntityDescriptionAudit.ts",
     "model-refactor:inventory": "tsx src/scripts/researchModelInventory.ts",
+    "model-refactor:search-baseline": "tsx src/scripts/phase0ResearchSearchBaseline.ts",
     "model-refactor:validators": "tsx src/scripts/canonicalMongoValidators.ts",
     "accepted-inputs": "tsx src/scripts/acceptedInputs.ts",
     "beta:data-quality": "tsx src/scripts/betaDataQuality.ts",

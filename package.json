@@ -22,6 +22,7 @@
     "meili:health": "curl http://localhost:7700/health",
     "meili:seed": "yarn --cwd server meili:seed",
     "migrate:mongo-naming": "yarn --cwd server migrate:mongo-naming",
+    "model-refactor:search-baseline": "yarn --cwd server model-refactor:search-baseline",
     "model-refactor:validators": "yarn --cwd server model-refactor:validators",
     "scrape": "yarn --cwd server scrape",
     "scrape:seed-sources": "yarn --cwd server scrape:seed-sources",
