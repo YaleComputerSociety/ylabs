@@ -397,7 +397,7 @@ function fellowshipProposal(
  */
 export function planPhase4LegacyRecordClassifications(
   inputs: readonly Phase4LegacyRecordClassificationInput[],
-  options: { now?: Date } = {},
+  options: { now: Date },
 ): Phase4LegacyRecordClassificationPlan {
   if (!Array.isArray(inputs)) throw new TypeError('classification inputs must be an array.');
   if (inputs.length > MAX_PHASE4_CLASSIFICATION_RECORDS) {
@@ -405,7 +405,7 @@ export function planPhase4LegacyRecordClassifications(
       `classification inputs must contain at most ${MAX_PHASE4_CLASSIFICATION_RECORDS} records.`,
     );
   }
-  const now = options.now ?? new Date();
+  const now = options?.now;
   if (!validDate(now)) throw new TypeError('now must be a valid Date.');
 
   const seen = new Set<string>();

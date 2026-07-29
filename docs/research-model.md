@@ -589,6 +589,7 @@ These loaders and projections are not wired to live REST routes, Meilisearch, ma
 ### Phase 4 reviewed legacy-record classification foundation
 
 [`legacyResearchRecordClassification.ts`](../server/src/services/legacyResearchRecordClassification.ts) defines a bounded, deterministic planner for the one-time classification of legacy `Listing` and `Fellowship` records.
+Operators must supply an explicit valid review timestamp so deadline-based classifications are reproducible and never depend on the process wall clock.
 It distinguishes real research-role postings, research programs that provide an entry route, formalization-only funding or thesis records, non-research archives, and unresolved records that require manual review.
 The planner adds a `PostedOpportunity` suggestion only when a program has a safe public application URL plus current or time-bound application evidence.
 Every output remains a suggestion with required `PENDING` review, a null owner, and a null decision.

@@ -318,5 +318,8 @@ describe('Phase 4 legacy record classification planner', () => {
     expect(() =>
       planPhase4LegacyRecordClassifications([listing], { now: new Date('invalid') }),
     ).toThrow(/now must be a valid Date/);
+    expect(() =>
+      planPhase4LegacyRecordClassifications([listing], {} as { now: Date }),
+    ).toThrow(/now must be a valid Date/);
   });
 });
