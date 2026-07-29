@@ -160,6 +160,7 @@ export interface Phase2IdentityMigrationPlanReport {
   policy: {
     createsPeopleFromExternalIdentityAlone: false;
     mergesPeopleOnNameAlone: false;
+    usesExternalIdentifiersAsMergeKeys: false;
     redirectsRuntimeReaders: false;
     writesCanonicalCollections: false;
   };
@@ -687,8 +688,6 @@ function identityComponents(nodes: Map<string, IdentityNode>): IdentityNode[][] 
     const entries: Array<[string, Set<string>]> = [
       ['netid', node.netids],
       ['email', node.emails],
-      ['orcid', node.orcids],
-      ['google_scholar', node.scholarIds],
     ];
     entries.forEach(([field, values]) => {
       values.forEach((value) => {
@@ -1075,6 +1074,7 @@ export function buildPhase2IdentityMigrationPlan(
     policy: {
       createsPeopleFromExternalIdentityAlone: false,
       mergesPeopleOnNameAlone: false,
+      usesExternalIdentifiersAsMergeKeys: false,
       redirectsRuntimeReaders: false,
       writesCanonicalCollections: false,
     },

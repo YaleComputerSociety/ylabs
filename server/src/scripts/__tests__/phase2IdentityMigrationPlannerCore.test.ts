@@ -56,6 +56,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             email: 'person.one@yale.edu',
             name: 'Person One',
             websiteUrl: 'https://example.yale.edu/profile/person-one/',
+            orcidId: '0000-0001-2345-6789',
           },
         ],
         memberships: [
@@ -77,6 +78,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
     expect(report.policy).toEqual({
       createsPeopleFromExternalIdentityAlone: false,
       mergesPeopleOnNameAlone: false,
+      usesExternalIdentifiersAsMergeKeys: false,
       redirectsRuntimeReaders: false,
       writesCanonicalCollections: false,
     });
@@ -97,7 +99,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
         displayName: 'Person One',
         accountKey: 'account:user:user-1',
         yaleEvidence: ['NETID', 'YALE_EMAIL'],
-        externalIdentityHints: [],
+        externalIdentityHints: ['ORCID'],
         unverifiedYaleProfileHints: ['https://example.yale.edu/profile/person-one'],
       },
     ]);
@@ -137,6 +139,135 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       reasons: ['external_identity_only'],
     });
   });
+
+  it.each([
+    {
+      label: 'shared ORCID',
+      externalField: 'orcidId',
+      externalValue: '0000-0001-2345-6789',
+      yaleIdentity: { netid: 'yale-orcid-person' },
+      yaleEvidence: ['NETID'],
+      externalHint: 'ORCID',
+    },
+    {
+      label: 'shared Google Scholar identifier',
+      externalField: 'googleScholarId',
+      externalValue: 'scholar-bridge-id',
+      yaleIdentity: { email: 'yale.scholar.person@yale.edu' },
+      yaleEvidence: ['YALE_EMAIL'],
+      externalHint: 'GOOGLE_SCHOLAR',
+    },
+  ] as const)(
+    'does not use $label to bridge an external-only row or approve its membership',
+    ({ externalField, externalValue, yaleIdentity, yaleEvidence, externalHint }) => {
+      const facultyMembers: Phase2IdentityMigrationPlannerInput['facultyMembers'] = [
+        {
+          id: 'faculty-yale-identity',
+          name: 'Yale Identity',
+          ...yaleIdentity,
+          [externalField]: externalValue,
+        },
+        {
+          id: 'faculty-external-only',
+          name: 'External Identity',
+          [externalField]: externalValue,
+        },
+      ];
+      const memberships: Phase2IdentityMigrationPlannerInput['memberships'] = [
+        {
+          id: 'membership-external-only',
+          researchEntityId: 'entity-external-only',
+          facultyMemberId: 'faculty-external-only',
+          name: 'External Identity',
+          role: 'pi',
+          isCurrentMember: true,
+          evidenceStatus: 'verified',
+          confidence: 0.95,
+        },
+      ];
+      const report = buildPhase2IdentityMigrationPlan(input({ facultyMembers, memberships }));
+      const reversedReport = buildPhase2IdentityMigrationPlan(
+        input({ facultyMembers: [...facultyMembers].reverse(), memberships }),
+      );
+
+      expect(report.plannedPeople).toEqual([
+        expect.objectContaining({
+          sourceFacultyMemberIds: ['faculty-yale-identity'],
+          yaleEvidence,
+          externalIdentityHints: [externalHint],
+        }),
+      ]);
+      expect(report.quarantine).toContainEqual({
+        subjectType: 'identity_component',
+        subjectIds: ['faculty_member:faculty-external-only'],
+        reasons: ['external_identity_only'],
+      });
+      expect(report.quarantine).toContainEqual({
+        subjectType: 'membership',
+        subjectIds: ['membership-external-only'],
+        reasons: ['membership_missing_person'],
+      });
+      expect(report.plannedRoleAssignments).toEqual([]);
+      expect(reversedReport).toEqual(report);
+    },
+  );
+
+  it.each([
+    [
+      'ORCID',
+      'orcid',
+      'orcidId',
+      '9999-9999-9999-9994',
+      '1111-1111-1111-1115',
+      'conflicting_orcid',
+    ],
+    [
+      'Google Scholar identifier',
+      'googleScholarId',
+      'googleScholarId',
+      'scholar-id-a',
+      'scholar-id-b',
+      'conflicting_google_scholar_id',
+    ],
+  ] as const)(
+    'still quarantines conflicting %s values inside an explicitly linked component',
+    (_label, userField, facultyField, userValue, facultyValue, reason) => {
+      const report = buildPhase2IdentityMigrationPlan(
+        input({
+          users: [
+            {
+              id: 'user-explicit-link',
+              netid: 'explicit-link',
+              email: 'explicit.link@yale.edu',
+              userType: 'professor',
+              fname: 'Explicit',
+              lname: 'Link',
+              userConfirmed: true,
+              facultyMemberId: 'faculty-explicit-link',
+              [userField]: userValue,
+            },
+          ],
+          facultyMembers: [
+            {
+              id: 'faculty-explicit-link',
+              userId: 'user-explicit-link',
+              netid: 'explicit-link',
+              email: 'explicit.link@yale.edu',
+              name: 'Explicit Link',
+              [facultyField]: facultyValue,
+            },
+          ],
+        }),
+      );
+
+      expect(report.plannedPeople).toEqual([]);
+      expect(report.quarantine).toContainEqual({
+        subjectType: 'identity_component',
+        subjectIds: ['faculty_member:faculty-explicit-link', 'user:user-explicit-link'],
+        reasons: [reason],
+      });
+    },
+  );
 
   it('quarantines distinct Yale identities that share only a name', () => {
     const report = buildPhase2IdentityMigrationPlan(

@@ -31,6 +31,7 @@ Official profile evidence remains disabled until a governed `ReviewDecision` or 
 Nested profile URL inspection has hard string, node, queue, child, and depth bounds.
 Any traversal truncation quarantines the affected identity and marks the report incomplete.
 ORCID and Google Scholar identifiers may remain external identity hints after a Yale identity exists.
+They never act as identity merge keys and cannot bridge an external-only row or membership into a Yale-confirmed Person.
 External identifiers alone never create a person.
 Names never merge identity components.
 Distinct identity components with the same normalized name enter quarantine.
