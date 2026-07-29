@@ -565,6 +565,14 @@ A later decision may point backward to one decision it supersedes, while the ori
 These collections may coexist empty with the current runtime.
 No current scraper or public read path should write or consume them until a later cutover phase adds reconciliation and explicit operational gates.
 
+### Phase 5 materialized provenance foundation
+
+[`materializedProvenanceSchema`](../server/src/models/materializedProvenance.ts) is an embedded contract for future canonical materializers.
+The exported schema and `MaterializedProvenance` type require 1 to 100 unique `EvidenceClaim` ObjectIds, a normalized stable materializer identifier of at most 120 characters, a positive safe-integer materializer version, and an explicit valid `computedAt` timestamp.
+The embedded schema uses strict mode and disables `_id`.
+The schema is reusable but remains unattached to target models.
+Attaching it, emitting claims, or writing provenance remains blocked until the earlier migration phases and their private operational evidence are accepted.
+
 ### Phase 1 bounded canonical read contracts
 
 [`canonicalDomainLoaders.ts`](../server/src/services/canonicalDomainLoaders.ts) defines reusable, read-only loaders for public person identity, current approved roles, active organizations, approved taxonomy terms, public evidence metadata, and account-owned research plans.

@@ -480,15 +480,7 @@ Example predicates include:
 ### Materialized provenance
 
 Materialized records must retain the claims that support them.
-
-```ts
-type MaterializedProvenance = {
-  evidenceClaimIds: string[];
-  materializer: string;
-  materializerVersion: number;
-  computedAt: Date;
-};
-```
+The canonical foundation contract and its rollout boundary are documented in [`research-model.md`](./research-model.md#phase-5-materialized-provenance-foundation).
 
 Computed values such as access summaries, browse ranking, and Best Next Step must identify themselves as Yale Research derivations.
 They must not be presented as direct quotations from a source.
@@ -660,7 +652,7 @@ After Phase 0 exits, the operational sequence is Phase 1, Phase 2, the remaining
 | [Phase 2](https://github.com/YaleComputerSociety/ylabs/issues/206) | **Foundation only**: Phase 1 provides empty `Account`, `Person`, and `RoleAssignment` contracts                                                                                                                               | **Blocked**: identity migration and parity review wait for Phase 0 and Phase 1 exits                                     | **Not started**: public identity, leadership, and professor-name search still use compatibility models                                                                                      |
 | [Phase 3](https://github.com/YaleComputerSociety/ylabs/issues/207) | **Partial**: dedicated bibliographic sources, schedules, release-gate invocations, the hidden department-roster publication producer, and its standalone repair writer are retired while rollback evidence and storage remain | **Pending**: outbound-link, search-parity, archive, and rollback acceptance                                              | **Paused at reversible preparation**: official-profile publication observations fail closed, but public scholarly readers, other materializers, audits, promotion paths, and storage remain |
 | [Phase 4](https://github.com/YaleComputerSociety/ylabs/issues/208) | **Foundation only**: first-class access records and a bounded review-only legacy-record classification planner exist; clean entity, taxonomy, and planning migrations do not                                                  | **Blocked**: canonical entity, access, opportunity, and private-plan parity review waits for earlier exits               | **Not started**: live entity, access, listing, fellowship, and saved-plan compatibility paths remain                                                                                        |
-| [Phase 5](https://github.com/YaleComputerSociety/ylabs/issues/209) | **Foundation only**: `SourceDocument`, `EvidenceClaim`, `ReviewDecision`, and governed predicate contracts exist                                                                                                              | **Blocked**: dual-write reconciliation, attribution, visibility, and search evidence wait for Phases 2 through 4         | **Not started**: materializers still consume field-name-based `Observation` records                                                                                                         |
+| [Phase 5](https://github.com/YaleComputerSociety/ylabs/issues/209) | **Foundation only**: `SourceDocument`, `EvidenceClaim`, `ReviewDecision`, governed predicate, and unattached `MaterializedProvenance` contracts exist                                                                         | **Blocked**: dual-write reconciliation, attribution, visibility, and search evidence wait for Phases 2 through 4         | **Not started**: materializers still consume field-name-based `Observation` records                                                                                                         |
 | [Phase 6](https://github.com/YaleComputerSociety/ylabs/issues/210) | **Not started**: final compatibility-removal and strict-validation work waits for every prior phase                                                                                                                           | **Blocked**: final parity, orphan, attribution, and rollback acceptance cannot precede earlier exits                     | **Not started**: compatibility readers, fields, models, promotion paths, and storage remain                                                                                                 |
 
 ### Phase 0: resolve integration state and measure production

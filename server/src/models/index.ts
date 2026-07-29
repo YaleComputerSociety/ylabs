@@ -47,5 +47,6 @@ export * from './taxonomyTerm';
 export * from './evidencePredicateRegistry';
 export * from './sourceDocument';
 export * from './evidenceClaim';
+export * from './materializedProvenance';
 export * from './researchPlan';
 export * from './reviewDecision';
