@@ -56,9 +56,11 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             email: 'person.one@yale.edu',
             name: 'Person One',
             websiteUrl: 'https://example.yale.edu/profile/person-one/',
-            websiteUrlVerification: {
-              verifiedAt: '2026-07-01T00:00:00.000Z',
-              observationId: 'observation-profile-1',
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2026-07-01T00:00:00.000Z',
+              reviewedByUserId: 'reviewer-1',
+              urls: ['https://example.yale.edu/profile/person-one/'],
             },
           },
         ],
@@ -217,9 +219,11 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             id: 'faculty-historical',
             name: 'Historical Person',
             websiteUrl: 'https://history.yale.edu/profile/historical-person',
-            websiteUrlVerification: {
-              verifiedAt: '2024-01-01T00:00:00.000Z',
-              sourceId: 'source-historical',
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2024-01-01T00:00:00.000Z',
+              reviewedByUserId: 'reviewer-historical',
+              urls: ['https://history.yale.edu/profile/historical-person'],
             },
             archived: true,
           },
@@ -267,9 +271,11 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             id: 'faculty-known',
             name: 'Known Person',
             websiteUrl: 'https://known.yale.edu/profile/known-person',
-            websiteUrlVerification: {
-              verifiedAt: '2026-07-01T00:00:00.000Z',
-              sourceId: 'source-known',
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2026-07-01T00:00:00.000Z',
+              reviewedByUserId: 'reviewer-known',
+              urls: ['https://known.yale.edu/profile/known-person'],
             },
           },
         ],
@@ -398,8 +404,8 @@ describe('buildPhase2IdentityMigrationPlan', () => {
     expect(report.quarantine).toEqual([]);
   });
 
-  it('does not treat a provenance-backed generic Yale directory URL as a person profile', () => {
-    const genericUrl = 'https://medicine.yale.edu/faculty/';
+  it('does not treat an approved generic Yale department URL as a person profile', () => {
+    const genericUrl = 'https://medicine.yale.edu/departments/cardiology/';
     const report = buildPhase2IdentityMigrationPlan(
       input({
         facultyMembers: [
@@ -407,9 +413,11 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             id: 'faculty-generic-profile',
             name: 'Generic Profile',
             websiteUrl: genericUrl,
-            websiteUrlVerification: {
-              verifiedAt: '2026-07-01T00:00:00.000Z',
-              observationId: 'observation-generic-profile',
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2026-07-01T00:00:00.000Z',
+              reviewedByUserId: 'reviewer-generic-profile',
+              urls: [genericUrl],
             },
           },
         ],
@@ -422,7 +430,131 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       subjectIds: ['faculty_member:faculty-generic-profile'],
       reasons: ['name_only_identity'],
       reviewHints: {
+        unverifiedYaleProfileUrls: ['https://medicine.yale.edu/departments/cardiology'],
+      },
+    });
+  });
+
+  it('ignores the legacy User profileVerified flag for a generic Yale URL', () => {
+    const genericUrl = 'https://medicine.yale.edu/faculty/';
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        users: [
+          {
+            id: 'user-generic-profile',
+            userType: 'professor',
+            fname: 'Generic',
+            lname: 'Profile',
+            website: genericUrl,
+            profileVerified: true,
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'identity_component',
+      subjectIds: ['user:user-generic-profile'],
+      reasons: ['name_only_identity'],
+      reviewHints: {
         unverifiedYaleProfileUrls: ['https://medicine.yale.edu/faculty'],
+      },
+    });
+  });
+
+  it('accepts only an exact approved, actor-bound, name-bound User person profile URL', () => {
+    const personUrl = 'https://medicine.yale.edu/profile/person-one/';
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        users: [
+          {
+            id: 'user-reviewed-profile',
+            userType: 'professor',
+            fname: 'Person',
+            lname: 'One',
+            website: personUrl,
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2026-07-01T00:00:00.000Z',
+              reviewedByUserId: 'reviewer-user-profile',
+              urls: [personUrl],
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([
+      expect.objectContaining({
+        sourceUserIds: ['user-reviewed-profile'],
+        yaleEvidence: ['YALE_OFFICIAL_PROFILE'],
+      }),
+    ]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'user',
+      subjectIds: ['user-reviewed-profile'],
+      reasons: ['account_missing_cas_evidence', 'account_missing_identity'],
+    });
+  });
+
+  it('keeps a matching URL as a hint when the person-profile review lacks an actor', () => {
+    const personUrl = 'https://medicine.yale.edu/profile/person-one/';
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-unattributed-review',
+            name: 'Person One',
+            websiteUrl: personUrl,
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2026-07-01T00:00:00.000Z',
+              urls: [personUrl],
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'identity_component',
+      subjectIds: ['faculty_member:faculty-unattributed-review'],
+      reasons: ['name_only_identity'],
+      reviewHints: {
+        unverifiedYaleProfileUrls: ['https://medicine.yale.edu/profile/person-one'],
+      },
+    });
+  });
+
+  it('does not apply an approved person-profile review to a different URL', () => {
+    const candidateUrl = 'https://medicine.yale.edu/profile/person-one/';
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-mismatched-review',
+            name: 'Person One',
+            websiteUrl: candidateUrl,
+            personProfileReview: {
+              status: 'approved',
+              reviewedAt: '2026-07-01T00:00:00.000Z',
+              reviewedByUserId: 'reviewer-mismatched-profile',
+              urls: ['https://medicine.yale.edu/profile/person-two/'],
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'identity_component',
+      subjectIds: ['faculty_member:faculty-mismatched-review'],
+      reasons: ['name_only_identity'],
+      reviewHints: {
+        unverifiedYaleProfileUrls: ['https://medicine.yale.edu/profile/person-one'],
       },
     });
   });
