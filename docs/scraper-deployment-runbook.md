@@ -141,6 +141,11 @@ Then run accepted sources in rollout order:
 
 OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and are not valid Beta or Render schedule targets.
 Researcher profiles may expose reviewed Google Scholar and ORCID links for outbound navigation, but those links do not rebuild a local publication corpus.
+Ordinary scraper runs, cron runs, and standalone materialization skip legacy paper Observations before reading or writing paper data.
+Never configure `RETIRED_PAPER_PIPELINE_ROLLBACK` in Render, checked-in environment files, or another persistent deployment environment.
+Set it to the exact value `true` only for an approved one-shot rollback, and continue to satisfy the normal scraper environment, release, and write-confirmation guards.
+Because the disabled path deliberately does not inspect legacy paper Observations, a write-enabled re-materialization of a historical paper-only ScrapeRun can replace its current materialization counters with zeros.
+Use its saved report as the historical audit artifact, and do not write-re-materialize it unless the approved rollback path is active.
 Retain the retired source files and stored scholarly collections only for an approved rollback while issue #207 remains open.
 
 For each Beta source:

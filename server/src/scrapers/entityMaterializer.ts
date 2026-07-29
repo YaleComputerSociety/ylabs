@@ -30,6 +30,7 @@ import {
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { isRetiredPaperPipelineRollbackEnabled } from './retiredPaperPipeline';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -2090,6 +2091,18 @@ export async function materializeEntity(
   else if (identifier.entityKey) filter.entityKey = identifier.entityKey;
   else throw new Error('materializeEntity requires entityId or entityKey');
 
+  if (entityType === 'paper' && !isRetiredPaperPipelineRollbackEnabled()) {
+    return {
+      entityType,
+      ...identifier,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      skipped: 'retired-paper-pipeline',
+    };
+  }
+
   const obs = await Observation.find(filter).lean();
   if (obs.length === 0) {
     return {
@@ -2368,6 +2381,10 @@ async function materializePaperObservationsFromRun(
   skipped: number;
   errors: number;
 }> {
+  if (!isRetiredPaperPipelineRollbackEnabled()) {
+    return { materialized: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, errors: 0 };
+  }
+
   const runObjectId = toMaterializerObjectId(scrapeRunId);
   if (!runObjectId) {
     return { materialized: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, errors: 0 };

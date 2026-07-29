@@ -18,6 +18,9 @@ import { User } from '../models/user';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { assertRetiredPaperPipelineRollbackEnabled } from '../scrapers/retiredPaperPipeline';
+
+export { assertRetiredPaperPipelineRollbackEnabled } from '../scrapers/retiredPaperPipeline';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,16 +59,6 @@ const AUTHORSHIP_METHODS = [
 const METADATA_ONLY_SOURCES = ['arxiv', 'crossref'] as const;
 const DIRECT_AUTHOR_FIELD_KEEP_SOURCES = ['manual-admin-edit', 'manual-pi-edit'] as const;
 const PAPER_AUTHORSHIP_AUDIT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-
-export function assertRetiredPaperPipelineRollbackEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-): void {
-  if (env.RETIRED_PAPER_PIPELINE_ROLLBACK !== 'true') {
-    throw new Error(
-      'Paper authorship audit is quarantined with the retired bibliographic pipeline. Set RETIRED_PAPER_PIPELINE_ROLLBACK=true only as part of an approved rollback plan.',
-    );
-  }
-}
 
 export function paperAuthorshipAuditFixCommand(maxApply?: number): string {
   const maxApplyArg = typeof maxApply === 'number' ? ` --max-apply=${maxApply}` : '';

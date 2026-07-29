@@ -16,6 +16,7 @@ const serverPackage = JSON.parse(
 ) as {
   scripts?: Record<string, string>;
 };
+const serverEnvExample = fs.readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8');
 const scraperCli = fs.readFileSync(new URL('../cli.ts', import.meta.url), 'utf8');
 const departmentRosterScraper = fs.readFileSync(
   new URL('../sources/departmentRosterScraper.ts', import.meta.url),
@@ -23,6 +24,10 @@ const departmentRosterScraper = fs.readFileSync(
 );
 const entityMaterializer = fs.readFileSync(
   new URL('../entityMaterializer.ts', import.meta.url),
+  'utf8',
+);
+const retiredPaperPipeline = fs.readFileSync(
+  new URL('../retiredPaperPipeline.ts', import.meta.url),
   'utf8',
 );
 
@@ -103,5 +108,16 @@ describe('deployed scraper source contract', () => {
     expect(departmentRosterScraper).not.toContain('publicationListUrls');
     expect(entityMaterializer).not.toContain("from '../models/researchScholarlyLink'");
     expect(entityMaterializer).not.toContain('materializeOfficialProfileScholarlyLinks');
+  });
+
+  it('keeps paper materialization behind an undeployed exact rollback opt-in', () => {
+    const flag = 'RETIRED_PAPER_PIPELINE_ROLLBACK';
+    const packageCommands = Object.values(serverPackage.scripts || {}).join('\n');
+
+    expect(retiredPaperPipeline).toContain("env[RETIRED_PAPER_PIPELINE_ROLLBACK_ENV] === 'true'");
+    expect(entityMaterializer.match(/!isRetiredPaperPipelineRollbackEnabled\(\)/g)).toHaveLength(2);
+    expect(renderBlueprint).not.toContain(flag);
+    expect(serverEnvExample).not.toContain(flag);
+    expect(packageCommands).not.toContain(flag);
   });
 });
