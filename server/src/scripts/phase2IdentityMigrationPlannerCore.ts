@@ -69,6 +69,7 @@ export interface Phase2IdentityMigrationPlannerInput {
   users: LegacyIdentityUser[];
   facultyMembers: LegacyIdentityFacultyMember[];
   memberships: LegacyIdentityMembership[];
+  knownResearchEntityIds: string[];
   environment: 'development' | 'beta' | 'production-copy';
   databaseName: string;
   sourceCommit: string;
@@ -147,7 +148,7 @@ export interface PlannedRoleAssignment {
   endedAt?: string;
   confidence: number;
   reviewStatus: RoleAssignmentReviewStatus;
-  resolution: 'CANONICAL_SOURCE_REFERENCE' | 'UNIQUE_YALE_CONFIRMED_NAME';
+  resolution: 'CANONICAL_SOURCE_REFERENCE';
 }
 
 export interface Phase2IdentityMigrationPlanReport {
@@ -687,7 +688,7 @@ function identityComponents(nodes: Map<string, IdentityNode>): IdentityNode[][] 
   orderedNodes.forEach((node, index) => {
     const entries: Array<[string, Set<string>]> = [
       ['netid', node.netids],
-      ['email', node.emails],
+      ['email', new Set([...node.emails].filter(isYaleEmail))],
     ];
     entries.forEach(([field, values]) => {
       values.forEach((value) => {
@@ -903,7 +904,7 @@ function roleState(membership: LegacyIdentityMembership): RoleAssignmentState {
 
 function plannedRoles(args: {
   memberships: LegacyIdentityMembership[];
-  people: PlannedPerson[];
+  knownResearchEntityIds: Set<string>;
   personKeyByUserId: Map<string, string>;
   personKeyByFacultyMemberId: Map<string, string>;
   identityByPersonKey: Map<
@@ -915,25 +916,18 @@ function plannedRoles(args: {
   >;
   quarantine: Phase2QuarantineRecord[];
 }): PlannedRoleAssignment[] {
-  const peopleByNormalizedName = new Map<string, PlannedPerson[]>();
-  args.people.forEach((person) => {
-    const pieces = person.displayName.trim().split(/\s+/);
-    const normalized = normalizePhase0PersonName({
-      fname: pieces.slice(0, -1).join(' '),
-      lname: pieces.at(-1),
-    });
-    if (!normalized) return;
-    const matches = peopleByNormalizedName.get(normalized) || [];
-    matches.push(person);
-    peopleByNormalizedName.set(normalized, matches);
-  });
   const plans: PlannedRoleAssignment[] = [];
   for (const membership of args.memberships) {
     const reasons: Phase2QuarantineReason[] = [];
     if (membership.archived === true && !historicalMembership(membership)) {
       reasons.push('membership_archived_without_historical_evidence');
     }
-    if (!membership.researchEntityId) reasons.push('membership_missing_research_entity');
+    if (
+      !membership.researchEntityId ||
+      !args.knownResearchEntityIds.has(membership.researchEntityId)
+    ) {
+      reasons.push('membership_missing_research_entity');
+    }
     const role = CANONICAL_ROLE_BY_LEGACY[(membership.role || '').trim().toLowerCase()];
     if (!role) reasons.push('membership_unsupported_role');
     const referencedPersonKeys = new Set<string>();
@@ -965,21 +959,7 @@ function plannedRoles(args: {
     } else if (referencedPersonKeys.size > 1) {
       reasons.push('membership_ambiguous_person');
     } else if (explicitReferenceCount === 0) {
-      const name = nonemptyText(membership.name);
-      const pieces = (name || '').split(/\s+/);
-      const normalizedName = normalizePhase0PersonName({
-        fname: pieces.slice(0, -1).join(' '),
-        lname: pieces.at(-1),
-      });
-      const matches = normalizedName ? peopleByNormalizedName.get(normalizedName) || [] : [];
-      if (matches.length === 1) {
-        personKey = matches[0].personKey;
-        resolution = 'UNIQUE_YALE_CONFIRMED_NAME';
-      } else if (matches.length > 1) {
-        reasons.push('membership_ambiguous_person');
-      } else {
-        reasons.push('membership_missing_person');
-      }
+      reasons.push('membership_missing_person');
     }
     if (personKey) {
       const plannedIdentity = args.identityByPersonKey.get(personKey);
@@ -1043,7 +1023,7 @@ export function buildPhase2IdentityMigrationPlan(
   const people = plannedPeople(components, accounts.byUserId, quarantine);
   const roles = plannedRoles({
     memberships: input.memberships,
-    people: people.people,
+    knownResearchEntityIds: new Set(input.knownResearchEntityIds),
     personKeyByUserId: people.personKeyByUserId,
     personKeyByFacultyMemberId: people.personKeyByFacultyMemberId,
     identityByPersonKey: people.identityByPersonKey,

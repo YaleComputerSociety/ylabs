@@ -11,10 +11,14 @@ import {
 function input(
   overrides: Partial<Phase2IdentityMigrationPlannerInput> = {},
 ): Phase2IdentityMigrationPlannerInput {
+  const memberships = overrides.memberships || [];
   return {
     users: [],
     facultyMembers: [],
-    memberships: [],
+    memberships,
+    knownResearchEntityIds: memberships.flatMap(({ researchEntityId }) =>
+      researchEntityId ? [researchEntityId] : [],
+    ),
     environment: 'development',
     databaseName: 'Development',
     sourceCommit: 'a'.repeat(40),
@@ -334,6 +338,96 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       subjectType: 'identity_component',
       subjectIds: ['faculty_member:faculty-conflict', 'user:user-conflict'],
       reasons: ['conflicting_email'],
+    });
+  });
+
+  it('does not join identity components through a shared external email', () => {
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-yale',
+            name: 'Yale Person',
+            netid: 'yale-person',
+            email: 'shared@example.com',
+          },
+          {
+            id: 'faculty-external',
+            name: 'External Person',
+            email: 'shared@example.com',
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([
+      expect.objectContaining({
+        sourceFacultyMemberIds: ['faculty-yale'],
+      }),
+    ]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'identity_component',
+      subjectIds: ['faculty_member:faculty-external'],
+      reasons: ['name_only_identity'],
+    });
+  });
+
+  it('quarantines a name-only membership even when its name is unique', () => {
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-known',
+            name: 'Known Person',
+            netid: 'known-person',
+          },
+        ],
+        memberships: [
+          {
+            id: 'membership-name-only',
+            researchEntityId: 'entity-known',
+            name: 'Known Person',
+            role: 'pi',
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedRoleAssignments).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'membership',
+      subjectIds: ['membership-name-only'],
+      reasons: ['membership_missing_person'],
+    });
+  });
+
+  it('quarantines a membership whose research entity is absent from the existence snapshot', () => {
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-known',
+            name: 'Known Person',
+            netid: 'known-person',
+          },
+        ],
+        memberships: [
+          {
+            id: 'membership-dangling-entity',
+            researchEntityId: 'entity-missing',
+            facultyMemberId: 'faculty-known',
+            role: 'pi',
+          },
+        ],
+        knownResearchEntityIds: [],
+      }),
+    );
+
+    expect(report.plannedRoleAssignments).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'membership',
+      subjectIds: ['membership-dangling-entity'],
+      reasons: ['membership_missing_research_entity'],
     });
   });
 

@@ -39,11 +39,12 @@ Conflicting netids, emails, ORCIDs, Google Scholar identifiers, names, or explic
 
 A role assignment normally resolves through a canonical source `userId` or `facultyMemberId`.
 An unresolved explicit reference never falls back to a same-name match.
-A name-only membership may produce only an unreviewed plan when exactly one Yale-confirmed planned person has that normalized name.
+Name-only memberships enter quarantine and never produce role assignments.
 Historical, alumni, ended, or explicitly non-current memberships remain `HISTORICAL`.
 This includes materializer-produced historical memberships whose legacy row is archived.
 Historical roles resolved through an archived identity remain unreviewed, while a current role that resolves only to archived identity evidence enters quarantine.
-Unsupported roles, ambiguous identities, missing people, and missing research entities enter quarantine.
+Unsupported roles, ambiguous identities, missing people, and research entity references absent from an authorized existence snapshot enter quarantine.
+The protected command does not read canonical targets, so it supplies no existence snapshot and fails closed by quarantining every membership proposal.
 
 ## Private Output Contract
 

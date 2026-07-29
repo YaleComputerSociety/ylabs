@@ -538,6 +538,7 @@ async function runPhase2IdentityMigrationPlan(
       users: users.documents,
       facultyMembers: facultyMembers.documents,
       memberships: memberships.documents,
+      knownResearchEntityIds: [],
       environment: args.environment,
       databaseName,
       sourceCommit,
