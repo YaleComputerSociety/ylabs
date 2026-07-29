@@ -586,6 +586,16 @@ A reconciliation pass must run at least every six hours to repair missed invalid
 
 These loaders and projections are not wired to live REST routes, Meilisearch, materializer writes, or migration code in Phase 1.
 
+### Phase 4 reviewed legacy-record classification foundation
+
+[`legacyResearchRecordClassification.ts`](../server/src/services/legacyResearchRecordClassification.ts) defines a bounded, deterministic planner for the one-time classification of legacy `Listing` and `Fellowship` records.
+It distinguishes real research-role postings, research programs that provide an entry route, formalization-only funding or thesis records, non-research archives, and unresolved records that require manual review.
+The planner adds a `PostedOpportunity` suggestion only when a program has a safe public application URL plus current or time-bound application evidence.
+Every output remains a suggestion with required `PENDING` review, a null owner, and a null decision.
+It copies no free-form record content or contact fields and has no persistence capability.
+A later guarded Phase 4 migration must consume separately accepted review decisions rather than treating planner output as permission to write.
+The planner does not authorize target-collection writes, runtime reader changes, saved-plan migration, or Meilisearch changes before the earlier phase gates exit.
+
 Current physical strategy: hard-pivot to physical `research_entities` and canonical dependent collections. Development has copied and dropped `research_groups`, `research_group_members`, `research_group_stats`, `paper_group_links`, and leftover `applications` after verified parity. Runtime paper activity now uses `research_scholarly_links` and `research_scholarly_attributions`; empty stats and paper-entity-link collections are not part of the launch copy set.
 
 The remaining end-to-end work is tracked in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md), including Beta seed, Pathway Meili relevance review, source blocker resolution, production scraper rollout, opportunity detail polish, data-quality operations, post-Beta legacy cleanup, and saved/advising workflow expansion.
