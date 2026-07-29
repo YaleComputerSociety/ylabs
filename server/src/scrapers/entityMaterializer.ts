@@ -15,7 +15,6 @@ import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { ScrapeRun } from '../models/scrapeRun';
 import { PostedOpportunity } from '../models/postedOpportunity';
-import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
@@ -56,6 +55,7 @@ interface ListingPostedOpportunityMetricDeps {
 
 const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
+// Retained only to fail closed on historical observations after the producer was retired.
 const OFFICIAL_PROFILE_PUBLICATIONS_FIELD = 'officialProfilePublications';
 const PUBLIC_QUOTE_FIELDS = new Set([
   'undergradEvidenceQuote',
@@ -202,166 +202,6 @@ export function shouldIgnoreObservationForEntityMaterialization(
     !!observation.sourceName &&
     DISCOVERY_ONLY_ACCESS_FIELD_SOURCES.has(observation.sourceName)
   );
-}
-
-type OfficialProfilePublicationValue = {
-  title?: unknown;
-  year?: unknown;
-  venue?: unknown;
-  url?: unknown;
-  sourceUrl?: unknown;
-};
-
-const MIN_SCHOLARLY_LINK_YEAR = 1800;
-const MAX_SCHOLARLY_LINK_FUTURE_YEARS = 1;
-
-function cleanScholarlyText(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-function cleanScholarlyHttpUrl(value: unknown): string {
-  const text = cleanScholarlyText(value);
-  if (!text) return '';
-  try {
-    const parsed = new URL(text);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? text : '';
-  } catch {
-    return '';
-  }
-}
-
-function isPlausibleScholarlyLinkYear(year: number): boolean {
-  return (
-    Number.isInteger(year) &&
-    year >= MIN_SCHOLARLY_LINK_YEAR &&
-    year <= new Date().getUTCFullYear() + MAX_SCHOLARLY_LINK_FUTURE_YEARS
-  );
-}
-
-function normalizeOfficialProfilePublication(
-  value: OfficialProfilePublicationValue,
-  fallbackSourceUrl: string,
-  fallbackObservedAt: Date,
-): {
-  title: string;
-  year?: number;
-  venue?: string;
-  url: string;
-  sourceUrl: string;
-  observedAt: Date;
-} | null {
-  const title = cleanScholarlyText(value.title);
-  if (!title) return null;
-  const sourceUrl =
-    cleanScholarlyHttpUrl(value.sourceUrl) || cleanScholarlyHttpUrl(fallbackSourceUrl);
-  if (!sourceUrl) return null;
-  const url = cleanScholarlyHttpUrl(value.url);
-  if (!url) return null;
-
-  const trimmedYear = typeof value.year === 'string' ? value.year.trim() : '';
-  const yearNumber =
-    typeof value.year === 'number'
-      ? value.year
-      : trimmedYear && /^\d+$/.test(trimmedYear)
-        ? Number(trimmedYear)
-        : undefined;
-  const year =
-    typeof yearNumber === 'number' && isPlausibleScholarlyLinkYear(yearNumber)
-      ? yearNumber
-      : undefined;
-
-  return {
-    title,
-    year,
-    venue: cleanScholarlyText(value.venue) || undefined,
-    url,
-    sourceUrl,
-    observedAt: fallbackObservedAt,
-  };
-}
-
-function officialProfilePublicationUrl(publication: {
-  title: string;
-  url?: string;
-  sourceUrl: string;
-}): string {
-  if (publication.url) return publication.url;
-  return '';
-}
-
-export function buildOfficialProfileScholarlyLinkUpserts(
-  userId: string,
-  observations: MaterializerObservationLike[],
-): any[] {
-  const userObjectId = toMaterializerObjectId(userId);
-  if (!userObjectId) return [];
-  const ops: any[] = [];
-  const seen = new Set<string>();
-
-  for (const observation of observations) {
-    if (observation.field !== OFFICIAL_PROFILE_PUBLICATIONS_FIELD) continue;
-    const values = Array.isArray(observation.value) ? observation.value : [observation.value];
-    const observedAt = observation.observedAt || new Date();
-    const fallbackSourceUrl = observation.sourceUrl || '';
-    const confidence = typeof observation.confidence === 'number' ? observation.confidence : 0.9;
-
-    for (const value of values) {
-      if (!value || typeof value !== 'object') continue;
-      const publication = normalizeOfficialProfilePublication(
-        value as OfficialProfilePublicationValue,
-        fallbackSourceUrl,
-        observedAt,
-      );
-      if (!publication) continue;
-      const key = publication.url.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      ops.push({
-        updateOne: {
-          filter: {
-            userId: userObjectId,
-            url: publication.url,
-          },
-          update: {
-            $set: {
-              userId: userObjectId,
-              title: publication.title,
-              url: officialProfilePublicationUrl(publication),
-              destinationKind: 'OTHER',
-              displaySource: 'Official Yale profile',
-              freeFullTextUrl: '',
-              freeFullTextLabel: '',
-              discoveredVia: 'OFFICIAL_PROFILE',
-              ...(publication.year ? { year: publication.year } : {}),
-              ...(publication.venue ? { venue: publication.venue } : {}),
-              confidence,
-              observedAt: publication.observedAt,
-              sourceUrl: publication.sourceUrl,
-              externalIds: {
-                officialProfileSourceUrl: publication.sourceUrl,
-              },
-              archived: false,
-            },
-          },
-          upsert: true,
-        },
-      });
-    }
-  }
-
-  return ops;
-}
-
-async function materializeOfficialProfileScholarlyLinks(
-  userId: string,
-  observations: MaterializerObservationLike[],
-): Promise<number> {
-  const ops = buildOfficialProfileScholarlyLinkUpserts(userId, observations);
-  if (ops.length === 0) return 0;
-  const result = await ResearchScholarlyLink.bulkWrite(ops, { ordered: false });
-  return result.upsertedCount + result.modifiedCount;
 }
 
 export function shouldClearIgnoredAccessClaimForEntity(
@@ -2459,10 +2299,6 @@ export async function materializeEntity(
     const created_ = await Model.create(insert);
     entityIdString = materializerDocumentId(created_._id);
     created = true;
-  }
-
-  if (entityType === 'user' && entityIdString) {
-    await materializeOfficialProfileScholarlyLinks(entityIdString, obs);
   }
 
   const syncEntityType = entityType === 'researchGroup' ? 'researchEntity' : entityType;

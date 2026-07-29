@@ -1302,19 +1302,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'scholarCandidateProfileUrls')?.value).toEqual([
       'https://scholar.google.com/citations?user=adaCandidate',
     ]);
-    expect(userObs.find((o) => o.field === 'officialProfilePublications')?.value).toEqual([
-      expect.objectContaining({
-        title: 'Persons, Roles and Minds',
-        year: 2001,
-        sourceUrl: 'https://math.yale.edu/people/ada-lovelace',
-      }),
-      expect.objectContaining({
-        title: 'The Stone in Late Imperial China',
-        year: 2009,
-        url: 'https://math.yale.edu/publications/stone',
-        sourceUrl: 'https://math.yale.edu/people/ada-lovelace',
-      }),
-    ]);
+    expect(userObs.find((o) => o.field === 'officialProfilePublications')).toBeUndefined();
     expect(userObs.find((o) => o.field === 'googleScholarId')).toBeUndefined();
     expect(userObs.find((o) => o.field === 'profileUrls')?.value).not.toHaveProperty(
       'googleScholar',
@@ -1329,7 +1317,7 @@ describe('DepartmentRosterScraper.run', () => {
     );
   });
 
-  it('extracts selected publications from Engineering profile grid columns', async () => {
+  it('preserves Scholar discovery without mirroring Engineering publications', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (
         url ===
@@ -1379,27 +1367,15 @@ describe('DepartmentRosterScraper.run', () => {
     await scraper.run(ctx);
 
     expect(
-      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
+      emitted.find((o) => o.entityType === 'user' && o.field === 'scholarCandidateProfileUrls')
         ?.value,
-    ).toEqual([
-      expect.objectContaining({
-        title: 'A Double Auction Mechanism for Mobile Data Offloading Markets',
-        year: 2015,
-        venue: 'IEEE/ACM Transactions on Networking',
-        sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
-      }),
-      expect.objectContaining({
-        title: 'Client-server games and their equilibria in peer-to-peer networks',
-        year: 2014,
-        venue: 'Computer Networks',
-        sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
-      }),
-    ]);
+    ).toEqual(['http://scholar.google.gr/citations?user=9qtgcZ8AAAAJ']);
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications'),
+    ).toBeUndefined();
   });
 
-  it('follows official profile publication-list website links for featured publications', async () => {
+  it('does not follow publication-list pages or emit publication observations', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (
         url ===
@@ -1461,26 +1437,17 @@ describe('DepartmentRosterScraper.run', () => {
     const { ctx, emitted } = makeContext();
     await scraper.run(ctx);
 
-    expect(htmlFetcher).toHaveBeenCalledWith(
+    expect(htmlFetcher).not.toHaveBeenCalledWith(
       'https://www.cs.yale.edu/homes/abhishek/',
       false,
       'dept-faculty-roster',
     );
     expect(
-      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
-        ?.value,
-    ).toEqual([
-      expect.objectContaining({
-        title: 'Fiduciary AI for the Future of Brain-Technology Interactions',
-        url: 'https://www.cs.yale.edu/papers/fiduciary-ai.pdf',
-        sourceUrl: 'https://www.cs.yale.edu/homes/abhishek/',
-      }),
-      expect.objectContaining({
-        title: "Scalable Far Memory: Balancing Faults and Evictions, SOSP'25",
-        url: 'https://www.cs.yale.edu/papers/scalable-far-memory.pdf',
-        sourceUrl: 'https://www.cs.yale.edu/homes/abhishek/',
-      }),
-    ]);
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications'),
+    ).toBeUndefined();
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'website')?.value,
+    ).toBe('https://www.cs.yale.edu/homes/abhishek/');
     expect(JSON.stringify(emitted)).not.toContain('For a list of selected publications');
   });
 
@@ -1690,7 +1657,7 @@ describe('DepartmentRosterScraper.run', () => {
       .toHaveLength(1);
   });
 
-  it('extracts year-backed major publications embedded in official profile bios', async () => {
+  it('does not derive publication observations from official profile bios', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (url === 'https://eall.yale.edu/people/taylor-literature') {
         return `
@@ -1730,23 +1697,9 @@ describe('DepartmentRosterScraper.run', () => {
     await scraper.run(ctx);
 
     expect(
-      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
-        ?.value,
-    ).toEqual([
-      expect.objectContaining({
-        title: 'Persons, Roles and Minds',
-        year: 2001,
-        venue: 'Stanford',
-        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-      }),
-      expect.objectContaining({
-        title:
-          'Accidental Incest, Filial Cannibalism, and Other Peculiar Encounters in Late Imperial Chinese Literature',
-        year: 2009,
-        venue: 'Harvard East Asian Monographs',
-        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-      }),
-    ]);
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications'),
+    ).toBeUndefined();
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'bio')).toBeDefined();
   });
 
   it('uses an injected rendered fetcher for JS-rendered depts while keeping parsing local', async () => {

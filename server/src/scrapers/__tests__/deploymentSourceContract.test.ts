@@ -17,6 +17,14 @@ const serverPackage = JSON.parse(
   scripts?: Record<string, string>;
 };
 const scraperCli = fs.readFileSync(new URL('../cli.ts', import.meta.url), 'utf8');
+const departmentRosterScraper = fs.readFileSync(
+  new URL('../sources/departmentRosterScraper.ts', import.meta.url),
+  'utf8',
+);
+const entityMaterializer = fs.readFileSync(
+  new URL('../entityMaterializer.ts', import.meta.url),
+  'utf8',
+);
 
 const RETIRED_BIBLIOGRAPHIC_SOURCES = [
   'arxiv',
@@ -85,5 +93,12 @@ describe('deployed scraper source contract', () => {
     expect(serverPackage.scripts?.['papers:authorship-audit']).toBeUndefined();
     expect(scraperCli).not.toMatch(/--discover-openalex-authors|--max-openalex-pages-per-author/);
     expect(scraperCli).not.toMatch(/--source openalex/);
+  });
+
+  it('keeps the department roster and user materializer out of scholarly ingestion', () => {
+    expect(departmentRosterScraper).not.toContain('officialProfilePublications');
+    expect(departmentRosterScraper).not.toContain('publicationListUrls');
+    expect(entityMaterializer).not.toContain("from '../models/researchScholarlyLink'");
+    expect(entityMaterializer).not.toContain('materializeOfficialProfileScholarlyLinks');
   });
 });
