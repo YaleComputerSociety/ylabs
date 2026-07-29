@@ -25,7 +25,6 @@ export interface LegacyIdentityUser {
   lastActive?: Date | string | null;
   website?: string;
   profileUrls?: unknown;
-  personProfileReview?: LegacyIdentityPersonProfileReview;
   orcid?: string;
   googleScholarId?: string;
   facultyMemberId?: string;
@@ -42,17 +41,9 @@ export interface LegacyIdentityFacultyMember {
   lastName?: string;
   websiteUrl?: string;
   profileUrls?: unknown;
-  personProfileReview?: LegacyIdentityPersonProfileReview;
   orcidId?: string;
   googleScholarId?: string;
   archived?: boolean;
-}
-
-export interface LegacyIdentityPersonProfileReview {
-  status?: string;
-  reviewedAt?: Date | string | null;
-  reviewedByUserId?: string;
-  urls?: unknown;
 }
 
 export interface LegacyIdentityMembership {
@@ -140,7 +131,7 @@ export interface PlannedPerson {
   sourceFacultyMemberIds: string[];
   displayName: string;
   accountKey?: string;
-  yaleEvidence: Array<'NETID' | 'YALE_EMAIL' | 'YALE_OFFICIAL_PROFILE'>;
+  yaleEvidence: Array<'NETID' | 'YALE_EMAIL'>;
   externalIdentityHints: Array<'ORCID' | 'GOOGLE_SCHOLAR'>;
   unverifiedYaleProfileHints?: string[];
 }
@@ -211,7 +202,6 @@ interface IdentityNode {
   normalizedName: string;
   netids: Set<string>;
   emails: Set<string>;
-  officialProfiles: Set<string>;
   unverifiedProfileHints: Set<string>;
   orcids: Set<string>;
   scholarIds: Set<string>;
@@ -369,92 +359,6 @@ function normalizeOfficialYaleUrl(value: unknown): string | undefined {
   }
 }
 
-function normalizedUrlLeafTokens(value: string): Set<string> {
-  let decodedLeaf: string;
-  try {
-    const leaf = new URL(value).pathname.split('/').filter(Boolean).at(-1);
-    decodedLeaf = decodeURIComponent(leaf || '');
-  } catch {
-    return new Set();
-  }
-  return new Set(
-    decodedLeaf
-      .normalize('NFKD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter(Boolean),
-  );
-}
-
-function normalizedIdentityToken(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '');
-}
-
-function isPersonSpecificYaleProfile(
-  value: string,
-  normalizedName: string,
-  netids: Set<string>,
-  emails: Set<string>,
-): boolean {
-  const url = new URL(value);
-  const pathSegments = url.pathname.split('/').filter(Boolean);
-  if (pathSegments.length === 0) return false;
-  const leaf = normalizedIdentityToken(pathSegments.at(-1) || '');
-  if (
-    [
-      'about',
-      'departments',
-      'directory',
-      'faculty',
-      'members',
-      'people',
-      'person',
-      'profiles',
-      'research',
-    ].includes(leaf)
-  ) {
-    return false;
-  }
-
-  const leafTokens = normalizedUrlLeafTokens(value);
-  const nameTokens = normalizedName
-    .split(/\s+/)
-    .map(normalizedIdentityToken)
-    .filter((token) => token.length >= 2);
-  if (
-    nameTokens.length >= 2 &&
-    leafTokens.has(nameTokens[0]) &&
-    leafTokens.has(nameTokens.at(-1) as string)
-  ) {
-    return true;
-  }
-
-  const identityTokens = new Set<string>();
-  netids.forEach((netid) => identityTokens.add(normalizedIdentityToken(netid)));
-  emails.forEach((email) => {
-    const localPart = email.split('@')[0];
-    if (localPart) identityTokens.add(normalizedIdentityToken(localPart));
-  });
-  const personNamespace = pathSegments.some((segment) =>
-    ['bio', 'faculty', 'people', 'person', 'profile', 'profiles'].includes(
-      normalizedIdentityToken(segment),
-    ),
-  );
-  return (
-    personNamespace &&
-    [...identityTokens].some(
-      (token) =>
-        token.length >= 3 &&
-        (leafTokens.has(token) || normalizedIdentityToken(pathSegments.at(-1) || '') === token),
-    )
-  );
-}
-
 function normalizedProfiles(...values: unknown[]): {
   profiles: Set<string>;
   truncated: boolean;
@@ -467,45 +371,6 @@ function normalizedProfiles(...values: unknown[]): {
         .filter((value): value is string => Boolean(value)),
     ),
     truncated: traversal.truncated,
-  };
-}
-
-function hasApprovedPersonProfileReview(
-  value: LegacyIdentityPersonProfileReview | undefined,
-  evidenceCutoff: Date,
-): boolean {
-  if (
-    !value ||
-    (value.status || '').trim().toLowerCase() !== 'approved' ||
-    !nonemptyText(value.reviewedByUserId)
-  ) {
-    return false;
-  }
-  const reviewedAt = normalizedIsoDate(value.reviewedAt);
-  return Boolean(reviewedAt && new Date(reviewedAt).getTime() <= evidenceCutoff.getTime());
-}
-
-function reviewedOfficialProfiles(args: {
-  candidates: Set<string>;
-  review: LegacyIdentityPersonProfileReview | undefined;
-  evidenceCutoff: Date;
-  normalizedName: string;
-  netids: Set<string>;
-  emails: Set<string>;
-}): { profiles: Set<string>; traversalTruncated: boolean } {
-  if (!hasApprovedPersonProfileReview(args.review, args.evidenceCutoff)) {
-    return { profiles: new Set(), traversalTruncated: false };
-  }
-  const reviewed = normalizedProfiles(args.review?.urls);
-  return {
-    profiles: new Set(
-      [...args.candidates].filter(
-        (profile) =>
-          reviewed.profiles.has(profile) &&
-          isPersonSpecificYaleProfile(profile, args.normalizedName, args.netids, args.emails),
-      ),
-    ),
-    traversalTruncated: reviewed.truncated,
   };
 }
 
@@ -700,7 +565,6 @@ function buildIdentityNodes(
   users: LegacyIdentityUser[],
   facultyMembers: LegacyIdentityFacultyMember[],
   memberships: LegacyIdentityMembership[],
-  evidenceCutoff: Date,
 ): { nodes: Map<string, IdentityNode>; profileUrlTraversalTruncated: boolean } {
   const scoped = scopedIdentityRows(users, facultyMembers, memberships);
   const referencedUsers = new Set(
@@ -723,15 +587,7 @@ function buildIdentityNodes(
     const profiles = normalizedProfiles(user.website, user.profileUrls);
     const netids = normalizedIdentitySet('netid', user.netid);
     const emails = normalizedIdentitySet('email', user.email);
-    const reviewedProfiles = reviewedOfficialProfiles({
-      candidates: profiles.profiles,
-      review: user.personProfileReview,
-      evidenceCutoff,
-      normalizedName: name.normalized,
-      netids,
-      emails,
-    });
-    const profileTraversalTruncated = profiles.truncated || reviewedProfiles.traversalTruncated;
+    const profileTraversalTruncated = profiles.truncated;
     profileUrlTraversalTruncated ||= profileTraversalTruncated;
     nodes.set(key, {
       key,
@@ -741,10 +597,7 @@ function buildIdentityNodes(
       normalizedName: name.normalized,
       netids,
       emails,
-      officialProfiles: reviewedProfiles.profiles,
-      unverifiedProfileHints: new Set(
-        [...profiles.profiles].filter((profile) => !reviewedProfiles.profiles.has(profile)),
-      ),
+      unverifiedProfileHints: profiles.profiles,
       orcids: normalizedIdentitySet('orcid', user.orcid),
       scholarIds: normalizedIdentitySet('googleScholarId', user.googleScholarId),
       relevantForPerson:
@@ -772,19 +625,7 @@ function buildIdentityNodes(
       ...websiteProfile.profiles,
       ...nestedProfiles.profiles,
     ]);
-    const reviewedProfiles = reviewedOfficialProfiles({
-      candidates: candidateProfiles,
-      review: facultyMember.personProfileReview,
-      evidenceCutoff,
-      normalizedName: name.normalized,
-      netids,
-      emails,
-    });
-    const unverifiedProfileHints = new Set<string>([
-      ...[...candidateProfiles].filter((profile) => !reviewedProfiles.profiles.has(profile)),
-    ]);
-    const profileTraversalTruncated =
-      websiteProfile.truncated || nestedProfiles.truncated || reviewedProfiles.traversalTruncated;
+    const profileTraversalTruncated = websiteProfile.truncated || nestedProfiles.truncated;
     profileUrlTraversalTruncated ||= profileTraversalTruncated;
     nodes.set(key, {
       key,
@@ -794,8 +635,7 @@ function buildIdentityNodes(
       normalizedName: name.normalized,
       netids,
       emails,
-      officialProfiles: reviewedProfiles.profiles,
-      unverifiedProfileHints,
+      unverifiedProfileHints: candidateProfiles,
       orcids: normalizedIdentitySet('orcid', facultyMember.orcidId),
       scholarIds: normalizedIdentitySet('googleScholarId', facultyMember.googleScholarId),
       relevantForPerson: !facultyMember.archived || referencedFacultyMembers.has(facultyMember.id),
@@ -847,7 +687,6 @@ function identityComponents(nodes: Map<string, IdentityNode>): IdentityNode[][] 
     const entries: Array<[string, Set<string>]> = [
       ['netid', node.netids],
       ['email', node.emails],
-      ['official_profile', node.officialProfiles],
       ['orcid', node.orcids],
       ['google_scholar', node.scholarIds],
     ];
@@ -889,10 +728,7 @@ function identityComponentReasons(component: IdentityNode[]): Phase2QuarantineRe
   const orcids = unionValues(component, 'orcids');
   const scholarIds = unionValues(component, 'scholarIds');
   const names = new Set(component.map(({ normalizedName }) => normalizedName).filter(Boolean));
-  const yaleEvidence =
-    netids.size > 0 ||
-    [...emails].some(isYaleEmail) ||
-    unionValues(component, 'officialProfiles').size > 0;
+  const yaleEvidence = netids.size > 0 || [...emails].some(isYaleEmail);
 
   if (netids.size > 1) reasons.push('conflicting_netid');
   if (emails.size > 1) reasons.push('conflicting_email');
@@ -926,7 +762,6 @@ function plannedPeople(
     string,
     {
       emails: Set<string>;
-      officialProfiles: Set<string>;
       hasActiveSource: boolean;
     }
   >;
@@ -962,7 +797,6 @@ function plannedPeople(
     string,
     {
       emails: Set<string>;
-      officialProfiles: Set<string>;
       hasActiveSource: boolean;
     }
   >();
@@ -1008,14 +842,12 @@ function plannedPeople(
     const personKey = `person:${preferredNode.key}`;
     const netids = unionValues(component, 'netids');
     const emails = unionValues(component, 'emails');
-    const profiles = unionValues(component, 'officialProfiles');
     const unverifiedYaleProfileHints = [...unionValues(component, 'unverifiedProfileHints')].sort(
       compareCodePoints,
     );
     const yaleEvidence: PlannedPerson['yaleEvidence'] = [];
     if (netids.size > 0) yaleEvidence.push('NETID');
     if ([...emails].some(isYaleEmail)) yaleEvidence.push('YALE_EMAIL');
-    if (profiles.size > 0) yaleEvidence.push('YALE_OFFICIAL_PROFILE');
     const externalIdentityHints: PlannedPerson['externalIdentityHints'] = [];
     if (unionValues(component, 'orcids').size > 0) externalIdentityHints.push('ORCID');
     if (unionValues(component, 'scholarIds').size > 0) {
@@ -1036,7 +868,6 @@ function plannedPeople(
     facultyMemberIds.forEach((id) => personKeyByFacultyMemberId.set(id, personKey));
     identityByPersonKey.set(personKey, {
       emails,
-      officialProfiles: profiles,
       hasActiveSource: component.some(({ archived }) => !archived),
     });
   }
@@ -1080,7 +911,6 @@ function plannedRoles(args: {
     string,
     {
       emails: Set<string>;
-      officialProfiles: Set<string>;
       hasActiveSource: boolean;
     }
   >;
@@ -1155,16 +985,11 @@ function plannedRoles(args: {
     if (personKey) {
       const plannedIdentity = args.identityByPersonKey.get(personKey);
       const membershipEmail = normalizeEmail(membership.email);
-      const membershipProfile = normalizeOfficialYaleUrl(membership.profileUrl);
       if (
-        (membershipEmail &&
-          plannedIdentity &&
-          plannedIdentity.emails.size > 0 &&
-          !plannedIdentity.emails.has(membershipEmail)) ||
-        (membershipProfile &&
-          plannedIdentity &&
-          plannedIdentity.officialProfiles.size > 0 &&
-          !plannedIdentity.officialProfiles.has(membershipProfile))
+        membershipEmail &&
+        plannedIdentity &&
+        plannedIdentity.emails.size > 0 &&
+        !plannedIdentity.emails.has(membershipEmail)
       ) {
         reasons.push('membership_conflicting_identity');
       }
@@ -1212,15 +1037,9 @@ export function buildPhase2IdentityMigrationPlan(
   input: Phase2IdentityMigrationPlannerInput,
 ): Phase2IdentityMigrationPlanReport {
   const generatedAt = normalizedIsoDate(input.generatedAt) || new Date().toISOString();
-  const evidenceCutoff = new Date(generatedAt);
   const quarantine: Phase2QuarantineRecord[] = [];
   const accounts = accountPlans(input.users, quarantine);
-  const identityNodes = buildIdentityNodes(
-    input.users,
-    input.facultyMembers,
-    input.memberships,
-    evidenceCutoff,
-  );
+  const identityNodes = buildIdentityNodes(input.users, input.facultyMembers, input.memberships);
   const components = identityComponents(identityNodes.nodes);
   const people = plannedPeople(components, accounts.byUserId, quarantine);
   const roles = plannedRoles({

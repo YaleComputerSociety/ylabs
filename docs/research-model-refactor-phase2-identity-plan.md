@@ -24,11 +24,10 @@ The private report separates planned `Account`, `Person`, and `RoleAssignment` r
 An account plan requires a normalized netid, a Yale email, and legacy login or confirmation evidence.
 Duplicate account netids or emails enter quarantine.
 
-A person plan requires accepted Yale evidence through a netid, Yale email, or verified official Yale profile.
-User and FacultyMember URLs count as official profile evidence only when the exact normalized URL appears in an approved `personProfileReview` with a reviewer and a valid review time.
-The URL must also bind conservatively to the record name or to a netid or Yale email identity inside a person-profile path.
-The legacy `profileVerified` flag and scraper field provenance never satisfy this person-identity review contract.
-Unverified Yale URLs remain private review hints and never merge identities or create a person.
+A person plan currently requires accepted Yale evidence through a netid or Yale email.
+All User and FacultyMember Yale URLs remain private review hints and never merge identities or create a person.
+Legacy `profileVerified`, scraper field provenance, and approved-looking embedded review objects cannot satisfy identity review.
+Official profile evidence remains disabled until a governed `ReviewDecision` or `EvidenceClaim` can bind the exact source record and URL after the earlier phase gates exit.
 Nested profile URL inspection has hard string, node, queue, child, and depth bounds.
 Any traversal truncation quarantines the affected identity and marks the report incomplete.
 ORCID and Google Scholar identifiers may remain external identity hints after a Yale identity exists.

@@ -2,7 +2,6 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import {
   MongoClient,
-  ObjectId,
   ReadPreference,
   type ClientSession,
   type ClientSessionOptions,
@@ -25,7 +24,6 @@ import {
   buildPhase2IdentityMigrationPlan,
   type LegacyIdentityFacultyMember,
   type LegacyIdentityMembership,
-  type LegacyIdentityPersonProfileReview,
   type LegacyIdentityUser,
 } from './phase2IdentityMigrationPlannerCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -74,7 +72,6 @@ const PHASE2_PROJECTIONS = Object.freeze({
     fname: 1,
     lname: 1,
     userConfirmed: 1,
-    personProfileReview: 1,
     loginCount: 1,
     lastLogin: 1,
     lastLoginAt: 1,
@@ -96,7 +93,6 @@ const PHASE2_PROJECTIONS = Object.freeze({
     lastName: 1,
     websiteUrl: 1,
     profileUrls: 1,
-    personProfileReview: 1,
     orcidId: 1,
     googleScholarId: 1,
     archived: 1,
@@ -238,39 +234,7 @@ function optionalId(value: unknown): string | undefined {
   return value === null || value === undefined ? undefined : String(value);
 }
 
-function optionalReviewActorId(value: unknown): string | undefined {
-  if (typeof value === 'string') return optionalString(value);
-  return value instanceof ObjectId ? value.toHexString() : undefined;
-}
-
-function recordField(value: unknown, field: string): unknown {
-  if (value instanceof Map) return Map.prototype.get.call(value, field);
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const descriptor = Object.getOwnPropertyDescriptor(value, field);
-  return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
-}
-
-function personProfileReviewFromDocument(
-  document: Document,
-): LegacyIdentityPersonProfileReview | undefined {
-  const review = document.personProfileReview;
-  if (!review || typeof review !== 'object' || Array.isArray(review)) {
-    return undefined;
-  }
-  const status = optionalString(recordField(review, 'status'));
-  const reviewedAt = optionalDate(recordField(review, 'reviewedAt'));
-  const reviewedByUserId = optionalReviewActorId(recordField(review, 'reviewedByUserId'));
-  const urls = recordField(review, 'urls');
-  return {
-    ...(status ? { status } : {}),
-    ...(reviewedAt !== undefined ? { reviewedAt } : {}),
-    ...(reviewedByUserId ? { reviewedByUserId } : {}),
-    ...(urls !== undefined ? { urls } : {}),
-  };
-}
-
 function userFromDocument(document: Document): LegacyIdentityUser {
-  const personProfileReview = personProfileReviewFromDocument(document);
   return {
     id: String(document._id),
     ...(optionalString(document.netid) ? { netid: optionalString(document.netid) } : {}),
@@ -281,7 +245,6 @@ function userFromDocument(document: Document): LegacyIdentityUser {
     ...(document.userConfirmed !== undefined
       ? { userConfirmed: Boolean(document.userConfirmed) }
       : {}),
-    ...(personProfileReview ? { personProfileReview } : {}),
     ...(Number.isFinite(Number(document.loginCount))
       ? { loginCount: Number(document.loginCount) }
       : {}),
@@ -308,7 +271,6 @@ function userFromDocument(document: Document): LegacyIdentityUser {
 }
 
 function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMember {
-  const personProfileReview = personProfileReviewFromDocument(document);
   return {
     id: String(document._id),
     ...(optionalId(document.userId) ? { userId: optionalId(document.userId) } : {}),
@@ -323,7 +285,6 @@ function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMem
       ? { websiteUrl: optionalString(document.websiteUrl) }
       : {}),
     ...(document.profileUrls !== undefined ? { profileUrls: document.profileUrls } : {}),
-    ...(personProfileReview ? { personProfileReview } : {}),
     ...(optionalString(document.orcidId) ? { orcidId: optionalString(document.orcidId) } : {}),
     ...(optionalString(document.googleScholarId)
       ? { googleScholarId: optionalString(document.googleScholarId) }
