@@ -105,6 +105,7 @@ export type Phase2QuarantineReason =
   | 'membership_conflicting_identity'
   | 'membership_missing_person'
   | 'membership_missing_research_entity'
+  | 'membership_research_entity_existence_inconclusive'
   | 'membership_unsupported_role'
   | 'membership_archived_without_historical_evidence'
   | 'membership_current_with_archived_person'
@@ -908,6 +909,7 @@ function roleState(membership: LegacyIdentityMembership): RoleAssignmentState {
 function plannedRoles(args: {
   memberships: LegacyIdentityMembership[];
   knownResearchEntityIds: Set<string>;
+  researchEntitySnapshotTruncated: boolean;
   personKeyByUserId: Map<string, string>;
   personKeyByFacultyMemberId: Map<string, string>;
   identityByPersonKey: Map<
@@ -925,11 +927,14 @@ function plannedRoles(args: {
     if (membership.archived === true && !historicalMembership(membership)) {
       reasons.push('membership_archived_without_historical_evidence');
     }
-    if (
-      !membership.researchEntityId ||
-      !args.knownResearchEntityIds.has(membership.researchEntityId)
-    ) {
+    if (!membership.researchEntityId) {
       reasons.push('membership_missing_research_entity');
+    } else if (!args.knownResearchEntityIds.has(membership.researchEntityId)) {
+      reasons.push(
+        args.researchEntitySnapshotTruncated
+          ? 'membership_research_entity_existence_inconclusive'
+          : 'membership_missing_research_entity',
+      );
     }
     const role = CANONICAL_ROLE_BY_LEGACY[(membership.role || '').trim().toLowerCase()];
     if (!role) reasons.push('membership_unsupported_role');
@@ -1027,6 +1032,7 @@ export function buildPhase2IdentityMigrationPlan(
   const roles = plannedRoles({
     memberships: input.memberships,
     knownResearchEntityIds: new Set(input.knownResearchEntityIds),
+    researchEntitySnapshotTruncated: input.truncation.researchEntities,
     personKeyByUserId: people.personKeyByUserId,
     personKeyByFacultyMemberId: people.personKeyByFacultyMemberId,
     identityByPersonKey: people.identityByPersonKey,

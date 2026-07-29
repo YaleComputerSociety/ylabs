@@ -465,7 +465,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
     expect(report.quarantine).toContainEqual({
       subjectType: 'membership',
       subjectIds: ['membership-entity-beyond-bound'],
-      reasons: ['membership_missing_research_entity'],
+      reasons: ['membership_research_entity_existence_inconclusive'],
     });
     expect(report.scan.possibleTruncation.researchEntities).toBe(true);
     expect(report.scan.complete).toBe(false);

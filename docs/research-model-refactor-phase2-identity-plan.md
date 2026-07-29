@@ -49,6 +49,7 @@ Unsupported roles, ambiguous identities, missing people, and research entity ref
 The protected command supplies a bounded, read-only `research_entities` ID snapshot and proposes a role only when its target appears in that snapshot.
 An absent target enters quarantine.
 If the entity scan is truncated, an unseen target remains quarantined, the report is incomplete, and strict mode fails so the operator cannot mistake the target for conclusively dangling.
+Those unseen targets use the distinct `membership_research_entity_existence_inconclusive` reason rather than the conclusive missing-target reason.
 
 ## Private Output Contract
 
