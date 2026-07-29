@@ -218,7 +218,7 @@ describe('Phase 4 legacy record classification planner', () => {
     });
   });
 
-  it('never lets stale accepting state override an expired application deadline', () => {
+  it('fails closed on expired application evidence regardless of stale accepting state', () => {
     expect(
       plan({
         sourceKind: 'FELLOWSHIP',
@@ -233,7 +233,23 @@ describe('Phase 4 legacy record classification planner', () => {
     ).toMatchObject({
       suggestedDisposition: 'MANUAL_REVIEW',
       proposedArtifacts: [],
-      blockers: ['CONFLICTING_APPLICATION_STATE'],
+      blockers: ['EXPIRED_APPLICATION_EVIDENCE'],
+    });
+
+    expect(
+      plan({
+        sourceKind: 'FELLOWSHIP',
+        sourceId: FELLOWSHIP_ID,
+        programKind: 'MENTOR_MATCHING',
+        entryMode: 'DIRECT_FACULTY_MATCHING',
+        reviewedResearchRelevance: 'RESEARCH_RELATED',
+        applicationLink: 'https://example.yale.edu/apply',
+        deadline: new Date('2026-06-01T00:00:00.000Z'),
+      }),
+    ).toMatchObject({
+      suggestedDisposition: 'MANUAL_REVIEW',
+      proposedArtifacts: [],
+      blockers: ['EXPIRED_APPLICATION_EVIDENCE'],
     });
   });
 
@@ -318,8 +334,8 @@ describe('Phase 4 legacy record classification planner', () => {
     expect(() =>
       planPhase4LegacyRecordClassifications([listing], { now: new Date('invalid') }),
     ).toThrow(/now must be a valid Date/);
-    expect(() =>
-      planPhase4LegacyRecordClassifications([listing], {} as { now: Date }),
-    ).toThrow(/now must be a valid Date/);
+    expect(() => planPhase4LegacyRecordClassifications([listing], {} as { now: Date })).toThrow(
+      /now must be a valid Date/,
+    );
   });
 });

@@ -47,6 +47,7 @@ export const phase4ClassificationBlockers = [
   'UNREVIEWED_RESEARCH_RELEVANCE',
   'CONFLICTING_PROGRAM_CLASSIFICATION',
   'CONFLICTING_APPLICATION_STATE',
+  'EXPIRED_APPLICATION_EVIDENCE',
   'INVALID_APPLICATION_DEADLINE',
 ] as const;
 export type Phase4ClassificationBlocker = (typeof phase4ClassificationBlockers)[number];
@@ -254,7 +255,10 @@ function fellowshipOpportunityReview(
   now: Date,
 ): {
   status?: PostedOpportunityStatus;
-  blocker?: 'CONFLICTING_APPLICATION_STATE' | 'INVALID_APPLICATION_DEADLINE';
+  blocker?:
+    | 'CONFLICTING_APPLICATION_STATE'
+    | 'EXPIRED_APPLICATION_EVIDENCE'
+    | 'INVALID_APPLICATION_DEADLINE';
 } {
   if (!isPublicHttpUrl(input.applicationLink)) return {};
   if (input.deadline !== undefined && !validDate(input.deadline)) {
@@ -262,12 +266,14 @@ function fellowshipOpportunityReview(
   }
   const deadline = validDate(input.deadline) ? input.deadline : undefined;
   const expired = deadline !== undefined && deadline.getTime() < now.getTime();
-  if (input.isAcceptingApplications === true && (input.archived === true || expired)) {
+  if (expired) {
+    return { blocker: 'EXPIRED_APPLICATION_EVIDENCE' };
+  }
+  if (input.isAcceptingApplications === true && input.archived === true) {
     return { blocker: 'CONFLICTING_APPLICATION_STATE' };
   }
   if (input.isAcceptingApplications !== true && !deadline) return {};
   if (input.archived === true) return { status: 'ARCHIVED' };
-  if (expired) return { status: 'CLOSED' };
   if (input.isAcceptingApplications === false) return {};
   return { status: 'OPEN' };
 }
