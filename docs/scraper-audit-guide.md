@@ -190,7 +190,7 @@ The claim gate is read-only. It validates existing access/pathway/contact/opport
 Directory, grant, and dataset sources are not research-description sources.
 Cancer, WTI, Economics, English, department, and center listing pages can support source or membership provenance but must be followed to individual official profile or lab pages for public description copy.
 NIH and NSF records can support funding and research-context evidence, but must not repair `fullDescription` or `shortDescription` by copying award summaries, raw data titles, or source chrome.
-OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref ingestion are retired and must not appear in audit rollout plans.
+OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref, and official-profile publication ingestion are retired and must not appear in audit rollout plans; see the authoritative retirement contract in [`docs/research-data-pipeline.md`](./research-data-pipeline.md).
 Keep reviewed Google Scholar and ORCID profile links as outbound researcher navigation only.
 The retired source files and stored scholarly collections remain temporarily available for an explicit rollback under issue #207.
 

@@ -8,8 +8,8 @@ Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifac
 
 The bibliographic ingestion sources (OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref) are deprecated: they are deregistered so they cannot run, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.
 Yale Research navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
-This is the reversible first increment of Phase 3 (#207): stored paper and scholarly collections are retained for rollback, and readers, storage, and downstream references are removed in later increments once replacement launch criteria are documented.
-Retiring the curated official-profile scholarly-activity surface is a separate one-way-door decision and is not included here.
+The confirmed Phase 3 scope also retires the curated official-profile scholarly-activity surface.
+The implementation proceeds in reversible increments: producers and consumers stop before any stored paper or scholarly collection is archived or removed.
 
 ## 2026-07-24: Refactor Around Research Navigation And Evidence
 

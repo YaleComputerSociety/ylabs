@@ -399,9 +399,13 @@ describe('isLikelyPersonSpecificYaleEmail', () => {
   });
 
   it('rejects contact or other-person Yale emails near a faculty name', () => {
-    expect(isLikelyPersonSpecificYaleEmail('sage.mismatch@yale.edu', 'Jordan Mismatch')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('sage.mismatch@yale.edu', 'Jordan Mismatch')).toBe(
+      false,
+    );
     expect(isLikelyPersonSpecificYaleEmail('drew.match@yale.edu', 'Dana Mismatch')).toBe(false);
-    expect(isLikelyPersonSpecificYaleEmail('sky.mismatch@yale.edu', 'Different Person')).toBe(false);
+    expect(isLikelyPersonSpecificYaleEmail('sky.mismatch@yale.edu', 'Different Person')).toBe(
+      false,
+    );
     expect(isLikelyPersonSpecificYaleEmail('ysm.editor@yale.edu', 'Cameron Profile')).toBe(false);
   });
 });
@@ -651,11 +655,7 @@ describe('psychExtractor', () => {
 
     const out = psychExtractor(html, { pageUrl: 'https://physics.yale.edu/people/faculty' });
 
-    expect(out[0].topics).toEqual([
-      'Condensed Matter Physics',
-      'Theorist',
-      'Quantum criticality',
-    ]);
+    expect(out[0].topics).toEqual(['Condensed Matter Physics', 'Theorist', 'Quantum criticality']);
     expect(out[0].topics).not.toContain('Condensed Matter PhysicsTheoristQuantum criticality');
   });
 
@@ -920,11 +920,9 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('skips JS-rendered depts and only invokes extractors for matching only-filter', async () => {
-    const cannedExtractor = vi.fn(
-      (): FacultyEntry[] => [
-        { name: 'Test Faculty', email: 'tf123@yale.edu', labUrl: 'https://tflab.example.org' },
-      ],
-    );
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Test Faculty', email: 'tf123@yale.edu', labUrl: 'https://tflab.example.org' },
+    ]);
     const stubExtractor = vi.fn((): FacultyEntry[] => []);
     const configs: DeptConfig[] = [
       {
@@ -982,15 +980,13 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('does not derive identity email observations from another person contact on a roster card', async () => {
-    const cannedExtractor = vi.fn(
-      (): FacultyEntry[] => [
-        {
-          name: 'Jordan Mismatch',
-          email: 'sage.mismatch@yale.edu',
-          labUrl: 'https://gendronlab.yale.edu',
-        },
-      ],
-    );
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Jordan Mismatch',
+        email: 'sage.mismatch@yale.edu',
+        labUrl: 'https://gendronlab.yale.edu',
+      },
+    ]);
     const configs: DeptConfig[] = [
       {
         deptKey: 'mcdb',
@@ -1019,15 +1015,14 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('models personal research websites as faculty research areas rather than labs', async () => {
-    const cannedExtractor = vi.fn(
-      (): FacultyEntry[] => [
-        {
-          name: 'Abraham Silberschatz',
-          profileUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/avery-database-fixture',
-          labUrl: 'https://codex.cs.yale.edu/avi/',
-        },
-      ],
-    );
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Abraham Silberschatz',
+        profileUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/avery-database-fixture',
+        labUrl: 'https://codex.cs.yale.edu/avi/',
+      },
+    ]);
     const configs: DeptConfig[] = [
       {
         deptKey: 'cs',
@@ -1050,9 +1045,7 @@ describe('DepartmentRosterScraper.run', () => {
       'Abraham Silberschatz Faculty Research',
     );
     expect(entityObs.find((o) => o.field === 'kind')?.value).toBe('individual');
-    expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe(
-      'FACULTY_RESEARCH_AREA',
-    );
+    expect(entityObs.find((o) => o.field === 'entityType')?.value).toBe('FACULTY_RESEARCH_AREA');
     expect(entityObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
       'https://codex.cs.yale.edu/avi/',
     );
@@ -1061,21 +1054,19 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('can suppress generic personal-site research entities for broad people rosters', async () => {
-    const cannedExtractor = vi.fn(
-      (): FacultyEntry[] => [
-        {
-          name: 'Deb Margolin',
-          email: 'devon.roster@yale.edu',
-          profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
-          labUrl: 'https://www.debmargolin.com/',
-        },
-        {
-          name: 'Research Lab Owner',
-          email: 'research.owner@yale.edu',
-          labUrl: 'https://researchlab.yale.edu/',
-        },
-      ],
-    );
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Deb Margolin',
+        email: 'devon.roster@yale.edu',
+        profileUrl: 'https://tdps.yale.edu/profile/deb-margolin',
+        labUrl: 'https://www.debmargolin.com/',
+      },
+      {
+        name: 'Research Lab Owner',
+        email: 'research.owner@yale.edu',
+        labUrl: 'https://researchlab.yale.edu/',
+      },
+    ]);
     const configs: DeptConfig[] = [
       {
         deptKey: 'tdps',
@@ -1105,27 +1096,25 @@ describe('DepartmentRosterScraper.run', () => {
   });
 
   it('emits conservative source-backed descriptions from roster topic fields', async () => {
-    const cannedExtractor = vi.fn(
-      (): FacultyEntry[] => [
-        {
-          name: 'Hayden Material',
-          email: 'hayden.material@yale.edu',
-          labUrl: 'https://www.eng.yale.edu/caolab/',
-          topics: [
-            'Condensed Matter Physics',
-            'Experimentalist',
-            'Coherent control of light transport and absorption',
-            'Random lasers',
-          ],
-          researchInterests: [
-            'Condensed Matter Physics',
-            'Experimentalist',
-            'Coherent control of light transport and absorption',
-            'Random lasers',
-          ],
-        },
-      ],
-    );
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Hayden Material',
+        email: 'hayden.material@yale.edu',
+        labUrl: 'https://www.eng.yale.edu/caolab/',
+        topics: [
+          'Condensed Matter Physics',
+          'Experimentalist',
+          'Coherent control of light transport and absorption',
+          'Random lasers',
+        ],
+        researchInterests: [
+          'Condensed Matter Physics',
+          'Experimentalist',
+          'Coherent control of light transport and absorption',
+          'Random lasers',
+        ],
+      },
+    ]);
     const configs: DeptConfig[] = [
       {
         deptKey: 'physics',
@@ -1284,9 +1273,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'title')?.value).toBe(
       'Associate Professor of Applied Mathematics',
     );
-    expect(userObs.find((o) => o.field === 'website')?.value).toBe(
-      'https://lovelacelab.yale.edu/',
-    );
+    expect(userObs.find((o) => o.field === 'website')?.value).toBe('https://lovelacelab.yale.edu/');
     expect(userObs.find((o) => o.field === 'orcid')?.value).toBe('0000-0000-0000-0001');
     expect(userObs.find((o) => o.field === 'bio')?.sourceUrl).toBe(
       'https://math.yale.edu/people/ada-lovelace',
@@ -1302,19 +1289,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(userObs.find((o) => o.field === 'scholarCandidateProfileUrls')?.value).toEqual([
       'https://scholar.google.com/citations?user=adaCandidate',
     ]);
-    expect(userObs.find((o) => o.field === 'officialProfilePublications')?.value).toEqual([
-      expect.objectContaining({
-        title: 'Persons, Roles and Minds',
-        year: 2001,
-        sourceUrl: 'https://math.yale.edu/people/ada-lovelace',
-      }),
-      expect.objectContaining({
-        title: 'The Stone in Late Imperial China',
-        year: 2009,
-        url: 'https://math.yale.edu/publications/stone',
-        sourceUrl: 'https://math.yale.edu/people/ada-lovelace',
-      }),
-    ]);
+    expect(userObs.find((o) => o.field === 'officialProfilePublications')).toBeUndefined();
     expect(userObs.find((o) => o.field === 'googleScholarId')).toBeUndefined();
     expect(userObs.find((o) => o.field === 'profileUrls')?.value).not.toHaveProperty(
       'googleScholar',
@@ -1324,16 +1299,13 @@ describe('DepartmentRosterScraper.run', () => {
     expect(labObs.find((o) => o.field === 'websiteUrl')?.value).toBe(
       'https://lovelacelab.yale.edu/',
     );
-    expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
-      'netid:ada.lovelace',
-    );
+    expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('netid:ada.lovelace');
   });
 
-  it('extracts selected publications from Engineering profile grid columns', async () => {
+  it('preserves Scholar discovery without mirroring Engineering publications', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (
-        url ===
-        'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network'
+        url === 'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network'
       ) {
         return `
           <html><head>
@@ -1379,27 +1351,15 @@ describe('DepartmentRosterScraper.run', () => {
     await scraper.run(ctx);
 
     expect(
-      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
+      emitted.find((o) => o.entityType === 'user' && o.field === 'scholarCandidateProfileUrls')
         ?.value,
-    ).toEqual([
-      expect.objectContaining({
-        title: 'A Double Auction Mechanism for Mobile Data Offloading Markets',
-        year: 2015,
-        venue: 'IEEE/ACM Transactions on Networking',
-        sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
-      }),
-      expect.objectContaining({
-        title: 'Client-server games and their equilibria in peer-to-peer networks',
-        year: 2014,
-        venue: 'Computer Networks',
-        sourceUrl:
-          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lane-network',
-      }),
-    ]);
+    ).toEqual(['http://scholar.google.gr/citations?user=9qtgcZ8AAAAJ']);
+    expect(
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications'),
+    ).toBeUndefined();
   });
 
-  it('follows official profile publication-list website links for featured publications', async () => {
+  it('does not follow publication-list pages or emit publication observations', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (
         url ===
@@ -1461,26 +1421,17 @@ describe('DepartmentRosterScraper.run', () => {
     const { ctx, emitted } = makeContext();
     await scraper.run(ctx);
 
-    expect(htmlFetcher).toHaveBeenCalledWith(
+    expect(htmlFetcher).not.toHaveBeenCalledWith(
       'https://www.cs.yale.edu/homes/abhishek/',
       false,
       'dept-faculty-roster',
     );
     expect(
-      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
-        ?.value,
-    ).toEqual([
-      expect.objectContaining({
-        title: 'Fiduciary AI for the Future of Brain-Technology Interactions',
-        url: 'https://www.cs.yale.edu/papers/fiduciary-ai.pdf',
-        sourceUrl: 'https://www.cs.yale.edu/homes/abhishek/',
-      }),
-      expect.objectContaining({
-        title: "Scalable Far Memory: Balancing Faults and Evictions, SOSP'25",
-        url: 'https://www.cs.yale.edu/papers/scalable-far-memory.pdf',
-        sourceUrl: 'https://www.cs.yale.edu/homes/abhishek/',
-      }),
-    ]);
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications'),
+    ).toBeUndefined();
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'website')?.value).toBe(
+      'https://www.cs.yale.edu/homes/abhishek/',
+    );
     expect(JSON.stringify(emitted)).not.toContain('For a list of selected publications');
   });
 
@@ -1686,11 +1637,12 @@ describe('DepartmentRosterScraper.run', () => {
     expect(emitted.filter((o) => o.entityType === 'user' && o.field === 'userType')).toHaveLength(
       1,
     );
-    expect(emitted.filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'))
-      .toHaveLength(1);
+    expect(
+      emitted.filter((o) => o.entityType === 'researchEntity' && o.field === 'websiteUrl'),
+    ).toHaveLength(1);
   });
 
-  it('extracts year-backed major publications embedded in official profile bios', async () => {
+  it('does not derive publication observations from official profile bios', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (url === 'https://eall.yale.edu/people/taylor-literature') {
         return `
@@ -1730,23 +1682,9 @@ describe('DepartmentRosterScraper.run', () => {
     await scraper.run(ctx);
 
     expect(
-      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications')
-        ?.value,
-    ).toEqual([
-      expect.objectContaining({
-        title: 'Persons, Roles and Minds',
-        year: 2001,
-        venue: 'Stanford',
-        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-      }),
-      expect.objectContaining({
-        title:
-          'Accidental Incest, Filial Cannibalism, and Other Peculiar Encounters in Late Imperial Chinese Literature',
-        year: 2009,
-        venue: 'Harvard East Asian Monographs',
-        sourceUrl: 'https://eall.yale.edu/people/taylor-literature',
-      }),
-    ]);
+      emitted.find((o) => o.entityType === 'user' && o.field === 'officialProfilePublications'),
+    ).toBeUndefined();
+    expect(emitted.find((o) => o.entityType === 'user' && o.field === 'bio')).toBeDefined();
   });
 
   it('uses an injected rendered fetcher for JS-rendered depts while keeping parsing local', async () => {
@@ -1778,10 +1716,12 @@ describe('DepartmentRosterScraper.run', () => {
       url: 'https://example.invalid/cs#rendered',
       fetchMode: 'scrapling',
     });
-    const htmlFetcher = vi.fn(async () => `
+    const htmlFetcher = vi.fn(
+      async () => `
       <html><head><link rel="canonical" href="/faculty/grace-hopper" /></head>
       <body><a href="https://hoppersystems.yale.edu">Research Group Website</a></body></html>
-    `);
+    `,
+    );
     const axios = (await import('axios')).default;
     const getSpy = vi.spyOn(axios, 'get');
 
