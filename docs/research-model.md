@@ -592,7 +592,10 @@ These loaders and projections are not wired to live REST routes, Meilisearch, ma
 It distinguishes real research-role postings, research programs that provide an entry route, formalization-only funding or thesis records, non-research archives, and unresolved records that require manual review.
 The planner adds a `PostedOpportunity` suggestion only when a program has a safe public application URL plus current or time-bound application evidence.
 Every output remains a suggestion with required `PENDING` review, a null owner, and a null decision.
+The private review output retains only the legacy source identifier and a caller-verified canonical target identifier when one exists.
 It copies no free-form record content or contact fields and has no persistence capability.
+Listing suggestions require the caller to affirm that the canonical `ResearchEntity` exists, and fellowship pathway suggestions require reviewed research relevance plus a direct program, project, or mentor-matching entry mode.
+Mentor-first funding remains formalization-only, and contradictory application-window evidence fails closed to manual review.
 A later guarded Phase 4 migration must consume separately accepted review decisions rather than treating planner output as permission to write.
 The planner does not authorize target-collection writes, runtime reader changes, saved-plan migration, or Meilisearch changes before the earlier phase gates exit.
 

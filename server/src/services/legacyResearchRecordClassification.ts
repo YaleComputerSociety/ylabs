@@ -27,6 +27,7 @@ export const phase4ClassificationReasons = [
   'LISTING_IS_FORMALIZATION',
   'PROGRAM_PROVIDES_ENTRY_ROUTE',
   'PROGRAM_IS_FORMALIZATION_ONLY',
+  'MENTOR_REQUIRED_BEFORE_APPLY',
   'REAL_APPLICATION_WINDOW',
   'NO_CURRENT_POSTING_EVIDENCE',
   'NON_RESEARCH_PROGRAM',
@@ -37,10 +38,16 @@ export type Phase4ClassificationReason = (typeof phase4ClassificationReasons)[nu
 export const phase4ClassificationBlockers = [
   'MISSING_RESEARCH_ENTITY',
   'INVALID_RESEARCH_ENTITY_ID',
+  'UNVERIFIED_RESEARCH_ENTITY',
   'UNCONFIRMED_LISTING',
   'MISSING_LISTING_TYPE',
   'UNSUPPORTED_LISTING_TYPE',
   'UNRESOLVED_PROGRAM_CLASSIFICATION',
+  'UNRESOLVED_PROGRAM_ENTRY_MODE',
+  'UNREVIEWED_RESEARCH_RELEVANCE',
+  'CONFLICTING_PROGRAM_CLASSIFICATION',
+  'CONFLICTING_APPLICATION_STATE',
+  'INVALID_APPLICATION_DEADLINE',
 ] as const;
 export type Phase4ClassificationBlocker = (typeof phase4ClassificationBlockers)[number];
 
@@ -48,6 +55,7 @@ export interface Phase4ListingClassificationInput {
   sourceKind: 'LISTING';
   sourceId: string;
   researchEntityId?: string;
+  researchEntityExists?: boolean;
   type?: string;
   confirmed?: boolean;
   archived?: boolean;
@@ -59,7 +67,7 @@ export interface Phase4FellowshipClassificationInput {
   sourceId: string;
   programKind?: ProgramKind | string;
   entryMode?: ProgramEntryMode | string;
-  researchRelated?: boolean;
+  reviewedResearchRelevance?: 'RESEARCH_RELATED' | 'NOT_RESEARCH_RELATED';
   applicationLink?: string;
   isAcceptingApplications?: boolean;
   deadline?: Date;
@@ -74,6 +82,9 @@ export interface Phase4LegacyRecordClassificationProposal {
   source: {
     kind: Phase4LegacyRecordClassificationInput['sourceKind'];
     id: string;
+  };
+  target?: {
+    researchEntityId: string;
   };
   suggestedDisposition: Phase4SuggestedDisposition;
   proposedArtifacts: Phase4ProposedArtifactKind[];
@@ -135,11 +146,24 @@ function validResearchEntityId(value: unknown): boolean {
   return typeof value === 'string' && MONGO_OBJECT_ID_PATTERN.test(value.trim());
 }
 
-function researchEntityBlockers(value: unknown): Phase4ClassificationBlocker[] {
+function researchEntityReview(
+  value: unknown,
+  exists: unknown,
+): {
+  target?: Phase4LegacyRecordClassificationProposal['target'];
+  blockers: Phase4ClassificationBlocker[];
+} {
   if (value === undefined || value === null || value === '') {
-    return ['MISSING_RESEARCH_ENTITY'];
+    return { blockers: ['MISSING_RESEARCH_ENTITY'] };
   }
-  return validResearchEntityId(value) ? [] : ['INVALID_RESEARCH_ENTITY_ID'];
+  if (!validResearchEntityId(value)) {
+    return { blockers: ['INVALID_RESEARCH_ENTITY_ID'] };
+  }
+  const target = { researchEntityId: (value as string).trim().toLowerCase() };
+  return {
+    target,
+    blockers: exists === true ? [] : ['UNVERIFIED_RESEARCH_ENTITY'],
+  };
 }
 
 function listingProposal(
@@ -147,12 +171,14 @@ function listingProposal(
   now: Date,
 ): Phase4LegacyRecordClassificationProposal {
   const source = { kind: input.sourceKind, id: normalizedSourceId(input.sourceId) };
-  const entityBlockers = researchEntityBlockers(input.researchEntityId);
+  const entityReview = researchEntityReview(input.researchEntityId, input.researchEntityExists);
+  const { target, blockers: entityBlockers } = entityReview;
   const type = typeof input.type === 'string' ? input.type.trim().toLowerCase() : '';
 
   if (input.confirmed !== true) {
     return {
       source,
+      ...(target ? { target } : {}),
       suggestedDisposition: 'MANUAL_REVIEW',
       proposedArtifacts: [],
       reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
@@ -164,6 +190,7 @@ function listingProposal(
   if (!type) {
     return {
       source,
+      ...(target ? { target } : {}),
       suggestedDisposition: 'MANUAL_REVIEW',
       proposedArtifacts: [],
       reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
@@ -175,6 +202,7 @@ function listingProposal(
   if (LISTING_FORMALIZATION_TYPES.has(type)) {
     return {
       source,
+      ...(target ? { target } : {}),
       suggestedDisposition: entityBlockers.length ? 'MANUAL_REVIEW' : 'FORMALIZATION_ONLY',
       proposedArtifacts: entityBlockers.length ? [] : ['FORMALIZATION_SUMMARY'],
       reasons: ['LISTING_IS_FORMALIZATION'],
@@ -186,6 +214,7 @@ function listingProposal(
   if (!LISTING_POSTING_TYPES.has(type)) {
     return {
       source,
+      ...(target ? { target } : {}),
       suggestedDisposition: 'MANUAL_REVIEW',
       proposedArtifacts: [],
       reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
@@ -197,6 +226,7 @@ function listingProposal(
   if (entityBlockers.length) {
     return {
       source,
+      ...(target ? { target } : {}),
       suggestedDisposition: 'MANUAL_REVIEW',
       proposedArtifacts: [],
       reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
@@ -209,6 +239,7 @@ function listingProposal(
   const historical = input.archived === true || expired;
   return {
     source,
+    target,
     suggestedDisposition: 'POSTED_RESEARCH_ROLE',
     proposedArtifacts: ['ENTRY_PATHWAY', 'POSTED_OPPORTUNITY'],
     suggestedOpportunityStatus: input.archived === true ? 'ARCHIVED' : expired ? 'CLOSED' : 'OPEN',
@@ -218,17 +249,27 @@ function listingProposal(
   };
 }
 
-function fellowshipOpportunityStatus(
+function fellowshipOpportunityReview(
   input: Phase4FellowshipClassificationInput,
   now: Date,
-): PostedOpportunityStatus | undefined {
-  if (!isPublicHttpUrl(input.applicationLink)) return undefined;
+): {
+  status?: PostedOpportunityStatus;
+  blocker?: 'CONFLICTING_APPLICATION_STATE' | 'INVALID_APPLICATION_DEADLINE';
+} {
+  if (!isPublicHttpUrl(input.applicationLink)) return {};
+  if (input.deadline !== undefined && !validDate(input.deadline)) {
+    return { blocker: 'INVALID_APPLICATION_DEADLINE' };
+  }
   const deadline = validDate(input.deadline) ? input.deadline : undefined;
-  if (input.isAcceptingApplications !== true && !deadline) return undefined;
-  if (input.archived === true) return 'ARCHIVED';
-  if (input.isAcceptingApplications === true) return 'OPEN';
-  if (input.isAcceptingApplications === false) return 'CLOSED';
-  return deadline!.getTime() < now.getTime() ? 'CLOSED' : 'OPEN';
+  const expired = deadline !== undefined && deadline.getTime() < now.getTime();
+  if (input.isAcceptingApplications === true && (input.archived === true || expired)) {
+    return { blocker: 'CONFLICTING_APPLICATION_STATE' };
+  }
+  if (input.isAcceptingApplications !== true && !deadline) return {};
+  if (input.archived === true) return { status: 'ARCHIVED' };
+  if (expired) return { status: 'CLOSED' };
+  if (input.isAcceptingApplications === false) return {};
+  return { status: 'OPEN' };
 }
 
 function fellowshipProposal(
@@ -239,7 +280,7 @@ function fellowshipProposal(
   const programKind =
     typeof input.programKind === 'string' ? input.programKind.trim().toUpperCase() : '';
 
-  if (input.researchRelated === false) {
+  if (input.reviewedResearchRelevance === 'NOT_RESEARCH_RELATED') {
     return {
       source,
       suggestedDisposition: 'ARCHIVE_ONLY',
@@ -251,6 +292,18 @@ function fellowshipProposal(
   }
 
   if (PROGRAM_FORMALIZATION_KINDS.has(programKind as ProgramKind)) {
+    const entryMode =
+      typeof input.entryMode === 'string' ? input.entryMode.trim().toUpperCase() : '';
+    if (['APPLY_TO_PROGRAM', 'APPLY_TO_PROJECT', 'DIRECT_FACULTY_MATCHING'].includes(entryMode)) {
+      return {
+        source,
+        suggestedDisposition: 'MANUAL_REVIEW',
+        proposedArtifacts: [],
+        reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
+        blockers: ['CONFLICTING_PROGRAM_CLASSIFICATION'],
+        review: { ...PENDING_REVIEW },
+      };
+    }
     return {
       source,
       suggestedDisposition: 'FORMALIZATION_ONLY',
@@ -262,7 +315,51 @@ function fellowshipProposal(
   }
 
   if (PROGRAM_PATHWAY_KINDS.has(programKind as ProgramKind)) {
-    const opportunityStatus = fellowshipOpportunityStatus(input, now);
+    const entryMode =
+      typeof input.entryMode === 'string' ? input.entryMode.trim().toUpperCase() : '';
+    if (entryMode === 'SECURE_MENTOR_THEN_APPLY') {
+      return {
+        source,
+        suggestedDisposition: 'FORMALIZATION_ONLY',
+        proposedArtifacts: ['FORMALIZATION_SUMMARY'],
+        reasons: ['PROGRAM_IS_FORMALIZATION_ONLY', 'MENTOR_REQUIRED_BEFORE_APPLY'],
+        blockers: [],
+        review: { ...PENDING_REVIEW },
+      };
+    }
+    if (!['APPLY_TO_PROGRAM', 'APPLY_TO_PROJECT', 'DIRECT_FACULTY_MATCHING'].includes(entryMode)) {
+      return {
+        source,
+        suggestedDisposition: 'MANUAL_REVIEW',
+        proposedArtifacts: [],
+        reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
+        blockers: ['UNRESOLVED_PROGRAM_ENTRY_MODE'],
+        review: { ...PENDING_REVIEW },
+      };
+    }
+    if (input.reviewedResearchRelevance !== 'RESEARCH_RELATED') {
+      return {
+        source,
+        suggestedDisposition: 'MANUAL_REVIEW',
+        proposedArtifacts: [],
+        reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
+        blockers: ['UNREVIEWED_RESEARCH_RELEVANCE'],
+        review: { ...PENDING_REVIEW },
+      };
+    }
+
+    const opportunityReview = fellowshipOpportunityReview(input, now);
+    if (opportunityReview.blocker) {
+      return {
+        source,
+        suggestedDisposition: 'MANUAL_REVIEW',
+        proposedArtifacts: [],
+        reasons: ['UNCLASSIFIED_LEGACY_RECORD'],
+        blockers: [opportunityReview.blocker],
+        review: { ...PENDING_REVIEW },
+      };
+    }
+    const opportunityStatus = opportunityReview.status;
     return {
       source,
       suggestedDisposition: 'RESEARCH_PROGRAM_PATHWAY',

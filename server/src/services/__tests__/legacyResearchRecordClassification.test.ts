@@ -20,6 +20,7 @@ describe('Phase 4 legacy record classification planner', () => {
       sourceKind: 'LISTING',
       sourceId: LISTING_ID,
       researchEntityId: ENTITY_ID,
+      researchEntityExists: true,
       type: 'ra',
       confirmed: true,
       expiresAt: new Date('2026-08-15T00:00:00.000Z'),
@@ -27,6 +28,7 @@ describe('Phase 4 legacy record classification planner', () => {
 
     expect(proposal).toEqual({
       source: { kind: 'LISTING', id: LISTING_ID },
+      target: { researchEntityId: ENTITY_ID },
       suggestedDisposition: 'POSTED_RESEARCH_ROLE',
       proposedArtifacts: ['ENTRY_PATHWAY', 'POSTED_OPPORTUNITY'],
       suggestedOpportunityStatus: 'OPEN',
@@ -47,6 +49,7 @@ describe('Phase 4 legacy record classification planner', () => {
         sourceKind: 'LISTING',
         sourceId: LISTING_ID,
         researchEntityId: ENTITY_ID,
+        researchEntityExists: true,
         type: 'volunteer',
         confirmed: true,
         expiresAt: new Date('2026-06-01T00:00:00.000Z'),
@@ -66,6 +69,7 @@ describe('Phase 4 legacy record classification planner', () => {
           sourceKind: 'LISTING',
           sourceId: LISTING_ID,
           researchEntityId: ENTITY_ID,
+          researchEntityExists: true,
           type,
           confirmed: true,
         }),
@@ -95,12 +99,31 @@ describe('Phase 4 legacy record classification planner', () => {
         sourceKind: 'LISTING',
         sourceId: LISTING_ID,
         researchEntityId: ENTITY_ID,
+        researchEntityExists: true,
         type: 'ra',
       }),
     ).toMatchObject({
       suggestedDisposition: 'MANUAL_REVIEW',
       proposedArtifacts: [],
       blockers: ['UNCONFIRMED_LISTING'],
+      target: { researchEntityId: ENTITY_ID },
+    });
+  });
+
+  it('requires caller-confirmed canonical ResearchEntity existence and retains the private target', () => {
+    expect(
+      plan({
+        sourceKind: 'LISTING',
+        sourceId: LISTING_ID,
+        researchEntityId: ENTITY_ID,
+        type: 'ra',
+        confirmed: true,
+      }),
+    ).toMatchObject({
+      target: { researchEntityId: ENTITY_ID },
+      suggestedDisposition: 'MANUAL_REVIEW',
+      proposedArtifacts: [],
+      blockers: ['UNVERIFIED_RESEARCH_ENTITY'],
     });
   });
 
@@ -117,6 +140,20 @@ describe('Phase 4 legacy record classification planner', () => {
       proposedArtifacts: ['FORMALIZATION_SUMMARY'],
       reasons: ['PROGRAM_IS_FORMALIZATION_ONLY'],
     });
+
+    expect(
+      plan({
+        sourceKind: 'FELLOWSHIP',
+        sourceId: FELLOWSHIP_ID,
+        programKind: 'FELLOWSHIP_FUNDING',
+        entryMode: 'DIRECT_FACULTY_MATCHING',
+        reviewedResearchRelevance: 'RESEARCH_RELATED',
+      }),
+    ).toMatchObject({
+      suggestedDisposition: 'MANUAL_REVIEW',
+      proposedArtifacts: [],
+      blockers: ['CONFLICTING_PROGRAM_CLASSIFICATION'],
+    });
   });
 
   it('proposes a posting only when a research program has a real application window', () => {
@@ -126,6 +163,7 @@ describe('Phase 4 legacy record classification planner', () => {
         sourceId: FELLOWSHIP_ID,
         programKind: 'MENTOR_MATCHING',
         entryMode: 'DIRECT_FACULTY_MATCHING',
+        reviewedResearchRelevance: 'RESEARCH_RELATED',
         applicationLink: 'https://example.yale.edu/apply',
         deadline: new Date('2026-09-01T00:00:00.000Z'),
       }),
@@ -142,11 +180,60 @@ describe('Phase 4 legacy record classification planner', () => {
         sourceId: FELLOWSHIP_ID,
         programKind: 'STRUCTURED_PROGRAM',
         entryMode: 'APPLY_TO_PROGRAM',
+        reviewedResearchRelevance: 'RESEARCH_RELATED',
         applicationLink: 'https://user:password@example.yale.edu/apply',
       }),
     ).toMatchObject({
       proposedArtifacts: ['RESEARCH_ENTITY', 'ENTRY_PATHWAY'],
       reasons: ['PROGRAM_PROVIDES_ENTRY_ROUTE', 'NO_CURRENT_POSTING_EVIDENCE'],
+    });
+  });
+
+  it('requires affirmative research relevance and keeps mentor-first programs out of pathways', () => {
+    expect(
+      plan({
+        sourceKind: 'FELLOWSHIP',
+        sourceId: FELLOWSHIP_ID,
+        programKind: 'MENTOR_MATCHING',
+        entryMode: 'DIRECT_FACULTY_MATCHING',
+      }),
+    ).toMatchObject({
+      suggestedDisposition: 'MANUAL_REVIEW',
+      proposedArtifacts: [],
+      blockers: ['UNREVIEWED_RESEARCH_RELEVANCE'],
+    });
+
+    expect(
+      plan({
+        sourceKind: 'FELLOWSHIP',
+        sourceId: FELLOWSHIP_ID,
+        programKind: 'STRUCTURED_PROGRAM',
+        entryMode: 'SECURE_MENTOR_THEN_APPLY',
+        reviewedResearchRelevance: 'RESEARCH_RELATED',
+      }),
+    ).toMatchObject({
+      suggestedDisposition: 'FORMALIZATION_ONLY',
+      proposedArtifacts: ['FORMALIZATION_SUMMARY'],
+      reasons: ['PROGRAM_IS_FORMALIZATION_ONLY', 'MENTOR_REQUIRED_BEFORE_APPLY'],
+    });
+  });
+
+  it('never lets stale accepting state override an expired application deadline', () => {
+    expect(
+      plan({
+        sourceKind: 'FELLOWSHIP',
+        sourceId: FELLOWSHIP_ID,
+        programKind: 'MENTOR_MATCHING',
+        entryMode: 'DIRECT_FACULTY_MATCHING',
+        reviewedResearchRelevance: 'RESEARCH_RELATED',
+        applicationLink: 'https://example.yale.edu/apply',
+        isAcceptingApplications: true,
+        deadline: new Date('2026-06-01T00:00:00.000Z'),
+      }),
+    ).toMatchObject({
+      suggestedDisposition: 'MANUAL_REVIEW',
+      proposedArtifacts: [],
+      blockers: ['CONFLICTING_APPLICATION_STATE'],
     });
   });
 
@@ -156,7 +243,7 @@ describe('Phase 4 legacy record classification planner', () => {
         sourceKind: 'FELLOWSHIP',
         sourceId: FELLOWSHIP_ID,
         programKind: 'OTHER',
-        researchRelated: false,
+        reviewedResearchRelevance: 'NOT_RESEARCH_RELATED',
       }),
     ).toMatchObject({
       suggestedDisposition: 'ARCHIVE_ONLY',
@@ -184,6 +271,7 @@ describe('Phase 4 legacy record classification planner', () => {
           sourceKind: 'LISTING',
           sourceId: LISTING_ID,
           researchEntityId: ENTITY_ID,
+          researchEntityExists: true,
           type: 'ra',
           title: 'Private title',
           ownerEmail: 'private@example.edu',
@@ -209,6 +297,7 @@ describe('Phase 4 legacy record classification planner', () => {
       sourceKind: 'LISTING' as const,
       sourceId: LISTING_ID,
       researchEntityId: ENTITY_ID,
+      researchEntityExists: true,
       type: 'ra',
       confirmed: true,
     };
