@@ -480,15 +480,7 @@ Example predicates include:
 ### Materialized provenance
 
 Materialized records must retain the claims that support them.
-
-```ts
-type MaterializedProvenance = {
-  evidenceClaimIds: string[];
-  materializer: string;
-  materializerVersion: number;
-  computedAt: Date;
-};
-```
+The canonical foundation contract and its rollout boundary are documented in [`research-model.md`](./research-model.md#phase-5-materialized-provenance-foundation).
 
 Computed values such as access summaries, browse ranking, and Best Next Step must identify themselves as Yale Research derivations.
 They must not be presented as direct quotations from a source.

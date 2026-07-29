@@ -568,7 +568,8 @@ No current scraper or public read path should write or consume them until a late
 ### Phase 5 materialized provenance foundation
 
 [`materializedProvenanceSchema`](../server/src/models/materializedProvenance.ts) is an embedded contract for future canonical materializers.
-It requires a bounded, unique, nonempty set of supporting `EvidenceClaim` references and records a stable materializer identifier, positive materializer version, and computation time.
+The exported schema and `MaterializedProvenance` type require 1 to 100 unique `EvidenceClaim` ObjectIds, a normalized stable materializer identifier of at most 120 characters, a positive safe-integer materializer version, and an explicit valid `computedAt` timestamp.
+The embedded schema uses strict mode and disables `_id`.
 The schema is reusable but remains unattached to target models.
 Attaching it, emitting claims, or writing provenance remains blocked until the earlier migration phases and their private operational evidence are accepted.
 
