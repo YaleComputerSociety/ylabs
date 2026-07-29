@@ -6,7 +6,7 @@ Phase 0 and Phase 1 must exit before any target-collection write or runtime iden
 
 ## What The Planner Reads
 
-The planner reads bounded snapshots of active records from:
+The planner reads bounded snapshots from:
 
 - `users`;
 - `faculty_members`;
@@ -14,6 +14,8 @@ The planner reads bounded snapshots of active records from:
 
 It uses one MongoDB snapshot session with `secondaryPreferred`, `retryWrites=false`, a pool of two connections, a five-second default query ceiling, and the `ylabs-phase2:identity-migration-plan` query comment.
 Each collection scan is sorted by `_id`, capped independently, and reports possible truncation.
+Archived identity rows remain in the scan so an archived, explicitly historical membership can resolve its original person safely.
+Unrelated archived identities remain outside person planning, and an archived membership without historical evidence enters quarantine.
 The command never reads from or writes to `accounts`, `people`, or `role_assignments`.
 
 ## Planning Rules
@@ -23,6 +25,10 @@ An account plan requires a normalized netid, a Yale email, and legacy login or c
 Duplicate account netids or emails enter quarantine.
 
 A person plan requires accepted Yale evidence through a netid, Yale email, or verified official Yale profile.
+FacultyMember URLs count as official profile evidence only when field provenance supplies an observation or source identifier plus a valid verification time.
+Unverified Yale URLs remain private review hints and never merge identities or create a person.
+Nested profile URL inspection has hard string, node, queue, child, and depth bounds.
+Any traversal truncation quarantines the affected identity and marks the report incomplete.
 ORCID and Google Scholar identifiers may remain external identity hints after a Yale identity exists.
 External identifiers alone never create a person.
 Names never merge identity components.
@@ -33,6 +39,8 @@ A role assignment normally resolves through a canonical source `userId` or `facu
 An unresolved explicit reference never falls back to a same-name match.
 A name-only membership may produce only an unreviewed plan when exactly one Yale-confirmed planned person has that normalized name.
 Historical, alumni, ended, or explicitly non-current memberships remain `HISTORICAL`.
+This includes materializer-produced historical memberships whose legacy row is archived.
+Historical roles resolved through an archived identity remain unreviewed, while a current role that resolves only to archived identity evidence enters quarantine.
 Unsupported roles, ambiguous identities, missing people, and missing research entities enter quarantine.
 
 ## Private Output Contract

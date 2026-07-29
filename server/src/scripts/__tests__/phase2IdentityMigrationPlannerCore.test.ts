@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPhase2IdentityMigrationPlan,
+  collectPhase2ProfileUrlValues,
+  MAX_PHASE2_PROFILE_URL_NODES,
+  MAX_PHASE2_PROFILE_URL_QUEUE,
+  MAX_PHASE2_PROFILE_URL_STRINGS,
   type Phase2IdentityMigrationPlannerInput,
 } from '../phase2IdentityMigrationPlannerCore';
 
@@ -52,6 +56,10 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             email: 'person.one@yale.edu',
             name: 'Person One',
             websiteUrl: 'https://example.yale.edu/profile/person-one/',
+            websiteUrlVerification: {
+              verifiedAt: '2026-07-01T00:00:00.000Z',
+              observationId: 'observation-profile-1',
+            },
           },
         ],
         memberships: [
@@ -209,12 +217,18 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             id: 'faculty-historical',
             name: 'Historical Person',
             websiteUrl: 'https://history.yale.edu/profile/historical-person',
+            websiteUrlVerification: {
+              verifiedAt: '2024-01-01T00:00:00.000Z',
+              sourceId: 'source-historical',
+            },
+            archived: true,
           },
         ],
         memberships: [
           {
             id: 'membership-historical',
             researchEntityId: 'entity-historical',
+            facultyMemberId: 'faculty-historical',
             name: 'Historical Person',
             role: 'alumni',
             isCurrentMember: false,
@@ -222,6 +236,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             joinedAt: '2020-01-01T00:00:00.000Z',
             leftAt: '2024-01-01T00:00:00.000Z',
             confidence: 4,
+            archived: true,
           },
         ],
       }),
@@ -239,7 +254,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
         endedAt: '2024-01-01T00:00:00.000Z',
         confidence: 1,
         reviewStatus: 'UNREVIEWED',
-        resolution: 'UNIQUE_YALE_CONFIRMED_NAME',
+        resolution: 'CANONICAL_SOURCE_REFERENCE',
       },
     ]);
   });
@@ -252,6 +267,10 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             id: 'faculty-known',
             name: 'Known Person',
             websiteUrl: 'https://known.yale.edu/profile/known-person',
+            websiteUrlVerification: {
+              verifiedAt: '2026-07-01T00:00:00.000Z',
+              sourceId: 'source-known',
+            },
           },
         ],
         memberships: [
@@ -334,8 +353,115 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       facultyMembers: false,
       memberships: false,
       quarantineRecords: true,
+      profileUrlTraversal: false,
     });
     expect(report.summary.quarantinedSubjects).toBe(2);
     expect(report.quarantine).toHaveLength(1);
+  });
+
+  it('keeps unverified FacultyMember Yale URLs as hints without identity evidence or union keys', () => {
+    const sharedUnverifiedUrl = 'https://medicine.yale.edu/profile/shared-unverified';
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-unverified-a',
+            name: 'Unverified Alpha',
+            netid: 'unverified-alpha',
+            websiteUrl: sharedUnverifiedUrl,
+          },
+          {
+            id: 'faculty-unverified-b',
+            name: 'Unverified Beta',
+            netid: 'unverified-beta',
+            websiteUrl: sharedUnverifiedUrl,
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toHaveLength(2);
+    expect(report.plannedPeople).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceFacultyMemberIds: ['faculty-unverified-a'],
+          yaleEvidence: ['NETID'],
+          unverifiedYaleProfileHints: [sharedUnverifiedUrl],
+        }),
+        expect.objectContaining({
+          sourceFacultyMemberIds: ['faculty-unverified-b'],
+          yaleEvidence: ['NETID'],
+          unverifiedYaleProfileHints: [sharedUnverifiedUrl],
+        }),
+      ]),
+    );
+    expect(report.quarantine).toEqual([]);
+  });
+
+  it('does not treat a provenance-backed generic Yale directory URL as a person profile', () => {
+    const genericUrl = 'https://medicine.yale.edu/faculty/';
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-generic-profile',
+            name: 'Generic Profile',
+            websiteUrl: genericUrl,
+            websiteUrlVerification: {
+              verifiedAt: '2026-07-01T00:00:00.000Z',
+              observationId: 'observation-generic-profile',
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'identity_component',
+      subjectIds: ['faculty_member:faculty-generic-profile'],
+      reasons: ['name_only_identity'],
+      reviewHints: {
+        unverifiedYaleProfileUrls: ['https://medicine.yale.edu/faculty'],
+      },
+    });
+  });
+
+  it('bounds nested profile URL traversal and fails the affected identity closed', () => {
+    const profileUrls = Object.fromEntries(
+      Array.from({ length: MAX_PHASE2_PROFILE_URL_QUEUE + 50 }, (_, index) => [
+        `profile-${index}`,
+        `https://example-${index}.yale.edu/profile/person`,
+      ]),
+    );
+    const traversal = collectPhase2ProfileUrlValues(profileUrls);
+    expect(traversal.truncated).toBe(true);
+    expect(traversal.nodesVisited).toBeLessThanOrEqual(MAX_PHASE2_PROFILE_URL_NODES);
+    expect(traversal.values.length).toBeLessThanOrEqual(MAX_PHASE2_PROFILE_URL_STRINGS);
+
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-wide-profile-tree',
+            name: 'Wide Profile Tree',
+            netid: 'wide-profile-tree',
+            profileUrls,
+          },
+        ],
+      }),
+    );
+
+    expect(report.plannedPeople).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'identity_component',
+      subjectIds: ['faculty_member:faculty-wide-profile-tree'],
+      reasons: ['profile_url_traversal_truncated'],
+      reviewHints: {
+        unverifiedYaleProfileUrls: expect.any(Array),
+      },
+    });
+    expect(report.scan.possibleTruncation.profileUrlTraversal).toBe(true);
+    expect(report.scan.complete).toBe(false);
   });
 });

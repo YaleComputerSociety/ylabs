@@ -40,9 +40,17 @@ export interface LegacyIdentityFacultyMember {
   lastName?: string;
   websiteUrl?: string;
   profileUrls?: unknown;
+  websiteUrlVerification?: LegacyIdentityProfileVerification;
+  profileUrlsVerification?: LegacyIdentityProfileVerification;
   orcidId?: string;
   googleScholarId?: string;
   archived?: boolean;
+}
+
+export interface LegacyIdentityProfileVerification {
+  verifiedAt: Date | string;
+  sourceId?: string;
+  observationId?: string;
 }
 
 export interface LegacyIdentityMembership {
@@ -102,12 +110,18 @@ export type Phase2QuarantineReason =
   | 'membership_conflicting_identity'
   | 'membership_missing_person'
   | 'membership_missing_research_entity'
-  | 'membership_unsupported_role';
+  | 'membership_unsupported_role'
+  | 'membership_archived_without_historical_evidence'
+  | 'membership_current_with_archived_person'
+  | 'profile_url_traversal_truncated';
 
 export interface Phase2QuarantineRecord {
   subjectType: 'user' | 'faculty_member' | 'identity_component' | 'membership';
   subjectIds: string[];
   reasons: Phase2QuarantineReason[];
+  reviewHints?: {
+    unverifiedYaleProfileUrls: string[];
+  };
 }
 
 export interface PlannedAccount {
@@ -126,6 +140,7 @@ export interface PlannedPerson {
   accountKey?: string;
   yaleEvidence: Array<'NETID' | 'YALE_EMAIL' | 'YALE_OFFICIAL_PROFILE'>;
   externalIdentityHints: Array<'ORCID' | 'GOOGLE_SCHOLAR'>;
+  unverifiedYaleProfileHints?: string[];
 }
 
 export interface PlannedRoleAssignment {
@@ -168,6 +183,7 @@ export interface Phase2IdentityMigrationPlanReport {
       facultyMembers: boolean;
       memberships: boolean;
       quarantineRecords: boolean;
+      profileUrlTraversal: boolean;
     };
     complete: boolean;
   };
@@ -194,11 +210,21 @@ interface IdentityNode {
   netids: Set<string>;
   emails: Set<string>;
   officialProfiles: Set<string>;
+  unverifiedProfileHints: Set<string>;
   orcids: Set<string>;
   scholarIds: Set<string>;
   relevantForPerson: boolean;
   danglingExplicitReference: boolean;
+  archived: boolean;
+  explicitReferenceKey?: string;
+  profileTraversalTruncated: boolean;
 }
+
+export const MAX_PHASE2_PROFILE_URL_STRINGS = 100;
+export const MAX_PHASE2_PROFILE_URL_NODES = 500;
+export const MAX_PHASE2_PROFILE_URL_QUEUE = 500;
+export const MAX_PHASE2_PROFILE_URL_DEPTH = 4;
+const MAX_PHASE2_PROFILE_URL_CHILDREN_PER_NODE = 100;
 
 const PLACEHOLDER_TEXT = new Set(['', 'na', 'n/a', 'none', 'null', 'unknown', 'undefined']);
 const CANONICAL_ROLE_BY_LEGACY: Readonly<Record<string, RoleAssignmentRole>> = Object.freeze({
@@ -241,28 +267,81 @@ function isYaleEmail(value: string): boolean {
   return domain === 'yale.edu' || Boolean(domain?.endsWith('.yale.edu'));
 }
 
-function profileUrlValues(value: unknown): string[] {
+export interface Phase2ProfileUrlTraversalResult {
+  values: string[];
+  truncated: boolean;
+  nodesVisited: number;
+}
+
+export function collectPhase2ProfileUrlValues(
+  ...values: unknown[]
+): Phase2ProfileUrlTraversalResult {
   const output: string[] = [];
-  const queue: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
+  const queue: Array<{ value: unknown; depth: number }> = [];
+  let truncated = values.length > MAX_PHASE2_PROFILE_URL_QUEUE;
+  values.slice(0, MAX_PHASE2_PROFILE_URL_QUEUE).forEach((value) => {
+    queue.push({ value, depth: 0 });
+  });
   const visited = new Set<object>();
-  while (queue.length > 0 && output.length < 100) {
-    const current = queue.shift();
-    if (!current) break;
+  let cursor = 0;
+  let nodesVisited = 0;
+  while (
+    cursor < queue.length &&
+    output.length < MAX_PHASE2_PROFILE_URL_STRINGS &&
+    nodesVisited < MAX_PHASE2_PROFILE_URL_NODES
+  ) {
+    const current = queue[cursor];
+    cursor += 1;
+    nodesVisited += 1;
     if (typeof current.value === 'string') {
       output.push(current.value);
       continue;
     }
-    if (!current.value || typeof current.value !== 'object' || current.depth >= 4) continue;
+    if (!current.value || typeof current.value !== 'object') continue;
+    if (current.depth >= MAX_PHASE2_PROFILE_URL_DEPTH) {
+      truncated = true;
+      continue;
+    }
     if (visited.has(current.value)) continue;
     visited.add(current.value);
-    const children = Array.isArray(current.value)
-      ? current.value
-      : Object.values(current.value as Record<string, unknown>);
-    children.slice(0, 100).forEach((child) => {
+    let childrenVisited = 0;
+    const appendChild = (child: unknown): boolean => {
+      if (
+        childrenVisited >= MAX_PHASE2_PROFILE_URL_CHILDREN_PER_NODE ||
+        queue.length >= MAX_PHASE2_PROFILE_URL_QUEUE
+      ) {
+        truncated = true;
+        return false;
+      }
+      childrenVisited += 1;
       queue.push({ value: child, depth: current.depth + 1 });
-    });
+      return true;
+    };
+
+    if (Array.isArray(current.value)) {
+      for (let index = 0; index < current.value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(current.value, String(index));
+        if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+          truncated = true;
+          break;
+        }
+        if (!appendChild(descriptor.value)) break;
+      }
+      continue;
+    }
+
+    for (const key in current.value as Record<string, unknown>) {
+      if (!Object.hasOwn(current.value, key)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(current.value, key);
+      if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+        truncated = true;
+        break;
+      }
+      if (!appendChild(descriptor.value)) break;
+    }
   }
-  return output;
+  if (cursor < queue.length) truncated = true;
+  return { values: output, truncated, nodesVisited };
 }
 
 function normalizeOfficialYaleUrl(value: unknown): string | undefined {
@@ -288,13 +367,35 @@ function normalizeOfficialYaleUrl(value: unknown): string | undefined {
   }
 }
 
-function normalizedProfiles(...values: unknown[]): Set<string> {
-  return new Set(
-    values
-      .flatMap(profileUrlValues)
-      .map(normalizeOfficialYaleUrl)
-      .filter((value): value is string => Boolean(value)),
-  );
+function isSpecificYalePersonProfile(value: string): boolean {
+  const segments = new URL(value).pathname.split('/').filter(Boolean);
+  if (segments.length < 2) return false;
+  const leaf = segments.at(-1)?.toLowerCase();
+  return !['people', 'person', 'faculty', 'directory', 'members', 'profiles'].includes(leaf || '');
+}
+
+function normalizedProfiles(...values: unknown[]): {
+  profiles: Set<string>;
+  truncated: boolean;
+} {
+  const traversal = collectPhase2ProfileUrlValues(...values);
+  return {
+    profiles: new Set(
+      traversal.values
+        .map(normalizeOfficialYaleUrl)
+        .filter((value): value is string => Boolean(value)),
+    ),
+    truncated: traversal.truncated,
+  };
+}
+
+function hasVerifiedProfileEvidence(
+  value: LegacyIdentityProfileVerification | undefined,
+  evidenceCutoff: Date,
+): boolean {
+  if (!value || (!nonemptyText(value.sourceId) && !nonemptyText(value.observationId))) return false;
+  const verifiedAt = normalizedIsoDate(value.verifiedAt);
+  return Boolean(verifiedAt && new Date(verifiedAt).getTime() <= evidenceCutoff.getTime());
 }
 
 function normalizedIdentitySet(field: Phase0IdentityField, ...values: unknown[]): Set<string> {
@@ -347,8 +448,72 @@ function activeFacultyMember(facultyMember: LegacyIdentityFacultyMember): boolea
   return !facultyMember.archived;
 }
 
-function activeMembership(membership: LegacyIdentityMembership): boolean {
-  return !membership.archived;
+function historicalMembership(membership: LegacyIdentityMembership): boolean {
+  return (
+    (membership.evidenceStatus || '').trim().toLowerCase() === 'historical' ||
+    membership.isCurrentMember === false ||
+    (membership.role || '').trim().toLowerCase() === 'alumni' ||
+    Boolean(membership.endedAt || membership.leftAt)
+  );
+}
+
+function membershipInIdentityScope(membership: LegacyIdentityMembership): boolean {
+  return !membership.archived || historicalMembership(membership);
+}
+
+function scopedIdentityRows(
+  users: LegacyIdentityUser[],
+  facultyMembers: LegacyIdentityFacultyMember[],
+  memberships: LegacyIdentityMembership[],
+): {
+  users: LegacyIdentityUser[];
+  facultyMembers: LegacyIdentityFacultyMember[];
+} {
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const facultyById = new Map(
+    facultyMembers.map((facultyMember) => [facultyMember.id, facultyMember]),
+  );
+  const includedUserIds = new Set(users.filter(activeUser).map(({ id }) => id));
+  const includedFacultyIds = new Set(
+    facultyMembers.filter(activeFacultyMember).map(({ id }) => id),
+  );
+  const queue: Array<{ kind: IdentityNodeKind; id: string }> = [
+    ...[...includedUserIds].map((id) => ({ kind: 'user' as const, id })),
+    ...[...includedFacultyIds].map((id) => ({ kind: 'faculty_member' as const, id })),
+  ];
+
+  memberships.filter(membershipInIdentityScope).forEach((membership) => {
+    if (membership.userId && !includedUserIds.has(membership.userId)) {
+      includedUserIds.add(membership.userId);
+      queue.push({ kind: 'user', id: membership.userId });
+    }
+    if (membership.facultyMemberId && !includedFacultyIds.has(membership.facultyMemberId)) {
+      includedFacultyIds.add(membership.facultyMemberId);
+      queue.push({ kind: 'faculty_member', id: membership.facultyMemberId });
+    }
+  });
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    if (current.kind === 'user') {
+      const facultyMemberId = usersById.get(current.id)?.facultyMemberId;
+      if (facultyMemberId && !includedFacultyIds.has(facultyMemberId)) {
+        includedFacultyIds.add(facultyMemberId);
+        queue.push({ kind: 'faculty_member', id: facultyMemberId });
+      }
+      continue;
+    }
+    const userId = facultyById.get(current.id)?.userId;
+    if (userId && !includedUserIds.has(userId)) {
+      includedUserIds.add(userId);
+      queue.push({ kind: 'user', id: userId });
+    }
+  }
+
+  return {
+    users: users.filter(({ id }) => includedUserIds.has(id)),
+    facultyMembers: facultyMembers.filter(({ id }) => includedFacultyIds.has(id)),
+  };
 }
 
 function appendQuarantine(values: Phase2QuarantineRecord[], record: Phase2QuarantineRecord): void {
@@ -424,18 +589,28 @@ function buildIdentityNodes(
   users: LegacyIdentityUser[],
   facultyMembers: LegacyIdentityFacultyMember[],
   memberships: LegacyIdentityMembership[],
-): Map<string, IdentityNode> {
+  evidenceCutoff: Date,
+): { nodes: Map<string, IdentityNode>; profileUrlTraversalTruncated: boolean } {
+  const scoped = scopedIdentityRows(users, facultyMembers, memberships);
   const referencedUsers = new Set(
-    memberships.filter(activeMembership).flatMap(({ userId }) => (userId ? [userId] : [])),
+    memberships.filter(membershipInIdentityScope).flatMap(({ userId }) => (userId ? [userId] : [])),
+  );
+  const referencedFacultyMembers = new Set(
+    memberships
+      .filter(membershipInIdentityScope)
+      .flatMap(({ facultyMemberId }) => (facultyMemberId ? [facultyMemberId] : [])),
   );
   const nodes = new Map<string, IdentityNode>();
-  const activeFacultyIds = new Set(facultyMembers.filter(activeFacultyMember).map(({ id }) => id));
-  const activeUserIds = new Set(users.filter(activeUser).map(({ id }) => id));
+  const scopedFacultyIds = new Set(scoped.facultyMembers.map(({ id }) => id));
+  const scopedUserIds = new Set(scoped.users.map(({ id }) => id));
+  let profileUrlTraversalTruncated = false;
 
-  for (const user of users.filter(activeUser)) {
+  for (const user of scoped.users) {
     const name = normalizedUserName(user);
     const key = `user:${user.id}`;
     const userType = (user.userType || '').trim().toLowerCase();
+    const profiles = normalizedProfiles(user.website, user.profileUrls);
+    profileUrlTraversalTruncated ||= profiles.truncated;
     nodes.set(key, {
       key,
       kind: 'user',
@@ -444,24 +619,53 @@ function buildIdentityNodes(
       normalizedName: name.normalized,
       netids: normalizedIdentitySet('netid', user.netid),
       emails: normalizedIdentitySet('email', user.email),
-      officialProfiles: user.profileVerified
-        ? normalizedProfiles(user.website, user.profileUrls)
-        : new Set(),
+      officialProfiles: user.profileVerified ? profiles.profiles : new Set(),
+      unverifiedProfileHints: user.profileVerified ? new Set() : profiles.profiles,
       orcids: normalizedIdentitySet('orcid', user.orcid),
       scholarIds: normalizedIdentitySet('googleScholarId', user.googleScholarId),
       relevantForPerson:
         referencedUsers.has(user.id) ||
-        userType === 'professor' ||
-        userType === 'faculty' ||
-        userType === 'staff',
+        (!user.archived &&
+          (userType === 'professor' || userType === 'faculty' || userType === 'staff')),
       danglingExplicitReference:
-        Boolean(user.facultyMemberId) && !activeFacultyIds.has(user.facultyMemberId as string),
+        Boolean(user.facultyMemberId) && !scopedFacultyIds.has(user.facultyMemberId as string),
+      archived: user.archived === true,
+      ...(user.facultyMemberId
+        ? { explicitReferenceKey: `faculty_member:${user.facultyMemberId}` }
+        : {}),
+      profileTraversalTruncated: profiles.truncated,
     });
   }
 
-  for (const facultyMember of facultyMembers.filter(activeFacultyMember)) {
+  for (const facultyMember of scoped.facultyMembers) {
     const name = normalizedFacultyName(facultyMember);
     const key = `faculty_member:${facultyMember.id}`;
+    const websiteProfile = normalizedProfiles(facultyMember.websiteUrl);
+    const nestedProfiles = normalizedProfiles(facultyMember.profileUrls);
+    const websiteVerified = hasVerifiedProfileEvidence(
+      facultyMember.websiteUrlVerification,
+      evidenceCutoff,
+    );
+    const nestedVerified = hasVerifiedProfileEvidence(
+      facultyMember.profileUrlsVerification,
+      evidenceCutoff,
+    );
+    const verifiedWebsiteProfiles = new Set(
+      websiteVerified ? [...websiteProfile.profiles].filter(isSpecificYalePersonProfile) : [],
+    );
+    const verifiedNestedProfiles = new Set(
+      nestedVerified ? [...nestedProfiles.profiles].filter(isSpecificYalePersonProfile) : [],
+    );
+    const officialProfiles = new Set<string>([
+      ...verifiedWebsiteProfiles,
+      ...verifiedNestedProfiles,
+    ]);
+    const unverifiedProfileHints = new Set<string>([
+      ...[...websiteProfile.profiles].filter((profile) => !verifiedWebsiteProfiles.has(profile)),
+      ...[...nestedProfiles.profiles].filter((profile) => !verifiedNestedProfiles.has(profile)),
+    ]);
+    const profileTraversalTruncated = websiteProfile.truncated || nestedProfiles.truncated;
+    profileUrlTraversalTruncated ||= profileTraversalTruncated;
     nodes.set(key, {
       key,
       kind: 'faculty_member',
@@ -470,22 +674,22 @@ function buildIdentityNodes(
       normalizedName: name.normalized,
       netids: normalizedIdentitySet('netid', facultyMember.netid),
       emails: normalizedIdentitySet('email', facultyMember.email),
-      officialProfiles: normalizedProfiles(facultyMember.websiteUrl, facultyMember.profileUrls),
+      officialProfiles,
+      unverifiedProfileHints,
       orcids: normalizedIdentitySet('orcid', facultyMember.orcidId),
       scholarIds: normalizedIdentitySet('googleScholarId', facultyMember.googleScholarId),
-      relevantForPerson: true,
+      relevantForPerson: !facultyMember.archived || referencedFacultyMembers.has(facultyMember.id),
       danglingExplicitReference:
-        Boolean(facultyMember.userId) && !activeUserIds.has(facultyMember.userId as string),
+        Boolean(facultyMember.userId) && !scopedUserIds.has(facultyMember.userId as string),
+      archived: facultyMember.archived === true,
+      ...(facultyMember.userId ? { explicitReferenceKey: `user:${facultyMember.userId}` } : {}),
+      profileTraversalTruncated,
     });
   }
-  return nodes;
+  return { nodes, profileUrlTraversalTruncated };
 }
 
-function identityComponents(
-  nodes: Map<string, IdentityNode>,
-  users: LegacyIdentityUser[],
-  facultyMembers: LegacyIdentityFacultyMember[],
-): IdentityNode[][] {
+function identityComponents(nodes: Map<string, IdentityNode>): IdentityNode[][] {
   const orderedNodes = [...nodes.values()].sort((left, right) =>
     compareCodePoints(left.key, right.key),
   );
@@ -513,19 +717,9 @@ function identityComponents(
     size[leftRoot] += size[rightRoot];
   };
 
-  users.filter(activeUser).forEach((user) => {
-    if (!user.facultyMemberId) return;
-    union(
-      indexByKey.get(`user:${user.id}`),
-      indexByKey.get(`faculty_member:${user.facultyMemberId}`),
-    );
-  });
-  facultyMembers.filter(activeFacultyMember).forEach((facultyMember) => {
-    if (!facultyMember.userId) return;
-    union(
-      indexByKey.get(`faculty_member:${facultyMember.id}`),
-      indexByKey.get(`user:${facultyMember.userId}`),
-    );
+  orderedNodes.forEach((node) => {
+    if (!node.explicitReferenceKey) return;
+    union(indexByKey.get(node.key), indexByKey.get(node.explicitReferenceKey));
   });
 
   const identityOwner = new Map<string, number>();
@@ -588,6 +782,9 @@ function identityComponentReasons(component: IdentityNode[]): Phase2QuarantineRe
   if (component.some(({ danglingExplicitReference }) => danglingExplicitReference)) {
     reasons.push('dangling_explicit_identity_reference');
   }
+  if (component.some(({ profileTraversalTruncated }) => profileTraversalTruncated)) {
+    reasons.push('profile_url_traversal_truncated');
+  }
   if (!yaleEvidence) {
     reasons.push(
       orcids.size > 0 || scholarIds.size > 0 ? 'external_identity_only' : 'name_only_identity',
@@ -610,6 +807,7 @@ function plannedPeople(
     {
       emails: Set<string>;
       officialProfiles: Set<string>;
+      hasActiveSource: boolean;
     }
   >;
 } {
@@ -645,15 +843,22 @@ function plannedPeople(
     {
       emails: Set<string>;
       officialProfiles: Set<string>;
+      hasActiveSource: boolean;
     }
   >();
   for (const component of relevantComponents) {
     const reasons = reasonsByComponent.get(component) || [];
     if (reasons.length > 0) {
+      const unverifiedYaleProfileUrls = [...unionValues(component, 'unverifiedProfileHints')].sort(
+        compareCodePoints,
+      );
       appendQuarantine(quarantine, {
         subjectType: 'identity_component',
         subjectIds: component.map(({ key }) => key),
         reasons,
+        ...(unverifiedYaleProfileUrls.length > 0
+          ? { reviewHints: { unverifiedYaleProfileUrls } }
+          : {}),
       });
       continue;
     }
@@ -684,6 +889,9 @@ function plannedPeople(
     const netids = unionValues(component, 'netids');
     const emails = unionValues(component, 'emails');
     const profiles = unionValues(component, 'officialProfiles');
+    const unverifiedYaleProfileHints = [...unionValues(component, 'unverifiedProfileHints')].sort(
+      compareCodePoints,
+    );
     const yaleEvidence: PlannedPerson['yaleEvidence'] = [];
     if (netids.size > 0) yaleEvidence.push('NETID');
     if ([...emails].some(isYaleEmail)) yaleEvidence.push('YALE_EMAIL');
@@ -701,6 +909,7 @@ function plannedPeople(
       ...(accountCandidates[0] ? { accountKey: accountCandidates[0].accountKey } : {}),
       yaleEvidence,
       externalIdentityHints,
+      ...(unverifiedYaleProfileHints.length > 0 ? { unverifiedYaleProfileHints } : {}),
     };
     people.push(person);
     userIds.forEach((id) => personKeyByUserId.set(id, personKey));
@@ -708,6 +917,7 @@ function plannedPeople(
     identityByPersonKey.set(personKey, {
       emails,
       officialProfiles: profiles,
+      hasActiveSource: component.some(({ archived }) => !archived),
     });
   }
   people.sort((left, right) => compareCodePoints(left.personKey, right.personKey));
@@ -727,9 +937,9 @@ function normalizedIsoDate(value: Date | string | null | undefined): string | un
 
 function roleState(membership: LegacyIdentityMembership): RoleAssignmentState {
   if (
-    membership.evidenceStatus === 'historical' ||
+    (membership.evidenceStatus || '').trim().toLowerCase() === 'historical' ||
     membership.isCurrentMember === false ||
-    membership.role === 'alumni' ||
+    (membership.role || '').trim().toLowerCase() === 'alumni' ||
     membership.endedAt ||
     membership.leftAt
   ) {
@@ -751,6 +961,7 @@ function plannedRoles(args: {
     {
       emails: Set<string>;
       officialProfiles: Set<string>;
+      hasActiveSource: boolean;
     }
   >;
   quarantine: Phase2QuarantineRecord[];
@@ -768,8 +979,11 @@ function plannedRoles(args: {
     peopleByNormalizedName.set(normalized, matches);
   });
   const plans: PlannedRoleAssignment[] = [];
-  for (const membership of args.memberships.filter(activeMembership)) {
+  for (const membership of args.memberships) {
     const reasons: Phase2QuarantineReason[] = [];
+    if (membership.archived === true && !historicalMembership(membership)) {
+      reasons.push('membership_archived_without_historical_evidence');
+    }
     if (!membership.researchEntityId) reasons.push('membership_missing_research_entity');
     const role = CANONICAL_ROLE_BY_LEGACY[(membership.role || '').trim().toLowerCase()];
     if (!role) reasons.push('membership_unsupported_role');
@@ -834,6 +1048,9 @@ function plannedRoles(args: {
       ) {
         reasons.push('membership_conflicting_identity');
       }
+      if (roleState(membership) !== 'HISTORICAL' && plannedIdentity?.hasActiveSource === false) {
+        reasons.push('membership_current_with_archived_person');
+      }
     }
     if (reasons.length > 0 || !personKey || !resolution || !role || !membership.researchEntityId) {
       appendQuarantine(args.quarantine, {
@@ -857,7 +1074,10 @@ function plannedRoles(args: {
       ...(state === 'HISTORICAL' && endedAt ? { endedAt } : {}),
       confidence: Math.min(1, Math.max(0, Number(membership.confidence) || 0)),
       reviewStatus:
-        resolution === 'CANONICAL_SOURCE_REFERENCE' && membership.evidenceStatus === 'verified'
+        membership.archived !== true &&
+        state === 'CURRENT' &&
+        resolution === 'CANONICAL_SOURCE_REFERENCE' &&
+        membership.evidenceStatus === 'verified'
           ? 'APPROVED'
           : 'UNREVIEWED',
       resolution,
@@ -871,10 +1091,17 @@ function plannedRoles(args: {
 export function buildPhase2IdentityMigrationPlan(
   input: Phase2IdentityMigrationPlannerInput,
 ): Phase2IdentityMigrationPlanReport {
+  const generatedAt = normalizedIsoDate(input.generatedAt) || new Date().toISOString();
+  const evidenceCutoff = new Date(generatedAt);
   const quarantine: Phase2QuarantineRecord[] = [];
   const accounts = accountPlans(input.users, quarantine);
-  const nodes = buildIdentityNodes(input.users, input.facultyMembers, input.memberships);
-  const components = identityComponents(nodes, input.users, input.facultyMembers);
+  const identityNodes = buildIdentityNodes(
+    input.users,
+    input.facultyMembers,
+    input.memberships,
+    evidenceCutoff,
+  );
+  const components = identityComponents(identityNodes.nodes);
   const people = plannedPeople(components, accounts.byUserId, quarantine);
   const roles = plannedRoles({
     memberships: input.memberships,
@@ -896,10 +1123,11 @@ export function buildPhase2IdentityMigrationPlan(
     !input.truncation.users &&
     !input.truncation.facultyMembers &&
     !input.truncation.memberships &&
+    !identityNodes.profileUrlTraversalTruncated &&
     !quarantineTruncated;
 
   return {
-    generatedAt: input.generatedAt || new Date().toISOString(),
+    generatedAt,
     environment: input.environment,
     databaseName: input.databaseName,
     sourceCommit: input.sourceCommit,
@@ -922,6 +1150,7 @@ export function buildPhase2IdentityMigrationPlan(
       possibleTruncation: {
         ...input.truncation,
         quarantineRecords: quarantineTruncated,
+        profileUrlTraversal: identityNodes.profileUrlTraversalTruncated,
       },
       complete,
     },

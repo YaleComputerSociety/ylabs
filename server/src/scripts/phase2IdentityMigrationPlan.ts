@@ -24,6 +24,7 @@ import {
   buildPhase2IdentityMigrationPlan,
   type LegacyIdentityFacultyMember,
   type LegacyIdentityMembership,
+  type LegacyIdentityProfileVerification,
   type LegacyIdentityUser,
 } from './phase2IdentityMigrationPlannerCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -94,6 +95,7 @@ const PHASE2_PROJECTIONS = Object.freeze({
     lastName: 1,
     websiteUrl: 1,
     profileUrls: 1,
+    fieldProvenance: 1,
     orcidId: 1,
     googleScholarId: 1,
     archived: 1,
@@ -235,6 +237,32 @@ function optionalId(value: unknown): string | undefined {
   return value === null || value === undefined ? undefined : String(value);
 }
 
+function recordField(value: unknown, field: string): unknown {
+  if (value instanceof Map) return value.get(field);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return (value as Record<string, unknown>)[field];
+}
+
+function profileVerificationFromDocument(
+  document: Document,
+  field: 'websiteUrl' | 'profileUrls',
+): LegacyIdentityProfileVerification | undefined {
+  const provenance = recordField(document.fieldProvenance, field);
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) {
+    return undefined;
+  }
+  const record = provenance as Record<string, unknown>;
+  const verifiedAt = optionalDate(record.observedAt);
+  const sourceId = optionalId(record.sourceId);
+  const observationId = optionalId(record.observationId);
+  if (!verifiedAt || (!sourceId && !observationId)) return undefined;
+  return {
+    verifiedAt,
+    ...(sourceId ? { sourceId } : {}),
+    ...(observationId ? { observationId } : {}),
+  };
+}
+
 function userFromDocument(document: Document): LegacyIdentityUser {
   return {
     id: String(document._id),
@@ -275,6 +303,8 @@ function userFromDocument(document: Document): LegacyIdentityUser {
 }
 
 function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMember {
+  const websiteUrlVerification = profileVerificationFromDocument(document, 'websiteUrl');
+  const profileUrlsVerification = profileVerificationFromDocument(document, 'profileUrls');
   return {
     id: String(document._id),
     ...(optionalId(document.userId) ? { userId: optionalId(document.userId) } : {}),
@@ -289,6 +319,8 @@ function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMem
       ? { websiteUrl: optionalString(document.websiteUrl) }
       : {}),
     ...(document.profileUrls !== undefined ? { profileUrls: document.profileUrls } : {}),
+    ...(websiteUrlVerification ? { websiteUrlVerification } : {}),
+    ...(profileUrlsVerification ? { profileUrlsVerification } : {}),
     ...(optionalString(document.orcidId) ? { orcidId: optionalString(document.orcidId) } : {}),
     ...(optionalString(document.googleScholarId)
       ? { googleScholarId: optionalString(document.googleScholarId) }
@@ -350,7 +382,7 @@ async function loadBoundedCollection<T>(args: {
     .db()
     .collection(args.collectionName)
     .find(
-      { archived: { $ne: true } },
+      buildPhase2IdentityCollectionFilter(),
       buildPhase2IdentityFindOptions(
         PHASE2_PROJECTIONS[args.collectionName],
         args.maxTimeMs,
@@ -370,6 +402,10 @@ async function loadBoundedCollection<T>(args: {
     documents.push(args.mapDocument(document));
   }
   return { documents, truncated };
+}
+
+export function buildPhase2IdentityCollectionFilter(): Document {
+  return {};
 }
 
 export function resolveCleanPhase2IdentityPlanSourceCommit(

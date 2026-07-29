@@ -2,6 +2,7 @@ import type { ClientSession } from 'mongodb';
 import { describe, expect, it } from 'vitest';
 import {
   assertStrictPhase2IdentityPlanComplete,
+  buildPhase2IdentityCollectionFilter,
   buildPhase2IdentityFindOptions,
   parsePhase2IdentityMigrationPlanArgs,
   serializePhase2IdentityPlanCompletion,
@@ -66,6 +67,10 @@ describe('Phase 2 identity migration plan CLI', () => {
       readConcern: { level: 'snapshot' },
       session,
     });
+  });
+
+  it('scans archived rows so historical memberships and referenced identities are not omitted', () => {
+    expect(buildPhase2IdentityCollectionFilter()).toEqual({});
   });
 
   it('fails closed in strict mode when any evidence is truncated', () => {
