@@ -68,6 +68,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 ## Deprecated: bibliographic paper pipeline
 
 The bibliographic ingestion scrapers (`arxivPreprintScraper.ts`, `openAlexPaperScraper.ts`, `orcidWorksScraper.ts`, `europePmcPaperScraper.ts` / `pubmed`, `crossrefPaperScraper.ts`) are deprecated and no longer registered in `registry.ts`, so they cannot run via the CLI, cron, or a sweep.
+The official-profile publication producer and materializer retirement contract is documented in `docs/research-data-pipeline.md`.
 The launch-trust gate no longer enforces paper-quality or research-activity checks.
 Source files, `paperAuthorshipPolicy.ts`, and the stored paper/scholarly collections are retained temporarily for rollback; verified Google Scholar and ORCID identity links stay on `Person`.
 The legacy `paperAuthorshipAudit.ts` has no package-script entry point and requires `RETIRED_PAPER_PIPELINE_ROLLBACK=true` for direct execution as part of an approved rollback plan.

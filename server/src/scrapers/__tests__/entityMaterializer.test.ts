@@ -868,7 +868,6 @@ describe('entityMaterializer post-materialization metrics', () => {
 
     expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
   });
-
 });
 
 describe('center relationship type + label resolution', () => {

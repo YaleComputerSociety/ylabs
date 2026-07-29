@@ -141,10 +141,7 @@ export const econExtractor: FacultyExtractor = (html, ctx) => {
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title =
       cleanText(
-        card
-          .find('.node-teaser__professional-title, .node-teaser__title')
-          .first()
-          .text(),
+        card.find('.node-teaser__professional-title, .node-teaser__title').first().text(),
       ) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
     out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
@@ -174,7 +171,8 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
     if (!name) return;
     const profileHref = link.attr('href') || '';
     const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
-    const title = card.find('.directory-listing-card__subheading').first().text().trim() || undefined;
+    const title =
+      card.find('.directory-listing-card__subheading').first().text().trim() || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
     let email: string | undefined;
     let labUrl: string | undefined;
@@ -186,7 +184,8 @@ export const mcdbExtractor: FacultyExtractor = (html, ctx) => {
         labUrl = href;
       }
     });
-    const bio = cleanText(card.find('.directory-listing-card__snippet').first().text()) || undefined;
+    const bio =
+      cleanText(card.find('.directory-listing-card__snippet').first().text()) || undefined;
     out.push({ name, profileUrl, title, email, labUrl, bio, ...(imageUrl ? { imageUrl } : {}) });
   });
   return out;
@@ -209,9 +208,12 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
     const row = $(el);
     const nameCell = row.find('.views-field-name').first();
     const nameLink = nameCell.find('a.username, a[href*="/people/"]').first();
-    const profileLink = nameLink.length > 0
-      ? nameLink
-      : row.find('.views-field-picture a[href*="/people/"], a.username, a[href*="/people/"]').first();
+    const profileLink =
+      nameLink.length > 0
+        ? nameLink
+        : row
+            .find('.views-field-picture a[href*="/people/"], a.username, a[href*="/people/"]')
+            .first();
     const name =
       cleanText(nameLink.text()) ||
       cleanText(nameCell.find('.field-content').first().text()) ||
@@ -226,7 +228,9 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       nameCell.find('a[href^="mailto:"]').first().attr('href') ||
       row.find('a[href^="mailto:"]').first().attr('href') ||
       '';
-    const email = /^mailto:/i.test(emailHref) ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
+    const email = /^mailto:/i.test(emailHref)
+      ? emailHref.replace(/^mailto:/i, '').trim()
+      : undefined;
 
     let title: string | undefined;
     let seenNameLink = false;
@@ -259,12 +263,18 @@ export const psychExtractor: FacultyExtractor = (html, ctx) => {
       const href = link.attr('href') || '';
       if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
       if (profileHref && href === profileHref) return;
-      if (profileUrl && normalizeUrlForDedupe(absolutize(href, ctx.pageUrl)) === normalizeUrlForDedupe(profileUrl)) {
+      if (
+        profileUrl &&
+        normalizeUrlForDedupe(absolutize(href, ctx.pageUrl)) === normalizeUrlForDedupe(profileUrl)
+      ) {
         return;
       }
       const text = link.text().replace(/\s+/g, ' ').trim();
       const signal = `${text} ${link.attr('aria-label') || ''} ${link.attr('title') || ''} ${href}`;
-      if (!/\b(website|lab|laboratory|homepage|research group)\b/i.test(signal) && !/^https?:\/\//i.test(href)) {
+      if (
+        !/\b(website|lab|laboratory|homepage|research group)\b/i.test(signal) &&
+        !/^https?:\/\//i.test(href)
+      ) {
         return;
       }
       const absolute = absolutize(href, ctx.pageUrl);
@@ -299,9 +309,16 @@ function decodeHtmlEntities(value: string): string {
   return cheerio.load(`<textarea>${value}</textarea>`)('textarea').text();
 }
 
-function yaleEmailFromElement($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>): string | undefined {
+function yaleEmailFromElement(
+  $: cheerio.CheerioAPI,
+  node: cheerio.Cheerio<any>,
+): string | undefined {
   const href = node.find('a[href^="mailto:"]').first().attr('href') || '';
-  if (/^mailto:/i.test(href)) return href.replace(/^mailto:/i, '').trim().toLowerCase();
+  if (/^mailto:/i.test(href))
+    return href
+      .replace(/^mailto:/i, '')
+      .trim()
+      .toLowerCase();
 
   const decoded = decodeHtmlEntities(node.html() || node.text() || '');
   const mailtoMatch = decoded.match(/mailto:([a-z0-9._%+-]+@yale\.edu)/i);
@@ -374,7 +391,9 @@ export const jacksonPersonCardExtractor: FacultyExtractor = (html, ctx) => {
 
     const profileHref = card.find('a[href*="/person/"]').first().attr('href') || '';
     const emailHref = card.find('a[href^="mailto:"]').first().attr('href') || '';
-    const email = /^mailto:/i.test(emailHref) ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
+    const email = /^mailto:/i.test(emailHref)
+      ? emailHref.replace(/^mailto:/i, '').trim()
+      : undefined;
     const title = cleanText(card.find('.page-item-person-bio-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
@@ -682,7 +701,9 @@ function absolutize(href: string, base: string): string {
 }
 
 function cleanText(value: string | undefined | null): string {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function firstImageUrlFromSrcset(value: string | undefined | null): string | undefined {
@@ -718,10 +739,7 @@ function isGenericLabDirectoryUrl(value: string | undefined | null): boolean {
   }
 }
 
-function elementTextWithChildSeparators(
-  $: cheerio.CheerioAPI,
-  el: AnyNode,
-): string {
+function elementTextWithChildSeparators($: cheerio.CheerioAPI, el: AnyNode): string {
   const parts = $(el)
     .contents()
     .map((_i, node) => cleanText($(node).text()))
@@ -751,7 +769,9 @@ const nonResearchTopicLabels = new Set([
 function lowerTopicPhrase(value: string): string {
   return cleanText(value)
     .split(/\s+/)
-    .map((word) => (/^[A-Z0-9&-]{2,}$/.test(word) ? word : `${word.charAt(0).toLowerCase()}${word.slice(1)}`))
+    .map((word) =>
+      /^[A-Z0-9&-]{2,}$/.test(word) ? word : `${word.charAt(0).toLowerCase()}${word.slice(1)}`,
+    )
     .join(' ');
 }
 
@@ -829,26 +849,24 @@ function canonicalProfileUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string)
 
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
   return (
-    link
-      .closest(
-        [
-          'footer',
-          'nav',
-          '[role="navigation"]',
-          '.site-header',
-          '.site-footer',
-          '.site-navigation',
-          '.menu',
-          '.menu__item',
-          '.menu__link',
-          '.breadcrumb',
-          '[id="site-header"]',
-          '[id="site-footer"]',
-          '[id="site-navigation"]',
-          '[id="breadcrumb"]',
-        ].join(', '),
-      )
-      .length > 0
+    link.closest(
+      [
+        'footer',
+        'nav',
+        '[role="navigation"]',
+        '.site-header',
+        '.site-footer',
+        '.site-navigation',
+        '.menu',
+        '.menu__item',
+        '.menu__link',
+        '.breadcrumb',
+        '[id="site-header"]',
+        '[id="site-footer"]',
+        '[id="site-navigation"]',
+        '[id="breadcrumb"]',
+      ].join(', '),
+    ).length > 0
   );
 }
 
@@ -1040,19 +1058,21 @@ async function fetchDeptData(
 function profileEnrichmentFromHtml(
   html: string,
   profileUrl: string,
-): Partial<Pick<
-  FacultyEntry,
-  | 'profileUrl'
-  | 'email'
-  | 'labUrl'
-  | 'title'
-  | 'orcid'
-  | 'bio'
-  | 'researchInterests'
-  | 'topics'
-  | 'scholarCandidateProfileUrls'
-  | 'profileSourceUrl'
->> {
+): Partial<
+  Pick<
+    FacultyEntry,
+    | 'profileUrl'
+    | 'email'
+    | 'labUrl'
+    | 'title'
+    | 'orcid'
+    | 'bio'
+    | 'researchInterests'
+    | 'topics'
+    | 'scholarCandidateProfileUrls'
+    | 'profileSourceUrl'
+  >
+> {
   const $ = cheerio.load(html);
   const canonicalUrl = canonicalProfileUrlFromHtml($, profileUrl);
 
@@ -1060,7 +1080,9 @@ function profileEnrichmentFromHtml(
   const email = emailHref ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
 
   const title =
-    $('[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"]')
+    $(
+      '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"]',
+    )
       .first()
       .text()
       .replace(/\s+/g, ' ')
@@ -1139,20 +1161,22 @@ function profileEnrichmentFromHtml(
 
 function mergeProfileEnrichment(
   entry: FacultyEntry,
-  enrichment: Partial<Pick<
-    FacultyEntry,
-    | 'profileUrl'
-    | 'email'
-    | 'labUrl'
-    | 'title'
-    | 'orcid'
-    | 'bio'
-    | 'researchInterests'
-    | 'topics'
-    | 'scholarCandidateProfileUrls'
-    | 'profileSourceUrl'
-    | 'imageUrl'
-  >>,
+  enrichment: Partial<
+    Pick<
+      FacultyEntry,
+      | 'profileUrl'
+      | 'email'
+      | 'labUrl'
+      | 'title'
+      | 'orcid'
+      | 'bio'
+      | 'researchInterests'
+      | 'topics'
+      | 'scholarCandidateProfileUrls'
+      | 'profileSourceUrl'
+      | 'imageUrl'
+    >
+  >,
 ): FacultyEntry {
   return {
     ...entry,
@@ -1166,7 +1190,10 @@ function mergeProfileEnrichment(
     researchInterests:
       uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
         .length > 0
-        ? uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
+        ? uniqueStrings([
+            ...(entry.researchInterests || []),
+            ...(enrichment.researchInterests || []),
+          ])
         : undefined,
     topics:
       uniqueStrings([...(entry.topics || []), ...(enrichment.topics || [])]).length > 0
@@ -1212,7 +1239,9 @@ function entryToUserObservations(
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeName(entry.name);
   const { first, last } = splitName(cleaned);
-  const personEmail = isLikelyPersonSpecificYaleEmail(entry.email, cleaned) ? entry.email : undefined;
+  const personEmail = isLikelyPersonSpecificYaleEmail(entry.email, cleaned)
+    ? entry.email
+    : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = slugify(cleaned);
   const entityKey = netid ? `netid:${netid}` : `dept:${dept.deptKey}:${slug || 'unknown'}`;
@@ -1262,7 +1291,9 @@ function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
   const name = normalizeName(entry.name);
   const url = entry.labUrl || '';
   const searchable = `${name} ${url}`.toLowerCase();
-  return /\b(lab|laboratory|research[-\s]?group|group)\b/.test(searchable) || /lab[./-]/.test(searchable);
+  return (
+    /\b(lab|laboratory|research[-\s]?group|group)\b/.test(searchable) || /lab[./-]/.test(searchable)
+  );
 }
 
 function entryToResearchEntityObservations(
@@ -1331,9 +1362,10 @@ export class DepartmentRosterScraper implements IScraper {
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
-    const onlyFilter = ctx.options.only && ctx.options.only.length > 0
-      ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
-      : null;
+    const onlyFilter =
+      ctx.options.only && ctx.options.only.length > 0
+        ? new Set(ctx.options.only.map((s) => s.trim().toLowerCase()))
+        : null;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');

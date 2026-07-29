@@ -2,7 +2,7 @@
 
 Status: active operator reference
 
-Last updated: 2026-07-21
+Last updated: 2026-07-28
 
 Yale Research data moves through an evidence-first pipeline. Use this document for the stable shape of the pipeline, [`docs/scraper-audit-guide.md`](./scraper-audit-guide.md) for source-level audit expectations, and [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) for Beta and production promotion steps.
 
@@ -83,7 +83,8 @@ When no official profile bio exists, trusted personal or lab homepages may suppo
 
 Explicit `View Lab Website` links on official Yale profiles are a stronger research-home signal than broad profile affiliations. This path may accept a non-Yale lab domain when the official profile card itself labels the target as a lab website; the materialized lab name should use the profile person's name plus `Lab`, with credential suffixes such as `PhD` stripped. These lab-card links still must not be confused with profile chrome, academic-publication concept links, social/profile services, or broader center/department pages.
 
-Official-profile publication observations are audit evidence unless they include an inspectable destination URL. The materializer must not create `research_scholarly_links` sidecar rows with blank URLs from profile publication lists; blank generated profile pointers collide under the user/link uniqueness model and are not public research activity.
+The department-roster scraper no longer extracts official-profile publications or linked publication lists, and the entity materializer ignores historical `officialProfilePublications` observations instead of creating `research_scholarly_links`.
+Stored observations and scholarly sidecars remain available only for the rollback-safe retirement sequence in issue #207.
 
 Description extraction should follow newly discovered official research-home websites before falling back to older profile/source URLs. `lab-microsite-description-llm` prefers non-profile `websiteUrl`/`website` values over profile source URLs, and non-profile official page descriptions carry higher confidence than profile-page descriptions so center/lab pages can replace biographical profile fallback copy. Profile-page extraction stays lower confidence and should not override better official research-home pages. One unreachable or broken page must be logged and skipped without aborting the remaining bounded extraction batch.
 
