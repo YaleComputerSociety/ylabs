@@ -91,6 +91,9 @@ describe('deployed scraper source contract', () => {
       expect(readinessSources.has(sourceName)).toBe(false);
     }
     expect(serverPackage.scripts?.['papers:authorship-audit']).toBeUndefined();
+    expect(
+      serverPackage.scripts?.['scholarly-links:repair-official-profile-pointers'],
+    ).toBeUndefined();
     expect(scraperCli).not.toMatch(/--discover-openalex-authors|--max-openalex-pages-per-author/);
     expect(scraperCli).not.toMatch(/--source openalex/);
   });
