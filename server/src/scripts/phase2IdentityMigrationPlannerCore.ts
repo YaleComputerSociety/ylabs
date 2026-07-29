@@ -49,6 +49,7 @@ export interface LegacyIdentityFacultyMember {
 export interface LegacyIdentityMembership {
   id: string;
   researchEntityId?: string;
+  researchGroupId?: string;
   userId?: string;
   facultyMemberId?: string;
   name?: string;
@@ -105,6 +106,7 @@ export type Phase2QuarantineReason =
   | 'membership_conflicting_identity'
   | 'membership_missing_person'
   | 'membership_missing_research_entity'
+  | 'membership_conflicting_research_entity'
   | 'membership_research_entity_existence_inconclusive'
   | 'membership_unsupported_role'
   | 'membership_archived_without_historical_evidence'
@@ -924,12 +926,19 @@ function plannedRoles(args: {
   const plans: PlannedRoleAssignment[] = [];
   for (const membership of args.memberships) {
     const reasons: Phase2QuarantineReason[] = [];
+    const researchEntityId = membership.researchEntityId || membership.researchGroupId;
     if (membership.archived === true && !historicalMembership(membership)) {
       reasons.push('membership_archived_without_historical_evidence');
     }
-    if (!membership.researchEntityId) {
+    if (
+      membership.researchEntityId &&
+      membership.researchGroupId &&
+      membership.researchEntityId !== membership.researchGroupId
+    ) {
+      reasons.push('membership_conflicting_research_entity');
+    } else if (!researchEntityId) {
       reasons.push('membership_missing_research_entity');
-    } else if (!args.knownResearchEntityIds.has(membership.researchEntityId)) {
+    } else if (!args.knownResearchEntityIds.has(researchEntityId)) {
       reasons.push(
         args.researchEntitySnapshotTruncated
           ? 'membership_research_entity_existence_inconclusive'
@@ -984,7 +993,7 @@ function plannedRoles(args: {
         reasons.push('membership_current_with_archived_person');
       }
     }
-    if (reasons.length > 0 || !personKey || !resolution || !role || !membership.researchEntityId) {
+    if (reasons.length > 0 || !personKey || !resolution || !role || !researchEntityId) {
       appendQuarantine(args.quarantine, {
         subjectType: 'membership',
         subjectIds: [membership.id],
@@ -999,7 +1008,7 @@ function plannedRoles(args: {
       roleAssignmentKey: `role_assignment:membership:${membership.id}`,
       sourceMembershipId: membership.id,
       personKey,
-      researchEntityId: membership.researchEntityId,
+      researchEntityId,
       role,
       state,
       ...(startedAt ? { startedAt } : {}),

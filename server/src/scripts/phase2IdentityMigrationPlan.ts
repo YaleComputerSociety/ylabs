@@ -100,6 +100,7 @@ const PHASE2_PROJECTIONS = Object.freeze({
   research_entity_members: {
     _id: 1,
     researchEntityId: 1,
+    researchGroupId: 1,
     userId: 1,
     facultyMemberId: 1,
     name: 1,
@@ -301,6 +302,9 @@ function membershipFromDocument(document: Document): LegacyIdentityMembership {
     id: String(document._id),
     ...(optionalId(document.researchEntityId)
       ? { researchEntityId: optionalId(document.researchEntityId) }
+      : {}),
+    ...(optionalId(document.researchGroupId)
+      ? { researchGroupId: optionalId(document.researchGroupId) }
       : {}),
     ...(optionalId(document.userId) ? { userId: optionalId(document.userId) } : {}),
     ...(optionalId(document.facultyMemberId)

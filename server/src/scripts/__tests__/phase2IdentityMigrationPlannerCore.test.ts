@@ -16,9 +16,10 @@ function input(
     users: [],
     facultyMembers: [],
     memberships,
-    knownResearchEntityIds: memberships.flatMap(({ researchEntityId }) =>
-      researchEntityId ? [researchEntityId] : [],
-    ),
+    knownResearchEntityIds: memberships.flatMap(({ researchEntityId, researchGroupId }) => {
+      const targetId = researchEntityId || researchGroupId;
+      return targetId ? [targetId] : [];
+    }),
     environment: 'development',
     databaseName: 'Development',
     sourceCommit: 'a'.repeat(40),
@@ -431,6 +432,48 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       reasons: ['membership_missing_research_entity'],
     });
     expect(report.scan.complete).toBe(true);
+  });
+
+  it('plans legacy membership targets and quarantines conflicting target fields', () => {
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-known',
+            name: 'Known Person',
+            netid: 'known-person',
+          },
+        ],
+        memberships: [
+          {
+            id: 'membership-legacy-target',
+            researchGroupId: 'entity-known',
+            facultyMemberId: 'faculty-known',
+            role: 'pi',
+          },
+          {
+            id: 'membership-conflicting-target',
+            researchEntityId: 'entity-known',
+            researchGroupId: 'entity-other',
+            facultyMemberId: 'faculty-known',
+            role: 'pi',
+          },
+        ],
+        knownResearchEntityIds: ['entity-known', 'entity-other'],
+      }),
+    );
+
+    expect(report.plannedRoleAssignments).toContainEqual(
+      expect.objectContaining({
+        sourceMembershipId: 'membership-legacy-target',
+        researchEntityId: 'entity-known',
+      }),
+    );
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'membership',
+      subjectIds: ['membership-conflicting-target'],
+      reasons: ['membership_conflicting_research_entity'],
+    });
   });
 
   it('marks unseen membership targets inconclusive when the entity snapshot is truncated', () => {

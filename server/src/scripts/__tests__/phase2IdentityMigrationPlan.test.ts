@@ -89,7 +89,7 @@ describe('Phase 2 identity migration plan CLI', () => {
       research_entity_members: [
         {
           _id: 'membership-1',
-          researchEntityId: 'entity-1',
+          researchGroupId: 'entity-1',
           facultyMemberId: 'faculty-1',
           role: 'pi',
           isCurrentMember: true,
@@ -175,6 +175,19 @@ describe('Phase 2 identity migration plan CLI', () => {
         .filter(({ operation }) => operation === 'find')
         .map(({ options }) => (options as { session?: ClientSession }).session),
     ).toEqual([session, session, session, session]);
+    expect(
+      calls.find(
+        ({ collection, operation }) =>
+          collection === 'research_entity_members' && operation === 'find',
+      ),
+    ).toMatchObject({
+      options: {
+        projection: expect.objectContaining({
+          researchEntityId: 1,
+          researchGroupId: 1,
+        }),
+      },
+    });
     expect(
       calls.find(
         ({ collection, operation }) => collection === 'research_entities' && operation === 'find',
