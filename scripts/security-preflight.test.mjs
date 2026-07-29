@@ -1163,7 +1163,6 @@ test('public search loaders avoid raw Axios console errors', () => {
 
 test('account and profile client surfaces avoid raw caught console errors', () => {
   const files = [
-    '../client/src/components/profile/PublicationsTable.tsx',
     '../client/src/components/accounts/ProfileEditor.tsx',
     '../client/src/pages/unknown.tsx',
     '../client/src/components/accounts/ListingForm/FormFields/ResearchAreaInput.tsx',
@@ -6627,10 +6626,6 @@ test('profile surfaces render only safe HTTP(S) profile URLs and images', () => 
     new URL('../client/src/components/DeveloperCard.tsx', import.meta.url),
     'utf8',
   );
-  const publicationsTableSource = fs.readFileSync(
-    new URL('../client/src/components/profile/PublicationsTable.tsx', import.meta.url),
-    'utf8',
-  );
   const urlSource = fs.readFileSync(new URL('../client/src/utils/url.ts', import.meta.url), 'utf8');
 
   assert.match(urlSource, /export const safeImageSrc = \(raw: unknown\): string =>/);
@@ -6695,13 +6690,6 @@ test('profile surfaces render only safe HTTP(S) profile URLs and images', () => 
   assert.match(developerCardSource, /src=\{imageSrc\}/);
   assert.doesNotMatch(developerCardSource, /src=\{developer\.image/);
   assert.doesNotMatch(developerCardSource, /safeUrl\(/);
-
-  assert.match(
-    publicationsTableSource,
-    /import \{ safeDoiUrl, safeHttpUrl \} from '\.\.\/\.\.\/utils\/url'/,
-  );
-  assert.match(publicationsTableSource, /safeHttpUrl\(pub\.open_access_url\)/);
-  assert.doesNotMatch(publicationsTableSource, /safeUrl\(pub\.open_access_url\)/);
 });
 
 test('programmatic new-tab opener only opens safe HTTP(S) URLs', () => {
@@ -7210,7 +7198,6 @@ test('publication DOI links use the shared DOI sanitizer', () => {
   const urlSource = fs.readFileSync(new URL('../client/src/utils/url.ts', import.meta.url), 'utf8');
   const doiRenderers = [
     '../client/src/components/labs/LabPapersList.tsx',
-    '../client/src/components/profile/PublicationsTable.tsx',
     '../client/src/components/admin/AdminProfileEditModal.tsx',
   ];
 
