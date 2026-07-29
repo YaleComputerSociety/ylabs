@@ -594,6 +594,14 @@ A reconciliation pass must run at least every six hours to repair missed invalid
 
 These loaders and projections are not wired to live REST routes, Meilisearch, materializer writes, or migration code in Phase 1.
 
+### Phase 2 read-only identity planning foundation
+
+[`phase2IdentityMigrationPlannerCore.ts`](../server/src/scripts/phase2IdentityMigrationPlannerCore.ts) deterministically separates planned `Account`, `Person`, and `RoleAssignment` rows from identity and membership quarantine cases.
+The planner never creates a person from ORCID or Google Scholar alone, never merges people on name alone, preserves historical roles, and rejects unresolved explicit membership references instead of falling back to names.
+[`phase2IdentityMigrationPlan.ts`](../server/src/scripts/phase2IdentityMigrationPlan.ts) reads bounded legacy snapshots and writes a private mode-`0600` dry-run artifact without writing canonical collections or redirecting runtime readers.
+Use the exact environment and review workflow in the [`Phase 2 identity-plan runbook`](./research-model-refactor-phase2-identity-plan.md).
+This repository foundation does not complete Phase 2 and remains operationally blocked on accepted Phase 0 and Phase 1 exits.
+
 ### Phase 4 reviewed legacy-record classification foundation
 
 [`legacyResearchRecordClassification.ts`](../server/src/services/legacyResearchRecordClassification.ts) defines a bounded, deterministic planner for the one-time classification of legacy `Listing` and `Fellowship` records.
