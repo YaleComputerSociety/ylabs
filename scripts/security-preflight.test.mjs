@@ -2322,11 +2322,6 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
     new URL('../server/src/scripts/repairListingResearchEntityProfiles.ts', import.meta.url),
     'utf8',
   );
-  const publicationPointerRepair = fs.readFileSync(
-    new URL('../server/src/scripts/repairOfficialProfilePublicationPointers.ts', import.meta.url),
-    'utf8',
-  );
-
   assert.match(guards, /export function resolveSafeJsonReportOutputPath/);
   assert.match(guards, /path\.extname\(resolved\)\.toLowerCase\(\) !== '\.json'/);
   assert.match(guards, /const tmpRoot = path\.resolve\(os\.tmpdir\(\)\)/);
@@ -2343,11 +2338,7 @@ test('scraper integrity report outputs are constrained to safe JSON artifact pat
   assert.match(integrityGate, /resolveSafeJsonReportOutputPath\(output\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(outputValue\)/);
   assert.match(duplicateReview, /resolveSafeJsonReportOutputPath\(output\)/);
-  for (const source of [
-    studentVisibilityBackfill,
-    listingProfileRepair,
-    publicationPointerRepair,
-  ]) {
+  for (const source of [studentVisibilityBackfill, listingProfileRepair]) {
     assert.match(source, /resolveSafeJsonReportOutputPath/);
     assert.match(source, /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/);
   }
@@ -4088,28 +4079,6 @@ test('rendered scraper fetch blocks cross-origin redirect content', () => {
     source,
     /url:\s*parsed\.url \|\| request\.url,\s*html:\s*parsed\.html \|\| ''/,
   );
-});
-
-test('official-profile publication pointer repair fetches through the shared SSRF guard', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/repairOfficialProfilePublicationPointers.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/utils\/ssrfGuard'/,
-  );
-  assert.match(source, /const safeUrl = await assertPublicHttpUrl\(url\)/);
-  assert.match(source, /const agents = ssrfSafeAgents\(\)/);
-  assert.match(source, /axios\.get\(safeUrl\.toString\(\), \{/);
-  assert.match(source, /httpAgent: agents\.httpAgent/);
-  assert.match(source, /httpsAgent: agents\.httpsAgent/);
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /id: serializedDocumentId\(row\._id\) \|\| ''/);
-  assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
-  assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
-  assert.doesNotMatch(source, /id: String\(row\._id\)/);
 });
 
 test('official-profile PI backfill fetches through the shared SSRF guard before cache lookup', () => {
@@ -5879,7 +5848,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/profileDataQualityAudit.ts',
     '../server/src/scripts/backfillBrowseRank.ts',
     '../server/src/scripts/auditProgramResearchRelevance.ts',
-    '../server/src/scripts/repairOfficialProfilePublicationPointers.ts',
     '../server/src/scripts/scholarlyLinkProvenanceAudit.ts',
     '../server/src/scripts/launchTrustContract.ts',
     '../server/src/scripts/repairArchivedEntityArtifacts.ts',
@@ -8565,7 +8533,6 @@ test('scraper tests do not contain known real profile fixture identifiers', () =
 test('source-acquisition report errors sanitize raw exception messages', () => {
   const files = [
     '../server/src/scrapers/sources/officialProfilePiBackfillScraper.ts',
-    '../server/src/scripts/repairOfficialProfilePublicationPointers.ts',
     '../server/src/scrapers/sources/yaleDirectoryScraper.ts',
     '../server/src/scrapers/sources/nsfAwardScraper.ts',
     '../server/src/scrapers/renderedFetch.ts',
