@@ -81,6 +81,7 @@ export interface Phase2IdentityMigrationPlannerInput {
     users: boolean;
     facultyMembers: boolean;
     memberships: boolean;
+    researchEntities: boolean;
   };
   generatedAt?: string;
 }
@@ -172,11 +173,13 @@ export interface Phase2IdentityMigrationPlanReport {
       users: number;
       facultyMembers: number;
       memberships: number;
+      researchEntities: number;
     };
     possibleTruncation: {
       users: boolean;
       facultyMembers: boolean;
       memberships: boolean;
+      researchEntities: boolean;
       quarantineRecords: boolean;
       profileUrlTraversal: boolean;
     };
@@ -1041,6 +1044,7 @@ export function buildPhase2IdentityMigrationPlan(
     !input.truncation.users &&
     !input.truncation.facultyMembers &&
     !input.truncation.memberships &&
+    !input.truncation.researchEntities &&
     !identityNodes.profileUrlTraversalTruncated &&
     !quarantineTruncated;
 
@@ -1065,6 +1069,7 @@ export function buildPhase2IdentityMigrationPlan(
         users: input.users.length,
         facultyMembers: input.facultyMembers.length,
         memberships: input.memberships.length,
+        researchEntities: input.knownResearchEntityIds.length,
       },
       possibleTruncation: {
         ...input.truncation,

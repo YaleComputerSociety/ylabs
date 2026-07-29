@@ -10,10 +10,12 @@ The planner reads bounded snapshots from:
 
 - `users`;
 - `faculty_members`;
-- `research_entity_members`.
+- `research_entity_members`;
+- `_id` only from `research_entities`.
 
 It uses one MongoDB snapshot session with `secondaryPreferred`, `retryWrites=false`, a pool of two connections, a five-second default query ceiling, and the `ylabs-phase2:identity-migration-plan` query comment.
-Each collection scan is sorted by `_id`, capped independently, and reports possible truncation.
+All four collection scans use that same snapshot session, are sorted by `_id`, are capped independently, and report possible truncation.
+The `research_entities` snapshot exists only to validate membership target IDs and includes archived entities so valid historical memberships can retain their original target.
 Archived identity rows remain in the scan so an archived, explicitly historical membership can resolve its original person safely.
 Unrelated archived identities remain outside person planning, and an archived membership without historical evidence enters quarantine.
 The command never reads from or writes to `accounts`, `people`, or `role_assignments`.
@@ -44,7 +46,9 @@ Historical, alumni, ended, or explicitly non-current memberships remain `HISTORI
 This includes materializer-produced historical memberships whose legacy row is archived.
 Historical roles resolved through an archived identity remain unreviewed, while a current role that resolves only to archived identity evidence enters quarantine.
 Unsupported roles, ambiguous identities, missing people, and research entity references absent from an authorized existence snapshot enter quarantine.
-The protected command does not read canonical targets, so it supplies no existence snapshot and fails closed by quarantining every membership proposal.
+The protected command supplies a bounded, read-only `research_entities` ID snapshot and proposes a role only when its target appears in that snapshot.
+An absent target enters quarantine.
+If the entity scan is truncated, an unseen target remains quarantined, the report is incomplete, and strict mode fails so the operator cannot mistake the target for conclusively dangling.
 
 ## Private Output Contract
 
@@ -58,12 +62,12 @@ The report records:
 
 - the clean source commit;
 - the exact environment and database;
-- collection scan bounds and truncation;
+- scan bounds and truncation for all four source collections;
 - planned account, person, and role-assignment rows;
 - every quarantine reason within the configured bound;
 - explicit policy assertions that no writes or runtime redirects occurred.
 
-`--strict` preserves the private artifact but exits nonzero if any collection or quarantine section was truncated.
+`--strict` preserves the private artifact but exits nonzero if any source collection, including the research entity existence snapshot, or quarantine section was truncated.
 
 ## Development Dry Run
 

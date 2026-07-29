@@ -115,6 +115,9 @@ const PHASE2_PROJECTIONS = Object.freeze({
     startedAt: 1,
     endedAt: 1,
   },
+  research_entities: {
+    _id: 1,
+  },
 });
 
 function consumeValue(
@@ -334,6 +337,12 @@ function membershipFromDocument(document: Document): LegacyIdentityMembership {
   };
 }
 
+function researchEntityIdFromDocument(document: Document): string {
+  const id = optionalId(document._id);
+  if (!id) throw new Error('Phase 2 identity planning found a research entity without an id.');
+  return id;
+}
+
 async function loadBoundedCollection<T>(args: {
   client: MongoClient;
   collectionName: keyof typeof PHASE2_PROJECTIONS;
@@ -366,6 +375,35 @@ async function loadBoundedCollection<T>(args: {
     documents.push(args.mapDocument(document));
   }
   return { documents, truncated };
+}
+
+export async function loadPhase2IdentitySnapshot(args: {
+  client: MongoClient;
+  documentLimit: number;
+  maxTimeMs: number;
+  session: ClientSession;
+}) {
+  const users = await loadBoundedCollection({
+    ...args,
+    collectionName: 'users',
+    mapDocument: userFromDocument,
+  });
+  const facultyMembers = await loadBoundedCollection({
+    ...args,
+    collectionName: 'faculty_members',
+    mapDocument: facultyMemberFromDocument,
+  });
+  const memberships = await loadBoundedCollection({
+    ...args,
+    collectionName: 'research_entity_members',
+    mapDocument: membershipFromDocument,
+  });
+  const researchEntities = await loadBoundedCollection({
+    ...args,
+    collectionName: 'research_entities',
+    mapDocument: researchEntityIdFromDocument,
+  });
+  return { users, facultyMembers, memberships, researchEntities };
 }
 
 export function buildPhase2IdentityCollectionFilter(): Document {
@@ -501,44 +539,22 @@ async function runPhase2IdentityMigrationPlan(
     const databaseName = client.db().databaseName;
     assertOperatorEnvironmentMatchesDatabase(args.environment, databaseName);
     const session = client.startSession(PHASE2_IDENTITY_SNAPSHOT_SESSION_OPTIONS);
-    let users: Awaited<ReturnType<typeof loadBoundedCollection<LegacyIdentityUser>>>;
-    let facultyMembers: Awaited<
-      ReturnType<typeof loadBoundedCollection<LegacyIdentityFacultyMember>>
-    >;
-    let memberships: Awaited<ReturnType<typeof loadBoundedCollection<LegacyIdentityMembership>>>;
+    let snapshot: Awaited<ReturnType<typeof loadPhase2IdentitySnapshot>>;
     try {
-      users = await loadBoundedCollection({
+      snapshot = await loadPhase2IdentitySnapshot({
         client,
-        collectionName: 'users',
         documentLimit: args.documentLimit,
         maxTimeMs: args.maxTimeMs,
         session,
-        mapDocument: userFromDocument,
-      });
-      facultyMembers = await loadBoundedCollection({
-        client,
-        collectionName: 'faculty_members',
-        documentLimit: args.documentLimit,
-        maxTimeMs: args.maxTimeMs,
-        session,
-        mapDocument: facultyMemberFromDocument,
-      });
-      memberships = await loadBoundedCollection({
-        client,
-        collectionName: 'research_entity_members',
-        documentLimit: args.documentLimit,
-        maxTimeMs: args.maxTimeMs,
-        session,
-        mapDocument: membershipFromDocument,
       });
     } finally {
       await session.endSession();
     }
     const report = buildPhase2IdentityMigrationPlan({
-      users: users.documents,
-      facultyMembers: facultyMembers.documents,
-      memberships: memberships.documents,
-      knownResearchEntityIds: [],
+      users: snapshot.users.documents,
+      facultyMembers: snapshot.facultyMembers.documents,
+      memberships: snapshot.memberships.documents,
+      knownResearchEntityIds: snapshot.researchEntities.documents,
       environment: args.environment,
       databaseName,
       sourceCommit,
@@ -547,9 +563,10 @@ async function runPhase2IdentityMigrationPlan(
         quarantineRecords: args.quarantineLimit,
       },
       truncation: {
-        users: users.truncated,
-        facultyMembers: facultyMembers.truncated,
-        memberships: memberships.truncated,
+        users: snapshot.users.truncated,
+        facultyMembers: snapshot.facultyMembers.truncated,
+        memberships: snapshot.memberships.truncated,
+        researchEntities: snapshot.researchEntities.truncated,
       },
     });
     const finalSourceCommit = resolveCleanPhase2IdentityPlanSourceCommit(sourceCommit);

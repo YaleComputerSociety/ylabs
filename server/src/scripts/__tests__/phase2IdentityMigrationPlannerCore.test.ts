@@ -30,6 +30,7 @@ function input(
       users: false,
       facultyMembers: false,
       memberships: false,
+      researchEntities: false,
     },
     generatedAt: '2026-07-28T12:00:00.000Z',
     ...overrides,
@@ -242,7 +243,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
             {
               id: 'user-explicit-link',
               netid: 'explicit-link',
-              email: 'explicit.link@yale.edu',
+              email: 'fixture.explicit.link@yale.edu',
               userType: 'professor',
               fname: 'Explicit',
               lname: 'Link',
@@ -256,7 +257,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
               id: 'faculty-explicit-link',
               userId: 'user-explicit-link',
               netid: 'explicit-link',
-              email: 'explicit.link@yale.edu',
+              email: 'fixture.explicit.link@yale.edu',
               name: 'Explicit Link',
               [facultyField]: facultyValue,
             },
@@ -429,6 +430,45 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       subjectIds: ['membership-dangling-entity'],
       reasons: ['membership_missing_research_entity'],
     });
+    expect(report.scan.complete).toBe(true);
+  });
+
+  it('marks unseen membership targets inconclusive when the entity snapshot is truncated', () => {
+    const report = buildPhase2IdentityMigrationPlan(
+      input({
+        facultyMembers: [
+          {
+            id: 'faculty-entity-beyond-bound',
+            name: 'Bounded Entity Person',
+            netid: 'fixture-bounded-entity',
+          },
+        ],
+        memberships: [
+          {
+            id: 'membership-entity-beyond-bound',
+            researchEntityId: 'entity-beyond-bound',
+            facultyMemberId: 'faculty-entity-beyond-bound',
+            role: 'pi',
+          },
+        ],
+        knownResearchEntityIds: [],
+        truncation: {
+          users: false,
+          facultyMembers: false,
+          memberships: false,
+          researchEntities: true,
+        },
+      }),
+    );
+
+    expect(report.plannedRoleAssignments).toEqual([]);
+    expect(report.quarantine).toContainEqual({
+      subjectType: 'membership',
+      subjectIds: ['membership-entity-beyond-bound'],
+      reasons: ['membership_missing_research_entity'],
+    });
+    expect(report.scan.possibleTruncation.researchEntities).toBe(true);
+    expect(report.scan.complete).toBe(false);
   });
 
   it('keeps unique name-resolved historical roles unreviewed', () => {
@@ -559,6 +599,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
           users: true,
           facultyMembers: false,
           memberships: false,
+          researchEntities: false,
         },
       }),
     );
@@ -568,6 +609,7 @@ describe('buildPhase2IdentityMigrationPlan', () => {
       users: true,
       facultyMembers: false,
       memberships: false,
+      researchEntities: false,
       quarantineRecords: true,
       profileUrlTraversal: false,
     });
