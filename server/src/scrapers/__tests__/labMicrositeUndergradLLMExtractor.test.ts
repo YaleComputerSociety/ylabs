@@ -1062,7 +1062,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       async (): Promise<LLMExtraction> => ({
         openToUndergrads: 'unclear',
         currentUndergradCount: 0,
-        evidenceQuote: null,
+        evidenceQuote: '',
         evidenceSource: 'none',
         joinPageUrl: null,
         compensationModes: ['PAID'],
