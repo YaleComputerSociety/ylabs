@@ -369,7 +369,7 @@ describe('claim-specific undergraduate logistics extraction', () => {
     );
   });
 
-  it('keeps an availability expiry only when the exact ISO date occurs in its quote', () => {
+  it('keeps an availability expiry when the normalized date occurs in its quote', () => {
     const sourceUrl = 'https://smith.example.com/join';
     const sourcePages = [
       {
@@ -409,6 +409,29 @@ describe('claim-specific undergraduate logistics extraction', () => {
     expect(
       unverified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
     ).not.toHaveProperty('validThrough');
+
+    const humanReadable = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      {
+        ...extraction,
+        currentAvailabilityQuote: 'Applications close August 15, 2026.',
+        availabilityValidThrough: '2026-08-15',
+      },
+      new Date('2026-07-14T00:00:00.000Z'),
+      {
+        sourcePages: [
+          {
+            url: sourceUrl,
+            text: 'Applications close August 15, 2026.',
+          },
+        ],
+      },
+    );
+    expect(
+      humanReadable.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')
+        ?.value,
+    ).toMatchObject({ validThrough: '2026-08-15' });
   });
 });
 

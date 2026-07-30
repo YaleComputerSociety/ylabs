@@ -573,16 +573,64 @@ export function extractionToObservations(
   };
   const out: ObservationInput[] = [];
 
-  const verifiedIsoDateInQuote = (
+  const verifiedDateInQuote = (
     candidate: string | null | undefined,
     quote: string,
   ): string | undefined => {
-    if (!candidate || !/^\d{4}-\d{2}-\d{2}$/.test(candidate) || !quote.includes(candidate)) {
-      return undefined;
-    }
+    if (!candidate || !/^\d{4}-\d{2}-\d{2}$/.test(candidate)) return undefined;
     const timestamp = Date.parse(`${candidate}T00:00:00.000Z`);
     if (!Number.isFinite(timestamp)) return undefined;
-    return new Date(timestamp).toISOString().slice(0, 10) === candidate ? candidate : undefined;
+    if (new Date(timestamp).toISOString().slice(0, 10) !== candidate) return undefined;
+    if (quote.includes(candidate)) return candidate;
+
+    const monthNumbers = new Map(
+      [
+        'january',
+        'february',
+        'march',
+        'april',
+        'may',
+        'june',
+        'july',
+        'august',
+        'september',
+        'october',
+        'november',
+        'december',
+      ].flatMap((month, index) => [
+        [month, index + 1] as const,
+        [month.slice(0, 3), index + 1] as const,
+      ]),
+    );
+    const normalizeMatch = (year: string, month: number, day: string): string | undefined => {
+      const normalized = `${year}-${String(month).padStart(2, '0')}-${String(
+        Number(day),
+      ).padStart(2, '0')}`;
+      const parsed = Date.parse(`${normalized}T00:00:00.000Z`);
+      return Number.isFinite(parsed) &&
+        new Date(parsed).toISOString().slice(0, 10) === normalized
+        ? normalized
+        : undefined;
+    };
+    const monthName =
+      'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+    const monthFirst = new RegExp(
+      `\\b(${monthName})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,)?\\s+(\\d{4})\\b`,
+      'gi',
+    );
+    const dayFirst = new RegExp(
+      `\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${monthName})\\.?(?:,)?\\s+(\\d{4})\\b`,
+      'gi',
+    );
+    for (const match of quote.matchAll(monthFirst)) {
+      const month = monthNumbers.get(match[1].toLowerCase().slice(0, 3));
+      if (month && normalizeMatch(match[3], month, match[2]) === candidate) return candidate;
+    }
+    for (const match of quote.matchAll(dayFirst)) {
+      const month = monthNumbers.get(match[2].toLowerCase().slice(0, 3));
+      if (month && normalizeMatch(match[3], month, match[1]) === candidate) return candidate;
+    }
+    return undefined;
   };
 
   const verifiedQuoteSourceUrl = (rawQuote: string | undefined): string | undefined => {
@@ -602,7 +650,7 @@ export function extractionToObservations(
     const evidenceQuote = (rawQuote || '').replace(/\s+/g, ' ').trim();
     const evidenceSourceUrl = verifiedQuoteSourceUrl(rawQuote);
     if (!evidenceQuote || !evidenceSourceUrl) return;
-    const verifiedValidThrough = verifiedIsoDateInQuote(validThrough, evidenceQuote);
+    const verifiedValidThrough = verifiedDateInQuote(validThrough, evidenceQuote);
     out.push({
       ...base,
       sourceUrl: evidenceSourceUrl,

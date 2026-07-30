@@ -125,6 +125,38 @@ describe('buildScrapeRunReport', () => {
     );
   });
 
+  it('does not expect logistics claims from legacy microsite runs', () => {
+    const report = buildScrapeRunReport(
+      {
+        _id: 'run-legacy',
+        sourceName: 'lab-microsite-undergrad-llm',
+        status: 'success',
+        options: {},
+        postMaterializationMetrics: {
+          entryPathways: 1,
+          accessSignals: 1,
+          contactRoutes: 1,
+          undergraduateLogisticsClaims: 0,
+        },
+      },
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'undergradAccessEvidence',
+          value: { openToUndergrads: 'yes' },
+          sourceUrl: 'https://smith.example.com',
+        },
+      ],
+      getSourceCoverage('lab-microsite-undergrad-llm'),
+    );
+
+    expect(report.postMaterialization?.expectedArtifactTypes).not.toContain(
+      'UndergraduateLogisticsClaim',
+    );
+    expect(report.warnings.join(' ')).not.toContain('UndergraduateLogisticsClaim');
+  });
+
   it('flags conflict candidates and malformed observations', () => {
     const report = buildScrapeRunReport(
       {

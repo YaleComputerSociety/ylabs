@@ -666,6 +666,7 @@ function metricForArtifact(
 function buildPostMaterializationSummary(
   metrics: ReportPostMaterializationMetrics | undefined,
   sourceCoverage?: ScrapeRunReport['coverage']['source'],
+  excludedExpectedArtifactTypes: readonly string[] = [],
 ): ReportPostMaterializationSummary | undefined {
   if (!metrics) return undefined;
 
@@ -681,7 +682,9 @@ function buildPostMaterializationSummary(
     errors: metrics.errors || 0,
   };
   const expectedArtifactTypes = (sourceCoverage?.artifactTypes.values || []).filter(
-    (artifactType) => (ACCESS_ARTIFACT_TYPES as readonly string[]).includes(artifactType),
+    (artifactType) =>
+      (ACCESS_ARTIFACT_TYPES as readonly string[]).includes(artifactType) &&
+      !excludedExpectedArtifactTypes.includes(artifactType),
   );
   const missingExpectedArtifactTypes = expectedArtifactTypes.filter(
     (artifactType) => metricForArtifact(normalized, artifactType) === 0,
@@ -698,6 +701,19 @@ function buildPostMaterializationSummary(
     expectedArtifactTypes,
     missingExpectedArtifactTypes,
   };
+}
+
+function logisticsAcquisitionEnabledForRun(run: ReportScrapeRun): boolean {
+  if (run.sourceName !== 'lab-microsite-undergrad-llm' || !Array.isArray(run.options?.only)) {
+    return false;
+  }
+  const allowlist = new Set(
+    run.options.only
+      .filter((slug): slug is string => typeof slug === 'string')
+      .map((slug) => slug.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return allowlist.size > 0 && allowlist.size <= 25;
 }
 
 export function buildSourceEvidenceGapReview(
@@ -815,6 +831,10 @@ export function buildScrapeRunReport(
   const postMaterialization = buildPostMaterializationSummary(
     run.postMaterializationMetrics,
     coverageSource,
+    run.sourceName === 'lab-microsite-undergrad-llm' &&
+      !logisticsAcquisitionEnabledForRun(run)
+      ? ['UndergraduateLogisticsClaim']
+      : [],
   );
   const workPlanner = run.metrics?.workPlanner;
   const workPlannerSkippedAll =
