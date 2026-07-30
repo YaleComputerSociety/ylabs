@@ -208,4 +208,31 @@ describe('buildResearchDetailSources', () => {
       expect.arrayContaining(['Profile website', 'Profile source']),
     );
   });
+
+  it('dedupes known logistics evidence into the official source ledger', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://example.yale.edu/join',
+        sourceUrls: [],
+      },
+      undergraduateLogistics: {
+        claims: [
+          {
+            claimType: 'COMPENSATION',
+            state: 'known',
+            evidence: { sourceUrl: 'https://example.yale.edu/join/' },
+          },
+          {
+            claimType: 'MODALITY',
+            state: 'conflicting_withheld',
+            evidence: { sourceUrl: 'https://private.example.test/conflict' },
+          },
+        ],
+      },
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].contexts).toEqual(['Profile website', 'Compensation logistics evidence']);
+    expect(JSON.stringify(sources)).not.toContain('private.example.test');
+  });
 });

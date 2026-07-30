@@ -42,6 +42,7 @@ Entity pages should answer:
 | `EntryPathway` | `entry_pathways` | How a student might approach a plausible research home. |
 | `PostedOpportunity` | `posted_opportunities` | A real active or time-bound posting. |
 | `AccessSignal` | `access_signals` | Evidence-backed signal about undergraduate access. |
+| `UndergraduateLogisticsClaim` | `undergraduate_logistics_claims` | Independent source-backed evidence about student level, compensation or credit, weekly time, modality, or current availability. |
 | `ContactRoute` | `contact_routes` | The best known way to act, such as official application, lab manager, or faculty PI. |
 
 ## Modeling rules
@@ -55,6 +56,8 @@ It is not an entry pathway by itself.
 Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
 Use `AccessSignal` with evidence strength instead.
+- Keep undergraduate logistics claims independent and neutral when unknown.
+Do not infer one logistics claim from another or from generic undergraduate-access evidence.
 - Contact routes are fail-closed.
 Prefer official and public URLs.
 Redact scraped emails from public payloads.

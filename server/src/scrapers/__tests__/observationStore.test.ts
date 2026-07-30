@@ -3,6 +3,52 @@ import { Observation } from '../../models/observation';
 import { appendObservations, buildObservationFingerprint } from '../observationStore';
 
 describe('buildObservationFingerprint', () => {
+  it('makes logistics updates latest-wins within a source but distinct across sources', () => {
+    const base = {
+      entityType: 'researchEntity',
+      entityKey: 'smith-lab',
+    };
+    const logisticsFields = [
+      'undergraduateLogisticsStudentLevel',
+      'undergraduateLogisticsCompensation',
+      'undergraduateLogisticsTimeCommitment',
+      'undergraduateLogisticsModality',
+      'undergraduateLogisticsCurrentAvailability',
+    ];
+
+    for (const field of logisticsFields) {
+      const oldValue = buildObservationFingerprint({
+        ...base,
+        field,
+        sourceName: 'lab-microsite-undergrad-llm',
+        value: { revision: 1 },
+      });
+      const newValue = buildObservationFingerprint({
+        ...base,
+        field,
+        sourceName: 'lab-microsite-undergrad-llm',
+        value: { revision: 2 },
+      });
+
+      expect(oldValue).toBe(newValue);
+    }
+
+    const otherSource = buildObservationFingerprint({
+      ...base,
+      field: 'undergraduateLogisticsCurrentAvailability',
+      sourceName: 'manual-admin-edit',
+      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
+    });
+    const extractorSource = buildObservationFingerprint({
+      ...base,
+      field: 'undergraduateLogisticsCurrentAvailability',
+      sourceName: 'lab-microsite-undergrad-llm',
+      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
+    });
+
+    expect(otherSource).not.toBe(extractorSource);
+  });
+
   it('is stable for same-source equivalent observations', () => {
     const a = buildObservationFingerprint({
       sourceName: 'openalex',
@@ -30,9 +76,7 @@ describe('buildObservationFingerprint', () => {
       value: true,
     };
 
-    expect(
-      buildObservationFingerprint({ ...base, sourceName: 'openalex' }),
-    ).not.toBe(
+    expect(buildObservationFingerprint({ ...base, sourceName: 'openalex' })).not.toBe(
       buildObservationFingerprint({ ...base, sourceName: 'lab-microsite-undergrad-llm' }),
     );
   });
@@ -61,9 +105,9 @@ describe('buildObservationFingerprint', () => {
       entityKey: 'smith-lab',
       field: 'websiteUrl',
     };
-    expect(
-      buildObservationFingerprint({ ...base, value: 'https://a.yale.edu' }),
-    ).not.toBe(buildObservationFingerprint({ ...base, value: 'https://b.yale.edu' }));
+    expect(buildObservationFingerprint({ ...base, value: 'https://a.yale.edu' })).not.toBe(
+      buildObservationFingerprint({ ...base, value: 'https://b.yale.edu' }),
+    );
   });
 });
 

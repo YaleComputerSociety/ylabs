@@ -149,12 +149,12 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### EP-04 - Source-Backed Undergraduate Logistics - FR-16
 
-- **Status:** Blocked.
-- **Depends on:** new evidence acquisition and reviewed observation/materialization contracts.
+- **Status:** Active.
+- **Depends on:** reviewed observation/materialization contracts, a bounded Beta acquisition run, and sampled false-positive acceptance before broad release.
 - **Acceptance criteria:** profiles may show student level, compensation/formalization mode, research modality, or current availability only when a source supports that exact claim; unknown values remain absent or neutrally disclosed on detail, never inferred from department, methods, or a generic undergrad signal; any future facet uses the same claim-specific evidence.
-- **Validation evidence:** model fields exist, but current corpus coverage is not sufficient to support a trustworthy student surface.
-- **PRs:** none.
-- **Blocker:** source acquisition and false-positive review are required before UI delivery.
+- **Validation evidence:** child issue `#254` adds exact-quote acquisition for five independent logistics claims, deterministic validation and freshness controls, first-class materialization, public DTO redaction, explicit known/unknown/stale/conflict presentation states, a read-only coverage and sampled-precision audit, claim-local rollback, and focused server/client tests.
+- **Delivery:** operational acceptance remains tracked by parent issue `#187`.
+- **Remaining release gate:** run the bounded acquisition in Beta, complete every deterministic audit sample, meet the configured precision threshold, and inspect the student-facing result before enabling broad or recurring acquisition.
 
 #### EP-05 - Research-Home Member Roster Beyond The Lead - FR-18
 

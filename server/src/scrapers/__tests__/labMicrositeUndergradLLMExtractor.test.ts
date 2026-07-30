@@ -19,7 +19,10 @@ import {
   candidateCrawlUrls,
   buildLLMPrompt,
   LAB_UNDERGRAD_RESPONSE_FORMAT,
+  LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT,
+  LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
+  logisticsAcquisitionAllowed,
   extractionToObservations,
   sourceUrlForExtraction,
   candidateLabFromResearchEntityDoc,
@@ -36,9 +39,11 @@ import type { ObservationInput, ScraperContext } from '../types';
 // Test harness
 // ---------------------------------------------------------------------------
 
-function makeContext(
-  overrides: Partial<ScraperContext['options']> = {},
-): { ctx: ScraperContext; emitted: ObservationInput[]; logs: string[] } {
+function makeContext(overrides: Partial<ScraperContext['options']> = {}): {
+  ctx: ScraperContext;
+  emitted: ObservationInput[];
+  logs: string[];
+} {
   const emitted: ObservationInput[] = [];
   const logs: string[] = [];
   const ctx: ScraperContext = {
@@ -254,9 +259,7 @@ describe('buildLLMPrompt', () => {
 
 describe('LLM extraction contract', () => {
   it('requires conservative source-backed research description fields', () => {
-    const required = (
-      (LAB_UNDERGRAD_RESPONSE_FORMAT as any).json_schema.schema.required
-    ) as string[];
+    const required = (LAB_UNDERGRAD_RESPONSE_FORMAT as any).json_schema.schema.required as string[];
 
     expect(required).toEqual(
       expect.arrayContaining(['researchSummary', 'methodsQuote', 'topicsQuote']),
@@ -279,6 +282,167 @@ describe('LLM extraction contract', () => {
     expect(prompt).toContain('generic faculty bio');
     expect(prompt).toContain('unsupported');
     expect(prompt).toContain('lab/faculty site research text');
+  });
+});
+
+describe('claim-specific undergraduate logistics extraction', () => {
+  it('emits isolated logistics observations only when the exact quote exists on a source page', () => {
+    const sourceUrl = 'https://smith.example.com/join';
+    const sourceText =
+      'Sophomores and juniors may apply. The role is paid. Expect 8 to 10 hours per week. Work is hybrid. Applications are currently open.';
+    const observations = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: sourceUrl,
+        eligibleStudentLevels: ['SOPHOMORE', 'JUNIOR'],
+        eligibilityQuote: 'Sophomores and juniors may apply.',
+        compensationModes: ['PAID'],
+        compensationQuote: 'The role is paid.',
+        timeCommitmentMinHours: 8,
+        timeCommitmentMaxHours: 10,
+        timeCommitmentQuote: 'Expect 8 to 10 hours per week.',
+        modalityModes: ['HYBRID'],
+        modalityQuote: 'Work is hybrid.',
+        currentAvailability: 'OPEN',
+        currentAvailabilityQuote: 'Applications are currently open.',
+        availabilityValidThrough: null,
+      },
+      new Date('2026-07-14T00:00:00.000Z'),
+      {
+        sourceUrls: [sourceUrl],
+        sourcePages: [{ url: sourceUrl, text: sourceText }],
+      },
+    );
+
+    expect(observations.map((row) => row.field)).toEqual(
+      expect.arrayContaining([
+        'undergraduateLogisticsStudentLevel',
+        'undergraduateLogisticsCompensation',
+        'undergraduateLogisticsTimeCommitment',
+        'undergraduateLogisticsModality',
+        'undergraduateLogisticsCurrentAvailability',
+      ]),
+    );
+    const compensation = observations.find(
+      (row) => row.field === 'undergraduateLogisticsCompensation',
+    );
+    expect(compensation).toMatchObject({
+      sourceUrl,
+      value: {
+        schemaVersion: 1,
+        claimType: 'COMPENSATION',
+        value: { modes: ['PAID'] },
+        evidenceQuote: 'The role is paid.',
+        quoteVerified: true,
+      },
+    });
+  });
+
+  it('does not emit a logistics claim when its quote is absent from fetched source text', () => {
+    const observations = extractionToObservations(
+      'smith-lab',
+      'https://smith.example.com/',
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        compensationModes: ['PAID'],
+        compensationQuote: 'This is a paid position.',
+      },
+      new Date('2026-07-14T00:00:00.000Z'),
+      {
+        sourcePages: [
+          { url: 'https://smith.example.com/', text: 'Undergraduate research information.' },
+        ],
+      },
+    );
+
+    expect(observations.some((row) => row.field === 'undergraduateLogisticsCompensation')).toBe(
+      false,
+    );
+  });
+
+  it('keeps an availability expiry when the normalized date occurs in its quote', () => {
+    const sourceUrl = 'https://smith.example.com/join';
+    const sourcePages = [
+      {
+        url: sourceUrl,
+        text: 'Applications are open through 2026-08-31.',
+      },
+    ];
+    const extraction: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: sourceUrl,
+      currentAvailability: 'OPEN',
+      currentAvailabilityQuote: 'Applications are open through 2026-08-31.',
+      availabilityValidThrough: '2026-08-31',
+    };
+
+    const verified = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      extraction,
+      new Date('2026-07-14T00:00:00.000Z'),
+      { sourcePages },
+    );
+    const unverified = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      { ...extraction, availabilityValidThrough: '2026-08-30' },
+      new Date('2026-07-14T00:00:00.000Z'),
+      { sourcePages },
+    );
+
+    expect(
+      verified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
+    ).toMatchObject({ validThrough: '2026-08-31' });
+    expect(
+      unverified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
+    ).not.toHaveProperty('validThrough');
+
+    const humanReadable = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      {
+        ...extraction,
+        currentAvailabilityQuote: 'Applications close August 15, 2026.',
+        availabilityValidThrough: '2026-08-15',
+      },
+      new Date('2026-07-14T00:00:00.000Z'),
+      {
+        sourcePages: [
+          {
+            url: sourceUrl,
+            text: 'Applications close August 15, 2026.',
+          },
+        ],
+      },
+    );
+    expect(
+      humanReadable.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
+    ).toMatchObject({ validThrough: '2026-08-15' });
+  });
+});
+
+describe('logisticsAcquisitionAllowed', () => {
+  it('requires an explicit bounded slug allowlist during staging', () => {
+    expect(logisticsAcquisitionAllowed({})).toBe(false);
+    expect(logisticsAcquisitionAllowed({ only: ['lab-a', 'LAB-A'] })).toBe(true);
+    expect(
+      logisticsAcquisitionAllowed({
+        only: Array.from({ length: 26 }, (_, index) => `lab-${index}`),
+      }),
+    ).toBe(false);
   });
 });
 
@@ -407,11 +571,17 @@ describe('extractionToObservations', () => {
       methodsQuote: 'Nature Neuroscience 2024',
       topicsQuote: 'Professor Smith is an award-winning researcher',
     };
-    const obs = extractionToObservations('lab-unsupported-desc', 'https://x.example/', ext, fixedDate, {
-      sourceTexts: [
-        'Selected publications: Nature Neuroscience 2024. Professor Smith is an award-winning researcher.',
-      ],
-    });
+    const obs = extractionToObservations(
+      'lab-unsupported-desc',
+      'https://x.example/',
+      ext,
+      fixedDate,
+      {
+        sourceTexts: [
+          'Selected publications: Nature Neuroscience 2024. Professor Smith is an award-winning researcher.',
+        ],
+      },
+    );
 
     expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
     expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
@@ -531,9 +701,9 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'contactInstructionsQuote')!.value).toBe(
       'Call [phone redacted] or email [email redacted].',
     );
-    expect((obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote).toBe(
-      'Email pi.person@yale.edu to discuss undergraduate research.',
-    );
+    expect(
+      (obs.find((o) => o.field === 'undergradAccessEvidence')!.value as any).evidenceQuote,
+    ).toBe('Email pi.person@yale.edu to discuss undergraduate research.');
   });
 });
 
@@ -562,9 +732,9 @@ describe('selectLabsToProcess', () => {
     { _id: '5', slug: 'lab-e', name: 'E', websiteUrl: 'https://e.example/' },
   ];
 
-  it('drops labs without a websiteUrl, with the field locked, or archived', () => {
+  it('drops labs without a websiteUrl or when archived', () => {
     const out = selectLabsToProcess(labs, {});
-    expect(out.map((l) => l.slug)).toEqual(['lab-a', 'lab-e']);
+    expect(out.map((l) => l.slug)).toEqual(['lab-a', 'lab-b', 'lab-e']);
   });
 
   it('honors --only as a slug allowlist (case-insensitive)', () => {
@@ -691,14 +861,16 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
   it('rejects unsafe runtime limits before loading candidate labs', async () => {
     const fetchPage = vi.fn();
     const callLLM = vi.fn();
-    const labFinder = vi.fn(async (): Promise<CandidateLab[]> => [
-      {
-        _id: '1',
-        slug: 'smith-lab',
-        name: 'Smith Lab',
-        websiteUrl: 'https://smith.example.edu/',
-      },
-    ]);
+    const labFinder = vi.fn(
+      async (): Promise<CandidateLab[]> => [
+        {
+          _id: '1',
+          slug: 'smith-lab',
+          name: 'Smith Lab',
+          websiteUrl: 'https://smith.example.edu/',
+        },
+      ],
+    );
     const scraper = newTestScraper({
       fetchPage,
       callLLM,
@@ -720,9 +892,13 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       'https://smith.example.com/people': PEOPLE_HTML,
     });
     const callLLM = vi.fn(
-      async (
-        _input: { model: string; systemPrompt: string; userPrompt: string; apiKey: string },
-      ): Promise<LLMExtraction> => ({
+      async (_input: {
+        model: string;
+        systemPrompt: string;
+        userPrompt: string;
+        apiKey: string;
+        responseFormat: Record<string, unknown>;
+      }): Promise<LLMExtraction> => ({
         openToUndergrads: 'yes',
         currentUndergradCount: 3,
         evidenceQuote: 'We welcome undergraduate researchers each semester.',
@@ -758,6 +934,13 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
     expect(llmInput.userPrompt).toContain('SUB-PAGE TEXT');
     expect(llmInput.userPrompt).toContain('Alice');
+    expect(llmInput.systemPrompt).toBe(LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT);
+    expect(llmInput.systemPrompt).not.toContain('eligibleStudentLevels');
+    expect(llmInput.responseFormat).toBe(LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT);
+    expect(
+      (llmInput.responseFormat as typeof LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT).json_schema.schema
+        .properties,
+    ).not.toHaveProperty('eligibleStudentLevels');
 
     // Observations
     expect(result.entitiesObserved).toBe(1);
@@ -802,9 +985,12 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       return null;
     });
     const callLLM = vi.fn(
-      async (
-        input: { model: string; systemPrompt: string; userPrompt: string; apiKey: string },
-      ): Promise<LLMExtraction> => {
+      async (input: {
+        model: string;
+        systemPrompt: string;
+        userPrompt: string;
+        apiKey: string;
+      }): Promise<LLMExtraction> => {
         expect(input.userPrompt).toContain('https://current.example.edu/opportunities');
         return {
           openToUndergrads: 'yes',
@@ -889,18 +1075,61 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
   });
 
+  it('does not let a legacy heartbeat suppress bounded logistics acquisition', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fresh.example.com/':
+        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
+    });
+    const callLLM = vi.fn(
+      async (): Promise<LLMExtraction> => ({
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        compensationModes: ['PAID'],
+        compensationQuote: 'Undergraduate researchers are paid.',
+      }),
+    );
+    const workPlanLoader = vi.fn();
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      workPlanLoader,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext({ only: ['fresh-lab'] });
+
+    await scraper.run(ctx);
+
+    expect(workPlanLoader).not.toHaveBeenCalled();
+    expect(fetchPage).toHaveBeenCalledWith('https://fresh.example.com/');
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
+  });
+
   it('can bypass WorkPlanner for full audit runs', async () => {
     const fetchPage = makeFetchPage({
       'https://fresh.example.com/':
         '<html><body><h1>Fresh Lab</h1><p>Undergraduates join projects.</p></body></html>',
     });
-    const callLLM = vi.fn(async (): Promise<LLMExtraction> => ({
-      openToUndergrads: 'yes',
-      currentUndergradCount: 0,
-      evidenceQuote: 'Undergraduates join projects.',
-      evidenceSource: 'explicit_text',
-      joinPageUrl: null,
-    }));
+    const callLLM = vi.fn(
+      async (): Promise<LLMExtraction> => ({
+        openToUndergrads: 'yes',
+        currentUndergradCount: 0,
+        evidenceQuote: 'Undergraduates join projects.',
+        evidenceSource: 'explicit_text',
+        joinPageUrl: null,
+      }),
+    );
     const workPlanLoader = vi.fn(async (lab, policy) => ({
       entityType: policy.entityType,
       entityKey: lab.slug,
@@ -956,13 +1185,16 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       'https://smith.example.com/join':
         '<html><body>Undergraduates help collect data each summer.</body></html>',
     });
-    const callLLM = vi.fn(async () => ({
-      openToUndergrads: 'yes',
-      currentUndergradCount: 0,
-      evidenceQuote: 'Undergraduates help collect data each summer.',
-      evidenceSource: 'explicit_text',
-      joinPageUrl: 'https://smith.example.com/join',
-    } satisfies LLMExtraction));
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'Undergraduates help collect data each summer.',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: 'https://smith.example.com/join',
+        }) satisfies LLMExtraction,
+    );
     const scraper = newTestScraper({
       fetchPage,
       callLLM,
@@ -1013,18 +1245,19 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       `,
       'https://bounded.example.com/people': '<html><body>People page</body></html>',
       'https://bounded.example.com/join': '<html><body>Join page</body></html>',
-      'https://bounded.example.com/opportunities':
-        '<html><body>Opportunities page</body></html>',
-      'https://bounded.example.com/undergraduates':
-        '<html><body>Undergraduates page</body></html>',
+      'https://bounded.example.com/opportunities': '<html><body>Opportunities page</body></html>',
+      'https://bounded.example.com/undergraduates': '<html><body>Undergraduates page</body></html>',
     });
-    const callLLM = vi.fn(async () => ({
-      openToUndergrads: 'unclear',
-      currentUndergradCount: 0,
-      evidenceQuote: '',
-      evidenceSource: 'none',
-      joinPageUrl: null,
-    } satisfies LLMExtraction));
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'unclear',
+          currentUndergradCount: 0,
+          evidenceQuote: '',
+          evidenceSource: 'none',
+          joinPageUrl: null,
+        }) satisfies LLMExtraction,
+    );
     const scraper = newTestScraper({
       fetchPage,
       callLLM,
@@ -1044,37 +1277,35 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(fetchPage).toHaveBeenCalledWith('https://bounded.example.com/people');
     expect(fetchPage).toHaveBeenCalledWith('https://bounded.example.com/join');
     expect(fetchPage).toHaveBeenCalledWith('https://bounded.example.com/opportunities');
-    expect(fetchPage).not.toHaveBeenCalledWith(
-      'https://bounded.example.com/undergraduates',
-    );
+    expect(fetchPage).not.toHaveBeenCalledWith('https://bounded.example.com/undergraduates');
     expect(
-      fetchPage.mock.calls.filter(
-        ([url]) => url === 'https://bounded.example.com/people',
-      ),
+      fetchPage.mock.calls.filter(([url]) => url === 'https://bounded.example.com/people'),
     ).toHaveLength(1);
     const prompt = (callLLM.mock.calls as unknown as Array<[{ userPrompt: string }]>)[0][0]
       .userPrompt;
-    expect(prompt).not.toContain(
-      'Undergraduates page',
-    );
+    expect(prompt).not.toContain('Undergraduates page');
   });
 
   it('falls back to a rendered fetcher when the home page is empty or script-heavy', async () => {
     const fetchPage = makeFetchPage({
-      'https://hydrated.example.com/': '<html><body><div id="root"></div><script>app()</script></body></html>',
+      'https://hydrated.example.com/':
+        '<html><body><div id="root"></div><script>app()</script></body></html>',
     });
     const renderedFetcher = vi.fn().mockResolvedValue({
       url: 'https://hydrated.example.com/',
       html: HOME_HTML,
       fetchMode: 'scrapling',
     });
-    const callLLM = vi.fn(async () => ({
-      openToUndergrads: 'yes',
-      currentUndergradCount: 0,
-      evidenceQuote: 'We welcome undergraduate researchers each semester.',
-      evidenceSource: 'explicit_text',
-      joinPageUrl: null,
-    } satisfies LLMExtraction));
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'We welcome undergraduate researchers each semester.',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: null,
+        }) satisfies LLMExtraction,
+    );
     const labFinder = async (): Promise<CandidateLab[]> => [
       {
         _id: '1',
@@ -1106,22 +1337,38 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(result.fetchMetrics?.summary.byMode.http?.succeeded).toBe(1);
   });
 
-  it('skips labs whose acceptingUndergrads field is manually locked', async () => {
-    const fetchPage = makeFetchPage({});
-    const callLLM = vi.fn();
+  it('continues logistics acquisition while preserving a legacy acceptance lock', async () => {
+    const fetchPage = makeFetchPage({
+      'https://locked.yale.edu/': HOME_HTML.replace(
+        '</body>',
+        '<p>Undergraduate researchers are paid.</p></body>',
+      ),
+    });
+    const callLLM = vi.fn(
+      async (input: {
+        systemPrompt: string;
+        responseFormat: Record<string, unknown>;
+      }): Promise<LLMExtraction> => {
+        expect(input.systemPrompt).toBe(LAB_UNDERGRAD_SYSTEM_PROMPT);
+        expect(input.responseFormat).toBe(LAB_UNDERGRAD_RESPONSE_FORMAT);
+        return {
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'We welcome undergraduate researchers.',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: null,
+          compensationModes: ['PAID'],
+          compensationQuote: 'Undergraduate researchers are paid.',
+        };
+      },
+    );
     const labFinder = async (): Promise<CandidateLab[]> => [
       {
         _id: '1',
         slug: 'locked-lab',
         name: 'Locked',
-        websiteUrl: 'https://locked.example.com/',
+        websiteUrl: 'https://locked.yale.edu/',
         manuallyLockedFields: ['acceptingUndergrads'],
-      },
-      {
-        _id: '2',
-        slug: 'free-lab',
-        name: 'Free',
-        websiteUrl: 'https://free.example.com/',
       },
     ];
 
@@ -1131,26 +1378,28 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       labFinder,
       apiKey: 'sk-test',
     });
-    const { ctx } = makeContext();
+    const { ctx, emitted } = makeContext({ only: ['locked-lab'] });
     await scraper.run(ctx);
 
-    // Locked lab was never fetched
-    expect(fetchPage).not.toHaveBeenCalledWith('https://locked.example.com/');
-    // Free lab was fetched
-    expect(fetchPage).toHaveBeenCalledWith('https://free.example.com/');
+    expect(fetchPage).toHaveBeenCalledWith('https://locked.yale.edu/');
+    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
+    expect(emitted.some((item) => item.field === 'acceptingUndergrads')).toBe(false);
   });
 
   it('respects the --only filter (slug allowlist)', async () => {
     const fetchPage = makeFetchPage({
       'https://b.example/': HOME_HTML,
     });
-    const callLLM = vi.fn(async () => ({
-      openToUndergrads: 'unclear',
-      currentUndergradCount: 0,
-      evidenceQuote: '',
-      evidenceSource: 'none',
-      joinPageUrl: null,
-    } satisfies LLMExtraction));
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'unclear',
+          currentUndergradCount: 0,
+          evidenceQuote: '',
+          evidenceSource: 'none',
+          joinPageUrl: null,
+        }) satisfies LLMExtraction,
+    );
     const labFinder = async (): Promise<CandidateLab[]> => [
       { _id: '1', slug: 'lab-a', name: 'A', websiteUrl: 'https://a.example/' },
       { _id: '2', slug: 'lab-b', name: 'B', websiteUrl: 'https://b.example/' },
@@ -1221,13 +1470,16 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       }
       return null; // sub-page probes return null too
     });
-    const callLLM = vi.fn(async () => ({
-      openToUndergrads: 'yes',
-      currentUndergradCount: 0,
-      evidenceQuote: 'We welcome undergraduates.',
-      evidenceSource: 'explicit_text',
-      joinPageUrl: null,
-    } satisfies LLMExtraction));
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'We welcome undergraduates.',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: null,
+        }) satisfies LLMExtraction,
+    );
     const labFinder = async (): Promise<CandidateLab[]> => [
       { _id: '1', slug: 'gone-lab', name: 'Gone', websiteUrl: 'https://gone.example.com/' },
       {
@@ -1254,9 +1506,9 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     // No observations for the gone lab
     expect(emitted.every((o) => o.entityKey !== 'gone-lab')).toBe(true);
     // present-lab got its observations
-    expect(emitted.some((o) => o.entityKey === 'present-lab' && o.field === 'acceptingUndergrads')).toBe(
-      true,
-    );
+    expect(
+      emitted.some((o) => o.entityKey === 'present-lab' && o.field === 'acceptingUndergrads'),
+    ).toBe(true);
   });
 
   it('returns zero observations and logs a warning when OPENAI_API_KEY is missing', async () => {
@@ -1284,13 +1536,16 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       websiteUrl: `https://lab${i}.example/`,
     }));
     const fetchPage = vi.fn(async (url: string) => ({ url, html: HOME_HTML }));
-    const callLLM = vi.fn(async () => ({
-      openToUndergrads: 'yes',
-      currentUndergradCount: 0,
-      evidenceQuote: 'q',
-      evidenceSource: 'explicit_text',
-      joinPageUrl: null,
-    } satisfies LLMExtraction));
+    const callLLM = vi.fn(
+      async () =>
+        ({
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'q',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: null,
+        }) satisfies LLMExtraction,
+    );
 
     const scraper = newTestScraper({
       fetchPage,

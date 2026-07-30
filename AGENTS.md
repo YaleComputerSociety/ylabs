@@ -58,7 +58,7 @@ Ask questions only when the answer cannot be inferred and a wrong assumption wou
 - When the user reports a problem, fix the upstream cause when feasible, not just the local symptom.
 - Follow existing local patterns before adding abstractions.
 - Prefer first-class product-model collections over embedded shortcuts.
-Canonical concepts are `ResearchEntity`, `EntryPathway`, `PostedOpportunity`, `AccessSignal`, and `ContactRoute`.
+See `skills/product-model/SKILL.md` for the canonical concepts.
 - Treat remaining `ResearchGroup`, `lab`, and `researchGroupId` naming as migration residue unless the file is explicitly rollback or migration support.
 - Keep scraper writes evidence-first and fail closed on contact data.
 See `skills/scrapers/SKILL.md`.

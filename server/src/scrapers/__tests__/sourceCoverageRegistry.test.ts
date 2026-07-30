@@ -144,4 +144,18 @@ describe('sourceCoverageRegistry', () => {
     expect(coverage?.artifactTypes).not.toContain('PostedOpportunity');
     expect(coverage?.defaultConfidence).toBe('MEDIUM');
   });
+
+  it('declares claim-specific undergraduate logistics coverage for the microsite source', () => {
+    const coverage = getSourceCoverage('lab-microsite-undergrad-llm');
+    expect(coverage?.artifactTypes).toContain('UndergraduateLogisticsClaim');
+    expect(coverage?.evidenceCategories).toEqual(
+      expect.arrayContaining([
+        'UNDERGRAD_STUDENT_LEVEL',
+        'UNDERGRAD_COMPENSATION',
+        'UNDERGRAD_TIME_COMMITMENT',
+        'UNDERGRAD_MODALITY',
+        'UNDERGRAD_CURRENT_AVAILABILITY',
+      ]),
+    );
+  });
 });

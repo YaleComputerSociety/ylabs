@@ -31,12 +31,21 @@ interface DetailSourcePostedOpportunity {
   sourceUrls?: string[];
 }
 
+interface DetailSourceUndergraduateLogistics {
+  claims?: Array<{
+    claimType?: string;
+    state?: string;
+    evidence?: { sourceUrl?: string };
+  }>;
+}
+
 export interface BuildResearchDetailSourcesInput {
   group?: DetailSourceGroup | null;
   pathways?: DetailSourcePathway[];
   accessSignals?: DetailSourceSignal[];
   contactRoutes?: DetailSourceContactRoute[];
   postedOpportunities?: DetailSourcePostedOpportunity[];
+  undergraduateLogistics?: DetailSourceUndergraduateLogistics;
 }
 
 export interface ResearchDetailSource {
@@ -148,6 +157,7 @@ export const buildResearchDetailSources = ({
   accessSignals = [],
   contactRoutes = [],
   postedOpportunities = [],
+  undergraduateLogistics,
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
 
@@ -189,6 +199,14 @@ export const buildResearchDetailSources = ({
   postedOpportunities.forEach((opportunity) => {
     addSource(opportunity.applicationUrl, 'Application route');
     opportunity.sourceUrls?.forEach((url) => addSource(url, 'Posted opportunity source'));
+  });
+
+  undergraduateLogistics?.claims?.forEach((claim) => {
+    if (claim.state !== 'known') return;
+    addSource(
+      claim.evidence?.sourceUrl,
+      `${labelizeResearchDetailValue(claim.claimType)} logistics evidence`,
+    );
   });
 
   return Array.from(sources.values());

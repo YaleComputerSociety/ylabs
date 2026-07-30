@@ -31,6 +31,10 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isRetiredPaperPipelineRollbackEnabled } from './retiredPaperPipeline';
+import {
+  materializeUndergraduateLogisticsForResearchEntity,
+  UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
+} from './undergraduateLogisticsMaterializer';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -189,6 +193,13 @@ export function shouldIgnoreObservationForEntityMaterialization(
   observation: MaterializerObservationLike,
 ): boolean {
   if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    observation.field &&
+    UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET.has(observation.field)
+  ) {
     return true;
   }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
@@ -1540,6 +1551,7 @@ export function emptyPostMaterializationMetrics(): Required<ReportPostMaterializ
     accessSignals: 0,
     contactRoutes: 0,
     postedOpportunities: 0,
+    undergraduateLogisticsClaims: 0,
     guardedContactRoutes: 0,
     staleEvidenceSkipped: 0,
     conflicts: 0,
@@ -1556,6 +1568,7 @@ export function addPostMaterializationMetrics(
   aggregate.accessSignals += next.accessSignals || 0;
   aggregate.contactRoutes += next.contactRoutes || 0;
   aggregate.postedOpportunities += next.postedOpportunities || 0;
+  aggregate.undergraduateLogisticsClaims += next.undergraduateLogisticsClaims || 0;
   aggregate.guardedContactRoutes += next.guardedContactRoutes || 0;
   aggregate.staleEvidenceSkipped += next.staleEvidenceSkipped || 0;
   aggregate.conflicts += next.conflicts || 0;
@@ -2330,15 +2343,22 @@ export async function materializeEntity(
       researchEntityId: entityIdString,
       entityKey: identifier.entityKey,
     });
+    const logisticsResult = await materializeUndergraduateLogisticsForResearchEntity({
+      researchEntityId: entityIdString,
+      entityKey: identifier.entityKey,
+      dryRun: options.dryRun,
+    });
     postMaterializationMetrics = {
       entryPathways: accessResult.entryPathways,
       accessSignals: accessResult.accessSignals,
       contactRoutes: accessResult.contactRoutes,
       postedOpportunities: 0,
+      undergraduateLogisticsClaims:
+        logisticsResult.known + logisticsResult.stale + logisticsResult.conflicts,
       guardedContactRoutes: accessResult.guardedContactRoutes,
       staleEvidenceSkipped: accessResult.staleEvidenceSkipped,
-      conflicts: 0,
-      errors: accessResult.errors,
+      conflicts: logisticsResult.conflicts,
+      errors: accessResult.errors + logisticsResult.rejected,
     };
 
     // Recompute the browse-ranking score now that access signals exist, and

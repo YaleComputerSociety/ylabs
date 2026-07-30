@@ -69,6 +69,7 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
+import { UndergraduateLogisticsSection } from '../components/research/UndergraduateLogisticsSection';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 
@@ -1071,6 +1072,7 @@ const LabDetail = () => {
     entityRelationships = [],
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
+    undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
   const researchActivityLinks: LabResearchActivityLink[] =
@@ -1119,6 +1121,7 @@ const LabDetail = () => {
     accessSignals,
     contactRoutes,
     postedOpportunities,
+    undergraduateLogistics,
   });
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes, group);
@@ -1239,6 +1242,8 @@ const LabDetail = () => {
             hasActivePostedOpportunity={hasActivePostedOpportunity}
             principalInvestigator={singlePrincipalInvestigator}
           />
+
+          <UndergraduateLogisticsSection logistics={undergraduateLogistics} />
 
           <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
             <SectionHeading>Contact options</SectionHeading>

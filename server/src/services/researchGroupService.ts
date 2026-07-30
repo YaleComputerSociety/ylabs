@@ -78,6 +78,11 @@ import {
 } from './researchActivityIntegrity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
+import {
+  getPublicUndergraduateLogistics,
+  unavailablePublicUndergraduateLogistics,
+  type PublicUndergraduateLogistics,
+} from './undergraduateLogisticsService';
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -91,6 +96,17 @@ const optionalPlanningContexts = async (entityIds: any[]) => {
       contexts: new Map(),
       degraded: true,
     };
+  }
+};
+
+const optionalUndergraduateLogistics = async (
+  entityId: unknown,
+): Promise<PublicUndergraduateLogistics> => {
+  try {
+    return await getPublicUndergraduateLogistics(entityId);
+  } catch (error) {
+    console.error('Optional undergraduate-logistics enrichment failed:', sanitizeLogValue(error));
+    return unavailablePublicUndergraduateLogistics();
   }
 };
 
@@ -2330,6 +2346,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   accessSignals: any[];
   contactRoutes: any[];
   postedOpportunities: any[];
+  undergraduateLogistics: PublicUndergraduateLogistics;
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
   relatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
@@ -2583,6 +2600,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     postedOpportunities,
     accessSummary,
     planningContexts,
+    undergraduateLogistics,
   ] = await Promise.all([
     memberUserIds.length
       ? Paper.find({
@@ -2659,6 +2677,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .lean(),
     getAccessSummaryForResearchEntity((group as any)._id),
     optionalPlanningContexts([(group as any)._id]),
+    optionalUndergraduateLogistics((group as any)._id),
   ]);
   const recentPapers = (recentPapersRaw as any[]).map(publicPaperForResearchDetail);
   const recentArxivPreprints = (recentArxivPreprintsRaw as any[]).map(publicPaperForResearchDetail);
@@ -2753,6 +2772,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     accessSignals: publicAccessSignals,
     contactRoutes: publicContactRoutes,
     postedOpportunities: publicPostedOpportunities,
+    undergraduateLogistics,
     ...relationshipPayload,
   });
 }

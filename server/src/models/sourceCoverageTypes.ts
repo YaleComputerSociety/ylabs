@@ -13,6 +13,7 @@ export const sourceCoverageArtifactTypes = [
   'AccessSignal',
   'ContactRoute',
   'PostedOpportunity',
+  'UndergraduateLogisticsClaim',
   'Observation',
 ] as const;
 
@@ -37,6 +38,11 @@ export const sourceCoverageEvidenceCategories = [
   'RESEARCH_SEMINAR',
   'FELLOWSHIP_COMPATIBILITY',
   'PAST_UNDERGRADS',
+  'UNDERGRAD_STUDENT_LEVEL',
+  'UNDERGRAD_COMPENSATION',
+  'UNDERGRAD_TIME_COMMITMENT',
+  'UNDERGRAD_MODALITY',
+  'UNDERGRAD_CURRENT_AVAILABILITY',
   'POSTED_OPENING',
   'FUNDING_ACTIVITY',
   'PUBLICATIONS',

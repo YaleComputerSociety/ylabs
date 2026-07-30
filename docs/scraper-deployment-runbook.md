@@ -55,6 +55,8 @@ Source metadata
   -> ResearchGroup/User/Paper/etc.
   -> access materialization where evidence supports it
   -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity
+  -> logistics materialization where exact official evidence supports each independent claim
+  -> UndergraduateLogisticsClaim
   -> Meilisearch sync or later reindex
 ```
 
@@ -155,6 +157,18 @@ For each Beta source:
 - Spot-check materialized records in MongoDB and the app.
 - Confirm public surfaces do not expose non-public scraped contact data.
 - Confirm expected access artifacts match the source's coverage metadata.
+
+After a bounded logistics-producing run, save the read-only coverage and sampled-review artifact:
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
+  --sample-size=25 \
+  --minimum-precision=0.95 \
+  --output=/tmp/ylabs-undergraduate-logistics-audit.json
+```
+
+Review every sampled claim against its official source, record the decisions in the audit command's `{"decisions":[...]}` input shape, and rerun with `--decisions=<reviewed-file>`.
+Do not broaden the source list or enable recurring logistics acquisition until parent issue `#187` records the accepted bounded private Beta run, `precision.releaseReady=true`, and accepted unknown, stale, conflict, validation-rejection, and per-claim coverage totals.
 
 Before switching Pathway search traffic, run:
 
@@ -292,7 +306,7 @@ Gate:
 
 Minimum copy set for the accepted full Beta posture:
 
-- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `papers`, `paper_authors`, and `grants`.
+- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `undergraduate_logistics_claims`, `papers`, `paper_authors`, and `grants`.
 - Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
 - Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
 
@@ -465,7 +479,7 @@ Suggested starting cadence:
 | `yale-directory`                   | weekly                            | Broad directory paging; watch runtime.                                               |
 | `nih-reporter`                     | weekly or monthly                 | Enrichment only; conflicts should remain understood aggregate churn.                 |
 | `nsf-award-search`                 | weekly or monthly                 | Enrichment only.                                                                     |
-| `lab-microsite-undergrad-llm`      | weekly after WorkPlanner          | Paid/LLM source; use stale-only work planning before recurring cron.                 |
+| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; logistics acquisition remains manual and bounded until the parent gate is accepted. |
 | `student-decision-llm`             | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
 | `undergrad-fellowships-recipients` | monthly/manual                    | Requires accepted real CSV/manual data.                                              |
 
@@ -480,6 +494,8 @@ Do not enable recurring cron for a source until its row is accepted. A source ma
 | `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.     | Weekly, one source-specific cron, report saved with run ID.    | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                   |
 | `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed. | Manual or low-frequency cron after one accepted guarded run.   | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access. |
 | `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                           | Monthly or term-bound cron, aligned to public deadline cycles. | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.  |
+| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. Recurring runs remain legacy-only until parent issue `#187` records an accepted bounded private Beta run and sampled logistics precision audit. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. Logistics acquisition remains manual and explicitly allowlisted until the parent gate is accepted. | Cost cap is missing, source emits raw non-public emails, logistics review is incomplete or below threshold, parent acceptance is absent, or materialization conflicts are unexplained. |
+| `student-decision-llm`            | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
 
 ### Recurring fellowship refresh
 
@@ -509,8 +525,6 @@ Missing or invalid deadlines, duplicate source identities, junk titles, and non-
 Validated past-to-future transitions emit one idempotent `program_reopened` row in `program_watch_events` for downstream watchlist delivery.
 No future deadline is synthesized.
 Successful execute runs write aggregate freshness state to `fellowship_refresh_runs`; alert when no successful run exists within 45 days or when every discovered row requires review.
-| `lab-microsite-undergrad-llm` | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, or materialization conflicts are unexplained. |
-| `student-decision-llm` | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
 
 ### Compact Observation Retention
 
@@ -566,5 +580,18 @@ If a production run is bad:
 5. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
 6. Rebuild or resync Meilisearch after restoring MongoDB.
 7. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+
+For a bad undergraduate logistics acquisition run, first generate a claim-local dry-run plan:
+
+```bash
+SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
+  yarn --cwd server undergraduate-logistics:rollback \
+  --run=<scrapeRunId> \
+  --output=/tmp/ylabs-undergraduate-logistics-rollback.json
+```
+
+If the plan is accepted and the broad Atlas restore threshold is not met, add `--apply --confirm-undergraduate-logistics-rollback`.
+The command marks only the selected run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
+Run the coverage and precision audit again before resuming acquisition.
 
 `Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.

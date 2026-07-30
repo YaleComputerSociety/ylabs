@@ -35,6 +35,7 @@ import { StudentProfile } from '../studentProfile';
 import { StudentTracking } from '../studentTracking';
 import { TaxonomyTerm } from '../taxonomyTerm';
 import { User } from '../user';
+import { UndergraduateLogisticsClaim } from '../undergraduateLogisticsClaim';
 
 const models: Array<[mongoose.Model<any>, string]> = [
   [Account, 'accounts'],
@@ -72,6 +73,7 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [StudentTracking, 'student_trackings'],
   [TaxonomyTerm, 'taxonomy_terms'],
   [User, 'users'],
+  [UndergraduateLogisticsClaim, 'undergraduate_logistics_claims'],
 ];
 
 function schemaPathSegments(model: mongoose.Model<any>): string[] {

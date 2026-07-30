@@ -84,7 +84,13 @@ export const sourceCoverageRegistry = {
   'lab-microsite-undergrad-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['EntryPathway', 'AccessSignal', 'ContactRoute', 'Observation'],
+    artifactTypes: [
+      'EntryPathway',
+      'AccessSignal',
+      'ContactRoute',
+      'UndergraduateLogisticsClaim',
+      'Observation',
+    ],
     evidenceCategories: [
       'LAB_WEBSITE',
       'JOIN_INSTRUCTIONS',
@@ -93,6 +99,11 @@ export const sourceCoverageRegistry = {
       'APPLICATION_LINK',
       'CONSTRAINTS',
       'PAST_UNDERGRADS',
+      'UNDERGRAD_STUDENT_LEVEL',
+      'UNDERGRAD_COMPENSATION',
+      'UNDERGRAD_TIME_COMMITMENT',
+      'UNDERGRAD_MODALITY',
+      'UNDERGRAD_CURRENT_AVAILABILITY',
     ],
     defaultConfidence: 'MEDIUM',
     notes:

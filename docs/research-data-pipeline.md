@@ -16,6 +16,7 @@ Source metadata
   -> entity/materializer resolution
   -> ResearchEntity / User / Paper / Grant / Fellowship records
   -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity when evidence supports it
+  -> UndergraduateLogisticsClaim when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items
   -> beta repair queue applies deterministic trusted-source repairs and re-gates records
   -> Meilisearch rebuild or sync
@@ -30,6 +31,11 @@ Run `yarn --cwd server research-entity:audit-public-descriptions --strict --incl
 The strict Beta data-quality scorecard includes this audit as an error-level check.
 
 Access claim validation is the interpretation boundary before student-facing access artifacts are written. `accessMaterializer.ts` now treats derived `EntryPathway`, `AccessSignal`, and `ContactRoute` rows as candidate claims and filters them through deterministic validation before upsert. The V1 contract is intentionally narrow: official application signals/routes require either an accepted official-application pathway in the same materialization bundle or an already-linked pathway; formalization-only pathway types are routed to review rather than accepted as access routes; missing source evidence rejects materialization candidates. Operators can inspect current artifacts with `yarn --cwd server scraper:claim-gate --collection=research --include-samples`, or include the summary inside `scraper:integrity-gate --include-claim-gate`.
+
+Undergraduate logistics validation is claim-specific and independent from generic access validation.
+`undergraduateLogisticsMaterializer.ts` accepts only versioned observations whose exact excerpt was verified on the recorded official public source page.
+It materializes student level, compensation or credit, time commitment, modality, and current availability independently, with a short freshness window for availability and explicit stale or conflict withholding states.
+No observation for a field means unknown, not false, unpaid, unavailable, in-person, or unrestricted.
 
 For YSM lab entities, `ysm-atoz-index` uses the current official index at `https://medicine.yale.edu/about/a-to-z-index/lab-websites/`. It is not only an index discovery source: it fetches the official lab homepage and emits source-backed `description`, `fullDescription`, and `shortDescription` observations from Yale's embedded page metadata when available. It follows an exact lab `Research Faculty` page link and emits a named `director` member only when that page has exactly one profile card; profile URLs are canonicalized to `medicine.yale.edu/profile/<slug>/`, and the scraper does not fabricate a `User` when no existing user match is available. Materialization records per-field provenance from the winning observation so detail pages can be audited back to the exact source URL.
 
@@ -111,6 +117,7 @@ Runtime research discovery is centered on:
 - `access_signals`
 - `contact_routes`
 - `posted_opportunities`
+- `undergraduate_logistics_claims`
 - `users`
 - `papers`
 - `paper_authors`
@@ -136,6 +143,38 @@ Before production promotion:
 The operator decision packet in [`docs/scraper-deployment-runbook.md`](./scraper-deployment-runbook.md) is the promotion record for lane, backup/restore point, rollback owner, smoke owner, Meili backend posture, accepted warnings, run IDs, and rollback drill status. Do not infer a lane from pipeline state alone; the operator must fill the packet before production writes or copy operations.
 The presence of that packet is not acceptance by itself; blank fields mean the production gate is blocked.
 
+### Undergraduate logistics release audit
+
+Run the read-only logistics audit after a bounded Beta acquisition and before broad or recurring acquisition:
+During staging, the microsite scraper emits logistics observations only when `--only` supplies an explicit allowlist of at most 25 unique slugs.
+Runs without that allowlist retain the legacy undergraduate-signal behavior but cannot emit logistics observations.
+
+```bash
+SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
+  --sample-size=25 \
+  --minimum-precision=0.95 \
+  --output=/tmp/ylabs-undergraduate-logistics-audit.json
+```
+
+The artifact reports coverage separately for every claim type and separates known, unknown, stale-under-review, and conflicting-withheld states.
+Review every deterministic sample against its linked official page, then provide a JSON decision file with this shape:
+
+```json
+{
+  "decisions": [
+    {
+      "claimHandle": "20-character-handle",
+      "correct": true,
+      "reason": "The exact excerpt supports the normalized claim."
+    }
+  ]
+}
+```
+
+Re-run the command with `--decisions=/tmp/ylabs-undergraduate-logistics-decisions.json`.
+Broad release remains blocked unless `precision.releaseReady` is true and the coverage, rejection, stale, and conflict totals are understood.
+Do not treat low coverage as negative evidence.
+
 ## Rollback Drill Expectations
 
 Rollback drills are dry-run-only until an operator approves production action:
@@ -143,3 +182,10 @@ Rollback drills are dry-run-only until an operator approves production action:
 - Lane A accepted Beta copy: identify the Production backup or point-in-time restore timestamp, the copied collection set, the Atlas restore owner, and the Meilisearch rebuild/relevance-review sequence.
 - Lane B guarded production delta: identify the source to disable, the plan to stop additional source runs, the pre-run backup or restore point, the threshold for restoring broad bad materialization, and the Mongo-backed Pathways rollback posture.
 - Both lanes keep `PATHWAY_SEARCH_BACKEND=mongo` as the default rollback posture until production Meilisearch relevance review is accepted.
+- A bad logistics acquisition run can be isolated with `yarn --cwd server undergraduate-logistics:rollback --run=<scrapeRunId> --output=/tmp/ylabs-undergraduate-logistics-rollback.json` before apply mode is considered.
+- Approved apply mode adds `--apply --confirm-undergraduate-logistics-rollback`, marks only that run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
+
+## Retention Posture
+
+Do not apply compact observation retention to undergraduate logistics without a separate reviewed decision.
+The exact source observations are the audit backbone for student-facing logistics claims and claim-local rollback.
