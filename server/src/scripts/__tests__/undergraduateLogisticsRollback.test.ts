@@ -13,23 +13,27 @@ describe('undergraduate logistics rollback planning', () => {
         entityId: '64b000000000000000000010',
         entityKey: 'sample-lab',
         observationFingerprint: 'source|researchEntity|sample-lab|field',
+        superseded: false,
       },
       {
         _id: '64b000000000000000000001',
         entityId: '64b000000000000000000010',
         entityKey: 'sample-lab',
         observationFingerprint: 'source|researchEntity|sample-lab|field',
+        superseded: false,
       },
     ]);
 
     expect(plan).toEqual({
       observationIds: ['64b000000000000000000001'],
+      activeObservationIds: ['64b000000000000000000001'],
       entityIds: ['64b000000000000000000010'],
       entityKeys: ['sample-lab'],
       observationFingerprints: ['source|researchEntity|sample-lab|field'],
     });
     expect(buildUndergraduateLogisticsRollbackPlan([])).toEqual({
       observationIds: [],
+      activeObservationIds: [],
       entityIds: [],
       entityKeys: [],
       observationFingerprints: [],
@@ -52,8 +56,26 @@ describe('undergraduate logistics rollback planning', () => {
     expect(filter).toMatchObject({
       scrapeRunId: '64b000000000000000000099',
       entityType: { $in: ['researchEntity', 'researchGroup'] },
-      $or: [{ superseded: false }, { 'rollback.rolledBackAt': { $exists: true } }],
     });
+    expect(filter).not.toHaveProperty('$or');
     expect(filter.field.$in).toHaveLength(5);
+  });
+
+  it('invalidates superseded rows without restoring their predecessors', () => {
+    const plan = buildUndergraduateLogisticsRollbackPlan([
+      {
+        _id: '64b000000000000000000001',
+        entityId: '64b000000000000000000010',
+        entityKey: 'sample-lab',
+        observationFingerprint: 'source|researchEntity|sample-lab|field',
+        superseded: true,
+      },
+    ]);
+
+    expect(plan.observationIds).toEqual(['64b000000000000000000001']);
+    expect(plan.activeObservationIds).toEqual([]);
+    expect(plan.entityIds).toEqual([]);
+    expect(plan.entityKeys).toEqual([]);
+    expect(plan.observationFingerprints).toEqual([]);
   });
 });

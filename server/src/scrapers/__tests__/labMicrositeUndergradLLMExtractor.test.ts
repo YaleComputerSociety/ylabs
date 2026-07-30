@@ -1053,6 +1053,47 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(logs.some((log) => log.includes('[fresh-lab] skipped by WorkPlanner'))).toBe(true);
   });
 
+  it('does not let a legacy heartbeat suppress bounded logistics acquisition', async () => {
+    const fetchPage = makeFetchPage({
+      'https://fresh.example.com/':
+        '<html><body><h1>Fresh Lab</h1><p>Undergraduate researchers are paid.</p></body></html>',
+    });
+    const callLLM = vi.fn(
+      async (): Promise<LLMExtraction> => ({
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: null,
+        evidenceSource: 'none',
+        joinPageUrl: null,
+        compensationModes: ['PAID'],
+        compensationQuote: 'Undergraduate researchers are paid.',
+      }),
+    );
+    const workPlanLoader = vi.fn();
+    const scraper = newTestScraper({
+      fetchPage,
+      callLLM,
+      workPlanLoader,
+      labFinder: async () => [
+        {
+          _id: '1',
+          slug: 'fresh-lab',
+          name: 'Fresh Lab',
+          websiteUrl: 'https://fresh.example.com/',
+        },
+      ],
+      apiKey: 'sk-test',
+    });
+    const { ctx, emitted } = makeContext({ only: ['fresh-lab'] });
+
+    await scraper.run(ctx);
+
+    expect(workPlanLoader).not.toHaveBeenCalled();
+    expect(fetchPage).toHaveBeenCalledWith('https://fresh.example.com/');
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(emitted.some((item) => item.field === 'undergraduateLogisticsCompensation')).toBe(true);
+  });
+
   it('can bypass WorkPlanner for full audit runs', async () => {
     const fetchPage = makeFetchPage({
       'https://fresh.example.com/':

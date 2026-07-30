@@ -22,10 +22,12 @@ interface RollbackObservationLike {
   entityId?: unknown;
   entityKey?: unknown;
   observationFingerprint?: unknown;
+  superseded?: unknown;
 }
 
 export interface UndergraduateLogisticsRollbackPlan {
   observationIds: string[];
+  activeObservationIds: string[];
   entityIds: string[];
   entityKeys: string[];
   observationFingerprints: string[];
@@ -36,7 +38,6 @@ export function undergraduateLogisticsRollbackObservationFilter(runId: string) {
     scrapeRunId: runId,
     entityType: { $in: ['researchEntity', 'researchGroup'] },
     field: { $in: Array.from(UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET) },
-    $or: [{ superseded: false }, { 'rollback.rolledBackAt': { $exists: true } }],
   };
 }
 
@@ -44,12 +45,17 @@ export function buildUndergraduateLogisticsRollbackPlan(
   observations: RollbackObservationLike[],
 ): UndergraduateLogisticsRollbackPlan {
   const observationIds = new Set<string>();
+  const activeObservationIds = new Set<string>();
   const entityIds = new Set<string>();
   const entityKeys = new Set<string>();
   const observationFingerprints = new Set<string>();
   for (const observation of observations) {
     const observationId = String(observation._id || '');
-    if (/^[a-f0-9]{24}$/i.test(observationId)) observationIds.add(observationId);
+    if (/^[a-f0-9]{24}$/i.test(observationId)) {
+      observationIds.add(observationId);
+      if (observation.superseded === false) activeObservationIds.add(observationId);
+    }
+    if (observation.superseded !== false) continue;
     const entityId = String(observation.entityId || '');
     if (/^[a-f0-9]{24}$/i.test(entityId)) entityIds.add(entityId);
     const entityKey = typeof observation.entityKey === 'string' ? observation.entityKey.trim() : '';
@@ -62,6 +68,7 @@ export function buildUndergraduateLogisticsRollbackPlan(
   }
   return {
     observationIds: Array.from(observationIds).sort(),
+    activeObservationIds: Array.from(activeObservationIds).sort(),
     entityIds: Array.from(entityIds).sort(),
     entityKeys: Array.from(entityKeys).sort(),
     observationFingerprints: Array.from(observationFingerprints).sort(),
@@ -155,7 +162,7 @@ async function run(): Promise<void> {
   const observations = await Observation.find(
     undergraduateLogisticsRollbackObservationFilter(args.runId),
   )
-    .select('_id entityId entityKey observationFingerprint')
+    .select('_id entityId entityKey observationFingerprint superseded')
     .lean();
   const plan = buildUndergraduateLogisticsRollbackPlan(observations);
   const keyedEntities = plan.entityKeys.length
@@ -177,7 +184,8 @@ async function run(): Promise<void> {
     mode: args.apply ? 'apply' : 'dry-run',
     scrapeRunId: args.runId,
     plan: {
-      activeObservations: plan.observationIds.length,
+      observations: plan.observationIds.length,
+      activeObservations: plan.activeObservationIds.length,
       affectedEntities: entityIds.length,
       affectedClaims,
     },
@@ -186,7 +194,7 @@ async function run(): Promise<void> {
   if (args.apply && plan.observationIds.length > 0) {
     const rolledBackAt = new Date();
     const observationUpdate = await Observation.updateMany(
-      { _id: { $in: plan.observationIds }, superseded: false },
+      { _id: { $in: plan.observationIds } },
       {
         $set: {
           superseded: true,
