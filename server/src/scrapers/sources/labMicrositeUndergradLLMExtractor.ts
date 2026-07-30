@@ -1155,9 +1155,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     let fetchFailed = 0;
     let llmFailed = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
-    const workPlannerPolicy = ctx.options.ignoreWorkPlanner || emitLogistics
-      ? undefined
-      : getWorkPlannerSourcePolicy(this.name);
+    const workPlannerPolicy =
+      ctx.options.ignoreWorkPlanner || emitLogistics
+        ? undefined
+        : getWorkPlannerSourcePolicy(this.name);
     const workPlannerMetrics = createWorkPlannerMetrics();
 
     for (const lab of labs) {

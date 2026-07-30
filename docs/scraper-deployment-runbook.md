@@ -167,7 +167,8 @@ SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
   --output=/tmp/ylabs-undergraduate-logistics-audit.json
 ```
 
-Do not broaden the source list or enable recurring acquisition until all samples are reviewed, `precision.releaseReady=true`, and unknown, stale, conflict, validation-rejection, and per-claim coverage totals are accepted.
+Review every sampled claim against its official source, record the decisions in the audit command's `{"decisions":[...]}` input shape, and rerun with `--decisions=<reviewed-file>`.
+Do not broaden the source list or enable recurring logistics acquisition until parent issue `#187` records the accepted bounded private Beta run, `precision.releaseReady=true`, and accepted unknown, stale, conflict, validation-rejection, and per-claim coverage totals.
 
 Before switching Pathway search traffic, run:
 
@@ -493,7 +494,7 @@ Do not enable recurring cron for a source until its row is accepted. A source ma
 | `ysm-atoz-index`                  | Manual production or accepted Beta evidence shows entity discovery is stable, `materialization.errors = 0`, and source health has no unexplained errors.     | Weekly, one source-specific cron, report saved with run ID.    | Selector/fetch failures, duplicate entity churn, or unexpected access artifacts.                                   |
 | `department-undergrad-research`   | Source metadata exists, output is verified as undergraduate-access evidence rather than generic department discovery, and public contact policy is reviewed. | Manual or low-frequency cron after one accepted guarded run.   | It emits unsupported access claims, non-public contact data, or department pages require Yale-network-only access. |
 | `yale-college-fellowships-office` | Fellowship program mapping and public application/contact routes are reviewed; no private recipient or applicant data is required.                           | Monthly or term-bound cron, aligned to public deadline cycles. | The run depends on manual/private files, creates person-level scraped data, or deadline state cannot be verified.  |
-| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, contact redaction is smoke-tested, and the logistics precision audit passes. | Weekly after WorkPlanner, with saved report and sampled public UI smoke. | Cost cap is missing, source emits raw non-public emails, logistics review is incomplete or below threshold, or materialization conflicts are unexplained. |
+| `lab-microsite-undergrad-llm`     | WorkPlanner target list is accepted, paid/LLM cost cap is set, stale-only or bounded scope is enforced, and contact redaction is smoke-tested. Recurring runs remain legacy-only until parent issue `#187` records an accepted bounded private Beta run and sampled logistics precision audit. | Weekly legacy-only after WorkPlanner, with saved report and sampled public UI smoke. Logistics acquisition remains manual and explicitly allowlisted until the parent gate is accepted. | Cost cap is missing, source emits raw non-public emails, logistics review is incomplete or below threshold, parent acceptance is absent, or materialization conflicts are unexplained. |
 | `student-decision-llm`            | Source-backed access evidence exists, target list excludes entities with existing explanations, paid/LLM cost cap is set, and rejected-output samples are reviewed for invented claims. | Manual bounded enrichment only; use `--use-cache` for cache-only replay when possible. | Cost cap is missing, outputs mention unsupported application routes/direct contacts, or validator rejection rate is unexplained. |
 
 ### Recurring fellowship refresh
