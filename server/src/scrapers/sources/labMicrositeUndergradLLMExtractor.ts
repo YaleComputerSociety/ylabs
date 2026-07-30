@@ -221,6 +221,65 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
   },
 };
 
+export const LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT = {
+  type: 'json_schema' as const,
+  json_schema: {
+    name: 'lab_undergrad_extraction',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        openToUndergrads: { type: 'string', enum: ['yes', 'no', 'unclear'] },
+        currentUndergradCount: { type: 'integer', minimum: 0 },
+        evidenceQuote: { type: 'string' },
+        evidenceSource: {
+          type: 'string',
+          enum: ['explicit_text', 'members_section', 'none'],
+        },
+        joinPageUrl: { type: ['string', 'null'] },
+        researchSummary: { type: 'string' },
+        methodsQuote: { type: 'string' },
+        topicsQuote: { type: 'string' },
+        undergradRoleQuote: { type: 'string' },
+        contactInstructionsQuote: { type: 'string' },
+        explicitConstraintQuote: { type: 'string' },
+      },
+      required: [
+        'openToUndergrads',
+        'currentUndergradCount',
+        'evidenceQuote',
+        'evidenceSource',
+        'joinPageUrl',
+        'researchSummary',
+        'methodsQuote',
+        'topicsQuote',
+        'undergradRoleQuote',
+        'contactInstructionsQuote',
+        'explicitConstraintQuote',
+      ],
+    },
+    strict: true,
+  },
+};
+
+export const LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website indicates that the lab accepts undergraduate researchers and contains source-backed research description text.
+
+Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
+
+- openToUndergrads: "yes" if there is text that affirmatively states the lab welcomes / hires / mentors undergraduates, OR if the members section lists undergraduate students. "no" if the lab explicitly states they do NOT take undergraduates. "unclear" otherwise. Default to "unclear" - be conservative.
+- currentUndergradCount: integer count of currently-listed undergraduates if (and only if) you can identify a members section that explicitly labels undergraduates. Return 0 if no members section exists or no undergrads are listed there.
+- evidenceQuote: a verbatim quote from the page (at most 200 characters) that supports your verdict. If openToUndergrads is "unclear" or "no", quote the most relevant text you found, or empty string if there is none.
+- evidenceSource: "explicit_text" if your verdict comes from prose ("we welcome undergraduates"), "members_section" if from a roster listing, "none" if no evidence.
+- joinPageUrl: the URL (absolute) of a "join the lab" or "opportunities" page, if mentioned. Otherwise null.
+- researchSummary: a concise 1-sentence summary of the lab/faculty site research text, only when the site itself describes current research topics, questions, or methods. Otherwise empty string.
+- methodsQuote: a verbatim quote (at most 200 characters) naming methods, materials, archives, data, fieldwork, instruments, or approaches that support researchSummary. Otherwise empty string.
+- topicsQuote: a verbatim quote (at most 200 characters) naming research topics, questions, populations, organisms, places, periods, systems, or phenomena that support researchSummary. Otherwise empty string.
+- undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
+- contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
+- explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
+
+Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim - do not paraphrase.`;
+
 export const LAB_UNDERGRAD_SYSTEM_PROMPT = `You are an expert classifier evaluating whether a Yale research lab's website indicates that the lab accepts undergraduate researchers and contains source-backed research description text.
 
 Your job is to read text scraped from a lab's website (home page plus optionally a "members" or "join" sub-page) and return a JSON object with these fields:
@@ -932,6 +991,7 @@ export type CallLLMFn = (input: {
   systemPrompt: string;
   userPrompt: string;
   apiKey: string;
+  responseFormat: Record<string, unknown>;
 }) => Promise<LLMExtraction>;
 
 export type WorkPlanLoaderFn = (
@@ -940,7 +1000,13 @@ export type WorkPlanLoaderFn = (
   ctx: ScraperContext,
 ) => Promise<EntityWorkPlan>;
 
-export const defaultCallLLM: CallLLMFn = async ({ model, systemPrompt, userPrompt, apiKey }) => {
+export const defaultCallLLM: CallLLMFn = async ({
+  model,
+  systemPrompt,
+  userPrompt,
+  apiKey,
+  responseFormat,
+}) => {
   const res = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -949,7 +1015,7 @@ export const defaultCallLLM: CallLLMFn = async ({ model, systemPrompt, userPromp
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      response_format: LAB_UNDERGRAD_RESPONSE_FORMAT,
+      response_format: responseFormat,
       temperature: 0,
     },
     {
@@ -1169,7 +1235,14 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
       // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI.
       const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
-      const cacheKey = `llm:v2:${this.model}:${sourceUrls.join('+')}`;
+      const cacheMode = emitLogistics ? 'logistics-v2' : 'legacy-v1';
+      const cacheKey = `llm:${cacheMode}:${this.model}:${sourceUrls.join('+')}`;
+      const systemPrompt = emitLogistics
+        ? LAB_UNDERGRAD_SYSTEM_PROMPT
+        : LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT;
+      const responseFormat = emitLogistics
+        ? LAB_UNDERGRAD_RESPONSE_FORMAT
+        : LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT;
 
       let extraction: LLMExtraction | null = null;
       if (ctx.options.useCache) {
@@ -1185,9 +1258,10 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         try {
           extraction = await this.callLLM({
             model: this.model,
-            systemPrompt: LAB_UNDERGRAD_SYSTEM_PROMPT,
+            systemPrompt,
             userPrompt,
             apiKey: this.apiKey,
+            responseFormat,
           });
         } catch (err: any) {
           ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);

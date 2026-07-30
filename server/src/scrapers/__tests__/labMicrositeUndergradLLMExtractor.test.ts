@@ -19,6 +19,8 @@ import {
   candidateCrawlUrls,
   buildLLMPrompt,
   LAB_UNDERGRAD_RESPONSE_FORMAT,
+  LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT,
+  LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
   logisticsAcquisitionAllowed,
   extractionToObservations,
@@ -873,6 +875,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
         systemPrompt: string;
         userPrompt: string;
         apiKey: string;
+        responseFormat: Record<string, unknown>;
       }): Promise<LLMExtraction> => ({
         openToUndergrads: 'yes',
         currentUndergradCount: 3,
@@ -909,6 +912,13 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
     expect(llmInput.userPrompt).toContain('We welcome undergraduate researchers');
     expect(llmInput.userPrompt).toContain('SUB-PAGE TEXT');
     expect(llmInput.userPrompt).toContain('Alice');
+    expect(llmInput.systemPrompt).toBe(LAB_UNDERGRAD_LEGACY_SYSTEM_PROMPT);
+    expect(llmInput.systemPrompt).not.toContain('eligibleStudentLevels');
+    expect(llmInput.responseFormat).toBe(LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT);
+    expect(
+      (llmInput.responseFormat as typeof LAB_UNDERGRAD_LEGACY_RESPONSE_FORMAT).json_schema.schema
+        .properties,
+    ).not.toHaveProperty('eligibleStudentLevels');
 
     // Observations
     expect(result.entitiesObserved).toBe(1);
@@ -1272,15 +1282,22 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       ),
     });
     const callLLM = vi.fn(
-      async (): Promise<LLMExtraction> => ({
-        openToUndergrads: 'yes',
-        currentUndergradCount: 0,
-        evidenceQuote: 'We welcome undergraduate researchers.',
-        evidenceSource: 'explicit_text',
-        joinPageUrl: null,
-        compensationModes: ['PAID'],
-        compensationQuote: 'Undergraduate researchers are paid.',
-      }),
+      async (input: {
+        systemPrompt: string;
+        responseFormat: Record<string, unknown>;
+      }): Promise<LLMExtraction> => {
+        expect(input.systemPrompt).toBe(LAB_UNDERGRAD_SYSTEM_PROMPT);
+        expect(input.responseFormat).toBe(LAB_UNDERGRAD_RESPONSE_FORMAT);
+        return {
+          openToUndergrads: 'yes',
+          currentUndergradCount: 0,
+          evidenceQuote: 'We welcome undergraduate researchers.',
+          evidenceSource: 'explicit_text',
+          joinPageUrl: null,
+          compensationModes: ['PAID'],
+          compensationQuote: 'Undergraduate researchers are paid.',
+        };
+      },
     );
     const labFinder = async (): Promise<CandidateLab[]> => [
       {
