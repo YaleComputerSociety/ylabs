@@ -603,12 +603,12 @@ export function extractionToObservations(
       ]),
     );
     const normalizeMatch = (year: string, month: number, day: string): string | undefined => {
-      const normalized = `${year}-${String(month).padStart(2, '0')}-${String(
-        Number(day),
-      ).padStart(2, '0')}`;
+      const normalized = `${year}-${String(month).padStart(2, '0')}-${String(Number(day)).padStart(
+        2,
+        '0',
+      )}`;
       const parsed = Date.parse(`${normalized}T00:00:00.000Z`);
-      return Number.isFinite(parsed) &&
-        new Date(parsed).toISOString().slice(0, 10) === normalized
+      return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === normalized
         ? normalized
         : undefined;
     };

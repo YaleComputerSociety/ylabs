@@ -151,7 +151,7 @@ describe('buildScrapeRunReport', () => {
       getSourceCoverage('lab-microsite-undergrad-llm'),
     );
 
-    expect(report.postMaterialization?.expectedArtifactTypes).not.toContain(
+    expect(report.coverage.postMaterialization?.expectedArtifactTypes ?? []).not.toContain(
       'UndergraduateLogisticsClaim',
     );
     expect(report.warnings.join(' ')).not.toContain('UndergraduateLogisticsClaim');

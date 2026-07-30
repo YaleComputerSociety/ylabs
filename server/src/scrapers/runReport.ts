@@ -831,8 +831,7 @@ export function buildScrapeRunReport(
   const postMaterialization = buildPostMaterializationSummary(
     run.postMaterializationMetrics,
     coverageSource,
-    run.sourceName === 'lab-microsite-undergrad-llm' &&
-      !logisticsAcquisitionEnabledForRun(run)
+    run.sourceName === 'lab-microsite-undergrad-llm' && !logisticsAcquisitionEnabledForRun(run)
       ? ['UndergraduateLogisticsClaim']
       : [],
   );

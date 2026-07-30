@@ -479,7 +479,7 @@ Suggested starting cadence:
 | `yale-directory`                   | weekly                            | Broad directory paging; watch runtime.                                               |
 | `nih-reporter`                     | weekly or monthly                 | Enrichment only; conflicts should remain understood aggregate churn.                 |
 | `nsf-award-search`                 | weekly or monthly                 | Enrichment only.                                                                     |
-| `lab-microsite-undergrad-llm`      | weekly after WorkPlanner          | Paid/LLM source; use stale-only work planning before recurring cron.                 |
+| `lab-microsite-undergrad-llm`      | weekly legacy-only after WorkPlanner | Paid/LLM source; logistics acquisition remains manual and bounded until the parent gate is accepted. |
 | `student-decision-llm`             | manual after accepted target list | Paid/LLM display enrichment; run bounded after source-backed access evidence exists. |
 | `undergrad-fellowships-recipients` | monthly/manual                    | Requires accepted real CSV/manual data.                                              |
 
@@ -591,7 +591,7 @@ SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
 ```
 
 If the plan is accepted and the broad Atlas restore threshold is not met, add `--apply --confirm-undergraduate-logistics-rollback`.
-The command supersedes only active logistics observations from the selected run and rematerializes affected entities from remaining evidence.
+The command marks only the selected run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
 Run the coverage and precision audit again before resuming acquisition.
 
 `Source.enabled=false` blocks cron execution by default. Use `--force-disabled` only for an explicit manual recovery run after checking the source-health report.

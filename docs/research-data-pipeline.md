@@ -183,7 +183,7 @@ Rollback drills are dry-run-only until an operator approves production action:
 - Lane B guarded production delta: identify the source to disable, the plan to stop additional source runs, the pre-run backup or restore point, the threshold for restoring broad bad materialization, and the Mongo-backed Pathways rollback posture.
 - Both lanes keep `PATHWAY_SEARCH_BACKEND=mongo` as the default rollback posture until production Meilisearch relevance review is accepted.
 - A bad logistics acquisition run can be isolated with `yarn --cwd server undergraduate-logistics:rollback --run=<scrapeRunId> --output=/tmp/ylabs-undergraduate-logistics-rollback.json` before apply mode is considered.
-- Approved apply mode adds `--apply --confirm-undergraduate-logistics-rollback`, supersedes only that run's active logistics observations, and rematerializes affected entities from remaining evidence.
+- Approved apply mode adds `--apply --confirm-undergraduate-logistics-rollback`, marks only that run's logistics observations as rolled back, restores the newest eligible predecessor observations, and rematerializes affected entities from the remaining evidence.
 
 ## Retention Posture
 

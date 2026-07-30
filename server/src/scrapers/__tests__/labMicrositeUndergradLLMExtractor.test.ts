@@ -429,8 +429,7 @@ describe('claim-specific undergraduate logistics extraction', () => {
       },
     );
     expect(
-      humanReadable.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')
-        ?.value,
+      humanReadable.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
     ).toMatchObject({ validThrough: '2026-08-15' });
   });
 });
