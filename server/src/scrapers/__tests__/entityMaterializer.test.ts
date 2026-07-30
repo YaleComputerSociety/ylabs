@@ -502,6 +502,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       accessSignals: 0,
       contactRoutes: 0,
       postedOpportunities: 0,
+      undergraduateLogisticsClaims: 0,
       guardedContactRoutes: 0,
       staleEvidenceSkipped: 0,
       conflicts: 0,
@@ -520,6 +521,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
     addPostMaterializationMetrics(aggregate, {
       postedOpportunities: 4,
+      undergraduateLogisticsClaims: 0,
       staleEvidenceSkipped: 2,
       conflicts: 1,
       errors: 1,
@@ -531,6 +533,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       accessSignals: 3,
       contactRoutes: 1,
       postedOpportunities: 4,
+      undergraduateLogisticsClaims: 0,
       guardedContactRoutes: 1,
       staleEvidenceSkipped: 2,
       conflicts: 1,

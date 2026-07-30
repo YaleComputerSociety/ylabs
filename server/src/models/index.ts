@@ -26,6 +26,11 @@ export { AccessSignal } from './accessSignal';
 export { ContactRoute } from './contactRoute';
 export { EntryPathway } from './entryPathway';
 export { PostedOpportunity } from './postedOpportunity';
+export {
+  UndergraduateLogisticsClaim,
+  undergraduateLogisticsClaimTypes,
+  undergraduateLogisticsClaimStatuses,
+} from './undergraduateLogisticsClaim';
 export { ResearchGroupMember } from './researchGroupMember';
 export { ScrapeJobLock } from './scrapeJobLock';
 export { Source } from './source';

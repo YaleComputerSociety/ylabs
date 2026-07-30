@@ -18,8 +18,7 @@
  * The scraper is deliberately conservative:
  *   - LLM-derived observations carry a 0.5 confidence override (low-trust)
  *     so manual edits and direct human signals always win.
- *   - Labs whose `acceptingUndergrads` field has been manually locked
- *     (`manuallyLockedFields` includes 'acceptingUndergrads') are skipped.
+ *   - A manual lock on legacy `acceptingUndergrads` suppresses only that observation.
  *   - Per-(websiteUrl, modelVersion) caching is used so reruns don't re-charge
  *     OpenAI for unchanged pages.
  *   - LLM call count is capped by `ctx.options.limit` (default 100). The
@@ -94,6 +93,20 @@ const SUBPAGE_ANCHOR_RE =
 
 export type OpenToUndergrads = 'yes' | 'no' | 'unclear';
 export type EvidenceSource = 'explicit_text' | 'members_section' | 'none';
+export type ExtractedStudentLevel = 'FIRST_YEAR' | 'SOPHOMORE' | 'JUNIOR' | 'SENIOR';
+export type ExtractedCompensationMode =
+  | 'PAID'
+  | 'STIPEND'
+  | 'COURSE_CREDIT'
+  | 'VOLUNTEER'
+  | 'WORK_STUDY'
+  | 'FELLOWSHIP';
+export type ExtractedModality = 'IN_PERSON' | 'HYBRID' | 'REMOTE';
+export type ExtractedCurrentAvailability =
+  | 'OPEN'
+  | 'ROLLING'
+  | 'NOT_CURRENTLY_AVAILABLE'
+  | 'UNKNOWN';
 
 export interface LLMExtraction {
   openToUndergrads: OpenToUndergrads;
@@ -107,6 +120,18 @@ export interface LLMExtraction {
   undergradRoleQuote?: string;
   contactInstructionsQuote?: string;
   explicitConstraintQuote?: string;
+  eligibleStudentLevels?: ExtractedStudentLevel[];
+  eligibilityQuote?: string;
+  compensationModes?: ExtractedCompensationMode[];
+  compensationQuote?: string;
+  timeCommitmentMinHours?: number | null;
+  timeCommitmentMaxHours?: number | null;
+  timeCommitmentQuote?: string;
+  modalityModes?: ExtractedModality[];
+  modalityQuote?: string;
+  currentAvailability?: ExtractedCurrentAvailability;
+  currentAvailabilityQuote?: string;
+  availabilityValidThrough?: string | null;
 }
 
 export interface PromptSourcePage {
@@ -136,6 +161,33 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
         undergradRoleQuote: { type: 'string' },
         contactInstructionsQuote: { type: 'string' },
         explicitConstraintQuote: { type: 'string' },
+        eligibleStudentLevels: {
+          type: 'array',
+          items: { type: 'string', enum: ['FIRST_YEAR', 'SOPHOMORE', 'JUNIOR', 'SENIOR'] },
+        },
+        eligibilityQuote: { type: 'string' },
+        compensationModes: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['PAID', 'STIPEND', 'COURSE_CREDIT', 'VOLUNTEER', 'WORK_STUDY', 'FELLOWSHIP'],
+          },
+        },
+        compensationQuote: { type: 'string' },
+        timeCommitmentMinHours: { type: ['number', 'null'], minimum: 0 },
+        timeCommitmentMaxHours: { type: ['number', 'null'], minimum: 0 },
+        timeCommitmentQuote: { type: 'string' },
+        modalityModes: {
+          type: 'array',
+          items: { type: 'string', enum: ['IN_PERSON', 'HYBRID', 'REMOTE'] },
+        },
+        modalityQuote: { type: 'string' },
+        currentAvailability: {
+          type: 'string',
+          enum: ['OPEN', 'ROLLING', 'NOT_CURRENTLY_AVAILABLE', 'UNKNOWN'],
+        },
+        currentAvailabilityQuote: { type: 'string' },
+        availabilityValidThrough: { type: ['string', 'null'] },
       },
       required: [
         'openToUndergrads',
@@ -149,6 +201,18 @@ export const LAB_UNDERGRAD_RESPONSE_FORMAT = {
         'undergradRoleQuote',
         'contactInstructionsQuote',
         'explicitConstraintQuote',
+        'eligibleStudentLevels',
+        'eligibilityQuote',
+        'compensationModes',
+        'compensationQuote',
+        'timeCommitmentMinHours',
+        'timeCommitmentMaxHours',
+        'timeCommitmentQuote',
+        'modalityModes',
+        'modalityQuote',
+        'currentAvailability',
+        'currentAvailabilityQuote',
+        'availabilityValidThrough',
       ],
     },
     strict: true,
@@ -170,8 +234,19 @@ Your job is to read text scraped from a lab's website (home page plus optionally
 - undergradRoleQuote: a verbatim quote that describes undergraduate roles/tasks, if present. Otherwise empty string.
 - contactInstructionsQuote: a verbatim quote with contact/application instructions, if present. Otherwise empty string.
 - explicitConstraintQuote: a verbatim quote with constraints such as "not accepting", eligibility, required courses, or application-only instructions, if present. Otherwise empty string.
+- eligibleStudentLevels: only the explicitly named class years from FIRST_YEAR, SOPHOMORE, JUNIOR, or SENIOR. An unqualified mention of "undergraduates" supports no class-year value. Return an empty array when no exact years are named.
+- eligibilityQuote: the verbatim quote that names every returned eligibleStudentLevels value. Otherwise empty string.
+- compensationModes: only explicitly documented modes from PAID, STIPEND, COURSE_CREDIT, VOLUNTEER, WORK_STUDY, or FELLOWSHIP. Do not infer unpaid or volunteer from missing pay language. Return an empty array when unknown.
+- compensationQuote: the verbatim quote that names every returned compensation mode. Otherwise empty string.
+- timeCommitmentMinHours and timeCommitmentMaxHours: weekly hours only when the page explicitly provides them. Use the same number for both when it gives one exact weekly amount. Otherwise return null for both.
+- timeCommitmentQuote: the verbatim quote containing the weekly hours. Otherwise empty string.
+- modalityModes: only explicitly documented IN_PERSON, HYBRID, or REMOTE arrangements. Do not infer modality from research methods or location. Return an empty array when unknown.
+- modalityQuote: the verbatim quote that names every returned modality. Otherwise empty string.
+- currentAvailability: OPEN or ROLLING only for explicit current, dated, or rolling evidence; NOT_CURRENTLY_AVAILABLE only for an explicit current negative statement; UNKNOWN otherwise. A generic join page or historical roster is UNKNOWN.
+- currentAvailabilityQuote: the verbatim quote supporting the currentAvailability value. Otherwise empty string.
+- availabilityValidThrough: an ISO YYYY-MM-DD date only when the source provides an explicit deadline or end date. Otherwise null.
 
-Be conservative. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim — do not paraphrase.`;
+Be conservative. Keep each logistics claim isolated. Never use one claim as evidence for another, and never turn a missing field into a negative answer. Do not infer openness from the mere presence of undergraduates as authors on papers. Do not use publication blurbs, selected-publication titles, generic faculty bio text, honors/awards, departmental boilerplate, or unsupported claims as descriptions. The researchSummary must be based on lab/faculty site research text and backed by methodsQuote and/or topicsQuote. Quotes must be verbatim - do not paraphrase.`;
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-testable, no I/O)
@@ -193,9 +268,7 @@ export function htmlToPromptText(html: string): string {
   $('script, style, noscript, svg, iframe').remove();
   const text = $('body').text() || $.root().text() || '';
   const collapsed = text.replace(/\s+/g, ' ').trim();
-  return collapsed.length > MAX_PROMPT_CHARS
-    ? collapsed.slice(0, MAX_PROMPT_CHARS)
-    : collapsed;
+  return collapsed.length > MAX_PROMPT_CHARS ? collapsed.slice(0, MAX_PROMPT_CHARS) : collapsed;
 }
 
 /**
@@ -386,6 +459,11 @@ export function sourceUrlForExtraction(
     extraction.undergradRoleQuote,
     extraction.contactInstructionsQuote,
     extraction.explicitConstraintQuote,
+    extraction.eligibilityQuote,
+    extraction.compensationQuote,
+    extraction.timeCommitmentQuote,
+    extraction.modalityQuote,
+    extraction.currentAvailabilityQuote,
     extraction.methodsQuote,
     extraction.topicsQuote,
   ]
@@ -422,6 +500,7 @@ export function extractionToObservations(
     sourceUrls?: string[];
     quoteSourceUrl?: string;
     sourceTexts?: string[];
+    sourcePages?: PromptSourcePage[];
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -432,6 +511,40 @@ export function extractionToObservations(
     sourceUrl,
   };
   const out: ObservationInput[] = [];
+
+  const verifiedQuoteSourceUrl = (rawQuote: string | undefined): string | undefined => {
+    const quote = (rawQuote || '').replace(/\s+/g, ' ').trim();
+    if (!quote) return undefined;
+    return sourceContext.sourcePages?.find((page) => page.text.replace(/\s+/g, ' ').includes(quote))
+      ?.url;
+  };
+
+  const pushLogisticsClaim = (
+    field: string,
+    claimType: string,
+    value: Record<string, unknown>,
+    rawQuote: string | undefined,
+    validThrough?: string | null,
+  ) => {
+    const evidenceQuote = (rawQuote || '').replace(/\s+/g, ' ').trim();
+    const evidenceSourceUrl = verifiedQuoteSourceUrl(rawQuote);
+    if (!evidenceQuote || !evidenceSourceUrl) return;
+    out.push({
+      ...base,
+      sourceUrl: evidenceSourceUrl,
+      observedAt,
+      field,
+      value: {
+        schemaVersion: 1,
+        claimType,
+        value,
+        evidenceQuote: redactDirectContactInfo(evidenceQuote).slice(0, 500),
+        quoteVerified: true,
+        ...(validThrough ? { validThrough } : {}),
+      },
+      confidenceOverride: 0.5,
+    });
+  };
 
   if (extraction.openToUndergrads === 'yes') {
     out.push({
@@ -554,6 +667,62 @@ export function extractionToObservations(
       value: redactDirectContactInfo(explicitConstraintQuote).slice(0, 500),
       confidenceOverride: 0.5,
     });
+  }
+
+  if ((extraction.eligibleStudentLevels || []).length > 0) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsStudentLevel',
+      'STUDENT_LEVEL',
+      { levels: extraction.eligibleStudentLevels },
+      extraction.eligibilityQuote,
+    );
+  }
+  if ((extraction.compensationModes || []).length > 0) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsCompensation',
+      'COMPENSATION',
+      { modes: extraction.compensationModes },
+      extraction.compensationQuote,
+    );
+  }
+  if (
+    (extraction.timeCommitmentMinHours !== null &&
+      extraction.timeCommitmentMinHours !== undefined) ||
+    (extraction.timeCommitmentMaxHours !== null && extraction.timeCommitmentMaxHours !== undefined)
+  ) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsTimeCommitment',
+      'TIME_COMMITMENT',
+      {
+        ...(extraction.timeCommitmentMinHours !== null &&
+        extraction.timeCommitmentMinHours !== undefined
+          ? { minHours: extraction.timeCommitmentMinHours }
+          : {}),
+        ...(extraction.timeCommitmentMaxHours !== null &&
+        extraction.timeCommitmentMaxHours !== undefined
+          ? { maxHours: extraction.timeCommitmentMaxHours }
+          : {}),
+        period: 'WEEK',
+      },
+      extraction.timeCommitmentQuote,
+    );
+  }
+  if ((extraction.modalityModes || []).length > 0) {
+    pushLogisticsClaim(
+      'undergraduateLogisticsModality',
+      'MODALITY',
+      { modes: extraction.modalityModes },
+      extraction.modalityQuote,
+    );
+  }
+  if (extraction.currentAvailability && extraction.currentAvailability !== 'UNKNOWN') {
+    pushLogisticsClaim(
+      'undergraduateLogisticsCurrentAvailability',
+      'CURRENT_AVAILABILITY',
+      { status: extraction.currentAvailability },
+      extraction.currentAvailabilityQuote,
+      extraction.availabilityValidThrough,
+    );
   }
 
   out.push({ ...base, field: 'lastObservedAt', value: observedAt });
@@ -683,7 +852,6 @@ export function selectLabsToProcess(
   for (const lab of candidates) {
     if (!lab.websiteUrl || !/^https?:\/\//i.test(lab.websiteUrl)) continue;
     if (lab.archived) continue;
-    if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) continue;
     if (onlyFilter && !onlyFilter.has(lab.slug.toLowerCase())) continue;
     out.push(lab);
     if (out.length >= limit) break;
@@ -750,12 +918,7 @@ export type WorkPlanLoaderFn = (
   ctx: ScraperContext,
 ) => Promise<EntityWorkPlan>;
 
-export const defaultCallLLM: CallLLMFn = async ({
-  model,
-  systemPrompt,
-  userPrompt,
-  apiKey,
-}) => {
+export const defaultCallLLM: CallLLMFn = async ({ model, systemPrompt, userPrompt, apiKey }) => {
   const res = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -868,9 +1031,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     if (!this.apiKey) {
-      ctx.log(
-        'OPENAI_API_KEY missing — cannot run LLM extraction; emitting zero observations.',
-      );
+      ctx.log('OPENAI_API_KEY missing — cannot run LLM extraction; emitting zero observations.');
       return {
         observationCount: 0,
         entitiesObserved: 0,
@@ -922,10 +1083,8 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         }
       }
 
-      const measuredHomePage = await measureRenderedFetch(
-        lab.websiteUrl,
-        'http',
-        () => this.fetchPage(lab.websiteUrl),
+      const measuredHomePage = await measureRenderedFetch(lab.websiteUrl, 'http', () =>
+        this.fetchPage(lab.websiteUrl),
       );
       fetchAttempts.push(measuredHomePage.metric);
       let homePage: FetchedPage | null = measuredHomePage.result;
@@ -959,10 +1118,8 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       const subPages: PromptSourcePage[] = [];
       for (const candidate of candidateCrawlUrls(homePage.html, homePage.url)) {
         if (subPages.length >= MAX_SUBPAGES_FETCHED) break;
-        const measuredSubPage = await measureRenderedFetch(
-          candidate,
-          'http',
-          () => this.fetchPage(candidate),
+        const measuredSubPage = await measureRenderedFetch(candidate, 'http', () =>
+          this.fetchPage(candidate),
         );
         fetchAttempts.push(measuredSubPage.metric);
         const fetched = measuredSubPage.result;
@@ -984,7 +1141,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
 
       // Per-(websiteUrl, model) cache so reruns don't re-charge OpenAI.
       const sourceUrls = [homePage.url, ...subPages.map((page) => page.url)];
-      const cacheKey = `llm:${this.model}:${sourceUrls.join('+')}`;
+      const cacheKey = `llm:v2:${this.model}:${sourceUrls.join('+')}`;
 
       let extraction: LLMExtraction | null = null;
       if (ctx.options.useCache) {
@@ -1005,9 +1162,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             apiKey: this.apiKey,
           });
         } catch (err: any) {
-          ctx.log(
-            `[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`,
-          );
+          ctx.log(`[${lab.slug}] LLM call failed: ${sanitizeLogValue(err)}; skipping.`);
           llmFailed++;
           continue;
         }
@@ -1020,13 +1175,9 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
         }
       }
 
-      const observations = extractionToObservations(
+      let observations = extractionToObservations(
         lab.slug,
-        sourceUrlForExtraction(
-          { url: homePage.url, text: homeText },
-          subPages,
-          extraction,
-        ),
+        sourceUrlForExtraction({ url: homePage.url, text: homeText }, subPages, extraction),
         extraction,
         new Date(),
         {
@@ -1037,8 +1188,14 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             extraction,
           ),
           sourceTexts: [homeText, ...subPages.map((page) => page.text)],
+          sourcePages: [{ url: homePage.url, text: homeText }, ...subPages],
         },
       );
+      if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) {
+        observations = observations.filter(
+          (observation) => observation.field !== 'acceptingUndergrads',
+        );
+      }
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;

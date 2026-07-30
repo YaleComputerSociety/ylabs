@@ -45,6 +45,8 @@
     "model-refactor:query-cost": "tsx src/scripts/phase0HotPathQueryCost.ts",
     "model-refactor:validators": "tsx src/scripts/canonicalMongoValidators.ts",
     "model-refactor:identity-plan": "tsx src/scripts/phase2IdentityMigrationPlan.ts",
+    "undergraduate-logistics:audit": "tsx src/scripts/undergraduateLogisticsAudit.ts",
+    "undergraduate-logistics:rollback": "tsx src/scripts/undergraduateLogisticsRollback.ts",
     "accepted-inputs": "tsx src/scripts/acceptedInputs.ts",
     "beta:data-quality": "tsx src/scripts/betaDataQuality.ts",
     "beta:seed-environment": "tsx src/scripts/betaSeedEnvironment.ts",

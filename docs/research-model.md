@@ -60,7 +60,10 @@ session state must derive admin status from active grants outside local
 localhost development; legacy `User.userType = "admin"` alone is not production
 admin authority.
 
-Do not embed every pathway, signal, posted opportunity, and contact route directly inside `ResearchEntity` long term. That will become query-heavy as students filter across plausible homes, access evidence, funding or pay possibilities, summer timing, beginner-friendly paths, thesis fit, Python/coding, archival work, open deadlines, and similar constraints. Prefer first-class collections for `EntryPathway`, `PostedOpportunity`, `AccessSignal`, and `ContactRoute`. Treat course credit as a formalization option after a student has identified a research home, not as an entry pathway by itself.
+Do not embed every pathway, signal, posted opportunity, logistics claim, and contact route directly inside `ResearchEntity` long term.
+That will become query-heavy as students filter across plausible homes, access evidence, funding or pay possibilities, summer timing, beginner-friendly paths, thesis fit, Python/coding, archival work, open deadlines, and similar constraints.
+Prefer first-class collections for `EntryPathway`, `PostedOpportunity`, `AccessSignal`, `UndergraduateLogisticsClaim`, and `ContactRoute`.
+Treat course credit as a formalization option after a student has identified a research home, not as an entry pathway by itself.
 
 External researcher identity note: accepted operator inputs should prefer ORCID over Yale netid. ORCID may enrich or disambiguate an existing Yale-confirmed `User`, including `User.orcid` and manually accepted `User.googleScholarId`, but ORCID must not create a Yale person record by itself. Netid remains an internal account/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
 
@@ -73,6 +76,7 @@ ResearchEntity
   has many ResearchProjects
   has many EntryPathways
   has many AccessSignals
+  has many UndergraduateLogisticsClaims
   has many ContactRoutes
   has many People / RoleAssignments
   has many SourceEvidence records
@@ -382,6 +386,18 @@ The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
 Legacy source files and stored paper and scholarly collections remain temporarily available for an explicit rollback under issue #207.
 See [Retire The Bibliographic Paper Pipeline](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) for the authoritative product decision and [Publication and Professor-Profile Decision](./research-model-refactor.md#publication-and-professor-profile-decision) for the target model.
+
+## UndergraduateLogisticsClaim
+
+`UndergraduateLogisticsClaim` stores one independently supported logistics claim for one research entity in `undergraduate_logistics_claims`.
+The supported claim types are student level, compensation or credit, time commitment, modality, and current availability.
+Each known claim requires a validated official public source URL, an exact supporting excerpt, observation time, expiry time, and source-run lineage.
+The logistics materializer does not use confidence to choose a winner.
+Matching fresh observations may reinforce a claim, distinct fresh values produce `CONFLICTING_WITHHELD`, and evidence that has exceeded its claim-specific freshness window produces `STALE_UNDER_REVIEW`.
+Missing observations archive an old materialized row and the public DTO computes a neutral `unknown` state instead of a negative answer.
+An explicit source-backed negative such as `NOT_CURRENTLY_AVAILABLE` remains a known value until its short availability freshness window expires.
+Public payloads expose only the allowlisted value and public evidence for known claims.
+They never expose observation identifiers, scrape-run identifiers, internal source names, confidence, or direct contact data.
 
 ## Source Coverage Metadata
 

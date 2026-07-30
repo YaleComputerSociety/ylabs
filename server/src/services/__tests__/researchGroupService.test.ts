@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   getAccessSummaryForResearchEntity: vi.fn(),
   listAccessSummariesForResearchEntities: vi.fn(),
   listPlanningContextsForResearchEntities: vi.fn(),
+  getPublicUndergraduateLogistics: vi.fn(),
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
@@ -118,6 +119,11 @@ vi.mock('../planningContextService', () => ({
   listPlanningContextsForResearchEntities: mocks.listPlanningContextsForResearchEntities,
 }));
 
+vi.mock('../undergraduateLogisticsService', () => ({
+  getPublicUndergraduateLogistics: mocks.getPublicUndergraduateLogistics,
+  unavailablePublicUndergraduateLogistics: () => ({ status: 'unavailable', claims: [] }),
+}));
+
 import {
   buildLeadPiOutreachContactRoute,
   buildResearchActivityLinkPayload,
@@ -172,6 +178,7 @@ beforeEach(() => {
   mocks.researchEntityFind.mockReset();
   mocks.listAccessSummariesForResearchEntities.mockReset();
   mocks.listPlanningContextsForResearchEntities.mockReset();
+  mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
   mocks.researchGroupMemberFind.mockReset();
   mocks.userFind.mockReset();
@@ -201,6 +208,7 @@ beforeEach(() => {
   mocks.getAccessSummaryForResearchEntity.mockResolvedValue(undefined);
   mocks.listAccessSummariesForResearchEntities.mockResolvedValue(new Map());
   mocks.listPlanningContextsForResearchEntities.mockResolvedValue(new Map());
+  mocks.getPublicUndergraduateLogistics.mockResolvedValue({ status: 'ready', claims: [] });
 });
 
 describe('searchResearchGroupsViaMeili', () => {
@@ -1111,6 +1119,7 @@ describe('getResearchGroupDetail', () => {
       'review.status': 'approved',
     });
 
+    expect(detail?.undergraduateLogistics).toEqual({ status: 'ready', claims: [] });
     expect(detail?.activeListings).toEqual([
       expect.objectContaining({
         id: '67d8928150621bcef434a1d6',

@@ -90,6 +90,10 @@ const observationSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    rollback: {
+      rolledBackAt: { type: Date, required: false },
+      reason: { type: String, maxlength: 500, required: false },
+    },
   },
   {
     timestamps: true,
