@@ -1298,7 +1298,7 @@ describe('LabMicrositeUndergradLLMExtractor.run', () => {
       labFinder,
       apiKey: 'sk-test',
     });
-    const { ctx, emitted } = makeContext();
+    const { ctx, emitted } = makeContext({ only: ['locked-lab'] });
     await scraper.run(ctx);
 
     expect(fetchPage).toHaveBeenCalledWith('https://locked.yale.edu/');

@@ -152,8 +152,8 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Active.
 - **Depends on:** reviewed observation/materialization contracts, a bounded Beta acquisition run, and sampled false-positive acceptance before broad release.
 - **Acceptance criteria:** profiles may show student level, compensation/formalization mode, research modality, or current availability only when a source supports that exact claim; unknown values remain absent or neutrally disclosed on detail, never inferred from department, methods, or a generic undergrad signal; any future facet uses the same claim-specific evidence.
-- **Validation evidence:** issue `#187` adds exact-quote acquisition for five independent logistics claims, deterministic validation and freshness controls, first-class materialization, public DTO redaction, explicit known/unknown/stale/conflict presentation states, a read-only coverage and sampled-precision audit, claim-local rollback, and focused server/client tests.
-- **Delivery:** implementation and operational acceptance remain tracked by issue `#187`.
+- **Validation evidence:** child issue `#254` adds exact-quote acquisition for five independent logistics claims, deterministic validation and freshness controls, first-class materialization, public DTO redaction, explicit known/unknown/stale/conflict presentation states, a read-only coverage and sampled-precision audit, claim-local rollback, and focused server/client tests.
+- **Delivery:** operational acceptance remains tracked by parent issue `#187`.
 - **Remaining release gate:** run the bounded acquisition in Beta, complete every deterministic audit sample, meet the configured precision threshold, and inspect the student-facing result before enabling broad or recurring acquisition.
 
 #### EP-05 - Research-Home Member Roster Beyond The Lead - FR-18

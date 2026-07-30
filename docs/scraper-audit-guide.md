@@ -237,14 +237,16 @@ Runs without that bounded allowlist continue to emit legacy undergraduate signal
 
 Expected collections:
 
-- `observations`: evidence-shaped fields such as `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, `undergradConstraintQuote`.
+- `observations`: evidence-shaped access fields plus independently quoted logistics fields for student level, compensation or credit, weekly time, modality, and current availability when the run uses the required bounded allowlist.
 - `entry_pathways`: exploratory/contact or application-like pathways when evidence supports them.
 - `access_signals`: reach-out plausible, application form exists, contact instructions exist, or not currently available.
 - `contact_routes`: guarded official application routes when an official URL is observed.
+- `undergraduate_logistics_claims`: one independently materialized row per supported claim type, including withheld stale or conflicting states.
 
 Audit focus:
 
 - Quotes are real and traceable to `sourceUrl`/`quoteSourceUrl`.
+- Every logistics quote supports only its associated normalized claim.
 - LLM evidence remains low-trust and conservative.
 - No active posted opportunity is created from a generic join page.
 - Direct emails and phone numbers are redacted from public quote/excerpt fields unless a guarded contact policy explicitly allows display.
