@@ -66,6 +66,8 @@ const DEFAULT_MODEL = 'gpt-4o-mini';
 const SOURCE_KEY = 'lab-microsite-undergrad-llm';
 const MAX_CANDIDATE_SUBPAGE_URLS = 8;
 const MAX_SUBPAGES_FETCHED = 3;
+const MAX_STAGING_LOGISTICS_LABS = 25;
+const LOGISTICS_OBSERVATION_PREFIX = 'undergraduateLogistics';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -512,6 +514,18 @@ export function extractionToObservations(
   };
   const out: ObservationInput[] = [];
 
+  const verifiedIsoDateInQuote = (
+    candidate: string | null | undefined,
+    quote: string,
+  ): string | undefined => {
+    if (!candidate || !/^\d{4}-\d{2}-\d{2}$/.test(candidate) || !quote.includes(candidate)) {
+      return undefined;
+    }
+    const timestamp = Date.parse(`${candidate}T00:00:00.000Z`);
+    if (!Number.isFinite(timestamp)) return undefined;
+    return new Date(timestamp).toISOString().slice(0, 10) === candidate ? candidate : undefined;
+  };
+
   const verifiedQuoteSourceUrl = (rawQuote: string | undefined): string | undefined => {
     const quote = (rawQuote || '').replace(/\s+/g, ' ').trim();
     if (!quote) return undefined;
@@ -529,6 +543,7 @@ export function extractionToObservations(
     const evidenceQuote = (rawQuote || '').replace(/\s+/g, ' ').trim();
     const evidenceSourceUrl = verifiedQuoteSourceUrl(rawQuote);
     if (!evidenceQuote || !evidenceSourceUrl) return;
+    const verifiedValidThrough = verifiedIsoDateInQuote(validThrough, evidenceQuote);
     out.push({
       ...base,
       sourceUrl: evidenceSourceUrl,
@@ -540,7 +555,7 @@ export function extractionToObservations(
         value,
         evidenceQuote: redactDirectContactInfo(evidenceQuote).slice(0, 500),
         quoteVerified: true,
-        ...(validThrough ? { validThrough } : {}),
+        ...(verifiedValidThrough ? { validThrough: verifiedValidThrough } : {}),
       },
       confidenceOverride: 0.5,
     });
@@ -859,6 +874,13 @@ export function selectLabsToProcess(
   return out;
 }
 
+export function logisticsAcquisitionAllowed(options: { only?: string[] }): boolean {
+  const allowlist = new Set(
+    (options.only || []).map((slug) => slug.trim().toLowerCase()).filter(Boolean),
+  );
+  return allowlist.size > 0 && allowlist.size <= MAX_STAGING_LOGISTICS_LABS;
+}
+
 // ---------------------------------------------------------------------------
 // I/O hooks (default implementations)
 // ---------------------------------------------------------------------------
@@ -1051,9 +1073,15 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       only: ctx.options.only,
       limit: limitOption,
     });
+    const emitLogistics = logisticsAcquisitionAllowed(ctx.options);
     ctx.log(
       `Processing ${labs.length} labs (limit=${limitOption ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
+    if (!emitLogistics) {
+      ctx.log(
+        `Undergraduate logistics observations disabled: staging requires an explicit allowlist of at most ${MAX_STAGING_LOGISTICS_LABS} labs.`,
+      );
+    }
 
     let totalObs = 0;
     let processed = 0;
@@ -1194,6 +1222,11 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
       if ((lab.manuallyLockedFields || []).includes('acceptingUndergrads')) {
         observations = observations.filter(
           (observation) => observation.field !== 'acceptingUndergrads',
+        );
+      }
+      if (!emitLogistics) {
+        observations = observations.filter(
+          (observation) => !observation.field.startsWith(LOGISTICS_OBSERVATION_PREFIX),
         );
       }
       if (observations.length > 0) {

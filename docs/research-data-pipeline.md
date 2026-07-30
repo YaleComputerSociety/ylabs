@@ -146,6 +146,8 @@ The presence of that packet is not acceptance by itself; blank fields mean the p
 ### Undergraduate logistics release audit
 
 Run the read-only logistics audit after a bounded Beta acquisition and before broad or recurring acquisition:
+During staging, the microsite scraper emits logistics observations only when `--only` supplies an explicit allowlist of at most 25 unique slugs.
+Runs without that allowlist retain the legacy undergraduate-signal behavior but cannot emit logistics observations.
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \

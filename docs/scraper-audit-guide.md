@@ -229,8 +229,11 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-undergrad-llm --limit 10 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-undergrad-llm --only <reviewed-slug> --limit 1 --use-cache --auto-materialize
 ```
+
+Logistics observations remain staging-gated unless the run supplies an explicit allowlist of at most 25 unique slugs.
+Runs without that bounded allowlist continue to emit legacy undergraduate signals but cannot emit logistics observations.
 
 Expected collections:
 

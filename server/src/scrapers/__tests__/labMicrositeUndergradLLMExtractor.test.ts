@@ -20,6 +20,7 @@ import {
   buildLLMPrompt,
   LAB_UNDERGRAD_RESPONSE_FORMAT,
   LAB_UNDERGRAD_SYSTEM_PROMPT,
+  logisticsAcquisitionAllowed,
   extractionToObservations,
   sourceUrlForExtraction,
   candidateLabFromResearchEntityDoc,
@@ -364,6 +365,60 @@ describe('claim-specific undergraduate logistics extraction', () => {
     expect(observations.some((row) => row.field === 'undergraduateLogisticsCompensation')).toBe(
       false,
     );
+  });
+
+  it('keeps an availability expiry only when the exact ISO date occurs in its quote', () => {
+    const sourceUrl = 'https://smith.example.com/join';
+    const sourcePages = [
+      {
+        url: sourceUrl,
+        text: 'Applications are open through 2026-08-31.',
+      },
+    ];
+    const extraction: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: sourceUrl,
+      currentAvailability: 'OPEN',
+      currentAvailabilityQuote: 'Applications are open through 2026-08-31.',
+      availabilityValidThrough: '2026-08-31',
+    };
+
+    const verified = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      extraction,
+      new Date('2026-07-14T00:00:00.000Z'),
+      { sourcePages },
+    );
+    const unverified = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      { ...extraction, availabilityValidThrough: '2026-08-30' },
+      new Date('2026-07-14T00:00:00.000Z'),
+      { sourcePages },
+    );
+
+    expect(
+      verified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
+    ).toMatchObject({ validThrough: '2026-08-31' });
+    expect(
+      unverified.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
+    ).not.toHaveProperty('validThrough');
+  });
+});
+
+describe('logisticsAcquisitionAllowed', () => {
+  it('requires an explicit bounded slug allowlist during staging', () => {
+    expect(logisticsAcquisitionAllowed({})).toBe(false);
+    expect(logisticsAcquisitionAllowed({ only: ['lab-a', 'LAB-A'] })).toBe(true);
+    expect(
+      logisticsAcquisitionAllowed({
+        only: Array.from({ length: 26 }, (_, index) => `lab-${index}`),
+      }),
+    ).toBe(false);
   });
 });
 
