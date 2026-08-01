@@ -68,10 +68,12 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
       head: 'a7a6e9c0592878eb',
       reportCommit: 'a7a6e9c0',
       inputFingerprint: 'fingerprint',
+      artifactDigest: 'artifact-digest',
       state: {
         graphifyVersion: '0.9.6',
         head: 'a7a6e9c0592878eb',
         inputFingerprint: 'fingerprint',
+        artifactDigest: 'artifact-digest',
       },
     }),
     [],
@@ -86,10 +88,12 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
       head: 'a7a6e9c0592878eb',
       reportCommit: 'ba888018',
       inputFingerprint: 'fingerprint',
+      artifactDigest: 'artifact-digest',
       state: {
         graphifyVersion: '0.9.6',
         head: 'a7a6e9c0592878eb',
         inputFingerprint: 'fingerprint',
+        artifactDigest: 'artifact-digest',
       },
     }),
     [],
@@ -104,7 +108,13 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
     head: 'a7a6e9c0592878eb',
     reportCommit: 'ba888018',
     inputFingerprint: 'new',
-    state: { graphifyVersion: '0.9.4', head: 'ba888018', inputFingerprint: 'old' },
+    artifactDigest: 'new-artifact',
+    state: {
+      graphifyVersion: '0.9.4',
+      head: 'ba888018',
+      inputFingerprint: 'old',
+      artifactDigest: 'old-artifact',
+    },
   });
   assert.ok(reasons.includes('graph artifacts are missing'));
   assert.ok(reasons.includes('installed Graphify 0.9.5 does not match 0.9.6'));
@@ -120,6 +130,7 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
     head: 'a7a6e9c0592878eb',
     reportCommit: 'ba888018',
     inputFingerprint: 'fingerprint',
+    artifactDigest: 'artifact-digest',
     state: null,
   });
   assert.ok(bootstrapReasons.includes('graph source commit differs from HEAD'));
@@ -134,11 +145,33 @@ test('refreshes an invalid cache even when its state is current', () => {
     head: 'a7a6e9c0592878eb',
     reportCommit: 'a7a6e9c0',
     inputFingerprint: 'fingerprint',
+    artifactDigest: 'artifact-digest',
     state: {
       graphifyVersion: '0.9.6',
       head: 'a7a6e9c0592878eb',
       inputFingerprint: 'fingerprint',
+      artifactDigest: 'artifact-digest',
     },
   });
   assert.deepEqual(reasons, ['graph artifacts are invalid']);
+});
+
+test('refreshes when an interrupted write truncates a generated artifact', () => {
+  const reasons = cacheRefreshReasons({
+    artifactsExist: true,
+    artifactsValid: true,
+    expectedVersion: '0.9.6',
+    installedVersion: '0.9.6',
+    head: 'a7a6e9c0592878eb',
+    reportCommit: 'a7a6e9c0',
+    inputFingerprint: 'fingerprint',
+    artifactDigest: 'truncated-report-digest',
+    state: {
+      graphifyVersion: '0.9.6',
+      head: 'a7a6e9c0592878eb',
+      inputFingerprint: 'fingerprint',
+      artifactDigest: 'complete-artifacts-digest',
+    },
+  });
+  assert.deepEqual(reasons, ['generated graph artifacts changed outside refresh']);
 });

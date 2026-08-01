@@ -130,6 +130,7 @@ export const cacheRefreshReasons = ({
   head,
   reportCommit,
   inputFingerprint,
+  artifactDigest,
   state,
 }) => {
   const reasons = [];
@@ -149,6 +150,9 @@ export const cacheRefreshReasons = ({
   if (state?.head !== head) reasons.push('cached HEAD differs from current HEAD');
   if (state?.inputFingerprint !== inputFingerprint) {
     reasons.push('graph-relevant working-tree inputs changed');
+  }
+  if (state?.artifactDigest !== artifactDigest) {
+    reasons.push('generated graph artifacts changed outside refresh');
   }
   return [...new Set(reasons)];
 };

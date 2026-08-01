@@ -98,10 +98,11 @@ const writeState = () => {
     statePath,
     `${JSON.stringify(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         graphifyVersion: readExpectedVersion(),
         head: head(),
         inputFingerprint: graphInputFingerprint(),
+        artifactDigest: artifactHash(),
         refreshedAt: new Date().toISOString(),
       },
       null,
@@ -193,6 +194,7 @@ const status = () => {
     head: currentHead,
     reportCommit: reportSourceCommit(),
     inputFingerprint: fingerprint,
+    artifactDigest: artifactsExist ? artifactHash() : '',
     state,
   });
   console.log(
