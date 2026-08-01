@@ -39,8 +39,6 @@ export interface ScraperOptions {
   visibilityGateMode?: 'dry-run' | 'apply';
   allowVisibilityDemotions?: boolean;
   since?: Date;
-  discoverOpenAlexAuthors?: boolean;
-  maxOpenAlexPagesPerAuthor?: number;
   manualRecipientCsvDir?: string;
   ignoreWorkPlanner?: boolean;
   dbReview?: boolean;

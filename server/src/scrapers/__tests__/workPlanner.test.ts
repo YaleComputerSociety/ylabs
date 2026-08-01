@@ -17,11 +17,6 @@ describe('buildEntityWorkPlan', () => {
       'lab-microsite-description-llm',
       'lab-microsite-undergrad-llm',
       'student-decision-llm',
-      'openalex',
-      'orcid',
-      'europe-pmc',
-      'pubmed',
-      'crossref',
     ]);
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')).toMatchObject({
       entityType: 'researchEntity',
@@ -51,6 +46,9 @@ describe('buildEntityWorkPlan', () => {
       'studentDecisionExplanation',
     ]);
     expect(getWorkPlannerSourcePolicy('unknown-source')).toBeUndefined();
+    for (const sourceName of ['openalex', 'orcid', 'europe-pmc', 'pubmed', 'crossref']) {
+      expect(getWorkPlannerSourcePolicy(sourceName), sourceName).toBeUndefined();
+    }
   });
 
   it('plans missing fields for fetch', () => {

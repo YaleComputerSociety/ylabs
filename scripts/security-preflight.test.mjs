@@ -1040,11 +1040,6 @@ test('credentialed scraper backfills do not log raw caught error messages', () =
     '../server/src/scripts/backfillResearchDescriptions.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
     '../server/src/scrapers/entityMaterializer.ts',
-    '../server/src/scrapers/sources/arxivPreprintScraper.ts',
-    '../server/src/scrapers/sources/europePmcPaperScraper.ts',
-    '../server/src/scrapers/sources/crossrefPaperScraper.ts',
-    '../server/src/scrapers/sources/orcidWorksScraper.ts',
-    '../server/src/scrapers/sources/openAlexPaperScraper.ts',
     '../server/src/scrapers/sources/nihReporterScraper.ts',
     '../server/src/scrapers/sources/undergradFellowshipRecipientScraper.ts',
     '../server/src/scrapers/sources/centersInstitutesScraper.ts',
@@ -4401,60 +4396,6 @@ test('profile data-quality audit ids use safe serialization for report grouping'
   assert.doesNotMatch(source, /String\(membership\.researchEntityId\)/);
   assert.doesNotMatch(source, /String\(membership\.userId\)/);
   assert.doesNotMatch(source, /String\(user\._id\)/);
-});
-
-test('OpenAlex paper scraper fetches the public API through the shared SSRF guard', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scrapers/sources/openAlexPaperScraper.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /import \{ assertPublicHttpUrl, ssrfSafeAgents \} from '\.\.\/\.\.\/utils\/ssrfGuard'/,
-  );
-  assert.match(source, /const safeUrl = await assertPublicHttpUrl\(url\)/);
-  assert.match(source, /const safeUrlText = safeUrl\.toString\(\)/);
-  assert.match(source, /const agents = ssrfSafeAgents\(\)/);
-  assert.match(source, /axios\.get\(safeUrlText, \{/);
-  assert.match(source, /maxRedirects: 5/);
-  assert.match(source, /httpAgent: agents\.httpAgent/);
-  assert.match(source, /httpsAgent: agents\.httpsAgent/);
-  assert.doesNotMatch(source, /axios\.get\(url,\s*\{/);
-  assert.doesNotMatch(source, /rejectUnauthorized:\s*false/);
-});
-
-test('publication scrapers serialize authorship user ids safely before observation emission', () => {
-  for (const [name, file, pattern] of [
-    [
-      'Europe PMC',
-      '../server/src/scrapers/sources/europePmcPaperScraper.ts',
-      /userId: serializedDocumentId\(user\._id\) \|\| ''/,
-    ],
-    [
-      'ORCID works',
-      '../server/src/scrapers/sources/orcidWorksScraper.ts',
-      /userId: serializedDocumentId\(user\._id\) \|\| ''/,
-    ],
-    [
-      'OpenAlex',
-      '../server/src/scrapers/sources/openAlexPaperScraper.ts',
-      /userId: serializedDocumentId\(fac\._id\) \|\| ''/,
-    ],
-  ]) {
-    const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(
-      source,
-      /import \{ serializedDocumentId \} from '\.\.\/\.\.\/utils\/idSerialization'/,
-      `${name} must import safe serializer`,
-    );
-    assert.match(source, pattern, `${name} must serialize authorship user id safely`);
-    assert.doesNotMatch(
-      source,
-      /userId: String\((user|fac)\._id\)/,
-      `${name} must not stringify user ids`,
-    );
-  }
 });
 
 test('rendered fetch bridge executes the SSRF-normalized URL', () => {

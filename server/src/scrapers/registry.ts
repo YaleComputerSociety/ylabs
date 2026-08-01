@@ -26,9 +26,9 @@ export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
   // The bibliographic paper pipeline (arXiv, OpenAlex, ORCID works, Europe PMC,
   // PubMed, Crossref) is deprecated and no longer registered, so it cannot run via
-  // the CLI, cron, or a sweep. Source files and stored collections are retained for
-  // rollback; verified Google Scholar and ORCID profile identity links are kept on
-  // Person. See issue #207 (Phase 3) and docs/research-model-refactor.md.
+  // the CLI, cron, or a sweep. Historical source rows, observations, stored collections,
+  // and the guarded materializer remain for rollback; verified Google Scholar and ORCID
+  // profile identity links are kept on Person. See issues #207 and #260.
   o.register(new YsmAtoZScraper());
   o.register(new YseCentersScraper());
   o.register(new YaleResearchOfficialScraper());

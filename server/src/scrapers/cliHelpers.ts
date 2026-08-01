@@ -47,7 +47,6 @@ const VALUE_FLAGS = new Set([
   'keep-runs',
   'limit',
   'manual-recipient-csv-dir',
-  'max-openalex-pages-per-author',
   'offset',
   'older-than-days',
   'only',
@@ -62,7 +61,6 @@ const BOOLEAN_FLAGS = new Set([
   'auto-materialize',
   'confirm-materialize',
   'confirm-observation-prune',
-  'discover-openalex-authors',
   'dry-run',
   'force-disabled',
   'ignore-work-planner',
@@ -124,12 +122,6 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined,
-    discoverOpenAlexAuthors: !!flags['discover-openalex-authors'],
-    maxOpenAlexPagesPerAuthor: parseOptionalIntegerFlag(
-      flags,
-      'max-openalex-pages-per-author',
-      { min: 1, label: 'positive' },
-    ),
     manualRecipientCsvDir:
       typeof flags['manual-recipient-csv-dir'] === 'string'
         ? flags['manual-recipient-csv-dir']
