@@ -7,6 +7,7 @@ import path from 'node:path';
 
 import {
   GRAPHIFY_ARTIFACTS,
+  artifactValidationError,
   cacheRefreshReasons,
   hashInputs,
   isGraphInputPath,
@@ -77,15 +78,19 @@ const validateArtifacts = () => {
   for (const artifact of GRAPHIFY_ARTIFACTS) {
     if (!existsSync(path.join(root, artifact))) throw new Error(`${artifact} was not generated`);
   }
-  const graph = JSON.parse(readFileSync(path.join(root, GRAPHIFY_ARTIFACTS[0]), 'utf8'));
-  if (
-    !Array.isArray(graph.nodes) ||
-    graph.nodes.length === 0 ||
-    !Array.isArray(graph.links) ||
-    graph.links.length === 0
-  ) {
-    throw new Error('graphify-out/graph.json must contain non-empty nodes and links arrays');
-  }
+  const error = artifactValidationError(
+    readFileSync(path.join(root, GRAPHIFY_ARTIFACTS[0]), 'utf8'),
+    readFileSync(path.join(root, GRAPHIFY_ARTIFACTS[1]), 'utf8'),
+  );
+  if (error) throw new Error(error);
+};
+
+const artifactsAreValid = () => {
+  if (GRAPHIFY_ARTIFACTS.some((artifact) => !existsSync(path.join(root, artifact)))) return false;
+  return !artifactValidationError(
+    readFileSync(path.join(root, GRAPHIFY_ARTIFACTS[0]), 'utf8'),
+    readFileSync(path.join(root, GRAPHIFY_ARTIFACTS[1]), 'utf8'),
+  );
 };
 
 const writeState = () => {
@@ -182,6 +187,7 @@ const status = () => {
   const state = readState();
   const reasons = cacheRefreshReasons({
     artifactsExist,
+    artifactsValid: artifactsAreValid(),
     expectedVersion,
     installedVersion: installedVersion(),
     head: currentHead,

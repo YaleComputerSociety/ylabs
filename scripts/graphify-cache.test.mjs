@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  artifactValidationError,
   cacheRefreshReasons,
   commitsMatch,
   hashInputs,
@@ -9,6 +10,9 @@ import {
   parseInstalledGraphifyVersion,
   parseReportSourceCommit,
 } from './graphify-cache-core.mjs';
+
+const validGraph = JSON.stringify({ nodes: [{ id: 'one' }], links: [{ source: 'one' }] });
+const validReport = '## Graph Freshness\n- Built from commit: `a7a6e9c0`\n';
 
 test('recognizes graph-relevant source and architecture files', () => {
   assert.equal(isGraphInputPath('server/src/services/userService.ts'), true);
@@ -42,10 +46,23 @@ test('hashes graph inputs independently of enumeration order', () => {
   assert.equal(first, second);
 });
 
+test('validates both generated graph artifacts', () => {
+  assert.equal(artifactValidationError(validGraph, validReport), '');
+  assert.equal(
+    artifactValidationError('{', validReport),
+    'graphify-out/graph.json is not valid JSON',
+  );
+  assert.equal(
+    artifactValidationError(validGraph, '# Incomplete report\n'),
+    'graphify-out/GRAPH_REPORT.md must identify its source commit',
+  );
+});
+
 test('refreshes for missing, stale, version-mismatched, or changed caches', () => {
   assert.deepEqual(
     cacheRefreshReasons({
       artifactsExist: true,
+      artifactsValid: true,
       expectedVersion: '0.9.6',
       installedVersion: '0.9.6',
       head: 'a7a6e9c0592878eb',
@@ -63,6 +80,7 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
   assert.deepEqual(
     cacheRefreshReasons({
       artifactsExist: true,
+      artifactsValid: true,
       expectedVersion: '0.9.6',
       installedVersion: '0.9.6',
       head: 'a7a6e9c0592878eb',
@@ -80,6 +98,7 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
 
   const reasons = cacheRefreshReasons({
     artifactsExist: false,
+    artifactsValid: false,
     expectedVersion: '0.9.6',
     installedVersion: '0.9.5',
     head: 'a7a6e9c0592878eb',
@@ -95,6 +114,7 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
 
   const bootstrapReasons = cacheRefreshReasons({
     artifactsExist: true,
+    artifactsValid: true,
     expectedVersion: '0.9.6',
     installedVersion: '0.9.6',
     head: 'a7a6e9c0592878eb',
@@ -103,4 +123,22 @@ test('refreshes for missing, stale, version-mismatched, or changed caches', () =
     state: null,
   });
   assert.ok(bootstrapReasons.includes('graph source commit differs from HEAD'));
+});
+
+test('refreshes an invalid cache even when its state is current', () => {
+  const reasons = cacheRefreshReasons({
+    artifactsExist: true,
+    artifactsValid: false,
+    expectedVersion: '0.9.6',
+    installedVersion: '0.9.6',
+    head: 'a7a6e9c0592878eb',
+    reportCommit: 'a7a6e9c0',
+    inputFingerprint: 'fingerprint',
+    state: {
+      graphifyVersion: '0.9.6',
+      head: 'a7a6e9c0592878eb',
+      inputFingerprint: 'fingerprint',
+    },
+  });
+  assert.deepEqual(reasons, ['graph artifacts are invalid']);
 });

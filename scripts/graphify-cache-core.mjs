@@ -76,6 +76,27 @@ export const parseReportSourceCommit = (report) => {
   return match?.[1]?.toLowerCase() || '';
 };
 
+export const artifactValidationError = (graphContents, reportContents) => {
+  let graph;
+  try {
+    graph = JSON.parse(graphContents);
+  } catch {
+    return 'graphify-out/graph.json is not valid JSON';
+  }
+  if (
+    !Array.isArray(graph.nodes) ||
+    graph.nodes.length === 0 ||
+    !Array.isArray(graph.links) ||
+    graph.links.length === 0
+  ) {
+    return 'graphify-out/graph.json must contain non-empty nodes and links arrays';
+  }
+  if (!parseReportSourceCommit(reportContents)) {
+    return 'graphify-out/GRAPH_REPORT.md must identify its source commit';
+  }
+  return '';
+};
+
 export const commitsMatch = (head, reportCommit) => {
   const normalizedHead = String(head || '')
     .trim()
@@ -103,6 +124,7 @@ export const hashInputs = (entries) => {
 
 export const cacheRefreshReasons = ({
   artifactsExist,
+  artifactsValid,
   expectedVersion,
   installedVersion,
   head,
@@ -112,6 +134,7 @@ export const cacheRefreshReasons = ({
 }) => {
   const reasons = [];
   if (!artifactsExist) reasons.push('graph artifacts are missing');
+  else if (!artifactsValid) reasons.push('graph artifacts are invalid');
   if (!installedVersion) reasons.push('Graphify is not installed');
   else if (installedVersion !== expectedVersion) {
     reasons.push(`installed Graphify ${installedVersion} does not match ${expectedVersion}`);
