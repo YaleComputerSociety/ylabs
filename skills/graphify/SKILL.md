@@ -1,45 +1,92 @@
 ---
 name: graphify
-description: Use when navigating or answering cross-module/architecture questions in this repo, before broad file search or grep, or maintaining the shared Graphify snapshot. Covers scoped graph queries and the maintenance-only refresh policy.
+description: Use whenever an agent needs cross-module architecture or dependency context, is about to search broadly, changes models/routes/controllers/services/schemas, finds a missing/stale/invalid Graphify cache, or encounters generated Graphify conflicts. Covers local cache freshness, scoped navigation, source verification, and deterministic CI policy.
 ---
 
-# Graphify repo memory
+# Graphify navigation cache
 
-Graphify is the shared knowledge graph and navigation layer for this repo. Output lives in `graphify-out/`. It is a navigation layer only - verify important claims against source files, tests, and `docs/*.md` before editing or summarizing.
+Graphify is a local, generated navigation cache for this repository.
+It is not committed source and it is never the final authority.
+Source files, tests, `AGENTS.md`, and `docs/*.md` are canonical.
 
-## Navigation order (before broad exploration)
+## Required workflow
 
-1. Start with the narrowest useful `graphify query`, `graphify path`, or `graphify explain` command.
-2. Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review.
-3. Verify important Graphify claims against source files, tests, and durable docs.
+1. Run `yarn graphify:ensure` before cross-module exploration or broad file search.
+2. Use the narrowest useful `graphify query`, `graphify path`, or `graphify explain` command.
+3. Open the source files Graphify identifies.
+4. Verify important relationships and behavior against source, tests, and durable docs.
+5. Make the smallest safe change.
+6. Run `yarn graphify:ensure` again if models, routes, controllers, services, schemas, or other architectural relationships changed.
 
-## Query commands
+`graphify:ensure` refreshes only when the cache is missing, invalid for the pinned Graphify version, not checked against the current commit, or stale relative to graph-relevant working-tree inputs.
+Refreshes use local AST analysis and do not require an LLM or API key.
 
-| Command | Effect |
-|---------|--------|
-| `graphify query "<question>"` | Ask cross-module architecture questions |
-| `graphify explain "<concept>"` | Get definition and related nodes for a concept |
-| `graphify path "<A>" "<B>"` | Trace the relationship between two nodes |
-| `graphify update .` | Rebuild graph from AST after code changes (no API cost) |
-| `graphify extract .` | Optional: full semantic extraction (requires LLM key) |
+## Commands
 
-For cross-module "how does X relate to Y" questions, prefer `graphify query` / `graphify path` / `graphify explain` over grep - they traverse the graph's extracted + inferred edges instead of scanning files.
+| Command | Use |
+|---------|-----|
+| `yarn graphify:ensure` | Check freshness and refresh only when needed |
+| `yarn graphify:status` | Print freshness and the exact refresh reasons without changing files |
+| `yarn graphify:refresh` | Force a local refresh after substantial architecture changes |
+| `graphify query "<question>"` | Ask a scoped cross-module architecture question |
+| `graphify explain "<concept>"` | Inspect a concept and related nodes |
+| `graphify path "<A>" "<B>"` | Trace relationships between two nodes |
+| `yarn graphify:policy` | Verify generated Graphify output is ignored and untracked |
+| `yarn graphify:verify` | Generate twice and require identical output, as CI does |
 
-## Maintenance policy
+Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review.
+Prefer scoped queries for implementation work.
 
-Do not refresh or commit Graphify outputs in feature PRs.
-Refresh the shared snapshot in a dedicated scheduled or manually triggered maintenance change after a group of Beta merges.
-Use the version declared in `.graphify-version`, run `graphify update .` twice, and verify the second run leaves both canonical outputs unchanged.
-The report's source commit identifies the code snapshot that was analyzed.
-It is expected to differ from the later commit that records the generated outputs, so compare it with the intended Beta source commit rather than requiring equality with the maintenance commit's `HEAD`.
+## Trust boundaries
 
-## Committed vs ignored outputs
+Graphify can suggest where code and relationships live.
+It cannot establish:
 
-- **Committed**: only `graphify-out/GRAPH_REPORT.md` and `graphify-out/graph.json`.
-- **Not committed**: every other `graphify-out/` file, including dated snapshots, `graph.html`, caches, manifests, labels, locks, and memory.
+- Whether an operational migration was reviewed or accepted.
+- Whether a GitHub issue or pull request is currently open, closed, or merged.
+- The current state of private or deployed data.
+- Runtime or deployment configuration.
+- The behavior of code added after the graph was generated.
 
-`.graphifyignore` controls what enters the graph - keep it strict (no secrets, `node_modules`, build outputs, or raw scraped data).
+Verify those facts against their authoritative systems.
+Always verify code behavior against current source and tests, even when the cache is fresh.
 
-## Installation
+## Failure fallback
 
-Install the exact version in `.graphify-version` with `uv tool install "graphifyy==$(cat .graphify-version)"` (preferred) or `pipx install "graphifyy==$(cat .graphify-version)"`, then run `graphify install --platform <codex|claude|...>`.
+If Graphify is unavailable or refresh fails, state the cache problem briefly and continue with targeted `rg`, source inspection, tests, and durable docs.
+Do not present a stale or invalid graph as current.
+Graphify should improve navigation, not block productive work.
+If a clean worktree has not installed Yarn dependencies yet, run `node scripts/graphify-cache.mjs ensure` directly.
+The cache helper uses only built-in Node modules.
+
+Install the exact pinned version with:
+
+```bash
+uv tool install "graphifyy==$(cat .graphify-version)"
+```
+
+If `uv` is unavailable, use `pipx` with the same exact version.
+
+## Git policy
+
+- Never stage or commit anything under `graphify-out/`.
+- Never manually merge generated Graphify JSON or reports.
+- Never force-add ignored Graphify output.
+- Keep `.graphify-version`, `.graphifyignore`, the cache scripts, and this skill committed.
+- Let CI publish deterministic generated output as a temporary artifact for inspection.
+
+If a legacy branch still has conflicts in the two formerly tracked outputs, resolve only those generated files from the target branch, then remove them from tracking:
+
+```bash
+git restore --source=origin/beta --staged --worktree -- \
+  graphify-out/graph.json graphify-out/GRAPH_REPORT.md
+git rm --cached -- \
+  graphify-out/graph.json graphify-out/GRAPH_REPORT.md
+```
+
+Do not apply that restoration command to source files or other user changes.
+
+## CI contract
+
+CI enforces that no `graphify-out/` file is tracked, installs the exact `.graphify-version`, runs generation twice, and fails if the two outputs differ.
+The generated graph and report are uploaded as a CI artifact instead of committed to Git.
