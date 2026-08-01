@@ -39,6 +39,7 @@ import axios from 'axios';
 import { User } from '../../models/user';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
+import { findCanonicalResearchHomeSlugForUser } from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type {
   IScraper,
@@ -431,12 +432,13 @@ function buildPiUserObservations(
   return { observations: obs, entityKey };
 }
 
-function buildResearchGroupObservations(
+export function buildResearchGroupObservations(
   group: PiAwardsGroup,
   piUserId: string | null,
   sourceUrl: string,
+  canonicalResearchHomeSlug?: string | null,
 ): ObservationInput[] {
-  const slug = piSlug(piUserId, group.piFirstName, group.piLastName);
+  const slug = canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
   const piName = piDisplayName(group.awards[0] || ({} as NsfAward));
   const labName = piName ? `${piName} Lab` : `NSF PI ${slug}`;
 
@@ -448,9 +450,13 @@ function buildResearchGroupObservations(
 
   const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
   const out: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
-    { ...base, field: 'name', value: labName },
-    { ...base, field: 'kind', value: 'lab' },
+    ...(!canonicalResearchHomeSlug
+      ? [
+          { ...base, field: 'slug', value: slug },
+          { ...base, field: 'name', value: labName },
+          { ...base, field: 'kind', value: 'lab' },
+        ]
+      : []),
     { ...base, field: 'recentGrants', value: top },
     { ...base, field: 'recentGrantCount', value: records.length },
     { ...base, field: 'fundingAgencies', value: ['NSF'] },
@@ -518,6 +524,7 @@ export interface NsfAwardScraperDeps {
   fetchPage?: typeof fetchPage;
   /** Override the lookback start date (default: today minus 5 years). */
   dateStart?: string;
+  researchHomeResolver?: (userId: string) => Promise<string | null>;
 }
 
 function defaultDateStart(): string {
@@ -538,6 +545,8 @@ export class NsfAwardScraper implements IScraper {
     const dateStart = this.deps.dateStart ?? defaultDateStart();
     const finder = this.deps.userFinder ?? defaultUserFinder;
     const fetcher = this.deps.fetchPage ?? fetchPage;
+    const researchHomeResolver =
+      this.deps.researchHomeResolver ?? findCanonicalResearchHomeSlugForUser;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -590,6 +599,9 @@ export class NsfAwardScraper implements IScraper {
         finder,
       );
       if (piUserId) piMatched++;
+      const canonicalResearchHomeSlug = piUserId
+        ? await researchHomeResolver(piUserId)
+        : null;
 
       // 3b. User observations — under nsf-pi:<key> entityKey if no match.
       // (Matched PIs already have a real User row; we don't re-emit User obs
@@ -602,12 +614,18 @@ export class NsfAwardScraper implements IScraper {
       }
 
       // 3c. ResearchGroup observations — always emitted.
-      const rgObs = buildResearchGroupObservations(group, piUserId, sourceUrl);
+      const rgObs = buildResearchGroupObservations(
+        group,
+        piUserId,
+        sourceUrl,
+        canonicalResearchHomeSlug,
+      );
       await ctx.emit(rgObs);
       totalObs += rgObs.length;
 
       // 3d. Co-PI member observations — only when co-PI is a known Yale User.
-      const slug = piSlug(piUserId, group.piFirstName, group.piLastName);
+      const slug =
+        canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
       const coPiObs = await buildCoPiObservations(group, slug, sourceUrl, finder);
       if (coPiObs.length > 0) {
         await ctx.emit(coPiObs);

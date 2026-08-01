@@ -193,6 +193,52 @@ describe('betaRepairQueue CLI helpers', () => {
     });
   });
 
+  it('accepts a reviewed Development artifact only for a Development target', () => {
+    const artifact = {
+      generatedAt: '2026-06-05T00:00:00.000Z',
+      environment: 'development',
+      mode: 'dry-run',
+      options: { collection: 'research', stage: 'source_description' },
+      attempts: [
+        {
+          applied: true,
+          status: 'repaired',
+          plan: { queueItemId: 'queue-1', recordId: 'entity-1' },
+        },
+      ],
+    };
+    const options = {
+      mode: 'apply' as const,
+      collection: 'research' as const,
+      stage: 'source_description' as const,
+    };
+
+    expect(
+      validateBetaRepairQueueApplyArtifact(
+        artifact,
+        options,
+        new Date('2026-06-05T01:00:00.000Z'),
+        'development',
+      ).recordIds,
+    ).toEqual(['entity-1']);
+    expect(() =>
+      validateBetaRepairQueueApplyArtifact(
+        artifact,
+        options,
+        new Date('2026-06-05T01:00:00.000Z'),
+        'beta',
+      ),
+    ).toThrow(/must target beta/);
+    expect(() =>
+      validateBetaRepairQueueApplyArtifact(
+        artifact,
+        options,
+        new Date('2026-06-05T01:00:00.000Z'),
+        'production',
+      ),
+    ).toThrow(/limited to Development and Beta/);
+  });
+
   it('can opt into applying dry-run partial patches from reviewed artifacts', () => {
     const validation = validateBetaRepairQueueApplyArtifact(
       {

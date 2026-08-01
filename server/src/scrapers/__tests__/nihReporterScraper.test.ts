@@ -404,6 +404,23 @@ describe('piGrantsToObservations', () => {
     expect(groupObs.find((o) => o.field === 'inferredPiUserKey')).toBeUndefined();
   });
 
+  it('enriches one canonical research home without overwriting its identity fields', () => {
+    const obs = piGrantsToObservations(
+      'Riley Roster',
+      [grantRoster],
+      { _id: 'user-abc', netid: 'rrb1' },
+      'dept-mcdb-riley-roster',
+    );
+    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
+    expect(groupObs.every((o) => o.entityKey === 'dept-mcdb-riley-roster')).toBe(true);
+    expect(groupObs.find((o) => o.field === 'slug')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'name')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'kind')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'departments')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'recentGrants')).toBeDefined();
+    expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
+  });
+
   it('emits no research-home observations for known non-owner grant PIs', () => {
     expect(
       piGrantsToObservations('Robin Hutchison', [grantArnsten], {

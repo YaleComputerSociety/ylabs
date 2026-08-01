@@ -32,6 +32,7 @@ import { User } from '../../models/user';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
+import { findCanonicalResearchHomeSlugForUser } from '../canonicalResearchHomeResolver';
 import { slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -335,12 +336,13 @@ export function piGrantsToObservations(
   canonicalName: string,
   grants: NihGrant[],
   matchedUser: { _id: string; netid?: string; researchHomeEligible?: boolean } | null,
+  canonicalResearchHomeSlug?: string | null,
 ): ObservationInput[] {
   const out: ObservationInput[] = [];
   if (!canonicalName || grants.length === 0) return out;
   if (matchedUser?.researchHomeEligible === false) return out;
 
-  const slug = piSlugForResearchGroup(canonicalName);
+  const slug = canonicalResearchHomeSlug || piSlugForResearchGroup(canonicalName);
   if (!slug) return out;
 
   // Sort grants by start date (desc), keep top N for the recentGrants array.
@@ -391,9 +393,11 @@ export function piGrantsToObservations(
     sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
   };
   const piDisplayName = canonicalName;
-  out.push({ ...groupBase, field: 'slug', value: slug });
-  out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
-  out.push({ ...groupBase, field: 'kind', value: 'lab' });
+  if (!canonicalResearchHomeSlug) {
+    out.push({ ...groupBase, field: 'slug', value: slug });
+    out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
+    out.push({ ...groupBase, field: 'kind', value: 'lab' });
+  }
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
   out.push({ ...groupBase, field: 'recentGrantCount', value: recentRecords.length });
   out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
@@ -419,7 +423,7 @@ export function piGrantsToObservations(
       confidenceOverride: 0.6,
     });
   }
-  if (deptTypes.size > 0) {
+  if (deptTypes.size > 0 && !canonicalResearchHomeSlug) {
     out.push({
       ...groupBase,
       field: 'departments',
@@ -494,6 +498,7 @@ export interface NihReporterScraperOptions {
   fiscalYears?: number[];
   /** Inject a custom User model (used by tests to mock the DB). */
   userModel?: { find: typeof User.find };
+  researchHomeResolver?: (userId: string) => Promise<string | null>;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -505,6 +510,8 @@ export class NihReporterScraper implements IScraper {
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
     const userModel = this.opts.userModel || User;
+    const researchHomeResolver =
+      this.opts.researchHomeResolver || findCanonicalResearchHomeSlugForUser;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -561,7 +568,15 @@ export class NihReporterScraper implements IScraper {
       if (matchedUser) matched++;
       else unmatched++;
 
-      const observations = piGrantsToObservations(piName, grants, matchedUser);
+      const canonicalResearchHomeSlug = matchedUser
+        ? await researchHomeResolver(matchedUser._id)
+        : null;
+      const observations = piGrantsToObservations(
+        piName,
+        grants,
+        matchedUser,
+        canonicalResearchHomeSlug,
+      );
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;

@@ -493,6 +493,29 @@ describe('NsfAwardScraper.run', () => {
     expect(inferredObs?.confidenceOverride).toBe(0.7);
   });
 
+  it('targets one resolved canonical home and preserves its identity fields', async () => {
+    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
+    const userFinder = vi.fn(async () => [{ _id: '507f1f77bcf86cd799439011' }]);
+    const researchHomeResolver = vi.fn().mockResolvedValue('dept-chem-parker-grant');
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      userFinder: userFinder as any,
+      researchHomeResolver,
+      dateStart: '01/01/2020',
+    });
+    const { ctx, emitted } = buildContext();
+    await scraper.run(ctx);
+
+    const rgObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(researchHomeResolver).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+    expect(rgObs.every((o) => o.entityKey === 'dept-chem-parker-grant')).toBe(true);
+    expect(rgObs.find((o) => o.field === 'slug')).toBeUndefined();
+    expect(rgObs.find((o) => o.field === 'name')).toBeUndefined();
+    expect(rgObs.find((o) => o.field === 'kind')).toBeUndefined();
+    expect(rgObs.find((o) => o.field === 'recentGrants')).toBeDefined();
+    expect(rgObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NSF']);
+  });
+
   it('emits ResearchGroupMember observations only for co-PIs that match Yale Users', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [BHATTACHARJEE_AWARD] });
 

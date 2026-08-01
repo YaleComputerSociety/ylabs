@@ -142,9 +142,14 @@ export function validateBetaRepairQueueApplyArtifact(
   artifact: Record<string, unknown>,
   options: BetaRepairQueueCliOptions,
   now = new Date(),
+  expectedEnvironment = 'beta',
 ): BetaRepairQueueApplyArtifactValidation {
-  if (textValue(artifact.environment).toLowerCase() !== 'beta') {
-    throw new Error('Apply-from artifact must target beta.');
+  const normalizedExpectedEnvironment = expectedEnvironment.trim().toLowerCase();
+  if (!['development', 'beta'].includes(normalizedExpectedEnvironment)) {
+    throw new Error('Repair queue apply artifacts are limited to Development and Beta.');
+  }
+  if (textValue(artifact.environment).toLowerCase() !== normalizedExpectedEnvironment) {
+    throw new Error(`Apply-from artifact must target ${normalizedExpectedEnvironment}.`);
   }
   if (textValue(artifact.mode) !== 'dry-run') {
     throw new Error('Apply-from artifact must be a dry-run report.');
@@ -297,7 +302,12 @@ async function main() {
     }
     const artifactPath = resolveSafeJsonReportOutputPath(options.applyFrom, '--apply-from');
     const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
-    const validation = validateBetaRepairQueueApplyArtifact(artifact, options);
+    const validation = validateBetaRepairQueueApplyArtifact(
+      artifact,
+      options,
+      new Date(),
+      guard.environment,
+    );
     runOptions = buildApplyFromArtifactOptions(validation, options);
   }
   const report = await runVisibilityRepairQueue(runOptions);
