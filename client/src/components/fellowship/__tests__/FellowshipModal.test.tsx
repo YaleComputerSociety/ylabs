@@ -86,6 +86,24 @@ const renderModal = (override: Partial<Fellowship> = {}) =>
   );
 
 describe('FellowshipModal', () => {
+  it('makes source-backed research application requirements scannable', () => {
+    renderModal({
+      researchFocused: true,
+      applicationMaterials: ['Research proposal', 'Transcript', 'Faculty mentor support'],
+      applicationInformation: 'Submit through the Student Grants Database.',
+    });
+
+    expect(screen.getByText('Research-focused')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Application Process' })).toBeTruthy();
+    expect(screen.getByText('Research proposal')).toBeTruthy();
+    expect(screen.getByText('Faculty mentor support')).toBeTruthy();
+    expect(screen.getByText('Submit through the Student Grants Database.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open official application' })).toHaveAttribute(
+      'href',
+      fellowship.applicationLink,
+    );
+  });
+
   it('contains keyboard focus, closes on Escape, and returns focus to the exact trigger', () => {
     const trigger = document.createElement('button');
     trigger.textContent = 'Open program';

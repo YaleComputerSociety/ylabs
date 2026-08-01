@@ -18,6 +18,7 @@ export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-
 const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
+  'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/yale-college-first-year-summer-research-fellowship',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
   'https://wti.yale.edu/initiatives/undergraduate',
   'https://medicine.yale.edu/whr/training/fellowship/apply/',
@@ -65,6 +66,9 @@ export interface FellowshipCatalogCandidate {
   title: string;
   summary?: string;
   description?: string;
+  applicationInformation?: string;
+  applicationMaterials?: string[];
+  researchFocused?: boolean;
   sourceUrl: string;
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
@@ -252,6 +256,66 @@ function inferPurpose(text: string): string[] {
   return Array.from(new Set(purposes));
 }
 
+const APPLICATION_HEADING_RE =
+  /(?:how to apply|application (?:process|information|requirements?|materials?)|applications? should include|submission)/i;
+
+const MATERIAL_PATTERNS: Array<[RegExp, string]> = [
+  [
+    /\b(?:research|project) proposal\b|\bdescription of (?:the )?proposed research project\b/i,
+    'Research proposal',
+  ],
+  [/\b(?:personal|interest) statement\b/i, 'Personal or interest statement'],
+  [/\b(?:curriculum vitae|cv|résumé|resume)\b/i, 'CV or resume'],
+  [/\b(?:unofficial |official )?transcript\b/i, 'Transcript'],
+  [/\b(?:letter|letters) of recommendation\b|\brecommendation letter\b/i, 'Recommendation letter'],
+  [
+    /\bmentor (?:letter|recommendation|signature|support)\b|\brecommendation letter from (?:the )?(?:proposed )?(?:yale )?faculty mentor\b/i,
+    'Faculty mentor support',
+  ],
+  [/\b(?:project |research )?budget\b/i, 'Budget'],
+  [/\bwriting sample\b/i, 'Writing sample'],
+  [/\blanguage evaluation\b/i, 'Language evaluation'],
+  [/\bapplication form\b/i, 'Application form'],
+];
+
+function applicationSectionText($: cheerio.CheerioAPI): string | undefined {
+  const sections: string[] = [];
+  $('h2,h3,h4,h5,h6').each((_index, heading) => {
+    const title = normalizeWhitespace($(heading).text());
+    if (!APPLICATION_HEADING_RE.test(title)) return;
+
+    const level = Number.parseInt(heading.tagName.slice(1), 10);
+    const content: string[] = [];
+    let sibling = $(heading).next();
+    while (sibling.length > 0) {
+      const tagName = sibling[0]?.tagName?.toLowerCase() || '';
+      if (/^h[2-6]$/.test(tagName)) {
+        const siblingLevel = Number.parseInt(tagName.slice(1), 10);
+        if (siblingLevel <= level) break;
+      }
+      const text = normalizeWhitespace(sibling.text());
+      if (text) content.push(text);
+      sibling = sibling.next();
+    }
+
+    const section = normalizeWhitespace([title, ...content].join(' '));
+    if (section) sections.push(section);
+  });
+
+  const unique = Array.from(new Set(sections));
+  return unique.length > 0 ? unique.join('\n').slice(0, 3000) : undefined;
+}
+
+function inferApplicationMaterials(text: string): string[] {
+  return MATERIAL_PATTERNS.flatMap(([pattern, label]) => (pattern.test(text) ? [label] : []));
+}
+
+function isResearchFocused(text: string): boolean {
+  return /\b(?:original|independent|summer|faculty[- ]mentored|undergraduate) research\b|\bresearch (?:project|proposal|experience|fellowship|program)\b/i.test(
+    text,
+  );
+}
+
 function extractEmail(text: string): string | undefined {
   return text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
 }
@@ -302,6 +366,9 @@ function fingerprintCandidate(
     title: candidate.title,
     summary: candidate.summary || '',
     description: candidate.description || '',
+    applicationInformation: candidate.applicationInformation || '',
+    applicationMaterials: candidate.applicationMaterials || [],
+    researchFocused: candidate.researchFocused === true,
     sourceUrl: candidate.sourceUrl,
     applicationLink: candidate.applicationLink || '',
     deadline: candidate.deadline?.toISOString() || '',
@@ -428,6 +495,9 @@ function candidateFromLink(
     title,
     summary: rowContext && rowContext !== title ? rowContext : undefined,
     description: undefined,
+    applicationInformation: undefined,
+    applicationMaterials: inferApplicationMaterials(contextText),
+    researchFocused: isResearchFocused(contextText),
     sourceUrl,
     applicationLink,
     links,
@@ -455,6 +525,7 @@ function candidateFromDetailPage(
   if (isGenericCatalogTitle(title)) return undefined;
 
   const bodyText = normalizeWhitespace($('body').text());
+  const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
   const links = $('a')
     .toArray()
@@ -478,6 +549,9 @@ function candidateFromDetailPage(
     title,
     summary: undefined,
     description: bodyText.slice(0, 2000),
+    applicationInformation,
+    applicationMaterials: inferApplicationMaterials(applicationInformation || bodyText),
+    researchFocused: isResearchFocused(bodyText),
     sourceUrl: pageUrl,
     applicationLink,
     links,
@@ -514,6 +588,11 @@ function mergeCandidates(
     sourceKey: existing.sourceKey,
     summary: incoming.summary || existing.summary,
     description: incoming.description || existing.description,
+    applicationInformation: incoming.applicationInformation || existing.applicationInformation,
+    applicationMaterials: Array.from(
+      new Set([...(existing.applicationMaterials || []), ...(incoming.applicationMaterials || [])]),
+    ),
+    researchFocused: existing.researchFocused || incoming.researchFocused,
     sourceUrl:
       incoming.sourceUrl !== existing.sourceUrl && isPublicYaleUrl(incoming.sourceUrl)
         ? incoming.sourceUrl
@@ -603,6 +682,9 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
     observation('title', candidate.title, candidate),
     observation('summary', candidate.summary, candidate),
     observation('description', candidate.description, candidate),
+    observation('applicationInformation', candidate.applicationInformation, candidate),
+    observation('applicationMaterials', candidate.applicationMaterials, candidate),
+    observation('researchFocused', candidate.researchFocused, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),

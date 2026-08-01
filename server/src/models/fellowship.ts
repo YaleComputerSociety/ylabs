@@ -94,6 +94,14 @@ const fellowshipSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    researchFocused: {
+      type: Boolean,
+      default: false,
+    },
+    applicationMaterials: {
+      type: [String],
+      default: [],
+    },
     title: {
       type: String,
       required: true,

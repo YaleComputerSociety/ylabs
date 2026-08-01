@@ -148,6 +148,8 @@ const PUBLIC_FELLOWSHIP_FIELDS = [
   'programDates',
   'bestNextStep',
   'prepSteps',
+  'researchFocused',
+  'applicationMaterials',
   'title',
   'competitionType',
   'summary',
@@ -183,6 +185,7 @@ const PUBLIC_FELLOWSHIP_PRIMITIVE_FIELDS = new Set([
   'mentorMatching',
   'undergraduateOnly',
   'yaleCollegeOnly',
+  'researchFocused',
   'hoursPerWeek',
   'awardAmount',
   'isAcceptingApplications',
@@ -256,7 +259,7 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
       : undefined;
   }
 
-  if (field === 'prepSteps' && Array.isArray(value)) {
+  if ((field === 'prepSteps' || field === 'applicationMaterials') && Array.isArray(value)) {
     return value
       .slice(0, MAX_PUBLIC_FELLOWSHIP_ARRAY_ITEMS)
       .flatMap((item) =>

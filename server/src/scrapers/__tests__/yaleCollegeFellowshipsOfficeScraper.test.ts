@@ -6,8 +6,7 @@ import {
   YaleCollegeFellowshipsOfficeScraper,
 } from '../sources/yaleCollegeFellowshipsOfficeScraper';
 
-const fundingPageUrl =
-  'https://funding.yale.edu/find-funding/yale-fellowships-offered-through';
+const fundingPageUrl = 'https://funding.yale.edu/find-funding/yale-fellowships-offered-through';
 const sciencePageUrl =
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale';
 const detailPageUrl =
@@ -85,6 +84,48 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     });
   });
 
+  it('extracts source-backed research focus, application process, and required materials', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <h1>Yale College Fixture Summer Research Fellowship</h1>
+          <p>Students conduct an original research project with a Yale faculty mentor.</p>
+          <h2>Applications should include the following materials</h2>
+          <ul>
+            <li>A description of the proposed research project.</li>
+            <li>An unofficial transcript and CV/resume.</li>
+            <li>A recommendation letter from the proposed faculty mentor.</li>
+            <li>A second letter of recommendation.</li>
+          </ul>
+          <p>Applications must be submitted through the Student Grants Database.</p>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]).toMatchObject({
+      researchFocused: true,
+      applicationMaterials: [
+        'Research proposal',
+        'CV or resume',
+        'Transcript',
+        'Recommendation letter',
+        'Faculty mentor support',
+      ],
+    });
+    expect(candidates[0]?.applicationInformation).toContain(
+      'Applications should include the following materials',
+    );
+    expect(candidateToObservations(candidates[0])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'researchFocused', value: true }),
+        expect.objectContaining({ field: 'applicationMaterials' }),
+        expect.objectContaining({ field: 'applicationInformation' }),
+      ]),
+    );
+  });
+
   it('extracts structured undergraduate program detail pages', () => {
     const candidates = parseFellowshipCatalogPage(
       `
@@ -115,8 +156,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     const observations = candidateToObservations({
       title: 'Yale-UC Louvain Summer Research Program',
       sourceKey: 'yale-college-fellowships-office:yale-uc-louvain-summer-research-program',
-      sourceUrl:
-        'https://science.yalecollege.yale.edu/yale-uc-louvain-summer-research-program',
+      sourceUrl: 'https://science.yalecollege.yale.edu/yale-uc-louvain-summer-research-program',
       sourceFingerprint: 'fixture',
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=louvain',
       links: [],
@@ -138,7 +178,10 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
         expect.objectContaining({ field: 'programKind', value: 'CENTER_INTERNSHIP' }),
         expect.objectContaining({ field: 'entryMode', value: 'APPLY_TO_PROJECT' }),
         expect.objectContaining({ field: 'requiresMentorBeforeApply', value: false }),
-        expect.objectContaining({ field: 'studentFacingCategory', value: 'External summer research program' }),
+        expect.objectContaining({
+          field: 'studentFacingCategory',
+          value: 'External summer research program',
+        }),
       ]),
     );
   });
@@ -269,7 +312,9 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(parseDeadlineToUtcEndOfDay('Deadline: Monday, January 5, 2026 at 11:00pm ET')).toEqual(
       new Date('2026-01-05T23:59:59.999Z'),
     );
-    expect(parseDeadlineToUtcEndOfDay('Application deadline typically in February/March.')).toBeUndefined();
+    expect(
+      parseDeadlineToUtcEndOfDay('Application deadline typically in February/March.'),
+    ).toBeUndefined();
     expect(parseDeadlineToUtcEndOfDay('Deadline: February 30, 2026')).toBeUndefined();
   });
 
@@ -282,7 +327,12 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
       description: 'Supports research.',
       sourceUrl: fundingPageUrl,
       applicationLink: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=123',
-      links: [{ label: 'Application', url: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=123' }],
+      links: [
+        {
+          label: 'Application',
+          url: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=123',
+        },
+      ],
       deadline: undefined,
       applicationOpenDate: undefined,
       contactOffice: 'Fixture Awards Office',
@@ -379,8 +429,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
   });
 
   it('continues when one configured public catalog page is stale', async () => {
-    const stalePageUrl =
-      'https://yalecollege.yale.edu/example/stale-fellowships-directory';
+    const stalePageUrl = 'https://yalecollege.yale.edu/example/stale-fellowships-directory';
     const fetchPage = vi.fn(async (url: string) => {
       if (url === stalePageUrl) throw new Error('Request failed with status code 404');
       if (url === fundingPageUrl) {
