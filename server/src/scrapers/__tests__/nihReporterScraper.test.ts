@@ -515,7 +515,8 @@ describe('NihReporterScraper.run', () => {
       })) as any,
     };
 
-    const scraper = new NihReporterScraper({ userModel });
+    const researchHomeResolver = vi.fn().mockResolvedValue({ status: 'safe-shell' });
+    const scraper = new NihReporterScraper({ userModel, researchHomeResolver });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -523,6 +524,7 @@ describe('NihReporterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 2 unique PIs
     expect(result.notes).toContain('matched 1');
     expect(result.notes).toContain('stubbed 1');
+    expect(researchHomeResolver).toHaveBeenCalledWith('breaker-id');
 
     // Arnsten unmatched → user obs present
     const arnstenUserObs = emitted.filter(

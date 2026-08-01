@@ -12,6 +12,7 @@ import {
 } from '../betaRepairQueue';
 
 describe('betaRepairQueue CLI helpers', () => {
+  const dbFingerprint = 'reviewed-database-fingerprint';
   it('parses dry-run lane filters and output flags', () => {
     expect(
       parseBetaRepairQueueArgs([
@@ -133,6 +134,7 @@ describe('betaRepairQueue CLI helpers', () => {
         generatedAt: '2026-06-05T00:00:00.000Z',
         environment: 'beta',
         db: 'Beta',
+        dbFingerprint,
         mode: 'dry-run',
         options: {
           mode: 'dry-run',
@@ -184,6 +186,8 @@ describe('betaRepairQueue CLI helpers', () => {
         retryBlocked: true,
       },
       new Date('2026-06-05T01:00:00.000Z'),
+      'beta',
+      dbFingerprint,
     );
 
     expect(validation).toEqual({
@@ -197,6 +201,7 @@ describe('betaRepairQueue CLI helpers', () => {
     const artifact = {
       generatedAt: '2026-06-05T00:00:00.000Z',
       environment: 'development',
+      dbFingerprint,
       mode: 'dry-run',
       options: { collection: 'research', stage: 'source_description' },
       attempts: [
@@ -219,6 +224,7 @@ describe('betaRepairQueue CLI helpers', () => {
         options,
         new Date('2026-06-05T01:00:00.000Z'),
         'development',
+        dbFingerprint,
       ).recordIds,
     ).toEqual(['entity-1']);
     expect(() =>
@@ -237,6 +243,15 @@ describe('betaRepairQueue CLI helpers', () => {
         'production',
       ),
     ).toThrow(/limited to Development and Beta/);
+    expect(() =>
+      validateBetaRepairQueueApplyArtifact(
+        artifact,
+        options,
+        new Date('2026-06-05T01:00:00.000Z'),
+        'development',
+        'different-database-fingerprint',
+      ),
+    ).toThrow(/database target does not match/);
   });
 
   it('can opt into applying dry-run partial patches from reviewed artifacts', () => {
@@ -245,6 +260,7 @@ describe('betaRepairQueue CLI helpers', () => {
         generatedAt: '2026-06-05T00:00:00.000Z',
         environment: 'beta',
         db: 'Beta',
+        dbFingerprint,
         mode: 'dry-run',
         options: {
           mode: 'dry-run',
@@ -297,6 +313,8 @@ describe('betaRepairQueue CLI helpers', () => {
         includeBlockedPatches: true,
       },
       new Date('2026-06-05T01:00:00.000Z'),
+      'beta',
+      dbFingerprint,
     );
 
     expect(validation).toEqual({
@@ -313,6 +331,7 @@ describe('betaRepairQueue CLI helpers', () => {
           generatedAt: '2026-06-05T00:00:00.000Z',
           environment: 'beta',
           db: 'Beta',
+          dbFingerprint,
           mode: 'dry-run',
           options: {
             mode: 'dry-run',
@@ -342,6 +361,8 @@ describe('betaRepairQueue CLI helpers', () => {
           includeBlockedPatches: true,
         },
         new Date('2026-06-05T01:00:00.000Z'),
+        'beta',
+        dbFingerprint,
       ),
     ).toThrow(/no dry-run-positive repair attempts/);
   });
@@ -352,12 +373,15 @@ describe('betaRepairQueue CLI helpers', () => {
         {
           generatedAt: '2026-06-01T00:00:00.000Z',
           environment: 'beta',
+          dbFingerprint,
           mode: 'dry-run',
           options: { mode: 'dry-run', collection: 'research', stage: 'source_description' },
           attempts: [],
         },
         { mode: 'apply', collection: 'research', stage: 'source_description' },
         new Date('2026-06-05T00:00:00.000Z'),
+        'beta',
+        dbFingerprint,
       ),
     ).toThrow(/stale/i);
     expect(() =>
@@ -365,12 +389,15 @@ describe('betaRepairQueue CLI helpers', () => {
         {
           generatedAt: '2026-06-05T00:00:00.000Z',
           environment: 'production',
+          dbFingerprint,
           mode: 'dry-run',
           options: { mode: 'dry-run', collection: 'research', stage: 'source_description' },
           attempts: [],
         },
         { mode: 'apply', collection: 'research', stage: 'source_description' },
         new Date('2026-06-05T01:00:00.000Z'),
+        'beta',
+        dbFingerprint,
       ),
     ).toThrow(/beta/i);
   });
@@ -407,6 +434,7 @@ describe('betaRepairQueue CLI helpers', () => {
         {
           environment: 'beta',
           db: 'Beta',
+          dbFingerprint,
           options: {
             mode: 'dry-run',
             collection: 'all',
@@ -446,6 +474,7 @@ describe('betaRepairQueue CLI helpers', () => {
       generatedAt: '2026-05-31T17:15:00.000Z',
       environment: 'beta',
       db: 'Beta',
+      dbFingerprint,
       options: {
         mode: 'dry-run',
         collection: 'all',

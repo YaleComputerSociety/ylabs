@@ -114,6 +114,10 @@ YSM A-to-Z lab records use full-name PI inference when the lab name includes fir
 
 Grant-source PI matching must remain conservative because award APIs are funding evidence, not official Yale profile identity evidence. NSF PI matching requires exact last name plus exact first name, then exact last name plus first-name prefix; it may use a bare first-initial fallback only when the source itself provides only an initial. Do not match a full source given name to a different Yale first name by initial alone, such as `Leying Guan` to `Lawrence Guan`.
 
+The shared canonical-home resolver distinguishes a safe absence of memberships from one canonical official home and ambiguous or ineligible memberships.
+Grant scrapers create a synthetic shell only for the safe-absence case and emit no research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.
+At materialization, grant records are merged by grant ID and funding agencies are unioned across sources.
+
 ## Canonical Collections
 
 Runtime research discovery is centered on:

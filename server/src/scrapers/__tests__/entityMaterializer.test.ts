@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addPostMaterializationMetrics,
+  aggregateResearchEntityGrantEvidence,
   buildInferredPiMemberUpsert,
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
@@ -27,6 +28,20 @@ import {
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 
 describe('entityMaterializer post-materialization metrics', () => {
+  it('merges cross-source grant evidence by stable grant id', () => {
+    expect(
+      aggregateResearchEntityGrantEvidence([
+        { field: 'recentGrants', value: [{ id: 'NIH-1' }, { id: 'SHARED', title: 'old' }] },
+        { field: 'recentGrants', value: [{ id: 'NSF-1' }, { id: 'shared', title: 'new' }] },
+        { field: 'fundingAgencies', value: ['NIH'] },
+        { field: 'fundingAgencies', value: ['NSF', 'nih'] },
+      ]),
+    ).toEqual({
+      recentGrants: [{ id: 'NIH-1' }, { id: 'shared', title: 'new' }, { id: 'NSF-1' }],
+      fundingAgencies: ['NIH', 'NSF'],
+    });
+  });
+
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {
     expect(normalizeMaterializerObjectId(' 507f1f77bcf86cd799439011 ')).toBe(
       '507f1f77bcf86cd799439011',

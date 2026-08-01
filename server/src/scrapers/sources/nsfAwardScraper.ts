@@ -39,7 +39,10 @@ import axios from 'axios';
 import { User } from '../../models/user';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
-import { findCanonicalResearchHomeSlugForUser } from '../canonicalResearchHomeResolver';
+import {
+  resolveCanonicalResearchHomeForUser,
+  type CanonicalResearchHomeResolution,
+} from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import type {
   IScraper,
@@ -524,7 +527,7 @@ export interface NsfAwardScraperDeps {
   fetchPage?: typeof fetchPage;
   /** Override the lookback start date (default: today minus 5 years). */
   dateStart?: string;
-  researchHomeResolver?: (userId: string) => Promise<string | null>;
+  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 function defaultDateStart(): string {
@@ -546,7 +549,7 @@ export class NsfAwardScraper implements IScraper {
     const finder = this.deps.userFinder ?? defaultUserFinder;
     const fetcher = this.deps.fetchPage ?? fetchPage;
     const researchHomeResolver =
-      this.deps.researchHomeResolver ?? findCanonicalResearchHomeSlugForUser;
+      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForUser;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -599,9 +602,17 @@ export class NsfAwardScraper implements IScraper {
         finder,
       );
       if (piUserId) piMatched++;
-      const canonicalResearchHomeSlug = piUserId
+      const researchHomeResolution = piUserId
         ? await researchHomeResolver(piUserId)
-        : null;
+        : { status: 'safe-shell' as const };
+      if (
+        researchHomeResolution.status === 'ambiguous' ||
+        researchHomeResolution.status === 'ineligible'
+      ) {
+        continue;
+      }
+      const canonicalResearchHomeSlug =
+        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
 
       // 3b. User observations — under nsf-pi:<key> entityKey if no match.
       // (Matched PIs already have a real User row; we don't re-emit User obs

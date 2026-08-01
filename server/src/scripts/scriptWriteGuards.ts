@@ -1,5 +1,6 @@
 import os from 'os';
 import path from 'path';
+import { createHash } from 'crypto';
 import {
   resolveScraperEnvironment,
   summarizeMongoUrl,
@@ -9,6 +10,19 @@ import {
 export interface ScriptApplyGuardResult {
   environment: ScraperEnvironment;
   dbLabel: string;
+  dbFingerprint: string;
+}
+
+export function mongoTargetFingerprint(mongoUrl: string | undefined): string {
+  if (!mongoUrl) return 'missing';
+  let identity: string;
+  try {
+    const parsed = new URL(mongoUrl);
+    identity = `${parsed.hostname.toLowerCase()}/${parsed.pathname.replace(/^\//, '').toLowerCase()}`;
+  } catch {
+    identity = mongoUrl.split('?')[0].replace(/\/\/.*@/, '//');
+  }
+  return createHash('sha256').update(identity).digest('hex');
 }
 
 export function assertScriptApplyAllowed(args: {
@@ -34,7 +48,7 @@ export function assertScriptApplyAllowed(args: {
     );
   }
 
-  return { environment, dbLabel };
+  return { environment, dbLabel, dbFingerprint: mongoTargetFingerprint(args.mongoUrl) };
 }
 
 const hasPathPrefix = (target: string, root: string): boolean =>

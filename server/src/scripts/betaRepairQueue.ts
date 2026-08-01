@@ -143,6 +143,7 @@ export function validateBetaRepairQueueApplyArtifact(
   options: BetaRepairQueueCliOptions,
   now = new Date(),
   expectedEnvironment = 'beta',
+  expectedDbFingerprint = '',
 ): BetaRepairQueueApplyArtifactValidation {
   const normalizedExpectedEnvironment = expectedEnvironment.trim().toLowerCase();
   if (!['development', 'beta'].includes(normalizedExpectedEnvironment)) {
@@ -150,6 +151,9 @@ export function validateBetaRepairQueueApplyArtifact(
   }
   if (textValue(artifact.environment).toLowerCase() !== normalizedExpectedEnvironment) {
     throw new Error(`Apply-from artifact must target ${normalizedExpectedEnvironment}.`);
+  }
+  if (!expectedDbFingerprint || textValue(artifact.dbFingerprint) !== expectedDbFingerprint) {
+    throw new Error('Apply-from artifact database target does not match the guarded target.');
   }
   if (textValue(artifact.mode) !== 'dry-run') {
     throw new Error('Apply-from artifact must be a dry-run report.');
@@ -230,7 +234,7 @@ export function writeBetaRepairQueueOutput(report: Record<string, unknown>, outp
 }
 
 export function buildBetaRepairQueueOutput(
-  target: { environment: string; db: string; options?: BetaRepairQueueCliOptions },
+  target: { environment: string; db: string; dbFingerprint: string; options?: BetaRepairQueueCliOptions },
   report: Record<string, unknown>,
   now = new Date(),
 ): Record<string, unknown> {
@@ -239,6 +243,7 @@ export function buildBetaRepairQueueOutput(
     generatedAt: now.toISOString(),
     environment: target.environment,
     db: target.db,
+    dbFingerprint: target.dbFingerprint,
     ...(target.options ? { options: target.options } : {}),
     ...(blockedReasonCounts.length > 0 ? { blockedReasonCounts } : {}),
     ...report,
@@ -307,13 +312,14 @@ async function main() {
       options,
       new Date(),
       guard.environment,
+      guard.dbFingerprint,
     );
     runOptions = buildApplyFromArtifactOptions(validation, options);
   }
   const report = await runVisibilityRepairQueue(runOptions);
 
   const outputReport = buildBetaRepairQueueOutput(
-    { environment: guard.environment, db: guard.dbLabel, options },
+    { environment: guard.environment, db: guard.dbLabel, dbFingerprint: guard.dbFingerprint, options },
     report as unknown as Record<string, unknown>,
   );
 

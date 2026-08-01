@@ -496,7 +496,10 @@ describe('NsfAwardScraper.run', () => {
   it('targets one resolved canonical home and preserves its identity fields', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
     const userFinder = vi.fn(async () => [{ _id: '507f1f77bcf86cd799439011' }]);
-    const researchHomeResolver = vi.fn().mockResolvedValue('dept-chem-parker-grant');
+    const researchHomeResolver = vi.fn().mockResolvedValue({
+      status: 'canonical',
+      slug: 'dept-chem-parker-grant',
+    });
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
       userFinder: userFinder as any,

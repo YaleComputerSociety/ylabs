@@ -10,7 +10,7 @@ describe('assertScriptApplyAllowed', () => {
         mongoUrl: 'mongodb+srv://user:pass@example.mongodb.net/Prod',
         env: { SCRAPER_ENV: 'production' },
       }),
-    ).toEqual({
+    ).toMatchObject({
       environment: 'production',
       dbLabel: 'example.mongodb.net/Prod',
     });

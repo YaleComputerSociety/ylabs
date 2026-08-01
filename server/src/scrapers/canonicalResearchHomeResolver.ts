@@ -14,6 +14,12 @@ export interface ResearchHomeCandidate {
   archived?: unknown;
 }
 
+export type CanonicalResearchHomeResolution =
+  | { status: 'safe-shell' }
+  | { status: 'canonical'; slug: string }
+  | { status: 'ineligible' }
+  | { status: 'ambiguous' };
+
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 export function isOfficialResearchHomeCandidate(candidate: ResearchHomeCandidate): boolean {
@@ -36,25 +42,36 @@ export function selectCanonicalResearchHomeSlug(
   return slugs.length === 1 ? slugs[0] : null;
 }
 
-export async function findCanonicalResearchHomeSlugForUser(userId: string): Promise<string | null> {
-  if (!mongoose.isValidObjectId(userId)) return null;
+export function resolveCanonicalResearchHome(
+  candidates: ResearchHomeCandidate[],
+): CanonicalResearchHomeResolution {
+  if (candidates.length === 0) return { status: 'safe-shell' };
+  const eligible = candidates.filter(isOfficialResearchHomeCandidate);
+  const slugs = Array.from(new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)));
+  if (slugs.length === 1) return { status: 'canonical', slug: slugs[0] };
+  if (slugs.length > 1) return { status: 'ambiguous' };
+  return { status: 'ineligible' };
+}
+
+export async function resolveCanonicalResearchHomeForUser(
+  userId: string,
+): Promise<CanonicalResearchHomeResolution> {
+  if (!mongoose.isValidObjectId(userId)) return { status: 'ineligible' };
   const memberships = await ResearchGroupMember.find({
     userId,
     role: { $in: LEAD_ROLES },
-    isCurrentMember: { $ne: false },
-    archived: { $ne: true },
   })
     .select('researchEntityId')
     .lean();
   const entityIds = Array.from(
     new Set(memberships.map((membership) => String(membership.researchEntityId || '')).filter(Boolean)),
   );
-  if (entityIds.length === 0) return null;
+  if (entityIds.length === 0) return { status: 'safe-shell' };
 
-  const entities = await ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
+  const entities = await ResearchEntity.find({ _id: { $in: entityIds } })
     .select('slug website websiteUrl sourceUrls archived')
     .lean();
-  return selectCanonicalResearchHomeSlug(
+  return resolveCanonicalResearchHome(
     entities.map((entity) => ({
       slug: entity.slug,
       website: entity.website,

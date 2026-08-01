@@ -257,6 +257,34 @@ function materializedFieldValue(
   return value;
 }
 
+const grantIdentity = (value: unknown): string => {
+  const grant = objectRecord(value);
+  const id = textValue(grant.id);
+  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(grant)}`;
+};
+
+export function aggregateResearchEntityGrantEvidence(
+  observations: MaterializerObservationLike[],
+): { recentGrants?: unknown[]; fundingAgencies?: string[] } {
+  const grants = new Map<string, unknown>();
+  const agencies = new Map<string, string>();
+  for (const observation of observations) {
+    if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
+      for (const grant of observation.value) grants.set(grantIdentity(grant), grant);
+    }
+    if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
+      for (const agency of observation.value) {
+        const normalized = textValue(agency);
+        if (normalized) agencies.set(normalized.toLowerCase(), normalized);
+      }
+    }
+  }
+  return {
+    ...(grants.size > 0 ? { recentGrants: [...grants.values()] } : {}),
+    ...(agencies.size > 0 ? { fundingAgencies: [...agencies.values()] } : {}),
+  };
+}
+
 const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | undefined => {
   const enrichment = objectRecord(value);
   if (!['current', 'partial'].includes(textValue(enrichment.state))) return undefined;
@@ -2176,6 +2204,16 @@ export async function materializeEntity(
     manuallyLockedFields,
     manualValues,
   });
+  if (isResearchEntityObservationType(entityType)) {
+    const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
+    if (grantEvidence.recentGrants && resolved.recentGrants) {
+      resolved.recentGrants.value = grantEvidence.recentGrants;
+      if (resolved.recentGrantCount) resolved.recentGrantCount.value = grantEvidence.recentGrants.length;
+    }
+    if (grantEvidence.fundingAgencies && resolved.fundingAgencies) {
+      resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
+    }
+  }
 
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};

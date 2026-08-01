@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isOfficialResearchHomeCandidate,
+  resolveCanonicalResearchHome,
   selectCanonicalResearchHomeSlug,
 } from '../canonicalResearchHomeResolver';
 
@@ -27,5 +28,16 @@ describe('canonicalResearchHomeResolver', () => {
     expect(isOfficialResearchHomeCandidate({ slug: 'nih-pi-ada', websiteUrl: 'https://ada.yale.edu/' })).toBe(false);
     expect(isOfficialResearchHomeCandidate({ slug: 'ada-lab', archived: true, websiteUrl: 'https://ada.yale.edu/' })).toBe(false);
     expect(isOfficialResearchHomeCandidate({ slug: 'ada-lab', sourceUrls: ['https://reporter.nih.gov/project/1'] })).toBe(false);
+  });
+
+  it('distinguishes safe shell creation from ineligible and ambiguous homes', () => {
+    expect(resolveCanonicalResearchHome([])).toEqual({ status: 'safe-shell' });
+    expect(resolveCanonicalResearchHome([{ slug: 'nih-pi-ada' }])).toEqual({ status: 'ineligible' });
+    expect(
+      resolveCanonicalResearchHome([
+        { slug: 'ada-lab', websiteUrl: 'https://ada.yale.edu/' },
+        { slug: 'engine-lab', websiteUrl: 'https://engine.yale.edu/' },
+      ]),
+    ).toEqual({ status: 'ambiguous' });
   });
 });

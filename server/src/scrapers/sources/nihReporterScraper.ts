@@ -32,7 +32,10 @@ import { User } from '../../models/user';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
-import { findCanonicalResearchHomeSlugForUser } from '../canonicalResearchHomeResolver';
+import {
+  resolveCanonicalResearchHomeForUser,
+  type CanonicalResearchHomeResolution,
+} from '../canonicalResearchHomeResolver';
 import { slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -498,7 +501,7 @@ export interface NihReporterScraperOptions {
   fiscalYears?: number[];
   /** Inject a custom User model (used by tests to mock the DB). */
   userModel?: { find: typeof User.find };
-  researchHomeResolver?: (userId: string) => Promise<string | null>;
+  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -511,7 +514,7 @@ export class NihReporterScraper implements IScraper {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
     const userModel = this.opts.userModel || User;
     const researchHomeResolver =
-      this.opts.researchHomeResolver || findCanonicalResearchHomeSlugForUser;
+      this.opts.researchHomeResolver || resolveCanonicalResearchHomeForUser;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -568,9 +571,17 @@ export class NihReporterScraper implements IScraper {
       if (matchedUser) matched++;
       else unmatched++;
 
-      const canonicalResearchHomeSlug = matchedUser
+      const researchHomeResolution = matchedUser
         ? await researchHomeResolver(matchedUser._id)
-        : null;
+        : { status: 'safe-shell' as const };
+      if (
+        researchHomeResolution.status === 'ambiguous' ||
+        researchHomeResolution.status === 'ineligible'
+      ) {
+        continue;
+      }
+      const canonicalResearchHomeSlug =
+        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
       const observations = piGrantsToObservations(
         piName,
         grants,
