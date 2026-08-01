@@ -1,46 +1,61 @@
 # Graphify Onboarding
 
-Graphify is the shared repo-memory layer for any coding agent.
-It helps future sessions navigate architecture, schema, scraper, and product-model context without rediscovering the repo from scratch.
-For day-to-day agent usage, read [`skills/graphify/SKILL.md`](../skills/graphify/SKILL.md).
+Graphify is a local generated navigation cache for coding agents.
+It helps agents navigate architecture, schema, scraper, and product-model relationships without treating generated output as canonical source.
+For day-to-day usage and failure handling, read [`skills/graphify/SKILL.md`](../skills/graphify/SKILL.md).
 
 ## Canonical Sources
 
 - Source code, tests, `AGENTS.md`, skills, and `docs/*.md` remain canonical.
-- Graphify output is a navigation layer. Verify important claims against source files before editing or summarizing.
-- `.graphifyignore` controls what enters shared repo memory.
+- Graphify output is a navigation layer.
+- Important claims must be verified against current source before editing or summarizing.
+- `.graphifyignore` controls what enters the local graph.
 
-## Setup Tasks
+## Setup
 
-1. Install the official package version declared in `.graphify-version`:
-   - Preferred: `uv tool install "graphifyy==$(cat .graphify-version)"`
-   - Alternative: `pipx install "graphifyy==$(cat .graphify-version)"`
-2. Install the agent integration for your platform:
-   - `graphify install --platform <codex|claude|...>`
-3. Build the no-cost code graph:
-   - `graphify update .`
-4. Run a scoped query and review the broad report only when needed:
-   - `graphify query "how does research discovery reach its search services?"`
-   - `graphify-out/GRAPH_REPORT.md`
-5. Optional: run full semantic extraction when an LLM key is configured:
-   - `graphify extract .`
-6. Enable always-on agent guidance after review (platform-specific):
-   - `graphify <platform> install`
+1. Install the exact version declared in `.graphify-version`:
 
-## Shared Output Policy
+   ```bash
+   uv tool install "graphifyy==$(cat .graphify-version)"
+   ```
 
-Commit only the canonical shared outputs:
+   Use `pipx` with the same exact version if `uv` is unavailable.
 
-- `graphify-out/GRAPH_REPORT.md`
-- `graphify-out/graph.json`
-- Do not commit any other `graphify-out/` content, including `graph.html`, dated snapshots, caches, manifests, labels, locks, or memory.
+2. Install the agent integration when the platform requires it:
 
-## Refresh Policy
+   ```bash
+   graphify install --platform <codex|claude|...>
+   ```
 
-Feature PRs do not refresh Graphify.
-After a group of changes lands on Beta, use a dedicated scheduled or manually triggered maintenance change to run `graphify update .` with the pinned version.
-Run the update twice and require the second run to produce no diff in `graphify-out/graph.json` or `graphify-out/GRAPH_REPORT.md`.
-Parse `graph.json`, verify it has nonempty `nodes` and `links`, and verify the report is nonempty before committing.
+3. Build or validate the local cache:
 
-The report records the source commit analyzed by Graphify.
-That source commit normally precedes the maintenance commit that records the outputs, so freshness means it matches the intended Beta source snapshot, not that it equals the output commit's `HEAD`.
+   ```bash
+   yarn graphify:ensure
+   ```
+
+   In a clean worktree without Yarn install state, use `node scripts/graphify-cache.mjs ensure` directly.
+
+4. Run a scoped query:
+
+   ```bash
+   graphify query "how does research discovery reach its search services?"
+   ```
+
+## Local Cache Policy
+
+Everything under `graphify-out/` is ignored and must remain untracked.
+Keep `.graphify-version`, `.graphifyignore`, the cache scripts, and the Graphify skill committed.
+Never manually merge, force-add, or commit generated Graphify JSON and reports.
+
+`yarn graphify:ensure` refreshes when output is missing, the installed version differs, the cache was not checked against `HEAD`, or graph-relevant working-tree inputs changed.
+Use `yarn graphify:status` to inspect the reasons without changing files.
+Use `yarn graphify:refresh` to force regeneration after substantial architecture changes.
+
+If Graphify is unavailable, continue with targeted source search and tests rather than relying on stale output.
+
+## CI Policy
+
+CI rejects tracked `graphify-out/` files.
+It installs the exact pinned Graphify version and runs generation twice.
+The check fails when the second generation changes the graph or report.
+Successful output is uploaded as a temporary CI artifact instead of committed to Git.

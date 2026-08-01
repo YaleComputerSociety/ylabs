@@ -7,14 +7,9 @@ This document captures the current Yale Research interface direction and the nex
 ## Graphify Grounding
 
 Start with the scoped Graphify checks below before changing this document.
-Use [`graphify-out/GRAPH_REPORT.md`](../graphify-out/GRAPH_REPORT.md) only when a broad architecture review is needed.
-The current graph highlights these relevant communities and nodes:
-
-- Community 5: app navigation and shared search/filter context, including `Navbar`, `SearchContext`, and quick filters.
-- Community 15: access materialization concepts, including derived access signals and contact routes.
-- Community 16: pathway search concepts, including `searchPathwayResults`, `EvidenceStrength`, and `BestNextStepSnapshot`.
-- Community 19: shared browse UI, including `BrowseCard`, `BrowseGrid`, and related browsable item views.
-- Community 46: research detail access UI, including `LabHeader`, planning summaries, and `computeAcceptanceVerdict`.
+Run `yarn graphify:ensure` first so the ignored local cache matches the checked-out branch.
+Use `graphify-out/GRAPH_REPORT.md` only when a broad architecture review is needed.
+Do not record generated community numbers here because they change as the source graph changes.
 
 Useful Graphify checks:
 

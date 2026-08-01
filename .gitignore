@@ -72,11 +72,9 @@ client/node_modules/
 .yarn/
 *.yarn
 
-# Graphify shared repo-memory output. Only the canonical query graph and report
-# are versioned; all other generated files stay local.
-graphify-out/*
-!graphify-out/graph.json
-!graphify-out/GRAPH_REPORT.md
+# Graphify is a branch-local generated navigation cache.
+# Keep its pinned version and generation policy in Git, never its outputs.
+graphify-out/
 
 # Local agent and browser-driver support files
 .codex/

@@ -4,6 +4,13 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-01: Treat Graphify As A Local Generated Cache
+
+Graphify output changes frequently during architecture refactors and created unrelated feature-branch diffs, rebase conflicts, and invalid generated JSON.
+Generated files under `graphify-out/` are now ignored local cache data rather than committed source.
+Agents refresh the cache when it is missing or stale, use it for scoped navigation, and verify important claims against source, tests, and durable docs.
+CI installs the pinned Graphify version, generates twice to verify deterministic output, and publishes the graph and report as an artifact.
+
 ## 2026-07-26: Retire The Bibliographic Paper Pipeline
 
 The bibliographic ingestion sources (OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref) are deprecated: they are deregistered so they cannot run, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.

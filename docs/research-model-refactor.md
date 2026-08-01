@@ -753,7 +753,7 @@ Each vertical cutover should verify:
 - rollback readiness before any collection drop.
 
 Focused tests and audit scripts should be added alongside each phase.
-Graphify output should be refreshed only through the repository's dedicated maintenance workflow after the implementation settles.
+Graphify output stays untracked and should be refreshed locally whenever a phase changes architectural relationships.
 
 ## Non-Goals
 

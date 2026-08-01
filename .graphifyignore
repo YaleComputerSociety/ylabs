@@ -21,7 +21,7 @@ client/coverage/
 *.key
 *.crt
 
-# Local/generated Graphify state that should not shape shared repo memory
+# Local/generated Graphify implementation state
 graphify-out/cache/
 graphify-out/cost.json
 graphify-out/manifest.json

@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-07-28
+Last updated: 2026-08-01
 
 This is the single task source of truth for Yale Research.
 Keep it operational and compact.
@@ -11,7 +11,7 @@ Temporary execution plans, worktree plans, screenshots, browser audit dumps, and
 - Start with `Current Focus`, then work down the active queue.
 - When work completes, record only stable outcomes and remaining work here.
 - Put durable product direction in `docs/product-context.md`, model decisions in `docs/research-model.md`, architecture decisions in `docs/decisions.md`, and scraper procedure in the scraper docs.
-- Refresh Graphify only in dedicated scheduled or manual maintenance after groups of Beta merges, not in feature PRs.
+- Keep Graphify output local and untracked, and run `yarn graphify:ensure` before broad architecture navigation.
 
 ## Priority Scale
 
