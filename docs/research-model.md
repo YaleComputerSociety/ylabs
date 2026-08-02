@@ -255,7 +255,8 @@ PostedOpportunity {
 
 Only use `PostedOpportunity` when there is a real active, rolling, or archived instance. Do not create fake posted opportunities for general exploratory outreach.
 
-Initial implementation note: `PostedOpportunity` is a separate collection that belongs to an `EntryPathway` and may reference an existing legacy `Listing` through optional `listingId`. Legacy listing behavior remains unchanged during migration.
+`PostedOpportunity` is a separate collection that belongs to an `EntryPathway` and may reference an existing legacy `Listing` through optional `listingId`.
+Legacy listing reads, outreach, claims, and view tracking remain as authenticated compatibility routes, but listing authoring is retired.
 
 Listing bridge note: legacy `Listing` rows with a `researchGroupId` now materialize into a `POSTED_ROLE` `EntryPathway`, `POSTED_OPENING` `AccessSignal`, and linked `PostedOpportunity`. Open listings with future deadlines become `OPEN`, listings without deadlines become `ROLLING`, expired/unconfirmed listings become `CLOSED`, and archived/deleted listings become `ARCHIVED`. Existing rows can be backfilled with [`server/src/scripts/backfillPostedOpportunitiesFromListings.ts`](../server/src/scripts/backfillPostedOpportunitiesFromListings.ts).
 
