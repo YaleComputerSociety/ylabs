@@ -1108,15 +1108,9 @@ describe('getResearchGroupDetail', () => {
       derivationKey: { $not: /^faculty-opportunity:/ },
     });
     expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
-    expect(mocks.postedOpportunityFind.mock.calls[0][0].$or[0]).toEqual({
+    expect(mocks.postedOpportunityFind.mock.calls[0][0]).toMatchObject({
       origin: { $ne: 'FACULTY_SUBMITTED' },
       archived: false,
-    });
-    expect(mocks.postedOpportunityFind.mock.calls[0][0].$or[1]).toMatchObject({
-      origin: 'FACULTY_SUBMITTED',
-      archived: false,
-      status: { $in: ['OPEN', 'ROLLING'] },
-      'review.status': 'approved',
     });
 
     expect(detail?.undergraduateLogistics).toEqual({ status: 'ready', claims: [] });

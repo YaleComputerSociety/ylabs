@@ -5,7 +5,6 @@ import { Router, Request, Response, NextFunction } from 'express';
 import {
   isAuthenticated,
   canSubmitListingClaimRequest,
-  canCreateListing,
   validateObjectId,
   validatePagination,
 } from '../middleware/index';
@@ -123,45 +122,12 @@ const logListingEvent = (eventType: AnalyticsEventType) => {
   };
 };
 
-const logListingCreateEvent = async (req: Request, res: Response, next: NextFunction) => {
-  const originalJson = res.json.bind(res);
-
-  res.json = function (data: any) {
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      const currentUser = req.user as { netId?: string; userType: string };
-
-      if (currentUser?.netId && data?.listing?._id) {
-        logEvent({
-          eventType: AnalyticsEventType.LISTING_CREATE,
-          netid: currentUser.netId,
-          userType: currentUser.userType,
-          listingId: data.listing._id,
-        }).catch((err) =>
-          console.error('Error logging listing create event:', sanitizeLogValue(err)),
-        );
-      }
-    }
-
-    return originalJson(data);
-  };
-
-  next();
-};
-
 router.get(
   '/search',
   isAuthenticated,
   validatePagination,
   logSearchEvent,
   listingController.searchListings,
-);
-
-router.post(
-  '/',
-  isAuthenticated,
-  canCreateListing,
-  logListingCreateEvent,
-  listingController.createListingForCurrentUser,
 );
 
 router.get(
@@ -189,43 +155,12 @@ router.post(
 );
 
 router.put(
-  '/:id',
-  isAuthenticated,
-  validateObjectId('id'),
-  logListingEvent(AnalyticsEventType.LISTING_UPDATE),
-  listingController.updateListingForCurrentUser,
-);
-
-router.put(
-  '/:id/archive',
-  isAuthenticated,
-  validateObjectId('id'),
-  logListingEvent(AnalyticsEventType.LISTING_ARCHIVE),
-  listingController.archiveListingForCurrentUser,
-);
-
-router.put(
-  '/:id/unarchive',
-  isAuthenticated,
-  validateObjectId('id'),
-  logListingEvent(AnalyticsEventType.LISTING_UNARCHIVE),
-  listingController.unarchiveListingForCurrentUser,
-);
-
-router.put(
   '/:id/addView',
   isAuthenticated,
   validateObjectId('id'),
   logListingEvent(AnalyticsEventType.LISTING_VIEW),
   logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'listing'),
   listingController.addViewToListing,
-);
-
-router.delete(
-  '/:id',
-  isAuthenticated,
-  validateObjectId('id'),
-  listingController.deleteListingForCurrentUser,
 );
 
 export default router;

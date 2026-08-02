@@ -73,23 +73,10 @@ describe('student access publication policy', () => {
     });
   });
 
-  it('preserves legacy opportunity visibility while gating faculty submissions', () => {
-    const now = new Date('2026-07-21T12:00:00.000Z');
-
-    expect(publicPostedOpportunityMongoMatch({ archived: false }, now)).toEqual({
-      $or: [
-        {
-          origin: { $ne: 'FACULTY_SUBMITTED' },
-          archived: false,
-        },
-        {
-          origin: 'FACULTY_SUBMITTED',
-          archived: false,
-          status: { $in: ['OPEN', 'ROLLING'] },
-          'review.status': 'approved',
-          $or: [{ deadline: { $exists: false } }, { deadline: null }, { deadline: { $gte: now } }],
-        },
-      ],
+  it('publishes only source-discovered opportunities', () => {
+    expect(publicPostedOpportunityMongoMatch({ archived: false })).toEqual({
+      archived: false,
+      origin: { $ne: 'FACULTY_SUBMITTED' },
     });
   });
 
