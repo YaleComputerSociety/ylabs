@@ -30,6 +30,7 @@
     "observations:repair-profile-description-conflicts": "tsx src/scripts/repairProfileDescriptionBackfillConflicts.ts",
     "research-entities:repair-july-legacy-medicine": "tsx src/scripts/repairJulyLegacyMedicineImport.ts",
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",
+    "observations:repair-orphaned-references": "tsx src/scripts/repairOrphanedObservationReferences.ts",
     "meili:rebuild-pathways": "tsx src/scripts/rebuildPathwaySearchIndex.ts",
     "pfr3:contact-route-review": "tsx src/scripts/pfr3ContactRouteReview.ts",
     "pfr3:outreach-report": "tsx src/scripts/pfr3StudentOutreachReport.ts",

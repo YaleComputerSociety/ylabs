@@ -17,6 +17,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - Production requires `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true`.
 - `scraperEnvironment.ts` enforces `SCRAPER_ENV` write guards.
 - Observation retention must preserve every Observation referenced by durable materialized records, including archived rollback records. Run it dry-run-first with an explicit environment, keep scrapers and materializers paused, and leave Production retention disabled unless a separate reviewed issue authorizes it.
+- Repair existing orphaned Observation references only with `observations:repair-orphaned-references`. The command is Development-only, writes private mode-0600 artifacts, requires a fresh target-bound classifier plus reviewed decisions, rechecks every owner and replacement before applying, and never manufactures evidence or silently clears provenance. Deterministic source-equivalent relinks and current-materializer rebuilds are preferred. Preserve archived records by recording evidence loss, and archive ambiguous active canonical artifacts only after an explicit reviewed decision.
 - Do not expose scraped contact data indiscriminately. Contact routes are fail-closed: prefer official/public URLs; redact scraped emails from public payloads.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 
