@@ -1,4 +1,7 @@
-import { isLikelyPersonSpecificYaleEmail } from '../scrapers/utils/scraperHelpers';
+import {
+  isLikelyPersonSpecificYaleEmail,
+  netidFromEmail,
+} from '../scrapers/utils/scraperHelpers';
 import { normalizeOrcid } from '../utils/orcid';
 
 export interface FacultyImportIdentityInput {
@@ -31,6 +34,10 @@ export function safeFacultyImportEmail(entry: FacultyImportIdentityInput): strin
     .replace(/^mailto:/, '');
   if (!candidate) return fallback;
   if (candidate === fallback) return fallback;
+  const candidateNetid = netidFromEmail(candidate);
+  if (candidateNetid && /^[a-z]{2,6}\d{1,5}$/.test(candidateNetid) && candidateNetid !== netid) {
+    return fallback;
+  }
   return isLikelyPersonSpecificYaleEmail(candidate, facultyImportDisplayName(entry))
     ? candidate
     : fallback;

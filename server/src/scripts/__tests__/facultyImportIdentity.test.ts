@@ -27,6 +27,26 @@ describe('faculty import identity guards', () => {
     ).toBe('drew.match@yale.edu');
   });
 
+  it('keeps a NetID-shaped Yale email matching the verified NetID', () => {
+    expect(
+      safeFacultyImportEmail({
+        netid: 'Test947',
+        name: 'Jordan Match',
+        email: 'TEST947@yale.edu',
+      }),
+    ).toBe('test947@yale.edu');
+  });
+
+  it('replaces a NetID-shaped Yale email that does not match the verified NetID', () => {
+    expect(
+      safeFacultyImportEmail({
+        netid: 'test947',
+        name: 'Jordan Mismatch',
+        email: 'jmg257@yale.edu',
+      }),
+    ).toBe('test947@yale.edu');
+  });
+
   it('drops an ORCID and its profile URL when different faculty rows claim it', () => {
     const entries = [
       { netid: 'one1', name: 'First Person', orcid: '0000-0002-7934-7159' },
