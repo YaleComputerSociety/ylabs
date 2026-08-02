@@ -60,7 +60,7 @@ Source metadata
   -> Meilisearch sync or later reindex
 ```
 
-The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
+The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old unreferenced superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
 
 ### PFR-3 pathway evidence review
 
@@ -528,21 +528,35 @@ Successful execute runs write aggregate freshness state to `fellowship_refresh_r
 
 ### Compact Observation Retention
 
-Run retention as its own scheduled job only after inspecting a dry-run:
+The student data operator owns a manual retention review once per semester, after the full Development scrape and before Beta promotion.
+Development is always cleaned first.
+Record the Atlas restore boundary and keep scrapers and materializers paused for the dry-run and apply window.
+
+Run the Development dry-run with an explicit target:
 
 ```bash
-yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-observation-retention-dry-run.json
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-development-observation-retention-dry-run.json
 ```
 
-Apply mode requires an explicit production confirmation:
+Review the eligible, reference-protected, and deletable candidate counts, recent-window cutoff, and retained run count before apply.
+Development apply mode requires the non-production write guard and explicit confirmation:
 
 ```bash
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server scrape prune-observations --apply --confirm-observation-prune --older-than-days 30 --keep-runs 3
+SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true MONGODBURL=<development-url> \
+  yarn --cwd server scrape prune-observations --apply --confirm-observation-prune --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-development-observation-retention-apply.json
 ```
 
-The retention command deletes only old `superseded: true` observations. It always preserves active observations, recent observations inside the age window, and observations attached to the latest retained runs per source.
-Use `--output <path>` on dry-runs and apply runs so the promotion packet has the exact candidate/deleted counts, retained run ids, command, target `environment`, `db`, and parsed `options`.
+Verify Atlas accepts a bounded write, then re-run integrity, claim, strict data-quality, and visibility gates.
+Beta retention requires a new target-bound dry-run, the same restore-boundary record, and explicit operator approval after the Development rehearsal passes.
+Never reuse Development candidate counts or an old Beta artifact.
+
+The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
+It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, pathways, access signals, contact routes, posted opportunities, logistics claims, or supersession links.
+Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, deleted, and retained-run counts plus command, target `environment`, `db`, and parsed `options`.
+
+Production retention stays disabled.
+A future reviewed issue must change the executable guard before any Production apply command can be prepared.
 
 ## Cost Controls
 

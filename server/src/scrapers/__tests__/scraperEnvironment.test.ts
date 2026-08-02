@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
   resolveScraperEnvironment,
   summarizeMongoUrl,
@@ -11,6 +12,20 @@ describe('resolveScraperEnvironment', () => {
     expect(resolveScraperEnvironment({ SCRAPER_ENV: 'staging' })).toBe('beta');
     expect(resolveScraperEnvironment({ NODE_ENV: 'ci' })).toBe('test');
     expect(resolveScraperEnvironment({ NODE_ENV: 'dev' })).toBe('development');
+  });
+});
+
+describe('applyObservationPruneEnvironmentGuards', () => {
+  it('keeps production retention disabled even with scraper confirmation', () => {
+    expect(() =>
+      applyObservationPruneEnvironmentGuards({
+        apply: true,
+        env: {
+          SCRAPER_ENV: 'production',
+          CONFIRM_PROD_SCRAPE: 'true',
+        },
+      }),
+    ).toThrow('Production observation pruning is disabled.');
   });
 });
 

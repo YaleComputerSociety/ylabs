@@ -339,7 +339,9 @@ Evidence-backed signal about undergraduate access.
 
 Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive `AccessSignal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
 
-Operational retention note: observations remain append-only within a scraper run, but old superseded observations may be pruned by the compact-retention command after reports are captured. Active observations, recent observations, and observations from the latest retained runs per source should remain available for audit and materialization.
+Operational retention note: observations remain append-only within a scraper run, but old unreferenced superseded observations may be pruned by the compact-retention command after reports are captured.
+Active observations, recent observations, observations from the latest retained runs per source, supersession links, and observations referenced by durable materialized or rollback records remain available for audit and materialization.
+The authoritative operator procedure and environment restrictions are in `docs/scraper-deployment-runbook.md`.
 
 `accessMaterializer.ts` derives first-class access rows from legacy `Observation`s. It intentionally ignores YSM/YSE index-only `acceptingUndergrads=true` observations as undergraduate-access evidence unless a source provides explicit undergrad participation evidence.
 

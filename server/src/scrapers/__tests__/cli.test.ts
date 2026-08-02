@@ -182,7 +182,7 @@ describe('scraper CLI helpers', () => {
         'mongodb+srv://example.mongodb.net/Production',
         { SCRAPER_ENV: 'production', CONFIRM_PROD_SCRAPE: 'false' } as NodeJS.ProcessEnv,
       ),
-    ).toThrow(/CONFIRM_PROD_SCRAPE=true/);
+    ).toThrow(/Production observation pruning is disabled/);
 
     expect(
       cli.buildScraperCliPreflight(

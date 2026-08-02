@@ -139,10 +139,8 @@ export function applyObservationPruneEnvironmentGuards(args: {
     );
   }
 
-  if (environment === 'production' && apply && env.CONFIRM_PROD_SCRAPE !== 'true') {
-    throw new Error(
-      'Production observation pruning requires CONFIRM_PROD_SCRAPE=true in the environment.',
-    );
+  if (environment === 'production' && apply) {
+    throw new Error('Production observation pruning is disabled.');
   }
 
   return {

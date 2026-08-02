@@ -69,7 +69,7 @@ ylabs scraper CLI
   materialize --run <runId> [--output <path>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
-  prune-observations [flags]                 Prune old superseded Observation rows
+  prune-observations [flags]                 Prune old unreferenced superseded Observation rows
 
 Run flags:
   --dry-run            Skip Observation writes (preview only)
@@ -105,6 +105,7 @@ Prune flags:
   --keep-runs <n>      Keep observations from the latest n runs per source (default 3)
   --source <name>      Restrict pruning to one source
   --output <path>      Save the prune report JSON
+  Durable Observation references are always preserved.
 
 Environment guardrails:
   SCRAPER_ENV=development|beta|production
