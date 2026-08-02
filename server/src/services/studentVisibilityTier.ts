@@ -8,7 +8,7 @@ import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 
-export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
+export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v2';
 
 export interface StudentVisibilityResult {
   tier: StudentVisibilityTier;
