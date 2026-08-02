@@ -331,6 +331,7 @@ describe('studentVisibilityGateService', () => {
     expect(isBlockingVisibilityReason('profile_biography_shell')).toBe(true);
     expect(isBlockingVisibilityReason('non_owner_grant_shell')).toBe(true);
     expect(isBlockingVisibilityReason('research_infrastructure_only')).toBe(true);
+    expect(isBlockingVisibilityReason('non_research_entity')).toBe(true);
     expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
     expect(isBlockingVisibilityReason('source_backed_description')).toBe(false);
     expect(isBlockingVisibilityReason('concrete_next_step')).toBe(false);
