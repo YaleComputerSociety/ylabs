@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveAccessArtifactsFromObservations,
+  deriveAccessArtifactsForResearchGroup,
   deriveIdentifiedLeadWaysIn,
   normalizeAccessMaterializerObjectId,
   officialNonGrantSourceUrl,
@@ -322,9 +323,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       },
     ]);
     expect(result.contactRoutes).toEqual([]);
-    expect(result.entryPathways.map((pathway) => pathway.pathwayType)).not.toContain(
-      'POSTED_ROLE',
-    );
+    expect(result.entryPathways.map((pathway) => pathway.pathwayType)).not.toContain('POSTED_ROLE');
   });
 
   it('derives department structured application pages as guarded official routes', () => {
@@ -526,6 +525,25 @@ describe('officialNonGrantSourceUrl', () => {
         sourceUrls: ['https://reporter.nih.gov/project-details/1', 'https://orcid.org/0000-0002'],
       }),
     ).toBe('');
+  });
+});
+
+describe('deriveAccessArtifactsForResearchGroup', () => {
+  it('returns the same current evidence bundle without writing canonical artifacts', async () => {
+    const result = await deriveAccessArtifactsForResearchGroup(
+      { researchEntityId: '64f000000000000000000001' },
+      [obs({ _id: '64f000000000000000000099', field: 'currentUndergradCount', value: 2 })],
+    );
+
+    expect(result.researchEntityId).toBe('64f000000000000000000001');
+    expect(result.artifacts.entryPathways[0]).toMatchObject({
+      derivationKey: 'pathway:EXPLORATORY_CONTACT:CURRENT_UNDERGRADS',
+      sourceEvidenceIds: ['64f000000000000000000099'],
+    });
+    expect(result.artifacts.accessSignals[0]).toMatchObject({
+      signalType: 'CURRENT_UNDERGRADS',
+      sourceEvidenceId: '64f000000000000000000099',
+    });
   });
 });
 

@@ -561,6 +561,71 @@ Use `--output <path>` on dry-runs and apply runs so the private promotion packet
 Production retention stays disabled.
 A future reviewed issue must change the executable guard before any Production apply command can be prepared.
 
+### Repair orphaned Observation references in Development
+
+Run this workflow only after a strict Development audit reports an Observation reference whose target no longer exists.
+Keep scrapers and materializers paused for the classifier, review, apply, and verification window.
+The command is Development-only and never creates replacement Observations.
+
+Create a bounded, target-bound private classifier and decision template:
+
+```bash
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server observations:repair-orphaned-references \
+  --limit-per-reference=100 \
+  --private-output=/tmp/ylabs-development-orphaned-observation-classifier.json \
+  --decision-template-output=/tmp/ylabs-development-orphaned-observation-decisions.json
+```
+
+Review the private classifier locally.
+For each decision, set `reviewedBy`, verify the recommended disposition against the owner and surviving evidence, and leave ambiguous rows as `defer_review` unless fail-closed archival has been explicitly accepted.
+Do not paste identifiers, counts, samples, artifact hashes, or artifact paths into a public issue or pull request.
+
+Apply only the reviewed bounded artifact to the same Development database:
+
+```bash
+SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true MONGODBURL=<development-url> \
+  yarn --cwd server observations:repair-orphaned-references \
+  --execute \
+  --confirm-development-orphan-reference-repair \
+  --max-apply=25 \
+  --apply-from=/tmp/ylabs-development-orphaned-observation-classifier.json \
+  --decisions=/tmp/ylabs-development-orphaned-observation-decisions.json \
+  --private-output=/tmp/ylabs-development-orphaned-observation-apply.json
+```
+
+The apply pass rejects stale or target-mismatched artifacts, changed owners, recreated targets, non-deterministic replacements, and decisions outside the classifier contract.
+It records each accepted repair in `observation_reference_repair_audits`.
+Archived rollback records remain present with their surviving provenance metadata; only the dangling identifier is removed, and the unrecoverable loss receives an explicit audit.
+
+After apply, rerun the classifier and the required gates:
+
+```bash
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server observations:repair-orphaned-references \
+  --limit-per-reference=100 \
+  --private-output=/tmp/ylabs-development-orphaned-observation-postcheck.json
+
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server scraper:integrity-gate \
+  --include-samples --include-claim-gate \
+  --output=/tmp/ylabs-development-integrity-after-observation-repair.json
+
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server student-visibility:gate \
+  --collection=all --mode=dry-run \
+  --output=/tmp/ylabs-development-visibility-after-observation-repair.json
+
+SCRAPER_ENV=development MONGODBURL=<development-url> \
+  yarn --cwd server beta:data-quality \
+  --strict --include-samples --progress \
+  --output=/tmp/ylabs-development-quality-after-observation-repair.json
+```
+
+The repaired canonical collections must have no remaining active orphaned Observation references.
+Any accepted exception needs a named owner and recovery plan in the private promotion packet.
+Production writes remain out of scope.
+
 ## Cost Controls
 
 Use these controls before spending cloud or API money:
