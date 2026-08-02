@@ -89,10 +89,12 @@ describe('app security runtime classification', () => {
     }> = [];
     const ipKeyGenerator = vi.fn((ip: string) => `ip-key:${ip}`);
     vi.doMock('express-rate-limit', () => ({
-      default: vi.fn((options: { keyGenerator: (req: { user?: unknown; ip?: string }) => string }) => {
-        limiters.push(options);
-        return (_req: unknown, _res: unknown, next: () => void) => next();
-      }),
+      default: vi.fn(
+        (options: { keyGenerator: (req: { user?: unknown; ip?: string }) => string }) => {
+          limiters.push(options);
+          return (_req: unknown, _res: unknown, next: () => void) => next();
+        },
+      ),
       ipKeyGenerator,
     }));
     process.env = {
@@ -124,9 +126,7 @@ describe('app security runtime classification', () => {
       ip: '198.51.100.20',
       session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
     };
-    expect(keyGenerator(anonymousRequest)).toBe(
-      'anonymous:0123456789abcdef0123456789abcdef',
-    );
+    expect(keyGenerator(anonymousRequest)).toBe('anonymous:0123456789abcdef0123456789abcdef');
 
     const malformedSessionRequest = {
       ip: '203.0.113.8',
@@ -251,7 +251,9 @@ describe('app security runtime classification', () => {
       expect(response.headers.get('content-security-policy')).toContain("default-src 'self'");
       expect(response.headers.get('content-security-policy')).toContain("object-src 'none'");
       expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
-      expect(response.headers.get('content-security-policy')).toContain('upgrade-insecure-requests');
+      expect(response.headers.get('content-security-policy')).toContain(
+        'upgrade-insecure-requests',
+      );
       expect(response.headers.get('permissions-policy')).toContain('camera=()');
       expect(response.headers.get('permissions-policy')).toContain('microphone=()');
       expect(response.headers.get('permissions-policy')).toContain('geolocation=()');

@@ -85,7 +85,8 @@ Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate
 
 ## Rate limits
 
-Rate limiters are keyed by authenticated user `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
+Rate limiters are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
+The anonymous identifier is initialized only for `/api` requests.
 This prevents shared proxy buckets without trusting forwarding headers, but clearing the session cookie lets an anonymous visitor rotate their bucket.
 All limiters are skipped in CI, development, and test.
 
