@@ -422,7 +422,7 @@ export function piGrantsToObservations(
   if (lastObservedAt > 0) {
     out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
-  if (sourceUrls.length > 0) {
+  if (sourceUrls.length > 0 && !canonicalResearchHomeSlug) {
     out.push({ ...groupBase, field: 'sourceUrls', value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI) });
   }
   if (matchedUser) {

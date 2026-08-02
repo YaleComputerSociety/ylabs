@@ -431,6 +431,7 @@ describe('piGrantsToObservations', () => {
     expect(groupObs.find((o) => o.field === 'name')).toBeUndefined();
     expect(groupObs.find((o) => o.field === 'kind')).toBeUndefined();
     expect(groupObs.find((o) => o.field === 'departments')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'sourceUrls')).toBeUndefined();
     expect(groupObs.find((o) => o.field === 'recentGrants')).toBeDefined();
     expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
   });
