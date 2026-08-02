@@ -417,7 +417,7 @@ export function piGrantsToObservations(
     out.push({ ...groupBase, field: 'kind', value: 'lab' });
   }
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
-  out.push({ ...groupBase, field: 'recentGrantCount', value: recentRecords.length });
+  out.push({ ...groupBase, field: 'recentGrantCount', value: sorted.length });
   out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
   if (lastObservedAt > 0) {
     out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });

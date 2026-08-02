@@ -457,6 +457,7 @@ describe('piGrantsToObservations', () => {
       (o) => o.entityType === 'researchEntity' && o.field === 'recentGrants',
     )?.value as any[];
     expect(recentGrants).toHaveLength(10);
+    expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(20);
     expect(
       obs.find(
         (o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount',

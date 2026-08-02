@@ -265,10 +265,14 @@ const grantIdentity = (value: unknown): string => {
 
 export function aggregateResearchEntityGrantEvidence(
   observations: MaterializerObservationLike[],
-): { recentGrants?: unknown[]; fundingAgencies?: string[] } {
+): { recentGrants?: unknown[]; recentGrantCount?: number; fundingAgencies?: string[] } {
   const latest = new Map<string, MaterializerObservationLike>();
   for (const observation of observations) {
-    if (observation.field !== 'recentGrants' && observation.field !== 'fundingAgencies') continue;
+    if (
+      observation.field !== 'recentGrants' &&
+      observation.field !== 'recentGrantCount' &&
+      observation.field !== 'fundingAgencies'
+    ) continue;
     const key = `${observation.sourceName || ''}:${observation.field}`;
     const current = latest.get(key);
     if (!current || (observation.observedAt?.getTime() || 0) >= (current.observedAt?.getTime() || 0)) {
@@ -278,7 +282,9 @@ export function aggregateResearchEntityGrantEvidence(
   const grants = new Map<string, unknown>();
   const agencies = new Map<string, string>();
   let hasGrantSnapshot = false;
+  let hasGrantCountSnapshot = false;
   let hasAgencySnapshot = false;
+  let recentGrantCount = 0;
   for (const observation of latest.values()) {
     if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
       hasGrantSnapshot = true;
@@ -291,9 +297,26 @@ export function aggregateResearchEntityGrantEvidence(
         if (normalized) agencies.set(normalized.toLowerCase(), normalized);
       }
     }
+    if (
+      observation.field === 'recentGrantCount' &&
+      typeof observation.value === 'number' &&
+      Number.isFinite(observation.value) &&
+      observation.value >= 0
+    ) {
+      hasGrantCountSnapshot = true;
+      recentGrantCount += Math.floor(observation.value);
+    }
   }
+  const recentGrants = [...grants.values()]
+    .sort((left, right) => {
+      const leftTime = new Date(objectRecord(left).startDate as any).getTime();
+      const rightTime = new Date(objectRecord(right).startDate as any).getTime();
+      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+    })
+    .slice(0, 10);
   return {
-    ...(hasGrantSnapshot ? { recentGrants: [...grants.values()] } : {}),
+    ...(hasGrantSnapshot ? { recentGrants } : {}),
+    ...(hasGrantCountSnapshot ? { recentGrantCount } : {}),
     ...(hasAgencySnapshot ? { fundingAgencies: [...agencies.values()] } : {}),
   };
 }
@@ -2221,7 +2244,9 @@ export async function materializeEntity(
     const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
     if (grantEvidence.recentGrants && resolved.recentGrants) {
       resolved.recentGrants.value = grantEvidence.recentGrants;
-      if (resolved.recentGrantCount) resolved.recentGrantCount.value = grantEvidence.recentGrants.length;
+    }
+    if (grantEvidence.recentGrantCount !== undefined && resolved.recentGrantCount) {
+      resolved.recentGrantCount.value = grantEvidence.recentGrantCount;
     }
     if (grantEvidence.fundingAgencies && resolved.fundingAgencies) {
       resolved.fundingAgencies.value = grantEvidence.fundingAgencies;

@@ -34,13 +34,31 @@ describe('entityMaterializer post-materialization metrics', () => {
         { field: 'recentGrants', sourceName: 'nih', observedAt: new Date('2025-01-01'), value: [{ id: 'AGED-OUT' }] },
         { field: 'recentGrants', sourceName: 'nih', observedAt: new Date('2026-01-01'), value: [{ id: 'NIH-1' }, { id: 'SHARED', title: 'old' }] },
         { field: 'recentGrants', sourceName: 'nsf', observedAt: new Date('2026-01-01'), value: [{ id: 'NSF-1' }, { id: 'shared', title: 'new' }] },
+        { field: 'recentGrantCount', sourceName: 'nih', observedAt: new Date('2025-01-01'), value: 14 },
+        { field: 'recentGrantCount', sourceName: 'nih', observedAt: new Date('2026-01-01'), value: 12 },
+        { field: 'recentGrantCount', sourceName: 'nsf', observedAt: new Date('2026-01-01'), value: 11 },
         { field: 'fundingAgencies', sourceName: 'nih', observedAt: new Date('2026-01-01'), value: ['NIH'] },
         { field: 'fundingAgencies', sourceName: 'nsf', observedAt: new Date('2026-01-01'), value: ['NSF', 'nih'] },
       ]),
     ).toEqual({
       recentGrants: [{ id: 'NIH-1' }, { id: 'shared', title: 'new' }, { id: 'NSF-1' }],
+      recentGrantCount: 23,
       fundingAgencies: ['NIH', 'NSF'],
     });
+  });
+
+  it('bounds the grant display independently of source totals', () => {
+    const evidence = aggregateResearchEntityGrantEvidence([
+      {
+        field: 'recentGrants',
+        sourceName: 'nsf',
+        observedAt: new Date('2026-01-01'),
+        value: Array.from({ length: 12 }, (_, index) => ({ id: `NSF-${index}` })),
+      },
+      { field: 'recentGrantCount', sourceName: 'nsf', observedAt: new Date('2026-01-01'), value: 12 },
+    ]);
+    expect(evidence.recentGrants).toHaveLength(10);
+    expect(evidence.recentGrantCount).toBe(12);
   });
 
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {

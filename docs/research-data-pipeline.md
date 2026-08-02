@@ -117,7 +117,8 @@ Grant-source PI matching must remain conservative because award APIs are funding
 The shared canonical-home resolver distinguishes a safe absence of memberships from one canonical official home and ambiguous or ineligible memberships.
 Grant scrapers create a synthetic shell only for the safe-absence case and emit no research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.
 Ambiguous Yale user matches and archived or non-current lead memberships are ineligible, not safe absences.
-At materialization, only each source's latest grant snapshot participates; grant records are then merged by grant ID and funding agencies are unioned across sources.
+At materialization, only each source's latest grant snapshot participates.
+The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
 
 ## Canonical Collections
 
