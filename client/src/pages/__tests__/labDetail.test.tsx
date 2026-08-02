@@ -1314,7 +1314,7 @@ describe('LabDetail page', () => {
     expect(text).not.toContain('Access evidence has not been attached yet.Evidence');
   });
 
-  it('renders direct scholarly links as related research cards that cite the real destination', async () => {
+  it('does not render paper-derived research evidence', async () => {
     renderLabDetail({
       ...basePayload,
       researchActivityLinks: [
@@ -1335,46 +1335,12 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText('Related Research')).toBeTruthy();
-    const link = screen.getByRole('link', { name: 'Example research mechanism study' });
-    expect(link.getAttribute('href')).toBe(EXAMPLE_MECHANISM_DOI);
-    expect(screen.getByText('DOI')).toBeTruthy();
-    expect(screen.queryByText('Found via OpenAlex')).toBeNull();
+    expect(screen.queryByText('Related Research')).toBeNull();
+    expect(screen.queryByText('Research evidence')).toBeNull();
+    expect(screen.queryByText('Example research mechanism study')).toBeNull();
   });
 
-  it('renders research activity titles without source HTML wrappers', async () => {
-    renderLabDetail({
-      ...basePayload,
-      researchActivityLinks: [
-        {
-          _id: 'link-html-title',
-          relationshipBasis: 'explicit_entity_link',
-          evidenceLabel: 'Linked to this research profile',
-          title:
-            '<p><b><span>Biomass gasification tar removal using catalyst assisted Dielectric Barrier discharge reactor</span></b><span></span></p>',
-          url: EXAMPLE_MECHANISM_DOI,
-          destinationKind: 'DOI',
-          displaySource: 'DOI',
-          discoveredVia: 'OPENALEX',
-          year: 2024,
-          venue: 'Fixture Discovery Journal',
-        },
-      ],
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(
-      screen
-        .getByRole('link', {
-          name: 'Biomass gasification tar removal using catalyst assisted Dielectric Barrier discharge reactor',
-        })
-        .getAttribute('href'),
-    ).toBe(EXAMPLE_MECHANISM_DOI);
-    expect(document.body.textContent).not.toContain('<p><b><span>');
-  });
-
-  it('renders member profile publications without synthesizing an internal profile handoff', async () => {
+  it('does not render publications attributed to research-home members', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -1408,16 +1374,9 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText('Recent work by Fixture Scholar')).toBeTruthy();
-    expect(screen.queryByText('Research Activity')).toBeNull();
-    expect(
-      screen.getByRole('link', { name: 'Example systems publication' }).getAttribute('href'),
-    ).toBe(EXAMPLE_SYSTEMS_DOI);
-    expect(
-      screen.queryByRole('link', {
-        name: 'View all research activity on Fixture Scholar’s profile',
-      }),
-    ).toBeNull();
+    expect(screen.queryByText('Recent work by Fixture Scholar')).toBeNull();
+    expect(screen.queryByText('Research evidence')).toBeNull();
+    expect(screen.queryByText('Example systems publication')).toBeNull();
   });
 
   it('deduplicates repeated active member rows before rendering profile cards', async () => {
