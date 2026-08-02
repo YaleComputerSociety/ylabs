@@ -12,6 +12,10 @@ In product shorthand: Yale Research is research-home-first navigation. It helps 
 
 Undergraduate research at Yale is decentralized. Students first need to identify plausible research homes: labs, faculty projects, centers, archives, collections, digital humanities initiatives, RA programs, institutes, mentor-matching fellowship programs, and adviser-like research areas. Once a home and supervisor are plausible, the relationship may be formalized through paid roles, course credit, volunteer arrangements, fellowships, senior essays, work-study, center programs, lab-manager coordination, faculty supervision, or posted opportunities. STEM often looks like faculty-led labs; humanities often looks like faculty projects, collections work, digital humanities, or fellowship-supported independent work; social science and economics often mix project teams, centers, thesis advising, and term-specific RA programs.
 
+An organizational label alone does not make an entity a research home.
+Centers, institutes, initiatives, and core facilities remain eligible when source-backed narrative positively shows that they conduct or organize research, including research about teaching itself.
+Service or instructional-support organizations without that positive evidence should be suppressed with auditable research-scope reasons, and a stale public visibility override must not bypass that suppression.
+
 The app should make this ecosystem navigable without forcing every discipline into a lab-opening model.
 
 ## Primary Surfaces

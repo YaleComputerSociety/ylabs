@@ -24,12 +24,7 @@ export interface ResearchEntityResearchScopeResult {
 }
 
 const ORGANIZATIONAL_KINDS = new Set(['center', 'institute', 'initiative', 'core facility']);
-const ORGANIZATIONAL_ENTITY_TYPES = new Set([
-  'CENTER',
-  'INSTITUTE',
-  'INITIATIVE',
-  'CORE_FACILITY',
-]);
+const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY']);
 
 const SERVICE_OR_INSTRUCTIONAL_SUPPORT =
   /\b(teaching and learning|teaching support|instructional support|faculty development|educational development|pedagogical support|course design|teaching consultation|teaching consultations|writing center|tutoring|academic support)\b/i;
