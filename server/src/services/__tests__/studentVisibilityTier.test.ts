@@ -5,6 +5,7 @@ import {
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
 } from '../studentVisibilityTier';
+import { researchScopeEvidenceValueHash } from '../researchEntityResearchScope';
 
 describe('computeResearchEntityStudentVisibility', () => {
   it('blocks raw descriptions that become empty after lead-aware public sanitization', () => {
@@ -637,18 +638,26 @@ describe('computeResearchEntityStudentVisibility', () => {
   });
 
   it('keeps a center that conducts research on teaching in research scope', () => {
+    const shortDescription =
+      'Conducts empirical research on university teaching and learning through faculty-led research projects and data collection.';
+    const fullDescription =
+      'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.';
     const result = computeResearchEntityStudentVisibility({
       entity: {
         name: 'Center for Research on Teaching and Learning',
         entityType: 'CENTER',
-        shortDescription:
-          'Conducts empirical research on university teaching and learning through faculty-led research projects and data collection.',
-        fullDescription:
-          'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
+        shortDescription,
+        fullDescription,
         sourceUrls: ['https://example.yale.edu/teaching-research'],
         fieldProvenance: {
-          shortDescription: { sourceUrl: 'https://example.yale.edu/teaching-research' },
-          fullDescription: { sourceUrl: 'https://example.yale.edu/teaching-research' },
+          shortDescription: {
+            sourceUrl: 'https://example.yale.edu/teaching-research',
+            valueHash: researchScopeEvidenceValueHash(shortDescription),
+          },
+          fullDescription: {
+            sourceUrl: 'https://example.yale.edu/teaching-research',
+            valueHash: researchScopeEvidenceValueHash(fullDescription),
+          },
         },
       },
       accessSignalCount: 1,
@@ -667,6 +676,32 @@ describe('computeResearchEntityStudentVisibility', () => {
         shortDescription: 'Provides teaching consultations and conducts research projects.',
         fullDescription:
           'The center provides instructional support and conducts research projects for Yale instructors.',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('missing_source_backed_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('rejects provenance left behind after a narrative field changes', () => {
+    const priorDescription =
+      'The center provides teaching consultations and conducts research projects for Yale instructors.';
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Instructional Services Center',
+        entityType: 'CENTER',
+        fullDescription:
+          'The center provides teaching consultations and conducts sponsored research studies.',
+        fieldProvenance: {
+          fullDescription: {
+            sourceUrl: 'https://example.yale.edu/instructional-services',
+            valueHash: researchScopeEvidenceValueHash(priorDescription),
+          },
+        },
         studentVisibilityOverrideTier: 'student_ready',
       },
       accessSignalCount: 1,
@@ -717,19 +752,23 @@ describe('computeResearchEntityStudentVisibility', () => {
   });
 
   it('keeps a center that leads clinical research projects in research scope', () => {
+    const fullDescription =
+      'The center leads clinical research projects and publishes findings on clinical education.';
     const result = computeResearchEntityStudentVisibility({
       entity: {
         name: 'Clinical Teaching Research Center',
         entityType: 'CENTER',
         shortDescription:
           'Leads clinical research projects while providing teaching support to trainees.',
-        fullDescription:
-          'The center leads clinical research projects and publishes findings on clinical education.',
+        fullDescription,
         sourceUrls: ['https://example.yale.edu/clinical-teaching-research'],
         fieldProvenance: new Map([
           [
             'fullDescription',
-            { sourceUrl: 'https://example.yale.edu/clinical-teaching-research' },
+            {
+              sourceUrl: 'https://example.yale.edu/clinical-teaching-research',
+              valueHash: researchScopeEvidenceValueHash(fullDescription),
+            },
           ],
         ]),
       },

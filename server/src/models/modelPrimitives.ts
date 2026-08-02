@@ -26,6 +26,10 @@ export const fieldProvenanceSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    valueHash: {
+      type: String,
+      default: '',
+    },
     observationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Observation',
