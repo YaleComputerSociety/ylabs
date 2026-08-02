@@ -90,15 +90,15 @@ function normalizedSearchPrefixes(entity: Record<string, unknown>): string[] {
     .trim()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
-  const prefixes = new Set<string>();
+  const suffixes = new Set<string>();
   for (const word of words) {
     const boundedWord = word.slice(0, MAX_SEARCH_PREFIX_LENGTH);
-    for (let length = 1; length <= boundedWord.length; length += 1) {
-      prefixes.add(boundedWord.slice(0, length));
-      if (prefixes.size >= MAX_SEARCH_PREFIXES) return Array.from(prefixes).sort();
+    for (let offset = 0; offset < boundedWord.length; offset += 1) {
+      suffixes.add(boundedWord.slice(offset));
+      if (suffixes.size >= MAX_SEARCH_PREFIXES) return Array.from(suffixes).sort();
     }
   }
-  return Array.from(prefixes).sort();
+  return Array.from(suffixes).sort();
 }
 
 function reviewAggregatePipeline(
@@ -361,6 +361,7 @@ async function loadReviewCountMap(
   batchSize: number,
   extraMatch: Record<string, unknown> = {},
   includeOfficialApplication = false,
+  session?: mongoose.ClientSession,
 ): Promise<Map<string, AggregateReviewCount>> {
   const pipeline: mongoose.PipelineStage[] = [
     { $match: { researchEntityId: { $ne: null }, ...extraMatch } },
@@ -390,7 +391,9 @@ async function loadReviewCountMap(
     },
   ];
   const result = new Map<string, AggregateReviewCount>();
-  const cursor = model.aggregate(pipeline).allowDiskUse(false).cursor({ batchSize });
+  const aggregate = model.aggregate(pipeline).allowDiskUse(false);
+  if (session) aggregate.session(session);
+  const cursor = aggregate.cursor({ batchSize });
   for await (const row of cursor) {
     if (!row?._id) continue;
     result.set(String(row._id), {
@@ -418,48 +421,65 @@ export async function rebuildAdminAccessReviewProjection(
     changed: boolean;
   }> = [];
   const parentIds = new Set<string>();
-  const [pathwayCounts, signalCounts, routeCounts, opportunityCounts] = await Promise.all([
-    loadReviewCountMap(EntryPathway, batchSize, {
-      derivationKey: { $not: /^faculty-opportunity:/ },
-    }),
-    loadReviewCountMap(AccessSignal, batchSize),
-    loadReviewCountMap(ContactRoute, batchSize),
-    loadReviewCountMap(PostedOpportunity, batchSize, { submissionStatus: { $ne: 'DRAFT' } }, true),
-  ]);
   const currentByEntityId = new Map<string, Record<string, any>>();
   const malformedProjectionIds: mongoose.Types.ObjectId[] = [];
-  const projectionCursor = AdminAccessReviewProjection.find({}).lean().cursor({ batchSize });
-  for await (const projection of projectionCursor) {
-    if ((projection as any).researchEntityId) {
-      currentByEntityId.set(String((projection as any).researchEntityId), projection as any);
-    } else if ((projection as any)._id) {
-      malformedProjectionIds.push((projection as any)._id);
-    }
-  }
-  const cursor = ResearchEntity.find({})
-    .select('name displayName slug departments researchAreas updatedAt')
-    .sort({ _id: 1 })
-    .lean()
-    .cursor({ batchSize });
+  await mongoose.connection.transaction(
+    async (session) => {
+      const pathwayCounts = await loadReviewCountMap(
+        EntryPathway,
+        batchSize,
+        { derivationKey: { $not: /^faculty-opportunity:/ } },
+        false,
+        session,
+      );
+      const signalCounts = await loadReviewCountMap(AccessSignal, batchSize, {}, false, session);
+      const routeCounts = await loadReviewCountMap(ContactRoute, batchSize, {}, false, session);
+      const opportunityCounts = await loadReviewCountMap(
+        PostedOpportunity,
+        batchSize,
+        { submissionStatus: { $ne: 'DRAFT' } },
+        true,
+        session,
+      );
+      const projectionCursor = AdminAccessReviewProjection.find({})
+        .session(session)
+        .lean()
+        .cursor({ batchSize });
+      for await (const projection of projectionCursor) {
+        if ((projection as any).researchEntityId) {
+          currentByEntityId.set(String((projection as any).researchEntityId), projection as any);
+        } else if ((projection as any)._id) {
+          malformedProjectionIds.push((projection as any)._id);
+        }
+      }
+      const cursor = ResearchEntity.find({})
+        .select('name displayName slug departments researchAreas updatedAt')
+        .sort({ _id: 1 })
+        .session(session)
+        .lean()
+        .cursor({ batchSize });
 
-  for await (const entity of cursor) {
-    const id = new mongoose.Types.ObjectId(String((entity as any)._id));
-    const key = id.toHexString();
-    parentIds.add(key);
-    const current = currentByEntityId.get(key) || null;
-    const desired = projectionValueFromParts(id, entity as any, {
-      pathways: pathwayCounts.get(key) || ZERO_REVIEW_COUNT,
-      signals: signalCounts.get(key) || ZERO_REVIEW_COUNT,
-      routes: routeCounts.get(key) || ZERO_REVIEW_COUNT,
-      opportunities: opportunityCounts.get(key) || ZERO_REVIEW_COUNT,
-    });
-    plans.push({
-      id,
-      desired,
-      ...(current ? { generation: Number((current as any).generation || 0) } : {}),
-      changed: !projectionValuesEqual(current as any, desired),
-    });
-  }
+      for await (const entity of cursor) {
+        const id = new mongoose.Types.ObjectId(String((entity as any)._id));
+        const key = id.toHexString();
+        parentIds.add(key);
+        const current = currentByEntityId.get(key) || null;
+        const desired = projectionValueFromParts(id, entity as any, {
+          pathways: pathwayCounts.get(key) || ZERO_REVIEW_COUNT,
+          signals: signalCounts.get(key) || ZERO_REVIEW_COUNT,
+          routes: routeCounts.get(key) || ZERO_REVIEW_COUNT,
+          opportunities: opportunityCounts.get(key) || ZERO_REVIEW_COUNT,
+        });
+        plans.push({
+          id,
+          desired,
+          ...(current ? { generation: Number((current as any).generation || 0) } : {}),
+          changed: !projectionValuesEqual(current as any, desired),
+        });
+      }
+    },
+    { readConcern: { level: 'snapshot' } },
+  );
 
   const orphanIds = [
     ...malformedProjectionIds,

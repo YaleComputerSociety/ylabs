@@ -294,7 +294,10 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
       .filter(Boolean)
       .slice(0, 10)
       .map((term) => term.slice(0, 60));
-    if (searchPrefixes.length > 0) filter.searchPrefixes = { $all: searchPrefixes };
+    filter.searchPrefixes =
+      searchPrefixes.length > 0
+        ? { $all: searchPrefixes.map((term) => new RegExp(`^${term}`)) }
+        : { $in: [] };
   }
   if (hasUnreviewed) filter.totalUnreviewed = { $gt: 0 };
   const sortSpec: Record<string, 1 | -1> =
