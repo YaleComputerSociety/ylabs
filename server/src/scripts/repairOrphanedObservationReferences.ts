@@ -71,6 +71,7 @@ interface ApplyResult {
 
 interface ApplyContext {
   materializationKeys: Set<string>;
+  ownerSnapshots: Map<string, string>;
 }
 
 const MAX_PRIVATE_ARTIFACT_BYTES = 20 * 1024 * 1024;
@@ -241,7 +242,7 @@ function occurrenceFromRow(
   };
 }
 
-function candidateSubjectMatch(ownerCollection: string, owner: Record<string, unknown>) {
+export function candidateSubjectMatch(ownerCollection: string, owner: Record<string, unknown>) {
   if (ownerCollection === 'research_entities') {
     const clauses: Record<string, unknown>[] = [{ entityId: owner._id }];
     if (stringValue(owner.slug)) clauses.push({ entityKey: stringValue(owner.slug) });
@@ -261,6 +262,21 @@ function candidateSubjectMatch(ownerCollection: string, owner: Record<string, un
     }
     return { entityType: 'paper', $or: clauses };
   }
+  if (ownerCollection === 'paper_authors') {
+    return owner.paperId ? { entityType: 'paper', entityId: owner.paperId } : null;
+  }
+  if (ownerCollection === 'grants') {
+    const entityIds = [
+      ...(Array.isArray(owner.researchEntityIds) ? owner.researchEntityIds : []),
+      ...(Array.isArray(owner.researchGroupIds) ? owner.researchGroupIds : []),
+    ].filter(Boolean);
+    const clauses: Record<string, unknown>[] = [];
+    if (entityIds.length) clauses.push({ entityId: { $in: entityIds } });
+    if (stringValue(owner.externalId)) clauses.push({ entityKey: stringValue(owner.externalId) });
+    return clauses.length
+      ? { entityType: { $in: ['researchEntity', 'researchGroup'] }, $or: clauses }
+      : null;
+  }
   if (ownerCollection === 'research_entity_members') {
     const clauses: Record<string, unknown>[] = [{ entityId: owner._id }];
     if (stringValue(owner.membershipKey)) {
@@ -279,29 +295,32 @@ async function loadCandidateObservations(input: {
   spec: ObservationReferenceSpec;
   owner: Record<string, unknown>;
   referenceKey?: string;
-}): Promise<OrphanReferenceObservationCandidate[]> {
+}): Promise<{ candidates: OrphanReferenceObservationCandidate[]; exhaustive: boolean }> {
   const subject = candidateSubjectMatch(input.spec.collection, input.owner);
-  if (!subject) return [];
+  if (!subject) return { candidates: [], exhaustive: true };
   const field = input.referenceKey || stringValue(input.owner.field);
-  if (!field) return [];
+  if (!field) return { candidates: [], exhaustive: true };
   const query: Record<string, unknown> = { ...subject, field };
   const sourceName = input.referenceKey
     ? stringValue(record(record(input.owner[input.spec.field])[input.referenceKey]).sourceName)
     : stringValue(input.owner.sourceName);
   if (sourceName) query.sourceName = sourceName;
-  const rows = await Observation.find(query).sort({ observedAt: -1 }).limit(50).lean();
-  return rows.map((candidate: any) => ({
-    id: serializedDocumentId(candidate._id) || '',
-    entityType: candidate.entityType,
-    entityId: serializedDocumentId(candidate.entityId),
-    entityKey: candidate.entityKey,
-    field: candidate.field,
-    value: candidate.value,
-    sourceName: candidate.sourceName,
-    sourceUrl: candidate.sourceUrl,
-    observedAt: candidate.observedAt?.toISOString?.() || String(candidate.observedAt || ''),
-    superseded: candidate.superseded === true,
-  }));
+  const rows = await Observation.find(query).sort({ observedAt: -1 }).limit(51).lean();
+  return {
+    exhaustive: rows.length <= 50,
+    candidates: rows.slice(0, 50).map((candidate: any) => ({
+      id: serializedDocumentId(candidate._id) || '',
+      entityType: candidate.entityType,
+      entityId: serializedDocumentId(candidate.entityId),
+      entityKey: candidate.entityKey,
+      field: candidate.field,
+      value: candidate.value,
+      sourceName: candidate.sourceName,
+      sourceUrl: candidate.sourceUrl,
+      observedAt: candidate.observedAt?.toISOString?.() || String(candidate.observedAt || ''),
+      superseded: candidate.superseded === true,
+    })),
+  };
 }
 
 interface ResearchEntityObservationContext {
@@ -439,7 +458,7 @@ async function classifyCurrentTarget(
     for (const row of orphanRows) {
       const occurrence = occurrenceFromRow(spec, row);
       if (!occurrence) continue;
-      const candidates = await loadCandidateObservations({
+      const candidateResult = await loadCandidateObservations({
         spec,
         owner: row.owner,
         referenceKey: row.referenceKey,
@@ -455,7 +474,8 @@ async function classifyCurrentTarget(
           occurrence,
           owner: row.owner,
           ownerFieldValue: row.referenceKey ? row.owner[row.referenceKey] : undefined,
-          candidates,
+          candidates: candidateResult.candidates,
+          candidatesExhaustive: candidateResult.exhaustive,
           currentMaterializationEvidenceIds: materialization.evidenceIds,
           materializationReplacesOwner: materialization.replacesOwner,
           dbFingerprint,
@@ -502,8 +522,27 @@ export function referenceMatchPath(classification: OrphanReferenceClassification
   return updatePathFor(classification);
 }
 
+function ownerSnapshotKey(classification: OrphanReferenceClassification): string {
+  return `${classification.ownerCollection}:${classification.ownerId}`;
+}
+
+function ownerSnapshot(owner: Record<string, unknown>): string {
+  return observationRepairFingerprint({ owner });
+}
+
+async function rememberOwnerSnapshot(
+  classification: OrphanReferenceClassification,
+  context: ApplyContext,
+): Promise<void> {
+  const owner = (await mongoose.connection.db!.collection(classification.ownerCollection).findOne({
+    _id: new mongoose.Types.ObjectId(classification.ownerId),
+  })) as Record<string, unknown> | null;
+  if (owner) context.ownerSnapshots.set(ownerSnapshotKey(classification), ownerSnapshot(owner));
+}
+
 async function preflightOwner(
   classification: OrphanReferenceClassification,
+  context?: ApplyContext,
 ): Promise<Record<string, unknown>> {
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is unavailable.');
@@ -514,12 +553,15 @@ async function preflightOwner(
     unknown
   > | null;
   if (!owner) throw new Error('owner_missing');
-  const fingerprint = buildOrphanReferenceOwnerFingerprint({
-    owner,
-    field: classification.field,
-    referenceKey: classification.referenceKey,
-  });
-  if (fingerprint !== classification.ownerFingerprint)
+  const remembered = context?.ownerSnapshots.get(ownerSnapshotKey(classification));
+  const fingerprint = remembered
+    ? ownerSnapshot(owner)
+    : buildOrphanReferenceOwnerFingerprint({
+        owner,
+        field: classification.field,
+        referenceKey: classification.referenceKey,
+      });
+  if (fingerprint !== (remembered || classification.ownerFingerprint))
     throw new Error('owner_changed_since_review');
   if (currentReferenceValue(owner, classification) !== classification.missingObservationId) {
     throw new Error('orphan_reference_changed_since_review');
@@ -630,12 +672,13 @@ async function repairAuditExists(
 async function applyRelink(
   decision: ValidatedOrphanReferenceDecision,
   artifactHash: string,
+  context: ApplyContext,
 ): Promise<ApplyResult> {
   const classification = decision.classification;
-  const owner = await preflightOwner(classification);
+  const owner = await preflightOwner(classification, context);
   const replacementId = classification.replacementObservationId;
   if (!replacementId) throw new Error('replacement_observation_missing');
-  const candidates = await loadCandidateObservations({
+  const candidateResult = await loadCandidateObservations({
     spec: {
       collection: classification.ownerCollection,
       field: classification.field,
@@ -648,7 +691,8 @@ async function applyRelink(
     occurrence: classification,
     owner,
     ownerFieldValue: classification.referenceKey ? owner[classification.referenceKey] : undefined,
-    candidates,
+    candidates: candidateResult.candidates,
+    candidatesExhaustive: candidateResult.exhaustive,
     dbFingerprint: '',
   });
   if (
@@ -672,6 +716,7 @@ async function applyRelink(
     },
   );
   if (result.modifiedCount !== 1) throw new Error('relink_preflight_filter_mismatch');
+  await rememberOwnerSnapshot(classification, context);
   const idempotent = await writeAudit(decision, artifactHash, 'relinked');
   return {
     handle: decision.handle,
@@ -901,7 +946,7 @@ async function applyDecision(
         return { handle: decision.handle, decision: decision.decision, status: 'idempotent' };
       }
     }
-    if (decision.decision === 'relink') return await applyRelink(decision, artifactHash);
+    if (decision.decision === 'relink') return await applyRelink(decision, artifactHash, context);
     if (decision.decision === 'rematerialize') {
       return await applyRematerialization(decision, artifactHash, context);
     }
@@ -1004,7 +1049,7 @@ async function main(): Promise<void> {
     maxApply: options.maxApply,
   });
   const results: ApplyResult[] = [];
-  const context: ApplyContext = { materializationKeys: new Set() };
+  const context: ApplyContext = { materializationKeys: new Set(), ownerSnapshots: new Map() };
   for (const decision of decisions) {
     results.push(await applyDecision(decision, artifact.artifactHash, context));
   }

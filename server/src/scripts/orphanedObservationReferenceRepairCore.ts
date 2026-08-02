@@ -232,6 +232,24 @@ function subjectsMatch(input: {
         (Boolean(candidateKey) && keys.includes(candidateKey)))
     );
   }
+  if (input.ownerCollection === 'paper_authors') {
+    const paperId = normalizeObservationRepairObjectId(input.owner.paperId);
+    return input.candidate.entityType === 'paper' && Boolean(paperId) && candidateId === paperId;
+  }
+  if (input.ownerCollection === 'grants') {
+    const entityIds = [
+      ...(Array.isArray(input.owner.researchEntityIds) ? input.owner.researchEntityIds : []),
+      ...(Array.isArray(input.owner.researchGroupIds) ? input.owner.researchGroupIds : []),
+    ]
+      .map(normalizeObservationRepairObjectId)
+      .filter(Boolean);
+    const externalId = stringValue(input.owner.externalId).toLowerCase();
+    return (
+      ['researchEntity', 'researchGroup'].includes(input.candidate.entityType) &&
+      ((Boolean(candidateId) && entityIds.includes(candidateId)) ||
+        (Boolean(candidateKey) && Boolean(externalId) && candidateKey === externalId))
+    );
+  }
   if (input.ownerCollection === 'research_entity_members') {
     const keys = [input.owner.membershipKey]
       .map((value) => stringValue(value).toLowerCase())
@@ -317,6 +335,7 @@ export function classifyOrphanReference(input: {
   owner: Record<string, unknown>;
   ownerFieldValue?: unknown;
   candidates: OrphanReferenceObservationCandidate[];
+  candidatesExhaustive?: boolean;
   currentMaterializationEvidenceIds?: string[];
   materializationReplacesOwner?: boolean;
   dbFingerprint: string;
@@ -326,7 +345,7 @@ export function classifyOrphanReference(input: {
 
   if (occurrence.ownerCollection === 'observations' && occurrence.field === 'supersededBy') {
     const exact = exactSupersessionCandidates(input);
-    if (exact.length === 1) {
+    if (exact.length === 1 && input.candidatesExhaustive !== false) {
       return {
         ...occurrence,
         handle,
@@ -356,6 +375,8 @@ export function classifyOrphanReference(input: {
       reason:
         exact.length > 1
           ? 'Multiple exact supersession candidates remain.'
+          : input.candidatesExhaustive === false
+            ? 'The bounded candidate query cannot prove the supersession candidate is unique.'
           : 'No exact supersession candidate remains.',
       candidateCount: exact.length,
       recommendedDecision: 'defer_review',
@@ -364,7 +385,7 @@ export function classifyOrphanReference(input: {
 
   if (occurrence.referenceKey) {
     const exact = exactProvenanceCandidates(input);
-    if (exact.length === 1) {
+    if (exact.length === 1 && input.candidatesExhaustive !== false) {
       return {
         ...occurrence,
         handle,
@@ -394,6 +415,8 @@ export function classifyOrphanReference(input: {
       reason:
         exact.length > 1
           ? 'Multiple source-equivalent provenance candidates remain.'
+          : input.candidatesExhaustive === false
+            ? 'The bounded candidate query cannot prove the provenance candidate is unique.'
           : 'No source-equivalent provenance candidate remains.',
       candidateCount: exact.length,
       recommendedDecision: ARCHIVABLE_REFERENCE_COLLECTIONS.has(occurrence.ownerCollection)

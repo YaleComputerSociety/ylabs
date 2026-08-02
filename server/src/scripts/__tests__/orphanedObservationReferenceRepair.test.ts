@@ -15,6 +15,7 @@ import {
   type OrphanReferenceOccurrence,
 } from '../orphanedObservationReferenceRepairCore';
 import {
+  candidateSubjectMatch,
   currentReferenceValue,
   orphanReferenceRemovalUpdate,
   parseRepairOrphanedObservationReferencesArgs,
@@ -50,6 +51,25 @@ function occurrence(overrides: Partial<OrphanReferenceOccurrence> = {}): OrphanR
 }
 
 describe('orphaned Observation reference repair core', () => {
+  it('binds paper-author and grant provenance to their source subjects', () => {
+    const paperId = new mongoose.Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa');
+    const researchEntityId = new mongoose.Types.ObjectId('bbbbbbbbbbbbbbbbbbbbbbbb');
+
+    expect(candidateSubjectMatch('paper_authors', { paperId })).toEqual({
+      entityType: 'paper',
+      entityId: paperId,
+    });
+    expect(
+      candidateSubjectMatch('grants', {
+        externalId: 'SYNTHETIC-123',
+        researchEntityIds: [researchEntityId],
+      }),
+    ).toEqual({
+      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      $or: [{ entityId: { $in: [researchEntityId] } }, { entityKey: 'SYNTHETIC-123' }],
+    });
+  });
+
   it('builds bounded direct and provenance orphan lookup pipelines', () => {
     const direct = buildDirectReferenceAggregationPipeline(
       { collection: 'entry_pathways', field: 'sourceEvidenceIds' },
@@ -131,6 +151,34 @@ describe('orphaned Observation reference repair core', () => {
       candidateCount: 2,
     });
     expect(classified.replacementObservationId).toBeUndefined();
+  });
+
+  it('does not declare a bounded candidate result unique', () => {
+    const owner = {
+      _id: new mongoose.Types.ObjectId('111111111111111111111111'),
+      slug: 'synthetic-home',
+      description: 'Synthetic research description.',
+    };
+    const classified = classifyOrphanReference({
+      occurrence: occurrence(),
+      owner,
+      ownerFieldValue: owner.description,
+      dbFingerprint: 'development-target',
+      candidatesExhaustive: false,
+      candidates: [
+        {
+          id: '333333333333333333333333',
+          entityType: 'researchEntity',
+          entityId: '111111111111111111111111',
+          field: 'description',
+          value: owner.description,
+          sourceName: 'official-profile',
+          sourceUrl: 'https://example.yale.edu/profile',
+        },
+      ],
+    });
+
+    expect(classified).toMatchObject({ recovery: 'review_required', candidateCount: 1 });
   });
 
   it('preserves archived records and records unrecoverable evidence loss', () => {
