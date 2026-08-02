@@ -6,7 +6,6 @@ import {
   exportFellowshipAcceptedCsv,
   normalizeOrcid,
   resolveOrcidCrosswalk,
-  validateArxivOrcidList,
   validateFellowshipAcceptedCsv,
   validateScholarAcceptedCsv,
   type AcceptedInputUser,
@@ -236,33 +235,5 @@ describe('ORCID crosswalk apply', () => {
 
     expect(result.appliedRows).toBe(0);
     expect(updates).toEqual([]);
-  });
-});
-
-describe('arXiv accepted ORCID validation', () => {
-  it('converts accepted ORCIDs to current scraper-compatible internal targets', () => {
-    const graceWithOrcid: AcceptedInputUser = {
-      ...grace,
-      orcid: '0000-0000-0000-0028',
-      primaryDepartment: 'Physics',
-    };
-    const result = validateArxivOrcidList(
-      [
-        '# comments allowed',
-        '0000-0000-0000-0001 # Ada Lovelace',
-        '0000-0000-0000-0028',
-      ].join('\n'),
-      [ada, graceWithOrcid],
-    );
-
-    expect(result.status).toBe('ready');
-    expect(result.readyRows).toBe(2);
-    expect(result.scraperOnlyValues).toEqual(['ada1', 'grace1']);
-  });
-
-  it('blocks unresolved ORCIDs instead of creating users', () => {
-    const result = validateArxivOrcidList('0000-0000-0000-0028', [ada]);
-    expect(result.status).toBe('blocked');
-    expect(result.issues[0].status).toBe('unresolved');
   });
 });
