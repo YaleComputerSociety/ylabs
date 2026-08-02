@@ -146,6 +146,48 @@ describe('computeAcceptanceVerdict — access summary compatibility', () => {
     });
   });
 
+  it('collapses duplicate access-summary signals into one evidence chip', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.74,
+          evidence: [
+            {
+              signalType: 'REACH_OUT_PLAUSIBLE',
+              confidence: 'MEDIUM',
+              excerpt: 'A public profile is available.',
+            },
+            {
+              signalType: 'REACH_OUT_PLAUSIBLE',
+              confidence: 'HIGH',
+              excerpt: 'The official lab page provides contact instructions.',
+            },
+            {
+              signalType: 'REACH_OUT_PLAUSIBLE',
+              confidence: 'MEDIUM',
+              excerpt: 'A second profile is available.',
+            },
+          ],
+          signalTypes: ['REACH_OUT_PLAUSIBLE'],
+          entryPathwayTypes: ['EXPLORATORY_CONTACT'],
+          hasActivePostedOpportunity: false,
+          bestNextStep: 'Review the official profile.',
+        },
+      }),
+      false,
+    );
+
+    expect(result.evidence).toEqual([
+      {
+        kind: 'access-signal',
+        label: 'Reach-out plausible',
+        detail: 'The official lab page provides contact instructions.',
+        strength: 'strong',
+      },
+    ]);
+  });
+
   it('maps not-currently-available accessSummary to the closed verdict', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
