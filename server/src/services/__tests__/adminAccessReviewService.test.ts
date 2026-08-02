@@ -53,6 +53,7 @@ vi.mock('../../models/adminAccessReviewProjection', () => ({
           return query;
         },
         select: vi.fn(() => query),
+        session: vi.fn(() => query),
         lean: mocks.projectionLean,
       };
       return query;
@@ -127,6 +128,9 @@ import {
 describe('adminAccessReviewService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(mongoose.connection, 'transaction').mockImplementation(async (work: any) =>
+      work({} as mongoose.ClientSession),
+    );
     mocks.syncPathwaySearchIndexDocument.mockResolvedValue(undefined);
     mocks.assertProjectionReady.mockResolvedValue(undefined);
     mocks.projectionLean.mockResolvedValue([]);
@@ -161,6 +165,11 @@ describe('adminAccessReviewService', () => {
       pageSize: 100,
       totalPages: 0,
     });
+    expect(mongoose.connection.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      readConcern: { level: 'snapshot' },
+      readPreference: 'primary',
+    });
+    expect(mocks.assertProjectionReady).toHaveBeenCalledWith(expect.any(Object));
   });
 
   it('rejects oversized access review search before model lookup', async () => {
@@ -224,6 +233,7 @@ describe('adminAccessReviewService', () => {
     mocks.projectionCountDocuments.mockResolvedValue(1);
     const entityQuery: any = {
       select: vi.fn(() => entityQuery),
+      session: vi.fn(() => entityQuery),
       lean: vi
         .fn()
         .mockResolvedValue([{ _id: researchEntityId, name: 'Example Lab', slug: 'example' }]),

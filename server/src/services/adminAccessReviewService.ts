@@ -267,7 +267,10 @@ function buildReviewSummary(input: {
   };
 }
 
-export async function listAccessReviewEntities(input: AccessReviewListInput = {}): Promise<{
+async function listAccessReviewEntitiesSnapshot(
+  session: mongoose.ClientSession,
+  input: AccessReviewListInput = {},
+): Promise<{
   entities: AccessReviewEntitySummary[];
   total: number;
   page: number;
@@ -317,16 +320,17 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
             researchEntityId: 1 as const,
           };
 
-  await assertAdminAccessReviewProjectionReady();
+  await assertAdminAccessReviewProjectionReady(session);
   const projectionQuery = AdminAccessReviewProjection.find(filter)
     .sort(sortSpec)
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .select('researchEntityId counts unreviewedCounts totalUnreviewed hasOfficialApplication')
+    .session(session)
     .lean();
   const [groups, total, progressCounts] = await Promise.all([
     projectionQuery,
-    AdminAccessReviewProjection.countDocuments(filter),
+    AdminAccessReviewProjection.countDocuments(filter, { session }),
     Promise.all(
       [EntryPathway, AccessSignal, ContactRoute, PostedOpportunity].map(async (model) => {
         const start = new Date();
@@ -338,15 +342,21 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
               ? { submissionStatus: { $ne: 'DRAFT' } }
               : {};
         const [remaining, reviewedToday] = await Promise.all([
-          model.countDocuments({
-            ...visibleQueueFilter,
-            $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }],
-          }),
-          model.countDocuments({
-            ...visibleQueueFilter,
-            'review.status': { $ne: 'unreviewed' },
-            'review.reviewedAt': { $gte: start },
-          }),
+          model.countDocuments(
+            {
+              ...visibleQueueFilter,
+              $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }],
+            },
+            { session },
+          ),
+          model.countDocuments(
+            {
+              ...visibleQueueFilter,
+              'review.status': { $ne: 'unreviewed' },
+              'review.reviewedAt': { $gte: start },
+            },
+            { session },
+          ),
         ]);
         return { remaining, reviewedToday };
       }),
@@ -358,6 +368,7 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
         .select(
           'name displayName slug entityType kind departments researchAreas manuallyLockedFields',
         )
+        .session(session)
         .lean()
     : [];
   const hydratedById = new Map(
@@ -398,6 +409,20 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
       { remaining: 0, reviewedToday: 0 },
     ),
   };
+}
+
+export async function listAccessReviewEntities(input: AccessReviewListInput = {}): Promise<{
+  entities: AccessReviewEntitySummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  progress: AccessReviewProgressSummary;
+}> {
+  return mongoose.connection.transaction(
+    (session) => listAccessReviewEntitiesSnapshot(session, input),
+    { readConcern: { level: 'snapshot' }, readPreference: 'primary' },
+  );
 }
 
 export async function getAccessReviewEntity(researchEntityId: string): Promise<any | null> {
