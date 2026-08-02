@@ -495,6 +495,48 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toContain('research_infrastructure_only');
   });
+
+  it('suppresses an instructional-support center without positive research evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Poorvu Center for Teaching and Learning',
+        entityType: 'CENTER',
+        shortDescription:
+          'Supports teaching and learning across Yale through consultations, programs, and educational resources for instructors and students.',
+        fullDescription:
+          'The Poorvu Center supports teaching and learning across Yale through consultations, programs, workshops, and educational resources for instructors and students.',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('non_research_entity');
+    expect(result.reasons).toContain('service_or_instructional_support');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('keeps a center that conducts research on teaching in research scope', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Research on Teaching and Learning',
+        entityType: 'CENTER',
+        shortDescription:
+          'Conducts empirical research on university teaching and learning through faculty-led research projects and data collection.',
+        fullDescription:
+          'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
+        sourceUrls: ['https://example.yale.edu/teaching-research'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('non_research_entity');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {

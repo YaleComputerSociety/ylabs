@@ -5,6 +5,7 @@ import {
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
+import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
 
@@ -308,8 +309,11 @@ export function computeResearchEntityStudentVisibility({
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
+  const researchScope = classifyResearchEntityResearchScope(entity);
+  const outsideResearchScope = !researchScope.researchHomeEligible;
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
+  if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')) {
     reasons.push('research_infrastructure_only');
   }
@@ -334,6 +338,7 @@ export function computeResearchEntityStudentVisibility({
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (
     entity.activeAtYaleCache === false ||
+    outsideResearchScope ||
     contentPageRisk ||
     exactUrlDuplicateRisk ||
     genericDirectoryShell ||
@@ -363,7 +368,12 @@ export function computeResearchEntityStudentVisibility({
     computedTier = 'limited_but_safe';
   }
 
-  return withOverride(entity, computedTier, Array.from(new Set(reasons)));
+  const uniqueReasons = Array.from(new Set(reasons));
+  if (outsideResearchScope) {
+    return { tier: 'suppressed', computedTier: 'suppressed', reasons: uniqueReasons };
+  }
+
+  return withOverride(entity, computedTier, uniqueReasons);
 }
 
 export function computeProgramStudentVisibility(
