@@ -304,5 +304,6 @@ userSchema.index({ primaryDepartment: 1 });
 userSchema.index({ facultyMemberId: 1 }, { sparse: true });
 userSchema.index({ studentProfileId: 1 }, { sparse: true });
 userSchema.index({ orcid: 1 }, { sparse: true });
+userSchema.index({ imageUrl: 1 }, { sparse: true });
 
 export const User = mongoose.model('User', userSchema);

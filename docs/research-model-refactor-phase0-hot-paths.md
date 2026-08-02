@@ -92,7 +92,8 @@ Each access collection has a `researchEntityId` index, with review compounds whe
 Relationship indexes begin with the source or target entity and relationship type, but the detail queries omit relationship type and sort by confidence and update time.
 `research_scholarly_links` and `research_scholarly_attributions` declare no indexes in their model files.
 The attribution query by `targetUserId` and the scholarly-link query by `researchEntityId` therefore require particular live scrutiny.
-The shared-image guard queries `users.imageUrl`, but the user schema declares no `imageUrl` index.
+The user schema declares a sparse `imageUrl` index matching the shared-image guard query shape.
+Phase 0 still requires live Development, Beta, and ProductionCopy evidence that the deployed index exists and the query uses it.
 
 ## `/opportunities/:id`
 

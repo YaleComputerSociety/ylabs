@@ -22,4 +22,12 @@ describe('User userType normalization', () => {
     expect(enumValues).toContain('professor');
     expect(enumValues).not.toContain('faculty');
   });
+
+  it('indexes shared profile image lookups without indexing missing values', () => {
+    const imageUrlIndex = User.schema
+      .indexes()
+      .find(([fields]) => fields.imageUrl === 1 && Object.keys(fields).length === 1);
+
+    expect(imageUrlIndex?.[1]).toMatchObject({ sparse: true });
+  });
 });
