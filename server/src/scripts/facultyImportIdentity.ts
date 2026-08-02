@@ -15,6 +15,11 @@ const normalizedText = (value: unknown): string =>
 
 const normalizedNetid = (value: string): string => normalizedText(value).toLowerCase();
 
+const normalizedOrcid = (value: unknown): string =>
+  normalizedText(value)
+    .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
+    .replace(/\/$/, '');
+
 export function facultyImportDisplayName(entry: FacultyImportIdentityInput): string {
   const explicit = normalizedText(entry.name);
   if (explicit) return explicit;
@@ -37,13 +42,18 @@ export function findCollidingFacultyImportOrcids(
 ): Set<string> {
   const owners = new Map<string, Set<string>>();
   for (const entry of entries) {
-    const orcid = normalizedText(entry.orcid);
-    if (!orcid) continue;
     const ownerKey = normalizedNetid(entry.netid) || facultyImportDisplayName(entry).toLowerCase();
     if (!ownerKey) continue;
-    const values = owners.get(orcid) || new Set<string>();
-    values.add(ownerKey);
-    owners.set(orcid, values);
+    const claimedOrcids = new Set([
+      normalizedOrcid(entry.orcid),
+      normalizedOrcid(entry.profileUrls?.orcid),
+    ]);
+    claimedOrcids.delete('');
+    for (const orcid of claimedOrcids) {
+      const values = owners.get(orcid) || new Set<string>();
+      values.add(ownerKey);
+      owners.set(orcid, values);
+    }
   }
   return new Set([...owners].filter(([, values]) => values.size > 1).map(([orcid]) => orcid));
 }
@@ -51,13 +61,23 @@ export function findCollidingFacultyImportOrcids(
 export function safeFacultyImportExternalIdentity(
   entry: FacultyImportIdentityInput,
   collidingOrcids: Set<string>,
-): { orcid?: string; profileUrls: Record<string, string> } {
-  const orcid = normalizedText(entry.orcid);
+): { orcid?: string; profileUrls: Record<string, string>; clearOrcid: boolean } {
+  const orcid = normalizedOrcid(entry.orcid);
   const profileUrls = { ...(entry.profileUrls || {}) };
-  const profileOrcid = normalizedText(profileUrls.orcid).replace(/^https?:\/\/orcid\.org\//i, '');
+  const profileOrcid = normalizedOrcid(profileUrls.orcid);
   if ((orcid && collidingOrcids.has(orcid)) || (profileOrcid && collidingOrcids.has(profileOrcid))) {
     delete profileUrls.orcid;
-    return { profileUrls };
+    return { profileUrls, clearOrcid: true };
   }
-  return { ...(orcid ? { orcid } : {}), profileUrls };
+  return { ...(orcid ? { orcid } : {}), profileUrls, clearOrcid: false };
+}
+
+export function facultyImportMongoUpdate(
+  cleanedData: Record<string, unknown>,
+  clearOrcid: boolean,
+): { $set: Record<string, unknown>; $unset?: { orcid: 1 } } {
+  return {
+    $set: cleanedData,
+    ...(clearOrcid ? { $unset: { orcid: 1 as const } } : {}),
+  };
 }

@@ -15,6 +15,7 @@ import path from 'path';
 import { User } from '../models/user';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
+  facultyImportMongoUpdate,
   findCollidingFacultyImportOrcids,
   safeFacultyImportEmail,
   safeFacultyImportExternalIdentity,
@@ -258,6 +259,7 @@ async function importFaculty() {
       firstName: entry.first_name,
       lastName: entry.last_name,
       orcid: entry.orcid,
+      profileUrls: entry.profileUrls,
     })),
   );
   if (collidingOrcids.size > 0) {
@@ -338,7 +340,7 @@ async function importFaculty() {
         updateOne: {
           filter: { netid: entry.netid },
           update: {
-            $set: cleanedData,
+            ...facultyImportMongoUpdate(cleanedData, externalIdentity.clearOrcid),
             $setOnInsert: {
               netid: entry.netid,
               favListings: [],
