@@ -307,7 +307,18 @@ function applicationSectionText($: cheerio.CheerioAPI): string | undefined {
 }
 
 function inferApplicationMaterials(text: string): string[] {
-  return MATERIAL_PATTERNS.flatMap(([pattern, label]) => (pattern.test(text) ? [label] : []));
+  const mentorPattern = MATERIAL_PATTERNS.find(([, label]) => label === 'Faculty mentor support');
+  const mentorSupport = mentorPattern?.[0].test(text) ? ['Faculty mentor support'] : [];
+  const withoutMentorRecommendation = text.replace(
+    /\b(?:a |the )?(?:recommendation )?letter from (?:the )?(?:proposed )?(?:yale )?faculty mentor\b|\bmentor (?:letter|recommendation|signature|support)\b/gi,
+    '',
+  );
+
+  return MATERIAL_PATTERNS.flatMap(([pattern, label]) => {
+    if (label === 'Faculty mentor support') return mentorSupport;
+    const searchableText = label === 'Recommendation letter' ? withoutMentorRecommendation : text;
+    return pattern.test(searchableText) ? [label] : [];
+  });
 }
 
 function isResearchFocused(text: string): boolean {
@@ -496,7 +507,9 @@ function candidateFromLink(
     summary: rowContext && rowContext !== title ? rowContext : undefined,
     description: undefined,
     applicationInformation: undefined,
-    applicationMaterials: inferApplicationMaterials(contextText),
+    applicationMaterials: APPLICATION_HEADING_RE.test(contextText)
+      ? inferApplicationMaterials(contextText)
+      : [],
     researchFocused: isResearchFocused(contextText),
     sourceUrl,
     applicationLink,
@@ -550,7 +563,9 @@ function candidateFromDetailPage(
     summary: undefined,
     description: bodyText.slice(0, 2000),
     applicationInformation,
-    applicationMaterials: inferApplicationMaterials(applicationInformation || bodyText),
+    applicationMaterials: applicationInformation
+      ? inferApplicationMaterials(applicationInformation)
+      : [],
     researchFocused: isResearchFocused(bodyText),
     sourceUrl: pageUrl,
     applicationLink,
@@ -652,6 +667,21 @@ function observation(
   };
 }
 
+function currentSourceObservation(
+  field: string,
+  value: unknown,
+  candidate: FellowshipCatalogCandidate,
+): ObservationInput {
+  return {
+    entityType: 'fellowship',
+    entityKey: candidate.sourceKey,
+    field,
+    value,
+    sourceUrl: candidate.sourceUrl,
+    confidenceOverride: 0.95,
+  };
+}
+
 export function candidateToObservations(candidate: FellowshipCatalogCandidate): ObservationInput[] {
   const classification = classifyProgram({
     title: candidate.title,
@@ -682,9 +712,17 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
     observation('title', candidate.title, candidate),
     observation('summary', candidate.summary, candidate),
     observation('description', candidate.description, candidate),
-    observation('applicationInformation', candidate.applicationInformation, candidate),
-    observation('applicationMaterials', candidate.applicationMaterials, candidate),
-    observation('researchFocused', candidate.researchFocused, candidate),
+    currentSourceObservation(
+      'applicationInformation',
+      candidate.applicationInformation || '',
+      candidate,
+    ),
+    currentSourceObservation(
+      'applicationMaterials',
+      candidate.applicationMaterials || [],
+      candidate,
+    ),
+    currentSourceObservation('researchFocused', candidate.researchFocused === true, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),

@@ -126,6 +126,40 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('does not infer application materials from unrelated page content', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <h1>Yale College Fixture Research Fellowship</h1>
+          <p>Past fellows have written proposals and shared resumes in workshops.</p>
+          <h2>About the fellowship</h2>
+          <p>Students conduct independent research with a faculty mentor.</p>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationMaterials).toEqual([]);
+    expect(candidates[0]?.applicationInformation).toBeUndefined();
+  });
+
+  it('does not duplicate a faculty mentor recommendation', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <h1>Yale College Fixture Research Fellowship</h1>
+          <h2>Application requirements</h2>
+          <p>Submit a recommendation letter from the proposed Yale faculty mentor.</p>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationMaterials).toEqual(['Faculty mentor support']);
+  });
+
   it('extracts structured undergraduate program detail pages', () => {
     const candidates = parseFellowshipCatalogPage(
       `
@@ -360,6 +394,13 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
           field: 'sourceFingerprint',
           value: 'fingerprint',
         }),
+      ]),
+    );
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'applicationInformation', value: '' }),
+        expect.objectContaining({ field: 'applicationMaterials', value: [] }),
+        expect.objectContaining({ field: 'researchFocused', value: false }),
       ]),
     );
   });

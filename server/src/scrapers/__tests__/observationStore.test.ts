@@ -98,6 +98,28 @@ describe('buildObservationFingerprint', () => {
     }
   });
 
+  it('makes source-owned fellowship guidance latest-wins', () => {
+    const base = {
+      sourceName: 'yale-college-fellowships-office',
+      entityType: 'fellowship',
+      entityKey: 'yale-college-fellowships-office:fixture',
+    };
+
+    for (const field of ['applicationInformation', 'applicationMaterials', 'researchFocused']) {
+      const populated = buildObservationFingerprint({
+        ...base,
+        field,
+        value: field === 'researchFocused' ? true : ['Transcript'],
+      });
+      const cleared = buildObservationFingerprint({
+        ...base,
+        field,
+        value: field === 'researchFocused' ? false : [],
+      });
+      expect(populated).toBe(cleared);
+    }
+  });
+
   it('still distinguishes values for non-latest-wins fields', () => {
     const base = {
       sourceName: 'centers-institutes-index',

@@ -107,6 +107,9 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'undergraduateLogisticsTimeCommitment',
   'undergraduateLogisticsModality',
   'undergraduateLogisticsCurrentAvailability',
+  'applicationInformation',
+  'applicationMaterials',
+  'researchFocused',
 ]);
 
 export function buildObservationFingerprint(input: {
