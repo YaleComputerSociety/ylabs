@@ -260,6 +260,55 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.runGate).toHaveBeenCalledWith('research', ['entity-1'], 'apply');
   });
 
+  it('blocks stale source-description repair when an official lab URL collides', async () => {
+    const officialLabUrl = 'https://medicine.yale.edu/lab/example/';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_card_description'],
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        fullDescription:
+          'Research fields include machine learning, algorithms, data compression, and automata theory.',
+        shortDescription: 'Studies machine learning, algorithms, data compression, and automata theory.',
+        websiteUrl: officialLabUrl,
+        sourceUrls: [officialLabUrl],
+      }),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([
+        {
+          role: 'pi',
+          userId: 'user-1',
+        },
+      ]),
+      findConflictingOfficialLabUrls: vi
+        .fn()
+        .mockResolvedValue(['https://medicine.yale.edu/lab/example']),
+      updateResearchEntity: vi.fn(),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
+    };
+
+    const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
+
+    expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
+      'https://medicine.yale.edu/lab/example',
+    ]);
+    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report.attempts[0]).toMatchObject({
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: ['missing_card_description', 'official_source_url_collision'],
+      repairSource: 'https://medicine.yale.edu/lab/example',
+    });
+    expect(deps.updateResearchEntity).not.toHaveBeenCalled();
+    expect(deps.runGate).not.toHaveBeenCalled();
+  });
+
   it('derives missing card descriptions from an existing source-backed fullDescription', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([

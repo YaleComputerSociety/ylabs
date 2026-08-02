@@ -1761,24 +1761,6 @@ async function attemptResearchRepair(
   const nonSourceDescriptionBlockers = plan.blockerReasons.filter(
     (reason) => !sourceDescriptionReasons.has(reason),
   );
-  if (
-    plan.repairStage === 'source_description' &&
-    staleSourceDescriptionBlockers.length > 0 &&
-    nonSourceDescriptionBlockers.length === 0 &&
-    textValue(entity.fullDescription) &&
-    textValue(entity.shortDescription) &&
-    currentQuality.score === 0 &&
-    staleSourceDescriptionBlockers.every((reason) => !currentRepairFlags.has(reason as any))
-  ) {
-    return {
-      plan,
-      applied: true,
-      status: 'repaired',
-      patchSummary: ['resolved stale source-description queue blockers against current quality'],
-      remainingBlockers: [],
-      repairSource: entityActionEvidenceSourceUrl(entity),
-    };
-  }
   const profileMatch = await findOfficialProfileUserMatch(entity, deps);
   const prospectiveLeadMembers = profileMatch
     ? [...leadMembers, officialProfileLeadMember(profileMatch)]
@@ -1816,6 +1798,23 @@ async function attemptResearchRepair(
         'official_source_url_collision',
       ]),
       repairSource: conflictingOfficialLabUrls[0],
+    };
+  }
+  if (
+    staleSourceDescriptionBlockers.length > 0 &&
+    nonSourceDescriptionBlockers.length === 0 &&
+    textValue(entity.fullDescription) &&
+    textValue(entity.shortDescription) &&
+    currentQuality.score === 0 &&
+    staleSourceDescriptionBlockers.every((reason) => !currentRepairFlags.has(reason as any))
+  ) {
+    return {
+      plan,
+      applied: true,
+      status: 'repaired',
+      patchSummary: ['resolved stale source-description queue blockers against current quality'],
+      remainingBlockers: [],
+      repairSource: entityActionEvidenceSourceUrl(entity),
     };
   }
   const patchSummary = [...summary];
