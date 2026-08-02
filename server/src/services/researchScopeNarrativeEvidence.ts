@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const narrativeFields = ['summary', 'description', 'shortDescription', 'fullDescription'] as const;
 
@@ -34,7 +35,7 @@ export async function trustedResearchScopeNarrativeFieldsByEntityId(
     'rollback.rolledBackAt': { $exists: false },
     sourceId: { $type: 'objectId' },
   })
-    .select('_id entityType entityId field value sourceId')
+    .select('_id entityType entityId field value sourceId sourceUrl')
     .lean();
   const observationsById = new Map(
     (observations as any[]).map((observation) => [
@@ -53,7 +54,9 @@ export async function trustedResearchScopeNarrativeFieldsByEntityId(
       serializedDocumentId(observation.entityId) !== entityId ||
       observation.field !== field ||
       observation.value !== entity[field] ||
-      serializedDocumentId(observation.sourceId) !== serializedDocumentId(provenance.sourceId)
+      serializedDocumentId(observation.sourceId) !== serializedDocumentId(provenance.sourceId) ||
+      !isPublicHttpUrl(observation.sourceUrl) ||
+      provenance.sourceUrl !== observation.sourceUrl
     ) {
       continue;
     }
