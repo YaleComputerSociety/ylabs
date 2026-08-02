@@ -14,6 +14,7 @@ export interface ResearchEntityResearchScopeInput {
   description?: unknown;
   shortDescription?: unknown;
   fullDescription?: unknown;
+  fieldProvenance?: unknown;
   researchAreas?: unknown;
   keywords?: unknown;
   website?: unknown;
@@ -40,12 +41,22 @@ const CONDUCTS_OR_ORGANIZES_RESEARCH = [
 const text = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-const hasHttpSource = (entity: ResearchEntityResearchScopeInput): boolean =>
-  [
-    entity.website,
-    entity.websiteUrl,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ].some((value) => /^https?:\/\//i.test(text(value)));
+const narrativeFields = ['summary', 'description', 'shortDescription', 'fullDescription'] as const;
+
+function fieldProvenanceValue(entity: ResearchEntityResearchScopeInput, field: string): unknown {
+  const provenance = entity.fieldProvenance;
+  if (provenance instanceof Map) return provenance.get(field);
+  if (provenance && typeof provenance === 'object') {
+    return (provenance as Record<string, unknown>)[field];
+  }
+  return undefined;
+}
+
+function hasSourceBackedField(entity: ResearchEntityResearchScopeInput, field: string): boolean {
+  const provenance = fieldProvenanceValue(entity, field);
+  if (!provenance || typeof provenance !== 'object') return false;
+  return /^https?:\/\//i.test(text((provenance as Record<string, unknown>).sourceUrl));
+}
 
 function isOrganizationalEntity(entity: ResearchEntityResearchScopeInput): boolean {
   return (
@@ -61,19 +72,19 @@ export function classifyResearchEntityResearchScope(
     return { researchHomeEligible: true, reasons: [] };
   }
 
-  const narrative = [
-    text(entity.summary),
-    text(entity.description),
-    text(entity.shortDescription),
-    text(entity.fullDescription),
-  ]
+  const narrativeByField = narrativeFields.map((field) => ({ field, value: text(entity[field]) }));
+  const narrative = narrativeByField
+    .map(({ value }) => value)
     .filter(Boolean)
     .join(' ');
   const serviceOrInstructionalSupport = SERVICE_OR_INSTRUCTIONAL_SUPPORT.test(narrative);
-  const positiveResearchClaim = CONDUCTS_OR_ORGANIZES_RESEARCH.some((pattern) =>
-    pattern.test(narrative),
+  const positiveClaimFields = narrativeByField.filter(({ value }) =>
+    CONDUCTS_OR_ORGANIZES_RESEARCH.some((pattern) => pattern.test(value)),
   );
-  const positiveResearchEvidence = positiveResearchClaim && hasHttpSource(entity);
+  const positiveResearchClaim = positiveClaimFields.length > 0;
+  const positiveResearchEvidence = positiveClaimFields.some(({ field }) =>
+    hasSourceBackedField(entity, field),
+  );
 
   if (serviceOrInstructionalSupport && !positiveResearchEvidence) {
     return {

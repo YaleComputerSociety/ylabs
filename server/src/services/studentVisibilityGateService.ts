@@ -171,7 +171,7 @@ const suppressionRepairReasons = new Set([
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas description shortDescription fullDescription profileSynthesisDescription descriptionSource studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas description shortDescription fullDescription profileSynthesisDescription descriptionSource fieldProvenance studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';

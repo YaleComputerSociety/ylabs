@@ -646,6 +646,10 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
         sourceUrls: ['https://example.yale.edu/teaching-research'],
+        fieldProvenance: {
+          shortDescription: { sourceUrl: 'https://example.yale.edu/teaching-research' },
+          fullDescription: { sourceUrl: 'https://example.yale.edu/teaching-research' },
+        },
       },
       accessSignalCount: 1,
       actionablePathwayCount: 1,
@@ -663,6 +667,27 @@ describe('computeResearchEntityStudentVisibility', () => {
         shortDescription: 'Provides teaching consultations and conducts research projects.',
         fullDescription:
           'The center provides instructional support and conducts research projects for Yale instructors.',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('missing_source_backed_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('does not use an unrelated entity URL as provenance for a research claim', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Instructional Services Center',
+        entityType: 'CENTER',
+        shortDescription: 'Provides teaching consultations and conducts research projects.',
+        fullDescription:
+          'The center provides instructional support and conducts research projects for Yale instructors.',
+        websiteUrl: 'https://example.yale.edu/instructional-services',
+        sourceUrls: ['https://example.yale.edu/instructional-services/about'],
         studentVisibilityOverrideTier: 'student_ready',
       },
       accessSignalCount: 1,
@@ -701,6 +726,12 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The center leads clinical research projects and publishes findings on clinical education.',
         sourceUrls: ['https://example.yale.edu/clinical-teaching-research'],
+        fieldProvenance: new Map([
+          [
+            'fullDescription',
+            { sourceUrl: 'https://example.yale.edu/clinical-teaching-research' },
+          ],
+        ]),
       },
       accessSignalCount: 1,
       actionablePathwayCount: 1,
