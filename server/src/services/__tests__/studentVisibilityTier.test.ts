@@ -538,6 +538,26 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('missing_positive_research_evidence');
   });
 
+  it.each([
+    'Coordinates administrative support for research projects through teaching consultations.',
+    'Operates a facility that supports research through instructional services and resources.',
+  ])('does not treat support operations as research activity: %s', (fullDescription) => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Teaching Support Center',
+        entityType: 'CENTER',
+        shortDescription: 'Provides instructional support and academic services.',
+        fullDescription,
+        sourceUrls: ['https://example.yale.edu/teaching-support'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+  });
+
   it('keeps a center that conducts research on teaching in research scope', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
@@ -548,6 +568,25 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
         sourceUrls: ['https://example.yale.edu/teaching-research'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('non_research_entity');
+  });
+
+  it('keeps a center that leads clinical research projects in research scope', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Clinical Teaching Research Center',
+        entityType: 'CENTER',
+        shortDescription:
+          'Leads clinical research projects while providing teaching support to trainees.',
+        fullDescription:
+          'The center leads clinical research projects and publishes findings on clinical education.',
+        sourceUrls: ['https://example.yale.edu/clinical-teaching-research'],
       },
       accessSignalCount: 1,
       actionablePathwayCount: 1,
