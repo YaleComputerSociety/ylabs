@@ -32,14 +32,29 @@ describe('canonicalResearchHomeResolver', () => {
   });
 
   it('rejects archived, grant-only, and synthetic shell candidates', () => {
-    expect(isOfficialResearchHomeCandidate({ slug: 'nih-pi-ada', websiteUrl: 'https://ada.yale.edu/' })).toBe(false);
-    expect(isOfficialResearchHomeCandidate({ slug: 'ada-lab', archived: true, websiteUrl: 'https://ada.yale.edu/' })).toBe(false);
-    expect(isOfficialResearchHomeCandidate({ slug: 'ada-lab', sourceUrls: ['https://reporter.nih.gov/project/1'] })).toBe(false);
+    expect(
+      isOfficialResearchHomeCandidate({ slug: 'nih-pi-ada', websiteUrl: 'https://ada.yale.edu/' }),
+    ).toBe(false);
+    expect(
+      isOfficialResearchHomeCandidate({
+        slug: 'ada-lab',
+        archived: true,
+        websiteUrl: 'https://ada.yale.edu/',
+      }),
+    ).toBe(false);
+    expect(
+      isOfficialResearchHomeCandidate({
+        slug: 'ada-lab',
+        sourceUrls: ['https://reporter.nih.gov/project/1'],
+      }),
+    ).toBe(false);
   });
 
   it('distinguishes safe shell creation from ineligible and ambiguous homes', () => {
     expect(resolveCanonicalResearchHome([])).toEqual({ status: 'safe-shell' });
-    expect(resolveCanonicalResearchHome([{ slug: 'nih-pi-ada' }])).toEqual({ status: 'ineligible' });
+    expect(resolveCanonicalResearchHome([{ slug: 'nih-pi-ada' }])).toEqual({
+      status: 'ineligible',
+    });
     expect(
       resolveCanonicalResearchHome([
         { slug: 'ada-lab', websiteUrl: 'https://ada.yale.edu/' },

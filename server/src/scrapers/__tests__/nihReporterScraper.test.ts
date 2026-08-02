@@ -257,9 +257,7 @@ describe('findUserForPi', () => {
   });
 
   it('returns the unique candidate when there is exactly one exact first-name surname match', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
-    ]);
+    const um = mockUserModel([{ _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' }]);
     expect(await findUserForPi('Amy Arnsten', um)).toEqual({
       _id: 'u1',
       netid: 'aa1',
@@ -268,9 +266,7 @@ describe('findUserForPi', () => {
   });
 
   it('does not match a unique surname candidate when the full first name conflicts', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' },
-    ]);
+    const um = mockUserModel([{ _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' }]);
     expect(await findUserForPi('Francis Wilson', um)).toBeNull();
   });
 
@@ -399,9 +395,7 @@ describe('piGrantsToObservations', () => {
     expect(lastObserved).toBeInstanceOf(Date);
     expect(lastObserved.toISOString().slice(0, 10)).toBe('2025-04-01');
 
-    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
-      'nih-pi:amy-arnsten',
-    );
+    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('nih-pi:amy-arnsten');
     expect(groupObs.find((o) => o.field === 'inferredPiUserId')).toBeUndefined();
   });
 
@@ -460,10 +454,8 @@ describe('piGrantsToObservations', () => {
     expect(recentGrants).toHaveLength(10);
     expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(20);
     expect(
-      obs.find(
-        (o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount',
-      )?.value,
-    ).toBe(10);
+      obs.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount')?.value,
+    ).toBe(20);
   });
 
   it('returns no observations on empty inputs', () => {
@@ -509,7 +501,10 @@ describe('NihReporterScraper.run', () => {
       // Page 1 returns 2 grants for Arnsten + 1 for Roster; page 2 returns empty.
       if (offset === 0) {
         return {
-          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
+          data: {
+            meta: { total: 3, offset: 0, limit: 500 },
+            results: [grantArnsten, grantArnsten2, grantRoster],
+          },
         } as any;
       }
       return { data: { meta: { total: 3, offset, limit: 500 }, results: [] } } as any;
@@ -569,7 +564,10 @@ describe('NihReporterScraper.run', () => {
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
+      data: {
+        meta: { total: 3, offset: 0, limit: 500 },
+        results: [grantArnsten, grantArnsten2, grantRoster],
+      },
     } as any);
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
       data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },
@@ -582,9 +580,7 @@ describe('NihReporterScraper.run', () => {
 
     // Only one PI should have been emitted observations for.
     const groupKeys = new Set(
-      emitted
-        .filter((o) => o.entityType === 'researchEntity')
-        .map((o) => o.entityKey),
+      emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
     );
     expect(groupKeys.size).toBe(1);
     expect(result.entitiesObserved).toBe(1);

@@ -108,7 +108,9 @@ export function parseBetaRepairQueueArgs(argv: string[]): BetaRepairQueueCliOpti
 
   options.mode = options.mode as VisibilityRepairMode;
   if (options.recordIds) {
-    options.recordIds = Array.from(new Set(options.recordIds.map((id) => id.trim()).filter(Boolean)));
+    options.recordIds = Array.from(
+      new Set(options.recordIds.map((id) => id.trim()).filter(Boolean)),
+    );
   }
   return options;
 }
@@ -130,13 +132,14 @@ export function assertBetaRepairQueueApplyReviewedArtifact(
 
 const APPLY_FROM_MAX_AGE_HOURS = 48;
 
-const textValue = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
+const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 const objectValue = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 
-const arrayValue = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+const arrayValue = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 export function validateBetaRepairQueueApplyArtifact(
   artifact: Record<string, unknown>,
@@ -234,7 +237,12 @@ export function writeBetaRepairQueueOutput(report: Record<string, unknown>, outp
 }
 
 export function buildBetaRepairQueueOutput(
-  target: { environment: string; db: string; dbFingerprint: string; options?: BetaRepairQueueCliOptions },
+  target: {
+    environment: string;
+    db: string;
+    dbFingerprint: string;
+    options?: BetaRepairQueueCliOptions;
+  },
   report: Record<string, unknown>,
   now = new Date(),
 ): Record<string, unknown> {
@@ -250,9 +258,7 @@ export function buildBetaRepairQueueOutput(
   };
 }
 
-function summarizeBlockedReasonCounts(
-  attempts: unknown,
-): Array<{ reason: string; count: number }> {
+function summarizeBlockedReasonCounts(attempts: unknown): Array<{ reason: string; count: number }> {
   if (!Array.isArray(attempts)) {
     return [];
   }
@@ -319,7 +325,12 @@ async function main() {
   const report = await runVisibilityRepairQueue(runOptions);
 
   const outputReport = buildBetaRepairQueueOutput(
-    { environment: guard.environment, db: guard.dbLabel, dbFingerprint: guard.dbFingerprint, options },
+    {
+      environment: guard.environment,
+      db: guard.dbLabel,
+      dbFingerprint: guard.dbFingerprint,
+      options,
+    },
     report as unknown as Record<string, unknown>,
   );
 

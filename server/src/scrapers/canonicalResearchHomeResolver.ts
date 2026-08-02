@@ -3,7 +3,8 @@ import { ResearchGroupMember } from '../models/researchGroupMember';
 import mongoose from 'mongoose';
 
 const GRANT_SHELL_SLUG = /^(?:nih|nsf)-pi-/i;
-const GRANT_SOURCE_URL = /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov)/i;
+const GRANT_SOURCE_URL =
+  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov)/i;
 const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 
 export interface ResearchHomeCandidate {
@@ -46,7 +47,9 @@ export function selectCanonicalResearchHomeSlug(
   candidates: ResearchHomeCandidate[],
 ): string | null {
   const eligible = candidates.filter(isOfficialResearchHomeCandidate);
-  const slugs = Array.from(new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)));
+  const slugs = Array.from(
+    new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)),
+  );
   return slugs.length === 1 ? slugs[0] : null;
 }
 
@@ -55,7 +58,9 @@ export function resolveCanonicalResearchHome(
 ): CanonicalResearchHomeResolution {
   if (candidates.length === 0) return { status: 'safe-shell' };
   const eligible = candidates.filter(isOfficialResearchHomeCandidate);
-  const slugs = Array.from(new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)));
+  const slugs = Array.from(
+    new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)),
+  );
   if (slugs.length === 1) return { status: 'canonical', slug: slugs[0] };
   if (slugs.length > 1) return { status: 'ambiguous' };
   return { status: 'ineligible' };
@@ -75,7 +80,9 @@ export async function resolveCanonicalResearchHomeForUser(
     return { status: 'ineligible' };
   }
   const entityIds = Array.from(
-    new Set(memberships.map((membership) => String(membership.researchEntityId || '')).filter(Boolean)),
+    new Set(
+      memberships.map((membership) => String(membership.researchEntityId || '')).filter(Boolean),
+    ),
   );
   if (entityIds.length === 0) return { status: 'safe-shell' };
 

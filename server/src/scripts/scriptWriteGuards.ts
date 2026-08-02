@@ -20,9 +20,12 @@ export function mongoTargetFingerprint(mongoUrl: string | undefined): string {
     const parsed = new URL(mongoUrl);
     const topologyKeys = ['directConnection', 'loadBalanced', 'replicaSet', 'srvServiceName'];
     const topology = topologyKeys
-      .flatMap((key) => parsed.searchParams.getAll(key).map((value) => [key.toLowerCase(), value.toLowerCase()]))
-      .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
-        leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue),
+      .flatMap((key) =>
+        parsed.searchParams.getAll(key).map((value) => [key.toLowerCase(), value.toLowerCase()]),
+      )
+      .sort(
+        ([leftKey, leftValue], [rightKey, rightValue]) =>
+          leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue),
       );
     identity = JSON.stringify({
       protocol: parsed.protocol.toLowerCase(),

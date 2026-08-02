@@ -162,10 +162,7 @@ describe('groupAwardsByPi', () => {
   });
 
   it('drops awards with no PI name', () => {
-    const groups = groupAwardsByPi([
-      { id: 'x', awardeeName: 'Yale University' },
-      GRANT_AWARD,
-    ]);
+    const groups = groupAwardsByPi([{ id: 'x', awardeeName: 'Yale University' }, GRANT_AWARD]);
     expect(groups).toHaveLength(1);
     expect(groups[0].piLastName).toBe('Grant');
   });
@@ -296,10 +293,7 @@ describe('findUserForPi', () => {
 
   it('returns the matched user id on exact lname+fname', async () => {
     const finder = vi.fn(async () => [{ _id: 'user-1' }]);
-    const id = await findUserForPi(
-      { firstName: 'Parker', lastName: 'Grant' },
-      finder as any,
-    );
+    const id = await findUserForPi({ firstName: 'Parker', lastName: 'Grant' }, finder as any);
     expect(id).toBe('user-1');
     expect(finder).toHaveBeenCalledTimes(1);
   });
@@ -495,6 +489,7 @@ describe('NsfAwardScraper.run', () => {
       fetchPage: fetchPage as any,
       userFinder: userFinder as any,
       dateStart: '01/01/2020',
+      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
     });
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
@@ -575,7 +570,9 @@ describe('NsfAwardScraper.run', () => {
     expect(emails).toContain('rowan.circuit@yale.edu');
     expect(emails).toContain('harper.signal@yale.edu');
     // Non-Yale co-PI Raghavendra should NOT appear
-    expect(emails.find((e) => typeof e === 'string' && (e as string).includes('cs.unc.edu'))).toBeUndefined();
+    expect(
+      emails.find((e) => typeof e === 'string' && (e as string).includes('cs.unc.edu')),
+    ).toBeUndefined();
   });
 
   it('respects ctx.options.limit by capping awards mid-page', async () => {

@@ -15,13 +15,11 @@
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
  *   - Group grants by contact PI name.
  *   - For each PI:
- *       - Try to resolve to a User by (lname exact + fname exact), then
- *         (lname exact + first initial). If unmatched, emit a User observation
- *         keyed by `nih-pi:<normalized>` so the materializer can stub a User.
- *       - Compute a deterministic ResearchGroup slug `nih-pi-<normalized>`.
- *       - Emit ResearchGroup observations: name, kind, school (for YSM only),
- *         recentGrants (full array of up to 10 most-recent grants), recentGrantCount,
- *         fundingAgencies=['NIH'], lastObservedAt = max(start_date), sourceUrls.
+ *       - Resolve an unambiguous Yale User by exact or conservative prefix name matching.
+ *       - Enrich the PI's one eligible official research home when present, fail closed
+ *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
+ *         only when no research-home membership exists.
+ *       - Emit grant evidence without replacing identity fields on an official home.
  *
  * Honors:
  *   - ctx.options.useCache — caches each (offset/limit/fiscal_year) page payload.
@@ -145,11 +143,7 @@ export function canonicalPiName(raw: string | undefined | null): string {
     const first_t = titleCaseToken(firstChunk);
     return [first_t, last_t].filter(Boolean).join(' ');
   }
-  return trimmed
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(titleCaseToken)
-    .join(' ');
+  return trimmed.split(/\s+/).filter(Boolean).map(titleCaseToken).join(' ');
 }
 
 function titleCaseToken(token: string): string {
@@ -227,7 +221,9 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
   const dollarAmount = typeof grant.award_amount === 'number' ? grant.award_amount : 0;
   const url =
     grant.project_detail_url ||
-    (grant.appl_id ? `https://reporter.nih.gov/project-details/${grant.appl_id}` : REPORTER_ENDPOINT);
+    (grant.appl_id
+      ? `https://reporter.nih.gov/project-details/${grant.appl_id}`
+      : REPORTER_ENDPOINT);
   return {
     id,
     agency,
@@ -290,9 +286,7 @@ export async function resolveUserForPi(
     .lean();
   if (!first) return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
   // Exact first name match wins.
-  const exact = candidates.filter(
-    (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
-  );
+  const exact = candidates.filter((c) => (c.fname || '').toLowerCase() === first.toLowerCase());
   if (exact.length === 1) {
     return { status: 'matched', user: userPiMatchResult(exact[0]) };
   }
@@ -375,9 +369,7 @@ export function piGrantsToObservations(
     .filter((t): t is number => typeof t === 'number')
     .reduce((max, t) => (t > max ? t : max), 0);
 
-  const sourceUrls = sorted
-    .map((g) => g.project_detail_url)
-    .filter((u): u is string => !!u);
+  const sourceUrls = sorted.map((g) => g.project_detail_url).filter((u): u is string => !!u);
 
   // Determine school/department hint from organization.dept_type when present.
   // We only use it as a soft signal; the resolver will dedupe against other sources.
@@ -423,7 +415,11 @@ export function piGrantsToObservations(
     out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
   if (sourceUrls.length > 0 && !canonicalResearchHomeSlug) {
-    out.push({ ...groupBase, field: 'sourceUrls', value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI) });
+    out.push({
+      ...groupBase,
+      field: 'sourceUrls',
+      value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI),
+    });
   }
   if (matchedUser) {
     out.push({
@@ -501,9 +497,7 @@ async function fetchPage({
     results: (res.data?.results as NihGrant[]) || [],
   };
   if (useCache) await setCached('nih-reporter', cacheKey, payload);
-  ctx.log(
-    `fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`,
-  );
+  ctx.log(`fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`);
   return payload;
 }
 

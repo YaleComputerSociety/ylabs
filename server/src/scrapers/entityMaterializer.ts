@@ -263,19 +263,25 @@ const grantIdentity = (value: unknown): string => {
   return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(grant)}`;
 };
 
-export function aggregateResearchEntityGrantEvidence(
-  observations: MaterializerObservationLike[],
-): { recentGrants?: unknown[]; recentGrantCount?: number; fundingAgencies?: string[] } {
+export function aggregateResearchEntityGrantEvidence(observations: MaterializerObservationLike[]): {
+  recentGrants?: unknown[];
+  recentGrantCount?: number;
+  fundingAgencies?: string[];
+} {
   const latest = new Map<string, MaterializerObservationLike>();
   for (const observation of observations) {
     if (
       observation.field !== 'recentGrants' &&
       observation.field !== 'recentGrantCount' &&
       observation.field !== 'fundingAgencies'
-    ) continue;
+    )
+      continue;
     const key = `${observation.sourceName || ''}:${observation.field}`;
     const current = latest.get(key);
-    if (!current || (observation.observedAt?.getTime() || 0) >= (current.observedAt?.getTime() || 0)) {
+    if (
+      !current ||
+      (observation.observedAt?.getTime() || 0) >= (current.observedAt?.getTime() || 0)
+    ) {
       latest.set(key, observation);
     }
   }
@@ -294,7 +300,9 @@ export function aggregateResearchEntityGrantEvidence(
       hasAgencySnapshot = true;
       for (const agency of observation.value) {
         const normalized = textValue(agency);
-        if (normalized) agencies.set(normalized.toLowerCase(), normalized);
+        if (normalized && !agencies.has(normalized.toLowerCase())) {
+          agencies.set(normalized.toLowerCase(), normalized);
+        }
       }
     }
     if (
@@ -311,7 +319,9 @@ export function aggregateResearchEntityGrantEvidence(
     .sort((left, right) => {
       const leftTime = new Date(objectRecord(left).startDate as any).getTime();
       const rightTime = new Date(objectRecord(right).startDate as any).getTime();
-      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+      return (
+        (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+      );
     })
     .slice(0, 10);
   return {

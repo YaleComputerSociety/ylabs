@@ -17,16 +17,15 @@
  *      ago) using `awardeeName="Yale University"` (quoted = exact phrase) and
  *      offset/rpp pagination. Stop on an empty page.
  *   2. Group awards by PI (`piFirstName` + `piLastName`).
- *   3. For each PI: try to match an existing User by exact lname+fname, then by
- *      lname + given-name prefix (or first initial when NSF only gives an initial). If matched, use a slug derived from that user; if
- *      not, emit a User observation under entityKey `nsf-pi:<normalized-name>`
- *      so the materializer at least records the person's existence.
- *   4. Emit a ResearchGroup observation per PI:
+ *   3. For each PI, resolve an unambiguous Yale User by exact or conservative
+ *      prefix matching. Enrich one eligible official research home when present,
+ *      fail closed on ambiguous or ineligible identity/home evidence, or use a
+ *      synthetic shell only when no research-home membership exists.
+ *   4. Emit grant evidence without replacing identity fields on an official home:
  *        - `recentGrants`: full embedded array of up to MAX_GRANTS_PER_PI
  *          (latest by start date).
  *        - `recentGrantCount`: count of active awards for this PI.
- *        - `fundingAgencies`: ['NSF']  (NIH scraper emits ['NIH']; the resolver
- *          merges array-typed fields with an agreement bonus across sources.)
+ *        - `fundingAgencies`: ['NSF'] (materialization unions latest source snapshots).
  *        - `lastObservedAt`: max(startDate) across this PI's awards.
  *   5. Co-PIs (`coPDPI`) → emit ResearchGroupMember observations with role
  *      'co-pi' but ONLY when we can resolve the co-PI to an existing Yale User
@@ -44,12 +43,7 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import type {
-  IScraper,
-  ObservationInput,
-  ScraperContext,
-  ScraperResult,
-} from '../types';
+import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -148,7 +142,9 @@ export interface RecentGrantRecord {
  */
 export function parseNsfDate(s: string | undefined | null): Date | undefined {
   if (!s) return undefined;
-  const m = String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const m = String(s)
+    .trim()
+    .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return undefined;
   const [_all, mm, dd, yyyy] = m;
   const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
@@ -231,8 +227,7 @@ export function awardToRecord(
     startDate: parseNsfDate(award.startDate),
     endDate: parseNsfDate(award.expDate),
     dollarAmount:
-      parseDollarAmount(award.fundsObligatedAmt) ??
-      parseDollarAmount(award.estimatedTotalAmt),
+      parseDollarAmount(award.fundsObligatedAmt) ?? parseDollarAmount(award.estimatedTotalAmt),
     url,
     role,
   };
@@ -368,9 +363,7 @@ export async function resolveUserForPi(
   return { status: 'absent' };
 }
 
-async function defaultUserFinder(
-  q: Record<string, unknown>,
-): Promise<Array<{ _id: unknown }>> {
+async function defaultUserFinder(q: Record<string, unknown>): Promise<Array<{ _id: unknown }>> {
   return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(5).lean();
 }
 
@@ -598,7 +591,9 @@ export class NsfAwardScraper implements IScraper {
       if (payload.awards.length < PAGE_SIZE) break;
       offset += PAGE_SIZE;
     }
-    ctx.log(`Fetched ${awards.length} awards across ${Math.ceil(awards.length / PAGE_SIZE)} page(s)`);
+    ctx.log(
+      `Fetched ${awards.length} awards across ${Math.ceil(awards.length / PAGE_SIZE)} page(s)`,
+    );
 
     // 2. Group by PI.
     const groups = groupAwardsByPi(awards);
