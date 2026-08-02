@@ -64,6 +64,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     await import('../app');
@@ -151,6 +152,21 @@ describe('app security runtime classification', () => {
     await expect(import('../app')).rejects.toThrow(/TRUSTED_PROXY_CIDRS/);
   });
 
+  it('requires a trusted proxy boundary in deployed runtimes', async () => {
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '  , ',
+    };
+
+    await expect(import('../app')).rejects.toThrow(
+      /TRUSTED_PROXY_CIDRS must define at least one trusted proxy/,
+    );
+  });
+
   it('keeps Express query parsing flat before request-shape sanitization', async () => {
     vi.doUnmock('cookie-session');
     process.env = {
@@ -159,6 +175,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -186,6 +203,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -239,6 +257,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -276,6 +295,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');
@@ -315,6 +335,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
     };
 
     const { default: app } = await import('../app');

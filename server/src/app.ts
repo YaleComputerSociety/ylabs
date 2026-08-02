@@ -94,6 +94,7 @@ const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
 const trustedProxyAddresses = new BlockList();
+let trustedProxyAddressCount = 0;
 for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
   const value = entry.trim();
   if (!value) continue;
@@ -114,6 +115,11 @@ for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
   } else {
     trustedProxyAddresses.addSubnet(address, prefix, family);
   }
+  trustedProxyAddressCount += 1;
+}
+
+if (!bypassRuntimeSecurity && trustedProxyAddressCount === 0) {
+  throw new Error('TRUSTED_PROXY_CIDRS must define at least one trusted proxy in deployed runtimes.');
 }
 
 const normalizedPeerAddress = (value: string): string =>

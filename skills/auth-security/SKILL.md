@@ -133,7 +133,7 @@ Never commit them.
 | `API_MODE` | No | `productionMigration` for dual-DB migration mode. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
-| `TRUSTED_PROXY_CIDRS` | Deployed proxy | Comma-separated proxy CIDRs trusted for forwarded visitor IP resolution. |
+| `TRUSTED_PROXY_CIDRS` | Deployed | Non-empty comma-separated proxy CIDRs trusted for forwarded visitor IP resolution; empty is allowed only in local development and tests. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
 | `MEILISEARCH_HOST` | No | Meilisearch host. |
