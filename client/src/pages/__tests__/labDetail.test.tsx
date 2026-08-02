@@ -324,6 +324,32 @@ describe('LabDetail page', () => {
     });
   });
 
+  it('sends signed-out visitors to Yale sign in before saving a research plan', async () => {
+    renderLabDetail(basePayload, { isAuthenticated: false });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(screen.getByRole('button', { name: 'Save research plan' }));
+
+    expect(await screen.findByText('Yale sign in')).toBeTruthy();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(localStorage.getItem('yale-research.firstResearchPlanSave.v1')).toBeNull();
+  });
+
+  it('does not claim a research plan was saved when persistence fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockedAxios.put.mockRejectedValueOnce(new Error('save unavailable'));
+    renderLabDetail();
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(screen.getByRole('button', { name: 'Save research plan' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save research plan' })).toBeTruthy(),
+    );
+    expect(screen.queryByText('Research plan saved')).toBeNull();
+    expect(localStorage.getItem('yale-research.firstResearchPlanSave.v1')).toBeNull();
+  });
+
   it('renders specific ways-to-approach guidance without crashing', async () => {
     renderLabDetail({
       ...basePayload,
