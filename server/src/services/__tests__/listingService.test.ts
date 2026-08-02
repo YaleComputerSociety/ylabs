@@ -55,6 +55,7 @@ const mocks = vi.hoisted(() => {
     findOrCreateForOwner: vi.fn(),
     getMeiliIndex: vi.fn(),
     materializePostedOpportunityFromListing: vi.fn(),
+    mutateProjection: vi.fn(),
     processListingTitle: vi.fn(async (title: string) => title),
     readUser: vi.fn(),
     researchEntityFindById: vi.fn(),
@@ -99,6 +100,10 @@ vi.mock('../postedOpportunityService', () => ({
   materializePostedOpportunityFromListing: mocks.materializePostedOpportunityFromListing,
 }));
 
+vi.mock('../adminAccessReviewProjectionService', () => ({
+  mutateAndRefreshAdminAccessReviewProjection: mocks.mutateProjection,
+}));
+
 vi.mock('../researchGroupService', () => ({
   findOrCreateForOwner: mocks.findOrCreateForOwner,
 }));
@@ -137,6 +142,10 @@ describe('listingService', () => {
     mocks.findOrCreateForOwner.mockReset();
     mocks.getMeiliIndex.mockReset();
     mocks.materializePostedOpportunityFromListing.mockReset();
+    mocks.mutateProjection.mockReset();
+    mocks.mutateProjection.mockImplementation(
+      (_id: unknown, mutate: (session: mongoose.ClientSession) => unknown) => mutate({} as any),
+    );
     mocks.processListingTitle.mockClear();
     mocks.readUser.mockReset();
     mocks.researchEntityFindById.mockReset();
@@ -513,10 +522,7 @@ describe('listingService', () => {
       'admin123',
       {
         title: `  ${'A'.repeat(180)}  `,
-        websites: [
-          'https://example.yale.edu/admin-listing',
-          'javascript:alert(document.cookie)',
-        ],
+        websites: ['https://example.yale.edu/admin-listing', 'javascript:alert(document.cookie)'],
         professorIds,
         professorNames: Array.from({ length: 60 }, (_, index) => ` Professor ${index} `),
         emails: ['owner123@yale.edu', { nested: true }],

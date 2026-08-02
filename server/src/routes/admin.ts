@@ -32,6 +32,7 @@ import { adminUpdateProfile, cascadeDepartmentsToListings } from '../services/pr
 import { buildSafeSearchRegex } from '../utils/regex';
 import {
   AccessReviewRequestError,
+  AdminAccessReviewProjectionUnavailableError,
   getAccessReviewEntity,
   listAccessReviewEntities,
   updateAccessReviewManualLocks,
@@ -626,6 +627,9 @@ router.get('/access-review', async (req: Request, res: Response) => {
   } catch (error) {
     if (error instanceof AccessReviewRequestError) {
       return res.status(400).json({ error: 'Search query is too long' });
+    }
+    if (error instanceof AdminAccessReviewProjectionUnavailableError) {
+      return res.status(503).json({ error: 'Access review queue is rebuilding' });
     }
     console.error('Admin: Error fetching access review entities:', sanitizeLogValue(error));
     res.status(500).json({ error: 'Failed to fetch access review entities' });

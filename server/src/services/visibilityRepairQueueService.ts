@@ -22,6 +22,7 @@ import { upsertContactRoute, type UpsertContactRouteInput } from './contactRoute
 import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
 
@@ -2347,7 +2348,9 @@ const defaultRepairDeps: RepairDeps = {
   async updateResearchEntity(id, patch) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return;
-    await ResearchEntity.updateOne({ _id: safeId }, { $set: patch });
+    await mutateAndRefreshAdminAccessReviewProjection(safeId, (session) =>
+      ResearchEntity.updateOne({ _id: safeId }, { $set: patch }, { session }).then(() => undefined),
+    );
   },
   async findProgram(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);

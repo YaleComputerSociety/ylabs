@@ -1,7 +1,7 @@
 # Research Model Refactor - Phase 0 Hot-Path Audit
 
 This audit records the source-backed ownership, read path, declared indexes, and boundedness of the five hot surfaces required by Phase 0.
-It was prepared from Beta commit `82843a11` without connecting to MongoDB, Meilisearch, or any environment secrets.
+It was refreshed from Beta commit `b016ad44` without connecting to MongoDB, Meilisearch, or any environment secrets.
 All cost statements below are structural inferences from source.
 They are not measured runtime results.
 
@@ -20,7 +20,7 @@ Phase 0 still needs live `getIndexes()`, Meilisearch settings, and query-plan ev
 | `/research/:slug`    | `client/src/pages/labDetail.tsx`                                                             | `researchGroupController.getResearchGroupBySlug` and `researchGroupService.getResearchGroupDetail`        | `research_entities` owns identity and visibility, while member, access, activity, listing, and relationship collections own their respective sections                                    | No Meilisearch query runs on the detail path                                                                                    |
 | `/opportunities/:id` | `client/src/pages/opportunityDetail.tsx`                                                     | `opportunityController.getOpportunityById` and `opportunityDetailService.getOpportunityDetail`            | `posted_opportunities` owns the posting, `entry_pathways` owns the durable route, `research_entities` owns the host, and `observations` owns evidence                                    | No Meilisearch query runs on the detail path                                                                                    |
 | Account planning     | `client/src/pages/account.tsx` and `client/src/components/accounts/SavedPathwaysSection.tsx` | `userController` and `userService` saved-research handlers, plus pathway and fellowship matching services | Runtime ownership is still embedded in `users.savedResearchEntities`, `users.savedResearchEntityPlans`, `users.favPathways`, and `users.savedPathwayPlans`                               | Pathway hydration uses MongoDB aggregation, not the `pathways` Meilisearch index                                                |
-| Admin access-review  | `client/src/pages/analytics.tsx`, `AdminPanel.tsx`, and `AdminAccessReview.tsx`              | Admin routes call `adminAccessReviewService` directly                                                     | `research_entities` owns queue parents, the four access collections own review state, and `observations` owns evidence                                                                   | Pathway Meilisearch sync can run after a faculty-opportunity review write, but list and detail reads are MongoDB-only           |
+| Admin access-review  | `client/src/pages/analytics.tsx`, `AdminPanel.tsx`, and `AdminAccessReview.tsx`              | Admin routes call `adminAccessReviewService` directly                                                     | `admin_access_review_projections` owns the rebuildable list projection, `research_entities` owns queue parents, the four access collections own review state, and `observations` owns evidence | Pathway Meilisearch sync can run after a faculty-opportunity review write, but list and detail reads are MongoDB-only           |
 
 The first-class `research_plans` schema exists, but none of the account-planning endpoints traced here reads or writes it.
 Phase 0 must therefore treat the embedded `users` planning fields as the current runtime owner until a later vertical cutover changes the endpoints.
@@ -160,16 +160,17 @@ The admin-only `/analytics` route renders `Analytics`, which mounts `AdminPanel`
 Selecting the Access Review tab mounts `AdminAccessReview`.
 The list sends `GET /api/admin/access-review`, and selection sends `GET /api/admin/access-review/:id`.
 Admin middleware applies authentication, active admin authority, and private no-store headers before these handlers.
-The list service aggregates from every matching `research_entities` parent, performs lookups into all four access collections, computes unreviewed counts and official-application state, sorts the computed results, and only then applies page skip and limit inside a facet.
+The list service checks that the environment-local `admin_access_review_projections` collection is ready and has no stale rows.
+It filters and sorts stored queue prefixes, counts, official-application state, and sort keys, applies page skip and limit, and then hydrates only the selected `research_entities` parents.
 The list request also runs eight progress counts, consisting of remaining and reviewed-today counts across four access collections.
 The detail service loads the entity and all matching pathways, signals, routes, and opportunities without result limits.
 It then resolves bounded evidence IDs per record from `observations`.
 
 ### Boundedness and cost drivers
 
-- Page and page-size inputs are capped at 1,000 and 100, but pagination occurs after all four lookups and computed sorting.
-- `hasUnreviewed` filters on a computed field after the lookups.
-- Search uses safe but unanchored regular expressions across name, display name, slug, departments, and research areas.
+- Page and page-size inputs are capped at 1,000 and 100, and projection pagination occurs before parent hydration.
+- `hasUnreviewed` and queue sorts use stored projection fields.
+- Search uses bounded normalized prefixes stored in the projection.
 - Each queue request adds eight collection counts to the main aggregate.
 - Detail output has no source-level limit for any of the four access-record collections.
 - Evidence IDs are capped at 100 per record, but the number of records is unbounded, so total evidence fan-out is also unbounded.
@@ -179,9 +180,8 @@ It then resolves bounded evidence IDs per record from `observations`.
 
 Each access collection declares a `researchEntityId` index and a `{ researchEntityId: 1, review.status: 1, review.reviewedAt: -1 }` compound index.
 Entry pathways and posted opportunities add exclusion predicates on `derivationKey` and `submissionStatus` that are not covered by those review compounds.
-Research entities declare indexes for slug, departments, and research areas, but not for display name.
-The computed unreviewed and application sorts cannot use a stored parent-field index as written.
-Live aggregate explains must determine whether each correlated `$lookup` uses the foreign `researchEntityId` index and whether the queue sort spills to disk.
+The projection declares indexes for its parent reference, stale-state checks, bounded search prefixes, and each supported queue sort.
+Live explains must determine whether deployed projection indexes support each queue filter and sort without a collection scan or blocking sort.
 
 ## Live evidence required before Phase 0 closes
 
@@ -218,7 +218,7 @@ Flag any collection scan, keys-to-results or documents-to-results amplification 
 For Meilisearch requests, retain `processingTimeMs`, hit counts, estimated totals, request mode, retry or degradation state, and the resolved index prefix.
 For each HTTP surface, retain server-side query count plus p50 and p95 latency over a reviewed representative sample.
 For account planning, separately retain the number of writes triggered by dashboard `GET` requests and compatibility-claim retries.
-For admin access-review, separately retain aggregate latency, each of the eight progress-count latencies, lookup cardinalities, and any sort spill.
+For admin access-review, separately retain projection-page and parent-hydration latency, each of the eight progress-count latencies, and any sort spill.
 For `/research/:slug`, separately retain per-collection returned counts so bounded direct sections are distinguishable from unbounded access-summary and planning-context reads.
 
 ## Phase 0 disposition
@@ -226,5 +226,5 @@ For `/research/:slug`, separately retain per-collection returned counts so bound
 Source inspection is complete for these five surfaces.
 The repeatable private ResearchEntity search-baseline tooling and protected Beta and ProductionCopy launchers are implemented, but reviewed Development, Beta, and ProductionCopy artifacts are still required.
 The repeatable private MongoDB query-cost tooling is implemented, but reviewed Development, Beta, and ProductionCopy artifacts are still required.
-The highest-priority live checks are the full-scan `/research` fallbacks, missing scholarly-link and attribution indexes, account planning's concurrent mutation-capable reads, fellowship all-record matching, and admin access-review's pre-pagination lookups and unbounded detail.
+The highest-priority live checks are the full-scan `/research` fallbacks, missing scholarly-link and attribution indexes, account planning's concurrent mutation-capable reads, fellowship all-record matching, and admin access-review's projection indexes and unbounded detail.
 No later migration phase should remove compatibility fields or redirect these readers until the live evidence is reviewed and an owner accepts the resulting index and cutover work.

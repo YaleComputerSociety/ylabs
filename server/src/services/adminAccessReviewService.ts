@@ -1,16 +1,23 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
+import { AdminAccessReviewProjection } from '../models/adminAccessReviewProjection';
 import { EntryPathway } from '../models/entryPathway';
 import { AccessSignal } from '../models/accessSignal';
 import { ContactRoute } from '../models/contactRoute';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { Observation } from '../models/observation';
 import { recordReviewStatuses } from '../models/modelPrimitives';
-import { buildSafeSearchRegex } from '../utils/regex';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
+import {
+  AdminAccessReviewProjectionUnavailableError,
+  assertAdminAccessReviewProjectionReady,
+  mutateAndRefreshAdminAccessReviewProjection,
+} from './adminAccessReviewProjectionService';
+
+export { AdminAccessReviewProjectionUnavailableError };
 
 export interface AccessReviewListInput {
   search?: string;
@@ -280,122 +287,43 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
   const searchTerm = normalizeAccessReviewSearchTerm(input.search);
 
   if (searchTerm) {
-    const searchRegex = buildSafeSearchRegex(searchTerm);
-    filter.$or = [
-      { name: searchRegex },
-      { displayName: searchRegex },
-      { slug: searchRegex },
-      { departments: searchRegex },
-      { researchAreas: searchRegex },
-    ];
+    const searchPrefixes = searchTerm
+      .normalize('NFKC')
+      .toLocaleLowerCase('en-US')
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+      .slice(0, 10)
+      .map((term) => term.slice(0, 60));
+    if (searchPrefixes.length > 0) filter.searchPrefixes = { $all: searchPrefixes };
   }
+  if (hasUnreviewed) filter.totalUnreviewed = { $gt: 0 };
+  const sortSpec: Record<string, 1 | -1> =
+    sort === 'updated'
+      ? { sortUpdatedAt: -1 as const, researchEntityId: 1 as const }
+      : sort === 'official_application'
+        ? {
+            hasOfficialApplication: -1 as const,
+            totalUnreviewed: -1 as const,
+            sortUpdatedAt: -1 as const,
+            researchEntityId: 1 as const,
+          }
+        : {
+            totalUnreviewed: -1 as const,
+            hasOfficialApplication: -1 as const,
+            sortUpdatedAt: -1 as const,
+            researchEntityId: 1 as const,
+          };
 
-  const lookup = (from: string, as: string, includeApplication = false) => ({
-    $lookup: {
-      from,
-      let: { entityId: '$_id' },
-      pipeline: [
-        {
-          $match: {
-            $expr: { $eq: ['$researchEntityId', '$$entityId'] },
-            ...(from === 'posted_opportunities'
-              ? { submissionStatus: { $ne: 'DRAFT' } }
-              : from === 'entry_pathways'
-                ? {
-                    derivationKey: { $not: /^faculty-opportunity:/ },
-                  }
-                : {}),
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            status: '$review.status',
-            ...(includeApplication ? { applicationUrl: 1 } : {}),
-          },
-        },
-      ],
-      as,
-    },
-  });
-  const pipeline: any[] = [
-    { $match: filter },
-    lookup('entry_pathways', '_pathways'),
-    lookup('access_signals', '_signals'),
-    lookup('contact_routes', '_routes'),
-    lookup('posted_opportunities', '_opportunities', true),
-    {
-      $set: {
-        totalUnreviewed: {
-          $add: [
-            {
-              $size: {
-                $filter: {
-                  input: '$_pathways',
-                  as: 'r',
-                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
-                },
-              },
-            },
-            {
-              $size: {
-                $filter: {
-                  input: '$_signals',
-                  as: 'r',
-                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
-                },
-              },
-            },
-            {
-              $size: {
-                $filter: {
-                  input: '$_routes',
-                  as: 'r',
-                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
-                },
-              },
-            },
-            {
-              $size: {
-                $filter: {
-                  input: '$_opportunities',
-                  as: 'r',
-                  cond: { $in: [{ $ifNull: ['$$r.status', 'unreviewed'] }, ['unreviewed', null]] },
-                },
-              },
-            },
-          ],
-        },
-        hasOfficialApplication: {
-          $anyElementTrue: {
-            $map: {
-              input: '$_opportunities',
-              as: 'r',
-              in: { $gt: [{ $strLenCP: { $ifNull: ['$$r.applicationUrl', ''] } }, 0] },
-            },
-          },
-        },
-      },
-    },
-    ...(hasUnreviewed ? [{ $match: { totalUnreviewed: { $gt: 0 } } }] : []),
-    {
-      $sort:
-        sort === 'updated'
-          ? { updatedAt: -1, _id: 1 }
-          : sort === 'official_application'
-            ? { hasOfficialApplication: -1, totalUnreviewed: -1, updatedAt: -1, _id: 1 }
-            : { totalUnreviewed: -1, hasOfficialApplication: -1, updatedAt: -1, _id: 1 },
-    },
-    {
-      $facet: {
-        rows: [{ $skip: (page - 1) * pageSize }, { $limit: pageSize }],
-        meta: [{ $count: 'total' }],
-      },
-    },
-  ];
-
-  const [aggregateResult, progressCounts] = await Promise.all([
-    ResearchEntity.aggregate(pipeline).exec(),
+  await assertAdminAccessReviewProjectionReady();
+  const projectionQuery = AdminAccessReviewProjection.find(filter)
+    .sort(sortSpec)
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .select('researchEntityId counts unreviewedCounts totalUnreviewed hasOfficialApplication')
+    .lean();
+  const [groups, total, progressCounts] = await Promise.all([
+    projectionQuery,
+    AdminAccessReviewProjection.countDocuments(filter),
     Promise.all(
       [EntryPathway, AccessSignal, ContactRoute, PostedOpportunity].map(async (model) => {
         const start = new Date();
@@ -421,42 +349,33 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
       }),
     ),
   ]);
-  const groups = aggregateResult[0]?.rows || [];
-  const total = Number(aggregateResult[0]?.meta?.[0]?.total || 0);
+  const entityIds = groups.map((group: any) => group.researchEntityId);
+  const hydrated = entityIds.length
+    ? await ResearchEntity.find({ _id: { $in: entityIds } })
+        .select(
+          'name displayName slug entityType kind departments researchAreas manuallyLockedFields',
+        )
+        .lean()
+    : [];
+  const hydratedById = new Map(
+    hydrated.map((entity: any) => [accessReviewDocumentId(entity._id), entity]),
+  );
 
-  const entities = groups.map((group: any) => {
-    const id = accessReviewDocumentId(group._id);
-    const records = [
-      group._pathways || [],
-      group._signals || [],
-      group._routes || [],
-      group._opportunities || [],
-    ];
-    const counts = {
-      entryPathways: records[0].length,
-      accessSignals: records[1].length,
-      contactRoutes: records[2].length,
-      postedOpportunities: records[3].length,
-    };
-    const unreviewedCounts = {
-      entryPathways: records[0].filter((r: any) => !r.status || r.status === 'unreviewed').length,
-      accessSignals: records[1].filter((r: any) => !r.status || r.status === 'unreviewed').length,
-      contactRoutes: records[2].filter((r: any) => !r.status || r.status === 'unreviewed').length,
-      postedOpportunities: records[3].filter((r: any) => !r.status || r.status === 'unreviewed')
-        .length,
-    };
-
+  const entities = groups.flatMap((group: any) => {
+    const id = accessReviewDocumentId(group.researchEntityId);
+    const entity = hydratedById.get(id);
+    if (!entity) return [];
     return {
       _id: id,
-      name: group.displayName || group.name || '',
-      slug: group.slug || '',
-      entityType: group.entityType,
-      kind: group.kind,
-      departments: group.departments || [],
-      researchAreas: group.researchAreas || [],
-      manuallyLockedFields: group.manuallyLockedFields || [],
-      counts,
-      unreviewedCounts,
+      name: entity.displayName || entity.name || '',
+      slug: entity.slug || '',
+      entityType: entity.entityType,
+      kind: entity.kind,
+      departments: entity.departments || [],
+      researchAreas: entity.researchAreas || [],
+      manuallyLockedFields: entity.manuallyLockedFields || [],
+      counts: group.counts,
+      unreviewedCounts: group.unreviewedCounts,
       totalUnreviewed: Number(group.totalUnreviewed) || 0,
       hasOfficialApplication: group.hasOfficialApplication === true,
     };
@@ -464,10 +383,10 @@ export async function listAccessReviewEntities(input: AccessReviewListInput = {}
 
   return {
     entities,
-    total,
+    total: Number(total),
     page,
     pageSize,
-    totalPages: Math.ceil(total / pageSize),
+    totalPages: Math.ceil(Number(total) / pageSize),
     progress: progressCounts.reduce(
       (summary, row) => ({
         remaining: summary.remaining + row.remaining,
@@ -527,13 +446,15 @@ export async function updateAccessReviewManualLocks(
   const manuallyLockedFields = normalizeAccessReviewLockedFields(fields);
   if (!id || !manuallyLockedFields) return null;
 
-  return ResearchEntity.findByIdAndUpdate(
-    id,
-    { $set: { manuallyLockedFields } },
-    { new: true, runValidators: true },
-  )
-    .select('name slug manuallyLockedFields')
-    .lean();
+  return mutateAndRefreshAdminAccessReviewProjection(id, async (session) =>
+    ResearchEntity.findByIdAndUpdate(
+      id,
+      { $set: { manuallyLockedFields } },
+      { new: true, runValidators: true, session },
+    )
+      .select('name slug manuallyLockedFields')
+      .lean(),
+  );
 }
 
 function reviewModelForRecordType(type: AccessReviewRecordType): mongoose.Model<any> | null {
@@ -576,9 +497,14 @@ export async function updateAccessReviewRecordReview(input: {
   const facultyOpportunity =
     input.type === 'postedOpportunity'
       ? await PostedOpportunity.findById(id)
-          .select('createdByUserId entryPathwayId submissionStatus review status archived revision')
+          .select(
+            'researchEntityId createdByUserId entryPathwayId submissionStatus review status archived revision',
+          )
           .lean()
       : null;
+  const projectionRecord =
+    facultyOpportunity || (await model.findById(id).select('researchEntityId').lean());
+  const projectionEntityId = (projectionRecord as any)?.researchEntityId;
 
   const update: Record<string, unknown> = {};
 
@@ -645,20 +571,28 @@ export async function updateAccessReviewRecordReview(input: {
         'review.status': facultyOpportunity?.review?.status,
       }
     : {};
-  const updateQuery = isFacultyModerationDecision
-    ? model.findOneAndUpdate(
-        { _id: id, ...expectedFacultyState },
-        { $set: update, $inc: { revision: 1 } },
-        { new: true, runValidators: true },
-      )
-    : model.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true });
-  const updated = await updateQuery.lean();
+  const mutate = async (session?: mongoose.ClientSession) => {
+    const updateQuery = isFacultyModerationDecision
+      ? model.findOneAndUpdate(
+          { _id: id, ...expectedFacultyState },
+          { $set: update, $inc: { revision: 1 } },
+          { new: true, runValidators: true, ...(session ? { session } : {}) },
+        )
+      : model.findByIdAndUpdate(
+          id,
+          { $set: update },
+          {
+            new: true,
+            runValidators: true,
+            ...(session ? { session } : {}),
+          },
+        );
+    const updated = await updateQuery.lean();
 
-  if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {
-    const reviewUpdate = Object.fromEntries(
-      Object.entries(update).filter(([field]) => field.startsWith('review.')),
-    );
-    try {
+    if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {
+      const reviewUpdate = Object.fromEntries(
+        Object.entries(update).filter(([field]) => field.startsWith('review.')),
+      );
       const pathwayResult = await EntryPathway.updateOne(
         {
           _id: facultyOpportunity.entryPathwayId,
@@ -674,45 +608,27 @@ export async function updateAccessReviewRecordReview(input: {
             ...(update['review.status'] === 'archived_by_review' ? { archived: true } : {}),
           },
         },
-        { runValidators: true },
+        { runValidators: true, ...(session ? { session } : {}) },
       );
       if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway changed');
-      if (
-        process.env.PATHWAY_SEARCH_SYNC === 'true' ||
-        process.env.PATHWAY_SEARCH_BACKEND === 'meili'
-      ) {
-        const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
-        if (pathwayId) {
-          await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
-            console.error('Faculty opportunity review sync failed:', sanitizeLogValue(error));
-          });
-        }
-      }
-    } catch (error) {
-      const expectedModeratedState = Object.fromEntries(
-        Object.entries(update).map(([field, value]) => [field, value]),
-      );
-      const compensation = await PostedOpportunity.updateOne(
-        {
-          _id: id,
-          ...expectedModeratedState,
-          revision: (updated as any).revision,
-          status: (updated as any).status,
-          archived: (updated as any).archived === true,
-        },
-        {
-          $set: {
-            submissionStatus: facultyOpportunity.submissionStatus,
-            review: facultyOpportunity.review,
-            archived: facultyOpportunity.archived === true,
-          },
-          $inc: { revision: 1 },
-        },
-      ).catch(() => null);
-      if (!compensation || compensation.matchedCount === 0) {
-        throw new Error('Faculty opportunity moderation compensation failed', { cause: error });
-      }
-      throw error;
+    }
+    return updated;
+  };
+
+  const updated = projectionEntityId
+    ? await mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, mutate)
+    : await mutate();
+  if (
+    updated &&
+    isFacultyModerationDecision &&
+    facultyOpportunity?.entryPathwayId &&
+    (process.env.PATHWAY_SEARCH_SYNC === 'true' || process.env.PATHWAY_SEARCH_BACKEND === 'meili')
+  ) {
+    const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
+    if (pathwayId) {
+      await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
+        console.error('Faculty opportunity review sync failed:', sanitizeLogValue(error));
+      });
     }
   }
 

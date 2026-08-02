@@ -362,6 +362,20 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     phase: 5,
     target: 'Environment-local rebuildable visibility repair queue over canonical projections',
   },
+  {
+    collection: 'admin_access_review_projections',
+    model: 'AdminAccessReviewProjection',
+    group: 'operational',
+    phase: 0,
+    target: 'Environment-local rebuildable admin access-review queue projection',
+  },
+  {
+    collection: 'admin_access_review_projection_state',
+    model: 'AdminAccessReviewProjectionState',
+    group: 'operational',
+    phase: 0,
+    target: 'Environment-local readiness state for the admin access-review projection',
+  },
   // Expected already retired by the earlier hard-pivot; presence is residue.
   {
     collection: 'research_groups',

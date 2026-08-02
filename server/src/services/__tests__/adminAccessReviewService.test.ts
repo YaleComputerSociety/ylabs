@@ -5,7 +5,16 @@ const mocks = vi.hoisted(() => ({
   researchEntityFind: vi.fn(),
   researchEntityCountDocuments: vi.fn(),
   researchEntityFindByIdAndUpdate: vi.fn(),
-  researchEntityAggregate: vi.fn(),
+  projectionFind: vi.fn(),
+  projectionCountDocuments: vi.fn(),
+  projectionSort: vi.fn(),
+  projectionSkip: vi.fn(),
+  projectionLimit: vi.fn(),
+  projectionLean: vi.fn(),
+  assertProjectionReady: vi.fn(),
+  invalidateProjection: vi.fn(),
+  refreshProjection: vi.fn(),
+  mutateProjection: vi.fn(),
   entryPathwayFindByIdAndUpdate: vi.fn(),
   entryPathwayFindById: vi.fn(),
   entryPathwayFindOne: vi.fn(),
@@ -23,7 +32,32 @@ vi.mock('../../models/researchEntity', () => ({
     find: mocks.researchEntityFind,
     countDocuments: mocks.researchEntityCountDocuments,
     findByIdAndUpdate: mocks.researchEntityFindByIdAndUpdate,
-    aggregate: mocks.researchEntityAggregate,
+  },
+}));
+
+vi.mock('../../models/adminAccessReviewProjection', () => ({
+  AdminAccessReviewProjection: {
+    find: (...args: unknown[]) => {
+      mocks.projectionFind(...args);
+      const query: any = {
+        sort: (...sortArgs: unknown[]) => {
+          mocks.projectionSort(...sortArgs);
+          return query;
+        },
+        skip: (...skipArgs: unknown[]) => {
+          mocks.projectionSkip(...skipArgs);
+          return query;
+        },
+        limit: (...limitArgs: unknown[]) => {
+          mocks.projectionLimit(...limitArgs);
+          return query;
+        },
+        select: vi.fn(() => query),
+        lean: mocks.projectionLean,
+      };
+      return query;
+    },
+    countDocuments: mocks.projectionCountDocuments,
   },
 }));
 
@@ -73,6 +107,14 @@ vi.mock('../pathwaySearchIndexService', () => ({
   syncPathwaySearchIndexDocument: mocks.syncPathwaySearchIndexDocument,
 }));
 
+vi.mock('../adminAccessReviewProjectionService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../adminAccessReviewProjectionService')>()),
+  assertAdminAccessReviewProjectionReady: mocks.assertProjectionReady,
+  invalidateAdminAccessReviewProjection: mocks.invalidateProjection,
+  refreshAdminAccessReviewProjection: mocks.refreshProjection,
+  mutateAndRefreshAdminAccessReviewProjection: mocks.mutateProjection,
+}));
+
 import {
   normalizeAccessReviewObjectId,
   normalizeAccessReviewLockedFields,
@@ -86,6 +128,14 @@ describe('adminAccessReviewService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.syncPathwaySearchIndexDocument.mockResolvedValue(undefined);
+    mocks.assertProjectionReady.mockResolvedValue(undefined);
+    mocks.projectionLean.mockResolvedValue([]);
+    mocks.projectionCountDocuments.mockResolvedValue(0);
+    mocks.invalidateProjection.mockResolvedValue(1);
+    mocks.refreshProjection.mockResolvedValue(true);
+    mocks.mutateProjection.mockImplementation(
+      (_id: unknown, mutate: (session: mongoose.ClientSession) => unknown) => mutate({} as any),
+    );
     const query: any = {
       select: vi.fn(() => query),
       lean: vi.fn().mockResolvedValue(null),
@@ -95,9 +145,6 @@ describe('adminAccessReviewService', () => {
   });
 
   it('caps access review page before building Mongo skip and limit values', async () => {
-    mocks.researchEntityAggregate.mockReturnValue({
-      exec: vi.fn().mockResolvedValue([{ rows: [], meta: [] }]),
-    });
     mocks.countDocuments.mockResolvedValue(0);
 
     const result = await listAccessReviewEntities({
@@ -105,8 +152,8 @@ describe('adminAccessReviewService', () => {
       pageSize: 500,
     });
 
-    const pipeline = mocks.researchEntityAggregate.mock.calls[0][0];
-    expect(pipeline.at(-1).$facet.rows).toEqual([{ $skip: 99_900 }, { $limit: 100 }]);
+    expect(mocks.projectionSkip).toHaveBeenCalledWith(99_900);
+    expect(mocks.projectionLimit).toHaveBeenCalledWith(100);
     expect(result).toMatchObject({
       entities: [],
       total: 0,
@@ -123,40 +170,56 @@ describe('adminAccessReviewService', () => {
       }),
     ).rejects.toThrow('Search query is too long');
 
-    expect(mocks.researchEntityAggregate).not.toHaveBeenCalled();
+    expect(mocks.projectionFind).not.toHaveBeenCalled();
     expect(mocks.researchEntityCountDocuments).not.toHaveBeenCalled();
   });
 
-  it('filters and sorts the queue by aggregate unreviewed work without returning record data', async () => {
-    mocks.researchEntityAggregate.mockReturnValue({
-      exec: vi.fn().mockResolvedValue([
-        {
-          rows: [
-            {
-              _id: new mongoose.Types.ObjectId('64f111111111111111111111'),
-              name: 'Example Lab',
-              slug: 'example',
-              _pathways: [{ status: 'unreviewed' }],
-              _signals: [],
-              _routes: [],
-              _opportunities: [{ status: 'approved', applicationUrl: 'https://example.edu/apply' }],
-              totalUnreviewed: 1,
-              hasOfficialApplication: true,
-            },
-          ],
-          meta: [{ total: 1 }],
-        },
-      ]),
+  it('uses bounded indexed word prefixes for queue search', async () => {
+    mocks.countDocuments.mockResolvedValue(0);
+
+    await listAccessReviewEntities({ search: ' Example   Lab ' });
+
+    expect(mocks.projectionFind).toHaveBeenCalledWith({
+      searchPrefixes: { $all: ['example', 'lab'] },
     });
+  });
+
+  it('filters and sorts the queue by aggregate unreviewed work without returning record data', async () => {
+    const researchEntityId = new mongoose.Types.ObjectId('64f111111111111111111111');
+    mocks.projectionLean.mockResolvedValue([
+      {
+        researchEntityId,
+        counts: {
+          entryPathways: 1,
+          accessSignals: 0,
+          contactRoutes: 0,
+          postedOpportunities: 1,
+        },
+        unreviewedCounts: {
+          entryPathways: 1,
+          accessSignals: 0,
+          contactRoutes: 0,
+          postedOpportunities: 0,
+        },
+        totalUnreviewed: 1,
+        hasOfficialApplication: true,
+      },
+    ]);
+    mocks.projectionCountDocuments.mockResolvedValue(1);
+    const entityQuery: any = {
+      select: vi.fn(() => entityQuery),
+      lean: vi
+        .fn()
+        .mockResolvedValue([{ _id: researchEntityId, name: 'Example Lab', slug: 'example' }]),
+    };
+    mocks.researchEntityFind.mockReturnValue(entityQuery);
     mocks.countDocuments.mockResolvedValue(2);
 
     const result = await listAccessReviewEntities({
       hasUnreviewed: 'true',
       sort: 'official_application',
     });
-    const pipeline = mocks.researchEntityAggregate.mock.calls[0][0];
-
-    expect(pipeline).toContainEqual({ $match: { totalUnreviewed: { $gt: 0 } } });
+    expect(mocks.projectionFind).toHaveBeenCalledWith({ totalUnreviewed: { $gt: 0 } });
     expect(result.entities[0]).toMatchObject({
       totalUnreviewed: 1,
       hasOfficialApplication: true,
@@ -382,7 +445,7 @@ describe('adminAccessReviewService', () => {
     expect(mocks.entryPathwayUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('compensates moderation when the linked pathway is missing', async () => {
+  it('rolls back moderation when the linked pathway is missing', async () => {
     const id = '64f222222222222222222222';
     const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
     const recordQuery: any = {
@@ -415,24 +478,10 @@ describe('adminAccessReviewService', () => {
       updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
     ).rejects.toThrow('Linked pathway changed');
 
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$set).toEqual({
-      submissionStatus: 'PENDING_REVIEW',
-      review: { status: 'unreviewed' },
-      archived: false,
-    });
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$inc).toEqual({ revision: 1 });
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
-      _id: new mongoose.Types.ObjectId(id),
-      revision: 5,
-      status: 'OPEN',
-      archived: false,
-      submissionStatus: 'REVIEWED',
-      'review.status': 'approved',
-      'review.reviewedAt': expect.any(Date),
-    });
+    expect(mocks.postedOpportunityUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('does not compensate over a concurrent faculty lifecycle write', async () => {
+  it('rolls back without compensating over a concurrent faculty lifecycle write', async () => {
     const id = '64f222222222222222222222';
     const recordQuery: any = {
       select: vi.fn(() => recordQuery),
@@ -463,18 +512,12 @@ describe('adminAccessReviewService', () => {
 
     await expect(
       updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
-    ).rejects.toThrow('Faculty opportunity moderation compensation failed');
+    ).rejects.toThrow('Linked pathway changed');
 
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
-      revision: 9,
-      status: 'OPEN',
-      archived: false,
-      submissionStatus: 'REVIEWED',
-      'review.status': 'approved',
-    });
+    expect(mocks.postedOpportunityUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('compensates when the linked pathway changes before moderation propagation', async () => {
+  it('rolls back when the linked pathway changes before moderation propagation', async () => {
     const id = '64f222222222222222222222';
     const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
     const pathwayUpdatedAt = new Date('2026-07-14T12:00:00.000Z');
@@ -527,13 +570,7 @@ describe('adminAccessReviewService', () => {
       'review.status': 'unreviewed',
       updatedAt: pathwayUpdatedAt,
     });
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
-      revision: 11,
-      status: 'OPEN',
-      archived: false,
-      submissionStatus: 'REVIEWED',
-      'review.status': 'approved',
-    });
+    expect(mocks.postedOpportunityUpdateOne).not.toHaveBeenCalled();
   });
 
   it('does not approve when faculty submission state changes after the moderation read', async () => {

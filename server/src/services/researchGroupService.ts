@@ -33,6 +33,10 @@ import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
+  invalidateAdminAccessReviewProjection,
+  refreshAdminAccessReviewProjection,
+} from './adminAccessReviewProjectionService';
+import {
   getAccessSummaryForResearchEntity,
   listAccessSummariesForResearchEntities,
 } from './accessSummaryService';
@@ -228,11 +232,20 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     },
   };
 
-  const group: any = await ResearchEntity.findOneAndUpdate({ slug }, update, {
-    upsert: true,
-    new: true,
-    setDefaultsOnInsert: true,
-  }).lean();
+  let group: any;
+  let projectionGeneration: number | null = null;
+  await mongoose.connection.transaction(async (session) => {
+    group = await ResearchEntity.findOneAndUpdate({ slug }, update, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      session,
+    }).lean();
+    projectionGeneration = await invalidateAdminAccessReviewProjection(group._id, { session });
+  });
+  if (projectionGeneration !== null) {
+    await refreshAdminAccessReviewProjection(group._id, projectionGeneration);
+  }
 
   if (ownerObjectId) {
     await ResearchGroupMember.updateOne(
