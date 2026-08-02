@@ -107,10 +107,15 @@ describe('useFavorites', () => {
     const { result } = renderHook(() => useFavorites('researchPlans'));
     await waitFor(() => expect(mockedAxios.get).toHaveBeenCalled());
 
+    let saved: boolean | undefined;
     await act(async () => {
-      await result.current.setFavorite('entity-1', true);
+      saved = await result.current.setFavorite('entity-1', true);
     });
 
+    expect(saved).toBe(false);
+    expect(result.current.favIds).toEqual([]);
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+    expect(mockedSwal).toHaveBeenCalledWith(expect.objectContaining({ icon: 'warning' }));
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 });

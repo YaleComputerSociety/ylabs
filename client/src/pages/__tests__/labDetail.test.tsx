@@ -7,6 +7,7 @@ import axios from '../../utils/axios';
 import { LabDetailPayload } from '../../types/labDetail';
 import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
+import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -80,7 +81,10 @@ const basePayload: LabDetailPayload = {
   postedOpportunities: [],
 };
 
-function renderLabDetail(payload: LabDetailPayload = basePayload) {
+function renderLabDetail(
+  payload: LabDetailPayload = basePayload,
+  { isAuthenticated = true }: { isAuthenticated?: boolean } = {},
+) {
   mockedAxios.get.mockImplementation((url: string) => {
     if (url === '/users/savedResearchEntityIds') {
       return Promise.resolve({ data: { savedResearchEntityIds: [] } });
@@ -92,11 +96,16 @@ function renderLabDetail(payload: LabDetailPayload = basePayload) {
   });
 
   return render(
-    <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
-      <Routes>
-        <Route path="/research/:slug" element={<LabDetail />} />
-      </Routes>
-    </MemoryRouter>,
+    <UserContext.Provider
+      value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}
+    >
+      <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+        <Routes>
+          <Route path="/research/:slug" element={<LabDetail />} />
+          <Route path="/login" element={<div>Yale sign in</div>} />
+        </Routes>
+      </MemoryRouter>
+    </UserContext.Provider>,
   );
 }
 
@@ -243,7 +252,7 @@ describe('LabDetail page', () => {
       data: { savedResearchEntities: ['entity-1'] },
     });
     expect(screen.getByRole('button', { name: 'Saved to Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toContain('Research plan saved');
+    expect((await screen.findByRole('status')).textContent).toContain('Research plan saved');
   });
 
   it('saves the research plan when students click the visible save row label', async () => {
@@ -310,6 +319,32 @@ describe('LabDetail page', () => {
       withCredentials: true,
       data: { savedResearchEntities: ['entity-1'] },
     });
+  });
+
+  it('sends signed-out visitors to Yale sign in before saving a research plan', async () => {
+    renderLabDetail(basePayload, { isAuthenticated: false });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(screen.getByRole('button', { name: 'Save research plan' }));
+
+    expect(await screen.findByText('Yale sign in')).toBeTruthy();
+    expect(mockedAxios.put).not.toHaveBeenCalled();
+    expect(localStorage.getItem('yale-research.firstResearchPlanSave.v1')).toBeNull();
+  });
+
+  it('does not claim a research plan was saved when persistence fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockedAxios.put.mockRejectedValueOnce(new Error('save unavailable'));
+    renderLabDetail();
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(screen.getByRole('button', { name: 'Save research plan' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save research plan' })).toBeTruthy(),
+    );
+    expect(screen.queryByText('Research plan saved')).toBeNull();
+    expect(localStorage.getItem('yale-research.firstResearchPlanSave.v1')).toBeNull();
   });
 
   it('renders specific ways-to-approach guidance without crashing', async () => {
