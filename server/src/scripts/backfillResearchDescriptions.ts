@@ -276,7 +276,7 @@ async function preExistingNarrativeProvenance(
     entityId,
     field,
     value,
-    sourceId: { $exists: true },
+    sourceId: { $type: 'objectId' },
     sourceName: { $type: 'string', $ne: '' },
     sourceUrl: { $regex: '^https?://', $options: 'i' },
     observedAt: { $lt: rewriteStartedAt },
