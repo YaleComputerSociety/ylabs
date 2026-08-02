@@ -164,7 +164,9 @@ function canonicalLegacyResearchHomeUrl(url: URL): URL {
     return new URL('https://campuspress.yale.edu/squirrel/people/elena-gracheva-lab/');
   }
   if (url.hostname === 'mrrc.yale.edu') {
-    return new URL('https://medicine.yale.edu/biomedical-imaging-institute/core-facilities/mr-core/');
+    return new URL(
+      'https://medicine.yale.edu/biomedical-imaging-institute/core-facilities/mr-core/',
+    );
   }
   if (url.hostname === 'childstudycenter.yale.edu' && path === '/research/del/') {
     return new URL(
@@ -333,7 +335,8 @@ function isPotentialDirectYalePersonPageUrl(value: unknown): boolean {
 
 function officialPersonUrlMatchesEntity(value: unknown, entity: Record<string, any>): boolean {
   if (isOfficialYaleProfileUrl(value)) return true;
-  if (!isOfficialYalePersonPageUrl(value) && !isPotentialDirectYalePersonPageUrl(value)) return false;
+  if (!isOfficialYalePersonPageUrl(value) && !isPotentialDirectYalePersonPageUrl(value))
+    return false;
   return entityExpectedPeople(entity).some((person) => personPageUrlMatchesUser(value, person));
 }
 
@@ -364,8 +367,7 @@ function visibleBioProfileUrlMatchesUser(url: string, user: Record<string, any>)
   const last = textValue(user.lname);
   if (isOfficialYaleProfileUrl(url)) {
     return (
-      isLikelyPersonUrl(url, first, last) ||
-      officialProfileSlugMatchesGivenNameVariant(url, user)
+      isLikelyPersonUrl(url, first, last) || officialProfileSlugMatchesGivenNameVariant(url, user)
     );
   }
 
@@ -450,7 +452,9 @@ function userIdentityMatchEntity(
   };
 }
 
-export function generatedOfficialProfileUrlCandidatesForPerson(person: Record<string, any>): string[] {
+export function generatedOfficialProfileUrlCandidatesForPerson(
+  person: Record<string, any>,
+): string[] {
   const first = textValue(person.fname);
   const last = textValue(person.lname);
   const email = textValue(person.email).toLowerCase();
@@ -458,10 +462,7 @@ export function generatedOfficialProfileUrlCandidatesForPerson(person: Record<st
   if (email && !email.endsWith('@yale.edu')) return [];
   const slug = slugify(normalizeName([first, last].join(' ')));
   if (!slug || slug.split('-').length < 2) return [];
-  return [
-    `https://medicine.yale.edu/profile/${slug}/`,
-    `https://ysph.yale.edu/profile/${slug}/`,
-  ];
+  return [`https://medicine.yale.edu/profile/${slug}/`, `https://ysph.yale.edu/profile/${slug}/`];
 }
 
 function canonicalUrlFromHtml($: cheerio.CheerioAPI, fallbackUrl: string): string {
@@ -506,8 +507,7 @@ function sameOfficialPersonPageForEntity(
     return false;
   }
   if (
-    normalizedLeft.replace(/^https?:\/\//i, '') ===
-    normalizedRight.replace(/^https?:\/\//i, '')
+    normalizedLeft.replace(/^https?:\/\//i, '') === normalizedRight.replace(/^https?:\/\//i, '')
   ) {
     return true;
   }
@@ -548,14 +548,18 @@ function cleanOfficialProfileDisplayName(value: string): string {
       /\s*,?\s+(?:Ph\.?\s*D|M\.?\s*A|M\.?\s*S|M\.?\s*Sc|B\.?\s*A|B\.?\s*S|B\.?\s*Sc|M\.?\s*Phil|MPH|MFA|DPhil|JD|MD)(?=\s|,|$|Professor|Research|Associate|Assistant|Director|Scientist|Lecturer)[\s\S]*$/i,
       '',
     )
-    .replace(/\b(?:Professor|Research Scientist|Associate Director|Assistant Director|Director)\b[\s\S]*$/i, '')
+    .replace(
+      /\b(?:Professor|Research Scientist|Associate Director|Assistant Director|Director)\b[\s\S]*$/i,
+      '',
+    )
     .trim();
 }
 
 function isCredentialOnlyOfficialProfileBio(value: string, hasResearchAction: boolean): boolean {
   const degreeMatches =
-    value.match(/\b(?:Ph\.?\s*D|M\.?\s*A|M\.?\s*S|M\.?\s*Sc|B\.?\s*A|B\.?\s*S|B\.?\s*Sc|M\.?\s*Phil|MFA|DPhil|JD|MD)\b/gi) ||
-    [];
+    value.match(
+      /\b(?:Ph\.?\s*D|M\.?\s*A|M\.?\s*S|M\.?\s*Sc|B\.?\s*A|B\.?\s*S|B\.?\s*Sc|M\.?\s*Phil|MFA|DPhil|JD|MD)\b/gi,
+    ) || [];
   return (
     !hasResearchAction &&
     degreeMatches.length >= 1 &&
@@ -593,7 +597,10 @@ function isSemicolonDelimitedProfileTopicList(value: string): boolean {
   const text = textValue(value);
   const semicolonCount = (text.match(/;/g) || []).length;
   if (semicolonCount < 2) return false;
-  const sentenceCount = text.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length;
+  const sentenceCount = text
+    .split(/[.!?]+/)
+    .map((part) => part.trim())
+    .filter(Boolean).length;
   return sentenceCount <= 1;
 }
 
@@ -901,7 +908,10 @@ function publicSourceUrlWebsiteBackfillUrl(value: unknown): string {
     if (/\/profile\//i.test(url.pathname)) return '';
     if (['epilepsy.yale.edu', 'sites.google.com'].includes(url.hostname)) return '';
     if (['alexandercoppock.com', 'www.alexandercoppock.com'].includes(url.hostname)) return '';
-    if (url.hostname === 'www.yale.edu' && /^\/macmillan\/shapiro\/index\.htm\/?$/i.test(url.pathname)) {
+    if (
+      url.hostname === 'www.yale.edu' &&
+      /^\/macmillan\/shapiro\/index\.htm\/?$/i.test(url.pathname)
+    ) {
       return '';
     }
     if (
@@ -980,7 +990,8 @@ export function firstNonDuplicateLeadDirectWebsiteUrl(
   );
   return (
     uniqueStrings(urls).find(
-      (url) => !duplicateWebsiteUrls.has(url) && !duplicateWebsiteKeys.has(websiteDuplicateKey(url)),
+      (url) =>
+        !duplicateWebsiteUrls.has(url) && !duplicateWebsiteKeys.has(websiteDuplicateKey(url)),
     ) || ''
   );
 }
@@ -1035,12 +1046,20 @@ function classifyResearchHome(
 
 function genericOrganizationName(name: string): boolean {
   return (
-    /^(?:yale medicine|yale university|yale school of medicine|yale new haven health system)$/i.test(name) ||
-    /^(?:internal medicine|cardiovascular medicine|clinical radiology|nuclear cardiology|child study center)$/i.test(name) ||
-    /^(?:interdepartmental neuroscience program|yale combined program in the biological and biomedical sciences|community research fellows program)$/i.test(name) ||
+    /^(?:yale medicine|yale university|yale school of medicine|yale new haven health system)$/i.test(
+      name,
+    ) ||
+    /^(?:internal medicine|cardiovascular medicine|clinical radiology|nuclear cardiology|child study center)$/i.test(
+      name,
+    ) ||
+    /^(?:interdepartmental neuroscience program|yale combined program in the biological and biomedical sciences|community research fellows program)$/i.test(
+      name,
+    ) ||
     /\b(?:department|section|division)\b/i.test(name) ||
     /\b(?:track|ventures|patient|clinical program)\b/i.test(name) ||
-    /\b(?:day\s*care|daycare|kindergarten|public sector leadership|student leadership)\b/i.test(name)
+    /\b(?:day\s*care|daycare|kindergarten|public sector leadership|student leadership)\b/i.test(
+      name,
+    )
   );
 }
 
@@ -1149,10 +1168,7 @@ function cleanProfileCardLabWebsiteLabel(value: string): string {
       .replace(/^\s*(?:The\s+)?Elena\s+Lab\s*$/i, 'Elena Gracheva Lab')
       .replace(/^\s*(?:The\s+)?Slav\s+Lab\s*$/i, 'Slav Bagriantsev Lab')
       .replace(/^[^/]{2,80}\s+Lab\s*\/\s*(?=(?:Yale\s+)?(?:Center|Centre)\b)/i, '')
-      .replace(
-        /(\([^)]*\blab\))\s+(?:my|our|his|her|their|dr\.?|this)\s+lab\b[\s\S]*$/i,
-        '$1',
-      )
+      .replace(/(\([^)]*\blab\))\s+(?:my|our|his|her|their|dr\.?|this)\s+lab\b[\s\S]*$/i, '$1')
       .replace(
         /\b(labs?|laboratory|center|program|initiative)\s+(?:my|our|his|her|their|dr\.?|this)\b[\s\S]*$/i,
         '$1',
@@ -1234,9 +1250,7 @@ function profileLinkedLabWebsitesFromHtml(
     const name = profileLinkedLabWebsiteName(rawName, context, profileName);
     if (!name || genericOrganizationName(name)) return;
     if (disallowedProfileLinkedResearchHome(name, url)) return;
-    const sectionHeading = textValue(
-      link.closest('section,aside').find('h2,h3,h4').first().text(),
-    );
+    const sectionHeading = textValue(link.closest('section,aside').find('h2,h3,h4').first().text());
     if (
       /contact\s+info/i.test(sectionHeading) &&
       !leadershipMentionsOrganization(evidenceText, name, rawName)
@@ -1287,7 +1301,9 @@ function linkedResearchHomesFromHtml(
     if (/\b(?:lab|laboratory|cent(?:er|re)|institute|program|initiative)\b/i.test(name)) {
       score += 2;
     }
-    if (/\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)) {
+    if (
+      /\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)
+    ) {
       score += 2;
     }
     if (score < 5) return;
@@ -1331,7 +1347,9 @@ export function extractOfficialProfileResearchHomes(
     if (/\b(?:lab|laboratory|cent(?:er|re)|institute|program|initiative)\b/i.test(name)) {
       score += 2;
     }
-    if (/\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)) {
+    if (
+      /\/(?:research|lab|labs|center|centers|institute|institutes|program|programs)\b/i.test(url)
+    ) {
       score += 2;
     }
     if (score < 5) continue;
@@ -1571,11 +1589,18 @@ function clipOfficialProfileBio(value: string): string {
     );
   });
   const lastSentenceEnd = sentenceEnds.at(-1);
-  if (lastSentenceEnd && typeof lastSentenceEnd.index === 'number' && lastSentenceEnd.index >= 300) {
+  if (
+    lastSentenceEnd &&
+    typeof lastSentenceEnd.index === 'number' &&
+    lastSentenceEnd.index >= 300
+  ) {
     return prefix.slice(0, lastSentenceEnd.index + 1).trim();
   }
 
-  const wordBoundary = prefix.replace(/\s+\S*$/, '').replace(/[,;:\-–—]+$/g, '').trim();
+  const wordBoundary = prefix
+    .replace(/\s+\S*$/, '')
+    .replace(/[,;:\-–—]+$/g, '')
+    .trim();
   return wordBoundary ? `${wordBoundary}.` : prefix;
 }
 
@@ -1584,7 +1609,10 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
     candidates.push($(el).attr('href') || '', $(el).text());
   });
-  const bodyMatches = $('body').text().match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
+  const bodyMatches =
+    $('body')
+      .text()
+      .match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
   candidates.push(...bodyMatches);
   return candidates.map(normalizeOrcid).find(Boolean);
 }
@@ -1606,15 +1634,24 @@ function officialProfileIdentityMatchesExpectedPerson(
 ): boolean {
   const expected = expectedPeople || [];
   if (expected.length === 0) return true;
-  const displayWords = new Set(normalizeName(displayName).toLowerCase().split(/\s+/).filter(Boolean));
+  const displayWords = new Set(
+    normalizeName(displayName).toLowerCase().split(/\s+/).filter(Boolean),
+  );
   const normalizedEmail = textValue(email).toLowerCase();
 
   return expected.some((person) => {
     const expectedEmail = textValue(person.email).toLowerCase();
     if (expectedEmail && normalizedEmail && expectedEmail === normalizedEmail) return true;
 
-    const first = normalizeName(person.fname || '').toLowerCase().split(/\s+/).filter(Boolean)[0];
-    const last = normalizeName(person.lname || '').toLowerCase().split(/\s+/).filter(Boolean).at(-1);
+    const first = normalizeName(person.fname || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)[0];
+    const last = normalizeName(person.lname || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .at(-1);
     return Boolean(first && last && displayWords.has(first) && displayWords.has(last));
   });
 }
@@ -1657,12 +1694,13 @@ export function extractOfficialProfileIdentity(
     email,
     options.expectedPeople,
   );
-  if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity)) return null;
+  if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
+    return null;
 
-  const title = uniqueStrings([
-    firstJsonLdText(profiles, ['jobTitle']),
-    firstUsefulProfileTitle($),
-  ]).find((value) => officialProfileTitlePattern.test(value)) || '';
+  const title =
+    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
+      (value) => officialProfileTitlePattern.test(value),
+    ) || '';
   if (!title) return null;
 
   const bio = extractBio($);
@@ -1742,7 +1780,9 @@ function lowerInitial(value: string): string {
 }
 
 function terseOfficialBioTopic(identity: OfficialProfileIdentity): string {
-  let topic = textValue(identity.bio).replace(/[.;:,]+$/g, '').trim();
+  let topic = textValue(identity.bio)
+    .replace(/[.;:,]+$/g, '')
+    .trim();
   if (!topic || topic.length >= PROFILE_BIO_MIN_LENGTH) return '';
   if (!isUsefulOfficialProfileBioText(topic)) return '';
 
@@ -1849,7 +1889,8 @@ export function identityToUserObservations(
         })
       : '';
     const shouldUseDerivedBio =
-      Boolean(derivedBio) && (!cleanedIdentityBio || cleanedIdentityBio.length < PROFILE_BIO_MIN_LENGTH);
+      Boolean(derivedBio) &&
+      (!cleanedIdentityBio || cleanedIdentityBio.length < PROFILE_BIO_MIN_LENGTH);
     const rawBio = shouldUseDerivedBio ? derivedBio : cleanedIdentityBio || derivedBio;
     const bioCandidate = hasExternalScholarProfileCallout(rawBio) ? '' : rawBio;
     const bio = cleanPublicProfileBio({
@@ -1946,9 +1987,7 @@ function shortOfficialProfileBio(value: string): string {
     return `Publishes on ${authorOfTopics[1].replace(/[.!?]+$/g, '').trim()}.`;
   }
 
-  const authorOf = text.match(
-    /\b(?:is|was)\s+(?:the\s+|an?\s+)?author\s+of\s+(.+?)(?:[.!?]|$)/i,
-  );
+  const authorOf = text.match(/\b(?:is|was)\s+(?:the\s+|an?\s+)?author\s+of\s+(.+?)(?:[.!?]|$)/i);
   if (authorOf?.[1]) {
     if (/^(?:many\s+)?(?:articles|books|articles\s+and\s+books)\b/i.test(authorOf[1])) {
       return '';
@@ -1962,7 +2001,8 @@ function shortOfficialProfileBio(value: string): string {
   if (nameLedResearch?.[1] && nameLedResearch?.[2]) {
     const verb = nameLedResearch[1].toLowerCase();
     const rest = nameLedResearch[2].replace(/[.!?]+$/g, '').trim();
-    const normalizedVerb = verb === 'studies' ? 'Studies' : `${verb.charAt(0).toUpperCase()}${verb.slice(1)}`;
+    const normalizedVerb =
+      verb === 'studies' ? 'Studies' : `${verb.charAt(0).toUpperCase()}${verb.slice(1)}`;
     return `${normalizedVerb} ${rest}.`;
   }
 
@@ -2002,10 +2042,15 @@ function shortOfficialProfileBio(value: string): string {
   if (lastSentenceEnd && typeof lastSentenceEnd.index === 'number' && lastSentenceEnd.index >= 80) {
     return prefix.slice(0, lastSentenceEnd.index + 1).trim();
   }
-  return `${prefix.replace(/\s+\S*$/, '').replace(/[,;:\-–—]+$/g, '').trim()}.`;
+  return `${prefix
+    .replace(/\s+\S*$/, '')
+    .replace(/[,;:\-–—]+$/g, '')
+    .trim()}.`;
 }
 
-export function shouldEmitProfileDescriptionBackfillForEntity(entity: Record<string, any>): boolean {
+export function shouldEmitProfileDescriptionBackfillForEntity(
+  entity: Record<string, any>,
+): boolean {
   const suppressedBy = entity[PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD];
   return !(Array.isArray(suppressedBy) && suppressedBy.length > 0);
 }
@@ -2166,18 +2211,23 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
       .select('researchEntityId')
       .lean(),
   ]);
-  const entitiesById = new Map((entities as any[]).map((entity) => [officialProfileDocumentId(entity._id), entity]));
-  const hasLead = new Set((leadMembers as any[]).map((member) => officialProfileDocumentId(member.researchEntityId)));
+  const entitiesById = new Map(
+    (entities as any[]).map((entity) => [officialProfileDocumentId(entity._id), entity]),
+  );
+  const hasLead = new Set(
+    (leadMembers as any[]).map((member) => officialProfileDocumentId(member.researchEntityId)),
+  );
 
   const annotatedEntities = await annotateEntitiesWithSourceObservationUrls(
     entityIds
       .map((id) => entitiesById.get(id))
-      .filter((entity): entity is Record<string, any> => !!entity && !hasLead.has(officialProfileDocumentId(entity._id))),
+      .filter(
+        (entity): entity is Record<string, any> =>
+          !!entity && !hasLead.has(officialProfileDocumentId(entity._id)),
+      ),
   );
 
-  return annotatedEntities
-    .filter(shouldQueueEntityForPiBackfill)
-    .slice(0, limit);
+  return annotatedEntities.filter(shouldQueueEntityForPiBackfill).slice(0, limit);
 }
 
 async function selectDirectVisibleProfileBioUserTargets(
@@ -2205,7 +2255,10 @@ async function selectDirectVisibleProfileBioUserTargets(
   ).lean();
 
   return (users as any[])
-    .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)) && publicBioNeedsBackfill(user))
+    .filter(
+      (user) =>
+        user.netid && !excludedUserIds.has(idValue(user._id)) && publicBioNeedsBackfill(user),
+    )
     .map((user) => {
       const urls = visibleBioProfileUrlsForUser(user);
       return urls.length > 0 ? userIdentityMatchEntity(user, urls) : null;
@@ -2214,7 +2267,9 @@ async function selectDirectVisibleProfileBioUserTargets(
     .slice(0, limit);
 }
 
-export async function selectVisibleProfileBioTargets(limit: number): Promise<Array<Record<string, any>>> {
+export async function selectVisibleProfileBioTargets(
+  limit: number,
+): Promise<Array<Record<string, any>>> {
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
@@ -2268,7 +2323,10 @@ export async function selectVisibleProfileBioTargets(limit: number): Promise<Arr
   const excludedUserIds = new Set(memberTargets.map((target) => idValue(target._id)));
   return [
     ...memberTargets,
-    ...(await selectDirectVisibleProfileBioUserTargets(limit - memberTargets.length, excludedUserIds)),
+    ...(await selectDirectVisibleProfileBioUserTargets(
+      limit - memberTargets.length,
+      excludedUserIds,
+    )),
   ].slice(0, limit);
 }
 
@@ -2333,9 +2391,8 @@ async function selectProfileDescriptionTargets(
   ).lean()) as Array<Record<string, any>>;
 
   const entitiesWithLeadUsers = await annotateEntitiesWithLeadUsers(entities);
-  const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(
-    entitiesWithLeadUsers,
-  );
+  const entitiesWithObservationUrls =
+    await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUsers);
   const candidates = entitiesWithObservationUrls.filter(
     (entity) => officialProfileUrlsForEntity(entity).length > 0,
   );
@@ -2352,9 +2409,9 @@ async function annotateEntitiesWithLeadUsers(
   entities: Array<Record<string, any>>,
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
-  const entityIds = uniqueStrings(entities.map((entity) => idValue(entity._id || entity.id))).filter(
-    (id) => /^[a-f0-9]{24}$/i.test(id),
-  );
+  const entityIds = uniqueStrings(
+    entities.map((entity) => idValue(entity._id || entity.id)),
+  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   if (entityIds.length === 0) return entities;
 
   const members = (await ResearchGroupMember.find({
@@ -2412,9 +2469,9 @@ async function annotateEntitiesWithSourceObservationUrls(
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(entities.map((entity) => idValue(entity._id || entity.id))).filter(
-    (id) => /^[a-f0-9]{24}$/i.test(id),
-  );
+  const entityIds = uniqueStrings(
+    entities.map((entity) => idValue(entity._id || entity.id)),
+  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
   if (entityIds.length === 0 && entityKeys.length === 0) return entities;
 
@@ -2456,9 +2513,9 @@ async function annotateProfileDescriptionPreferredSourceEvidence(
 ): Promise<Array<Record<string, any>>> {
   if (entities.length === 0) return entities;
 
-  const entityIds = uniqueStrings(entities.map((entity) => idValue(entity._id || entity.id))).filter(
-    (id) => /^[a-f0-9]{24}$/i.test(id),
-  );
+  const entityIds = uniqueStrings(
+    entities.map((entity) => idValue(entity._id || entity.id)),
+  ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   const entityKeys = uniqueStrings(entities.map((entity) => textValue(entity.slug)));
   if (entityIds.length === 0 && entityKeys.length === 0) return entities;
 
@@ -2558,10 +2615,7 @@ async function selectResearchHomeProfileTargets(
     ]);
     if (urls.length === 0) continue;
     const entityId = idValue(member.researchEntityId);
-    profileUrlsByEntity.set(entityId, [
-      ...(profileUrlsByEntity.get(entityId) || []),
-      ...urls,
-    ]);
+    profileUrlsByEntity.set(entityId, [...(profileUrlsByEntity.get(entityId) || []), ...urls]);
     leadUsersByEntity.set(entityId, [
       ...(leadUsersByEntity.get(entityId) || []),
       {
@@ -2572,13 +2626,13 @@ async function selectResearchHomeProfileTargets(
     ]);
   }
 
-  const entitiesWithLeadUrls = entities
-    .map((entity) => ({
-      ...entity,
-      leadUserProfileUrls: uniqueStrings(profileUrlsByEntity.get(idValue(entity._id)) || []),
-      leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
-    }));
-  const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUrls);
+  const entitiesWithLeadUrls = entities.map((entity) => ({
+    ...entity,
+    leadUserProfileUrls: uniqueStrings(profileUrlsByEntity.get(idValue(entity._id)) || []),
+    leadUsers: leadUsersByEntity.get(idValue(entity._id)) || [],
+  }));
+  const entitiesWithObservationUrls =
+    await annotateEntitiesWithSourceObservationUrls(entitiesWithLeadUrls);
 
   return entitiesWithObservationUrls
     .filter((entity) => officialProfileUrlsForEntity(entity).length > 0)
@@ -2651,7 +2705,10 @@ async function selectLeadDirectWebsiteTargets(
     const duplicateLookupUrls = uniqueStrings(candidateUrls.flatMap(websiteDuplicateLookupUrls));
     const existingWebsiteRows = (await ResearchEntity.find({
       archived: { $ne: true },
-      $or: [{ websiteUrl: { $in: duplicateLookupUrls } }, { website: { $in: duplicateLookupUrls } }],
+      $or: [
+        { websiteUrl: { $in: duplicateLookupUrls } },
+        { website: { $in: duplicateLookupUrls } },
+      ],
     })
       .select('_id website websiteUrl')
       .lean()) as Array<Record<string, any>>;
@@ -2722,7 +2779,10 @@ async function selectSourceUrlWebsiteTargets(
     const duplicateLookupUrls = uniqueStrings(candidateUrls.flatMap(websiteDuplicateLookupUrls));
     const existingWebsiteRows = (await ResearchEntity.find({
       archived: { $ne: true },
-      $or: [{ websiteUrl: { $in: duplicateLookupUrls } }, { website: { $in: duplicateLookupUrls } }],
+      $or: [
+        { websiteUrl: { $in: duplicateLookupUrls } },
+        { website: { $in: duplicateLookupUrls } },
+      ],
     })
       .select('_id website websiteUrl')
       .lean()) as Array<Record<string, any>>;
@@ -2772,30 +2832,36 @@ export async function resolveExistingUserForIdentity(
     .lean();
 
   const matchingCandidates =
-    candidates.length <= 1 ? candidates : candidates.filter((candidate: any) => {
-      const candidateEmail = textValue(candidate.email).toLowerCase();
-      if (email && candidateEmail === email) return true;
+    candidates.length <= 1
+      ? candidates
+      : candidates.filter((candidate: any) => {
+          const candidateEmail = textValue(candidate.email).toLowerCase();
+          if (email && candidateEmail === email) return true;
 
-      const identitySplit = splitName(identity.displayName);
-      const candidateSplit = splitName(
-        textValue(candidate.name || candidate.displayName) ||
-          textValue(`${textValue(candidate.fname)} ${textValue(candidate.lname)}`),
-      );
-      const candidateFirst = slugify(normalizeName(textValue(candidate.fname) || candidateSplit.first));
-      const candidateLast = slugify(normalizeName(textValue(candidate.lname) || candidateSplit.last));
-      const identityFirst = slugify(normalizeName(identitySplit.first));
-      const identityLast = slugify(normalizeName(identitySplit.last));
-      const exactNameMatch =
-        candidateFirst &&
-        candidateLast &&
-        identityFirst &&
-        identityLast &&
-        candidateFirst === identityFirst &&
-        candidateLast === identityLast;
-      if (exactNameMatch) return true;
+          const identitySplit = splitName(identity.displayName);
+          const candidateSplit = splitName(
+            textValue(candidate.name || candidate.displayName) ||
+              textValue(`${textValue(candidate.fname)} ${textValue(candidate.lname)}`),
+          );
+          const candidateFirst = slugify(
+            normalizeName(textValue(candidate.fname) || candidateSplit.first),
+          );
+          const candidateLast = slugify(
+            normalizeName(textValue(candidate.lname) || candidateSplit.last),
+          );
+          const identityFirst = slugify(normalizeName(identitySplit.first));
+          const identityLast = slugify(normalizeName(identitySplit.last));
+          const exactNameMatch =
+            candidateFirst &&
+            candidateLast &&
+            identityFirst &&
+            identityLast &&
+            candidateFirst === identityFirst &&
+            candidateLast === identityLast;
+          if (exactNameMatch) return true;
 
-      return urls.some((url) => personPageUrlMatchesUser(url, candidate));
-    });
+          return urls.some((url) => personPageUrlMatchesUser(url, candidate));
+        });
 
   if (matchingCandidates.length !== 1) return null;
   const user = matchingCandidates[0] as any;
@@ -2829,7 +2895,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       useCache: boolean,
       sourceName: string,
     ) => Promise<string> = fetchHtml,
-    private readonly entitySelector: (limit: number) => Promise<Array<Record<string, any>>> = selectQueuedEntities,
+    private readonly entitySelector: (
+      limit: number,
+    ) => Promise<Array<Record<string, any>>> = selectQueuedEntities,
     private readonly userResolver: (
       identity: OfficialProfileIdentity,
     ) => Promise<ExistingProfileUser | null> = resolveExistingUserForIdentity,
@@ -2867,12 +2935,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       targetKeys.length === 0 && (only.size === 0 || only.has(QUEUED_PI_BACKFILL_KEY));
     const runVisibleProfileBioBackfill =
       targetKeys.length === 0 && only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
-    const runProfileDescriptionBackfill =
-      only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
-    const runLeadDirectWebsiteBackfill =
-      only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
-    const runSourceUrlWebsiteBackfill =
-      only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
+    const runProfileDescriptionBackfill = only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
+    const runLeadDirectWebsiteBackfill = only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
+    const runSourceUrlWebsiteBackfill = only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
     const runProfileResearchHomeBackfill =
       only.size === 0 ||
       only.has(PROFILE_RESEARCH_HOME_BACKFILL_KEY) ||
@@ -3052,7 +3117,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
           });
           if (identity) {
             if (shouldEmitProfileDescriptionBackfillForEntity(entity)) {
-              observations.push(...identityToResearchEntityDescriptionObservations(identity, entity));
+              observations.push(
+                ...identityToResearchEntityDescriptionObservations(identity, entity),
+              );
             }
             const existingUser = await existingUserForIdentity(identity);
             if (existingUser) {

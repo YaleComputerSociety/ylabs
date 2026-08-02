@@ -40,36 +40,37 @@ Entity pages should answer:
 
 ## Canonical runtime model
 
-| Concept | Collection | Purpose |
-|---------|------------|---------|
-| `ResearchEntity` | `research_entities` | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc. |
-| `EntryPathway` | `entry_pathways` | How a student might approach a plausible research home. |
-| `PostedOpportunity` | `posted_opportunities` | A real active or time-bound posting. |
-| `AccessSignal` | `access_signals` | Evidence-backed signal about undergraduate access. |
+| Concept                       | Collection                       | Purpose                                                                                                                         |
+| ----------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `ResearchEntity`              | `research_entities`              | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc.                                      |
+| `EntryPathway`                | `entry_pathways`                 | How a student might approach a plausible research home.                                                                         |
+| `PostedOpportunity`           | `posted_opportunities`           | A real active or time-bound posting.                                                                                            |
+| `AccessSignal`                | `access_signals`                 | Evidence-backed signal about undergraduate access.                                                                              |
 | `UndergraduateLogisticsClaim` | `undergraduate_logistics_claims` | Independent source-backed evidence about student level, compensation or credit, weekly time, modality, or current availability. |
-| `ContactRoute` | `contact_routes` | The best known way to act, such as official application, lab manager, or faculty PI. |
-| `ResearchEntityRelationship` | `research_entity_relationships` | A source-backed affiliation, hosting, membership, or umbrella relationship between research entities. |
+| `ContactRoute`                | `contact_routes`                 | The best known way to act, such as official application, lab manager, or faculty PI.                                            |
+| `ResearchEntityRelationship`  | `research_entity_relationships`  | A source-backed affiliation, hosting, membership, or umbrella relationship between research entities.                           |
 
 ## Modeling rules
 
 - Course credit is a formalization outcome after a student finds a research home.
-It is not an entry pathway by itself.
+  It is not an entry pathway by itself.
 - Fellowship funding usually behaves like formalization or funding, except when the fellowship is itself a structured discovery or mentor-matching program.
 - `EntryPathway` is durable.
-`PostedOpportunity` is a specific active or time-bound posting and may be an instance of a recurring pathway.
+  `PostedOpportunity` is a specific active or time-bound posting and may be an instance of a recurring pathway.
 - Directory inclusion does not require an `AccessSignal`, `EntryPathway`, `ContactRoute`, or `PostedOpportunity`.
 - Scrapers emit append-only `Observation` rows.
-Materializers derive first-class access records.
+  Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
-Use `AccessSignal` with evidence strength instead.
+  Use `AccessSignal` with evidence strength instead.
 - Keep undergraduate logistics claims independent and neutral when unknown.
-Do not infer one logistics claim from another or from generic undergraduate-access evidence.
+  Do not infer one logistics claim from another or from generic undergraduate-access evidence.
 - Contact routes are fail-closed.
-Prefer official and public URLs.
-Redact scraped emails from public payloads.
+  Prefer official and public URLs.
+  Redact scraped emails from public payloads.
 - The normal PI action is a link to the official Yale profile and does not imply permission to contact.
 - When no official Yale profile exists, the primary PI link may use a verified person-specific lab about page or personal academic page.
-- Do not show research papers, publication-derived activity, or an aggregated Sources section in the public directory or detail experience.
+- Do not show research papers or publication-derived activity in the public directory or detail experience.
+- A research detail page may deduplicate official links in a Sources section, but it must not turn provenance into a paper or publication surface.
 - Show verified Google Scholar and ORCID profiles only as secondary outbound links near the PI.
 - Do not guess researcher-profile links from names or scrape their works, citations, or metrics for the directory.
 - Preserve source provenance for review and compact inline attribution of material access or opportunity claims.

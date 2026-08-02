@@ -158,7 +158,7 @@ describe('inferPiSurname', () => {
     expect(inferPiSurname('Iwasaki Lab')).toBe('Iwasaki');
   });
 
-  it("strips possessive apostrophe-s", () => {
+  it('strips possessive apostrophe-s', () => {
     expect(inferPiSurname("Abujarad's Digital Health Lab")).toBeTruthy();
   });
 
@@ -387,12 +387,14 @@ describe('extractProfileContactWidgetProfile', () => {
       </body></html>
     `;
 
-    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual({
-      name: 'Skylar Lab',
-      profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
-      title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
-      email: 'skylar.lab@yale.edu',
-    });
+    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual(
+      {
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+        title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+        email: 'skylar.lab@yale.edu',
+      },
+    );
   });
 
   it('does not infer a lead when multiple profile contact widgets are present', () => {
@@ -424,7 +426,9 @@ describe('extractProfileContactWidgetProfile', () => {
       </body></html>
     `;
 
-    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/')).toBeNull();
+    expect(
+      extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/'),
+    ).toBeNull();
   });
 });
 
@@ -505,6 +509,8 @@ describe('labResearchFacultyToObservations', () => {
     );
 
     expect(observations.some((observation) => observation.entityType === 'user')).toBe(false);
-    expect(observations.find((observation) => observation.field === 'inferredPiUserKey')).toBeUndefined();
+    expect(
+      observations.find((observation) => observation.field === 'inferredPiUserKey'),
+    ).toBeUndefined();
   });
 });

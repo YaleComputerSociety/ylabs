@@ -168,10 +168,10 @@ function candidateMatchesOnly(candidate: DecisionCandidate, only: Set<string>): 
 function hasActionEvidence(candidate: DecisionCandidate): boolean {
   return Boolean(
     candidate.accessSummary?.bestNextStep ||
-      candidate.accessSignals?.length ||
-      candidate.entryPathways?.length ||
-      candidate.contactRoutes?.length ||
-      candidate.postedOpportunities?.length,
+    candidate.accessSignals?.length ||
+    candidate.entryPathways?.length ||
+    candidate.contactRoutes?.length ||
+    candidate.postedOpportunities?.length,
   );
 }
 
@@ -282,7 +282,9 @@ export function selectDecisionCandidates(
   candidates: DecisionCandidate[],
   options: DecisionCandidateSelectionOptions = {},
 ): DecisionCandidate[] {
-  const only = new Set((options.only || []).map((value) => value.trim().toLowerCase()).filter(Boolean));
+  const only = new Set(
+    (options.only || []).map((value) => value.trim().toLowerCase()).filter(Boolean),
+  );
   const limit =
     options.limit && options.limit > 0
       ? options.limit
@@ -301,27 +303,23 @@ export function selectDecisionCandidates(
 export function buildStudentDecisionPrompt(candidate: DecisionCandidate): string {
   const sourceUrls = compactSourceUrls(candidate).map((url) => safePromptUrl(url));
   const accessSignals = (candidate.accessSignals || [])
-    .map(
-      (signal) =>
-        `- ${safePromptText(signal.signalType || 'SIGNAL', 80)} (${safePromptText(signal.confidence || 'UNKNOWN', 80)}): ${safePromptText(signal.excerpt)} ${safePromptUrl(signal.sourceUrl)}`.trim(),
+    .map((signal) =>
+      `- ${safePromptText(signal.signalType || 'SIGNAL', 80)} (${safePromptText(signal.confidence || 'UNKNOWN', 80)}): ${safePromptText(signal.excerpt)} ${safePromptUrl(signal.sourceUrl)}`.trim(),
     )
     .join('\n');
   const entryPathways = (candidate.entryPathways || [])
-    .map(
-      (pathway) =>
-        `- ${safePromptText(pathway.pathwayType || 'PATHWAY', 80)} (${safePromptText(pathway.status || 'UNKNOWN', 80)}): ${safePromptText(pathway.studentFacingLabel)} ${(pathway.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
+    .map((pathway) =>
+      `- ${safePromptText(pathway.pathwayType || 'PATHWAY', 80)} (${safePromptText(pathway.status || 'UNKNOWN', 80)}): ${safePromptText(pathway.studentFacingLabel)} ${(pathway.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
     )
     .join('\n');
   const contacts = (candidate.contactRoutes || [])
-    .map(
-      (route) =>
-        `- ${safePromptText(route.routeType || 'CONTACT', 80)} (${safePromptText(route.visibility || 'UNKNOWN', 80)}): ${safePromptUrl(route.url || route.sourceUrl)}`.trim(),
+    .map((route) =>
+      `- ${safePromptText(route.routeType || 'CONTACT', 80)} (${safePromptText(route.visibility || 'UNKNOWN', 80)}): ${safePromptUrl(route.url || route.sourceUrl)}`.trim(),
     )
     .join('\n');
   const opportunities = (candidate.postedOpportunities || [])
-    .map(
-      (opportunity) =>
-        `- ${safePromptText(opportunity.status || 'UNKNOWN', 80)}: ${safePromptUrl(opportunity.applicationUrl)} ${(opportunity.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
+    .map((opportunity) =>
+      `- ${safePromptText(opportunity.status || 'UNKNOWN', 80)}: ${safePromptUrl(opportunity.applicationUrl)} ${(opportunity.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
     )
     .join('\n');
 
@@ -396,7 +394,9 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     archived: { $ne: true },
     studentVisibilityTier: { $ne: 'suppressed' },
   })
-    .select('slug name entityType description shortDescription websiteUrl sourceUrls accessSummary studentDecisionExplanation')
+    .select(
+      'slug name entityType description shortDescription websiteUrl sourceUrls accessSummary studentDecisionExplanation',
+    )
     .lean();
 
   const entityIds = (rows as any[]).map((row) => row._id);
@@ -444,7 +444,9 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     accessSignals: (signalsByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 8),
     entryPathways: (pathwaysByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 8),
     contactRoutes: (routesByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 5),
-    postedOpportunities: (opportunitiesByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 5),
+    postedOpportunities: (
+      opportunitiesByEntity.get(studentDecisionDocumentId(row._id)) || []
+    ).slice(0, 5),
   }));
 }
 
@@ -498,7 +500,8 @@ export class StudentDecisionLLMExtractor implements IScraper {
     this.model = deps.model ?? DEFAULT_MODEL;
     this.candidateLoader = deps.candidateLoader ?? defaultCandidateLoader;
     this.callLLM =
-      deps.callLLM ?? ((prompt, candidate) => defaultCallLLM(prompt, candidate, this.model, this.apiKey));
+      deps.callLLM ??
+      ((prompt, candidate) => defaultCallLLM(prompt, candidate, this.model, this.apiKey));
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -544,7 +547,9 @@ export class StudentDecisionLLMExtractor implements IScraper {
         }
         if (!output) {
           if (!this.apiKey) {
-            ctx.log(`[${candidate.slug}] cached student decision LLM output missing and OPENAI_API_KEY is not configured`);
+            ctx.log(
+              `[${candidate.slug}] cached student decision LLM output missing and OPENAI_API_KEY is not configured`,
+            );
             llmFailed += 1;
             continue;
           }

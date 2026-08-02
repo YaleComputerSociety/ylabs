@@ -3,10 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ResearchGroup } from '../../types/researchGroup';
 import { ResearchEntityDetailPayload } from '../../types/researchEntity';
 import { Listing } from '../../types/types';
-import {
-  createInitialLabDetailState,
-  labDetailReducer,
-} from '../labDetailReducer';
+import { createInitialLabDetailState, labDetailReducer } from '../labDetailReducer';
 
 const sampleGroup: ResearchGroup = {
   _id: 'g1',

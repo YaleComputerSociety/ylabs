@@ -70,9 +70,11 @@ const explanation = {
   reviewFlags: [],
 };
 
-function makeContext(
-  overrides: Partial<ScraperContext['options']> = {},
-): { ctx: ScraperContext; emitted: ObservationInput[]; logs: string[] } {
+function makeContext(overrides: Partial<ScraperContext['options']> = {}): {
+  ctx: ScraperContext;
+  emitted: ObservationInput[];
+  logs: string[];
+} {
   const emitted: ObservationInput[] = [];
   const logs: string[] = [];
   const ctx: ScraperContext = {
@@ -96,9 +98,7 @@ function makeContext(
   return { ctx, emitted, logs };
 }
 
-function newTestScraper(
-  deps: StudentDecisionLLMExtractorDeps,
-): StudentDecisionLLMExtractor {
+function newTestScraper(deps: StudentDecisionLLMExtractorDeps): StudentDecisionLLMExtractor {
   return new StudentDecisionLLMExtractor({
     apiKey: 'test-key',
     model: 'test-model',
@@ -118,9 +118,20 @@ describe('studentDecisionLLMExtractor', () => {
       selectDecisionCandidates(
         [
           candidate,
-          { ...candidate, _id: 'entity-2', slug: 'no-evidence', accessSignals: [], entryPathways: [] },
+          {
+            ...candidate,
+            _id: 'entity-2',
+            slug: 'no-evidence',
+            accessSignals: [],
+            entryPathways: [],
+          },
           { ...candidate, _id: 'entity-3', slug: 'other-lab' },
-          { ...candidate, _id: 'entity-4', slug: 'already-explained', studentDecisionExplanation: explanation },
+          {
+            ...candidate,
+            _id: 'entity-4',
+            slug: 'already-explained',
+            studentDecisionExplanation: explanation,
+          },
         ],
         { only: ['example-lab', 'other-lab', 'already-explained'], limit: 10 },
       ).map((item) => item.slug),
@@ -204,7 +215,11 @@ describe('studentDecisionLLMExtractor', () => {
   });
 
   it('turns valid LLM output into a low-confidence studentDecisionExplanation observation', () => {
-    const observation = decisionExtractionToObservation(candidate, explanation, new Date('2026-05-29T00:00:00Z'));
+    const observation = decisionExtractionToObservation(
+      candidate,
+      explanation,
+      new Date('2026-05-29T00:00:00Z'),
+    );
 
     expect(observation).toMatchObject({
       entityType: 'researchEntity',

@@ -24,6 +24,7 @@ Once a home and supervisor are plausible, the relationship may be formalized thr
 STEM often looks like faculty-led labs, humanities often looks like faculty projects or collections work, and social science often mixes project teams, centers, thesis advising, and term-specific RA programs.
 
 The app should make this ecosystem navigable without forcing every discipline into a lab-opening model or forcing every directory record to have a pathway.
+Organizational service and instructional-support units should stay out of student discovery unless their public description positively establishes that they conduct or organize research.
 
 ## Primary Surfaces
 
@@ -81,7 +82,7 @@ Target surfaces:
 - `/research`: explore research entities, even when no opening exists.
 - `/research/:slug`: show what the entity does, who is involved, important affiliations, evidence of undergraduate access, saved research-plan actions, and planning routes when they are supported.
 - `/opportunities/:id`: show real active or time-bound postings only.
-These must be backed by `PostedOpportunity`.
+  These must be backed by `PostedOpportunity`.
 - `/programs`: active authenticated program and fellowship discovery surface.
 - `/listings`: retired compatibility URL that redirects to `/research`.
 - `/fellowships`: retired compatibility URL that redirects to `/programs`.
@@ -91,8 +92,8 @@ The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/r
 Implementation note: the separate practical-routes page has been retired because it degraded the directory experience.
 Planning context should appear inside `/research` results and `/research/:slug` only when useful, without exposing a standalone public pathways search.
 `/opportunities/:id` should render real posted instances and should not render generic exploratory pathways.
-Research detail should not render research papers or an aggregated Sources section.
-Source provenance remains available to operators and may appear as a compact inline evidence link for a specific access claim or opportunity.
+Research detail should not render research papers.
+A deduplicated Sources section may expose the official links that support the page, while source provenance remains available to operators and may also appear as a compact inline evidence link for a specific access claim or opportunity.
 
 Implementation note: legacy listings now bridge into `PostedOpportunity` records.
 Public CTAs should prefer official application URLs, official profiles, source review, and saved planning over raw emails or yLabs-hosted outreach promises.

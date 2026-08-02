@@ -19,14 +19,12 @@ import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDe
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
-import LabInquireModal from '../components/labs/LabInquireModal';
 import LongText from '../components/shared/LongText';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
 import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
-  LabAccessSignal,
   LabContactRoute,
   LabEntityRelationship,
   LabEntryPathway,
@@ -340,6 +338,9 @@ const ResearchPlanSaveButton = ({
         Track notes and funding matches
       </span>
     </span>
+    <span className="sr-only" role="status">
+      {isSaved ? 'Research plan saved' : ''}
+    </span>
   </FavoriteButton>
 );
 
@@ -448,8 +449,6 @@ const dedupeLeadMembers = (members: LabMember[]): LabMember[] => {
     (a, b) => (LEAD_ROLE_PRIORITY.get(a.role) ?? 99) - (LEAD_ROLE_PRIORITY.get(b.role) ?? 99),
   );
 };
-
-const memberId = (member: LabMember): string => String(member.user.publicKey || '');
 
 /**
  * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
@@ -977,14 +976,9 @@ const LabDetail = () => {
   } = payload;
   const group = legacyGroup ?? researchEntity;
   const hasActivePostedOpportunity = postedOpportunities.length > 0;
-  const hasWaysIn = entryPathways.length > 0 || postedOpportunities.length > 0;
   const hasRelatedResearchEntities = relatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = affiliatedResearchEntities.length > 0;
   const showWaysToApproach = hasSpecificWaysToApproach(entryPathways, postedOpportunities);
-  const missingSparseItems = [
-    !hasWaysIn ? 'No indexed planning routes are attached yet.' : '',
-    accessSignals.length === 0 ? 'Access evidence has not been attached yet.' : '',
-  ].filter(Boolean);
   const sources = buildResearchDetailSources({
     group,
     pathways: entryPathways,
@@ -1062,11 +1056,7 @@ const LabDetail = () => {
     }
 
     const saved = await setSavedResearchPlanFavorite(entityId, shouldSave);
-    if (
-      saved &&
-      shouldSave &&
-      !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)
-    ) {
+    if (saved && shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
     }
@@ -1170,7 +1160,6 @@ const LabDetail = () => {
           )}
         </div>
       </div>
-
     </div>
   );
 };

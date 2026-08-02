@@ -157,7 +157,8 @@ export function buildEntityRepairPlan(
       field: 'departments',
       betaValue: beta.departments,
       productionValue: productionDepartments,
-      reason: 'July import collapsed richer production departments to generic Yale School of Medicine.',
+      reason:
+        'July import collapsed richer production departments to generic Yale School of Medicine.',
     });
   }
 
@@ -182,7 +183,8 @@ export function buildEntityRepairPlan(
       field: 'sourceUrls',
       betaValue: betaSourceUrls,
       productionValue: [...new Set([...betaSourceUrls, ...productionSourceUrls])],
-      reason: 'Beta lost production source URLs; preserve the union rather than deleting newer Beta URLs.',
+      reason:
+        'Beta lost production source URLs; preserve the union rather than deleting newer Beta URLs.',
     });
   }
 
@@ -191,7 +193,8 @@ export function buildEntityRepairPlan(
       field: 'website',
       betaValue: beta.website,
       productionValue: production.websiteUrl,
-      reason: 'July import left the legacy website alias empty while production has an official URL.',
+      reason:
+        'July import left the legacy website alias empty while production has an official URL.',
     });
   }
 
@@ -204,7 +207,8 @@ export function buildEntityRepairPlan(
   ]) {
     plan.skippedFields.push({
       field,
-      reason: 'Not exposed by the production public API; preserve Beta rather than infer a rollback value.',
+      reason:
+        'Not exposed by the production public API; preserve Beta rather than infer a rollback value.',
     });
   }
 
@@ -263,10 +267,13 @@ async function mapWithConcurrency<T, U>(
   return results;
 }
 
-async function fetchProductionEntity(slug: string): Promise<{ status: number; entity: PlainRecord | null }> {
+async function fetchProductionEntity(
+  slug: string,
+): Promise<{ status: number; entity: PlainRecord | null }> {
   const response = await fetch(`${PRODUCTION_API_ORIGIN}/api/research/${encodeURIComponent(slug)}`);
   if (response.status === 404) return { status: 404, entity: null };
-  if (!response.ok) throw new Error(`Production request for ${slug} failed with ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Production request for ${slug} failed with ${response.status}`);
   const payload = (await response.json()) as PlainRecord;
   return { status: response.status, entity: payload.researchEntity || payload.group || null };
 }
@@ -335,17 +342,23 @@ async function main(): Promise<void> {
     entities: cohort,
   });
 
-  const comparisons = await mapWithConcurrency(cohort, args.concurrency, async (entity: PlainRecord) => {
-    const production = await fetchProductionEntity(text(entity.slug));
-    return {
-      entity,
-      production: production.entity,
-      plan: buildEntityRepairPlan(entity, production.entity, production.status),
-    };
-  });
+  const comparisons = await mapWithConcurrency(
+    cohort,
+    args.concurrency,
+    async (entity: PlainRecord) => {
+      const production = await fetchProductionEntity(text(entity.slug));
+      return {
+        entity,
+        production: production.entity,
+        plan: buildEntityRepairPlan(entity, production.entity, production.status),
+      };
+    },
+  );
   const changedPlans = comparisons.filter(({ plan }) => plan.repairs.length > 0);
   if (changedPlans.length > args.maxApply) {
-    throw new Error(`Repair would update ${changedPlans.length} entities, above --max-apply=${args.maxApply}`);
+    throw new Error(
+      `Repair would update ${changedPlans.length} entities, above --max-apply=${args.maxApply}`,
+    );
   }
 
   const departmentRows = await Department.find({})
@@ -377,7 +390,11 @@ async function main(): Promise<void> {
       const unset: PlainRecord = {};
       for (const repair of plan.repairs) {
         set[repair.field] = repair.productionValue;
-        const observation = matchingObservation(observations as PlainRecord[], repair.field, repair.productionValue);
+        const observation = matchingObservation(
+          observations as PlainRecord[],
+          repair.field,
+          repair.productionValue,
+        );
         const provenance = observation
           ? {
               sourceId: observation.sourceId,
@@ -452,7 +469,9 @@ async function main(): Promise<void> {
       })),
   };
   writeJson(args.output, report);
-  console.log(JSON.stringify({ output: args.output, backup: args.backup, summary: report.summary }, null, 2));
+  console.log(
+    JSON.stringify({ output: args.output, backup: args.backup, summary: report.summary }, null, 2),
+  );
   await mongoose.disconnect();
 }
 

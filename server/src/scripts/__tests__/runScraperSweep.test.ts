@@ -30,10 +30,7 @@ describe('runScraperSweep', () => {
 
   it('fails before the sweep when a registered source metadata row is missing', () => {
     expect(() =>
-      validateScraperSweepSourceRows(
-        ['yale-directory', 'center-director-llm'],
-        ['yale-directory'],
-      ),
+      validateScraperSweepSourceRows(['yale-directory', 'center-director-llm'], ['yale-directory']),
     ).toThrow(/center-director-llm.*source metadata seed/i);
   });
 

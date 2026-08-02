@@ -375,7 +375,9 @@ export function computeResearchEntityStudentVisibility({
     computedTier = 'limited_but_safe';
   }
 
-  const result = withOverride(entity, computedTier, Array.from(new Set(reasons)));
+  const result = outsideResearchScope
+    ? { tier: computedTier, computedTier, reasons: Array.from(new Set(reasons)) }
+    : withOverride(entity, computedTier, Array.from(new Set(reasons)));
   if (result.tier === 'student_ready' && !publicDescription.invariant.pass) {
     return {
       tier: result.computedTier,

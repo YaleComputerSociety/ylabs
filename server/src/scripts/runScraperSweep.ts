@@ -38,17 +38,12 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
+  { name: 'official-research-home-roster', phase: 'relationships' },
   { name: 'center-affiliation-llm', phase: 'relationships' },
   { name: 'center-director-llm', phase: 'relationships' },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
   { name: 'lab-microsite-undergrad-llm', phase: 'content-access' },
   { name: 'student-decision-llm', phase: 'content-access' },
-  { name: 'orcid', phase: 'scholarly' },
-  { name: 'openalex', phase: 'scholarly' },
-  { name: 'europe-pmc', phase: 'scholarly' },
-  { name: 'pubmed', phase: 'scholarly' },
-  { name: 'crossref', phase: 'scholarly' },
-  { name: 'arxiv', phase: 'scholarly' },
 ];
 
 interface ScraperSweepModeConfig {
@@ -96,12 +91,7 @@ export interface ScraperSweepRunRow {
 }
 
 export interface DevelopmentPostRunStage {
-  name:
-    | 'search-rebuild'
-    | 'coverage-audit'
-    | 'data-quality'
-    | 'integrity-gate'
-    | 'trust-contract';
+  name: 'search-rebuild' | 'coverage-audit' | 'data-quality' | 'integrity-gate' | 'trust-contract';
   status: 'succeeded' | 'failed';
   artifactPath: string;
   exitCode: number;
@@ -410,9 +400,7 @@ type ChildRunner = (
   },
 ) => SpawnSyncReturns<Buffer>;
 
-export function buildDevelopmentPostRunStages(
-  outputDirectory: string,
-): Array<{
+export function buildDevelopmentPostRunStages(outputDirectory: string): Array<{
   name: DevelopmentPostRunStage['name'];
   artifactPath: string;
   args: string[];
@@ -640,11 +628,7 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   void (async () => runScraperSweep(parseScraperSweepArgs(process.argv.slice(2))))()
     .then((summary) => {
-      if (
-        summary.failed > 0 ||
-        summary.notRun > 0 ||
-        summary.postRun?.status === 'failed'
-      ) {
+      if (summary.failed > 0 || summary.notRun > 0 || summary.postRun?.status === 'failed') {
         process.exitCode = 1;
       }
     })

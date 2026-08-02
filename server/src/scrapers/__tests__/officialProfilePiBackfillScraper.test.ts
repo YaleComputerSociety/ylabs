@@ -1445,14 +1445,24 @@ function contextFor(emitted: ObservationInput[]): ScraperContext {
 function visibleBioContextFor(emitted: ObservationInput[]): ScraperContext {
   return {
     ...contextFor(emitted),
-    options: { dryRun: true, useCache: false, release: false, only: ['visible-profile-bio-backfill'] },
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+      only: ['visible-profile-bio-backfill'],
+    },
   };
 }
 
 function profileDescriptionContextFor(emitted: ObservationInput[]): ScraperContext {
   return {
     ...contextFor(emitted),
-    options: { dryRun: true, useCache: false, release: false, only: ['profile-description-backfill'] },
+    options: {
+      dryRun: true,
+      useCache: false,
+      release: false,
+      only: ['profile-description-backfill'],
+    },
   };
 }
 
@@ -1736,7 +1746,8 @@ describe('officialProfilePiBackfillScraper', () => {
       fetchedUrl: 'http://environment.yale.edu/profile/clark/',
       displayName: 'Sage Fixture',
       email: 'sage.fixture@yale.edu',
-      title: 'Jules F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences',
+      title:
+        'Jules F. Cullman 3rd Adjunct Professor Emeritus of Wildlife Ecology and Policy Sciences',
     });
   });
 
@@ -1891,7 +1902,10 @@ describe('officialProfilePiBackfillScraper', () => {
     const longBio =
       'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology '.repeat(
         11,
-      ) + 'Dr. Fixture also mentors students in clinical trial design and translational oncology. '.repeat(5);
+      ) +
+      'Dr. Fixture also mentors students in clinical trial design and translational oncology. '.repeat(
+        5,
+      );
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(/Jules Fixture studies[\s\S]*?gastrointestinal oncology\./, longBio),
       profileUrl,
@@ -1989,7 +2003,9 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Sustainable chemical separations']));
+    expect(researchInterests?.value).toEqual(
+      expect.arrayContaining(['Sustainable chemical separations']),
+    );
   });
 
   it('does not derive a user bio from official interests when the profile bio is single-citation text', () => {
@@ -2010,7 +2026,9 @@ describe('officialProfilePiBackfillScraper', () => {
     const researchInterests = obs.find((o) => o.field === 'researchInterests');
 
     expect(bio).toBeUndefined();
-    expect(researchInterests?.value).toEqual(expect.arrayContaining(['Sustainable chemical separations']));
+    expect(researchInterests?.value).toEqual(
+      expect.arrayContaining(['Sustainable chemical separations']),
+    );
   });
 
   it('does not emit long appointment-only official profile blocks as bios', () => {
@@ -2132,8 +2150,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'jules.fixture@yale.edu',
         title: 'Assistant Professor of Medicine',
         departments: [],
-        bio:
-          'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
+        bio: 'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
         researchInterests: [],
       },
       { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
@@ -2210,8 +2227,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'xylo.fixture@yale.edu',
         title: 'Assistant Professor of Radiology and Biomedical Imaging',
         departments: [],
-        bio:
-          'Xiaofeng joined Yale in 03/2024 as an Assistant Professor (forward related email to: liuxiaof@broadinstitute.org). His research interests are centered around medical imaging, machine learning, and cancer detection.',
+        bio: 'Xiaofeng joined Yale in 03/2024 as an Assistant Professor (forward related email to: liuxiaof@broadinstitute.org). His research interests are centered around medical imaging, machine learning, and cancer detection.',
         researchInterests: ['medical imaging', 'machine learning', 'cancer detection'],
       },
       {
@@ -2236,8 +2252,7 @@ describe('officialProfilePiBackfillScraper', () => {
         email: 'riley.metabolic@yale.edu',
         title: 'Professor of Cellular and Molecular Physiology',
         departments: [],
-        bio:
-          'Riley Metabolic, Ph.D. Professor Email: riley.metabolic@yale.eduPhone: 737-1216 Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
+        bio: 'Riley Metabolic, Ph.D. Professor Email: riley.metabolic@yale.eduPhone: 737-1216 Dr. Riley Metabolic is a Tenure Professor in the Department of Cellular and Molecular Physiology. Her research focuses on mitochondria-endoplasmic reticulum interactions and metabolic regulation in the central nervous system.',
         researchInterests: ['mitochondria', 'metabolic regulation', 'central nervous system'],
       },
       {
@@ -2409,7 +2424,10 @@ describe('officialProfilePiBackfillScraper', () => {
       slug: 'faculty-research-area-jules-fixture',
     });
 
-    const obs = identityToUserObservations(identity!, { netid: 'fixture106', email: 'jules.fixture@yale.edu' });
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
 
     expect(obs.every((o) => o.entityType === 'user')).toBe(true);
     expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
@@ -2620,7 +2638,10 @@ describe('officialProfilePiBackfillScraper', () => {
       },
     );
 
-    const obs = identityToUserObservations(identity!, { netid: 'fixture106', email: 'jules.fixture@yale.edu' });
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
 
     expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
     expect(obs.some((o) => o.field === 'departments')).toBe(false);
@@ -2890,10 +2911,7 @@ describe('officialProfilePiBackfillScraper', () => {
         expect.objectContaining({
           entityType: 'researchEntity',
           field: 'sourceUrls',
-          value: [
-            'https://medicine.yale.edu/cancer/profile/jules-fixture',
-            profileUrl,
-          ],
+          value: ['https://medicine.yale.edu/cancer/profile/jules-fixture', profileUrl],
         }),
         expect.objectContaining({
           entityType: 'researchEntity',
@@ -3162,11 +3180,7 @@ describe('officialProfilePiBackfillScraper', () => {
     const result = await scraper.run(visibleBioContextFor(emitted));
 
     expect(result).toMatchObject({ observationCount: emitted.length, entitiesObserved: 1 });
-    expect(htmlFetcher).toHaveBeenCalledWith(
-      facultyPageUrl,
-      false,
-      'official-profile-pi-backfill',
-    );
+    expect(htmlFetcher).toHaveBeenCalledWith(facultyPageUrl, false, 'official-profile-pi-backfill');
     expect(emitted.find((o) => o.field === 'bio')?.sourceUrl).toBe(facultyPageUrl);
   });
 
@@ -4106,7 +4120,8 @@ describe('officialProfilePiBackfillScraper', () => {
         }),
         expect.objectContaining({
           field: 'websiteUrl',
-          value: 'https://medicine.yale.edu/internal-medicine/cardio/research/translational-imaging/',
+          value:
+            'https://medicine.yale.edu/internal-medicine/cardio/research/translational-imaging/',
         }),
         expect.objectContaining({
           field: 'sourceUrls',
@@ -4126,7 +4141,9 @@ describe('officialProfilePiBackfillScraper', () => {
         _id: 'entity-caccone',
         slug: 'caccone-lab-ac3',
         name: 'Caccone Lab',
-        sourceUrls: ['https://eeb.yale.edu/people/faculty-research-scientists-lecturer/adalgisa-caccone/'],
+        sourceUrls: [
+          'https://eeb.yale.edu/people/faculty-research-scientists-lecturer/adalgisa-caccone/',
+        ],
       },
       'http://caccone.yale.edu/',
     );

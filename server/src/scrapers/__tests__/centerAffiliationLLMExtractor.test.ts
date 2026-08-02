@@ -32,7 +32,10 @@ describe('affiliationExtractionToObservations', () => {
   it('emits relationship-only observations keyed by the center slug', () => {
     const obs = affiliationExtractionToObservations(
       { affiliatedPeople: [{ name: 'Jane Doe', role: 'director' }] },
-      { centerEntityKey: 'center-jackson-centers-blue-center', sourceUrl: 'https://jackson.yale.edu/x' },
+      {
+        centerEntityKey: 'center-jackson-centers-blue-center',
+        sourceUrl: 'https://jackson.yale.edu/x',
+      },
     );
     expect(obs.length).toBeGreaterThan(0);
     // relationship-only: no researchGroupMember observations

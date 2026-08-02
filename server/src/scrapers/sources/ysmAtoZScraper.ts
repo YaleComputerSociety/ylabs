@@ -21,10 +21,7 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
-import {
-  isLikelyPersonSpecificYaleEmail,
-  netidFromEmail,
-} from '../utils/scraperHelpers';
+import { isLikelyPersonSpecificYaleEmail, netidFromEmail } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const PAGE_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
@@ -186,7 +183,10 @@ function cleanDescription(value: unknown): string {
 }
 
 function cleanProfileTitle(value: string): string {
-  const normalized = value.replace(/View\s*Full\s*Profile/i, '').replace(/\s+/g, ' ').trim();
+  const normalized = value
+    .replace(/View\s*Full\s*Profile/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const parts = normalized
     .split(/\s*;\s*/)
     .map((part) => part.trim())
@@ -196,7 +196,9 @@ function cleanProfileTitle(value: string): string {
     if (unique.some((existing) => existing.toLowerCase() === part.toLowerCase())) continue;
     if (unique.some((existing) => existing.toLowerCase().includes(part.toLowerCase()))) continue;
     if (unique.some((existing) => part.toLowerCase().includes(existing.toLowerCase()))) {
-      const index = unique.findIndex((existing) => part.toLowerCase().includes(existing.toLowerCase()));
+      const index = unique.findIndex((existing) =>
+        part.toLowerCase().includes(existing.toLowerCase()),
+      );
       unique[index] = part;
       continue;
     }
@@ -222,14 +224,18 @@ function parsePageDataPayloads(html: string): any[] {
 
 function clippedDescription(value: string, maxChars = 280): string {
   if (value.length <= maxChars) return value;
-  const clipped = value.slice(0, maxChars).replace(/\s+\S*$/, '').trim();
+  const clipped = value
+    .slice(0, maxChars)
+    .replace(/\s+\S*$/, '')
+    .trim();
   return clipped || value.slice(0, maxChars).trim();
 }
 
 export function extractLabHomepageDescription(html: string): LabHomepageDescription | null {
   const $ = cheerio.load(html);
   const pageData = parsePageDataPayloads(html).find(
-    (payload) => Array.isArray(payload?.mainComponents) && JSON.stringify(payload).includes('metaData'),
+    (payload) =>
+      Array.isArray(payload?.mainComponents) && JSON.stringify(payload).includes('metaData'),
   );
 
   if (pageData) {
@@ -249,7 +255,9 @@ export function extractLabHomepageDescription(html: string): LabHomepageDescript
       if (description) {
         return {
           description,
-          shortDescription: deriveShortDescriptionFromFullDescription(description) || clippedDescription(description),
+          shortDescription:
+            deriveShortDescriptionFromFullDescription(description) ||
+            clippedDescription(description),
         };
       }
     } catch {
@@ -265,7 +273,8 @@ export function extractLabHomepageDescription(html: string): LabHomepageDescript
     return {
       description: metaDescription,
       shortDescription:
-        deriveShortDescriptionFromFullDescription(metaDescription) || clippedDescription(metaDescription),
+        deriveShortDescriptionFromFullDescription(metaDescription) ||
+        clippedDescription(metaDescription),
     };
   }
 
@@ -298,7 +307,9 @@ export function extractProfileContactWidgetProfile(
       const profile = component?.model?.profile || {};
       const name = cleanDescription(profile.fullName || profile.name);
       const profileUrl = absoluteUrl(String(profile.profileUrl || ''), baseUrl);
-      const title = cleanProfileTitle(cleanDescription(profile.title || component?.model?.title || ''));
+      const title = cleanProfileTitle(
+        cleanDescription(profile.title || component?.model?.title || ''),
+      );
       const email = profileContactWidgetEmail(profile);
       if (!name || !profileUrl) return null;
       return { name, profileUrl, title, ...(email ? { email } : {}) };
@@ -328,11 +339,7 @@ function profileContactWidgetEmail(profile: any): string {
 }
 
 function nameHintFromProfileName(name: string): PiNameHint | null {
-  const cleaned = name
-    .split(',')
-    .at(0)
-    ?.replace(/\s+/g, ' ')
-    .trim();
+  const cleaned = name.split(',').at(0)?.replace(/\s+/g, ' ').trim();
   if (!cleaned) return null;
   const tokens = cleaned.split(/\s+/).filter(Boolean);
   if (tokens.length < 2) return null;
@@ -358,15 +365,8 @@ export function extractSoleResearchFacultyProfile(
     if (!label || /^View Full Profile$/i.test(label)) return;
     const profileUrl = absoluteUrl(href, baseUrl);
     if (!profileUrl) return;
-    const containerText = $(el)
-      .closest('li')
-      .text()
-      .replace(/\s+/g, ' ')
-      .trim();
-    const title = containerText
-      .replace(label, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const containerText = $(el).closest('li').text().replace(/\s+/g, ' ').trim();
+    const title = containerText.replace(label, '').replace(/\s+/g, ' ').trim();
     const cleanedTitle = cleanProfileTitle(title);
     byUrl.set(profileUrl, JSON.stringify({ name: label, title: cleanedTitle }));
   });
@@ -508,7 +508,11 @@ export function labResearchFacultyToObservations(
     { ...base, field: 'researchGroupKey', value: lab.slug },
     { ...base, field: 'role', value: 'director' },
     { ...base, field: 'name', value: profile.name },
-    { ...base, field: 'inferredUserName', value: { fname: nameHint.firstName, lname: nameHint.lastName } },
+    {
+      ...base,
+      field: 'inferredUserName',
+      value: { fname: nameHint.firstName, lname: nameHint.lastName },
+    },
     { ...base, field: 'profileUrl', value: profile.profileUrl },
   ];
   if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
@@ -589,7 +593,12 @@ function matchesOnlyFilter(lab: RawLab, only: string[]): boolean {
       (() => {
         try {
           const url = new URL(lab.url);
-          return url.pathname.replace(/^\/+|\/+$/g, '').split('/').pop() || '';
+          return (
+            url.pathname
+              .replace(/^\/+|\/+$/g, '')
+              .split('/')
+              .pop() || ''
+          );
         } catch {
           return '';
         }
@@ -624,10 +633,7 @@ export class YsmAtoZScraper implements IScraper {
     const selected = labs.filter((lab) => matchesOnlyFilter(lab, only));
     const offset = offsetOption && offsetOption > 0 ? offsetOption : 0;
     const offsetLabs = offset > 0 ? selected.slice(offset) : selected;
-    const limited =
-      limitOption && limitOption > 0
-        ? offsetLabs.slice(0, limitOption)
-        : offsetLabs;
+    const limited = limitOption && limitOption > 0 ? offsetLabs.slice(0, limitOption) : offsetLabs;
 
     // Direct-URL, PI-only mode: `--only <full lab URL>` values for labs that are
     // no longer in the A-Z index (but still live at medicine.yale.edu/lab/<slug>/)
@@ -658,7 +664,9 @@ export class YsmAtoZScraper implements IScraper {
       const observations = piOnly ? [] : labToObservations(lab, PAGE_URL);
       const homepageHtml = await fetchLabHomepage(lab.url, ctx.options.useCache);
       if (!piOnly) {
-        const homepageDescription = homepageHtml ? extractLabHomepageDescription(homepageHtml) : null;
+        const homepageDescription = homepageHtml
+          ? extractLabHomepageDescription(homepageHtml)
+          : null;
         observations.push(...labDescriptionToObservations(lab, homepageDescription));
         if (homepageDescription) descriptionsFound++;
       }
@@ -679,13 +687,12 @@ export class YsmAtoZScraper implements IScraper {
           allowUnknownExactName: true,
           allowSurnameFallback: false,
         });
-        if (piUserId) piSourceUrl = researchFacultyProfile?.profileUrl || researchFacultyUrl || piSourceUrl;
+        if (piUserId)
+          piSourceUrl = researchFacultyProfile?.profileUrl || researchFacultyUrl || piSourceUrl;
       }
       if (!piUserId && homepageHtml) {
         const contactWidgetProfile = extractProfileContactWidgetProfile(homepageHtml, lab.url);
-        observations.push(
-          ...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url),
-        );
+        observations.push(...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url));
         piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''), {
           allowUnknownExactName: true,
           allowSurnameFallback: false,

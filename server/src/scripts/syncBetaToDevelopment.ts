@@ -682,21 +682,15 @@ async function main(): Promise<void> {
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
     const clearedDevelopmentCollections = localCollectionsClearedOnApply;
     let after: SyncCollectionPlan[] = [];
-    await applySync(
-      betaDb,
-      developmentDb,
-      collections,
-      clearedDevelopmentCollections,
-      async () => {
-        after = await buildPlan(betaDb, developmentDb, collections);
-        const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
-        if (mismatches.length > 0) {
-          throw new Error(
-            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-          );
-        }
-      },
-    );
+    await applySync(betaDb, developmentDb, collections, clearedDevelopmentCollections, async () => {
+      after = await buildPlan(betaDb, developmentDb, collections);
+      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
+      if (mismatches.length > 0) {
+        throw new Error(
+          `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+        );
+      }
+    });
     const result = {
       ...summary,
       status: 'applied',

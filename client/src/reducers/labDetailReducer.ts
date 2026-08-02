@@ -35,10 +35,7 @@ export const createInitialLabDetailState = (
   ...overrides,
 });
 
-export function labDetailReducer(
-  state: LabDetailState,
-  action: LabDetailAction,
-): LabDetailState {
+export function labDetailReducer(state: LabDetailState, action: LabDetailAction): LabDetailState {
   switch (action.type) {
     case 'FETCH_START':
       return { ...state, loading: true, error: null };

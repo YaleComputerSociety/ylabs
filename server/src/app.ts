@@ -5,7 +5,10 @@ import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { allowsNonProductionSecurityBypass, requiresSecureSessionCookie } from './utils/environment';
+import {
+  allowsNonProductionSecurityBypass,
+  requiresSecureSessionCookie,
+} from './utils/environment';
 import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
@@ -104,8 +107,7 @@ for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
   const maximumPrefix = addressType === 4 ? 32 : 128;
   if (
     addressType === 0 ||
-    (prefix !== undefined &&
-      (!Number.isInteger(prefix) || prefix < 0 || prefix > maximumPrefix))
+    (prefix !== undefined && (!Number.isInteger(prefix) || prefix < 0 || prefix > maximumPrefix))
   ) {
     throw new Error(`TRUSTED_PROXY_CIDRS contains an invalid address or CIDR: ${value}`);
   }
@@ -119,7 +121,9 @@ for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
 }
 
 if (!bypassRuntimeSecurity && trustedProxyAddressCount === 0) {
-  throw new Error('TRUSTED_PROXY_CIDRS must define at least one trusted proxy in deployed runtimes.');
+  throw new Error(
+    'TRUSTED_PROXY_CIDRS must define at least one trusted proxy in deployed runtimes.',
+  );
 }
 
 const normalizedPeerAddress = (value: string): string =>
@@ -129,8 +133,7 @@ const isTrustedProxyAddress = (value: string): boolean => {
   const address = normalizedPeerAddress(value);
   const addressType = isIP(address);
   return (
-    addressType !== 0 &&
-    trustedProxyAddresses.check(address, addressType === 4 ? 'ipv4' : 'ipv6')
+    addressType !== 0 && trustedProxyAddresses.check(address, addressType === 4 ? 'ipv4' : 'ipv6')
   );
 };
 
@@ -234,7 +237,11 @@ const corsOptions = {
   credentials: true,
 };
 
-function setPrivateApiCacheHeaders(_req: express.Request, res: express.Response, next: express.NextFunction) {
+function setPrivateApiCacheHeaders(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   res.setHeader('Cache-Control', 'no-store, private, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Surrogate-Control', 'no-store');
@@ -243,7 +250,11 @@ function setPrivateApiCacheHeaders(_req: express.Request, res: express.Response,
   next();
 }
 
-function blockSourceMapAssetRequests(req: express.Request, res: express.Response, next: express.NextFunction) {
+function blockSourceMapAssetRequests(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   if (req.path.endsWith('.map')) {
     res.setHeader('Cache-Control', 'no-store, private, max-age=0');
     res.setHeader('Pragma', 'no-cache');
@@ -298,9 +309,12 @@ const app = express()
   .use(securityHeaders)
   .use(cors(corsOptions))
   .use('/api', setPrivateApiCacheHeaders)
-  .use('/api', csrfOriginGuard(allowList, {
-    writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,
-  }))
+  .use(
+    '/api',
+    csrfOriginGuard(allowList, {
+      writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,
+    }),
+  )
   .use(express.json({ limit: API_BODY_LIMIT }))
   .use(
     express.urlencoded({

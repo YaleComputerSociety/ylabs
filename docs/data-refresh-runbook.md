@@ -272,7 +272,7 @@ Then run the full Development release-candidate sweep:
 yarn scrape:development:all:full
 ```
 
-The full command runs all 23 registered sources with `--exhaustive`, without cache, bypasses freshness skips for coverage measurement, and materializes each successful run into Atlas Development.
+The full command runs every source in the canonical sweep manifest with `--exhaustive`, without cache, bypasses freshness skips for coverage measurement, and materializes each successful run into Atlas Development.
 `--exhaustive` disables the default candidate caps inside the LLM and backfill scrapers as well as omitting the shared `--limit`.
 This can take hours and can make many paid API calls.
 Only run it after the bounded sample succeeds.
@@ -355,13 +355,13 @@ Run the exhaustive Beta release-candidate fetch after reviewing the bounded plan
 yarn scrape:beta:all:fetch
 ```
 
-The Beta fetch uses the same 23-source manifest and exhaustive candidate behavior that passed in Development.
+The Beta fetch uses the same canonical sweep manifest and exhaustive candidate behavior that passed in Development.
 It bypasses freshness skips, stops at the first failed source, and never materializes locally.
 The runner prints an output directory under `/tmp`.
 Open its `summary.json`.
 Each successful row contains the exact run ID and the Beta Render plan and apply commands for Phase 3.
 
-Stop if the summary does not report 23 successful sources and zero failed or not-run sources, a source unexpectedly returns zero observations, or any report contains unexplained errors.
+Stop if the summary does not report every manifest source as successful with zero failed or not-run sources, a source unexpectedly returns zero observations, or any report contains unexplained errors.
 
 ## Phase 3: Beta Materialization and Search - Run in the Beta Render Shell
 
