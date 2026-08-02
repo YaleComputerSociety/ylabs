@@ -49,7 +49,7 @@ export async function trustedResearchScopeNarrativeFieldsByEntityId(
     const entityId = serializedDocumentId(entity._id);
     if (
       !entityId ||
-      observation?.entityType !== 'researchEntity' ||
+      !['researchEntity', 'researchGroup'].includes(observation?.entityType) ||
       serializedDocumentId(observation.entityId) !== entityId ||
       observation.field !== field ||
       observation.value !== entity[field] ||

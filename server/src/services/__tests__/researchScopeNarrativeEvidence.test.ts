@@ -77,4 +77,34 @@ describe('trustedResearchScopeNarrativeFieldsByEntityId', () => {
 
     expect(result.size).toBe(0);
   });
+
+  it('accepts the supported legacy researchGroup observation type', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const observationId = new mongoose.Types.ObjectId();
+    const sourceId = new mongoose.Types.ObjectId();
+    const value = 'The center conducts interdisciplinary research.';
+    const lean = vi.fn().mockResolvedValue([
+      {
+        _id: observationId,
+        entityType: 'researchGroup',
+        entityId,
+        field: 'fullDescription',
+        value,
+        sourceId,
+      },
+    ]);
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      select: vi.fn().mockReturnValue({ lean }),
+    } as any);
+
+    const result = await trustedResearchScopeNarrativeFieldsByEntityId([
+      {
+        _id: entityId,
+        fullDescription: value,
+        fieldProvenance: { fullDescription: { observationId, sourceId } },
+      },
+    ]);
+
+    expect(result.get(entityId.toString())).toEqual(new Set(['fullDescription']));
+  });
 });
