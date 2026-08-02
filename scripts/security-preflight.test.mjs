@@ -1555,12 +1555,12 @@ test('admin access-review lock fields are bounded before persistence', () => {
   assert.match(source, /id instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /id\.toHexString\(\)/);
   assert.match(source, /if \(!\/\^\[a-f0-9\]\{24\}\$\/i\.test\(value\)\) return null/);
-  assert.match(source, /accessReviewDocumentId\(group\._id\)/);
+  assert.match(source, /accessReviewDocumentId\(group\.researchEntityId\)/);
   assert.match(source, /records\.map\(\(record\) => accessReviewDocumentId\(record\._id\)\)/);
   assert.match(source, /accessReviewDocumentId\(obs\._id\)/);
   assert.match(source, /scrapeRunId: accessReviewDocumentId\(obs\.scrapeRunId\) \|\| undefined/);
   assert.match(source, /evidenceByRecordId\.get\(accessReviewDocumentId\(record\._id\)\)/);
-  assert.match(source, /const id = accessReviewDocumentId\(group\._id\)/);
+  assert.match(source, /const id = accessReviewDocumentId\(group\.researchEntityId\)/);
   assert.match(
     source,
     /export function normalizeAccessReviewLockedFields\(input: unknown\): string\[\] \| null/,
@@ -3730,7 +3730,7 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /const ownerUserId = normalizeListingObjectId\(owner\?\._id\)/);
   assert.match(
     source,
-    /const suppliedResearchEntityId = normalizeListingObjectId\(data\?\.researchEntityId \|\| data\?\.researchGroupId\)/,
+    /const suppliedResearchEntityId = normalizeListingObjectId\(\s*data\?\.researchEntityId \|\| data\?\.researchGroupId,\s*\)/,
   );
   assert.doesNotMatch(
     source,
