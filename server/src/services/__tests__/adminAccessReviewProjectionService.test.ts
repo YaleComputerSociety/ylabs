@@ -78,6 +78,7 @@ import {
   assertAdminAccessReviewProjectionReady,
   buildAdminAccessReviewProjection,
   invalidateAdminAccessReviewProjection,
+  mutateAndRefreshAdminAccessReviewProjection,
   refreshAdminAccessReviewProjection,
 } from '../adminAccessReviewProjectionService';
 
@@ -142,6 +143,29 @@ describe('adminAccessReviewProjectionService', () => {
       generation: 4,
     });
     expect(mocks.projectionUpdateOne.mock.calls[0][2]).toEqual({ upsert: false });
+  });
+
+  it('commits canonical writes and invalidation in the same transaction', async () => {
+    const id = '64f111111111111111111111';
+    const session = {} as mongoose.ClientSession;
+    const transaction = vi
+      .spyOn(mongoose.connection, 'transaction')
+      .mockImplementation(async (work: any) => work(session));
+    const mutate = vi.fn().mockResolvedValue('written');
+
+    await expect(mutateAndRefreshAdminAccessReviewProjection(id, mutate)).resolves.toBe('written');
+
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(mutate).toHaveBeenCalledWith(session);
+    expect(
+      (await import('../../models/adminAccessReviewProjection')).AdminAccessReviewProjection
+        .findOneAndUpdate,
+    ).toHaveBeenCalledWith(
+      { researchEntityId: new mongoose.Types.ObjectId(id) },
+      expect.any(Object),
+      expect.objectContaining({ session }),
+    );
+    transaction.mockRestore();
   });
 
   it('fails the queue closed when state is missing or any projection is stale', async () => {

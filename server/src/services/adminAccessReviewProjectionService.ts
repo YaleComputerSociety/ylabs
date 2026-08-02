@@ -40,6 +40,11 @@ interface ProjectionModelDeps {
   projectionModel?: typeof AdminAccessReviewProjection;
 }
 
+interface ProjectionInvalidationDeps {
+  projectionModel?: typeof AdminAccessReviewProjection;
+  session?: mongoose.ClientSession;
+}
+
 export interface AdminAccessReviewProjectionRebuildSummary {
   mode: 'dry-run' | 'apply';
   scanned: number;
@@ -217,7 +222,7 @@ export async function buildAdminAccessReviewProjection(
 
 export async function invalidateAdminAccessReviewProjection(
   researchEntityId: unknown,
-  deps: Pick<ProjectionModelDeps, 'projectionModel'> = {},
+  deps: ProjectionInvalidationDeps = {},
 ): Promise<number | null> {
   const id = mongoose.isObjectIdOrHexString(researchEntityId)
     ? new mongoose.Types.ObjectId(String(researchEntityId))
@@ -241,11 +246,27 @@ export async function invalidateAdminAccessReviewProjection(
         $set: { stale: true },
         $inc: { generation: 1 },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
+      { upsert: true, new: true, setDefaultsOnInsert: true, session: deps.session },
     )
     .select('generation')
     .lean();
   return Number((projection as any)?.generation || 0);
+}
+
+export async function mutateAndRefreshAdminAccessReviewProjection<T>(
+  researchEntityId: unknown,
+  mutate: (session: mongoose.ClientSession) => Promise<T>,
+): Promise<T> {
+  let result: T | undefined;
+  let generation: number | null = null;
+  await mongoose.connection.transaction(async (session) => {
+    result = await mutate(session);
+    generation = await invalidateAdminAccessReviewProjection(researchEntityId, { session });
+  });
+  if (generation !== null) {
+    await refreshAdminAccessReviewProjection(researchEntityId, generation);
+  }
+  return result as T;
 }
 
 export async function refreshAdminAccessReviewProjection(

@@ -14,8 +14,7 @@ import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
 import {
   AdminAccessReviewProjectionUnavailableError,
   assertAdminAccessReviewProjectionReady,
-  invalidateAdminAccessReviewProjection,
-  refreshAdminAccessReviewProjection,
+  mutateAndRefreshAdminAccessReviewProjection,
 } from './adminAccessReviewProjectionService';
 
 export { AdminAccessReviewProjectionUnavailableError };
@@ -447,13 +446,15 @@ export async function updateAccessReviewManualLocks(
   const manuallyLockedFields = normalizeAccessReviewLockedFields(fields);
   if (!id || !manuallyLockedFields) return null;
 
-  return ResearchEntity.findByIdAndUpdate(
-    id,
-    { $set: { manuallyLockedFields } },
-    { new: true, runValidators: true },
-  )
-    .select('name slug manuallyLockedFields')
-    .lean();
+  return mutateAndRefreshAdminAccessReviewProjection(id, async (session) =>
+    ResearchEntity.findByIdAndUpdate(
+      id,
+      { $set: { manuallyLockedFields } },
+      { new: true, runValidators: true, session },
+    )
+      .select('name slug manuallyLockedFields')
+      .lean(),
+  );
 }
 
 function reviewModelForRecordType(type: AccessReviewRecordType): mongoose.Model<any> | null {
@@ -554,10 +555,6 @@ export async function updateAccessReviewRecordReview(input: {
     update.archived = true;
   }
 
-  const projectionGeneration = projectionEntityId
-    ? await invalidateAdminAccessReviewProjection(projectionEntityId)
-    : null;
-
   const facultyPathway =
     isFacultyModerationDecision && facultyOpportunity?.entryPathwayId
       ? await EntryPathway.findById(facultyOpportunity.entryPathwayId)
@@ -574,20 +571,24 @@ export async function updateAccessReviewRecordReview(input: {
         'review.status': facultyOpportunity?.review?.status,
       }
     : {};
-  const updateQuery = isFacultyModerationDecision
-    ? model.findOneAndUpdate(
-        { _id: id, ...expectedFacultyState },
-        { $set: update, $inc: { revision: 1 } },
-        { new: true, runValidators: true },
-      )
-    : model.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true });
-  const updated = await updateQuery.lean();
+  const mutate = async (session?: mongoose.ClientSession) => {
+    const updateQuery = isFacultyModerationDecision
+      ? model.findOneAndUpdate(
+          { _id: id, ...expectedFacultyState },
+          { $set: update, $inc: { revision: 1 } },
+          { new: true, runValidators: true, ...(session ? { session } : {}) },
+        )
+      : model.findByIdAndUpdate(id, { $set: update }, {
+          new: true,
+          runValidators: true,
+          ...(session ? { session } : {}),
+        });
+    const updated = await updateQuery.lean();
 
-  if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {
-    const reviewUpdate = Object.fromEntries(
-      Object.entries(update).filter(([field]) => field.startsWith('review.')),
-    );
-    try {
+    if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {
+      const reviewUpdate = Object.fromEntries(
+        Object.entries(update).filter(([field]) => field.startsWith('review.')),
+      );
       const pathwayResult = await EntryPathway.updateOne(
         {
           _id: facultyOpportunity.entryPathwayId,
@@ -603,50 +604,28 @@ export async function updateAccessReviewRecordReview(input: {
             ...(update['review.status'] === 'archived_by_review' ? { archived: true } : {}),
           },
         },
-        { runValidators: true },
+        { runValidators: true, ...(session ? { session } : {}) },
       );
       if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway changed');
-      if (
-        process.env.PATHWAY_SEARCH_SYNC === 'true' ||
-        process.env.PATHWAY_SEARCH_BACKEND === 'meili'
-      ) {
-        const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
-        if (pathwayId) {
-          await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
-            console.error('Faculty opportunity review sync failed:', sanitizeLogValue(error));
-          });
-        }
-      }
-    } catch (error) {
-      const expectedModeratedState = Object.fromEntries(
-        Object.entries(update).map(([field, value]) => [field, value]),
-      );
-      const compensation = await PostedOpportunity.updateOne(
-        {
-          _id: id,
-          ...expectedModeratedState,
-          revision: (updated as any).revision,
-          status: (updated as any).status,
-          archived: (updated as any).archived === true,
-        },
-        {
-          $set: {
-            submissionStatus: facultyOpportunity.submissionStatus,
-            review: facultyOpportunity.review,
-            archived: facultyOpportunity.archived === true,
-          },
-          $inc: { revision: 1 },
-        },
-      ).catch(() => null);
-      if (!compensation || compensation.matchedCount === 0) {
-        throw new Error('Faculty opportunity moderation compensation failed', { cause: error });
-      }
-      throw error;
     }
-  }
+    return updated;
+  };
 
-  if (projectionEntityId && projectionGeneration !== null) {
-    await refreshAdminAccessReviewProjection(projectionEntityId, projectionGeneration);
+  const updated = projectionEntityId
+    ? await mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, mutate)
+    : await mutate();
+  if (
+    updated &&
+    isFacultyModerationDecision &&
+    facultyOpportunity?.entryPathwayId &&
+    (process.env.PATHWAY_SEARCH_SYNC === 'true' || process.env.PATHWAY_SEARCH_BACKEND === 'meili')
+  ) {
+    const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
+    if (pathwayId) {
+      await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
+        console.error('Faculty opportunity review sync failed:', sanitizeLogValue(error));
+      });
+    }
   }
 
   return updated;

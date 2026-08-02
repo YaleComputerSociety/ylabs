@@ -9,8 +9,7 @@ import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArti
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
-  invalidateAdminAccessReviewProjection,
-  refreshAdminAccessReviewProjection,
+  mutateAndRefreshAdminAccessReviewProjection,
 } from './adminAccessReviewProjectionService';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 
@@ -86,9 +85,6 @@ export async function upsertAccessSignal(
     derivationKey,
   });
   const existing = await findReviewLockedRecord(AccessSignal, filter);
-  const projectionGeneration = !deps.model
-    ? await invalidateAdminAccessReviewProjection(researchEntityId)
-    : null;
 
   const update = {
     $setOnInsert: compactObject({
@@ -115,15 +111,18 @@ export async function upsertAccessSignal(
     ),
   };
 
-  const query = AccessSignal.findOneAndUpdate(filter, update, {
-    upsert: true,
-    new: true,
-    setDefaultsOnInsert: true,
-  });
-  const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
-  if (!deps.model && projectionGeneration !== null) {
-    await refreshAdminAccessReviewProjection(researchEntityId, projectionGeneration);
-  }
+  const write = async (session?: mongoose.ClientSession) => {
+    const query = AccessSignal.findOneAndUpdate(filter, update, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    });
+    return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
+  };
+  const doc = deps.model
+    ? await write()
+    : await mutateAndRefreshAdminAccessReviewProjection(researchEntityId, write);
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
     const entryPathwayId = serializedDocumentId(doc?.entryPathwayId);
     const researchEntityId = serializedDocumentId(doc?.researchEntityId);

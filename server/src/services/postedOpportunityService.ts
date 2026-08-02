@@ -10,8 +10,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import {
-  invalidateAdminAccessReviewProjection,
-  refreshAdminAccessReviewProjection,
+  mutateAndRefreshAdminAccessReviewProjection,
 } from './adminAccessReviewProjectionService';
 import type {
   CompensationType,
@@ -108,11 +107,7 @@ export async function upsertPostedOpportunity(
     ? compactObject({ entryPathwayId, derivationKey: input.derivationKey })
     : compactObject({ entryPathwayId, listingId, title: input.title });
   const existing = await findReviewLockedRecord(PostedOpportunity, filter);
-  const projectionEntityId = researchEntityId || (existing as any)?.researchEntityId;
-  const projectionGeneration =
-    !deps.model && projectionEntityId
-      ? await invalidateAdminAccessReviewProjection(projectionEntityId)
-      : null;
+  const projectionEntityId = (existing as any)?.researchEntityId || researchEntityId;
 
   const update = {
     $setOnInsert: compactObject({
@@ -142,15 +137,18 @@ export async function upsertPostedOpportunity(
     },
   };
 
-  const query = PostedOpportunity.findOneAndUpdate(filter, update, {
-    upsert: true,
-    new: true,
-    setDefaultsOnInsert: true,
-  });
-  const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
-  if (!deps.model && projectionEntityId && projectionGeneration !== null) {
-    await refreshAdminAccessReviewProjection(projectionEntityId, projectionGeneration);
-  }
+  const write = async (session?: mongoose.ClientSession) => {
+    const query = PostedOpportunity.findOneAndUpdate(filter, update, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    });
+    return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
+  };
+  const doc = !deps.model && projectionEntityId
+    ? await mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, write)
+    : await write();
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && doc?.entryPathwayId) {
     const entryPathwayId = serializedDocumentId(doc.entryPathwayId);
     if (entryPathwayId)
@@ -473,19 +471,18 @@ export async function reapExpiredPostedOpportunities(
       continue;
     }
 
-    const projectionGeneration =
+    const write = (session?: mongoose.ClientSession) =>
+      postedOpportunityModel.updateOne(
+        { _id: opportunity._id },
+        { $set: { status: 'CLOSED' } },
+        session ? { session } : {},
+      );
+    const updateResult =
       !deps.model && opportunity.researchEntityId
-        ? await invalidateAdminAccessReviewProjection(opportunity.researchEntityId)
-        : null;
-    const updateResult = await postedOpportunityModel.updateOne(
-      { _id: opportunity._id },
-      { $set: { status: 'CLOSED' } },
-    );
+        ? await mutateAndRefreshAdminAccessReviewProjection(opportunity.researchEntityId, write)
+        : await write();
     if ((updateResult as any).modifiedCount || (updateResult as any).matchedCount) {
       closedOpportunities++;
-    }
-    if (projectionGeneration !== null) {
-      await refreshAdminAccessReviewProjection(opportunity.researchEntityId, projectionGeneration);
     }
   }
 

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   assertProjectionReady: vi.fn(),
   invalidateProjection: vi.fn(),
   refreshProjection: vi.fn(),
+  mutateProjection: vi.fn(),
   entryPathwayFindByIdAndUpdate: vi.fn(),
   entryPathwayFindById: vi.fn(),
   entryPathwayFindOne: vi.fn(),
@@ -111,6 +112,7 @@ vi.mock('../adminAccessReviewProjectionService', async (importOriginal) => ({
   assertAdminAccessReviewProjectionReady: mocks.assertProjectionReady,
   invalidateAdminAccessReviewProjection: mocks.invalidateProjection,
   refreshAdminAccessReviewProjection: mocks.refreshProjection,
+  mutateAndRefreshAdminAccessReviewProjection: mocks.mutateProjection,
 }));
 
 import {
@@ -131,6 +133,9 @@ describe('adminAccessReviewService', () => {
     mocks.projectionCountDocuments.mockResolvedValue(0);
     mocks.invalidateProjection.mockResolvedValue(1);
     mocks.refreshProjection.mockResolvedValue(true);
+    mocks.mutateProjection.mockImplementation(
+      (_id: unknown, mutate: (session: mongoose.ClientSession) => unknown) => mutate({} as any),
+    );
     const query: any = {
       select: vi.fn(() => query),
       lean: vi.fn().mockResolvedValue(null),
@@ -440,7 +445,7 @@ describe('adminAccessReviewService', () => {
     expect(mocks.entryPathwayUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('compensates moderation when the linked pathway is missing', async () => {
+  it('rolls back moderation when the linked pathway is missing', async () => {
     const id = '64f222222222222222222222';
     const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
     const recordQuery: any = {
@@ -473,24 +478,10 @@ describe('adminAccessReviewService', () => {
       updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
     ).rejects.toThrow('Linked pathway changed');
 
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$set).toEqual({
-      submissionStatus: 'PENDING_REVIEW',
-      review: { status: 'unreviewed' },
-      archived: false,
-    });
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][1].$inc).toEqual({ revision: 1 });
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
-      _id: new mongoose.Types.ObjectId(id),
-      revision: 5,
-      status: 'OPEN',
-      archived: false,
-      submissionStatus: 'REVIEWED',
-      'review.status': 'approved',
-      'review.reviewedAt': expect.any(Date),
-    });
+    expect(mocks.postedOpportunityUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('does not compensate over a concurrent faculty lifecycle write', async () => {
+  it('rolls back without compensating over a concurrent faculty lifecycle write', async () => {
     const id = '64f222222222222222222222';
     const recordQuery: any = {
       select: vi.fn(() => recordQuery),
@@ -521,18 +512,12 @@ describe('adminAccessReviewService', () => {
 
     await expect(
       updateAccessReviewRecordReview({ type: 'postedOpportunity', id, status: 'approved' }),
-    ).rejects.toThrow('Faculty opportunity moderation compensation failed');
+    ).rejects.toThrow('Linked pathway changed');
 
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
-      revision: 9,
-      status: 'OPEN',
-      archived: false,
-      submissionStatus: 'REVIEWED',
-      'review.status': 'approved',
-    });
+    expect(mocks.postedOpportunityUpdateOne).not.toHaveBeenCalled();
   });
 
-  it('compensates when the linked pathway changes before moderation propagation', async () => {
+  it('rolls back when the linked pathway changes before moderation propagation', async () => {
     const id = '64f222222222222222222222';
     const pathwayId = new mongoose.Types.ObjectId('64f333333333333333333333');
     const pathwayUpdatedAt = new Date('2026-07-14T12:00:00.000Z');
@@ -585,13 +570,7 @@ describe('adminAccessReviewService', () => {
       'review.status': 'unreviewed',
       updatedAt: pathwayUpdatedAt,
     });
-    expect(mocks.postedOpportunityUpdateOne.mock.calls[0][0]).toMatchObject({
-      revision: 11,
-      status: 'OPEN',
-      archived: false,
-      submissionStatus: 'REVIEWED',
-      'review.status': 'approved',
-    });
+    expect(mocks.postedOpportunityUpdateOne).not.toHaveBeenCalled();
   });
 
   it('does not approve when faculty submission state changes after the moderation read', async () => {

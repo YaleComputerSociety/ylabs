@@ -6,8 +6,7 @@ import { publicAccessHttpUrls, publicAccessText } from '../utils/publicAccessArt
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
-  invalidateAdminAccessReviewProjection,
-  refreshAdminAccessReviewProjection,
+  mutateAndRefreshAdminAccessReviewProjection,
 } from './adminAccessReviewProjectionService';
 import type {
   CompensationType,
@@ -94,9 +93,6 @@ export async function upsertEntryPathway(
 
   const filter = { researchEntityId, derivationKey };
   const existing = await findReviewLockedRecord(EntryPathway, filter);
-  const projectionGeneration = !deps.model
-    ? await invalidateAdminAccessReviewProjection(researchEntityId)
-    : null;
 
   const update = {
     $setOnInsert: {
@@ -125,15 +121,18 @@ export async function upsertEntryPathway(
     },
   };
 
-  const query = EntryPathway.findOneAndUpdate(filter, update, {
-    upsert: true,
-    new: true,
-    setDefaultsOnInsert: true,
-  });
-  const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
-  if (!deps.model && projectionGeneration !== null) {
-    await refreshAdminAccessReviewProjection(researchEntityId, projectionGeneration);
-  }
+  const write = async (session?: mongoose.ClientSession) => {
+    const query = EntryPathway.findOneAndUpdate(filter, update, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    });
+    return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
+  };
+  const doc = deps.model
+    ? await write()
+    : await mutateAndRefreshAdminAccessReviewProjection(researchEntityId, write);
   const pathwayId = serializedDocumentId(doc?._id);
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && pathwayId) {
     await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {

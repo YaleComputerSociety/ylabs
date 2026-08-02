@@ -909,10 +909,7 @@ export async function submitFacultyOpportunity(
   const validated = validateFacultyOpportunityInput(current, { requireComplete: true, now });
   const { opportunityModel, pathwayModel } = modelDeps(deps);
   const nextRevision = expectedRevision + 1;
-  const projectionGeneration =
-    !deps.opportunityModel && !deps.pathwayModel
-      ? await invalidateAdminAccessReviewProjection(current.researchEntityId)
-      : null;
+  let projectionGeneration: number | null = null;
   const submitted = await runTransaction(deps, async (session) => {
     const result = await opportunityModel
       .findOneAndUpdate(
@@ -951,6 +948,12 @@ export async function submitFacultyOpportunity(
       { runValidators: true, session },
     );
     if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
+    if (!deps.opportunityModel && !deps.pathwayModel) {
+      projectionGeneration = await invalidateAdminAccessReviewProjection(
+        current.researchEntityId,
+        { session },
+      );
+    }
     return result;
   });
   if (projectionGeneration !== null) {

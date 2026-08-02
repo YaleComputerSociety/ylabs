@@ -17,6 +17,7 @@ import { buildListingResearchEntityProfilePatch } from './listingResearchEntityP
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 
 const LISTING_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const MAX_LISTING_ID_READS = 100;
@@ -69,7 +70,13 @@ async function syncResearchEntityProfileFromListing(listing: any): Promise<void>
     if (!entity) return;
     const patch = buildListingResearchEntityProfilePatch({ entity, listing });
     if (Object.keys(patch).length === 0) return;
-    await ResearchEntity.updateOne({ _id: safeResearchEntityId }, { $set: patch });
+    await mutateAndRefreshAdminAccessReviewProjection(safeResearchEntityId, (session) =>
+      ResearchEntity.updateOne(
+        { _id: safeResearchEntityId },
+        { $set: patch },
+        { session },
+      ).then(() => undefined),
+    );
   } catch (error) {
     console.error('Failed to sync listing profile fields to ResearchEntity:', sanitizeLogValue(error));
   }
