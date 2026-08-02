@@ -955,7 +955,7 @@ test('served browser assets do not expose source maps or hidden static files', (
 
   assert.match(
     appSource,
-    /function blockSourceMapAssetRequests\(req: express\.Request, res: express\.Response, next: express\.NextFunction\)/,
+    /function blockSourceMapAssetRequests\(\s*req: express\.Request,\s*res: express\.Response,\s*next: express\.NextFunction,?\s*\)/,
   );
   assert.match(appSource, /req\.path\.endsWith\('\.map'\)/);
   assert.match(appSource, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
@@ -1338,7 +1338,7 @@ test('API responses default to private no-store cache headers', () => {
 
   assert.match(
     source,
-    /function setPrivateApiCacheHeaders\(_req: express\.Request, res: express\.Response, next: express\.NextFunction\)/,
+    /function setPrivateApiCacheHeaders\(\s*_req: express\.Request,\s*res: express\.Response,\s*next: express\.NextFunction,?\s*\)/,
   );
   assert.match(source, /res\.setHeader\('Cache-Control', 'no-store, private, max-age=0'\)/);
   assert.match(source, /res\.setHeader\('Pragma', 'no-cache'\)/);
@@ -1347,7 +1347,7 @@ test('API responses default to private no-store cache headers', () => {
   assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
   assert.match(
     source,
-    /\.use\('\/api', setPrivateApiCacheHeaders\)\s*\.use\('\/api', csrfOriginGuard\(allowList/,
+    /\.use\('\/api', setPrivateApiCacheHeaders\)\s*\.use\(\s*'\/api',\s*csrfOriginGuard\(allowList/,
   );
 });
 
