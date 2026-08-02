@@ -42,9 +42,8 @@ const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
 // POST routes that are pure reads (search bodies too rich for a query string).
 // They stay behind the CSRF origin guard and their surface limiter, but must
-// not consume the write budget: research search is public and IP-keyed for
-// anonymous visitors, so 50/15min shared across a campus NAT egress IP would
-// throttle the main browse page.
+// not consume the write budget: research search is public and uses the
+// anonymous discovery budget, so 50/15min would throttle the main browse page.
 const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>(['/research/search']);
 // View-telemetry PUTs fired on every detail-page open. Billing them as writes
 // lets ordinary browsing exhaust the 50/15min budget and 429 the user's real
@@ -132,10 +131,9 @@ const getRateLimitKey = (req: express.Request): string => {
     : `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
 };
 
-// The CAS login callback is always unauthenticated, so it keys by IP —
-// and Yale campus NAT can put many users behind one egress IP, letting the
-// shared budget lock people out of login. CAS ticket validation already
-// gates the endpoint, so it is exempt from the general limiter.
+// Login availability must not depend on the general API traffic budget.
+// CAS ticket validation already gates the callback, so it is exempt from the
+// general limiter.
 const isCasLoginCallback = (req: express.Request): boolean => req.path === '/cas';
 
 // Surfaces governed by publicDiscoveryLimiter below; exempt from the general

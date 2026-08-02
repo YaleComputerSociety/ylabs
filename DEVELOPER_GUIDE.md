@@ -391,7 +391,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
      → Create/Update User → cookie-session
 ```
 
-The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is also exempt from the general API rate limiter: it's always unauthenticated, so it keys by IP, and many users behind one campus NAT egress IP could otherwise exhaust the shared budget and be locked out of login.
+The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
 The public browse surfaces (`/api/research`, `/api/opportunities`) are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
 Anonymous bucket identifiers are initialized only for `/api` requests, and forwarding headers are not trusted as client identity.
