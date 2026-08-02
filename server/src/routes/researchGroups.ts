@@ -5,7 +5,7 @@
  * - GET  /:slug  → Full lab detail payload (group + members + papers + listings).
  *
  * Both endpoints are public so unauthenticated visitors can explore Yale labs;
- * `publicDiscoveryLimiter` in app.ts provides per-IP rate limiting.
+ * `publicDiscoveryLimiter` in app.ts provides validated identity-bucket rate limiting.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';

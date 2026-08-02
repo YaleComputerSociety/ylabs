@@ -5,11 +5,15 @@ import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { allowsNonProductionSecurityBypass, requiresSecureSessionCookie } from './utils/environment';
+import {
+  allowsNonProductionSecurityBypass,
+  requiresSecureSessionCookie,
+} from './utils/environment';
 import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -38,9 +42,8 @@ const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
 // POST routes that are pure reads (search bodies too rich for a query string).
 // They stay behind the CSRF origin guard and their surface limiter, but must
-// not consume the write budget: research search is public and IP-keyed for
-// anonymous visitors, so 50/15min shared across a campus NAT egress IP would
-// throttle the main browse page.
+// not consume the write budget: research search is public and uses the
+// anonymous discovery budget, so 50/15min would throttle the main browse page.
 const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>(['/research/search']);
 // View-telemetry PUTs fired on every detail-page open. Billing them as writes
 // lets ordinary browsing exhaust the 50/15min budget and 429 the user's real
@@ -91,11 +94,28 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+const RATE_LIMIT_ANONYMOUS_ID_RE = /^[a-f0-9]{32}$/;
 
 const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase();
   return RATE_LIMIT_NETID_RE.test(normalized) ? normalized : undefined;
+};
+
+const normalizedAnonymousRateLimitId = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  return RATE_LIMIT_ANONYMOUS_ID_RE.test(value) ? value : undefined;
+};
+
+const ensureAnonymousRateLimitId = (
+  req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) => {
+  if (req.session && !normalizedAnonymousRateLimitId(req.session.rateLimitId)) {
+    req.session.rateLimitId = randomBytes(16).toString('hex');
+  }
+  next();
 };
 
 const getRateLimitKey = (req: express.Request): string => {
@@ -105,18 +125,20 @@ const getRateLimitKey = (req: express.Request): string => {
     return `user:${netId}`;
   }
 
-  return `ip:${ipKeyGenerator(req.ip || '')}`;
+  const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
+  return anonymousId
+    ? `anonymous:${anonymousId}`
+    : `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
 };
 
-// The CAS login callback is always unauthenticated, so it keys by IP —
-// and Yale campus NAT can put many users behind one egress IP, letting the
-// shared budget lock people out of login. CAS ticket validation already
-// gates the endpoint, so it is exempt from the general limiter.
+// Login availability must not depend on the general API traffic budget.
+// CAS ticket validation already gates the callback, so it is exempt from the
+// general limiter.
 const isCasLoginCallback = (req: express.Request): boolean => req.path === '/cas';
 
 // Surfaces governed by publicDiscoveryLimiter below; exempt from the general
 // limiter so the discovery budget is the single, deliberately sized cap for
-// the anonymous (IP-keyed) browse experience. Both mounts hold only public
+// the anonymous browse experience. Both mounts hold only public
 // search/detail reads.
 const isPublicDiscoveryPath = (req: express.Request): boolean =>
   req.path === '/research' ||
@@ -124,7 +146,7 @@ const isPublicDiscoveryPath = (req: express.Request): boolean =>
   req.path === '/opportunities' ||
   req.path.startsWith('/opportunities/');
 
-// General rate limiter: 200 requests per 15 minutes per user (falls back to IP for unauthenticated requests)
+// General rate limiter: 200 requests per 15 minutes per validated session bucket.
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -149,11 +171,9 @@ const writeLimiter = rateLimit({
 });
 
 // Public discovery endpoints (research/opportunity search + detail) are the
-// sole rate budget for the anonymous browse surface, which keys by IP — often
-// a shared campus NAT egress. The ceiling must absorb debounced
-// search-as-you-type, filter toggles, infinite scroll, and detail views from
-// several concurrent users on one IP; the fan-out behind it is Meilisearch,
-// which is cheap.
+// sole rate budget for the anonymous browse surface. The ceiling must absorb
+// debounced search-as-you-type, filter toggles, infinite scroll, and detail
+// views; the fan-out behind it is Meilisearch, which is cheap.
 const publicDiscoveryLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,
@@ -190,7 +210,11 @@ const corsOptions = {
   credentials: true,
 };
 
-function setPrivateApiCacheHeaders(_req: express.Request, res: express.Response, next: express.NextFunction) {
+function setPrivateApiCacheHeaders(
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   res.setHeader('Cache-Control', 'no-store, private, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Surrogate-Control', 'no-store');
@@ -199,7 +223,11 @@ function setPrivateApiCacheHeaders(_req: express.Request, res: express.Response,
   next();
 }
 
-function blockSourceMapAssetRequests(req: express.Request, res: express.Response, next: express.NextFunction) {
+function blockSourceMapAssetRequests(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
   if (req.path.endsWith('.map')) {
     res.setHeader('Cache-Control', 'no-store, private, max-age=0');
     res.setHeader('Pragma', 'no-cache');
@@ -254,9 +282,12 @@ const app = express()
   .use(securityHeaders)
   .use(cors(corsOptions))
   .use('/api', setPrivateApiCacheHeaders)
-  .use('/api', csrfOriginGuard(allowList, {
-    writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,
-  }))
+  .use(
+    '/api',
+    csrfOriginGuard(allowList, {
+      writeLikeSafeMethodPaths: WRITE_LIKE_SAFE_METHOD_API_PATHS,
+    }),
+  )
   .use(express.json({ limit: API_BODY_LIMIT }))
   .use(
     express.urlencoded({
@@ -278,6 +309,7 @@ const app = express()
       sameSite: 'lax',
     }),
   )
+  .use('/api', ensureAnonymousRateLimitId)
   // cookie-session is stateless and does not implement session.regenerate /
   // session.save, which Passport >= 0.6 calls during req.logIn (session-
   // fixation hardening). Without these shims every login throws
