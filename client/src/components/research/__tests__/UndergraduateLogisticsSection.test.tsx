@@ -27,6 +27,8 @@ describe('UndergraduateLogisticsSection', () => {
     );
 
     expect(screen.getByText('8-10 hours per week')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Planning context' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Undergraduate logistics' })).toBeTruthy();
     expect(screen.getByText('Students commit 8 to 10 hours per week.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Official evidence' }).getAttribute('href')).toBe(
       'https://example.yale.edu/join',
@@ -34,8 +36,8 @@ describe('UndergraduateLogisticsSection', () => {
     expect(screen.getByText(/Missing details are unknown, not negative answers/)).toBeTruthy();
   });
 
-  it('renders missing fields as neutral unknowns, never negative availability', () => {
-    render(
+  it('hides logistics when every claim is unknown', () => {
+    const { container } = render(
       <UndergraduateLogisticsSection
         logistics={{
           status: 'ready',
@@ -50,9 +52,7 @@ describe('UndergraduateLogisticsSection', () => {
       />,
     );
 
-    expect(screen.getByText(/not documented on an official source yet/)).toBeTruthy();
-    expect(screen.getByText(/does not mean the research home is unavailable/)).toBeTruthy();
-    expect(screen.queryByText('Not currently available')).toBeNull();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('shows a negative availability answer only when it is a known sourced claim', () => {
@@ -98,9 +98,11 @@ describe('UndergraduateLogisticsSection', () => {
     expect(screen.getByText(/latest evidence is stale/)).toBeTruthy();
   });
 
-  it('keeps the profile usable when optional logistics enrichment fails', () => {
-    render(<UndergraduateLogisticsSection logistics={{ status: 'unavailable', claims: [] }} />);
+  it('hides logistics when optional enrichment is unavailable', () => {
+    const { container } = render(
+      <UndergraduateLogisticsSection logistics={{ status: 'unavailable', claims: [] }} />,
+    );
 
-    expect(screen.getByText(/rest of this research profile/)).toBeTruthy();
+    expect(container).toBeEmptyDOMElement();
   });
 });
