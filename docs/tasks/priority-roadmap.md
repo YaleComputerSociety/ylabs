@@ -1,6 +1,6 @@
 # Priority Roadmap
 
-Last updated: 2026-08-01
+Last updated: 2026-08-02
 
 This is the single task source of truth for Yale Research.
 Keep it operational and compact.
@@ -22,11 +22,13 @@ Temporary execution plans, worktree plans, screenshots, browser audit dumps, and
 
 ## Current Focus
 
-The near-term work is launch hardening and product trust.
+The near-term work is completing the research-model refactor's Phase 0 exit without weakening launch hardening or product trust.
 Keep runtime centered on canonical `ResearchEntity` infrastructure and avoid adding new models, services, or planning documents unless they replace larger surface area.
 
 Active themes:
 
+- Complete private Development review and capture the Beta and ProductionCopy inventory, identity-collision, search-baseline, query-cost, and rollback evidence required by the Phase 0 exit.
+- After Phase 0 acceptance, validate Phase 1 coexistence and proceed through identity, publication, research/access, evidence, and compatibility cutovers in dependency order.
 - Exercise the completed MongoDB research-search fallback in launch-like outage checks and retain private operational evidence.
 - Decide and implement the logged-out read-only discovery posture for `/research`, `/research/:slug`, and `/about`.
 - Validate configured-environment delivery across the completed client error boundary, server/client Sentry integrations, and claim-specific research journey analytics.
@@ -48,6 +50,7 @@ They do not claim configured private environments, delivered telemetry, outage e
 
 | Priority | Work                                                                             | Done When                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Complete research-model refactor Phase 0.                                        | Development, Beta, and ProductionCopy inventory, identity-collision, search-baseline, and query-cost evidence, collision-class owners and dispositions, the phase ownership map, and rollback evidence are reviewed under the [Phase 0 runbook](../research-model-refactor-phase0.md), and the [migration execution status](../research-model-refactor.md#migration-execution-status) records the accepted exit. |
 | P0       | Remove repo-root scratch/PII/secrets exposure and strengthen the secret scanner. | Scratch credential/PII files are gone, ignored by pattern, any exposed keys are rotated, and the scanner catches representative high-entropy/Yalies-style tokens.                                                                                                                                                                                                                                                |
 | P0       | Validate degraded research discovery operationally.                              | A controlled launch-like Meilisearch outage confirms that visible browse/search results, filters, facets, and pagination remain usable through the completed MongoDB fallback, and private monitoring evidence distinguishes degraded service from an honest empty result.                                                                                                                                       |
 | P0       | Decide logged-out discovery.                                                     | Logged-out users can read public research/about pages, or `docs/decisions.md` records why Yale-only access is intentional for the current phase.                                                                                                                                                                                                                                                                 |
@@ -58,7 +61,6 @@ They do not claim configured private environments, delivered telemetry, outage e
 | P1       | Add URL-backed search state and evidence facets.                                 | Query and filters survive reload/share/back navigation, and facets use evidence/product-model concepts instead of legacy acceptance labels.                                                                                                                                                                                                                                                                      |
 | P2       | Add a minimal E2E smoke in CI or scheduled Beta checks.                          | Browse -> search -> detail -> save is exercised outside manual-only scripts.                                                                                                                                                                                                                                                                                                                                     |
 | P2       | Reduce frontend and API payload weight.                                          | Student routes are split out of the admin bundle path and browse cards use a smaller DTO.                                                                                                                                                                                                                                                                                                                        |
-| P2       | Complete research-model refactor Phase 0.                                        | Development, Beta, and ProductionCopy inventory, identity-collision, search-baseline, and query-cost evidence, collision-class owners and dispositions, the phase ownership map, and rollback evidence are reviewed under the [Phase 0 runbook](../research-model-refactor-phase0.md), and the [migration execution status](../research-model-refactor.md#migration-execution-status) records the accepted exit. |
 | P2       | Move gate scorecards off fixed `/tmp` paths.                                     | Operator Board scorecards survive deploys/restarts through a durable store or explicitly documented external artifact path.                                                                                                                                                                                                                                                                                      |
 | P2       | Continue surface-area deletion.                                                  | Unused indexes, old listing-era paths, unused deps, and obsolete docs are removed when touched.                                                                                                                                                                                                                                                                                                                  |
 
