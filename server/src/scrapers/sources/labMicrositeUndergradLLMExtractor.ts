@@ -962,13 +962,18 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
 
 export function selectLabsToProcess(
   candidates: CandidateLab[],
-  options: { only?: string[]; limit?: number },
+  options: { only?: string[]; limit?: number; exhaustive?: boolean },
 ): CandidateLab[] {
   const onlyFilter =
     options.only && options.only.length > 0
       ? new Set(options.only.map((s) => s.trim().toLowerCase()))
       : null;
-  const limit = options.limit && options.limit > 0 ? options.limit : DEFAULT_LIMIT;
+  const limit =
+    options.limit && options.limit > 0
+      ? options.limit
+      : options.exhaustive
+        ? Number.POSITIVE_INFINITY
+        : DEFAULT_LIMIT;
 
   const out: CandidateLab[] = [];
   for (const lab of candidates) {
@@ -1186,10 +1191,11 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
     const labs = selectLabsToProcess(candidates, {
       only: ctx.options.only,
       limit: limitOption,
+      exhaustive: ctx.options.exhaustive,
     });
     const emitLogistics = logisticsAcquisitionAllowed(ctx.options);
     ctx.log(
-      `Processing ${labs.length} labs (limit=${limitOption ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
+      `Processing ${labs.length} labs (limit=${ctx.options.exhaustive && limitOption === undefined ? 'all' : (limitOption ?? DEFAULT_LIMIT)}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
     if (!emitLogistics) {
       ctx.log(

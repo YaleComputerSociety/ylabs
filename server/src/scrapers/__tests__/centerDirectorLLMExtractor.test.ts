@@ -71,7 +71,13 @@ describe('directorExtractionToObservations', () => {
 
   it('emits entity-level director observations with a name split and lifted role confidence', () => {
     const obs = directorExtractionToObservations(
-      { director: { name: 'Elliot P. Fixture', title: 'Director', profileUrl: 'https://medicine.yale.edu/profile/fixture-center-director/' } },
+      {
+        director: {
+          name: 'Elliot P. Fixture',
+          title: 'Director',
+          profileUrl: 'https://medicine.yale.edu/profile/fixture-center-director/',
+        },
+      },
       context,
     );
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
@@ -106,9 +112,9 @@ describe('directorExtractionToObservations', () => {
 
   it('returns nothing for a null director, a single-token name, or a missing center key', () => {
     expect(directorExtractionToObservations({ director: null }, context)).toEqual([]);
-    expect(
-      directorExtractionToObservations({ director: { name: 'Madonna' } }, context),
-    ).toEqual([]);
+    expect(directorExtractionToObservations({ director: { name: 'Madonna' } }, context)).toEqual(
+      [],
+    );
     expect(
       directorExtractionToObservations(
         { director: { name: 'Jane Doe' } },
@@ -147,9 +153,7 @@ describe('CenterDirectorLLMExtractor.run', () => {
       url: 'https://medicine.yale.edu/cancer/about-us/leadership/',
       html: `<html><body>${'Elliot P. Fixture is the Director of Yale Cancer Center. '.repeat(20)}</body></html>`,
     };
-    const fetchPage = vi.fn(async (url: string) =>
-      url === landing.url ? landing : leadership,
-    );
+    const fetchPage = vi.fn(async (url: string) => (url === landing.url ? landing : leadership));
     const callLLM = vi.fn(async (input: { sourceUrl: string }) =>
       input.sourceUrl === leadership.url
         ? { director: { name: 'Elliot P. Fixture', title: 'Director', role: 'director' as const } }
@@ -172,9 +176,7 @@ describe('CenterDirectorLLMExtractor.run', () => {
       lname: 'Fixture',
     });
     // the finder is asked only for homes missing a lead
-    expect(centerFinder).toHaveBeenCalledWith(
-      expect.objectContaining({ missingLeadOnly: true }),
-    );
+    expect(centerFinder).toHaveBeenCalledWith(expect.objectContaining({ missingLeadOnly: true }));
   });
 
   it('skips cleanly when no director is named on any candidate page', async () => {
@@ -194,6 +196,25 @@ describe('CenterDirectorLLMExtractor.run', () => {
     const result = await scraper.run(ctx);
     expect(result.entitiesObserved).toBe(0);
     expect(emitted).toEqual([]);
+  });
+
+  it('processes candidates beyond the default cap in exhaustive mode', async () => {
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      _id: String(index),
+      slug: `center-${index}`,
+      name: `Center ${index}`,
+      websiteUrl: `https://example.yale.edu/center-${index}`,
+    }));
+    const fetchPage = vi.fn(async (url: string) => ({ url, html: '<main>Empty</main>' }));
+    const scraper = new CenterDirectorLLMExtractor({
+      fetchPage,
+      centerFinder: vi.fn(async () => candidates),
+      apiKey: 'test-key',
+    });
+
+    await scraper.run(makeContext({ exhaustive: true }).ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(101);
   });
 
   it('no-ops without an API key', async () => {

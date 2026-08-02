@@ -5,9 +5,10 @@
  * https://medicine.yale.edu/about/a-to-z-index/lab-websites/
  *
  * The page is a single HTML table with ~266 rows, each `<tr>` containing a lab name
- * (link) and the lab website URL. No PI names are shown directly; we infer the PI
- * surname from the lab name ("Arnsten Lab" -> "Arnsten") and try to match it against
- * existing Yale faculty Users.
+ * (link) and the lab website URL. The scraper prefers a person explicitly named on
+ * the official lab homepage or Research Faculty page. Surname-only inference from
+ * the lab name is a final fallback because common surnames can identify the wrong
+ * Yale faculty member.
  *
  * Each row produces ResearchGroup observations keyed by slug (derived from the URL or
  * from the lab name). The slug is the unique identifier `EntityMaterializer` uses to
@@ -20,10 +21,7 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
-import {
-  isLikelyPersonSpecificYaleEmail,
-  netidFromEmail,
-} from '../utils/scraperHelpers';
+import { isLikelyPersonSpecificYaleEmail, netidFromEmail } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const PAGE_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
@@ -185,7 +183,10 @@ function cleanDescription(value: unknown): string {
 }
 
 function cleanProfileTitle(value: string): string {
-  const normalized = value.replace(/View\s*Full\s*Profile/i, '').replace(/\s+/g, ' ').trim();
+  const normalized = value
+    .replace(/View\s*Full\s*Profile/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const parts = normalized
     .split(/\s*;\s*/)
     .map((part) => part.trim())
@@ -195,7 +196,9 @@ function cleanProfileTitle(value: string): string {
     if (unique.some((existing) => existing.toLowerCase() === part.toLowerCase())) continue;
     if (unique.some((existing) => existing.toLowerCase().includes(part.toLowerCase()))) continue;
     if (unique.some((existing) => part.toLowerCase().includes(existing.toLowerCase()))) {
-      const index = unique.findIndex((existing) => part.toLowerCase().includes(existing.toLowerCase()));
+      const index = unique.findIndex((existing) =>
+        part.toLowerCase().includes(existing.toLowerCase()),
+      );
       unique[index] = part;
       continue;
     }
@@ -221,14 +224,18 @@ function parsePageDataPayloads(html: string): any[] {
 
 function clippedDescription(value: string, maxChars = 280): string {
   if (value.length <= maxChars) return value;
-  const clipped = value.slice(0, maxChars).replace(/\s+\S*$/, '').trim();
+  const clipped = value
+    .slice(0, maxChars)
+    .replace(/\s+\S*$/, '')
+    .trim();
   return clipped || value.slice(0, maxChars).trim();
 }
 
 export function extractLabHomepageDescription(html: string): LabHomepageDescription | null {
   const $ = cheerio.load(html);
   const pageData = parsePageDataPayloads(html).find(
-    (payload) => Array.isArray(payload?.mainComponents) && JSON.stringify(payload).includes('metaData'),
+    (payload) =>
+      Array.isArray(payload?.mainComponents) && JSON.stringify(payload).includes('metaData'),
   );
 
   if (pageData) {
@@ -248,7 +255,9 @@ export function extractLabHomepageDescription(html: string): LabHomepageDescript
       if (description) {
         return {
           description,
-          shortDescription: deriveShortDescriptionFromFullDescription(description) || clippedDescription(description),
+          shortDescription:
+            deriveShortDescriptionFromFullDescription(description) ||
+            clippedDescription(description),
         };
       }
     } catch {
@@ -264,7 +273,8 @@ export function extractLabHomepageDescription(html: string): LabHomepageDescript
     return {
       description: metaDescription,
       shortDescription:
-        deriveShortDescriptionFromFullDescription(metaDescription) || clippedDescription(metaDescription),
+        deriveShortDescriptionFromFullDescription(metaDescription) ||
+        clippedDescription(metaDescription),
     };
   }
 
@@ -297,7 +307,9 @@ export function extractProfileContactWidgetProfile(
       const profile = component?.model?.profile || {};
       const name = cleanDescription(profile.fullName || profile.name);
       const profileUrl = absoluteUrl(String(profile.profileUrl || ''), baseUrl);
-      const title = cleanProfileTitle(cleanDescription(profile.title || component?.model?.title || ''));
+      const title = cleanProfileTitle(
+        cleanDescription(profile.title || component?.model?.title || ''),
+      );
       const email = profileContactWidgetEmail(profile);
       if (!name || !profileUrl) return null;
       return { name, profileUrl, title, ...(email ? { email } : {}) };
@@ -327,11 +339,7 @@ function profileContactWidgetEmail(profile: any): string {
 }
 
 function nameHintFromProfileName(name: string): PiNameHint | null {
-  const cleaned = name
-    .split(',')
-    .at(0)
-    ?.replace(/\s+/g, ' ')
-    .trim();
+  const cleaned = name.split(',').at(0)?.replace(/\s+/g, ' ').trim();
   if (!cleaned) return null;
   const tokens = cleaned.split(/\s+/).filter(Boolean);
   if (tokens.length < 2) return null;
@@ -357,15 +365,8 @@ export function extractSoleResearchFacultyProfile(
     if (!label || /^View Full Profile$/i.test(label)) return;
     const profileUrl = absoluteUrl(href, baseUrl);
     if (!profileUrl) return;
-    const containerText = $(el)
-      .closest('li')
-      .text()
-      .replace(/\s+/g, ' ')
-      .trim();
-    const title = containerText
-      .replace(label, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const containerText = $(el).closest('li').text().replace(/\s+/g, ' ').trim();
+    const title = containerText.replace(label, '').replace(/\s+/g, ' ').trim();
     const cleanedTitle = cleanProfileTitle(title);
     byUrl.set(profileUrl, JSON.stringify({ name: label, title: cleanedTitle }));
   });
@@ -407,23 +408,44 @@ function parseLabs(html: string): RawLab[] {
   return labs;
 }
 
-async function findPiUserId(nameHint: PiNameHint | null): Promise<string | null> {
-  if (!nameHint?.lastName) return null;
+interface PiUserLookupOptions {
+  allowUnknownExactName?: boolean;
+  allowSurnameFallback?: boolean;
+}
+
+export function buildPiUserLookupQuery(
+  nameHint: PiNameHint,
+  options: PiUserLookupOptions = {},
+): Record<string, unknown> {
+  const hasExactFirstName = nameHint.firstName.trim().length > 0;
   const baseQuery: Record<string, unknown> = {
     lname: new RegExp(`^${escapeRegex(nameHint.lastName)}$`, 'i'),
-    userType: { $in: ['professor', 'faculty'] },
+    ...(!options.allowUnknownExactName || !hasExactFirstName
+      ? { userType: { $in: ['professor', 'faculty'] } }
+      : {}),
   };
-  const query =
-    nameHint.firstName.trim().length > 0
-      ? {
-          ...baseQuery,
-          fname: new RegExp(`^${escapeRegex(nameHint.firstName.trim())}$`, 'i'),
-        }
-      : baseQuery;
+  return hasExactFirstName
+    ? {
+        ...baseQuery,
+        fname: new RegExp(`^${escapeRegex(nameHint.firstName.trim())}$`, 'i'),
+      }
+    : baseQuery;
+}
+
+async function findPiUserId(
+  nameHint: PiNameHint | null,
+  options: PiUserLookupOptions = {},
+): Promise<string | null> {
+  if (!nameHint?.lastName) return null;
+  const query = buildPiUserLookupQuery(nameHint, options);
   const matches = await User.find(query, { _id: 1, fname: 1, lname: 1, primaryDepartment: 1 })
     .limit(5)
     .lean();
-  if (matches.length === 0 && nameHint.firstName.trim().length > 0) {
+  if (
+    matches.length === 0 &&
+    nameHint.firstName.trim().length > 0 &&
+    options.allowSurnameFallback !== false
+  ) {
     return findPiUserId({ firstName: '', lastName: nameHint.lastName });
   }
   if (matches.length !== 1) return null;
@@ -486,7 +508,11 @@ export function labResearchFacultyToObservations(
     { ...base, field: 'researchGroupKey', value: lab.slug },
     { ...base, field: 'role', value: 'director' },
     { ...base, field: 'name', value: profile.name },
-    { ...base, field: 'inferredUserName', value: { fname: nameHint.firstName, lname: nameHint.lastName } },
+    {
+      ...base,
+      field: 'inferredUserName',
+      value: { fname: nameHint.firstName, lname: nameHint.lastName },
+    },
     { ...base, field: 'profileUrl', value: profile.profileUrl },
   ];
   if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
@@ -567,7 +593,12 @@ function matchesOnlyFilter(lab: RawLab, only: string[]): boolean {
       (() => {
         try {
           const url = new URL(lab.url);
-          return url.pathname.replace(/^\/+|\/+$/g, '').split('/').pop() || '';
+          return (
+            url.pathname
+              .replace(/^\/+|\/+$/g, '')
+              .split('/')
+              .pop() || ''
+          );
         } catch {
           return '';
         }
@@ -602,10 +633,7 @@ export class YsmAtoZScraper implements IScraper {
     const selected = labs.filter((lab) => matchesOnlyFilter(lab, only));
     const offset = offsetOption && offsetOption > 0 ? offsetOption : 0;
     const offsetLabs = offset > 0 ? selected.slice(offset) : selected;
-    const limited =
-      limitOption && limitOption > 0
-        ? offsetLabs.slice(0, limitOption)
-        : offsetLabs;
+    const limited = limitOption && limitOption > 0 ? offsetLabs.slice(0, limitOption) : offsetLabs;
 
     // Direct-URL, PI-only mode: `--only <full lab URL>` values for labs that are
     // no longer in the A-Z index (but still live at medicine.yale.edu/lab/<slug>/)
@@ -636,13 +664,15 @@ export class YsmAtoZScraper implements IScraper {
       const observations = piOnly ? [] : labToObservations(lab, PAGE_URL);
       const homepageHtml = await fetchLabHomepage(lab.url, ctx.options.useCache);
       if (!piOnly) {
-        const homepageDescription = homepageHtml ? extractLabHomepageDescription(homepageHtml) : null;
+        const homepageDescription = homepageHtml
+          ? extractLabHomepageDescription(homepageHtml)
+          : null;
         observations.push(...labDescriptionToObservations(lab, homepageDescription));
         if (homepageDescription) descriptionsFound++;
       }
       let piSourceUrl = PAGE_URL;
-      let piUserId = await findPiUserId(inferPiNameFromLabName(lab.name));
-      if (!piUserId && homepageHtml) {
+      let piUserId: string | null = null;
+      if (homepageHtml) {
         const researchFacultyUrl = extractResearchFacultyUrl(homepageHtml, lab.url);
         const researchFacultyHtml = researchFacultyUrl
           ? await fetchLabHomepage(researchFacultyUrl, ctx.options.useCache)
@@ -653,16 +683,24 @@ export class YsmAtoZScraper implements IScraper {
         observations.push(
           ...labResearchFacultyToObservations(lab, researchFacultyProfile, researchFacultyUrl),
         );
-        piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''));
-        if (piUserId) piSourceUrl = researchFacultyProfile?.profileUrl || researchFacultyUrl || piSourceUrl;
+        piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''), {
+          allowUnknownExactName: true,
+          allowSurnameFallback: false,
+        });
+        if (piUserId)
+          piSourceUrl = researchFacultyProfile?.profileUrl || researchFacultyUrl || piSourceUrl;
       }
       if (!piUserId && homepageHtml) {
         const contactWidgetProfile = extractProfileContactWidgetProfile(homepageHtml, lab.url);
-        observations.push(
-          ...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url),
-        );
-        piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''));
+        observations.push(...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url));
+        piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''), {
+          allowUnknownExactName: true,
+          allowSurnameFallback: false,
+        });
         if (piUserId) piSourceUrl = contactWidgetProfile?.profileUrl || lab.url;
+      }
+      if (!piUserId) {
+        piUserId = await findPiUserId(inferPiNameFromLabName(lab.name));
       }
       if (piUserId) {
         observations.push({

@@ -195,11 +195,15 @@ async function defaultCallLLM(input: {
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterAffiliationExtraction>;
-  return { affiliatedPeople: Array.isArray(parsed.affiliatedPeople) ? parsed.affiliatedPeople : [] };
+  return {
+    affiliatedPeople: Array.isArray(parsed.affiliatedPeople) ? parsed.affiliatedPeople : [],
+  };
 }
 
 async function defaultCenterFinder(options: { only?: string[] } = {}): Promise<CandidateCenter[]> {
-  const only = Array.from(new Set((options.only || []).map((value) => value.trim()).filter(Boolean)));
+  const only = Array.from(
+    new Set((options.only || []).map((value) => value.trim()).filter(Boolean)),
+  );
   const onlyObjectIds = only
     .map((value) => normalizeCenterAffiliationObjectId(value))
     .filter((value): value is string => Boolean(value))
@@ -256,9 +260,14 @@ export class CenterAffiliationLLMExtractor implements IScraper {
       return { observationCount: 0, entitiesObserved: 0, notes: 'OPENAI_API_KEY missing' };
     }
 
-    const only = Array.from(new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)));
+    const only = Array.from(
+      new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)),
+    );
     const offset = Math.max(0, Number(ctx.options.offset) || 0);
-    const limit = Math.max(1, Number(ctx.options.limit) || 100);
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, Number(ctx.options.limit) || 100);
     const candidates = (await this.centerFinder({ only }))
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);
@@ -272,7 +281,9 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         try {
           page = await this.fetchPage(center.websiteUrl as string);
         } catch (error) {
-          ctx.log(`[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`);
+          ctx.log(
+            `[${center.slug}] fetch failed for configured center URL: ${sanitizeLogValue(error)}`,
+          );
           continue;
         }
         const pageText = htmlToText(page?.html || '');
@@ -299,7 +310,9 @@ export class CenterAffiliationLLMExtractor implements IScraper {
         await ctx.emit(observations);
         observationCount += observations.length;
         entitiesObserved += 1;
-        ctx.log(`[${center.slug}] emitted ${observations.length} affiliation relationship observations.`);
+        ctx.log(
+          `[${center.slug}] emitted ${observations.length} affiliation relationship observations.`,
+        );
       } catch (error) {
         ctx.log(`[${center.slug}] affiliation extraction failed: ${sanitizeLogValue(error)}`);
       }

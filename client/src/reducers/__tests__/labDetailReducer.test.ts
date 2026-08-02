@@ -3,10 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ResearchGroup } from '../../types/researchGroup';
 import { ResearchEntityDetailPayload } from '../../types/researchEntity';
 import { Listing } from '../../types/types';
-import {
-  createInitialLabDetailState,
-  labDetailReducer,
-} from '../labDetailReducer';
+import { createInitialLabDetailState, labDetailReducer } from '../labDetailReducer';
 
 const sampleGroup: ResearchGroup = {
   _id: 'g1',
@@ -103,25 +100,22 @@ const otherPayload: ResearchEntityDetailPayload = {
 };
 
 describe('labDetailReducer', () => {
-  it('initial state starts loading with no payload, no error, modal closed', () => {
+  it('initial state starts loading with no payload or error', () => {
     const state = createInitialLabDetailState();
     expect(state.loading).toBe(true);
     expect(state.payload).toBeNull();
     expect(state.error).toBeNull();
-    expect(state.isInquireModalOpen).toBe(false);
   });
 
-  it('FETCH_START sets loading, clears error, and closes the inquire modal', () => {
+  it('FETCH_START sets loading and clears error', () => {
     const state = createInitialLabDetailState({
       error: 'old failure',
       loading: false,
       payload: samplePayload,
-      isInquireModalOpen: true,
     });
     const next = labDetailReducer(state, { type: 'FETCH_START' });
     expect(next.loading).toBe(true);
     expect(next.error).toBeNull();
-    expect(next.isInquireModalOpen).toBe(false);
     // Stale payload is preserved during refetch
     expect(next.payload).toBe(samplePayload);
   });
@@ -148,38 +142,11 @@ describe('labDetailReducer', () => {
     expect(next.payload).toBe(samplePayload);
   });
 
-  it('OPEN_INQUIRE_MODAL is a no-op when no payload is loaded', () => {
-    const state = createInitialLabDetailState();
-    const next = labDetailReducer(state, { type: 'OPEN_INQUIRE_MODAL' });
-    expect(next).toBe(state);
-    expect(next.isInquireModalOpen).toBe(false);
-  });
-
-  it('OPEN_INQUIRE_MODAL flips the toggle once the payload is present', () => {
-    const loaded = labDetailReducer(createInitialLabDetailState(), {
-      type: 'FETCH_SUCCESS',
-      payload: samplePayload,
-    });
-    const opened = labDetailReducer(loaded, { type: 'OPEN_INQUIRE_MODAL' });
-    expect(opened.isInquireModalOpen).toBe(true);
-    expect(opened.payload).toBe(samplePayload);
-    const closed = labDetailReducer(opened, { type: 'CLOSE_INQUIRE_MODAL' });
-    expect(closed.isInquireModalOpen).toBe(false);
-  });
-
-  it('CLOSE_INQUIRE_MODAL is safe to call when modal is already closed', () => {
-    const state = createInitialLabDetailState();
-    const next = labDetailReducer(state, { type: 'CLOSE_INQUIRE_MODAL' });
-    expect(next.isInquireModalOpen).toBe(false);
-  });
-
   it('reducer does not mutate prior state', () => {
     const state = createInitialLabDetailState();
     const snapshot = JSON.stringify(state);
     labDetailReducer(state, { type: 'FETCH_SUCCESS', payload: samplePayload });
     labDetailReducer(state, { type: 'FETCH_FAILURE', payload: 'x' });
-    labDetailReducer(state, { type: 'OPEN_INQUIRE_MODAL' });
-    labDetailReducer(state, { type: 'CLOSE_INQUIRE_MODAL' });
     labDetailReducer(state, { type: 'FETCH_SUCCESS', payload: otherPayload });
     expect(JSON.stringify(state)).toBe(snapshot);
   });

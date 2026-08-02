@@ -8,6 +8,7 @@ import {
   extractResearchFacultyUrl,
   extractSoleResearchFacultyProfile,
   inferPiNameFromLabName,
+  buildPiUserLookupQuery,
   labResearchFacultyToObservations,
   labToObservations,
 } from '../sources/ysmAtoZScraper';
@@ -157,7 +158,7 @@ describe('inferPiSurname', () => {
     expect(inferPiSurname('Iwasaki Lab')).toBe('Iwasaki');
   });
 
-  it("strips possessive apostrophe-s", () => {
+  it('strips possessive apostrophe-s', () => {
     expect(inferPiSurname("Abujarad's Digital Health Lab")).toBeTruthy();
   });
 
@@ -183,6 +184,25 @@ describe('inferPiNameFromLabName', () => {
       firstName: '',
       lastName: 'Arnsten',
     });
+  });
+});
+
+describe('buildPiUserLookupQuery', () => {
+  it('allows a unique exact name from an official lab profile to resolve an unclassified user', () => {
+    const query = buildPiUserLookupQuery(
+      { firstName: 'Jeffrey', lastName: 'Townsend' },
+      { allowUnknownExactName: true, allowSurnameFallback: false },
+    );
+
+    expect(query).not.toHaveProperty('userType');
+    expect(String(query.fname)).toBe('/^Jeffrey$/i');
+    expect(String(query.lname)).toBe('/^Townsend$/i');
+  });
+
+  it('keeps surname-only fallback restricted to classified faculty', () => {
+    const query = buildPiUserLookupQuery({ firstName: '', lastName: 'Townsend' });
+
+    expect(query).toHaveProperty('userType');
   });
 });
 
@@ -367,12 +387,14 @@ describe('extractProfileContactWidgetProfile', () => {
       </body></html>
     `;
 
-    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual({
-      name: 'Skylar Lab',
-      profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
-      title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
-      email: 'skylar.lab@yale.edu',
-    });
+    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/garg/')).toEqual(
+      {
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+        title: 'Director, Yale Lupus Clinical Research Program, Internal Medicine',
+        email: 'skylar.lab@yale.edu',
+      },
+    );
   });
 
   it('does not infer a lead when multiple profile contact widgets are present', () => {
@@ -404,7 +426,9 @@ describe('extractProfileContactWidgetProfile', () => {
       </body></html>
     `;
 
-    expect(extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/')).toBeNull();
+    expect(
+      extractProfileContactWidgetProfile(html, 'https://medicine.yale.edu/lab/example/'),
+    ).toBeNull();
   });
 });
 
@@ -485,6 +509,8 @@ describe('labResearchFacultyToObservations', () => {
     );
 
     expect(observations.some((observation) => observation.entityType === 'user')).toBe(false);
-    expect(observations.find((observation) => observation.field === 'inferredPiUserKey')).toBeUndefined();
+    expect(
+      observations.find((observation) => observation.field === 'inferredPiUserKey'),
+    ).toBeUndefined();
   });
 });

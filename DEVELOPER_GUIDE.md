@@ -231,6 +231,7 @@ LOCAL_AUTH_BYPASS_NETID=devadmin
 LOCAL_AUTH_BYPASS_USER_TYPE=admin
 ```
 
+If the selected local bypass user does not exist, the first request creates a synthetic confirmed and verified user so authenticated services can resolve it from MongoDB.
 Per-request overrides are available with `x-dev-netid` and `x-dev-user-type` headers. `/api/cas` and `/api/logout` are not bypassed, so leave `LOCAL_AUTH_BYPASS=false` or visit those routes directly when testing Yale CAS behavior.
 
 The auth flow's verbose tracing (per-request deserialization, the find-or-create source cascade, analytics-event confirmations) is off by default - set `AUTH_DEBUG=true` in `server/.env` to turn it on when debugging an auth issue. Genuine auth errors and anomalies log regardless of the flag.
@@ -394,7 +395,8 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
 The public browse surfaces (`/api/research`, `/api/opportunities`) are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
-Anonymous bucket identifiers are initialized only for `/api` requests, and forwarding headers are not trusted as client identity.
+Anonymous bucket identifiers are initialized only for `/api` requests.
+For IP fallback, deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
 The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations.
 Sessions last 30 days; the per-request admin-grant check is cached in-memory for 60s (invalidated immediately on grant/revoke).
 Public detail endpoints (research entity by slug, opportunity by id) and `/api/config` allow brief HTTP caching instead of the global `/api` no-store.

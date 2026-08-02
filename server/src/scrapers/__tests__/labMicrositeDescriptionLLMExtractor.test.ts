@@ -185,6 +185,28 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
   });
 
+  it('processes candidates beyond the default cap in exhaustive mode', async () => {
+    const { ctx } = makeContext();
+    ctx.options.limit = undefined;
+    ctx.options.exhaustive = true;
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      _id: String(index),
+      slug: `lab-${index}`,
+      name: `Lab ${index}`,
+      websiteUrl: `https://example.yale.edu/lab-${index}`,
+    }));
+    const fetchPage = vi.fn(async (url: string) => ({ url, html: '<main>Empty</main>' }));
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: vi.fn(async () => candidates),
+      fetchPage,
+    });
+
+    await scraper.run(ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(101);
+  });
+
   it('falls back to the next trusted source URL when the preferred website is unreachable', async () => {
     const { ctx, emitted, logs } = makeContext();
     ctx.options.only = ['dept-statistics-john-lafferty'];

@@ -96,9 +96,7 @@ function renderLabDetail(
   });
 
   return render(
-    <UserContext.Provider
-      value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}
-    >
+    <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}>
       <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
         <Routes>
           <Route path="/research/:slug" element={<LabDetail />} />
@@ -215,10 +213,9 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
       OFFICIAL_PROFILE_URL,
     );
-    expect(screen.getByText('Profile status')).toBeTruthy();
-    expect(screen.getByText('Source-backed details')).toBeTruthy();
-    expect(screen.getByText('Still missing')).toBeTruthy();
-    expect(screen.getByText('No indexed planning routes are attached yet.')).toBeTruthy();
+    expect(screen.queryByText('Profile status')).toBeNull();
+    expect(screen.queryByText('Contact options')).toBeNull();
+    expect(screen.queryByText(/No verified contact route is available yet/)).toBeNull();
     expect(screen.queryByText('Ways In')).toBeNull();
     expect(screen.queryByText('Evidence')).toBeNull();
   });
@@ -961,9 +958,8 @@ describe('LabDetail page', () => {
     expect(text).not.toContain('Student fit');
     expect(text).not.toContain('Likely preparation');
     expect(text).not.toContain('Good fit if you are interested in');
-    expect(text).toContain('Profile status');
+    expect(text).not.toContain('Profile status');
     expect(text).not.toContain('Recommended outreach angle');
-    expect(text.indexOf('What this lab studies')).toBeLessThan(text.indexOf('Profile status'));
     expect(
       screen
         .getAllByRole('link', { name: 'Open official profile' })
@@ -1315,14 +1311,14 @@ describe('LabDetail page', () => {
     expect(screen.getAllByText('Public Health Research').length).toBeGreaterThan(0);
   });
 
-  it('renders detail labels and empty states as visible copy', async () => {
+  it('does not render internal profile completeness copy', async () => {
     renderLabDetail();
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText('Profile status')).toBeTruthy();
-    expect(screen.getByText('Source-backed details')).toBeTruthy();
-    expect(screen.getByText('No indexed planning routes are attached yet.')).toBeTruthy();
+    expect(screen.queryByText('Profile status')).toBeNull();
+    expect(screen.queryByText('Source-backed details')).toBeNull();
+    expect(screen.queryByText('No indexed planning routes are attached yet.')).toBeNull();
   });
 
   it('does not render legacy active listings as a public detail section', async () => {
@@ -1335,14 +1331,12 @@ describe('LabDetail page', () => {
 
     const text = container.textContent || '';
     const principalInvestigatorIndex = text.indexOf('Principal Investigator');
-    const sparseProfileIndex = text.indexOf('Profile status');
     const sourcesIndex = text.indexOf('Sources');
 
     expect(text).not.toContain('Active Opportunities');
     expect(text).toContain('No principal investigator is attached yet');
     expect(text).toContain('Check the official profile for current leadership.');
     expect(principalInvestigatorIndex).toBeGreaterThan(-1);
-    expect(sparseProfileIndex).toBeGreaterThan(-1);
     expect(sourcesIndex).toBeGreaterThan(principalInvestigatorIndex);
     expect(text).not.toContain('Research Activity');
     expect(text).not.toContain('Ways In');

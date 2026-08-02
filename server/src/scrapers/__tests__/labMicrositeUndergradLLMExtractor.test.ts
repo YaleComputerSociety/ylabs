@@ -748,6 +748,16 @@ describe('selectLabsToProcess', () => {
     expect(out[0].slug).toBe('lab-a');
   });
 
+  it('does not apply the default cap in exhaustive mode', () => {
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      _id: String(index),
+      slug: `lab-${index}`,
+      name: `Lab ${index}`,
+      websiteUrl: `https://lab-${index}.example/`,
+    }));
+    expect(selectLabsToProcess(candidates, { exhaustive: true })).toHaveLength(101);
+  });
+
   it('normalizes canonical ResearchEntity website fallbacks for candidate selection', () => {
     expect(
       candidateLabFromResearchEntityDoc({

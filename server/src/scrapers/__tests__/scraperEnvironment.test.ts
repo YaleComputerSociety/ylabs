@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   applyObservationPruneEnvironmentGuards,
   applyScraperEnvironmentGuards,
+  assertScraperEnvironmentMatchesMongoTarget,
+  resolveMongoDatabaseName,
   resolveScraperEnvironment,
   summarizeMongoUrl,
 } from '../scraperEnvironment';
@@ -37,6 +39,39 @@ describe('summarizeMongoUrl', () => {
   });
 });
 
+describe('resolveMongoDatabaseName', () => {
+  it('returns the explicit database name', () => {
+    expect(
+      resolveMongoDatabaseName('mongodb+srv://user:pass@example.mongodb.net/Beta?retryWrites=true'),
+    ).toBe('Beta');
+  });
+});
+
+describe('assertScraperEnvironmentMatchesMongoTarget', () => {
+  it('blocks a Beta scraper profile pointed at Development', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'beta',
+        mongoUrl: 'mongodb://localhost/Development',
+        env: { SCRAPER_ENV: 'beta' },
+      }),
+    ).toThrow('requires Mongo database "Beta"');
+  });
+
+  it('allows explicit custom database names', () => {
+    expect(() =>
+      assertScraperEnvironmentMatchesMongoTarget({
+        environment: 'beta',
+        mongoUrl: 'mongodb://localhost/YLabsStaging',
+        env: {
+          SCRAPER_ENV: 'beta',
+          SCRAPER_BETA_DB_NAME: 'YLabsStaging',
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe('applyScraperEnvironmentGuards', () => {
   const baseOptions = {
     dryRun: false,
@@ -49,7 +84,7 @@ describe('applyScraperEnvironmentGuards', () => {
       command: 'run',
       options: baseOptions,
       autoMaterialize: true,
-      mongoUrl: 'mongodb://localhost/Development',
+      mongoUrl: 'mongodb://localhost/Beta',
       env: { SCRAPER_ENV: 'beta' },
     });
 

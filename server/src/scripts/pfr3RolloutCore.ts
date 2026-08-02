@@ -133,8 +133,11 @@ export function assertPathwayIndexRolloutTarget(input: {
     throw new Error('PFR-3 beta/production rebuild refuses a localhost Meilisearch target');
   }
   const prefix = input.indexPrefix?.trim();
-  if (!prefix || !prefix.toLowerCase().startsWith(`${input.environment}_`)) {
-    throw new Error('MEILISEARCH_INDEX_PREFIX must unambiguously match the target environment');
+  const expectedPrefix = input.environment === 'production' ? 'prod' : 'beta';
+  if (prefix !== expectedPrefix) {
+    throw new Error(
+      `MEILISEARCH_INDEX_PREFIX must be "${expectedPrefix}" for ${input.environment}`,
+    );
   }
   const restorePoint = input.restorePoint?.trim();
   if (!restorePoint || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{7,200}$/.test(restorePoint)) {

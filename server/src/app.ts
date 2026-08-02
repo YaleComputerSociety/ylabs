@@ -15,6 +15,7 @@ import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'fs/promises';
+import { BlockList, isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -95,6 +96,51 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 const RATE_LIMIT_ANONYMOUS_ID_RE = /^[a-f0-9]{32}$/;
+
+const trustedProxyAddresses = new BlockList();
+let trustedProxyAddressCount = 0;
+for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
+  const value = entry.trim();
+  if (!value) continue;
+  const cidrParts = value.split('/');
+  const [address, prefixValue] = cidrParts;
+  const addressType = isIP(address);
+  const hasValidPrefixSyntax = prefixValue === undefined || /^\d+$/.test(prefixValue);
+  const prefix = prefixValue === undefined ? undefined : Number(prefixValue);
+  const maximumPrefix = addressType === 4 ? 32 : 128;
+  if (
+    cidrParts.length > 2 ||
+    addressType === 0 ||
+    !hasValidPrefixSyntax ||
+    (prefix !== undefined && (!Number.isInteger(prefix) || prefix < 0 || prefix > maximumPrefix))
+  ) {
+    throw new Error(`TRUSTED_PROXY_CIDRS contains an invalid address or CIDR: ${value}`);
+  }
+  const family = addressType === 4 ? 'ipv4' : 'ipv6';
+  if (prefix === undefined) {
+    trustedProxyAddresses.addAddress(address, family);
+  } else {
+    trustedProxyAddresses.addSubnet(address, prefix, family);
+  }
+  trustedProxyAddressCount += 1;
+}
+
+if (!bypassRuntimeSecurity && trustedProxyAddressCount === 0) {
+  throw new Error(
+    'TRUSTED_PROXY_CIDRS must define at least one trusted proxy in deployed runtimes.',
+  );
+}
+
+const normalizedPeerAddress = (value: string): string =>
+  value.startsWith('::ffff:') && isIP(value.slice(7)) === 4 ? value.slice(7) : value;
+
+const isTrustedProxyAddress = (value: string): boolean => {
+  const address = normalizedPeerAddress(value);
+  const addressType = isIP(address);
+  return (
+    addressType !== 0 && trustedProxyAddresses.check(address, addressType === 4 ? 'ipv4' : 'ipv6')
+  );
+};
 
 const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -276,7 +322,7 @@ function sendStaticNotFound(res: express.Response) {
 }
 
 const app = express()
-  .set('trust proxy', 1)
+  .set('trust proxy', isTrustedProxyAddress)
   .set('query parser', 'simple')
   .disable('x-powered-by')
   .use(securityHeaders)

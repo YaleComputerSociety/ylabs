@@ -10,6 +10,7 @@ vi.mock('../services/userService', () => userServiceMock);
 
 import {
   ensureDevLoginUser,
+  ensureLocalAuthBypassUser,
   isDevLoginAllowed,
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,
@@ -173,6 +174,81 @@ describe('auth environment guards', () => {
     });
   });
 
+  it('creates the database user required by account endpoints for a new local bypass identity', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    };
+    userServiceMock.validateUser.mockResolvedValue(null);
+    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+
+    try {
+      await expect(ensureLocalAuthBypassUser(env)).resolves.toEqual({
+        netId: 'devadmin',
+        userType: 'admin',
+        userConfirmed: true,
+        profileVerified: true,
+      });
+      expect(userServiceMock.createUser).toHaveBeenCalledWith({
+        netid: 'devadmin',
+        email: 'devadmin@example.invalid',
+        fname: 'Development',
+        lname: 'User',
+        userType: 'admin',
+        userConfirmed: true,
+        profileVerified: true,
+      });
+    } finally {
+      userServiceMock.validateUser.mockReset();
+      userServiceMock.createUser.mockReset();
+    }
+  });
+
+  it('does not overwrite an existing user selected by the local auth bypass', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'existing1',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    };
+    userServiceMock.validateUser.mockResolvedValue({
+      netid: 'existing1',
+      userType: 'undergraduate',
+    });
+
+    try {
+      await expect(ensureLocalAuthBypassUser(env)).resolves.toMatchObject({
+        netId: 'existing1',
+        userType: 'admin',
+      });
+      expect(userServiceMock.createUser).not.toHaveBeenCalled();
+      expect(userServiceMock.updateUser).not.toHaveBeenCalled();
+    } finally {
+      userServiceMock.validateUser.mockReset();
+    }
+  });
+
+  it('fails closed when the local bypass identity cannot be persisted', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+    };
+    userServiceMock.validateUser.mockResolvedValue(null);
+    userServiceMock.createUser.mockRejectedValue(new Error('database unavailable'));
+
+    try {
+      await expect(ensureLocalAuthBypassUser(env)).rejects.toThrow('database unavailable');
+    } finally {
+      userServiceMock.validateUser.mockReset();
+      userServiceMock.createUser.mockReset();
+    }
+  });
+
   it('does not promote malformed local auth bypass user types to admin', () => {
     expect(
       localAuthBypassUser({
@@ -249,10 +325,16 @@ describe('auth environment guards', () => {
       /SSOBASEURL/,
     );
     expect(() =>
-      validateProductionAuthConfig({ ...validProductionEnv, SERVER_BASE_URL: 'http://yalelabs.io' }),
+      validateProductionAuthConfig({
+        ...validProductionEnv,
+        SERVER_BASE_URL: 'http://yalelabs.io',
+      }),
     ).toThrow(/SERVER_BASE_URL must use HTTPS/);
     expect(() =>
-      validateProductionAuthConfig({ ...validProductionEnv, SERVER_BASE_URL: 'https://localhost:4000' }),
+      validateProductionAuthConfig({
+        ...validProductionEnv,
+        SERVER_BASE_URL: 'https://localhost:4000',
+      }),
     ).toThrow(/localhost|private or local host/);
     expect(() =>
       validateProductionAuthConfig({ ...validProductionEnv, SSOBASEURL: 'not-a-url' }),
@@ -305,10 +387,7 @@ describe('auth environment guards', () => {
 
     handler(req, res);
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(res.setHeader).toHaveBeenCalledWith('Surrogate-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith({
@@ -331,7 +410,10 @@ describe('auth environment guards', () => {
 
     for (const userType of ['undergraduate', 'graduate', 'staff']) {
       const res = { setHeader: vi.fn(), json: vi.fn() };
-      handler({ user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false } }, res);
+      handler(
+        { user: { netId: 'abc123', userType, userConfirmed: true, profileVerified: false } },
+        res,
+      );
 
       expect(res.json).toHaveBeenCalledWith({
         auth: true,
@@ -387,10 +469,12 @@ describe('auth environment guards', () => {
   });
 
   it('marks CAS callback responses as private no-store auth payloads', async () => {
-    const authenticateSpy = vi.spyOn(passport, 'authenticate').mockImplementation(
-      ((_strategy: unknown, callback: any) =>
-        ((req: any, res: any, next: any) => callback(null, false, {}, req, res, next))) as any,
-    );
+    const authenticateSpy = vi
+      .spyOn(passport, 'authenticate')
+      .mockImplementation(
+        ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
+          callback(null, false, {}, req, res, next)) as any,
+      );
 
     const casRoute = (passportRoutes as any).stack
       .map((layer: any) => layer.route)
@@ -408,10 +492,7 @@ describe('auth environment guards', () => {
     try {
       await handler({ query: {} }, res, vi.fn());
 
-      expect(res.setHeader).toHaveBeenCalledWith(
-        'Cache-Control',
-        'no-store, private, max-age=0',
-      );
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
       expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
       expect(res.setHeader).toHaveBeenCalledWith('Surrogate-Control', 'no-store');
       expect(res.status).toHaveBeenCalledWith(401);
@@ -439,10 +520,7 @@ describe('auth environment guards', () => {
 
     await logoutRouteHandler(req as any, res as any, next);
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Surrogate-Control', 'no-store');
     expect(res.setHeader).toHaveBeenCalledWith('Allow', 'GET');
     expect(res.status).toHaveBeenCalledWith(405);
@@ -494,10 +572,12 @@ describe('auth environment guards', () => {
   it('does not redirect CAS auth failures to same-host HTTP downgrade URLs', async () => {
     const originalServerBaseUrl = process.env.SERVER_BASE_URL;
     process.env.SERVER_BASE_URL = 'https://yalelabs.io';
-    const authenticateSpy = vi.spyOn(passport, 'authenticate').mockImplementation(
-      ((_strategy: unknown, callback: any) =>
-        ((req: any, res: any, next: any) => callback(new Error('CAS failed'), false, {}, req, res, next))) as any,
-    );
+    const authenticateSpy = vi
+      .spyOn(passport, 'authenticate')
+      .mockImplementation(
+        ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
+          callback(new Error('CAS failed'), false, {}, req, res, next)) as any,
+      );
 
     const casRoute = (passportRoutes as any).stack
       .map((layer: any) => layer.route)
@@ -538,10 +618,12 @@ describe('auth environment guards', () => {
   it('rejects oversized CAS redirect targets before parsing or redirecting', async () => {
     const originalServerBaseUrl = process.env.SERVER_BASE_URL;
     process.env.SERVER_BASE_URL = 'https://yalelabs.io';
-    const authenticateSpy = vi.spyOn(passport, 'authenticate').mockImplementation(
-      ((_strategy: unknown, callback: any) =>
-        ((req: any, res: any, next: any) => callback(new Error('CAS failed'), false, {}, req, res, next))) as any,
-    );
+    const authenticateSpy = vi
+      .spyOn(passport, 'authenticate')
+      .mockImplementation(
+        ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
+          callback(new Error('CAS failed'), false, {}, req, res, next)) as any,
+      );
 
     const casRoute = (passportRoutes as any).stack
       .map((layer: any) => layer.route)
@@ -581,11 +663,17 @@ describe('auth environment guards', () => {
 
   it('does not echo Passport auth info messages when CAS returns no user', async () => {
     const authenticateSpy = vi.spyOn(passport, 'authenticate').mockImplementation(
-      ((_strategy: unknown, callback: any) =>
-        ((req: any, res: any, next: any) =>
-          callback(null, false, {
+      ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
+        callback(
+          null,
+          false,
+          {
             message: 'CAS ticket ST-secret-ticket for ada@yale.edu failed',
-          }, req, res, next))) as any,
+          },
+          req,
+          res,
+          next,
+        )) as any,
     );
 
     const casRoute = (passportRoutes as any).stack
@@ -623,10 +711,12 @@ describe('auth environment guards', () => {
       'Authorization: Bearer secret-access-token',
       'at callback (https://example.test/cas?ticket=ST-stack-ticket)',
     ].join('\n');
-    const authenticateSpy = vi.spyOn(passport, 'authenticate').mockImplementation(
-      ((_strategy: unknown, callback: any) =>
-        ((req: any, res: any, next: any) => callback(authError, false, {}, req, res, next))) as any,
-    );
+    const authenticateSpy = vi
+      .spyOn(passport, 'authenticate')
+      .mockImplementation(
+        ((_strategy: unknown, callback: any) => (req: any, res: any, next: any) =>
+          callback(authError, false, {}, req, res, next)) as any,
+      );
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 

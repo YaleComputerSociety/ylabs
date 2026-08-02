@@ -154,11 +154,7 @@ const idValue = (value: unknown): string => {
 const candidateKeyMatches = (candidate: CandidateDescriptionLab, keys: string[]): boolean => {
   if (keys.length === 0) return true;
   const normalized = new Set(keys.map((key) => key.toLowerCase()));
-  return [
-    idValue(candidate._id),
-    candidate.slug,
-    candidate.name,
-  ].some((value) => {
+  return [idValue(candidate._id), candidate.slug, candidate.name].some((value) => {
     const text = textValue(value).toLowerCase();
     return text && normalized.has(text);
   });
@@ -168,7 +164,9 @@ function descriptionUrlPriority(value: string): number {
   try {
     const url = new URL(value);
     const path = url.pathname.toLowerCase();
-    if (/\/(?:lab|labs|research|center|centers|institute|institutes|program|programs)\b/.test(path)) {
+    if (
+      /\/(?:lab|labs|research|center|centers|institute|institutes|program|programs)\b/.test(path)
+    ) {
       return 0;
     }
     if (/\/profile\//.test(path)) return 1;
@@ -273,26 +271,14 @@ function normalizeKnownDescriptionAcronyms(value: string): string {
 
 function firstPersonShortToCardShort(value: string, fullDescription: string): string {
   const rewrites: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
-    [
-      /^we\s+study\s+(.+)$/i,
-      (match) => `Studies ${match[1]}`,
-    ],
-    [
-      /^we\s+investigate\s+(.+)$/i,
-      (match) => `Investigates ${match[1]}`,
-    ],
-    [
-      /^we\s+focus\s+on\s+(.+)$/i,
-      (match) => `Focuses on ${match[1]}`,
-    ],
+    [/^we\s+study\s+(.+)$/i, (match) => `Studies ${match[1]}`],
+    [/^we\s+investigate\s+(.+)$/i, (match) => `Investigates ${match[1]}`],
+    [/^we\s+focus\s+on\s+(.+)$/i, (match) => `Focuses on ${match[1]}`],
     [
       /^our\s+research\s+(?:studies|investigates|examines)\s+(.+)$/i,
       (match) => `Studies ${match[1]}`,
     ],
-    [
-      /^our\s+research\s+focuses\s+on\s+(.+)$/i,
-      (match) => `Focuses on ${match[1]}`,
-    ],
+    [/^our\s+research\s+focuses\s+on\s+(.+)$/i, (match) => `Focuses on ${match[1]}`],
   ];
 
   for (const [pattern, rewrite] of rewrites) {
@@ -414,24 +400,27 @@ async function defaultCallLLM(input: {
   return JSON.parse(content) as DescriptionExtraction;
 }
 
-async function defaultLabFinder(options: { only?: string[] } = {}): Promise<CandidateDescriptionLab[]> {
+async function defaultLabFinder(
+  options: { only?: string[]; exhaustive?: boolean } = {},
+): Promise<CandidateDescriptionLab[]> {
   const only = uniqueStrings(options.only || []);
   const onlyObjectIds = only
     .map((value) => normalizeDescriptionLlmObjectId(value))
     .filter((value): value is string => Boolean(value))
     .map((value) => new mongoose.Types.ObjectId(value));
-  const queueItems = only.length
-    ? []
-    : await VisibilityReleaseQueueItem.find({
-        collection: 'research',
-        status: 'open',
-        repairStage: 'source_description',
-        repairStatus: { $in: ['queued', 'blocked', 'attempted'] },
-      })
-        .sort({ lastSeenAt: -1, _id: 1 })
-        .limit(1000)
-        .select('recordId')
-        .lean();
+  let queueItems: Array<{ recordId?: unknown }> = [];
+  if (!only.length) {
+    const queueQuery = VisibilityReleaseQueueItem.find({
+      collection: 'research',
+      status: 'open',
+      repairStage: 'source_description',
+      repairStatus: { $in: ['queued', 'blocked', 'attempted'] },
+    }).sort({ lastSeenAt: -1, _id: 1 });
+    if (!options.exhaustive) {
+      queueQuery.limit(1000);
+    }
+    queueItems = (await queueQuery.select('recordId').lean()) as Array<{ recordId?: unknown }>;
+  }
   const queueOrder = uniqueStrings(queueItems.map((item: any) => item.recordId));
   const identityFilter = only.length
     ? {
@@ -467,7 +456,10 @@ async function defaultLabFinder(options: { only?: string[] } = {}): Promise<Cand
       manuallyLockedFields: 1,
     },
   ).lean();
-  return candidateDescriptionLabsFromDocs(docs as CandidateDescriptionLabDoc[], { only, queueOrder });
+  return candidateDescriptionLabsFromDocs(docs as CandidateDescriptionLabDoc[], {
+    only,
+    queueOrder,
+  });
 }
 
 async function defaultWorkPlanLoader(
@@ -494,7 +486,10 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
   private readonly fetchPage: FetchDescriptionPageFn;
   private readonly callLLM: CallDescriptionLLMFn;
   private readonly workPlanLoader: DescriptionWorkPlanLoaderFn;
-  private readonly labFinder: (options?: { only?: string[] }) => Promise<CandidateDescriptionLab[]>;
+  private readonly labFinder: (options?: {
+    only?: string[];
+    exhaustive?: boolean;
+  }) => Promise<CandidateDescriptionLab[]>;
   private readonly apiKey?: string;
   private readonly model: string;
 
@@ -519,12 +514,15 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       label: 'non-negative',
       fallback: 0,
     });
-    const limit = parseRuntimeIntegerOption(ctx.options.limit, '--limit', {
-      min: 1,
-      label: 'positive',
-      fallback: 100,
-    });
-    const candidates = (await this.labFinder({ only }))
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : parseRuntimeIntegerOption(ctx.options.limit, '--limit', {
+            min: 1,
+            label: 'positive',
+            fallback: 100,
+          });
+    const candidates = (await this.labFinder({ only, exhaustive: ctx.options.exhaustive }))
       .filter(
         (candidate) =>
           candidateKeyMatches(candidate, only) &&
@@ -638,9 +636,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         entitiesObserved += 1;
       } catch (error) {
         const message = sanitizeLogValue(error);
-        ctx.log(
-          `[${lab.slug || 'candidate'}] skipping description extraction: ${message}`,
-        );
+        ctx.log(`[${lab.slug || 'candidate'}] skipping description extraction: ${message}`);
       }
     }
 

@@ -53,7 +53,7 @@ Confirm the deployed Beta service has all of the following values from the deplo
 - `SCRAPER_ENV=beta`
 - `MONGODBURL` targeting the Beta database
 - `MEILISEARCH_HOST` targeting the remote Beta search service, never localhost
-- `MEILISEARCH_INDEX_PREFIX` beginning with `beta_`
+- `MEILISEARCH_INDEX_PREFIX=beta`, which resolves the Pathways index to `beta_pathways`
 - `PFR3_MEILI_RESTORE_POINT` naming a verified pre-rebuild snapshot or export
 
 Record the current Pathways index document count and the restore procedure.
@@ -70,7 +70,7 @@ Stop if the count is unexpectedly low or the index prefix in the output is wrong
 ## 3. Production rollout
 
 Create and verify a production Pathways index snapshot or export first.
-Set `SCRAPER_ENV=production`, an explicit production database, a remote production Meilisearch host, a prefix beginning with `production_`, `CONFIRM_PROD_SCRAPE=true`, and the verified `PFR3_MEILI_RESTORE_POINT` value.
+Set `SCRAPER_ENV=production`, an explicit production database, a remote production Meilisearch host, `MEILISEARCH_INDEX_PREFIX=prod`, `CONFIRM_PROD_SCRAPE=true`, and the verified `PFR3_MEILI_RESTORE_POINT` value.
 Run the same rebuild command during the approved change window.
 
 Verify index count, settings, representative searches, and application health before closing the change.
