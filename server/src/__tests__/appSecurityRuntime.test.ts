@@ -79,12 +79,12 @@ describe('app security runtime classification', () => {
     );
   });
 
-  it('uses validated session identifiers for rate-limit buckets', async () => {
+  it('uses validated edge visitor addresses for anonymous rate-limit buckets', async () => {
     const limiters: Array<{
       keyGenerator: (req: {
         user?: unknown;
         ip?: string;
-        session?: { rateLimitId?: unknown } | null;
+        get?: (name: string) => string | undefined;
       }) => string;
     }> = [];
     const ipKeyGenerator = vi.fn((ip: string) => `ip-key:${ip}`);
@@ -120,26 +120,46 @@ describe('app security runtime classification', () => {
     );
     expect(coerced).toBe(false);
 
-    const anonymousRequest = {
-      ip: '198.51.100.20',
-      session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
-    };
-    expect(keyGenerator(anonymousRequest)).toBe(
-      'anonymous:0123456789abcdef0123456789abcdef',
-    );
+    expect(
+      keyGenerator({
+        ip: '10.0.0.8',
+        get: (name) => (name.toLowerCase() === 'cf-connecting-ip' ? '198.51.100.20' : undefined),
+      }),
+    ).toBe('ip:ip-key:198.51.100.20');
 
-    const malformedSessionRequest = {
-      ip: '203.0.113.8',
-      session: { rateLimitId: 'attacker-controlled' },
-    };
-    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:203.0.113.8');
+    expect(
+      keyGenerator({
+        ip: '10.0.0.9',
+        get: (name) =>
+          name.toLowerCase() === 'x-forwarded-for'
+            ? '2001:db8:85a3::8a2e:370:7334, 10.0.0.9'
+            : undefined,
+      }),
+    ).toBe('ip:ip-key:2001:db8:85a3::8a2e:370:7334');
+
+    expect(
+      keyGenerator({
+        ip: '203.0.113.8',
+        get: (name) =>
+          name.toLowerCase() === 'cf-connecting-ip' ? '198.51.100.20, 203.0.113.8' : undefined,
+      }),
+    ).toBe('ip:ip-key:203.0.113.8');
 
     expect(
       keyGenerator({
         ip: '203.0.113.9',
-        session: { rateLimitId: 'ABCDEF0123456789ABCDEF0123456789' },
+        get: (name) =>
+          name.toLowerCase() === 'x-forwarded-for' ? 'not-an-ip, 10.0.0.9' : undefined,
       }),
     ).toBe('ip:ip-key:203.0.113.9');
+
+    expect(
+      keyGenerator({
+        user: { netId: 'AbC123' },
+        ip: '10.0.0.10',
+        get: (name) => (name.toLowerCase() === 'cf-connecting-ip' ? '198.51.100.21' : undefined),
+      }),
+    ).toBe('user:abc123');
   });
 
   it('keeps Express query parsing flat before request-shape sanitization', async () => {
@@ -155,54 +175,6 @@ describe('app security runtime classification', () => {
     const { default: app } = await import('../app');
 
     expect(app.get('query parser')).toBe('simple');
-  });
-
-  it('initializes anonymous rate-limit sessions only for API requests', async () => {
-    vi.doUnmock('cookie-session');
-    process.env = {
-      ...ORIGINAL_ENV,
-      NODE_ENV: 'production',
-      SERVER_BASE_URL: 'https://yalelabs.io',
-      SSOBASEURL: 'https://secure.its.yale.edu/cas',
-      SESSION_SECRET: STRONG_SESSION_SECRET,
-    };
-
-    const { default: app } = await import('../app');
-    const server = http.createServer(app);
-
-    await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', resolve);
-    });
-
-    try {
-      const address = server.address() as AddressInfo;
-      const requestHeaders = { 'x-forwarded-proto': 'https' };
-      const staticResponse = await fetch(`http://127.0.0.1:${address.port}/missing.js`, {
-        headers: requestHeaders,
-      });
-      const apiResponse = await fetch(`http://127.0.0.1:${address.port}/api/missing`, {
-        headers: requestHeaders,
-      });
-      const readSession = (response: Response) => {
-        const sessionCookie = response.headers
-          .getSetCookie()
-          .find((cookie) => cookie.startsWith('__Host-session='));
-        const encodedSession = sessionCookie?.split(';', 1)[0].split('=', 2)[1];
-        return encodedSession
-          ? (JSON.parse(Buffer.from(encodedSession, 'base64').toString('utf8')) as Record<
-              string,
-              unknown
-            >)
-          : {};
-      };
-
-      expect(readSession(staticResponse)).not.toHaveProperty('rateLimitId');
-      expect(readSession(apiResponse).rateLimitId).toMatch(/^[a-f0-9]{32}$/);
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-    }
   });
 
   it('serves public config with mounted browser hardening headers and no source revision fingerprint', async () => {
@@ -366,7 +338,6 @@ describe('app security runtime classification', () => {
     try {
       const address = server.address() as AddressInfo;
       let lastStatus = 0;
-      let sessionCookie: string | undefined;
 
       for (let attempt = 0; attempt < 51; attempt += 1) {
         const response = await fetch(`http://127.0.0.1:${address.port}/api/users/favPathways`, {
@@ -375,16 +346,9 @@ describe('app security runtime classification', () => {
             origin: 'https://yalelabs.io',
             'content-type': 'application/json',
             'x-forwarded-proto': 'https',
-            ...(sessionCookie ? { cookie: sessionCookie } : {}),
           },
           body: JSON.stringify({ data: { favPathways: ['64a000000000000000000030'] } }),
         });
-        if (!sessionCookie) {
-          sessionCookie = response.headers
-            .getSetCookie()
-            .map((cookie) => cookie.split(';', 1)[0])
-            .join('; ');
-        }
         lastStatus = response.status;
         await response.text();
       }
