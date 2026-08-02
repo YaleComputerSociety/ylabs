@@ -146,11 +146,7 @@ const laneCommand = (
     return dryRunRepairCommand('pi_identity', 'ylabs-beta-repair-pi-identity.json', 250);
   }
   if (stage === 'action_evidence') {
-    return dryRunRepairCommand(
-      'action_evidence',
-      'ylabs-beta-repair-action-evidence.json',
-      250,
-    );
+    return dryRunRepairCommand('action_evidence', 'ylabs-beta-repair-action-evidence.json', 250);
   }
   if (stage === 'suppression') {
     return dryRunRepairCommand(
@@ -204,9 +200,7 @@ function buildRepairLanes(
     review_exception: 4,
   };
 
-  return Array.from(byStage.values()).sort(
-    (a, b) => stageOrder[a.stage] - stageOrder[b.stage],
-  );
+  return Array.from(byStage.values()).sort((a, b) => stageOrder[a.stage] - stageOrder[b.stage]);
 }
 
 export function buildLaunchTrustContractReport(
@@ -255,10 +249,12 @@ export function buildLaunchTrustContractReport(
   }
 
   const repairLanes = buildRepairLanes(violations, options.collection);
+  const sampledViolations = [
+    ...violations.filter((violation) => violation.publicVisibilityViolation),
+    ...violations.filter((violation) => !violation.publicVisibilityViolation),
+  ].slice(0, 50);
   const gateCollectionArg =
-    options.collection === 'all'
-      ? '--collection=all'
-      : `--collection=${options.collection}`;
+    options.collection === 'all' ? '--collection=all' : `--collection=${options.collection}`;
   const gateCommand = betaCommand(
     `yarn --cwd server student-visibility:gate ${gateCollectionArg} --mode=dry-run --output /tmp/ylabs-student-visibility-gate.json`,
   );
@@ -288,7 +284,7 @@ export function buildLaunchTrustContractReport(
       (paperQuality?.pass ?? true),
     counts,
     repairLanes,
-    violations: violations.slice(0, 50),
+    violations: sampledViolations,
     ...(researchActivity ? { researchActivity } : {}),
     ...(paperQuality ? { paperQuality } : {}),
     requiredCommands: Array.from(
@@ -297,9 +293,7 @@ export function buildLaunchTrustContractReport(
         ...(researchActivity
           ? [researchActivity.command, researchActivity.fixCommand].filter(Boolean)
           : []),
-        ...(paperQuality
-          ? [paperQuality.command, ...paperQuality.fixCommands]
-          : []),
+        ...(paperQuality ? [paperQuality.command, ...paperQuality.fixCommands] : []),
         ...repairLanes.map((lane) => lane.command),
       ]),
     ),
