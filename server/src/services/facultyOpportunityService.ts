@@ -949,10 +949,9 @@ export async function submitFacultyOpportunity(
     );
     if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
     if (!deps.opportunityModel && !deps.pathwayModel) {
-      projectionGeneration = await invalidateAdminAccessReviewProjection(
-        current.researchEntityId,
-        { session },
-      );
+      projectionGeneration = await invalidateAdminAccessReviewProjection(current.researchEntityId, {
+        session,
+      });
     }
     return result;
   });

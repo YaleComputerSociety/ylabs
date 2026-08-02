@@ -578,11 +578,15 @@ export async function updateAccessReviewRecordReview(input: {
           { $set: update, $inc: { revision: 1 } },
           { new: true, runValidators: true, ...(session ? { session } : {}) },
         )
-      : model.findByIdAndUpdate(id, { $set: update }, {
-          new: true,
-          runValidators: true,
-          ...(session ? { session } : {}),
-        });
+      : model.findByIdAndUpdate(
+          id,
+          { $set: update },
+          {
+            new: true,
+            runValidators: true,
+            ...(session ? { session } : {}),
+          },
+        );
     const updated = await updateQuery.lean();
 
     if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {

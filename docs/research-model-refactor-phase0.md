@@ -382,9 +382,9 @@ The admin access-review list reads an environment-local projection instead of jo
 The projection stores only the parent `ResearchEntity` reference, bounded normalized queue search prefixes, queue sort keys, aggregate record and unreviewed counts, official-application presence, and reconciliation fields.
 It never stores evidence excerpts, contact destinations, review notes, or other detail payloads.
 The list verifies projection readiness, filters and paginates the projection, and only then hydrates the selected parent rows.
-The existing detail route remains separately bounded and protected by the shared admin authentication and private `no-store` middleware.
+The existing detail route remains separate from the list projection and protected by the shared admin authentication and private `no-store` middleware.
 
-Canonical `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` service writes increment a per-entity generation before writing and refresh only that generation afterward.
+Canonical `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` service writes increment a per-entity generation in the same transaction and refresh only that generation afterward.
 A concurrent or failed refresh leaves the queue stale and unavailable until reconciliation.
 Run reconciliation after deployment, after any bulk migration that bypasses canonical services, and at least once every six hours while scraper or moderation writes are active.
 

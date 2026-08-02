@@ -9,9 +9,7 @@ import { upsertEntryPathway } from './entryPathwayService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
-import {
-  mutateAndRefreshAdminAccessReviewProjection,
-} from './adminAccessReviewProjectionService';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -146,9 +144,10 @@ export async function upsertPostedOpportunity(
     });
     return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
   };
-  const doc = !deps.model && projectionEntityId
-    ? await mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, write)
-    : await write();
+  const doc =
+    !deps.model && projectionEntityId
+      ? await mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, write)
+      : await write();
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && doc?.entryPathwayId) {
     const entryPathwayId = serializedDocumentId(doc.entryPathwayId);
     if (entryPathwayId)

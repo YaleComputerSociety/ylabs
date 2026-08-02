@@ -8,9 +8,7 @@ import {
 import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArtifact';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
-import {
-  mutateAndRefreshAdminAccessReviewProjection,
-} from './adminAccessReviewProjectionService';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 
 export type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';

@@ -5,9 +5,7 @@ import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
 import { publicAccessHttpUrls, publicAccessText } from '../utils/publicAccessArtifact';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
-import {
-  mutateAndRefreshAdminAccessReviewProjection,
-} from './adminAccessReviewProjectionService';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 import type {
   CompensationType,
   EntryPathwayStatus,

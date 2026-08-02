@@ -122,11 +122,11 @@ describe.runIf(liveMongoUrl)('admin access-review projection reconciliation with
         expectedPlanFingerprint: repeatedDryRun.planFingerprint,
       }),
     ).rejects.toThrow(/plan drifted/i);
-    await expect(AdminAccessReviewProjection.findOne({ researchEntityId }).lean()).resolves.toMatchObject(
-      {
-        counts: { accessSignals: 0 },
-        stale: false,
-      },
-    );
+    await expect(
+      AdminAccessReviewProjection.findOne({ researchEntityId }).lean(),
+    ).resolves.toMatchObject({
+      counts: { accessSignals: 0 },
+      stale: false,
+    });
   });
 });
