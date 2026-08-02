@@ -235,7 +235,7 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
 
   it('prefers detail-page research evidence over conflicting catalog context', async () => {
     const catalogUrl = fundingPageUrl;
-    const programUrl = `${detailPageUrl}-detail-evidence`;
+    const programUrl = 'https://wti.yale.edu/fellowship';
     const fetchPage = vi.fn(async (url: string) => {
       if (url === catalogUrl) {
         return `

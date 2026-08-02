@@ -70,6 +70,7 @@ export interface FellowshipCatalogCandidate {
   applicationMaterials?: string[];
   researchFocused?: boolean;
   researchFocusExplicitNegative?: boolean;
+  sourcePageKind?: 'catalog' | 'detail';
   sourceUrl: string;
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
@@ -615,6 +616,7 @@ function candidateFromLink(
       : [],
     researchFocused: isResearchFocused(contextText),
     researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(contextText),
+    sourcePageKind: 'catalog',
     sourceUrl,
     applicationLink,
     links,
@@ -678,6 +680,7 @@ function candidateFromDetailPage(
       : [],
     researchFocused: isResearchFocused(bodyText),
     researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(bodyText),
+    sourcePageKind: 'detail',
     sourceUrl: pageUrl,
     applicationLink,
     links,
@@ -718,13 +721,19 @@ function mergeCandidates(
   };
   const existingSpecificity = sourceSpecificity(existing.sourceUrl);
   const incomingSpecificity = sourceSpecificity(incoming.sourceUrl);
-  const sourceUrl =
-    incomingSpecificity > existingSpecificity ? incoming.sourceUrl : existing.sourceUrl;
-  const researchEvidenceOwner =
-    incomingSpecificity > existingSpecificity ||
-    (incomingSpecificity === existingSpecificity && incoming.description && !existing.description)
+  const existingIsDetail = existing.sourcePageKind === 'detail';
+  const incomingIsDetail = incoming.sourcePageKind === 'detail';
+  const evidenceOwner =
+    incomingIsDetail !== existingIsDetail
+      ? incomingIsDetail
+        ? incoming
+        : existing
+      : incomingSpecificity > existingSpecificity ||
+          (incomingSpecificity === existingSpecificity && incoming.description && !existing.description)
       ? incoming
       : existing;
+  const sourceUrl = evidenceOwner.sourceUrl;
+  const researchEvidenceOwner = evidenceOwner;
   const researchFocusExplicitNegative =
     researchEvidenceOwner.researchFocusExplicitNegative === true;
   const researchFocused = researchFocusExplicitNegative
@@ -746,6 +755,7 @@ function mergeCandidates(
     ),
     researchFocused,
     researchFocusExplicitNegative,
+    sourcePageKind: evidenceOwner.sourcePageKind,
     sourceUrl,
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
     links,
