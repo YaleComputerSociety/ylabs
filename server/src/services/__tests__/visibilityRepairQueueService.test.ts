@@ -164,7 +164,10 @@ describe('visibilityRepairQueueService', () => {
       runGate: vi.fn(),
     };
 
-    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'research' }, deps);
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
 
     expect(report.repaired).toBe(1);
     expect(deps.updateResearchEntity).not.toHaveBeenCalled();
@@ -222,8 +225,10 @@ describe('visibilityRepairQueueService', () => {
         _id: 'entity-1',
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
-        shortDescription: 'Studies machine learning, algorithms, data compression, and automata theory.',
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
+        shortDescription:
+          'Studies machine learning, algorithms, data compression, and automata theory.',
+        websiteUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         sourceUrls: [
           'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         ],
@@ -273,7 +278,8 @@ describe('visibilityRepairQueueService', () => {
         _id: 'entity-1',
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
-        shortDescription: 'Studies machine learning, algorithms, data compression, and automata theory.',
+        shortDescription:
+          'Studies machine learning, algorithms, data compression, and automata theory.',
         websiteUrl: officialLabUrl,
         sourceUrls: [officialLabUrl],
       }),
@@ -322,7 +328,8 @@ describe('visibilityRepairQueueService', () => {
         fullDescription:
           'Research fields include machine learning, algorithms, data compression, and automata theory.',
         shortDescription: '',
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
+        websiteUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         sourceUrls: [
           'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
         ],
@@ -586,7 +593,12 @@ describe('visibilityRepairQueueService', () => {
     const openItems = [
       queueItem({ _id: 'blocked', repairStatus: 'blocked' }),
       queueItem({ _id: 'repaired', recordId: 'entity-3', repairStatus: 'repaired' }),
-      queueItem({ _id: 'attempted', recordId: 'entity-4', repairStatus: 'queued', attemptCount: 1 }),
+      queueItem({
+        _id: 'attempted',
+        recordId: 'entity-4',
+        repairStatus: 'queued',
+        attemptCount: 1,
+      }),
       queueItem({ _id: 'queued', recordId: 'entity-2', repairStatus: 'queued' }),
     ];
     const deps = {
@@ -674,7 +686,10 @@ describe('visibilityRepairQueueService', () => {
       runGate: vi.fn(),
     };
 
-    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'research' }, deps);
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
 
     expect(report.repaired).toBe(0);
     expect(report.blocked).toBe(1);
@@ -707,7 +722,10 @@ describe('visibilityRepairQueueService', () => {
       runGate: vi.fn(),
     };
 
-    const report = await runVisibilityRepairQueue({ mode: 'dry-run', collection: 'research' }, deps);
+    const report = await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'research' },
+      deps,
+    );
 
     expect(report.repaired).toBe(0);
     expect(report.blocked).toBe(1);
@@ -769,11 +787,7 @@ describe('visibilityRepairQueueService', () => {
           user: {
             fname: 'Example',
             lname: 'Faculty',
-            researchInterests: [
-              'RNA splicing',
-              'zebrafish development',
-              'single-cell genomics',
-            ],
+            researchInterests: ['RNA splicing', 'zebrafish development', 'single-cell genomics'],
             profileUrls: {
               medicine: 'https://medicine.yale.edu/profile/example-faculty/',
             },
@@ -831,8 +845,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Fiona',
             lname: 'Castellan Moreau',
-            bio:
-              "Fiona Castellan Moreau's research examines migration, borderlands, Latinx literature, and social movements across the Americas. Her work analyzes cultural politics, state power, and community organizing through literary, historical, and media evidence.",
+            bio: "Fiona Castellan Moreau's research examines migration, borderlands, Latinx literature, and social movements across the Americas. Her work analyzes cultural politics, state power, and community organizing through literary, historical, and media evidence.",
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -901,8 +914,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Samuel',
             lname: 'Prescott',
-            bio:
-              'Interests Samuel Prescott teaches expository writing in the English Department. A former trusts and estates lawyer, Samuel also teaches an undergraduate introduction to legal reasoning and writing. Courses Undergraduate: Reading and Writing the Modern Essay; Thinking and Writing about the Law',
+            bio: 'Interests Samuel Prescott teaches expository writing in the English Department. A former trusts and estates lawyer, Samuel also teaches an undergraduate introduction to legal reasoning and writing. Courses Undergraduate: Reading and Writing the Modern Essay; Thinking and Writing about the Law',
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -1007,8 +1019,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Jordan',
             lname: 'Oakes',
-            bio:
-              'Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.',
+            bio: 'Jordan Oakes’s writing has been published in the Bellevue Literary Review, the Baltimore Sun, the Boston Phoenix, the Mississippi Review, the New York Times, Off Assignment, Post Road, the Village Voice, and other publications. His books include Difficult Listening and Master Class in Fiction Writing. With a team of visual artists he adapted four of Shakespeare’s tragedies as manga, and his anthology Rap on Rap was acquired by Harvard’s W.E.B. DuBois Institute for African and African American Research.',
             profileUrls: {
               departmental: sourceUrl,
             },
@@ -1067,8 +1078,7 @@ describe('visibilityRepairQueueService', () => {
             fname: 'Élise',
             lname: 'Beaumont',
             website,
-            bio:
-              'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
+            bio: 'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1127,8 +1137,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Élise',
             lname: 'Beaumont',
-            bio:
-              'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
+            bio: 'Bio Élise Beaumont is a Professor of Political Science at Yale University, with a secondary appointment in Philosophy. Her research and teaching interests include democratic theory, political epistemology, and the ethics and politics of artificial intelligence.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1202,8 +1211,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Sonya-Claire',
             lname: 'Fontaine',
-            bio:
-              'Sonya-Claire Fontaine is Assistant Professor of Ethnicity, Race, and Migration. She received her PhD in Chicana/o and Central American Studies from University of California Los Angeles. She is an interdisciplinary scholar whose scholarship integrates ethnographic methods, digital humanities, and Latinx geographies in analyzing contemporary urban labor struggles and resistance.',
+            bio: 'Sonya-Claire Fontaine is Assistant Professor of Ethnicity, Race, and Migration. She received her PhD in Chicana/o and Central American Studies from University of California Los Angeles. She is an interdisciplinary scholar whose scholarship integrates ethnographic methods, digital humanities, and Latinx geographies in analyzing contemporary urban labor struggles and resistance.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1261,8 +1269,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Faye',
             lname: 'Hollister',
-            bio:
-              'Faye Hollister is a playwright, actor, and founding member of Split Britches Theater Company. She is the author of numerous plays, including Imagining Madoff and Turquoise.',
+            bio: 'Faye Hollister is a playwright, actor, and founding member of Split Britches Theater Company. She is the author of numerous plays, including Imagining Madoff and Turquoise.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1319,8 +1326,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Grace',
             lname: 'Ellery',
-            bio:
-              'Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.',
+            bio: 'Grace Ellery has performed internationally with New York City Ballet, Mikhail Baryshnikov’s White Oak Dance Project, Twyla Tharp, and Yvonne Rainer. Career highlights include three duets with Baryshnikov.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1377,8 +1383,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'RS',
             lname: 'Kazimierczak',
-            bio:
-              "RS (R. Kazimierczak) received their Ph.D. in historical musicology from Harvard University in 2010. Bringing the history of musical forms and notation into dialogue with medieval literature, iconography, and the history of ideas, RS's publications have focused on French and northern Italian music of the fourteenth and fifteenth centuries.",
+            bio: "RS (R. Kazimierczak) received their Ph.D. in historical musicology from Harvard University in 2010. Bringing the history of musical forms and notation into dialogue with medieval literature, iconography, and the history of ideas, RS's publications have focused on French and northern Italian music of the fourteenth and fifteenth centuries.",
             profileUrls: {
               departmental: profileUrl,
             },
@@ -1436,8 +1441,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Peter',
             lname: 'Walden',
-            bio:
-              "Peter Walden received his Ph.D in ethnomusicology from Wesleyan University. A self-described musical pan-Africanist, Walden's work has typically addressed musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.",
+            bio: "Peter Walden received his Ph.D in ethnomusicology from Wesleyan University. A self-described musical pan-Africanist, Walden's work has typically addressed musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.",
             researchInterests: [
               'Health Systems',
               'Economic Evaluations',
@@ -1618,8 +1622,7 @@ describe('visibilityRepairQueueService', () => {
             _id: 'user-1',
             fname: 'Oona',
             lname: 'Delacroix',
-            bio:
-              'Oona Delacroix is Assistant Professor in Ethnicity, Race, and Migration. Her scholarship employs critical Indigenous studies to re-evaluate and re-narrativize stories of the early medieval North Atlantic.',
+            bio: 'Oona Delacroix is Assistant Professor in Ethnicity, Race, and Migration. Her scholarship employs critical Indigenous studies to re-evaluate and re-narrativize stories of the early medieval North Atlantic.',
             profileUrls: {
               departmental: profileUrl,
             },
@@ -2321,8 +2324,7 @@ describe('visibilityRepairQueueService', () => {
         _id: 'user-1',
         fname: 'Priya',
         lname: 'Mehta',
-        bio:
-          'Priya Mehta studies pediatric hematology, inherited blood disorders, and clinical outcomes for children with complex diseases.',
+        bio: 'Priya Mehta studies pediatric hematology, inherited blood disorders, and clinical outcomes for children with complex diseases.',
         researchInterests: [
           'Pediatric hematology',
           'Inherited blood disorders',
@@ -2845,7 +2847,8 @@ describe('visibilityRepairQueueService', () => {
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
         {
           id: 'obs-1',
-          excerpt: 'The program places teaching undergraduate, graduate, and professional students at the core of its mission.',
+          excerpt:
+            'The program places teaching undergraduate, graduate, and professional students at the core of its mission.',
           sourceUrl: 'https://jackson.yale.edu/centers-initiatives/',
           sourceName: 'research-entity-cache-backfill',
         },
@@ -2943,7 +2946,8 @@ describe('visibilityRepairQueueService', () => {
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
         {
           id: 'obs-1',
-          excerpt: 'The Blue Center supports teaching at both the undergraduate and graduate levels.',
+          excerpt:
+            'The Blue Center supports teaching at both the undergraduate and graduate levels.',
           sourceUrl: 'https://jackson.yale.edu/centers-initiatives/',
           sourceName: 'research-entity-cache-backfill',
         },
@@ -3191,7 +3195,8 @@ describe('visibilityRepairQueueService', () => {
         name: 'Lee Queue Lab',
         fullDescription:
           'The lab studies statistical methods for biomedical imaging and public health data.',
-        shortDescription: 'Studies statistical methods for biomedical imaging and public health data.',
+        shortDescription:
+          'Studies statistical methods for biomedical imaging and public health data.',
         sourceUrls: ['https://medicine.yale.edu/profile/fixture-rotation-lead/'],
       }),
       updateResearchEntity: vi.fn(),
