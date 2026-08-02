@@ -57,6 +57,7 @@ function completeFixtures(): Phase0HotPathFixtureState {
       },
     ],
     adminSearchTerm: 'PRIVATE PERSON',
+    adminReviewEntityIds: ['private-entity-1'],
   };
 }
 
@@ -317,6 +318,7 @@ describe('Phase 0 hot-path query-cost core', () => {
     fixtures.highEvidenceOpportunity!.evidenceIds = [];
     fixtures.accounts[1].savedResearchEntityIds = [];
     fixtures.accounts[2].pathwayIds = [];
+    fixtures.adminReviewEntityIds = [];
 
     const dependentLabels = [
       'research-detail-users',
@@ -333,6 +335,7 @@ describe('Phase 0 hot-path query-cost core', () => {
       'account-planning-pathway-hydration-zero-saves',
       'account-planning-visible-entities-typical-saves',
       'account-planning-pathway-hydration-near-limit-saves',
+      'admin-access-review-hydration',
     ];
     const specs = buildPhase0HotPathQuerySpecs(fixtures, new Date('2026-07-28T12:00:00.000Z'));
     const emittedLabels = new Set(specs.map((spec) => spec.label));

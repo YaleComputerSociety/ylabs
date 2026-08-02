@@ -99,7 +99,11 @@ export async function recomputeBrowseRankForEntities(
     updated += 1;
     if (options.dryRun) continue;
 
-    await ResearchEntity.updateOne({ _id: entity._id }, { $set: { browseRankScore: score } });
+    await ResearchEntity.updateOne(
+      { _id: entity._id },
+      { $set: { browseRankScore: score } },
+      { timestamps: false },
+    );
     if (sync) {
       const fresh = await ResearchEntity.findById(entity._id).lean();
       if (fresh) await syncEntity('researchEntity', fresh);

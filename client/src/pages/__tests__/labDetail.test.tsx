@@ -97,11 +97,7 @@ function renderLabDetail(
 
   return render(
     <UserContext.Provider
-      value={{
-        ...defaultUserContext,
-        isLoading: false,
-        isAuthenticated,
-      }}
+      value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}
     >
       <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
         <Routes>
@@ -255,7 +251,7 @@ describe('LabDetail page', () => {
       data: { savedResearchEntities: ['entity-1'] },
     });
     expect(screen.getByRole('button', { name: 'Saved to Dashboard' })).toBeTruthy();
-    expect(screen.getByRole('status').textContent).toContain('Research plan saved');
+    expect((await screen.findByRole('status')).textContent).toContain('Research plan saved');
   });
 
   it('saves the research plan when students click the visible save row label', async () => {

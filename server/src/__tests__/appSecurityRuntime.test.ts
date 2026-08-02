@@ -80,12 +80,14 @@ describe('app security runtime classification', () => {
     );
   });
 
-  it('uses session NetIDs and forwarded visitor IPs only through trusted peers', async () => {
+  it('uses validated session identifiers for rate-limit buckets', async () => {
     const limiters: Array<{
       keyGenerator: (req: {
         user?: unknown;
         ip?: string;
-        socket?: { remoteAddress?: string };
+        headers?: Record<string, string>;
+        socket: { remoteAddress?: string };
+        session?: { rateLimitId?: unknown } | null;
       }) => string;
     }> = [];
     const ipKeyGenerator = vi.fn((ip: string) => `ip-key:${ip}`);
@@ -118,27 +120,50 @@ describe('app security runtime classification', () => {
       },
     };
 
-    expect(keyGenerator({ user: { netId: 'AbC123' }, ip: '127.0.0.1' })).toBe('user:abc123');
+    expect(
+      keyGenerator({
+        user: { netId: 'AbC123' },
+        session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+    ).toBe('user:abc123');
     expect(
       keyGenerator({
         user: { netId: objectNetId },
-        ip: '203.0.113.7',
-        socket: { remoteAddress: '10.20.30.40' },
+        socket: { remoteAddress: '203.0.113.7' },
       }),
     ).toBe('ip:ip-key:203.0.113.7');
     expect(coerced).toBe(false);
 
-    const directOriginRequest = {
-      ip: '2001:db8::1234',
-      socket: { remoteAddress: '198.51.100.20' },
+    const anonymousRequest = {
+      ip: '198.51.100.20',
+      socket: { remoteAddress: '192.0.2.20' },
+      session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
     };
-    expect(keyGenerator(directOriginRequest)).toBe('ip:ip-key:198.51.100.20');
+    expect(keyGenerator(anonymousRequest)).toBe('anonymous:0123456789abcdef0123456789abcdef');
 
-    const trustedIpv6Peer = {
-      ip: '2001:db8::5678',
-      socket: { remoteAddress: '2001:db8:abcd::10' },
+    const malformedSessionRequest = {
+      ip: '198.51.100.8',
+      headers: {
+        'x-forwarded-for': '203.0.113.8',
+        'cf-connecting-ip': '203.0.113.9',
+      },
+      socket: { remoteAddress: '192.0.2.8' },
+      session: { rateLimitId: 'attacker-controlled' },
     };
-    expect(keyGenerator(trustedIpv6Peer)).toBe('ip:ip-key:2001:db8::5678');
+    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:192.0.2.8');
+
+    expect(
+      keyGenerator({
+        ip: '198.51.100.9',
+        headers: {
+          'x-forwarded-for': '203.0.113.10',
+          'cf-connecting-ip': '203.0.113.11',
+        },
+        socket: { remoteAddress: '192.0.2.9' },
+        session: { rateLimitId: 'ABCDEF0123456789ABCDEF0123456789' },
+      }),
+    ).toBe('ip:ip-key:192.0.2.9');
   });
 
   it('rejects malformed trusted proxy boundaries', async () => {
@@ -183,6 +208,55 @@ describe('app security runtime classification', () => {
     const { default: app } = await import('../app');
 
     expect(app.get('query parser')).toBe('simple');
+  });
+
+  it('initializes anonymous rate-limit sessions only for API requests', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      const requestHeaders = { 'x-forwarded-proto': 'https' };
+      const staticResponse = await fetch(`http://127.0.0.1:${address.port}/missing.js`, {
+        headers: requestHeaders,
+      });
+      const apiResponse = await fetch(`http://127.0.0.1:${address.port}/api/missing`, {
+        headers: requestHeaders,
+      });
+      const readSession = (response: Response) => {
+        const sessionCookie = response.headers
+          .getSetCookie()
+          .find((cookie) => cookie.startsWith('__Host-session='));
+        const encodedSession = sessionCookie?.split(';', 1)[0].split('=', 2)[1];
+        return encodedSession
+          ? (JSON.parse(Buffer.from(encodedSession, 'base64').toString('utf8')) as Record<
+              string,
+              unknown
+            >)
+          : {};
+      };
+
+      expect(readSession(staticResponse)).not.toHaveProperty('rateLimitId');
+      expect(readSession(apiResponse).rateLimitId).toMatch(/^[a-f0-9]{32}$/);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it('serves public config with mounted browser hardening headers and no source revision fingerprint', async () => {
@@ -352,6 +426,7 @@ describe('app security runtime classification', () => {
     try {
       const address = server.address() as AddressInfo;
       let lastStatus = 0;
+      let sessionCookie: string | undefined;
 
       for (let attempt = 0; attempt < 51; attempt += 1) {
         const response = await fetch(`http://127.0.0.1:${address.port}/api/users/favPathways`, {
@@ -360,9 +435,16 @@ describe('app security runtime classification', () => {
             origin: 'https://yalelabs.io',
             'content-type': 'application/json',
             'x-forwarded-proto': 'https',
+            ...(sessionCookie ? { cookie: sessionCookie } : {}),
           },
           body: JSON.stringify({ data: { favPathways: ['64a000000000000000000030'] } }),
         });
+        if (!sessionCookie) {
+          sessionCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(';', 1)[0])
+            .join('; ');
+        }
         lastStatus = response.status;
         await response.text();
       }

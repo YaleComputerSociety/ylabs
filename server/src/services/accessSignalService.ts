@@ -1,19 +1,17 @@
 import mongoose from 'mongoose';
 import { AccessSignal } from '../models/accessSignal';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
-import { syncPathwaySearchIndexDocument, syncPathwaySearchIndexDocumentsForEntity } from './pathwaySearchIndexService';
+import {
+  syncPathwaySearchIndexDocument,
+  syncPathwaySearchIndexDocumentsForEntity,
+} from './pathwaySearchIndexService';
 import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArtifact';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
-import type {
-  AccessSignalConfidence,
-  AccessSignalType,
-} from '../models/researchAccessTypes';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
+import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 
-export type {
-  AccessSignalConfidence,
-  AccessSignalType,
-} from '../models/researchAccessTypes';
+export type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 
 export interface UpsertAccessSignalInput {
   researchEntityId: string;
@@ -92,28 +90,37 @@ export async function upsertAccessSignal(
       signalType: input.signalType,
       derivationKey,
     }),
-    $set: omitReviewLockedFields(compactObject({
-      entryPathwayId,
-      sourceEvidenceId,
-      observationId: sourceEvidenceId,
-      confidence: input.confidence,
-      confidenceScore: input.confidenceScore ?? input.originalConfidence,
-      observedAt: input.observedAt,
-      excerpt: publicAccessText(input.excerpt),
-      sourceName: input.sourceName,
-      sourceUrl: publicAccessHttpUrl(input.sourceUrl),
-      originalConfidence: input.originalConfidence,
-      archived: input.archived,
-      lastMaterializedAt: new Date(),
-    }), existing),
+    $set: omitReviewLockedFields(
+      compactObject({
+        entryPathwayId,
+        sourceEvidenceId,
+        observationId: sourceEvidenceId,
+        confidence: input.confidence,
+        confidenceScore: input.confidenceScore ?? input.originalConfidence,
+        observedAt: input.observedAt,
+        excerpt: publicAccessText(input.excerpt),
+        sourceName: input.sourceName,
+        sourceUrl: publicAccessHttpUrl(input.sourceUrl),
+        originalConfidence: input.originalConfidence,
+        archived: input.archived,
+        lastMaterializedAt: new Date(),
+      }),
+      existing,
+    ),
   };
 
-  const query = AccessSignal.findOneAndUpdate(filter, update, {
-    upsert: true,
-    new: true,
-    setDefaultsOnInsert: true,
-  });
-  const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  const write = async (session?: mongoose.ClientSession) => {
+    const query = AccessSignal.findOneAndUpdate(filter, update, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    });
+    return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
+  };
+  const doc = deps.model
+    ? await write()
+    : await mutateAndRefreshAdminAccessReviewProjection(researchEntityId, write);
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
     const entryPathwayId = serializedDocumentId(doc?.entryPathwayId);
     const researchEntityId = serializedDocumentId(doc?.researchEntityId);

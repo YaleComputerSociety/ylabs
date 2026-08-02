@@ -520,6 +520,25 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
     typeof typicalEntity?.name === 'string' && typicalEntity.name.trim().length >= 2
       ? typicalEntity.name.trim().slice(0, 8)
       : undefined;
+  const adminProjectionRows = await aggregateFixture(
+    db,
+    'admin_access_review_projections',
+    'admin-access-review-projection-page',
+    [
+      { $match: { stale: false } },
+      {
+        $sort: {
+          totalUnreviewed: -1,
+          hasOfficialApplication: -1,
+          sortUpdatedAt: -1,
+          researchEntityId: 1,
+        },
+      },
+      { $limit: 25 },
+      { $project: { _id: 0, researchEntityId: 1 } },
+    ],
+    maxTimeMS,
+  );
   const toOpportunity = (row: Document | undefined) =>
     row
       ? {
@@ -550,6 +569,7 @@ async function selectFixtures(db: Db, maxTimeMS: number): Promise<Phase0HotPathF
     highEvidenceOpportunity: toOpportunity(highEvidenceRows[0]),
     accounts,
     adminSearchTerm,
+    adminReviewEntityIds: adminProjectionRows.map((row) => row.researchEntityId).filter(Boolean),
   };
 }
 

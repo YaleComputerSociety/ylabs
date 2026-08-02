@@ -5,6 +5,7 @@ import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
 import { publicAccessHttpUrls, publicAccessText } from '../utils/publicAccessArtifact';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -97,30 +98,39 @@ export async function upsertEntryPathway(
       pathwayType: input.pathwayType,
       derivationKey,
     },
-    $set: omitReviewLockedFields(compactObject({
-      status: input.status,
-      evidenceStrength: input.evidenceStrength,
-      studentFacingLabel: publicAccessText(input.studentFacingLabel),
-      explanation: publicAccessText(input.explanation),
-      bestNextStep: publicAccessText(input.bestNextStep),
-      compensation: input.compensation,
-      confidence: input.confidence,
-      archived: input.archived,
-      lastObservedAt: input.lastObservedAt,
-      lastMaterializedAt: now,
-    }), existing),
+    $set: omitReviewLockedFields(
+      compactObject({
+        status: input.status,
+        evidenceStrength: input.evidenceStrength,
+        studentFacingLabel: publicAccessText(input.studentFacingLabel),
+        explanation: publicAccessText(input.explanation),
+        bestNextStep: publicAccessText(input.bestNextStep),
+        compensation: input.compensation,
+        confidence: input.confidence,
+        archived: input.archived,
+        lastObservedAt: input.lastObservedAt,
+        lastMaterializedAt: now,
+      }),
+      existing,
+    ),
     $addToSet: {
       sourceEvidenceIds: { $each: sourceEvidenceIds },
       sourceUrls: { $each: sourceUrls },
     },
   };
 
-  const query = EntryPathway.findOneAndUpdate(filter, update, {
-    upsert: true,
-    new: true,
-    setDefaultsOnInsert: true,
-  });
-  const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  const write = async (session?: mongoose.ClientSession) => {
+    const query = EntryPathway.findOneAndUpdate(filter, update, {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    });
+    return typeof (query as any).lean === 'function' ? (query as any).lean() : query;
+  };
+  const doc = deps.model
+    ? await write()
+    : await mutateAndRefreshAdminAccessReviewProjection(researchEntityId, write);
   const pathwayId = serializedDocumentId(doc?._id);
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && pathwayId) {
     await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {

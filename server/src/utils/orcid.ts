@@ -2,8 +2,9 @@ export function normalizeOrcid(value: unknown): string {
   if (typeof value !== 'string') return '';
   const compact = value
     .trim()
-    .replace(/^https?:\/\/orcid\.org\//i, '')
+    .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
     .replace(/^orcid:\s*/i, '')
+    .replace(/\/+$/, '')
     .replace(/[\s-]/g, '')
     .toUpperCase();
   if (!/^\d{15}[\dX]$/.test(compact)) return '';

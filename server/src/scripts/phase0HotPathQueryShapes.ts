@@ -209,101 +209,47 @@ function pathwayHydrationPipeline(pathwayIds: unknown[]): Document[] {
   ];
 }
 
-function accessReviewLookup(from: string, as: string, includeApplication = false): Document {
-  return {
-    $lookup: {
-      from,
-      let: { entityId: '$_id' },
-      pipeline: [
-        {
-          $match: {
-            $expr: { $eq: ['$researchEntityId', '$$entityId'] },
-            ...(from === 'posted_opportunities'
-              ? { submissionStatus: { $ne: 'DRAFT' } }
-              : from === 'entry_pathways'
-                ? { derivationKey: { $not: /^faculty-opportunity:/ } }
-                : {}),
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            status: '$review.status',
-            ...(includeApplication ? { applicationUrl: 1 } : {}),
-          },
-        },
-      ],
-      as,
-    },
-  };
-}
-
-function accessReviewPipeline(input: {
+function accessReviewProjectionSpec(input: {
+  label: string;
   search?: string;
   hasUnreviewed?: boolean;
   sort: 'unreviewed' | 'official-application' | 'updated';
-}): Document[] {
+}): Phase0HotPathQuerySpec {
   const filter: Document = input.search
     ? {
-        $or: [
-          { name: new RegExp(escapePhase0HotPathRegex(input.search), 'i') },
-          { displayName: new RegExp(escapePhase0HotPathRegex(input.search), 'i') },
-          { slug: new RegExp(escapePhase0HotPathRegex(input.search), 'i') },
-          { departments: new RegExp(escapePhase0HotPathRegex(input.search), 'i') },
-          { researchAreas: new RegExp(escapePhase0HotPathRegex(input.search), 'i') },
-        ],
+        searchPrefixes: {
+          $all: input.search
+            .normalize('NFKC')
+            .toLocaleLowerCase('en-US')
+            .split(/[^a-z0-9]+/)
+            .filter(Boolean)
+            .slice(0, 10)
+            .map((term) => term.slice(0, 60)),
+        },
       }
     : {};
-  return [
-    { $match: filter },
-    accessReviewLookup('entry_pathways', '_pathways'),
-    accessReviewLookup('access_signals', '_signals'),
-    accessReviewLookup('contact_routes', '_routes'),
-    accessReviewLookup('posted_opportunities', '_opportunities', true),
-    {
-      $set: {
-        totalUnreviewed: {
-          $add: ['$_pathways', '$_signals', '$_routes', '$_opportunities'].map((inputName) => ({
-            $size: {
-              $filter: {
-                input: inputName,
-                as: 'record',
-                cond: {
-                  $in: [{ $ifNull: ['$$record.status', 'unreviewed'] }, ['unreviewed', null]],
-                },
-              },
-            },
-          })),
-        },
-        hasOfficialApplication: {
-          $anyElementTrue: {
-            $map: {
-              input: '$_opportunities',
-              as: 'record',
-              in: {
-                $gt: [{ $strLenCP: { $ifNull: ['$$record.applicationUrl', ''] } }, 0],
-              },
-            },
-          },
-        },
-      },
-    },
-    ...(input.hasUnreviewed === true ? [{ $match: { totalUnreviewed: { $gt: 0 } } }] : []),
-    {
-      $sort:
-        input.sort === 'updated'
-          ? { updatedAt: -1, _id: 1 }
-          : input.sort === 'official-application'
-            ? { hasOfficialApplication: -1, totalUnreviewed: -1, updatedAt: -1, _id: 1 }
-            : { totalUnreviewed: -1, hasOfficialApplication: -1, updatedAt: -1, _id: 1 },
-    },
-    {
-      $facet: {
-        rows: [{ $skip: 0 }, { $limit: 25 }, { $project: { _id: 1 } }],
-        meta: [{ $count: 'total' }],
-      },
-    },
-  ];
+  if (input.hasUnreviewed) filter.totalUnreviewed = { $gt: 0 };
+  const sort =
+    input.sort === 'updated'
+      ? { sortUpdatedAt: -1, researchEntityId: 1 }
+      : input.sort === 'official-application'
+        ? {
+            hasOfficialApplication: -1,
+            totalUnreviewed: -1,
+            sortUpdatedAt: -1,
+            researchEntityId: 1,
+          }
+        : {
+            totalUnreviewed: -1,
+            hasOfficialApplication: -1,
+            sortUpdatedAt: -1,
+            researchEntityId: 1,
+          };
+  return findSpec(input.label, 'admin-access-review', 'admin_access_review_projections', filter, {
+    sort,
+    limit: 25,
+    projection: { researchEntityId: 1 },
+  });
 }
 
 function progressCountSpec(
@@ -736,39 +682,38 @@ export function buildPhase0HotPathQuerySpecs(
   );
 
   specs.push(
+    accessReviewProjectionSpec({ label: 'admin-access-review-default', sort: 'unreviewed' }),
+    accessReviewProjectionSpec({
+      label: 'admin-access-review-official-application',
+      sort: 'official-application',
+    }),
+    accessReviewProjectionSpec({ label: 'admin-access-review-updated', sort: 'updated' }),
+    accessReviewProjectionSpec({
+      label: 'admin-access-review-has-unreviewed-false',
+      sort: 'unreviewed',
+      hasUnreviewed: false,
+    }),
     aggregateSpec(
-      'admin-access-review-default',
+      'admin-access-review-count',
       'admin-access-review',
-      'research_entities',
-      accessReviewPipeline({ sort: 'unreviewed' }),
+      'admin_access_review_projections',
+      [{ $match: {} }, { $count: 'count' }],
     ),
-    aggregateSpec(
-      'admin-access-review-official-application',
+    findSpec(
+      'admin-access-review-hydration',
       'admin-access-review',
       'research_entities',
-      accessReviewPipeline({ sort: 'official-application' }),
-    ),
-    aggregateSpec(
-      'admin-access-review-updated',
-      'admin-access-review',
-      'research_entities',
-      accessReviewPipeline({ sort: 'updated' }),
-    ),
-    aggregateSpec(
-      'admin-access-review-has-unreviewed-false',
-      'admin-access-review',
-      'research_entities',
-      accessReviewPipeline({ sort: 'unreviewed', hasUnreviewed: false }),
+      { _id: { $in: fixtures.adminReviewEntityIds } },
+      { limit: 25, projection: { _id: 1 } },
     ),
   );
   if (fixtures.adminSearchTerm) {
     specs.push(
-      aggregateSpec(
-        'admin-access-review-search',
-        'admin-access-review',
-        'research_entities',
-        accessReviewPipeline({ sort: 'unreviewed', search: fixtures.adminSearchTerm }),
-      ),
+      accessReviewProjectionSpec({
+        label: 'admin-access-review-search',
+        sort: 'unreviewed',
+        search: fixtures.adminSearchTerm,
+      }),
     );
   }
 
@@ -856,6 +801,7 @@ export function buildPhase0HotPathQuerySpecs(
       'opportunity-detail-high-evidence-observations',
       fixtures.highEvidenceOpportunity?.evidenceIds.length || 0,
     ],
+    ['admin-access-review-hydration', fixtures.adminReviewEntityIds.length],
   ]);
 
   return specs.filter((spec) => {
