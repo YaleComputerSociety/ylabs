@@ -80,7 +80,13 @@ describe('app security runtime classification', () => {
   });
 
   it('uses only bounded primitive session NetIDs for rate-limit user buckets', async () => {
-    const limiters: Array<{ keyGenerator: (req: { user?: unknown; ip?: string }) => string }> = [];
+    const limiters: Array<{
+      keyGenerator: (req: {
+        user?: unknown;
+        ip?: string;
+        get?: (name: string) => string | undefined;
+      }) => string;
+    }> = [];
     const ipKeyGenerator = vi.fn((ip: string) => `ip-key:${ip}`);
     vi.doMock('express-rate-limit', () => ({
       default: vi.fn((options: { keyGenerator: (req: { user?: unknown; ip?: string }) => string }) => {
@@ -113,6 +119,20 @@ describe('app security runtime classification', () => {
       'ip:ip-key:203.0.113.7',
     );
     expect(coerced).toBe(false);
+
+    const edgeRequest = {
+      ip: '198.51.100.20',
+      get: (name: string) => (name === 'cf-connecting-ip' ? '2001:db8::1234' : undefined),
+    };
+    expect(keyGenerator(edgeRequest)).toBe('ip:ip-key:2001:db8::1234');
+    expect(ipKeyGenerator).toHaveBeenCalledWith('2001:db8::1234');
+
+    const malformedEdgeRequest = {
+      ip: '203.0.113.8',
+      get: (name: string) =>
+        name === 'cf-connecting-ip' ? '198.51.100.1, 198.51.100.2' : undefined,
+    };
+    expect(keyGenerator(malformedEdgeRequest)).toBe('ip:ip-key:203.0.113.8');
   });
 
   it('keeps Express query parsing flat before request-shape sanitization', async () => {
