@@ -655,6 +655,42 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('non_research_entity');
   });
 
+  it('suppresses an unsupported positive research claim', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Instructional Services Center',
+        entityType: 'CENTER',
+        shortDescription: 'Provides teaching consultations and conducts research projects.',
+        fullDescription:
+          'The center provides instructional support and conducts research projects for Yale instructors.',
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('missing_source_backed_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('does not treat an entity name as research evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center That Conducts Research',
+        entityType: 'CENTER',
+        shortDescription: 'Provides teaching consultations and instructional support.',
+        fullDescription: 'Offers course-design resources and workshops for instructors.',
+        sourceUrls: ['https://example.yale.edu/instructional-services'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+  });
+
   it('keeps a center that leads clinical research projects in research scope', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
