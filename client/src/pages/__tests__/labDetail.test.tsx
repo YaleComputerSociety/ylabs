@@ -96,9 +96,7 @@ function renderLabDetail(
   });
 
   return render(
-    <UserContext.Provider
-      value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}
-    >
+    <UserContext.Provider value={{ ...defaultUserContext, isLoading: false, isAuthenticated }}>
       <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
         <Routes>
           <Route path="/research/:slug" element={<LabDetail />} />
