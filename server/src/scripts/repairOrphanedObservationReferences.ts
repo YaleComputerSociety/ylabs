@@ -576,6 +576,7 @@ async function preflightOwner(
 async function preflightOwnerForReviewedLoss(
   classification: OrphanReferenceClassification,
   artifactHash: string,
+  options: { requireArchived?: boolean } = { requireArchived: true },
 ): Promise<Record<string, unknown>> {
   try {
     return await preflightOwner(classification);
@@ -586,14 +587,24 @@ async function preflightOwnerForReviewedLoss(
   const owner = (await db.collection(classification.ownerCollection).findOne({
     _id: new mongoose.Types.ObjectId(classification.ownerId),
   })) as Record<string, unknown> | null;
-  if (!owner || owner.archived !== true) throw new Error('owner_changed_since_review');
+  if (!owner || (options.requireArchived !== false && owner.archived !== true)) {
+    throw new Error('owner_changed_since_review');
+  }
   if (currentReferenceValue(owner, classification) !== classification.missingObservationId) {
     throw new Error('orphan_reference_changed_since_review');
+  }
+  const reviewedRepairOwnerClauses: Record<string, unknown>[] = [
+    { ownerId: new mongoose.Types.ObjectId(classification.ownerId) },
+  ];
+  if (options.requireArchived === false && classification.researchEntityId) {
+    reviewedRepairOwnerClauses.push({
+      researchEntityId: new mongoose.Types.ObjectId(classification.researchEntityId),
+    });
   }
   const priorReviewedRepair = await db.collection('observation_reference_repair_audits').findOne(
     {
       artifactHash,
-      ownerId: new mongoose.Types.ObjectId(classification.ownerId),
+      $or: reviewedRepairOwnerClauses,
     },
     { projection: { _id: 1 } },
   );
@@ -622,6 +633,13 @@ async function writeAudit(
         handle: decision.handle,
         ownerCollection: decision.classification.ownerCollection,
         ownerId: new mongoose.Types.ObjectId(decision.classification.ownerId),
+        ...(decision.classification.researchEntityId
+          ? {
+              researchEntityId: new mongoose.Types.ObjectId(
+                decision.classification.researchEntityId,
+              ),
+            }
+          : {}),
         field: decision.classification.field,
         referenceKey: decision.classification.referenceKey,
         missingObservationId: new mongoose.Types.ObjectId(
@@ -731,11 +749,9 @@ async function applyRematerialization(
   applyContext: ApplyContext,
 ): Promise<ApplyResult> {
   const classification = decision.classification;
-  if (classification.rematerializationMode === 'replace_legacy_owner') {
-    await preflightOwnerForReviewedLoss(classification, artifactHash);
-  } else {
-    await preflightOwner(classification);
-  }
+  await preflightOwnerForReviewedLoss(classification, artifactHash, {
+    requireArchived: classification.rematerializationMode === 'replace_legacy_owner',
+  });
   const researchEntityId = classification.researchEntityId;
   if (!researchEntityId) throw new Error('research_entity_missing');
   const context = await loadResearchEntityObservationContext(researchEntityId);
