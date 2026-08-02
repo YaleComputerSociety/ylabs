@@ -6,9 +6,7 @@ import {
 } from '../launchTrustContractService';
 import type { StudentVisibilityGatePlan } from '../studentVisibilityGateService';
 
-const plan = (
-  overrides: Partial<StudentVisibilityGatePlan> = {},
-): StudentVisibilityGatePlan => ({
+const plan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-1',
   label: 'Trusted Lab',
@@ -32,10 +30,7 @@ const report = (
 
 describe('buildLaunchTrustContractReport', () => {
   it('passes when every scanned record is launch-grade student_ready', () => {
-    const result = report([
-      plan(),
-      plan({ recordId: 'entity-2', label: 'Another Trusted Lab' }),
-    ]);
+    const result = report([plan(), plan({ recordId: 'entity-2', label: 'Another Trusted Lab' })]);
 
     expect(result.pass).toBe(true);
     expect(result.counts).toMatchObject({
@@ -263,7 +258,8 @@ describe('buildLaunchTrustContractReport', () => {
     expect(result.researchActivity).toMatchObject({
       pass: false,
       counts: expect.objectContaining({ nullTargetAttributions: 1 }),
-      command: 'SCRAPER_ENV=beta yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
+      command:
+        'SCRAPER_ENV=beta yarn --cwd server scholarly-links:provenance-audit --sample-limit=0',
       fixCommand:
         'SCRAPER_ENV=beta yarn --cwd server scholarly-links:provenance-audit --apply --confirm-scholarly-link-apply',
     });
