@@ -10,21 +10,21 @@ describe('faculty import identity guards', () => {
   it('replaces a wrong-person name-shaped email with the verified NetID address', () => {
     expect(
       safeFacultyImportEmail({
-        netid: 'jz947',
-        name: 'Jonathan Zimmerman',
-        email: 'julie.zimmerman@yale.edu',
+        netid: 'test947',
+        name: 'Jordan Mismatch',
+        email: 'sage.mismatch@yale.edu',
       }),
-    ).toBe('jz947@yale.edu');
+    ).toBe('test947@yale.edu');
   });
 
   it('keeps a person-specific Yale email and normalizes mailto casing', () => {
     expect(
       safeFacultyImportEmail({
-        netid: 'xz739',
-        name: 'Xiangyu Zhang',
-        email: 'MAILTO:Xiangyu.Zhang@yale.edu',
+        netid: 'test739',
+        name: 'Drew Match',
+        email: 'MAILTO:Drew.Match@yale.edu',
       }),
-    ).toBe('xiangyu.zhang@yale.edu');
+    ).toBe('drew.match@yale.edu');
   });
 
   it('drops an ORCID and its profile URL when different faculty rows claim it', () => {
