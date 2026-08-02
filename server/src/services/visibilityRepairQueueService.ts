@@ -103,6 +103,7 @@ interface RepairDeps {
   findOpenQueueItems: (options: VisibilityRepairQueueOptions) => Promise<VisibilityRepairQueueItemInput[]>;
   updateQueueItem: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findResearchEntity: (id: string) => Promise<Record<string, any> | null>;
+  findConflictingOfficialLabUrls?: (id: string, urls: string[]) => Promise<string[]>;
   findResearchEntityMembers?: (id: string) => Promise<Array<Record<string, any>>>;
   findUserByProfileUrl?: (urls: string[]) => Promise<Record<string, any> | null>;
   findUserByExactWebsiteUrl?: (urls: string[]) => Promise<Record<string, any> | null>;
@@ -586,6 +587,24 @@ const urlVariants = (urls: unknown[]): string[] => {
   return Array.from(variants);
 };
 
+const officialMedicineLabUrlKey = (value: unknown): string => {
+  const urlText = textValue(value);
+  if (!hasHttpUrl(urlText)) return '';
+  try {
+    const url = new URL(urlText);
+    const pathMatch = url.pathname.toLowerCase().match(/^\/lab\/([^/]+)\/?$/);
+    if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'medicine.yale.edu' || !pathMatch) {
+      return '';
+    }
+    return `https://medicine.yale.edu/lab/${pathMatch[1]}`;
+  } catch {
+    return '';
+  }
+};
+
+const exactUrlRegex = (url: string): RegExp =>
+  new RegExp(`^${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/?$`, 'i');
+
 const officialProfileUrlsForEntity = (entity: Record<string, any>): string[] =>
   urlVariants([
     entity.websiteUrl,
@@ -877,6 +896,9 @@ export function classifyVisibilityRepairStage(reasons: string[] = []): Visibilit
 
 export function repairActionForStage(stage: VisibilityRepairStage, reasons: string[] = []): string {
   if (stage === 'source_description') {
+    if (reasons.includes('official_source_url_collision')) {
+      return 'Resolve the duplicate official lab URL owner before repairing source-backed descriptions.';
+    }
     if (reasons.includes('missing_source_url')) return 'Attach a trusted official source URL, then re-run visibility gates.';
     return 'Backfill source-backed description fields from trusted source evidence.';
   }
@@ -1769,6 +1791,33 @@ async function attemptResearchRepair(
     prospectiveLeadMembers,
     profileDescriptionCandidates,
   );
+  const repairSourceUrls = uniqueStrings([
+    ...(Array.isArray(patch.sourceUrls) ? patch.sourceUrls : []),
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    entity.websiteUrl,
+    entity.website,
+    ...sourceUrlsForFieldProvenance(entity),
+    ...sourceUrlsForLeadMembers(prospectiveLeadMembers),
+    ...profileDescriptionCandidates.map((candidate) => candidate.sourceUrl),
+  ]);
+  const officialLabUrls = uniqueStrings(repairSourceUrls.map(officialMedicineLabUrlKey));
+  const conflictingOfficialLabUrls =
+    officialLabUrls.length > 0 && deps.findConflictingOfficialLabUrls
+      ? await deps.findConflictingOfficialLabUrls(plan.recordId, officialLabUrls)
+      : [];
+  if (conflictingOfficialLabUrls.length > 0) {
+    return {
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: uniqueStrings([
+        ...plan.blockerReasons,
+        'official_source_url_collision',
+      ]),
+      repairSource: conflictingOfficialLabUrls[0],
+    };
+  }
   const patchSummary = [...summary];
   let leadRepaired = false;
 
@@ -2008,6 +2057,25 @@ const defaultRepairDeps: RepairDeps = {
   async findResearchEntity(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     return safeId ? ResearchEntity.findById(safeId).lean() : null;
+  },
+  async findConflictingOfficialLabUrls(id, urls) {
+    const safeId = toVisibilityRepairObjectId(id);
+    if (!safeId) return [];
+    const conflicts: string[] = [];
+    for (const url of uniqueStrings(urls.map(officialMedicineLabUrlKey))) {
+      const exactUrl = exactUrlRegex(url);
+      const owner = await ResearchEntity.exists({
+        _id: { $ne: safeId },
+        archived: { $ne: true },
+        $or: [
+          { websiteUrl: exactUrl },
+          { website: exactUrl },
+          { sourceUrls: exactUrl },
+        ],
+      });
+      if (owner) conflicts.push(url);
+    }
+    return conflicts;
   },
   async findUserByProfileUrl(urls) {
     const variants = urlVariants(urls);

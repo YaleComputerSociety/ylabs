@@ -442,6 +442,58 @@ describe('visibilityRepairQueueService', () => {
     );
   });
 
+  it('blocks source-description repair when another active entity owns the official lab URL', async () => {
+    const officialLabUrl = 'https://medicine.yale.edu/lab/example/';
+    const deps = {
+      findOpenQueueItems: vi.fn().mockResolvedValue([
+        queueItem({
+          blockerReasons: ['missing_description', 'missing_source_url'],
+        }),
+      ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        description:
+          'This laboratory studies a sufficiently detailed research topic using source-backed methods and evidence.',
+        sourceUrls: [],
+        fieldProvenance: {
+          undergradAccessEvidence: {
+            sourceName: 'lab-microsite-undergrad-llm',
+            sourceUrl: officialLabUrl,
+          },
+        },
+      }),
+      findConflictingOfficialLabUrls: vi
+        .fn()
+        .mockResolvedValue(['https://medicine.yale.edu/lab/example']),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue({ mode: 'apply', collection: 'research' }, deps);
+
+    expect(deps.findConflictingOfficialLabUrls).toHaveBeenCalledWith('entity-1', [
+      'https://medicine.yale.edu/lab/example',
+    ]);
+    expect(report).toMatchObject({ repaired: 0, blocked: 1, resolvedByGate: 0 });
+    expect(report.attempts[0]).toMatchObject({
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: [
+        'missing_description',
+        'missing_source_url',
+        'official_source_url_collision',
+      ],
+      repairSource: 'https://medicine.yale.edu/lab/example',
+    });
+    expect(deps.updateResearchEntity).not.toHaveBeenCalled();
+    expect(deps.runGate).not.toHaveBeenCalled();
+  });
+
   it('does not attach metadata-only field provenance as source URLs', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
