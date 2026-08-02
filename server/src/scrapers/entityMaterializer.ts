@@ -36,6 +36,7 @@ import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
 } from './undergraduateLogisticsMaterializer';
+import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -2390,7 +2391,13 @@ export async function materializeEntity(
   if (entityDoc) {
     const update: Record<string, unknown> = { $set: set };
     if (Object.keys(unset).length > 0) update.$unset = unset;
-    await Model.updateOne({ _id: entityDoc._id }, update);
+    if (isResearchEntityObservationType(entityType)) {
+      await mutateAndRefreshAdminAccessReviewProjection(entityDoc._id, (session) =>
+        Model.updateOne({ _id: entityDoc._id }, update, { session }),
+      );
+    } else {
+      await Model.updateOne({ _id: entityDoc._id }, update);
+    }
   } else {
     const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
     if (!keyField || !identifier.entityKey) {
@@ -2413,7 +2420,21 @@ export async function materializeEntity(
         skipped: 'missing-required-fields',
       };
     }
-    const created_ = await Model.create(insert);
+    let created_;
+    if (isResearchEntityObservationType(entityType)) {
+      const researchEntityId = new mongoose.Types.ObjectId();
+      created_ = await mutateAndRefreshAdminAccessReviewProjection(
+        researchEntityId,
+        async (session) => {
+          const createdDocuments = await Model.create([{ _id: researchEntityId, ...insert }], {
+            session,
+          });
+          return createdDocuments[0];
+        },
+      );
+    } else {
+      created_ = await Model.create(insert);
+    }
     entityIdString = materializerDocumentId(created_._id);
     created = true;
   }

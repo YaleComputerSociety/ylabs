@@ -7240,6 +7240,27 @@ test('scraper materializer logs sanitize untrusted exception values', () => {
   assert.doesNotMatch(source, /\(err as Error\)\?\.message \|\| err/);
 });
 
+test('scraper ResearchEntity writes refresh the admin access-review projection', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/scrapers/entityMaterializer.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /import \{ mutateAndRefreshAdminAccessReviewProjection \}/);
+  assert.match(
+    source,
+    /mutateAndRefreshAdminAccessReviewProjection\(entityDoc\._id, \(session\) =>\s*Model\.updateOne\(\{ _id: entityDoc\._id \}, update, \{ session \}\)/,
+  );
+  assert.match(
+    source,
+    /mutateAndRefreshAdminAccessReviewProjection\(\s*researchEntityId,\s*async \(session\) =>/,
+  );
+  assert.match(
+    source,
+    /Model\.create\(\[\{ _id: researchEntityId, \.\.\.insert \}\], \{\s*session,\s*\}\)/,
+  );
+});
+
 test('scraper cron heartbeat logs sanitize lock exceptions', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scrapers/cronRunner.ts', import.meta.url),
