@@ -16,6 +16,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - Non-production environments default to dry-run. Set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to a dev DB.
 - Production requires `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true`.
 - `scraperEnvironment.ts` enforces `SCRAPER_ENV` write guards.
+- Observation retention must preserve every Observation referenced by durable materialized records, including archived rollback records. Run it dry-run-first with an explicit environment, keep scrapers and materializers paused, and leave Production retention disabled unless a separate reviewed issue authorizes it.
 - Do not expose scraped contact data indiscriminately. Contact routes are fail-closed: prefer official/public URLs; redact scraped emails from public payloads.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 
