@@ -181,6 +181,38 @@ describe('orphaned Observation reference repair core', () => {
     expect(classified).toMatchObject({ recovery: 'review_required', candidateCount: 1 });
   });
 
+  it('does not record archived evidence as lost from a truncated candidate query', () => {
+    const owner = {
+      _id: new mongoose.Types.ObjectId('111111111111111111111111'),
+      slug: 'synthetic-home',
+      description: 'Synthetic research description.',
+    };
+    const classified = classifyOrphanReference({
+      occurrence: occurrence({ activity: 'archived' }),
+      owner,
+      ownerFieldValue: owner.description,
+      dbFingerprint: 'development-target',
+      candidatesExhaustive: false,
+      candidates: [
+        {
+          id: '333333333333333333333333',
+          entityType: 'researchEntity',
+          entityId: '111111111111111111111111',
+          field: 'description',
+          value: owner.description,
+          sourceName: 'official-profile',
+          sourceUrl: 'https://example.yale.edu/profile',
+        },
+      ],
+    });
+
+    expect(classified).toMatchObject({
+      recovery: 'review_required',
+      recommendedDecision: 'defer_review',
+      candidateCount: 1,
+    });
+  });
+
   it('preserves archived records and records unrecoverable evidence loss', () => {
     const classified = classifyOrphanReference({
       occurrence: occurrence({

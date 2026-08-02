@@ -345,7 +345,17 @@ export function classifyOrphanReference(input: {
 
   if (occurrence.ownerCollection === 'observations' && occurrence.field === 'supersededBy') {
     const exact = exactSupersessionCandidates(input);
-    if (exact.length === 1 && input.candidatesExhaustive !== false) {
+    if (input.candidatesExhaustive === false) {
+      return {
+        ...occurrence,
+        handle,
+        recovery: 'review_required',
+        reason: 'The bounded candidate query cannot prove the supersession candidate is unique.',
+        candidateCount: exact.length,
+        recommendedDecision: 'defer_review',
+      };
+    }
+    if (exact.length === 1) {
       return {
         ...occurrence,
         handle,
@@ -375,9 +385,7 @@ export function classifyOrphanReference(input: {
       reason:
         exact.length > 1
           ? 'Multiple exact supersession candidates remain.'
-          : input.candidatesExhaustive === false
-            ? 'The bounded candidate query cannot prove the supersession candidate is unique.'
-            : 'No exact supersession candidate remains.',
+          : 'No exact supersession candidate remains.',
       candidateCount: exact.length,
       recommendedDecision: 'defer_review',
     };
@@ -385,7 +393,17 @@ export function classifyOrphanReference(input: {
 
   if (occurrence.referenceKey) {
     const exact = exactProvenanceCandidates(input);
-    if (exact.length === 1 && input.candidatesExhaustive !== false) {
+    if (input.candidatesExhaustive === false) {
+      return {
+        ...occurrence,
+        handle,
+        recovery: 'review_required',
+        reason: 'The bounded candidate query cannot prove the provenance candidate is unique.',
+        candidateCount: exact.length,
+        recommendedDecision: 'defer_review',
+      };
+    }
+    if (exact.length === 1) {
       return {
         ...occurrence,
         handle,
@@ -415,9 +433,7 @@ export function classifyOrphanReference(input: {
       reason:
         exact.length > 1
           ? 'Multiple source-equivalent provenance candidates remain.'
-          : input.candidatesExhaustive === false
-            ? 'The bounded candidate query cannot prove the provenance candidate is unique.'
-            : 'No source-equivalent provenance candidate remains.',
+          : 'No source-equivalent provenance candidate remains.',
       candidateCount: exact.length,
       recommendedDecision: ARCHIVABLE_REFERENCE_COLLECTIONS.has(occurrence.ownerCollection)
         ? 'archive_owner'
