@@ -157,6 +157,54 @@ describe('app security runtime classification', () => {
     expect(app.get('query parser')).toBe('simple');
   });
 
+  it('initializes anonymous rate-limit sessions only for API requests', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      const requestHeaders = { 'x-forwarded-proto': 'https' };
+      const staticResponse = await fetch(`http://127.0.0.1:${address.port}/missing.js`, {
+        headers: requestHeaders,
+      });
+      const apiResponse = await fetch(`http://127.0.0.1:${address.port}/api/missing`, {
+        headers: requestHeaders,
+      });
+      const readSession = (response: Response) => {
+        const sessionCookie = response.headers
+          .getSetCookie()
+          .find((cookie) => cookie.startsWith('__Host-session='));
+        const encodedSession = sessionCookie?.split(';', 1)[0].split('=', 2)[1];
+        return encodedSession
+          ? (JSON.parse(Buffer.from(encodedSession, 'base64').toString('utf8')) as Record<
+              string,
+              unknown
+            >)
+          : {};
+      };
+
+      expect(readSession(staticResponse)).not.toHaveProperty('rateLimitId');
+      expect(readSession(apiResponse).rateLimitId).toMatch(/^[a-f0-9]{32}$/);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
+
   it('serves public config with mounted browser hardening headers and no source revision fingerprint', async () => {
     vi.doUnmock('cookie-session');
     vi.doMock('../services/configService', () => ({

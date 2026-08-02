@@ -299,7 +299,7 @@ const app = express()
       sameSite: 'lax',
     }),
   )
-  .use(ensureAnonymousRateLimitId)
+  .use('/api', ensureAnonymousRateLimitId)
   // cookie-session is stateless and does not implement session.regenerate /
   // session.save, which Passport >= 0.6 calls during req.logIn (session-
   // fixation hardening). Without these shims every login throws
