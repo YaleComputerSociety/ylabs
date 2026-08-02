@@ -198,7 +198,9 @@ function buildSamePiVisibilityDedupeRows(args: {
     .map(([userId, rows]) => {
       const entityIds = new Set<string>();
       const entities = [
-        ...rows.map((row) => entityById.get(serializedDocumentId(row.researchEntityId) || '')).filter(Boolean),
+        ...rows
+          .map((row) => entityById.get(serializedDocumentId(row.researchEntityId) || ''))
+          .filter(Boolean),
         ...(args.extraEntitiesByUserId?.get(userId) || []),
       ]
         .filter((entity: any) => {
@@ -298,37 +300,37 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   const entityIds = entities.map((entity: any) => entity._id);
   const [leadRows, accessRows, pathwayRows, postedRows, trustedNarrativeFieldsByEntityId] =
     await Promise.all([
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId userId name role')
-      .lean(),
-    AccessSignal.aggregate([
-      { $match: { researchEntityId: { $in: entityIds }, archived: false } },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    EntryPathway.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
+      ResearchGroupMember.find({
+        researchEntityId: { $in: entityIds },
+        isCurrentMember: { $ne: false },
+        role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
+      })
+        .select('researchEntityId userId name role')
+        .lean(),
+      AccessSignal.aggregate([
+        { $match: { researchEntityId: { $in: entityIds }, archived: false } },
+        { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      ]),
+      EntryPathway.aggregate([
+        {
+          $match: {
+            researchEntityId: { $in: entityIds },
+            archived: false,
+            pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
+          },
         },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    PostedOpportunity.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          status: { $in: ['OPEN', 'ROLLING'] },
+        { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      ]),
+      PostedOpportunity.aggregate([
+        {
+          $match: {
+            researchEntityId: { $in: entityIds },
+            archived: false,
+            status: { $in: ['OPEN', 'ROLLING'] },
+          },
         },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
+        { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      ]),
       trustedResearchScopeNarrativeFieldsByEntityId(entities as any[]),
     ]);
 
@@ -337,7 +339,9 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     new Set((leadRows as any[]).map((row) => serializedDocumentId(row.userId)).filter(Boolean)),
   );
   const leadUsers = leadUserIds.length
-    ? await User.find({ _id: { $in: leadUserIds } }).select('fname lname').lean()
+    ? await User.find({ _id: { $in: leadUserIds } })
+        .select('fname lname')
+        .lean()
     : [];
   const leadUsersById = new Map(
     (leadUsers as any[]).flatMap((user) => {
@@ -385,19 +389,17 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       return id ? [[id, entity] as const] : [];
     }),
   );
-  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds(
-    [
-      ...buildSamePiVisibilityDedupeRows({
-        entities: entities as any[],
-        leadRows: leadRows as any[],
-        extraEntitiesByUserId: profileAreaEntitiesByUserId,
-      }),
-      ...buildNameOnlyVisibilityDedupeRows({
-        entities: entities as any[],
-        leadsByEntityId,
-      }),
-    ],
-  );
+  const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds([
+    ...buildSamePiVisibilityDedupeRows({
+      entities: entities as any[],
+      leadRows: leadRows as any[],
+      extraEntitiesByUserId: profileAreaEntitiesByUserId,
+    }),
+    ...buildNameOnlyVisibilityDedupeRows({
+      entities: entities as any[],
+      leadsByEntityId,
+    }),
+  ]);
   const concreteLeadEntityUserIds = new Set<string>();
   for (const row of leadRows as any[]) {
     const entity = entityById.get(serializedDocumentId(row.researchEntityId) || '');
@@ -419,11 +421,12 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       accessSignalCount: accessCounts.get(id) || 0,
       actionablePathwayCount: pathwayCounts.get(id) || 0,
       openPostedOpportunityCount: postedCounts.get(id) || 0,
-      duplicateRisk: hasProfileAreaShellDuplicateRisk({
-        entity,
-        leadMembers,
-        concreteLeadEntityUserIds,
-      }) || samePiDuplicateRiskEntityIds.has(id),
+      duplicateRisk:
+        hasProfileAreaShellDuplicateRisk({
+          entity,
+          leadMembers,
+          concreteLeadEntityUserIds,
+        }) || samePiDuplicateRiskEntityIds.has(id),
     });
     return {
       id,
@@ -534,34 +537,37 @@ async function main() {
   const counts: Record<string, number> = {};
   for (const update of [...research, ...programs]) increment(counts, update.tier);
 
-  const report = buildStudentVisibilityBackfillOutput({
-    mode: options.apply ? 'apply' : 'dry-run',
-    collection: options.collection,
-    version: STUDENT_VISIBILITY_VERSION,
-    scanned: {
-      research: research.length,
-      programs: programs.length,
-    },
-    counts,
-    diagnostics: {
-      research: researchReport,
-      programs: programReport,
-      applySafety: {
-        safeToApply: applyBlockers.length === 0,
-        recommendation:
-          applyBlockers.length === 0 ? 'apply' : 'repair_source_materialization_first',
-        blockers: applyBlockers,
+  const report = buildStudentVisibilityBackfillOutput(
+    {
+      mode: options.apply ? 'apply' : 'dry-run',
+      collection: options.collection,
+      version: STUDENT_VISIBILITY_VERSION,
+      scanned: {
+        research: research.length,
+        programs: programs.length,
+      },
+      counts,
+      diagnostics: {
+        research: researchReport,
+        programs: programReport,
+        applySafety: {
+          safeToApply: applyBlockers.length === 0,
+          recommendation:
+            applyBlockers.length === 0 ? 'apply' : 'repair_source_materialization_first',
+          blockers: applyBlockers,
+        },
+      },
+      samples: {
+        research: research.slice(0, 20),
+        programs: programs.slice(0, 20),
       },
     },
-    samples: {
-      research: research.slice(0, 20),
-      programs: programs.slice(0, 20),
+    {
+      environment: guard.environment,
+      db: guard.dbLabel,
+      options,
     },
-  }, {
-    environment: guard.environment,
-    db: guard.dbLabel,
-    options,
-  });
+  );
 
   console.log(JSON.stringify(report, null, 2));
   writeStudentVisibilityBackfillOutput(report, options.output);

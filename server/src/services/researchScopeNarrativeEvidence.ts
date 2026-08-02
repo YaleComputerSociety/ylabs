@@ -37,7 +37,10 @@ export async function trustedResearchScopeNarrativeFieldsByEntityId(
     .select('_id entityType entityId field value sourceId')
     .lean();
   const observationsById = new Map(
-    (observations as any[]).map((observation) => [serializedDocumentId(observation._id), observation]),
+    (observations as any[]).map((observation) => [
+      serializedDocumentId(observation._id),
+      observation,
+    ]),
   );
   const trusted = new Map<string, Set<string>>();
 

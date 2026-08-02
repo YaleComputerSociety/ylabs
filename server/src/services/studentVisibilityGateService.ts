@@ -890,51 +890,51 @@ async function planResearchEntityGateUpdates(
 
   const [leadRows, accessRows, pathwayRows, postedRows, trustedNarrativeFieldsByEntityId] =
     await Promise.all([
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId userId facultyMemberId name role')
-      .lean(),
-    AccessSignal.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          sourceUrl: { $regex: '^https?://', $options: 'i' },
+      ResearchGroupMember.find({
+        researchEntityId: { $in: entityIds },
+        archived: { $ne: true },
+        isCurrentMember: { $ne: false },
+        role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
+      })
+        .select('researchEntityId userId facultyMemberId name role')
+        .lean(),
+      AccessSignal.aggregate([
+        {
+          $match: {
+            researchEntityId: { $in: entityIds },
+            archived: false,
+            sourceUrl: { $regex: '^https?://', $options: 'i' },
+          },
         },
-      },
-      {
-        $group: {
-          _id: '$researchEntityId',
-          count: { $sum: 1 },
-          sourceNames: { $addToSet: '$sourceName' },
+        {
+          $group: {
+            _id: '$researchEntityId',
+            count: { $sum: 1 },
+            sourceNames: { $addToSet: '$sourceName' },
+          },
         },
-      },
-    ]),
-    EntryPathway.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
-          sourceUrls: { $elemMatch: { $regex: '^https?://', $options: 'i' } },
+      ]),
+      EntryPathway.aggregate([
+        {
+          $match: {
+            researchEntityId: { $in: entityIds },
+            archived: false,
+            pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
+            sourceUrls: { $elemMatch: { $regex: '^https?://', $options: 'i' } },
+          },
         },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    PostedOpportunity.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          status: { $in: ['OPEN', 'ROLLING'] },
+        { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      ]),
+      PostedOpportunity.aggregate([
+        {
+          $match: {
+            researchEntityId: { $in: entityIds },
+            archived: false,
+            status: { $in: ['OPEN', 'ROLLING'] },
+          },
         },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
+        { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
+      ]),
       trustedResearchScopeNarrativeFieldsByEntityId(entities as any[]),
     ]);
 
