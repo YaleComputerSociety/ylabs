@@ -87,7 +87,15 @@ describe('buildObservationFingerprint', () => {
       entityType: 'researchEntity',
       entityKey: 'smith-lab',
     };
-    for (const field of ['fullDescription', 'shortDescription', 'researchAreas', 'methods']) {
+    for (const field of [
+      'fullDescription',
+      'shortDescription',
+      'researchAreas',
+      'methods',
+      'recentGrants',
+      'recentGrantCount',
+      'fundingAgencies',
+    ]) {
       const v1 = buildObservationFingerprint({ ...base, field, value: 'The Smith Lab studies X.' });
       const v2 = buildObservationFingerprint({
         ...base,

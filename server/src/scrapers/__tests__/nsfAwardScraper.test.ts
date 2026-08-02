@@ -11,6 +11,7 @@ import {
   NsfAwardScraper,
   awardToRecord,
   findUserForPi,
+  resolveUserForPi,
   groupAwardsByPi,
   maxStartDate,
   parseCoPdpiLine,
@@ -278,6 +279,21 @@ describe('piSlug', () => {
 // ---------------------------------------------------------------------------
 
 describe('findUserForPi', () => {
+  it('distinguishes absent and ambiguous identities', async () => {
+    expect(
+      await resolveUserForPi(
+        { firstName: 'Parker', lastName: 'Grant' },
+        vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+      ),
+    ).toEqual({ status: 'absent' });
+    expect(
+      await resolveUserForPi(
+        { firstName: 'Parker', lastName: 'Grant' },
+        vi.fn().mockResolvedValue([{ _id: 'a' }, { _id: 'b' }]),
+      ),
+    ).toEqual({ status: 'ambiguous' });
+  });
+
   it('returns the matched user id on exact lname+fname', async () => {
     const finder = vi.fn(async () => [{ _id: 'user-1' }]);
     const id = await findUserForPi(

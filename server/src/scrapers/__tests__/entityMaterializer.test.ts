@@ -31,10 +31,11 @@ describe('entityMaterializer post-materialization metrics', () => {
   it('merges cross-source grant evidence by stable grant id', () => {
     expect(
       aggregateResearchEntityGrantEvidence([
-        { field: 'recentGrants', value: [{ id: 'NIH-1' }, { id: 'SHARED', title: 'old' }] },
-        { field: 'recentGrants', value: [{ id: 'NSF-1' }, { id: 'shared', title: 'new' }] },
-        { field: 'fundingAgencies', value: ['NIH'] },
-        { field: 'fundingAgencies', value: ['NSF', 'nih'] },
+        { field: 'recentGrants', sourceName: 'nih', observedAt: new Date('2025-01-01'), value: [{ id: 'AGED-OUT' }] },
+        { field: 'recentGrants', sourceName: 'nih', observedAt: new Date('2026-01-01'), value: [{ id: 'NIH-1' }, { id: 'SHARED', title: 'old' }] },
+        { field: 'recentGrants', sourceName: 'nsf', observedAt: new Date('2026-01-01'), value: [{ id: 'NSF-1' }, { id: 'shared', title: 'new' }] },
+        { field: 'fundingAgencies', sourceName: 'nih', observedAt: new Date('2026-01-01'), value: ['NIH'] },
+        { field: 'fundingAgencies', sourceName: 'nsf', observedAt: new Date('2026-01-01'), value: ['NSF', 'nih'] },
       ]),
     ).toEqual({
       recentGrants: [{ id: 'NIH-1' }, { id: 'shared', title: 'new' }, { id: 'NSF-1' }],

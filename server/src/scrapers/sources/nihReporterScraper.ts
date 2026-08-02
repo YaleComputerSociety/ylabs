@@ -261,9 +261,22 @@ export async function findUserForPi(
   canonicalName: string,
   userModel: { find: typeof User.find } = User,
 ): Promise<{ _id: string; netid?: string; researchHomeEligible?: boolean } | null> {
-  if (!canonicalName) return null;
+  const result = await resolveUserForPi(canonicalName, userModel);
+  return result.status === 'matched' ? result.user : null;
+}
+
+export type NihPiUserResolution =
+  | { status: 'matched'; user: { _id: string; netid?: string; researchHomeEligible?: boolean } }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
+export async function resolveUserForPi(
+  canonicalName: string,
+  userModel: { find: typeof User.find } = User,
+): Promise<NihPiUserResolution> {
+  if (!canonicalName) return { status: 'absent' };
   const { first, last } = splitName(canonicalName);
-  if (!last) return null;
+  if (!last) return { status: 'absent' };
   const lnameRe = new RegExp(`^${escapeRegex(last)}$`, 'i');
   const candidates: any[] = await userModel
     .find(
@@ -275,14 +288,15 @@ export async function findUserForPi(
     )
     .limit(10)
     .lean();
-  if (!first) return null;
+  if (!first) return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
   // Exact first name match wins.
   const exact = candidates.filter(
     (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
   );
   if (exact.length === 1) {
-    return userPiMatchResult(exact[0]);
+    return { status: 'matched', user: userPiMatchResult(exact[0]) };
   }
+  if (exact.length > 1) return { status: 'ambiguous' };
 
   // Fall back to a given-name prefix. Only use a bare first initial when the
   // source itself only provided an initial; otherwise same-initial matches are
@@ -292,10 +306,11 @@ export async function findUserForPi(
   const prefix = (isInitialOnly ? firstToken : first).toLowerCase();
   const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
   if (byPrefix.length === 1) {
-    return userPiMatchResult(byPrefix[0]);
+    return { status: 'matched', user: userPiMatchResult(byPrefix[0]) };
   }
-  // Ambiguous — refuse to guess.
-  return null;
+  return byPrefix.length > 1 || candidates.length > 0
+    ? { status: 'ambiguous' }
+    : { status: 'absent' };
 }
 
 function userPiMatchResult(candidate: any): {
@@ -562,14 +577,16 @@ export class NihReporterScraper implements IScraper {
     let unmatched = 0;
     let processed = 0;
     for (const [piName, grants] of piEntries) {
-      let matchedUser: { _id: string; netid?: string } | null = null;
+      let userResolution: NihPiUserResolution = { status: 'ambiguous' };
       try {
-        matchedUser = await findUserForPi(piName, userModel);
+        userResolution = await resolveUserForPi(piName, userModel);
       } catch (err: any) {
         ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
       }
-      if (matchedUser) matched++;
-      else unmatched++;
+      const matchedUser = userResolution.status === 'matched' ? userResolution.user : null;
+      if (userResolution.status === 'matched') matched++;
+      else if (userResolution.status === 'absent') unmatched++;
+      else continue;
 
       const researchHomeResolution = matchedUser
         ? await researchHomeResolver(matchedUser._id)

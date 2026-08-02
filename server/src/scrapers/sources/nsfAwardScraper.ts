@@ -316,9 +316,22 @@ export async function findUserForPi(
   name: { firstName: string; lastName: string },
   finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>> = defaultUserFinder,
 ): Promise<string | null> {
-  const first = (name.firstName || '').trim();
-  const last = (name.lastName || '').trim();
-  if (!last) return null;
+  const result = await resolveUserForPi(name, finder);
+  return result.status === 'matched' ? result.userId : null;
+}
+
+export type NsfPiUserResolution =
+  | { status: 'matched'; userId: string }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
+export async function resolveUserForPi(
+  pi: { firstName?: string; lastName?: string },
+  finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>> = defaultUserFinder,
+): Promise<NsfPiUserResolution> {
+  const first = (pi.firstName || '').trim();
+  const last = (pi.lastName || '').trim();
+  if (!last) return { status: 'absent' };
 
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const lnameRe = new RegExp(`^${escapeRe(last)}$`, 'i');
@@ -332,9 +345,9 @@ export async function findUserForPi(
       fname: fnameRe,
       userType: userTypeFilter,
     });
-    if (matches.length === 1) return String(matches[0]._id);
+    if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     // multiple exact matches → ambiguous, give up (don't fall through to initial)
-    if (matches.length > 1) return null;
+    if (matches.length > 1) return { status: 'ambiguous' };
   }
 
   // pass 2: exact lname + given-name prefix. Only fall back to a bare initial
@@ -349,9 +362,10 @@ export async function findUserForPi(
       fname: initRe,
       userType: userTypeFilter,
     });
-    if (matches.length === 1) return String(matches[0]._id);
+    if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
+    if (matches.length > 1) return { status: 'ambiguous' };
   }
-  return null;
+  return { status: 'absent' };
 }
 
 async function defaultUserFinder(
@@ -597,10 +611,12 @@ export class NsfAwardScraper implements IScraper {
 
     for (const group of groups) {
       // 3a. Match PI to existing User (best-effort).
-      const piUserId = await findUserForPi(
+      const userResolution = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
         finder,
       );
+      if (userResolution.status === 'ambiguous') continue;
+      const piUserId = userResolution.status === 'matched' ? userResolution.userId : null;
       if (piUserId) piMatched++;
       const researchHomeResolution = piUserId
         ? await researchHomeResolver(piUserId)

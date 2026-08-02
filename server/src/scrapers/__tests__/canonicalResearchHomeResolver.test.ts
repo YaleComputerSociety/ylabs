@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   isOfficialResearchHomeCandidate,
+  hasIneligibleLeadMembership,
   resolveCanonicalResearchHome,
   selectCanonicalResearchHomeSlug,
 } from '../canonicalResearchHomeResolver';
 
 describe('canonicalResearchHomeResolver', () => {
+  it('rejects archived and non-current lead memberships', () => {
+    expect(hasIneligibleLeadMembership([{ archived: true, isCurrentMember: true }])).toBe(true);
+    expect(hasIneligibleLeadMembership([{ archived: false, isCurrentMember: false }])).toBe(true);
+    expect(hasIneligibleLeadMembership([{ archived: false, isCurrentMember: true }])).toBe(false);
+  });
+
   it('selects one official non-grant research home', () => {
     expect(
       selectCanonicalResearchHomeSlug([

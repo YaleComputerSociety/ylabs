@@ -18,7 +18,18 @@ export function mongoTargetFingerprint(mongoUrl: string | undefined): string {
   let identity: string;
   try {
     const parsed = new URL(mongoUrl);
-    identity = `${parsed.hostname.toLowerCase()}/${parsed.pathname.replace(/^\//, '').toLowerCase()}`;
+    const topologyKeys = ['directConnection', 'loadBalanced', 'replicaSet', 'srvServiceName'];
+    const topology = topologyKeys
+      .flatMap((key) => parsed.searchParams.getAll(key).map((value) => [key.toLowerCase(), value.toLowerCase()]))
+      .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+        leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue),
+      );
+    identity = JSON.stringify({
+      protocol: parsed.protocol.toLowerCase(),
+      host: parsed.host.toLowerCase(),
+      database: parsed.pathname.replace(/^\//, '').toLowerCase(),
+      topology,
+    });
   } catch {
     identity = mongoUrl.split('?')[0].replace(/\/\/.*@/, '//');
   }

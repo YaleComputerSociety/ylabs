@@ -19,6 +19,7 @@ import {
   grantToRecord,
   piGrantsToObservations,
   findUserForPi,
+  resolveUserForPi,
   type NihGrant,
 } from '../sources/nihReporterScraper';
 import type { ScraperContext, ObservationInput } from '../types';
@@ -237,6 +238,19 @@ function mockUserModel(rows: any[]) {
 }
 
 describe('findUserForPi', () => {
+  it('distinguishes absent and ambiguous identities', async () => {
+    expect(await resolveUserForPi('Amy Arnsten', mockUserModel([]))).toEqual({ status: 'absent' });
+    expect(
+      await resolveUserForPi(
+        'Amy Arnsten',
+        mockUserModel([
+          { _id: 'u1', fname: 'Amy', lname: 'Arnsten' },
+          { _id: 'u2', fname: 'Amy', lname: 'Arnsten' },
+        ]),
+      ),
+    ).toEqual({ status: 'ambiguous' });
+  });
+
   it('returns null when no candidates match the surname', async () => {
     const um = mockUserModel([]);
     expect(await findUserForPi('Amy Arnsten', um)).toBeNull();

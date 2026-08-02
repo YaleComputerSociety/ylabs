@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { assertScriptApplyAllowed } from '../scriptWriteGuards';
+import { assertScriptApplyAllowed, mongoTargetFingerprint } from '../scriptWriteGuards';
 
 describe('assertScriptApplyAllowed', () => {
+  it('distinguishes Mongo ports and topology options', () => {
+    const base = mongoTargetFingerprint('mongodb://localhost:27017/Development?replicaSet=alpha');
+    expect(mongoTargetFingerprint('mongodb://localhost:27018/Development?replicaSet=alpha')).not.toBe(base);
+    expect(mongoTargetFingerprint('mongodb://localhost:27017/Development?replicaSet=beta')).not.toBe(base);
+  });
+
   it('allows dry-runs in production without confirmation', () => {
     expect(
       assertScriptApplyAllowed({

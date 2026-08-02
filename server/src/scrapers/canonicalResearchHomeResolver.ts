@@ -22,6 +22,14 @@ export type CanonicalResearchHomeResolution =
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
+export function hasIneligibleLeadMembership(
+  memberships: Array<{ archived?: unknown; isCurrentMember?: unknown }>,
+): boolean {
+  return memberships.some(
+    (membership) => membership.archived === true || membership.isCurrentMember === false,
+  );
+}
+
 export function isOfficialResearchHomeCandidate(candidate: ResearchHomeCandidate): boolean {
   const slug = text(candidate.slug);
   if (!slug || candidate.archived === true || GRANT_SHELL_SLUG.test(slug)) return false;
@@ -61,8 +69,11 @@ export async function resolveCanonicalResearchHomeForUser(
     userId,
     role: { $in: LEAD_ROLES },
   })
-    .select('researchEntityId')
+    .select('researchEntityId isCurrentMember archived')
     .lean();
+  if (hasIneligibleLeadMembership(memberships)) {
+    return { status: 'ineligible' };
+  }
   const entityIds = Array.from(
     new Set(memberships.map((membership) => String(membership.researchEntityId || '')).filter(Boolean)),
   );
@@ -71,6 +82,7 @@ export async function resolveCanonicalResearchHomeForUser(
   const entities = await ResearchEntity.find({ _id: { $in: entityIds } })
     .select('slug website websiteUrl sourceUrls archived')
     .lean();
+  if (entities.length === 0) return { status: 'ineligible' };
   return resolveCanonicalResearchHome(
     entities.map((entity) => ({
       slug: entity.slug,

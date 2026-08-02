@@ -266,13 +266,26 @@ const grantIdentity = (value: unknown): string => {
 export function aggregateResearchEntityGrantEvidence(
   observations: MaterializerObservationLike[],
 ): { recentGrants?: unknown[]; fundingAgencies?: string[] } {
+  const latest = new Map<string, MaterializerObservationLike>();
+  for (const observation of observations) {
+    if (observation.field !== 'recentGrants' && observation.field !== 'fundingAgencies') continue;
+    const key = `${observation.sourceName || ''}:${observation.field}`;
+    const current = latest.get(key);
+    if (!current || (observation.observedAt?.getTime() || 0) >= (current.observedAt?.getTime() || 0)) {
+      latest.set(key, observation);
+    }
+  }
   const grants = new Map<string, unknown>();
   const agencies = new Map<string, string>();
-  for (const observation of observations) {
+  let hasGrantSnapshot = false;
+  let hasAgencySnapshot = false;
+  for (const observation of latest.values()) {
     if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
+      hasGrantSnapshot = true;
       for (const grant of observation.value) grants.set(grantIdentity(grant), grant);
     }
     if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
+      hasAgencySnapshot = true;
       for (const agency of observation.value) {
         const normalized = textValue(agency);
         if (normalized) agencies.set(normalized.toLowerCase(), normalized);
@@ -280,8 +293,8 @@ export function aggregateResearchEntityGrantEvidence(
     }
   }
   return {
-    ...(grants.size > 0 ? { recentGrants: [...grants.values()] } : {}),
-    ...(agencies.size > 0 ? { fundingAgencies: [...agencies.values()] } : {}),
+    ...(hasGrantSnapshot ? { recentGrants: [...grants.values()] } : {}),
+    ...(hasAgencySnapshot ? { fundingAgencies: [...agencies.values()] } : {}),
   };
 }
 
