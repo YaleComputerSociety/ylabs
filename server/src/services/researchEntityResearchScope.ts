@@ -35,8 +35,8 @@ const SERVICE_OR_INSTRUCTIONAL_SUPPORT =
   /\b(teaching and learning|teaching support|instructional support|faculty development|educational development|pedagogical support|course design|teaching consultation|teaching consultations|writing center|tutoring|academic support)\b/i;
 
 const CONDUCTS_OR_ORGANIZES_RESEARCH = [
-  /\b(conducts?|leads?|coordinates?|organizes?|operates?|sponsors?)\b(?:\s+[\w-]+){0,5}\s+\b(research|research (?:activities|programs?|projects?|studies)|empirical studies|fieldwork|clinical trials?|data collection)\b/i,
-  /\b(research|research (?:activities|programs?|projects?|studies)|empirical studies|fieldwork|clinical trials?|data collection)\b(?:\s+[\w-]+){0,5}\s+\b(is|are)\s+(?:actively\s+)?(conducted|led|coordinated|organized|operated|sponsored)\b/i,
+  /\b(conducts?|leads?|coordinates?|organizes?|operates?|sponsors?)\s+(?:(?:empirical|scientific|scholarly|clinical|interdisciplinary)\s+){0,2}(?:research(?:\s+(?:activities|programs?|projects?|studies))?|studies|fieldwork|trials?|data collection)\b/i,
+  /\b(?:(?:empirical|scientific|scholarly|clinical|interdisciplinary)\s+){0,2}(?:research(?:\s+(?:activities|programs?|projects?|studies))?|studies|fieldwork|trials?|data collection)\s+(?:is|are)\s+(?:actively\s+)?(?:conducted|led|coordinated|organized|operated|sponsored)\b/i,
 ];
 
 const text = (value: unknown): string =>
