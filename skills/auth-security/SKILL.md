@@ -37,23 +37,23 @@ Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local 
 
 Defined in `server/src/middleware/auth.ts`.
 
-| Middleware                     | Check                                                                                             |
-| ------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `isAuthenticated`              | `req.user` exists.                                                                                |
-| `isAdmin`                      | `userType === 'admin'`.                                                                           |
-| `isProfessor`                  | `userType` is `professor`, `faculty`, or `admin`.                                                 |
-| `isTrustworthy`                | confirmed admin, professor, or faculty.                                                           |
-| `isConfirmed`                  | `userConfirmed === true`.                                                                         |
-| `canCreateListing`             | professor, faculty, or admin plus confirmed user and verified profile.                            |
+| Middleware | Check |
+|------------|-------|
+| `isAuthenticated` | `req.user` exists. |
+| `isAdmin` | `userType === 'admin'`. |
+| `isProfessor` | `userType` is `professor`, `faculty`, or `admin`. |
+| `isTrustworthy` | confirmed admin, professor, or faculty. |
+| `isConfirmed` | `userConfirmed === true`. |
+| `canCreateListing` | professor, faculty, or admin plus confirmed user and verified profile. |
 | `canManagePostedOpportunities` | professor or faculty plus confirmed user and verified profile; admins moderate but cannot author. |
 
 Client route guards:
 
-| Guard            | Purpose                                                            |
-| ---------------- | ------------------------------------------------------------------ |
-| `PrivateRoute`   | Auth required; redirects unknown users when `unknownBlocked=true`. |
-| `AdminRoute`     | Admin only.                                                        |
-| `UnprivateRoute` | No auth required.                                                  |
+| Guard | Purpose |
+|-------|---------|
+| `PrivateRoute` | Auth required; redirects unknown users when `unknownBlocked=true`. |
+| `AdminRoute` | Admin only. |
+| `UnprivateRoute` | No auth required. |
 
 ## Validation middleware
 
@@ -71,13 +71,13 @@ Exported from `server/src/middleware/`:
 
 Applied globally or to `/api` in `app.ts`.
 
-| Middleware                         | Purpose                                                                          |
-| ---------------------------------- | -------------------------------------------------------------------------------- |
-| `securityHeaders`                  | CSP, permissions policy, and `X-*` headers.                                      |
-| `csrfOriginGuard(allowList)`       | Rejects unsafe-method `/api` requests from non-allowlisted origins or referrers. |
-| `sanitizeMongo`                    | Strips Mongo operator and prototype-pollution keys from body/query.              |
-| `createCorsOriginHandler`          | Dynamic CORS origin handler.                                                     |
-| `errorHandler` / `notFoundHandler` | Terminal error and 404 handlers.                                                 |
+| Middleware | Purpose |
+|------------|---------|
+| `securityHeaders` | CSP, permissions policy, and `X-*` headers. |
+| `csrfOriginGuard(allowList)` | Rejects unsafe-method `/api` requests from non-allowlisted origins or referrers. |
+| `sanitizeMongo` | Strips Mongo operator and prototype-pollution keys from body/query. |
+| `createCorsOriginHandler` | Dynamic CORS origin handler. |
+| `errorHandler` / `notFoundHandler` | Terminal error and 404 handlers. |
 
 SSRF protection lives in `server/src/utils/ssrfGuard.ts`.
 Any outbound fetch to a host derived from user input or stored data must go through it.
@@ -88,11 +88,11 @@ Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate
 Rate limiters are keyed by authenticated user `netId`, with strict Cloudflare or Render original visitor-IP extraction for unauthenticated requests and `req.ip` fallback for missing or malformed edge headers.
 All limiters are skipped in CI, development, and test.
 
-| Limiter                  | Scope                                                        | Limit               |
-| ------------------------ | ------------------------------------------------------------ | ------------------- |
-| `apiLimiter`             | All `/api` except `/api/cas` and public discovery mounts.    | 200 per 15 minutes. |
-| `publicDiscoveryLimiter` | `/api/research` and `/api/opportunities`.                    | 300 per 15 minutes. |
-| `writeLimiter`           | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes.  |
+| Limiter | Scope | Limit |
+|---------|-------|-------|
+| `apiLimiter` | All `/api` except `/api/cas` and public discovery mounts. | 200 per 15 minutes. |
+| `publicDiscoveryLimiter` | `/api/research` and `/api/opportunities`. | 300 per 15 minutes. |
+| `writeLimiter` | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes. |
 
 Faculty opportunity routes repeat ownership and conflict checks in the service layer.
 Only current, non-archived PI, co-PI, director, or co-director memberships tied to the authenticated user qualify, and identity conflicts fail closed.
@@ -101,11 +101,11 @@ Only current, non-archived PI, co-PI, director, or co-director memberships tied 
 
 Custom errors in `server/src/utils/errors.ts`:
 
-| Error                       | Status |
-| --------------------------- | ------ |
-| `NotFoundError`             | 404    |
-| `ObjectIdError`             | 404    |
-| `IncorrectPermissionsError` | 403    |
+| Error | Status |
+|-------|--------|
+| `NotFoundError` | 404 |
+| `ObjectIdError` | 404 |
+| `IncorrectPermissionsError` | 403 |
 
 The error handler maps Mongoose `ValidationError` to 400, `CastError` to 400, MongoDB duplicate key 11000 to 409, and everything else to 500.
 Development responses include full details.
@@ -114,7 +114,7 @@ Production responses are generic.
 ## Sensitive areas
 
 - `server/.env` and `client/.env` contain credentials, API keys, and database URLs.
-  Never commit them.
+Never commit them.
 - `server/src/passport.ts` controls CAS auth and user creation.
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
@@ -124,30 +124,30 @@ Production responses are generic.
 
 ### Server
 
-| Variable                        | Required       | Purpose                                                        |
-| ------------------------------- | -------------- | -------------------------------------------------------------- |
-| `MONGODBURL`                    | Yes            | MongoDB connection string.                                     |
-| `MONGODBURL_MIGRATION`          | Migration mode | Secondary DB for dual-DB migrations.                           |
-| `SESSION_SECRET`                | Yes            | Cookie session signing key.                                    |
-| `AUTH_DEBUG`                    | No             | Enables verbose auth tracing when `true`.                      |
-| `API_MODE`                      | No             | `productionMigration` for dual-DB migration mode.              |
-| `SSOBASEURL`                    | Yes            | Yale CAS URL.                                                  |
-| `SERVER_BASE_URL`               | Yes            | Public server URL for CAS callbacks.                           |
-| `YALIES_API_KEY`                | No             | API key for yalies.io.                                         |
-| `OPENAI_API_KEY`                | No             | OpenAI key for Meilisearch embedder config and LLM extractors. |
-| `MEILISEARCH_HOST`              | No             | Meilisearch host.                                              |
-| `MEILISEARCH_API_KEY`           | No             | Meilisearch API key.                                           |
-| `MEILISEARCH_INDEX_PREFIX`      | No             | Environment index prefix.                                      |
-| `PORT`                          | No             | Server port, default 4000.                                     |
-| `SCRAPER_ENV`                   | No             | Scraper write guards.                                          |
-| `ALLOW_NON_PROD_SCRAPER_WRITES` | No             | Enables scraper writes to non-prod DBs.                        |
-| `CONFIRM_PROD_SCRAPE`           | No             | Enables production scraper writes with production env.         |
-| `GATE_SCORECARD_MAX_AGE_HOURS`  | No             | Max age before a gate scorecard is stale.                      |
-| `GATE_REFRESH_INTERVAL_MINUTES` | No             | Positive value enables in-process gate refresh.                |
-| `GATE_REFRESH_SKIP_HEAVY`       | No             | Skips heavy gate refresh work when `true`.                     |
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `MONGODBURL` | Yes | MongoDB connection string. |
+| `MONGODBURL_MIGRATION` | Migration mode | Secondary DB for dual-DB migrations. |
+| `SESSION_SECRET` | Yes | Cookie session signing key. |
+| `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
+| `API_MODE` | No | `productionMigration` for dual-DB migration mode. |
+| `SSOBASEURL` | Yes | Yale CAS URL. |
+| `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
+| `YALIES_API_KEY` | No | API key for yalies.io. |
+| `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
+| `MEILISEARCH_HOST` | No | Meilisearch host. |
+| `MEILISEARCH_API_KEY` | No | Meilisearch API key. |
+| `MEILISEARCH_INDEX_PREFIX` | No | Environment index prefix. |
+| `PORT` | No | Server port, default 4000. |
+| `SCRAPER_ENV` | No | Scraper write guards. |
+| `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
+| `CONFIRM_PROD_SCRAPE` | No | Enables production scraper writes with production env. |
+| `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
+| `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
+| `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |
 
 ### Client
 
-| Variable          | Required | Purpose          |
-| ----------------- | -------- | ---------------- |
-| `VITE_APP_SERVER` | Yes      | Backend API URL. |
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `VITE_APP_SERVER` | Yes | Backend API URL. |
