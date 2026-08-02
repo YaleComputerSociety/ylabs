@@ -42,7 +42,7 @@ vi.mock('../../models/postedOpportunity', () => ({
 }));
 
 vi.mock('../../models/adminAccessReviewProjection', () => ({
-  ADMIN_ACCESS_REVIEW_PROJECTION_SCHEMA_VERSION: 1,
+  ADMIN_ACCESS_REVIEW_PROJECTION_SCHEMA_VERSION: 2,
   ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID: 'admin-access-review',
   AdminAccessReviewProjection: {
     findOneAndUpdate: vi.fn(() => {
@@ -100,7 +100,7 @@ describe('adminAccessReviewProjectionService', () => {
     mocks.projectionFindOneAndUpdateLean.mockResolvedValue({ generation: 4 });
     mocks.projectionUpdateOne.mockResolvedValue({ matchedCount: 1 });
     mocks.projectionDeleteOne.mockResolvedValue({ deletedCount: 1 });
-    mocks.stateLean.mockResolvedValue({ schemaVersion: 1, ready: true, rebuilding: false });
+    mocks.stateLean.mockResolvedValue({ schemaVersion: 2, ready: true, rebuilding: false });
     mocks.staleLean.mockResolvedValue(null);
   });
 
@@ -110,7 +110,14 @@ describe('adminAccessReviewProjectionService', () => {
 
     expect(value).toMatchObject({
       researchEntityId: id,
-      searchPrefixes: expect.arrayContaining(['example', 'lab', 'research', 'computer', 'machine']),
+      searchPrefixes: expect.arrayContaining([
+        'example',
+        'ale',
+        'lab',
+        'research',
+        'computer',
+        'machine',
+      ]),
       counts: {
         entryPathways: 3,
         accessSignals: 2,
@@ -119,7 +126,7 @@ describe('adminAccessReviewProjectionService', () => {
       },
       totalUnreviewed: 4,
       hasOfficialApplication: true,
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
     const pathwayPipeline = mocks.pathwayExec.mock.calls[0][0];
     const opportunityPipeline = mocks.opportunityExec.mock.calls[0][0];

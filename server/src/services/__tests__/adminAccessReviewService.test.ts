@@ -174,14 +174,30 @@ describe('adminAccessReviewService', () => {
     expect(mocks.researchEntityCountDocuments).not.toHaveBeenCalled();
   });
 
-  it('uses bounded indexed word prefixes for queue search', async () => {
+  it('uses bounded indexed substring prefixes for queue search', async () => {
     mocks.countDocuments.mockResolvedValue(0);
 
     await listAccessReviewEntities({ search: ' Example   Lab ' });
 
     expect(mocks.projectionFind).toHaveBeenCalledWith({
-      searchPrefixes: { $all: ['example', 'lab'] },
+      searchPrefixes: { $all: [/^example/, /^lab/] },
     });
+  });
+
+  it('returns no queue matches for punctuation-only search', async () => {
+    mocks.countDocuments.mockResolvedValue(0);
+
+    await listAccessReviewEntities({ search: '---' });
+
+    expect(mocks.projectionFind).toHaveBeenCalledWith({ searchPrefixes: { $in: [] } });
+  });
+
+  it('preserves substring matching within queue search words', async () => {
+    mocks.countDocuments.mockResolvedValue(0);
+
+    await listAccessReviewEntities({ search: 'ale' });
+
+    expect(mocks.projectionFind).toHaveBeenCalledWith({ searchPrefixes: { $all: [/^ale/] } });
   });
 
   it('filters and sorts the queue by aggregate unreviewed work without returning record data', async () => {
