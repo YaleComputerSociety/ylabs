@@ -377,7 +377,7 @@ export function classifyOrphanReference(input: {
           ? 'Multiple exact supersession candidates remain.'
           : input.candidatesExhaustive === false
             ? 'The bounded candidate query cannot prove the supersession candidate is unique.'
-          : 'No exact supersession candidate remains.',
+            : 'No exact supersession candidate remains.',
       candidateCount: exact.length,
       recommendedDecision: 'defer_review',
     };
@@ -417,7 +417,7 @@ export function classifyOrphanReference(input: {
           ? 'Multiple source-equivalent provenance candidates remain.'
           : input.candidatesExhaustive === false
             ? 'The bounded candidate query cannot prove the provenance candidate is unique.'
-          : 'No source-equivalent provenance candidate remains.',
+            : 'No source-equivalent provenance candidate remains.',
       candidateCount: exact.length,
       recommendedDecision: ARCHIVABLE_REFERENCE_COLLECTIONS.has(occurrence.ownerCollection)
         ? 'archive_owner'
