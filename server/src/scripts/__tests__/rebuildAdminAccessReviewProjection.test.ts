@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import {
   ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID,
   AdminAccessReviewProjection,
@@ -52,18 +53,28 @@ describe('rebuildAdminAccessReviewProjection CLI', () => {
   });
 });
 
-const liveMongoUrl = process.env.ACCESS_REVIEW_TEST_MONGO_URL;
+let memoryReplSet: MongoMemoryReplSet | undefined;
 
-describe.runIf(liveMongoUrl)('admin access-review projection reconciliation with MongoDB', () => {
-  beforeEach(async () => {
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(liveMongoUrl as string);
+describe('admin access-review projection reconciliation with MongoDB', () => {
+  beforeAll(async () => {
+    let mongoUrl = process.env.ACCESS_REVIEW_TEST_MONGO_URL;
+    if (!mongoUrl) {
+      memoryReplSet = await MongoMemoryReplSet.create({
+        binary: { version: '8.0.12' },
+        replSet: { count: 1, storageEngine: 'wiredTiger' },
+      });
+      mongoUrl = memoryReplSet.getUri('access_review_test');
     }
+    await mongoose.connect(mongoUrl);
+  }, 120_000);
+
+  beforeEach(async () => {
     await mongoose.connection.dropDatabase();
   });
 
   afterAll(async () => {
     await mongoose.disconnect();
+    await memoryReplSet?.stop();
   });
 
   it('applies a fingerprint-bound plan idempotently and rejects drift', async () => {
