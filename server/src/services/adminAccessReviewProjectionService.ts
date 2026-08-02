@@ -301,16 +301,16 @@ export async function refreshAdminAccessReviewProjection(
 export async function assertAdminAccessReviewProjectionReady(
   session?: mongoose.ClientSession,
 ): Promise<void> {
-  const [state, stale] = await Promise.all([
-    AdminAccessReviewProjectionState.findById(ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID)
-      .select('schemaVersion ready rebuilding')
-      .session(session || null)
-      .lean(),
-    AdminAccessReviewProjection.findOne({ stale: true })
-      .select('_id')
-      .session(session || null)
-      .lean(),
-  ]);
+  const state = await AdminAccessReviewProjectionState.findById(
+    ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID,
+  )
+    .select('schemaVersion ready rebuilding')
+    .session(session || null)
+    .lean();
+  const stale = await AdminAccessReviewProjection.findOne({ stale: true })
+    .select('_id')
+    .session(session || null)
+    .lean();
   if (
     !state ||
     (state as any).ready !== true ||

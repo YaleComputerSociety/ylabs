@@ -183,4 +183,26 @@ describe('adminAccessReviewProjectionService', () => {
       AdminAccessReviewProjectionUnavailableError,
     );
   });
+
+  it('checks readiness sequentially on a supplied transaction session', async () => {
+    let activeReads = 0;
+    let maximumConcurrentReads = 0;
+    const trackedRead = async <T>(value: T): Promise<T> => {
+      activeReads += 1;
+      maximumConcurrentReads = Math.max(maximumConcurrentReads, activeReads);
+      await Promise.resolve();
+      activeReads -= 1;
+      return value;
+    };
+    mocks.stateLean.mockImplementation(() =>
+      trackedRead({ schemaVersion: 2, ready: true, rebuilding: false }),
+    );
+    mocks.staleLean.mockImplementation(() => trackedRead(null));
+
+    await expect(
+      assertAdminAccessReviewProjectionReady({} as mongoose.ClientSession),
+    ).resolves.toBeUndefined();
+
+    expect(maximumConcurrentReads).toBe(1);
+  });
 });
