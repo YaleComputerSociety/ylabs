@@ -16,6 +16,9 @@ export interface ResearchEntityResearchScopeInput {
   fullDescription?: unknown;
   researchAreas?: unknown;
   keywords?: unknown;
+  website?: unknown;
+  websiteUrl?: unknown;
+  sourceUrls?: unknown;
 }
 
 export interface ResearchEntityResearchScopeResult {
@@ -37,6 +40,13 @@ const CONDUCTS_OR_ORGANIZES_RESEARCH = [
 const text = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+const hasHttpSource = (entity: ResearchEntityResearchScopeInput): boolean =>
+  [
+    entity.website,
+    entity.websiteUrl,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].some((value) => /^https?:\/\//i.test(text(value)));
+
 function isOrganizationalEntity(entity: ResearchEntityResearchScopeInput): boolean {
   return (
     ORGANIZATIONAL_KINDS.has(text(entity.kind).toLowerCase()) ||
@@ -52,8 +62,6 @@ export function classifyResearchEntityResearchScope(
   }
 
   const narrative = [
-    text(entity.name),
-    text(entity.displayName),
     text(entity.summary),
     text(entity.description),
     text(entity.shortDescription),
@@ -62,14 +70,19 @@ export function classifyResearchEntityResearchScope(
     .filter(Boolean)
     .join(' ');
   const serviceOrInstructionalSupport = SERVICE_OR_INSTRUCTIONAL_SUPPORT.test(narrative);
-  const positiveResearchEvidence = CONDUCTS_OR_ORGANIZES_RESEARCH.some((pattern) =>
+  const positiveResearchClaim = CONDUCTS_OR_ORGANIZES_RESEARCH.some((pattern) =>
     pattern.test(narrative),
   );
+  const positiveResearchEvidence = positiveResearchClaim && hasHttpSource(entity);
 
   if (serviceOrInstructionalSupport && !positiveResearchEvidence) {
     return {
       researchHomeEligible: false,
-      reasons: ['service_or_instructional_support', 'missing_positive_research_evidence'],
+      reasons: [
+        'service_or_instructional_support',
+        'missing_positive_research_evidence',
+        ...(positiveResearchClaim ? ['missing_source_backed_research_evidence'] : []),
+      ],
     };
   }
 
