@@ -84,6 +84,8 @@ describe('app security runtime classification', () => {
       keyGenerator: (req: {
         user?: unknown;
         ip?: string;
+        headers?: Record<string, string>;
+        socket: { remoteAddress?: string };
         session?: { rateLimitId?: unknown } | null;
       }) => string;
     }> = [];
@@ -116,30 +118,50 @@ describe('app security runtime classification', () => {
       },
     };
 
-    expect(keyGenerator({ user: { netId: 'AbC123' }, ip: '127.0.0.1' })).toBe('user:abc123');
-    expect(keyGenerator({ user: { netId: objectNetId }, ip: '203.0.113.7' })).toBe(
-      'ip:ip-key:203.0.113.7',
-    );
+    expect(
+      keyGenerator({
+        user: { netId: 'AbC123' },
+        session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
+        socket: { remoteAddress: '127.0.0.1' },
+      }),
+    ).toBe('user:abc123');
+    expect(
+      keyGenerator({
+        user: { netId: objectNetId },
+        socket: { remoteAddress: '203.0.113.7' },
+      }),
+    ).toBe('ip:ip-key:203.0.113.7');
     expect(coerced).toBe(false);
 
     const anonymousRequest = {
       ip: '198.51.100.20',
+      socket: { remoteAddress: '192.0.2.20' },
       session: { rateLimitId: '0123456789abcdef0123456789abcdef' },
     };
     expect(keyGenerator(anonymousRequest)).toBe('anonymous:0123456789abcdef0123456789abcdef');
 
     const malformedSessionRequest = {
-      ip: '203.0.113.8',
+      ip: '198.51.100.8',
+      headers: {
+        'x-forwarded-for': '203.0.113.8',
+        'cf-connecting-ip': '203.0.113.9',
+      },
+      socket: { remoteAddress: '192.0.2.8' },
       session: { rateLimitId: 'attacker-controlled' },
     };
-    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:203.0.113.8');
+    expect(keyGenerator(malformedSessionRequest)).toBe('ip:ip-key:192.0.2.8');
 
     expect(
       keyGenerator({
-        ip: '203.0.113.9',
+        ip: '198.51.100.9',
+        headers: {
+          'x-forwarded-for': '203.0.113.10',
+          'cf-connecting-ip': '203.0.113.11',
+        },
+        socket: { remoteAddress: '192.0.2.9' },
         session: { rateLimitId: 'ABCDEF0123456789ABCDEF0123456789' },
       }),
-    ).toBe('ip:ip-key:203.0.113.9');
+    ).toBe('ip:ip-key:192.0.2.9');
   });
 
   it('keeps Express query parsing flat before request-shape sanitization', async () => {

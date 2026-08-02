@@ -127,7 +127,9 @@ const getRateLimitKey = (req: express.Request): string => {
   }
 
   const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
-  return anonymousId ? `anonymous:${anonymousId}` : `ip:${ipKeyGenerator(req.ip ?? '')}`;
+  return anonymousId
+    ? `anonymous:${anonymousId}`
+    : `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
 };
 
 // The CAS login callback is always unauthenticated, so it keys by IP —
