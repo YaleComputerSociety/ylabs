@@ -150,7 +150,15 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
     };
   }
 
-  const evidence = summary.evidence.slice(0, 4).map<EvidenceItem>((item) => ({
+  const uniqueEvidence = [...summary.evidence.reduce((bySignalType, item) => {
+    const existing = bySignalType.get(item.signalType);
+    if (!existing || (existing.confidence !== 'HIGH' && item.confidence === 'HIGH')) {
+      bySignalType.set(item.signalType, item);
+    }
+    return bySignalType;
+  }, new Map<string, (typeof summary.evidence)[number]>()).values()];
+
+  const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => ({
     kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
     label: accessSignalLabel(item.signalType),
     detail: item.excerpt || item.sourceUrl || undefined,
