@@ -298,12 +298,18 @@ export async function refreshAdminAccessReviewProjection(
   return Number((result as any).matchedCount || (result as any).upsertedCount || 0) > 0;
 }
 
-export async function assertAdminAccessReviewProjectionReady(): Promise<void> {
+export async function assertAdminAccessReviewProjectionReady(
+  session?: mongoose.ClientSession,
+): Promise<void> {
   const [state, stale] = await Promise.all([
     AdminAccessReviewProjectionState.findById(ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID)
       .select('schemaVersion ready rebuilding')
+      .session(session || null)
       .lean(),
-    AdminAccessReviewProjection.findOne({ stale: true }).select('_id').lean(),
+    AdminAccessReviewProjection.findOne({ stale: true })
+      .select('_id')
+      .session(session || null)
+      .lean(),
   ]);
   if (
     !state ||

@@ -57,6 +57,7 @@ vi.mock('../../models/adminAccessReviewProjection', () => ({
     findOne: vi.fn(() => {
       const query: any = {
         select: vi.fn(() => query),
+        session: vi.fn(() => query),
         lean: mocks.staleLean,
       };
       return query;
@@ -66,6 +67,7 @@ vi.mock('../../models/adminAccessReviewProjection', () => ({
     findById: vi.fn(() => {
       const query: any = {
         select: vi.fn(() => query),
+        session: vi.fn(() => query),
         lean: mocks.stateLean,
       };
       return query;
