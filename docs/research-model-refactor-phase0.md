@@ -389,6 +389,7 @@ A concurrent or failed refresh leaves the queue stale and unavailable until reco
 Run reconciliation after deployment, after any bulk migration that bypasses canonical services, and at least once every six hours while scraper or moderation writes are active.
 
 Reconciliation is dry-run-first.
+Its planning reads use one snapshot transaction so counts, current projections, and parent entities describe the same database state.
 Apply accepts only the exact plan fingerprint from a reviewed mode-`0600` artifact for the same environment and database.
 Production is not an allowed target.
 Run Development first, then Beta, then ProductionCopy from a clean current Beta worktree with the matching database URL injected locally.

@@ -180,7 +180,7 @@ It then resolves bounded evidence IDs per record from `observations`.
 
 Each access collection declares a `researchEntityId` index and a `{ researchEntityId: 1, review.status: 1, review.reviewedAt: -1 }` compound index.
 Entry pathways and posted opportunities add exclusion predicates on `derivationKey` and `submissionStatus` that are not covered by those review compounds.
-The projection declares indexes for its parent reference, stale-state checks, bounded search prefixes, and each supported queue sort.
+The projection declares indexes for its parent reference, stale-state checks, bounded search suffixes, and each supported queue sort.
 Live explains must determine whether deployed projection indexes support each queue filter and sort without a collection scan or blocking sort.
 
 ## Live evidence required before Phase 0 closes

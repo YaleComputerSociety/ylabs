@@ -512,6 +512,7 @@ Admins need a way to inspect derived access records before deeper editorial work
 Implementation note: `GET /api/admin/access-review` filters, sorts, and paginates the environment-local `AdminAccessReviewProjection` before it hydrates the selected parent `ResearchEntity` rows.
 The projection stores only bounded normalized word suffixes that preserve case-insensitive substring search, sort keys, aggregate counts, the parent reference, and reconciliation state.
 Canonical access-record services invalidate the affected generation in the same transaction as a write and recompute it afterward, so concurrent writes cannot clear a newer invalidation.
+The list checks readiness and performs projection, progress-count, and parent-hydration reads sequentially in one snapshot transaction, so concurrent invalidation cannot produce a partially current response.
 The list fails with a temporary unavailable response when the projection is uninitialized, rebuilding, or stale.
 `GET /api/admin/access-review/:id` remains a separate full derived access bundle for one entity rather than reading through the list projection.
 `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status, notes, and locks.
