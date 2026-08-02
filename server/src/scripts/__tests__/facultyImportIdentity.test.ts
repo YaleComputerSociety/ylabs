@@ -51,16 +51,36 @@ describe('faculty import identity guards', () => {
     });
   });
 
-  it('detects mixed scalar and profile URL claims as a collision', () => {
+  it.each([
+    'https://ORCID.org/0000-0002-7934-7159',
+    'https://www.orcid.org/0000-0002-7934-7159/',
+    '0000000279347159',
+    '0000 0002 7934 7159',
+    'ORCID: 0000-0002-7934-7159',
+  ])('detects mixed scalar and profile URL claims in %s form', (profileOrcid) => {
     const collisions = findCollidingFacultyImportOrcids([
       { netid: 'one1', orcid: '0000-0002-7934-7159' },
-      {
-        netid: 'two2',
-        profileUrls: { orcid: 'https://orcid.org/0000-0002-7934-7159/' },
-      },
+      { netid: 'two2', profileUrls: { orcid: profileOrcid } },
     ]);
 
     expect(collisions).toEqual(new Set(['0000-0002-7934-7159']));
+  });
+
+  it('normalizes case variants before persistence', () => {
+    expect(
+      safeFacultyImportExternalIdentity(
+        {
+          netid: 'one1',
+          orcid: 'orcid: 0000-0000-0000-001x',
+          profileUrls: { orcid: 'https://ORCID.org/0000-0000-0000-001x/' },
+        },
+        new Set(),
+      ),
+    ).toEqual({
+      orcid: '0000-0000-0000-001X',
+      profileUrls: { orcid: 'https://orcid.org/0000-0000-0000-001X' },
+      clearOrcid: false,
+    });
   });
 
   it('marks a colliding update to clear a stored scalar ORCID', () => {

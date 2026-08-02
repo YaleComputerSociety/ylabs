@@ -1,4 +1,5 @@
 import { isLikelyPersonSpecificYaleEmail } from '../scrapers/utils/scraperHelpers';
+import { normalizeOrcid } from '../utils/orcid';
 
 export interface FacultyImportIdentityInput {
   netid: string;
@@ -14,11 +15,6 @@ const normalizedText = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
 const normalizedNetid = (value: string): string => normalizedText(value).toLowerCase();
-
-const normalizedOrcid = (value: unknown): string =>
-  normalizedText(value)
-    .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
-    .replace(/\/$/, '');
 
 export function facultyImportDisplayName(entry: FacultyImportIdentityInput): string {
   const explicit = normalizedText(entry.name);
@@ -45,8 +41,8 @@ export function findCollidingFacultyImportOrcids(
     const ownerKey = normalizedNetid(entry.netid) || facultyImportDisplayName(entry).toLowerCase();
     if (!ownerKey) continue;
     const claimedOrcids = new Set([
-      normalizedOrcid(entry.orcid),
-      normalizedOrcid(entry.profileUrls?.orcid),
+      normalizeOrcid(entry.orcid),
+      normalizeOrcid(entry.profileUrls?.orcid),
     ]);
     claimedOrcids.delete('');
     for (const orcid of claimedOrcids) {
@@ -62,9 +58,13 @@ export function safeFacultyImportExternalIdentity(
   entry: FacultyImportIdentityInput,
   collidingOrcids: Set<string>,
 ): { orcid?: string; profileUrls: Record<string, string>; clearOrcid: boolean } {
-  const orcid = normalizedOrcid(entry.orcid);
+  const orcid = normalizeOrcid(entry.orcid);
   const profileUrls = { ...(entry.profileUrls || {}) };
-  const profileOrcid = normalizedOrcid(profileUrls.orcid);
+  const profileOrcid = normalizeOrcid(profileUrls.orcid);
+  if (profileUrls.orcid) {
+    if (profileOrcid) profileUrls.orcid = `https://orcid.org/${profileOrcid}`;
+    else delete profileUrls.orcid;
+  }
   if ((orcid && collidingOrcids.has(orcid)) || (profileOrcid && collidingOrcids.has(profileOrcid))) {
     delete profileUrls.orcid;
     return { profileUrls, clearOrcid: true };
