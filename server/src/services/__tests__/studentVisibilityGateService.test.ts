@@ -25,7 +25,9 @@ import {
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 
-const safePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
+const safePlan = (
+  overrides: Partial<StudentVisibilityGatePlan> = {},
+): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-safe',
   label: 'Safe Lab',
@@ -38,7 +40,9 @@ const safePlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVi
   ...overrides,
 });
 
-const heldPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}): StudentVisibilityGatePlan => ({
+const heldPlan = (
+  overrides: Partial<StudentVisibilityGatePlan> = {},
+): StudentVisibilityGatePlan => ({
   collection: 'research',
   recordId: 'entity-held',
   label: 'Held Lab',

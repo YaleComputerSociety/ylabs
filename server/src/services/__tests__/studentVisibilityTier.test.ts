@@ -187,10 +187,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.computedTier).toBe('suppressed');
     expect(result.reasons).toEqual(
-      expect.arrayContaining([
-        'non_owner_grant_shell',
-        'missing_action_evidence',
-      ]),
+      expect.arrayContaining(['non_owner_grant_shell', 'missing_action_evidence']),
     );
   });
 
@@ -425,9 +422,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('operator_review');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['missing_lead', 'missing_source_url']),
-    );
+    expect(result.reasons).toEqual(expect.arrayContaining(['missing_lead', 'missing_source_url']));
   });
 
   it('keeps records with conflicting PI identity out of public tiers', () => {
