@@ -415,6 +415,7 @@ function fieldProvenanceForResolvedObservation(
   field: string,
   resolved: ResolvedField,
   observations: MaterializerObservationLike[],
+  valueForHash: unknown = resolved.value,
 ): Record<string, unknown> | null {
   const resolvedValue = comparableObservationValue(resolved.value);
   const contributingSources = new Set(resolved.contributingSources);
@@ -429,7 +430,7 @@ function fieldProvenanceForResolvedObservation(
     ...(match._id ? { sourceId: match._id } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
-    valueHash: researchScopeEvidenceValueHash(resolved.value),
+    valueHash: researchScopeEvidenceValueHash(valueForHash),
     observedAt: match.observedAt || new Date(),
     confidence: match.confidence ?? resolved.confidence,
   };
@@ -2328,6 +2329,7 @@ export async function materializeEntity(
             'fullDescription',
             resolved.fullDescription,
             materializationObs,
+            derivedShortDescription,
           )
         : undefined;
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;

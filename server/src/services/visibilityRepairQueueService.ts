@@ -22,6 +22,7 @@ import { upsertContactRoute, type UpsertContactRouteInput } from './contactRoute
 import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { researchScopeEvidenceValueHash } from './researchEntityResearchScope';
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
 
@@ -1057,6 +1058,13 @@ function buildResearchSourceDescriptionPatch(
     if (candidateQuality.full.isUseful && !currentQuality.full.isUseful) {
       patch.fullDescription = candidate.value;
       repairSource = candidate.sourceUrl || repairSource;
+      patch['fieldProvenance.fullDescription'] = {
+        sourceName: 'visibility-repair-queue',
+        sourceUrl: repairSource,
+        valueHash: researchScopeEvidenceValueHash(candidate.value),
+        observedAt: new Date(),
+        confidence: 0.8,
+      };
       summary.push(`copied useful source-backed ${candidate.label} into fullDescription`);
     }
     if (candidateQuality.full.isUseful && !currentQuality.short.isUseful) {
@@ -1084,6 +1092,13 @@ function buildResearchSourceDescriptionPatch(
       if (derivedShortDescription && derivedShortQuality?.isUseful) {
         patch.shortDescription = derivedShortDescription;
         repairSource = candidate.sourceUrl || repairSource;
+        patch['fieldProvenance.shortDescription'] = {
+          sourceName: 'visibility-repair-queue',
+          sourceUrl: repairSource,
+          valueHash: researchScopeEvidenceValueHash(derivedShortDescription),
+          observedAt: new Date(),
+          confidence: 0.8,
+        };
         summary.push(`derived shortDescription from source-backed ${candidate.label}`);
       }
     }

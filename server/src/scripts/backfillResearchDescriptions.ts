@@ -28,6 +28,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { Observation } from '../models/observation';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
@@ -246,17 +247,23 @@ export async function fetchGrantAbstract(entity: any): Promise<string> {
   return '';
 }
 
-function officialSourceUrl(entity: any): string {
-  const urls = [
-    entity.websiteUrl,
-    entity.website,
-    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
-  return (
-    urls.find((u) => !/reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(u)) ||
-    urls[0] ||
-    ''
-  );
+async function narrativeSourceUrl(entity: any, sourceText: string): Promise<string> {
+  if (sourceText === String(entity.fullDescription || '')) {
+    const observation = await Observation.findOne({
+      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      entityId: entity._id,
+      field: 'fullDescription',
+      value: entity.fullDescription,
+      superseded: { $ne: true },
+      sourceUrl: { $regex: '^https?://', $options: 'i' },
+    })
+      .sort({ observedAt: -1 })
+      .lean();
+    return String(observation?.sourceUrl || '');
+  }
+  return entityHttpUrls(entity).find((url) =>
+    /reporter\.nih\.gov\/project-details\/\d+|nsf\.gov\/awardsearch\/showAward\?AWD_ID=\d+/i.test(url),
+  ) || '';
 }
 
 export interface ResearchDescriptionBackfillResult {
@@ -291,6 +298,7 @@ export async function runResearchDescriptionBackfill(options: {
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
+      fieldProvenance: 1,
     },
   ).lean();
 
@@ -315,6 +323,21 @@ export async function runResearchDescriptionBackfill(options: {
       sourceText = await fetchGrantAbstract(entity);
     }
     if (sourceText.length < MIN_SOURCE_CHARS) continue;
+    const sourceUrl = await narrativeSourceUrl(entity, sourceText);
+    if (!sourceUrl) {
+      if (!options.dryRun) {
+        await ResearchEntity.updateOne(
+          { _id: entity._id },
+          {
+            $unset: {
+              'fieldProvenance.fullDescription': '',
+              'fieldProvenance.shortDescription': '',
+            },
+          },
+        );
+      }
+      continue;
+    }
     result.scanned += 1;
     try {
       const out = await rewrite({ name: entity.displayName || entity.name, sourceText });
@@ -347,7 +370,6 @@ export async function runResearchDescriptionBackfill(options: {
         });
       }
       if (!options.dryRun && source) {
-        const sourceUrl = officialSourceUrl(entity);
         const entityId = serializedDocumentId(entity._id);
         const observations: ObservationInput[] = [
           {
