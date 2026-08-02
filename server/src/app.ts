@@ -11,6 +11,7 @@ import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
 import { readFile } from 'fs/promises';
+import { BlockList, isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -92,6 +93,41 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
+const trustedProxyAddresses = new BlockList();
+for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
+  const value = entry.trim();
+  if (!value) continue;
+  const [address, prefixValue] = value.split('/');
+  const addressType = isIP(address);
+  const prefix = prefixValue === undefined ? undefined : Number(prefixValue);
+  const maximumPrefix = addressType === 4 ? 32 : 128;
+  if (
+    addressType === 0 ||
+    (prefix !== undefined &&
+      (!Number.isInteger(prefix) || prefix < 0 || prefix > maximumPrefix))
+  ) {
+    throw new Error(`TRUSTED_PROXY_CIDRS contains an invalid address or CIDR: ${value}`);
+  }
+  const family = addressType === 4 ? 'ipv4' : 'ipv6';
+  if (prefix === undefined) {
+    trustedProxyAddresses.addAddress(address, family);
+  } else {
+    trustedProxyAddresses.addSubnet(address, prefix, family);
+  }
+}
+
+const normalizedPeerAddress = (value: string): string =>
+  value.startsWith('::ffff:') && isIP(value.slice(7)) === 4 ? value.slice(7) : value;
+
+const isTrustedProxyAddress = (value: string): boolean => {
+  const address = normalizedPeerAddress(value);
+  const addressType = isIP(address);
+  return (
+    addressType !== 0 &&
+    trustedProxyAddresses.check(address, addressType === 4 ? 'ipv4' : 'ipv6')
+  );
+};
+
 const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase();
@@ -105,7 +141,8 @@ const getRateLimitKey = (req: express.Request): string => {
     return `user:${netId}`;
   }
 
-  const clientIp = req.socket?.remoteAddress ?? '';
+  const peerIp = req.socket?.remoteAddress ?? '';
+  const clientIp = isTrustedProxyAddress(peerIp) ? req.ip || peerIp : peerIp;
   return `ip:${ipKeyGenerator(clientIp)}`;
 };
 
@@ -249,7 +286,7 @@ function sendStaticNotFound(res: express.Response) {
 }
 
 const app = express()
-  .set('trust proxy', 1)
+  .set('trust proxy', isTrustedProxyAddress)
   .set('query parser', 'simple')
   .disable('x-powered-by')
   .use(securityHeaders)

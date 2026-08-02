@@ -79,7 +79,7 @@ describe('app security runtime classification', () => {
     );
   });
 
-  it('uses only bounded primitive session NetIDs for rate-limit user buckets', async () => {
+  it('uses session NetIDs and forwarded visitor IPs only through trusted peers', async () => {
     const limiters: Array<{
       keyGenerator: (req: {
         user?: unknown;
@@ -101,6 +101,7 @@ describe('app security runtime classification', () => {
       SERVER_BASE_URL: 'https://yalelabs.io',
       SSOBASEURL: 'https://secure.its.yale.edu/cas',
       SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/8,2001:db8:abcd::/48',
     };
 
     await import('../app');
@@ -119,16 +120,35 @@ describe('app security runtime classification', () => {
       keyGenerator({
         user: { netId: objectNetId },
         ip: '203.0.113.7',
-        socket: { remoteAddress: '198.51.100.20' },
+        socket: { remoteAddress: '10.20.30.40' },
       }),
-    ).toBe('ip:ip-key:198.51.100.20');
+    ).toBe('ip:ip-key:203.0.113.7');
     expect(coerced).toBe(false);
 
-    const spoofedForwardingHeaders = {
+    const directOriginRequest = {
       ip: '2001:db8::1234',
       socket: { remoteAddress: '198.51.100.20' },
     };
-    expect(keyGenerator(spoofedForwardingHeaders)).toBe('ip:ip-key:198.51.100.20');
+    expect(keyGenerator(directOriginRequest)).toBe('ip:ip-key:198.51.100.20');
+
+    const trustedIpv6Peer = {
+      ip: '2001:db8::5678',
+      socket: { remoteAddress: '2001:db8:abcd::10' },
+    };
+    expect(keyGenerator(trustedIpv6Peer)).toBe('ip:ip-key:2001:db8::5678');
+  });
+
+  it('rejects malformed trusted proxy boundaries', async () => {
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '10.0.0.0/99',
+    };
+
+    await expect(import('../app')).rejects.toThrow(/TRUSTED_PROXY_CIDRS/);
   });
 
   it('keeps Express query parsing flat before request-shape sanitization', async () => {
