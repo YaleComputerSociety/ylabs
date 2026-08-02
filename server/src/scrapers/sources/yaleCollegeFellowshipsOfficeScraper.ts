@@ -21,7 +21,7 @@ const DEFAULT_PAGE_URLS = [
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/yale-college-first-year-summer-research-fellowship',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
   'https://wti.yale.edu/initiatives/undergraduate',
-  'https://medicine.yale.edu/whr/training/fellowship/apply/',
+  'https://medicine.yale.edu/whr/training/',
   'https://ycmd.yale.edu/education/summer-undergraduate-internships',
   'https://economics.yale.edu/undergraduate/tobin-ra',
   'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
@@ -109,6 +109,14 @@ function sourceKeyForTitle(title: string): string {
   return `${YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE}:${slugify(title)}`;
 }
 
+function normalizedCandidateTitle(value: string): string {
+  return normalizeWhitespace(value)
+    .replace(/^ale College\b/, 'Yale College')
+    .replace(/\s+Learn more about\b.*$/i, '')
+    .replace(/\s+Read More\s*$/i, '')
+    .trim();
+}
+
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
   if (!rawUrl) return undefined;
   const trimmed = rawUrl.trim();
@@ -160,6 +168,16 @@ function isCommunityForceUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
     return new URL(url).hostname.toLowerCase().endsWith('communityforce.com');
+  } catch {
+    return false;
+  }
+}
+
+function isRecordSpecificApplicationUrl(url: string | undefined): boolean {
+  if (!url || !isCommunityForceUrl(url)) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.searchParams.size > 0;
   } catch {
     return false;
   }
@@ -302,6 +320,24 @@ function applicationSectionText($: cheerio.CheerioAPI): string | undefined {
     if (section) sections.push(section);
   });
 
+  $('strong').each((_index, marker) => {
+    const title = normalizeWhitespace($(marker).text());
+    if (!APPLICATION_HEADING_RE.test(title) || $(marker).closest('h2,h3,h4,h5,h6').length > 0) {
+      return;
+    }
+
+    const content: string[] = [];
+    let sibling = $(marker).closest('p,li,div').first();
+    for (let offset = 0; sibling.length > 0 && offset < 12; offset += 1) {
+      if (offset > 0 && sibling.is('h2,h3,h4,h5,h6')) break;
+      const text = normalizeWhitespace(sibling.text());
+      if (text) content.push(text);
+      sibling = sibling.next();
+    }
+    const section = normalizeWhitespace(content.join(' '));
+    if (section) sections.push(section);
+  });
+
   const unique = Array.from(new Set(sections));
   return unique.length > 0 ? unique.join('\n').slice(0, 3000) : undefined;
 }
@@ -322,6 +358,13 @@ function inferApplicationMaterials(text: string): string[] {
 }
 
 function isResearchFocused(text: string): boolean {
+  if (
+    /\bdoes not (?:primarily )?focus on\b[^.]{0,80}\bresearch\b|\bnot (?:primarily )?a research\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
   return /\b(?:original|independent|summer|faculty[- ]mentored|undergraduate) research\b|\bresearch (?:project|proposal|experience|fellowship|program)\b/i.test(
     text,
   );
@@ -337,9 +380,47 @@ function hasExplicitActiveApplicationLanguage(text: string): boolean {
   );
 }
 
+function nearestDateTextForLabel(text: string, labelPattern: RegExp): string {
+  const normalized = normalizeWhitespace(text);
+  const label = labelPattern.exec(normalized);
+  if (!label || label.index === undefined) return '';
+
+  const monthPattern = Object.keys(MONTHS).join('|');
+  const datePattern = new RegExp(
+    `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`,
+    'gi',
+  );
+  const before = normalized.slice(Math.max(0, label.index - 100), label.index);
+  const datesBefore = Array.from(before.matchAll(datePattern));
+  const after = normalized.slice(
+    label.index + label[0].length,
+    label.index + label[0].length + 120,
+  );
+  datePattern.lastIndex = 0;
+  const closestBeforeMatch = datesBefore.at(-1);
+  const closestAfterMatch = datePattern.exec(after);
+  const labelIntroducesFollowingDate = /^\s*(?::|is\b|on\b)/i.test(after);
+  if (labelIntroducesFollowingDate && closestAfterMatch) return closestAfterMatch[0];
+  return closestBeforeMatch?.[0] || closestAfterMatch?.[0] || '';
+}
+
 function bestDeadlineText(text: string): string {
-  const deadlineSentence = text.match(/[^.]*\bdeadline\b[^.]*\./i)?.[0];
-  return deadlineSentence || text;
+  return nearestDateTextForLabel(
+    text,
+    /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b/i,
+  );
+}
+
+function bestApplicationOpenText(text: string): string {
+  return nearestDateTextForLabel(
+    text,
+    /\bapplication\s+(?:opens?|open\s+date)\b|\bapplications?\s+open\b/i,
+  );
+}
+
+function utcStartOfDay(date: Date | undefined): Date | undefined {
+  if (!date) return undefined;
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 export function parseDeadlineToUtcEndOfDay(
@@ -350,7 +431,7 @@ export function parseDeadlineToUtcEndOfDay(
   const monthPattern = Object.keys(MONTHS).join('|');
   const match = normalized.match(
     new RegExp(
-      `(?:deadline[^A-Za-z0-9]*)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(${monthPattern})\\s+(\\d{1,2})(?:,\\s*(\\d{4}))?`,
+      `(?:deadline[^A-Za-z0-9]*)?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(${monthPattern})\\s+(\\d{1,2})(?!\\d)(?:,\\s*(\\d{4}))?`,
       'i',
     ),
   );
@@ -422,7 +503,7 @@ function existingKeyForCandidate(
   const applicationLink = candidate.applicationLink
     ? normalizeLinkUrl(candidate.applicationLink)
     : undefined;
-  if (applicationLink) {
+  if (applicationLink && isRecordSpecificApplicationUrl(applicationLink)) {
     for (const [key, existing] of byKey) {
       const existingUrls = [existing.applicationLink, ...existing.links.map((link) => link.url)]
         .filter((url): url is string => !!url)
@@ -473,7 +554,7 @@ function candidateFromLink(
   referenceDate: Date,
 ): FellowshipCatalogCandidate | undefined {
   const $link = $(link);
-  const title = normalizeWhitespace($link.text());
+  const title = normalizedCandidateTitle($link.text());
   if (!title || !isLikelyFellowshipTitle(title)) return undefined;
 
   const rawHref = absoluteUrl($link.attr('href'), pageUrl);
@@ -537,10 +618,16 @@ function candidateFromDetailPage(
   if (!title || !isLikelyFellowshipTitle(title)) return undefined;
   if (isGenericCatalogTitle(title)) return undefined;
 
-  const bodyText = normalizeWhitespace($('body').text());
+  const primaryContent = $('main, [role="main"], article').first();
+  const contentRoot = primaryContent.length > 0 ? primaryContent : $('body');
+  const bodyText = normalizeWhitespace(contentRoot.text());
   const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
-  const links = $('a')
+  const applicationOpenDate = utcStartOfDay(
+    parseDeadlineToUtcEndOfDay(bestApplicationOpenText(bodyText), referenceDate),
+  );
+  const links = contentRoot
+    .find('a')
     .toArray()
     .map((link) => {
       const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
@@ -571,7 +658,7 @@ function candidateFromDetailPage(
     applicationLink,
     links,
     deadline,
-    applicationOpenDate: undefined,
+    applicationOpenDate,
     contactOffice: 'Yale Fellowships and Funding',
     contactEmail: extractEmail(bodyText),
     yearOfStudy: [],
@@ -597,6 +684,18 @@ function mergeCandidates(
     ).values(),
   );
   const applicationLink = incoming.applicationLink || existing.applicationLink;
+  const sourceSpecificity = (url: string): number => {
+    try {
+      const pathSegments = new URL(url).pathname.split('/').filter(Boolean).length;
+      return pathSegments - (isGenericPublicYalePath(url) ? 10 : 0);
+    } catch {
+      return -100;
+    }
+  };
+  const sourceUrl =
+    sourceSpecificity(incoming.sourceUrl) > sourceSpecificity(existing.sourceUrl)
+      ? incoming.sourceUrl
+      : existing.sourceUrl;
   return finalizeCandidate({
     ...existing,
     title: preferredTitle(existing, incoming),
@@ -608,10 +707,7 @@ function mergeCandidates(
       new Set([...(existing.applicationMaterials || []), ...(incoming.applicationMaterials || [])]),
     ),
     researchFocused: existing.researchFocused || incoming.researchFocused,
-    sourceUrl:
-      incoming.sourceUrl !== existing.sourceUrl && isPublicYaleUrl(incoming.sourceUrl)
-        ? incoming.sourceUrl
-        : existing.sourceUrl,
+    sourceUrl,
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
     links,
     deadline: incoming.deadline || existing.deadline,
@@ -641,10 +737,12 @@ export function parseFellowshipCatalogPage(
   const detail = candidateFromDetailPage($, pageUrl, referenceDate);
   if (detail) upsertCandidate(byKey, detail);
 
-  for (const link of $('a').toArray()) {
-    const candidate = candidateFromLink($, link, pageUrl, referenceDate);
-    if (!candidate) continue;
-    upsertCandidate(byKey, candidate);
+  if (!detail) {
+    for (const link of $('a').toArray()) {
+      const candidate = candidateFromLink($, link, pageUrl, referenceDate);
+      if (!candidate) continue;
+      upsertCandidate(byKey, candidate);
+    }
   }
 
   return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
