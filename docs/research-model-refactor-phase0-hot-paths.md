@@ -170,7 +170,7 @@ It then resolves bounded evidence IDs per record from `observations`.
 
 - Page and page-size inputs are capped at 1,000 and 100, and projection pagination occurs before parent hydration.
 - `hasUnreviewed` and queue sorts use stored projection fields.
-- Search uses bounded normalized prefixes stored in the projection.
+- Search preserves case-insensitive substring matching through a bounded set of normalized word suffixes stored in the projection.
 - Each queue request adds eight collection counts to the main aggregate.
 - Detail output has no source-level limit for any of the four access-record collections.
 - Evidence IDs are capped at 100 per record, but the number of records is unbounded, so total evidence fan-out is also unbounded.
