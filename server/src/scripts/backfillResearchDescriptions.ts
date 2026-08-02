@@ -88,7 +88,9 @@ export interface ResearchDescriptionBackfillOptions {
   output?: string;
 }
 
-export function parseResearchDescriptionBackfillArgs(argv: string[]): ResearchDescriptionBackfillOptions {
+export function parseResearchDescriptionBackfillArgs(
+  argv: string[],
+): ResearchDescriptionBackfillOptions {
   const options: ResearchDescriptionBackfillOptions = {
     dryRun: true,
     limit: 0,
@@ -148,7 +150,10 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
   const safeName = redactDirectContactInfo(name).slice(0, MAX_REWRITE_PROMPT_NAME_CHARS);
-  const safeSourceText = redactDirectContactInfo(sourceText).slice(0, MAX_REWRITE_PROMPT_SOURCE_CHARS);
+  const safeSourceText = redactDirectContactInfo(sourceText).slice(
+    0,
+    MAX_REWRITE_PROMPT_SOURCE_CHARS,
+  );
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -172,20 +177,27 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
         },
       ],
     },
-    { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 40000 },
+    {
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      timeout: 40000,
+    },
   );
   const content = response.data?.choices?.[0]?.message?.content;
   const parsed = content ? JSON.parse(content) : {};
   return {
-    fullDescription: typeof parsed.fullDescription === 'string' ? parsed.fullDescription.trim() : '',
-    shortDescription: typeof parsed.shortDescription === 'string' ? parsed.shortDescription.trim() : '',
+    fullDescription:
+      typeof parsed.fullDescription === 'string' ? parsed.fullDescription.trim() : '',
+    shortDescription:
+      typeof parsed.shortDescription === 'string' ? parsed.shortDescription.trim() : '',
   };
 };
 
 function entityHttpUrls(entity: any): string[] {
-  return [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])].filter(
-    (u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u),
-  );
+  return [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
 }
 
 /**
@@ -196,12 +208,18 @@ function entityHttpUrls(entity: any): string[] {
  */
 export async function fetchGrantAbstract(entity: any): Promise<string> {
   const urls = entityHttpUrls(entity);
-  const nih = urls.map((u) => u.match(/reporter\.nih\.gov\/project-details\/(\d+)/i)?.[1]).find(Boolean);
+  const nih = urls
+    .map((u) => u.match(/reporter\.nih\.gov\/project-details\/(\d+)/i)?.[1])
+    .find(Boolean);
   if (nih) {
     try {
       const res = await axios.post(
         'https://api.reporter.nih.gov/v2/projects/search',
-        { criteria: { appl_ids: [Number(nih)] }, include_fields: ['AbstractText', 'ProjectTitle'], limit: 1 },
+        {
+          criteria: { appl_ids: [Number(nih)] },
+          include_fields: ['AbstractText', 'ProjectTitle'],
+          limit: 1,
+        },
         { timeout: 25000 },
       );
       const r = res.data?.results?.[0];
@@ -229,8 +247,11 @@ export async function fetchGrantAbstract(entity: any): Promise<string> {
 }
 
 function officialSourceUrl(entity: any): string {
-  const urls = [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])]
-    .filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
+  const urls = [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
   return (
     urls.find((u) => !/reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(u)) ||
     urls[0] ||
@@ -261,7 +282,16 @@ export async function runResearchDescriptionBackfill(options: {
       studentVisibilityTier: { $in: ['operator_review', 'limited_but_safe'] },
       studentVisibilityReasons: { $in: DESC_BLOCK_REASONS },
     },
-    { _id: 1, slug: 1, name: 1, displayName: 1, fullDescription: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      fullDescription: 1,
+      websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
+    },
   ).lean();
 
   const result: ResearchDescriptionBackfillResult = {
@@ -292,7 +322,10 @@ export async function runResearchDescriptionBackfill(options: {
         result.skippedNoResearch += 1;
         continue;
       }
-      const grounding = groundingScore(`${out.fullDescription} ${out.shortDescription}`, sourceText);
+      const grounding = groundingScore(
+        `${out.fullDescription} ${out.shortDescription}`,
+        sourceText,
+      );
       if (grounding < MIN_GROUNDING) {
         result.skippedUngrounded += 1;
         continue;
@@ -383,7 +416,8 @@ export async function runResearchDescriptionBackfill(options: {
 async function main(): Promise<void> {
   const options = parseResearchDescriptionBackfillArgs(process.argv.slice(2));
   const apply = !options.dryRun;
-  if (apply && !options.confirm) throw new Error('Apply mode requires --confirm-research-descriptions.');
+  if (apply && !options.confirm)
+    throw new Error('Apply mode requires --confirm-research-descriptions.');
   if (apply && !options.explicitLimit) throw new Error('Apply mode requires an explicit --limit.');
 
   const guard = assertScriptApplyAllowed({
@@ -391,7 +425,9 @@ async function main(): Promise<void> {
     scriptName: 'research-description rewrite backfill',
     mongoUrl: process.env.MONGODBURL,
   });
-  console.log(`Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${apply ? 'apply' : 'dry-run'}`);
+  console.log(
+    `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${apply ? 'apply' : 'dry-run'}`,
+  );
 
   await initializeConnections();
   try {
