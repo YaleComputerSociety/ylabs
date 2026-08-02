@@ -255,6 +255,10 @@ export function buildLaunchTrustContractReport(
   }
 
   const repairLanes = buildRepairLanes(violations, options.collection);
+  const sampledViolations = [
+    ...violations.filter((violation) => violation.publicVisibilityViolation),
+    ...violations.filter((violation) => !violation.publicVisibilityViolation),
+  ].slice(0, 50);
   const gateCollectionArg =
     options.collection === 'all'
       ? '--collection=all'
@@ -288,7 +292,7 @@ export function buildLaunchTrustContractReport(
       (paperQuality?.pass ?? true),
     counts,
     repairLanes,
-    violations: violations.slice(0, 50),
+    violations: sampledViolations,
     ...(researchActivity ? { researchActivity } : {}),
     ...(paperQuality ? { paperQuality } : {}),
     requiredCommands: Array.from(

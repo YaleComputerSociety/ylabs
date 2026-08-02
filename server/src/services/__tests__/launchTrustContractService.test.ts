@@ -180,6 +180,34 @@ describe('buildLaunchTrustContractReport', () => {
     expect(result.repairLanes).toEqual([]);
   });
 
+  it('keeps public visibility violations actionable when held rows exceed the sample bound', () => {
+    const heldPlans = Array.from({ length: 50 }, (_, index) =>
+      plan({
+        recordId: `held-${index}`,
+        currentTier: 'operator_review',
+        computedTier: 'operator_review',
+        tier: 'operator_review',
+        reasons: ['missing_description'],
+      }),
+    );
+    const publicViolation = plan({
+      recordId: 'public-violation',
+      currentTier: 'student_ready',
+      computedTier: 'operator_review',
+      tier: 'operator_review',
+      reasons: ['missing_description'],
+    });
+
+    const result = report([...heldPlans, publicViolation]);
+
+    expect(result.counts.publicVisibilityViolations).toBe(1);
+    expect(result.violations).toHaveLength(50);
+    expect(result.violations[0]).toMatchObject({
+      recordId: 'public-violation',
+      publicVisibilityViolation: true,
+    });
+  });
+
   it('does not recommend apply mode for review-exception lanes before accepted decisions', () => {
     const result = report([
       plan({
