@@ -1,5 +1,7 @@
 /**
  * Import enriched faculty data into the User collection.
+ * Name-shaped Yale emails must match the faculty member or fall back to their NetID address.
+ * ORCIDs claimed by different faculty identities are cleared without removing unrelated profile URLs.
  *
  * Usage:
  *   MONGODBURL="mongodb://..." npx ts-node server/src/scripts/importFaculty.ts [path-to-json]
@@ -14,6 +16,12 @@ import path from 'path';
 
 import { User } from '../models/user';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import {
+  facultyImportMongoUpdate,
+  findCollidingFacultyImportOrcids,
+  safeFacultyImportEmail,
+  safeFacultyImportExternalIdentity,
+} from './facultyImportIdentity';
 
 const MAX_FACULTY_IMPORT_JSON_BYTES = 25 * 1024 * 1024;
 
@@ -246,6 +254,19 @@ async function importFaculty() {
   console.log(`Reading faculty data from: ${jsonPath}`);
   const raw: RawFacultyEntry[] = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
   console.log(`Loaded ${raw.length} faculty entries`);
+  const collidingOrcids = findCollidingFacultyImportOrcids(
+    raw.map((entry) => ({
+      netid: entry.netid,
+      name: entry.name,
+      firstName: entry.first_name,
+      lastName: entry.last_name,
+      orcid: entry.orcid,
+      profileUrls: entry.profileUrls,
+    })),
+  );
+  if (collidingOrcids.size > 0) {
+    console.warn(`Discarding ${collidingOrcids.size} cross-person ORCID collisions.`);
+  }
 
   console.log(`Connecting to MongoDB...`);
   await mongoose.connect(mongoUrl);
@@ -269,11 +290,21 @@ async function importFaculty() {
 
       const primaryDept = cleanPrimaryDepartment(entry.primaryDepartment || '');
       const secondaryDepts = cleanSecondaryDepartments(entry.secondaryDepartments || []);
+      const identityInput = {
+        netid: entry.netid,
+        name: entry.name,
+        firstName: entry.first_name,
+        lastName: entry.last_name,
+        email: entry.email,
+        orcid: entry.orcid,
+        profileUrls: entry.profileUrls,
+      };
+      const externalIdentity = safeFacultyImportExternalIdentity(identityInput, collidingOrcids);
 
       const cleanedData: Record<string, any> = {
         fname: entry.first_name || entry.name?.split(' ')[0] || 'NA',
         lname: entry.last_name || entry.name?.split(' ').slice(1).join(' ') || 'NA',
-        email: entry.email || `${entry.netid}@yale.edu`,
+        email: safeFacultyImportEmail(identityInput),
         title: entry.title || '',
         bio: entry.bio || '',
         phone: entry.phone || '',
@@ -281,9 +312,9 @@ async function importFaculty() {
         secondaryDepartments: secondaryDepts,
         departments: [primaryDept, ...secondaryDepts].filter(Boolean),
         imageUrl: entry.imageUrl || '',
-        orcid: entry.orcid || undefined,
+        orcid: externalIdentity.orcid,
         openAlexId: entry.openAlexId || undefined,
-        profileUrls: entry.profileUrls || {},
+        profileUrls: externalIdentity.profileUrls,
         publications: (entry.publications || []).map((p) => ({
           title: p.title,
           doi: p.doi || undefined,
@@ -311,7 +342,7 @@ async function importFaculty() {
         updateOne: {
           filter: { netid: entry.netid },
           update: {
-            $set: cleanedData,
+            ...facultyImportMongoUpdate(cleanedData, externalIdentity.clearOrcid),
             $setOnInsert: {
               netid: entry.netid,
               favListings: [],
