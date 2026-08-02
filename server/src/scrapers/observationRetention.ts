@@ -19,7 +19,7 @@ export interface SupersededObservationPruneResult {
   deleted: number;
   cutoff: string;
   keepRuns: number;
-  keptRunIds: unknown[];
+  retainedRuns: number;
   sourceName?: string;
 }
 
@@ -135,7 +135,7 @@ export async function pruneSupersededObservations(
     deleted,
     cutoff: cutoff.toISOString(),
     keepRuns,
-    keptRunIds,
+    retainedRuns: keptRunIds.length,
     sourceName: options.sourceName,
   };
 }

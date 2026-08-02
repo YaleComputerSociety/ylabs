@@ -125,7 +125,7 @@ describe('observation retention', () => {
       deleted: 0,
       cutoff: CUTOFF.toISOString(),
       keepRuns: 3,
-      keptRunIds: ['recent-run-1', 'recent-run-2', 'recent-run-3'],
+      retainedRuns: 3,
       sourceName: undefined,
     });
   });

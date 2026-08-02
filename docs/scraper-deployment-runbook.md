@@ -539,7 +539,7 @@ SCRAPER_ENV=development MONGODBURL=<development-url> \
   yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-development-observation-retention-dry-run.json
 ```
 
-Review the protected candidate count, reference-protected count, recent-window cutoff, and retained run set before apply.
+Review the protected candidate count, reference-protected count, recent-window cutoff, and retained run count before apply.
 Development apply mode requires the non-production write guard and explicit confirmation:
 
 ```bash
@@ -553,10 +553,10 @@ Never reuse Development candidate counts or an old Beta artifact.
 
 The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
 It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, pathways, access signals, contact routes, posted opportunities, logistics claims, or supersession links.
-Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, and deleted counts plus retained run ids, command, target `environment`, `db`, and parsed `options`.
+Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, deleted, and retained-run counts plus command, target `environment`, `db`, and parsed `options`.
 
 Production retention stays disabled.
-It requires a separate reviewed issue, restore plan, explicit authorization, and production confirmation before any command is prepared.
+A future reviewed issue must change the executable guard before any Production apply command can be prepared.
 
 ## Cost Controls
 
