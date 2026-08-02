@@ -36,6 +36,7 @@ import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
 } from './undergraduateLogisticsMaterializer';
+import { researchScopeEvidenceValueHash } from '../services/researchEntityResearchScope';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -428,6 +429,7 @@ function fieldProvenanceForResolvedObservation(
     ...(match._id ? { sourceId: match._id } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
+    valueHash: researchScopeEvidenceValueHash(resolved.value),
     observedAt: match.observedAt || new Date(),
     confidence: match.confidence ?? resolved.confidence,
   };

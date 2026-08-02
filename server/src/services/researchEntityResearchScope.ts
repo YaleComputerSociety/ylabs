@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 /**
  * Classifies whether an organizational ResearchEntity is actually a research
  * home. Organization type and polished source copy are not sufficient by
@@ -41,6 +43,9 @@ const CONDUCTS_OR_ORGANIZES_RESEARCH = [
 const text = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+export const researchScopeEvidenceValueHash = (value: unknown): string =>
+  createHash('sha256').update(text(value)).digest('hex');
+
 const narrativeFields = ['summary', 'description', 'shortDescription', 'fullDescription'] as const;
 
 function fieldProvenanceValue(entity: ResearchEntityResearchScopeInput, field: string): unknown {
@@ -55,7 +60,12 @@ function fieldProvenanceValue(entity: ResearchEntityResearchScopeInput, field: s
 function hasSourceBackedField(entity: ResearchEntityResearchScopeInput, field: string): boolean {
   const provenance = fieldProvenanceValue(entity, field);
   if (!provenance || typeof provenance !== 'object') return false;
-  return /^https?:\/\//i.test(text((provenance as Record<string, unknown>).sourceUrl));
+  const record = provenance as Record<string, unknown>;
+  return (
+    /^https?:\/\//i.test(text(record.sourceUrl)) &&
+    text(record.valueHash) ===
+      researchScopeEvidenceValueHash(entity[field as keyof ResearchEntityResearchScopeInput])
+  );
 }
 
 function isOrganizationalEntity(entity: ResearchEntityResearchScopeInput): boolean {

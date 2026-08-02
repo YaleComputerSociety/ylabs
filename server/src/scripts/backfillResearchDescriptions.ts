@@ -35,6 +35,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import type { ObservationInput } from '../scrapers/types';
+import { researchScopeEvidenceValueHash } from '../services/researchEntityResearchScope';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -347,7 +348,28 @@ export async function runResearchDescriptionBackfill(options: {
         // that keeps the description on future re-materialization.
         await ResearchEntity.updateOne(
           { _id: entity._id },
-          { $set: { fullDescription: out.fullDescription, shortDescription: out.shortDescription } },
+          {
+            $set: {
+              fullDescription: out.fullDescription,
+              shortDescription: out.shortDescription,
+              'fieldProvenance.fullDescription': {
+                sourceId: source._id,
+                sourceName: SOURCE_NAME,
+                sourceUrl,
+                valueHash: researchScopeEvidenceValueHash(out.fullDescription),
+                observedAt: new Date(),
+                confidence: REWRITE_CONFIDENCE,
+              },
+              'fieldProvenance.shortDescription': {
+                sourceId: source._id,
+                sourceName: SOURCE_NAME,
+                sourceUrl,
+                valueHash: researchScopeEvidenceValueHash(out.shortDescription),
+                observedAt: new Date(),
+                confidence: REWRITE_CONFIDENCE,
+              },
+            },
+          },
         );
       }
     } catch (error) {
