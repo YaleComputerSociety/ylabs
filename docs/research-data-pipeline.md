@@ -202,5 +202,5 @@ Rollback drills are dry-run-only until an operator approves production action:
 
 ## Retention Posture
 
-Do not apply compact observation retention to undergraduate logistics without a separate reviewed decision.
-The exact source observations are the audit backbone for student-facing logistics claims and claim-local rollback.
+Compact observation retention must preserve every source observation referenced by an undergraduate logistics claim.
+Follow the reviewed dry-run-first retention procedure in `docs/scraper-deployment-runbook.md`; the exact source observations remain the audit backbone for student-facing logistics claims and claim-local rollback.

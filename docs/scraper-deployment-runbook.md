@@ -60,7 +60,7 @@ Source metadata
   -> Meilisearch sync or later reindex
 ```
 
-The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
+The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old unreferenced superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
 
 ### PFR-3 pathway evidence review
 
@@ -539,7 +539,7 @@ SCRAPER_ENV=development MONGODBURL=<development-url> \
   yarn --cwd server scrape prune-observations --older-than-days 30 --keep-runs 3 --output /tmp/ylabs-development-observation-retention-dry-run.json
 ```
 
-Review the protected candidate count, reference-protected count, recent-window cutoff, and retained run count before apply.
+Review the eligible, reference-protected, and deletable candidate counts, recent-window cutoff, and retained run count before apply.
 Development apply mode requires the non-production write guard and explicit confirmation:
 
 ```bash
