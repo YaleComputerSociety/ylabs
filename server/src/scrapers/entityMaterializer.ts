@@ -91,6 +91,7 @@ function toMaterializerObjectId(value: unknown): mongoose.Types.ObjectId | undef
 
 export type MaterializerObservationLike = {
   _id?: unknown;
+  sourceId?: unknown;
   field?: string;
   value?: unknown;
   sourceName?: string;
@@ -427,7 +428,8 @@ function fieldProvenanceForResolvedObservation(
   if (!match) return null;
 
   return {
-    ...(match._id ? { sourceId: match._id } : {}),
+    ...(match.sourceId ? { sourceId: match.sourceId } : {}),
+    ...(match._id ? { observationId: match._id } : {}),
     sourceName: match.sourceName,
     sourceUrl: match.sourceUrl || '',
     valueHash: researchScopeEvidenceValueHash(valueForHash),

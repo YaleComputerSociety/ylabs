@@ -316,6 +316,14 @@ describe('visibilityRepairQueueService', () => {
   });
 
   it('derives missing card descriptions from an existing source-backed fullDescription', async () => {
+    const provenance = {
+      sourceId: 'source-1',
+      observationId: 'observation-1',
+      sourceName: 'visibility-repair-queue',
+      sourceUrl:
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
+      valueHash: 'certified-value-hash',
+    };
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
@@ -341,6 +349,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       updateResearchEntity: vi.fn().mockResolvedValue(undefined),
+      ensureNarrativeEvidenceObservation: vi.fn().mockResolvedValue(provenance),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
       runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
@@ -359,6 +368,16 @@ describe('visibilityRepairQueueService', () => {
       'entity-1',
       expect.objectContaining({
         shortDescription: expect.stringMatching(
+          /machine learning, algorithms, data compression, and automata theory/i,
+        ),
+        'fieldProvenance.shortDescription': provenance,
+      }),
+    );
+    expect(deps.ensureNarrativeEvidenceObservation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        researchEntityId: 'entity-1',
+        field: 'shortDescription',
+        value: expect.stringMatching(
           /machine learning, algorithms, data compression, and automata theory/i,
         ),
       }),
