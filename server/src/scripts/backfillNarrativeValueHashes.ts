@@ -105,6 +105,7 @@ async function main(): Promise<void> {
     if (recordIds.length > 0) {
       const visibilityPlans = await planStudentVisibilityGate({
         collection: 'research',
+        mode: 'apply',
         recordIds,
       });
       await applyStudentVisibilityGatePlans(visibilityPlans);

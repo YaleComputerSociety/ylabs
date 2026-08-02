@@ -261,9 +261,13 @@ async function narrativeSourceUrl(entity: any, sourceText: string): Promise<stri
       .lean();
     return String(observation?.sourceUrl || '');
   }
-  return entityHttpUrls(entity).find((url) =>
-    /reporter\.nih\.gov\/project-details\/\d+|nsf\.gov\/awardsearch\/showAward\?AWD_ID=\d+/i.test(url),
-  ) || '';
+  return (
+    entityHttpUrls(entity).find((url) =>
+      /reporter\.nih\.gov\/project-details\/\d+|nsf\.gov\/awardsearch\/showAward\?AWD_ID=\d+/i.test(
+        url,
+      ),
+    ) || ''
+  );
 }
 
 export interface ResearchDescriptionBackfillResult {
