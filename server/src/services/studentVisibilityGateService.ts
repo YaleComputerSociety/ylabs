@@ -33,6 +33,7 @@ import {
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import { trustedResearchScopeNarrativeFieldsByEntityId } from './researchScopeNarrativeEvidence';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -887,7 +888,8 @@ async function planResearchEntityGateUpdates(
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
+  const [leadRows, accessRows, pathwayRows, postedRows, trustedNarrativeFieldsByEntityId] =
+    await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
       archived: { $ne: true },
@@ -933,7 +935,8 @@ async function planResearchEntityGateUpdates(
       },
       { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
     ]),
-  ]);
+      trustedResearchScopeNarrativeFieldsByEntityId(entities as any[]),
+    ]);
 
   const leadUserIds = uniqueStrings(
     (leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)),
@@ -1040,7 +1043,10 @@ async function planResearchEntityGateUpdates(
     const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
     const result = computeResearchEntityStudentVisibility({
-      entity,
+      entity: {
+        ...entity,
+        trustedNarrativeProvenanceFields: trustedNarrativeFieldsByEntityId.get(recordId),
+      },
       leadMembers,
       accessSignalCount: accessCounts.get(recordId) || 0,
       actionablePathwayCount: pathwayCounts.get(recordId) || 0,

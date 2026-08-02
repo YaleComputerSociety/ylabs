@@ -22,6 +22,7 @@ export interface ResearchEntityResearchScopeInput {
   website?: unknown;
   websiteUrl?: unknown;
   sourceUrls?: unknown;
+  trustedNarrativeProvenanceFields?: ReadonlySet<string>;
 }
 
 export interface ResearchEntityResearchScopeResult {
@@ -58,6 +59,7 @@ function fieldProvenanceValue(entity: ResearchEntityResearchScopeInput, field: s
 }
 
 function hasSourceBackedField(entity: ResearchEntityResearchScopeInput, field: string): boolean {
+  if (!entity.trustedNarrativeProvenanceFields?.has(field)) return false;
   const provenance = fieldProvenanceValue(entity, field);
   if (!provenance || typeof provenance !== 'object') return false;
   const record = provenance as Record<string, unknown>;

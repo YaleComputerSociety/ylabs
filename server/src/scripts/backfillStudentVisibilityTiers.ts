@@ -30,6 +30,7 @@ import {
 } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { trustedResearchScopeNarrativeFieldsByEntityId } from '../services/researchScopeNarrativeEvidence';
 import {
   buildCollectionReport,
   nextRepairActionForReasons,
@@ -295,7 +296,8 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   if (Number.isFinite(limit)) query.limit(limit);
   const entities = await query.lean();
   const entityIds = entities.map((entity: any) => entity._id);
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
+  const [leadRows, accessRows, pathwayRows, postedRows, trustedNarrativeFieldsByEntityId] =
+    await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
       isCurrentMember: { $ne: false },
@@ -327,7 +329,8 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       },
       { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
     ]),
-  ]);
+      trustedResearchScopeNarrativeFieldsByEntityId(entities as any[]),
+    ]);
 
   const leadsByEntityId = new Map<string, any[]>();
   const leadUserIds = Array.from(
@@ -408,7 +411,10 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     const id = serializedDocumentId(entity._id) || '';
     const leadMembers = leadsByEntityId.get(id) || [];
     const result = computeResearchEntityStudentVisibility({
-      entity,
+      entity: {
+        ...entity,
+        trustedNarrativeProvenanceFields: trustedNarrativeFieldsByEntityId.get(id),
+      },
       leadMembers,
       accessSignalCount: accessCounts.get(id) || 0,
       actionablePathwayCount: pathwayCounts.get(id) || 0,
