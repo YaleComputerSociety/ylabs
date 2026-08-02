@@ -61,7 +61,10 @@ describe('backfillNarrativeValueHashes', () => {
       entityId: 'entity-1',
       field: 'description',
       value: description,
+      sourceId: { $type: 'objectId' },
+      sourceName: { $type: 'string', $ne: '' },
       superseded: { $ne: true },
+      'rollback.rolledBackAt': { $exists: false },
       sourceUrl: { $regex: '^https?://', $options: 'i' },
     });
     expect(plans).toEqual([

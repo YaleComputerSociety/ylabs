@@ -70,7 +70,7 @@ The release queue is written by `yarn --cwd server student-visibility:gate`. Scr
 Research-scope classifier releases must reconcile stored research visibility before deployment.
 Run `yarn --cwd server research-scope:backfill --mode=dry-run --limit=<reviewedEntityCount>` first and review its environment, database target, scanned count, and matched provenance count.
 Then run `yarn --cwd server research-scope:backfill --mode=apply --limit=<reviewedEntityCount> --confirm-narrative-value-hashes` under the existing environment write guards.
-The guarded migration certifies a narrative field only when a current, non-superseded observation exactly matches its value and has an HTTP source URL.
+The guarded migration certifies a narrative field only when a current, non-superseded, non-rolled-back, Source-linked observation exactly matches its value, names its source, and has an HTTP source URL.
 After persisting those hashes, it reconciles every scanned research entity so unmatched, synthesized, and stale claims also fail closed instead of retaining an earlier public tier.
 
 Beta repair is dry-run-first through `yarn --cwd server beta:repair-queue --mode=dry-run --collection=all --output <artifact>`, then apply mode must use `--apply-from <artifact> --confirm-beta-repair-queue-apply` after reviewing the fresh Beta artifact.
@@ -79,6 +79,7 @@ The same reviewed-artifact workflow supports Development repairs when the dry-ru
 Development artifacts cannot be applied to Beta, Beta artifacts cannot be applied to Development, and production repair-queue apply remains unsupported.
 The repair runner plans ordered lanes from blocker reasons: source/description first, PI identity second, and action evidence third.
 Only deterministic source-backed patches are applied automatically.
+Visibility repair may attach research-scope provenance only from a pre-existing observation that is current, non-superseded, non-rolled-back, Source-linked, and an exact field-value and source-URL match; it never creates an observation or trusted value hash from a repair candidate.
 Repair code must block archived research entities before PI member, pathway, access-signal, or contact-route upserts; archived duplicates should be repaired through the guarded member/artifact cleanup scripts instead.
 PI identity conflicts, same-name risks, suppression decisions, and unsupported action-evidence gaps remain queued as exceptions instead of being guessed into student-visible data.
 

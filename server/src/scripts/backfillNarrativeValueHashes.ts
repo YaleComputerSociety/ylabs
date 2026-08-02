@@ -62,7 +62,10 @@ export async function planNarrativeValueHashBackfill(limit: number): Promise<
         entityId: entity._id,
         field,
         value: entity[field],
+        sourceId: { $type: 'objectId' },
+        sourceName: { $type: 'string', $ne: '' },
         superseded: { $ne: true },
+        'rollback.rolledBackAt': { $exists: false },
         sourceUrl: { $regex: '^https?://', $options: 'i' },
       })
         .sort({ observedAt: -1 })

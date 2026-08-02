@@ -2379,8 +2379,10 @@ const defaultRepairDeps: RepairDeps = {
       field,
       value,
       sourceUrl,
-      sourceId: { $ne: null },
+      sourceId: { $type: 'objectId' },
+      sourceName: { $type: 'string', $ne: '' },
       superseded: { $ne: true },
+      'rollback.rolledBackAt': { $exists: false },
     })
       .sort({ observedAt: -1 })
       .lean();
