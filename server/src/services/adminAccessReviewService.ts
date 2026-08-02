@@ -328,40 +328,38 @@ async function listAccessReviewEntitiesSnapshot(
     .select('researchEntityId counts unreviewedCounts totalUnreviewed hasOfficialApplication')
     .session(session)
     .lean();
-  const [groups, total, progressCounts] = await Promise.all([
-    projectionQuery,
-    AdminAccessReviewProjection.countDocuments(filter, { session }),
-    Promise.all(
-      [EntryPathway, AccessSignal, ContactRoute, PostedOpportunity].map(async (model) => {
-        const start = new Date();
-        start.setHours(0, 0, 0, 0);
-        const visibleQueueFilter =
-          model === EntryPathway
-            ? { derivationKey: { $not: /^faculty-opportunity:/ } }
-            : model === PostedOpportunity
-              ? { submissionStatus: { $ne: 'DRAFT' } }
-              : {};
-        const [remaining, reviewedToday] = await Promise.all([
-          model.countDocuments(
-            {
-              ...visibleQueueFilter,
-              $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }],
-            },
-            { session },
-          ),
-          model.countDocuments(
-            {
-              ...visibleQueueFilter,
-              'review.status': { $ne: 'unreviewed' },
-              'review.reviewedAt': { $gte: start },
-            },
-            { session },
-          ),
-        ]);
-        return { remaining, reviewedToday };
-      }),
-    ),
-  ]);
+  // MongoDB does not support parallel operations on one transaction session.
+  // Keep every read in this snapshot sequential so the response linearizes
+  // wholly before or after a concurrent projection invalidation.
+  const groups = await projectionQuery;
+  const total = await AdminAccessReviewProjection.countDocuments(filter, { session });
+  const progressCounts: Array<{ remaining: number; reviewedToday: number }> = [];
+  for (const model of [EntryPathway, AccessSignal, ContactRoute, PostedOpportunity]) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const visibleQueueFilter =
+      model === EntryPathway
+        ? { derivationKey: { $not: /^faculty-opportunity:/ } }
+        : model === PostedOpportunity
+          ? { submissionStatus: { $ne: 'DRAFT' } }
+          : {};
+    const remaining = await model.countDocuments(
+      {
+        ...visibleQueueFilter,
+        $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }],
+      },
+      { session },
+    );
+    const reviewedToday = await model.countDocuments(
+      {
+        ...visibleQueueFilter,
+        'review.status': { $ne: 'unreviewed' },
+        'review.reviewedAt': { $gte: start },
+      },
+      { session },
+    );
+    progressCounts.push({ remaining, reviewedToday });
+  }
   const entityIds = groups.map((group: any) => group.researchEntityId);
   const hydrated = entityIds.length
     ? await ResearchEntity.find({ _id: { $in: entityIds } })

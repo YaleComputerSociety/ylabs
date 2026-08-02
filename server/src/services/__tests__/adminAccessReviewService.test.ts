@@ -172,6 +172,25 @@ describe('adminAccessReviewService', () => {
     expect(mocks.assertProjectionReady).toHaveBeenCalledWith(expect.any(Object));
   });
 
+  it('runs snapshot transaction reads sequentially on one MongoDB session', async () => {
+    let activeReads = 0;
+    let maximumConcurrentReads = 0;
+    const trackedRead = async <T>(value: T): Promise<T> => {
+      activeReads += 1;
+      maximumConcurrentReads = Math.max(maximumConcurrentReads, activeReads);
+      await Promise.resolve();
+      activeReads -= 1;
+      return value;
+    };
+    mocks.projectionLean.mockImplementation(() => trackedRead([]));
+    mocks.projectionCountDocuments.mockImplementation(() => trackedRead(0));
+    mocks.countDocuments.mockImplementation(() => trackedRead(0));
+
+    await listAccessReviewEntities();
+
+    expect(maximumConcurrentReads).toBe(1);
+  });
+
   it('rejects oversized access review search before model lookup', async () => {
     await expect(
       listAccessReviewEntities({
