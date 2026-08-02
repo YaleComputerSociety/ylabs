@@ -150,40 +150,49 @@ describe('buildEntityWorkPlan', () => {
   it('records shared work planner metrics for fetch and skip decisions', () => {
     const metrics = createWorkPlannerMetrics();
 
-    recordWorkPlannerDecision(metrics, buildEntityWorkPlan({
-      entityType: 'researchEntity',
-      entityKey: 'smith-lab',
-      sourceName: 'lab-microsite-undergrad-llm',
-      targetFields: ['joinPageUrl'],
-      observations: [],
-      freshnessWindowMs: 7 * DAY,
-      now: NOW,
-    }));
-    recordWorkPlannerDecision(metrics, buildEntityWorkPlan({
-      entityType: 'researchEntity',
-      entityKey: 'jones-lab',
-      sourceName: 'lab-microsite-undergrad-llm',
-      targetFields: ['joinPageUrl'],
-      observations: [
-        {
-          sourceName: 'lab-microsite-undergrad-llm',
-          field: 'joinPageUrl',
-          observedAt: new Date('2026-05-02T12:00:00Z'),
-        },
-      ],
-      freshnessWindowMs: 7 * DAY,
-      now: NOW,
-    }));
-    recordWorkPlannerDecision(metrics, buildEntityWorkPlan({
-      entityType: 'researchEntity',
-      entityKey: 'locked-lab',
-      sourceName: 'lab-microsite-undergrad-llm',
-      targetFields: ['joinPageUrl'],
-      manuallyLockedFields: ['joinPageUrl'],
-      observations: [],
-      freshnessWindowMs: 7 * DAY,
-      now: NOW,
-    }));
+    recordWorkPlannerDecision(
+      metrics,
+      buildEntityWorkPlan({
+        entityType: 'researchEntity',
+        entityKey: 'smith-lab',
+        sourceName: 'lab-microsite-undergrad-llm',
+        targetFields: ['joinPageUrl'],
+        observations: [],
+        freshnessWindowMs: 7 * DAY,
+        now: NOW,
+      }),
+    );
+    recordWorkPlannerDecision(
+      metrics,
+      buildEntityWorkPlan({
+        entityType: 'researchEntity',
+        entityKey: 'jones-lab',
+        sourceName: 'lab-microsite-undergrad-llm',
+        targetFields: ['joinPageUrl'],
+        observations: [
+          {
+            sourceName: 'lab-microsite-undergrad-llm',
+            field: 'joinPageUrl',
+            observedAt: new Date('2026-05-02T12:00:00Z'),
+          },
+        ],
+        freshnessWindowMs: 7 * DAY,
+        now: NOW,
+      }),
+    );
+    recordWorkPlannerDecision(
+      metrics,
+      buildEntityWorkPlan({
+        entityType: 'researchEntity',
+        entityKey: 'locked-lab',
+        sourceName: 'lab-microsite-undergrad-llm',
+        targetFields: ['joinPageUrl'],
+        manuallyLockedFields: ['joinPageUrl'],
+        observations: [],
+        freshnessWindowMs: 7 * DAY,
+        now: NOW,
+      }),
+    );
     recordWorkPlannerNoIdentifier(metrics);
 
     expect(metrics).toEqual({

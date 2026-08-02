@@ -337,10 +337,7 @@ async function writeText(filePath: string, text: string): Promise<void> {
   await fs.writeFile(safePath, text, 'utf8');
 }
 
-export async function writeAcceptedInputsOutput(
-  report: unknown,
-  output?: string,
-): Promise<void> {
+export async function writeAcceptedInputsOutput(report: unknown, output?: string): Promise<void> {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   await fs.mkdir(path.dirname(safeOutput), { recursive: true });
@@ -351,7 +348,9 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-const isDirectRun = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
 
 if (isDirectRun) {
   main()

@@ -133,10 +133,7 @@ export interface OrcidCrosswalkApplyResult {
   }>;
 }
 
-export type UpdateUserFn = (
-  userId: unknown,
-  update: Record<string, unknown>,
-) => Promise<unknown>;
+export type UpdateUserFn = (userId: unknown, update: Record<string, unknown>) => Promise<unknown>;
 
 type CsvRecord = Record<string, string>;
 
@@ -212,10 +209,7 @@ export function parseCsvRecords(input: string): CsvRecord[] {
 
 import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
 
-export function serializeCsv(
-  rows: Array<Record<string, unknown>>,
-  headers: string[],
-): string {
+export function serializeCsv(rows: Array<Record<string, unknown>>, headers: string[]): string {
   const lines = [headers.map((header) => escapeCsvCell(header)).join(',')];
   for (const row of rows) {
     lines.push(headers.map((header) => escapeCsvCell(row[header])).join(','));
@@ -334,8 +328,7 @@ export function resolveOrcidCrosswalk(
   }
 
   const hintName = normalizePersonName(hints.name);
-  const hasOfficialYaleSource =
-    isYaleUrl(hints.profileUrl) || isYaleUrl(hints.sourceUrl);
+  const hasOfficialYaleSource = isYaleUrl(hints.profileUrl) || isYaleUrl(hints.sourceUrl);
   if (hintName && hasOfficialYaleSource) {
     for (const user of users) {
       if (normalizePersonName(userDisplayName(user)) === hintName) {
@@ -352,8 +345,7 @@ export function resolveOrcidCrosswalk(
       candidates: [],
       basis: [],
       canPersist: false,
-      message:
-        'No existing Yale-confirmed user matched the supplied ORCID crosswalk evidence',
+      message: 'No existing Yale-confirmed user matched the supplied ORCID crosswalk evidence',
     };
   }
   if (candidates.length > 1) {
@@ -428,8 +420,7 @@ export function validateFellowshipAcceptedCsv(
       rowIssues.push({
         row: rowNumber,
         status: 'manual-required',
-        message:
-          'Rows without advisorOrcid require advisorName, sourceUrl, and reviewNote',
+        message: 'Rows without advisorOrcid require advisorName, sourceUrl, and reviewNote',
       });
     } else if (!isHttpUrl(sourceUrl)) {
       rowIssues.push({
@@ -864,11 +855,15 @@ function normalizeWhitespace(value: string): string {
 }
 
 function normalizeEmail(value: string | undefined): string {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeExternalId(value: string | undefined): string {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizePersonName(value: string | undefined): string {
@@ -955,9 +950,7 @@ function collectProfileUrls(value: unknown, urls: string[]): void {
 
 function hasSourceBackedBasis(basis: string[]): boolean {
   return basis.some((item) =>
-    ['yale-email', 'openalex', 'official-profile-url', 'name-with-yale-source'].includes(
-      item,
-    ),
+    ['yale-email', 'openalex', 'official-profile-url', 'name-with-yale-source'].includes(item),
   );
 }
 

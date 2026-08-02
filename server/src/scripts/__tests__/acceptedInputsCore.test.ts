@@ -51,9 +51,7 @@ const noYaleEvidence: AcceptedInputUser = {
 
 describe('normalizeOrcid', () => {
   it('normalizes ORCID URLs and compact strings', () => {
-    expect(normalizeOrcid('https://orcid.org/0000-0000-0000-0001')).toBe(
-      '0000-0000-0000-0001',
-    );
+    expect(normalizeOrcid('https://orcid.org/0000-0000-0000-0001')).toBe('0000-0000-0000-0001');
     expect(normalizeOrcid('000000000000001X')).toBe('0000-0000-0000-001X');
   });
 
@@ -139,10 +137,7 @@ describe('fellowship accepted CSV validation', () => {
   });
 
   it('exports scraper-compatible rows and fills advisorName from resolved ORCID', () => {
-    const csv = [
-      'advisorOrcid,year,studentName',
-      '0000-0000-0000-0001,2024,=Alice Liu',
-    ].join('\n');
+    const csv = ['advisorOrcid,year,studentName', '0000-0000-0000-0001,2024,=Alice Liu'].join('\n');
     const result = exportFellowshipAcceptedCsv('stars-ii', csv, [ada]);
     expect(result.exportedRows).toBe(1);
     expect(result.csv).toContain('Ada Lovelace,0000-0000-0000-0001,2024');

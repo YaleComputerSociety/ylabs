@@ -51,31 +51,32 @@ describe('scraper CLI helpers', () => {
         output: '/tmp/scrape-report.json',
       },
     });
-    expect(() =>
-      cli.parseArgs(['node', 'cli.ts', 'report', '--output', '--dry-run']),
-    ).toThrow(/--output requires a value/);
-    expect(() =>
-      cli.parseArgs(['node', 'cli.ts', 'report', '--output=--dry-run']),
-    ).toThrow(/--output requires a value/);
-    expect(() =>
-      cli.parseArgs(['node', 'cli.ts', 'run', 'prod', '--source=orcid']),
-    ).toThrow(/Unknown scraper CLI argument: prod/);
-    expect(() =>
-      cli.parseArgs(['node', 'cli.ts', 'prune-observations', '--apply=false']),
-    ).toThrow(/--apply does not accept a value/);
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'report', '--output', '--dry-run'])).toThrow(
+      /--output requires a value/,
+    );
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'report', '--output=--dry-run'])).toThrow(
+      /--output requires a value/,
+    );
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'run', 'prod', '--source=orcid'])).toThrow(
+      /Unknown scraper CLI argument: prod/,
+    );
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'prune-observations', '--apply=false'])).toThrow(
+      /--apply does not accept a value/,
+    );
     expect(() =>
       cli.parseArgs(['node', 'cli.ts', 'prune-observations', '--apply', 'false']),
     ).toThrow(/Unknown scraper CLI argument: false/);
     expect(() =>
+      cli.parseArgs(['node', 'cli.ts', 'prune-observations', '--confirm-observation-prune=false']),
+    ).toThrow(/--confirm-observation-prune does not accept a value/);
+    expect(() =>
       cli.parseArgs([
         'node',
         'cli.ts',
-        'prune-observations',
-        '--confirm-observation-prune=false',
+        'materialize',
+        '--run=run-1',
+        '--confirm-materialize=false',
       ]),
-    ).toThrow(/--confirm-observation-prune does not accept a value/);
-    expect(() =>
-      cli.parseArgs(['node', 'cli.ts', 'materialize', '--run=run-1', '--confirm-materialize=false']),
     ).toThrow(/--confirm-materialize does not accept a value/);
     expect(() =>
       cli.parseArgs(['node', 'cli.ts', 'run', '--source=orcid', '--release=false']),
@@ -102,14 +103,7 @@ describe('scraper CLI helpers', () => {
       ]),
     ).toThrow(/Unknown scraper CLI argument: false/);
     expect(
-      cli.parseArgs([
-        'node',
-        'cli.ts',
-        'run',
-        '--source=orcid',
-        '--release',
-        '--dry-run',
-      ]),
+      cli.parseArgs(['node', 'cli.ts', 'run', '--source=orcid', '--release', '--dry-run']),
     ).toEqual({
       command: 'run',
       flags: {
@@ -119,14 +113,7 @@ describe('scraper CLI helpers', () => {
       },
     });
     expect(
-      cli.parseArgs([
-        'node',
-        'cli.ts',
-        'cron',
-        '--source=orcid',
-        '--release',
-        '--force-disabled',
-      ]),
+      cli.parseArgs(['node', 'cli.ts', 'cron', '--source=orcid', '--release', '--force-disabled']),
     ).toEqual({
       command: 'cron',
       flags: {

@@ -163,10 +163,7 @@ export function buildEntityWorkPlan(options: BuildEntityWorkPlanOptions): Entity
 
     const lastObservedAt = latestObservedAt(
       options.observations.filter(
-        (obs) =>
-          !obs.superseded &&
-          obs.sourceName === options.sourceName &&
-          obs.field === field,
+        (obs) => !obs.superseded && obs.sourceName === options.sourceName && obs.field === field,
       ),
     );
 
