@@ -120,7 +120,7 @@ export function assertBetaRepairQueueApplyReviewedArtifact(
 ): void {
   if (options.mode === 'apply' && !options.applyFrom) {
     throw new Error(
-      '--apply-from is required when --apply is set for beta:repair-queue; review a fresh Beta dry-run artifact before applying repairs.',
+      '--apply-from is required when --apply is set for beta:repair-queue; review a fresh dry-run artifact for the guarded Development or Beta target before applying repairs.',
     );
   }
   if (options.mode === 'apply' && !options.confirmBetaRepairQueueApply) {
