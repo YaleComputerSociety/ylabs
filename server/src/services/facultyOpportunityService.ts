@@ -5,6 +5,10 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
+import {
+  invalidateAdminAccessReviewProjection,
+  refreshAdminAccessReviewProjection,
+} from './adminAccessReviewProjectionService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -905,6 +909,10 @@ export async function submitFacultyOpportunity(
   const validated = validateFacultyOpportunityInput(current, { requireComplete: true, now });
   const { opportunityModel, pathwayModel } = modelDeps(deps);
   const nextRevision = expectedRevision + 1;
+  const projectionGeneration =
+    !deps.opportunityModel && !deps.pathwayModel
+      ? await invalidateAdminAccessReviewProjection(current.researchEntityId)
+      : null;
   const submitted = await runTransaction(deps, async (session) => {
     const result = await opportunityModel
       .findOneAndUpdate(
@@ -945,6 +953,9 @@ export async function submitFacultyOpportunity(
     if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway not found');
     return result;
   });
+  if (projectionGeneration !== null) {
+    await refreshAdminAccessReviewProjection(current.researchEntityId, projectionGeneration);
+  }
   await runOptionalPathwaySync(idString(current.entryPathwayId), deps);
   return facultyOpportunityDto(submitted, now);
 }

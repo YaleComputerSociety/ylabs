@@ -44,7 +44,10 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   },
 }));
 
-import { AccessReviewRequestError } from '../../services/adminAccessReviewService';
+import {
+  AccessReviewRequestError,
+  AdminAccessReviewProjectionUnavailableError,
+} from '../../services/adminAccessReviewService';
 import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
   checkAdminUrlReachability,
@@ -121,14 +124,16 @@ const invokeRouteHandler = async (path: string, req: Record<string, any>, method
 };
 
 const invokeSafeLookup = (hostname: string) =>
-  new Promise<{ error: NodeJS.ErrnoException | null; address?: string; family?: number }>((resolve) => {
-    (ssrfSafeLookup as any)(
-      hostname,
-      {},
-      (error: NodeJS.ErrnoException | null, address?: string, family?: number) =>
-        resolve({ error, address, family }),
-    );
-  });
+  new Promise<{ error: NodeJS.ErrnoException | null; address?: string; family?: number }>(
+    (resolve) => {
+      (ssrfSafeLookup as any)(
+        hostname,
+        {},
+        (error: NodeJS.ErrnoException | null, address?: string, family?: number) =>
+          resolve({ error, address, family }),
+      );
+    },
+  );
 
 describe('admin routes', () => {
   afterEach(() => {
@@ -148,10 +153,7 @@ describe('admin routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateAdminCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
   });
@@ -227,7 +229,9 @@ describe('admin routes', () => {
 
   it('bounds URL checker fan-out before doing outbound work', async () => {
     const res = await invokeRouteHandler('/check-urls', {
-      body: { urls: Array.from({ length: MAX_ADMIN_URL_CHECK_URLS + 1 }, (_, i) => `example${i}.com`) },
+      body: {
+        urls: Array.from({ length: MAX_ADMIN_URL_CHECK_URLS + 1 }, (_, i) => `example${i}.com`),
+      },
     });
 
     expect(res.statusCode).toBe(400);
@@ -258,7 +262,9 @@ describe('admin routes', () => {
     const lookup = vi.spyOn(dns, 'lookup');
 
     await expect(
-      checkAdminUrlReachability('https://example.com/' + 'a'.repeat(MAX_ADMIN_URL_CHECK_URL_LENGTH)),
+      checkAdminUrlReachability(
+        'https://example.com/' + 'a'.repeat(MAX_ADMIN_URL_CHECK_URL_LENGTH),
+      ),
     ).resolves.toMatchObject({
       url: expect.stringMatching(/^https:\/\/example\.com\//),
       status: 0,
@@ -271,7 +277,9 @@ describe('admin routes', () => {
   it('rejects ambiguous direct admin URL reachability inputs before DNS work', async () => {
     const lookup = vi.spyOn(dns, 'lookup');
 
-    await expect(checkAdminUrlReachability('https://example.com\\@127.0.0.1/')).resolves.toMatchObject({
+    await expect(
+      checkAdminUrlReachability('https://example.com\\@127.0.0.1/'),
+    ).resolves.toMatchObject({
       status: 0,
       reachable: false,
       error: 'Invalid URL',
@@ -281,7 +289,9 @@ describe('admin routes', () => {
 
   it('bounds and strips control characters from admin URL check display values', async () => {
     await expect(
-      checkAdminUrlReachability(`\nhttps://example.com/${'a'.repeat(MAX_ADMIN_URL_CHECK_URL_LENGTH)}\r`),
+      checkAdminUrlReachability(
+        `\nhttps://example.com/${'a'.repeat(MAX_ADMIN_URL_CHECK_URL_LENGTH)}\r`,
+      ),
     ).resolves.toMatchObject({
       url: expect.not.stringMatching(/[\r\n]/),
       status: 0,
@@ -493,15 +503,19 @@ describe('admin routes', () => {
   });
 
   it('rejects invalid access-review record types before review update work', async () => {
-    const res = await invokeRouteHandler('/access-review/records/:type/:recordId/review', {
-      params: {
-        type: '$where',
-        recordId: '507f1f77bcf86cd799439011',
+    const res = await invokeRouteHandler(
+      '/access-review/records/:type/:recordId/review',
+      {
+        params: {
+          type: '$where',
+          recordId: '507f1f77bcf86cd799439011',
+        },
+        body: {
+          status: 'reviewed',
+        },
       },
-      body: {
-        status: 'reviewed',
-      },
-    }, 'put');
+      'put',
+    );
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ error: 'Invalid review record type' });
@@ -557,9 +571,7 @@ describe('admin routes', () => {
       page: 1,
       pageSize: 25,
     });
-    expect(
-      normalizeAdminPagination({ toString: () => '999999999' }, ['500']),
-    ).toEqual({
+    expect(normalizeAdminPagination({ toString: () => '999999999' }, ['500'])).toEqual({
       page: 1,
       pageSize: 25,
     });
@@ -585,13 +597,13 @@ describe('admin routes', () => {
       'Molecular Biology',
     );
     expect(() =>
-      normalizeAdminTaxonomyLabel('x'.repeat(MAX_ADMIN_TAXONOMY_LABEL_LENGTH + 1), 'department name'),
-    ).toThrow('Invalid department name');
-    expect(() =>
       normalizeAdminTaxonomyLabel(
-        'MCDB contact pi@example.edu',
+        'x'.repeat(MAX_ADMIN_TAXONOMY_LABEL_LENGTH + 1),
         'department name',
       ),
+    ).toThrow('Invalid department name');
+    expect(() =>
+      normalizeAdminTaxonomyLabel('MCDB contact pi@example.edu', 'department name'),
     ).toThrow('Invalid department name');
     expect(() =>
       normalizeAdminTaxonomyLabel(
@@ -680,7 +692,7 @@ describe('admin routes', () => {
       hIndex: 42,
       h_index: 42,
     });
-    expect((payload.publications as unknown[])).toHaveLength(500);
+    expect(payload.publications as unknown[]).toHaveLength(500);
     expect(payload).not.toHaveProperty('_id');
     expect(payload).not.toHaveProperty('ownListings');
     expect(payload).not.toHaveProperty('favListings');
@@ -747,7 +759,9 @@ describe('admin routes', () => {
   });
 
   it('returns a client error for oversized access-review search terms', async () => {
-    mocks.listAccessReviewEntities.mockRejectedValue(new AccessReviewRequestError('Search query is too long'));
+    mocks.listAccessReviewEntities.mockRejectedValue(
+      new AccessReviewRequestError('Search query is too long'),
+    );
 
     const res = await invokeRouteHandler(
       '/access-review',
@@ -759,6 +773,17 @@ describe('admin routes', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ error: 'Search query is too long' });
+  });
+
+  it('fails the access-review list closed while its projection is stale', async () => {
+    mocks.listAccessReviewEntities.mockRejectedValue(
+      new AdminAccessReviewProjectionUnavailableError(),
+    );
+
+    const res = await invokeRouteHandler('/access-review', { query: {} }, 'get');
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: 'Access review queue is rebuilding' });
   });
 
   it('classifies private and special-use addresses as blocked', () => {
@@ -816,7 +841,9 @@ describe('admin routes', () => {
   });
 
   it('rejects admin URL checks for non-public hosts and unsafe URL forms before connect', async () => {
-    await expect(checkAdminUrlReachability('http://169.254.169.254/latest/meta-data')).resolves.toEqual({
+    await expect(
+      checkAdminUrlReachability('http://169.254.169.254/latest/meta-data'),
+    ).resolves.toEqual({
       url: 'http://169.254.169.254/latest/meta-data',
       status: 0,
       reachable: false,
@@ -837,7 +864,9 @@ describe('admin routes', () => {
       error: 'Unsupported port',
     });
 
-    await expect(checkAdminUrlReachability('https://user:pass@example.com/private')).resolves.toEqual({
+    await expect(
+      checkAdminUrlReachability('https://user:pass@example.com/private'),
+    ).resolves.toEqual({
       url: 'https://example.com/private',
       status: 0,
       reachable: false,

@@ -59,6 +59,7 @@ export interface Phase0HotPathFixtureState {
     pathwayIds: unknown[];
   }>;
   adminSearchTerm?: string;
+  adminReviewEntityIds: unknown[];
 }
 
 export interface Phase0HotPathPlanSummary {
@@ -178,6 +179,7 @@ export const PHASE0_HOT_PATH_INDEX_COLLECTIONS = [
   'research_entity_relationships',
   'observations',
   'fellowships',
+  'admin_access_review_projections',
 ] as const;
 
 export const PHASE0_HOT_PATH_EXPECTED_LABELS = [
@@ -232,6 +234,8 @@ export const PHASE0_HOT_PATH_EXPECTED_LABELS = [
   'admin-access-review-updated',
   'admin-access-review-search',
   'admin-access-review-has-unreviewed-false',
+  'admin-access-review-count',
+  'admin-access-review-hydration',
   'admin-access-review-progress-entry-pathways-remaining',
   'admin-access-review-progress-entry-pathways-reviewed-today',
   'admin-access-review-progress-access-signals-remaining',

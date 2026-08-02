@@ -1,7 +1,10 @@
 import mongoose from 'mongoose';
 import { ContactRoute } from '../models/contactRoute';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
-import { syncPathwaySearchIndexDocument, syncPathwaySearchIndexDocumentsForEntity } from './pathwaySearchIndexService';
+import {
+  syncPathwaySearchIndexDocument,
+  syncPathwaySearchIndexDocumentsForEntity,
+} from './pathwaySearchIndexService';
 import {
   publicAccessEmail,
   publicAccessHttpUrl,
@@ -9,6 +12,10 @@ import {
 } from '../utils/publicAccessArtifact';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
+import {
+  invalidateAdminAccessReviewProjection,
+  refreshAdminAccessReviewProjection,
+} from './adminAccessReviewProjectionService';
 import type {
   ContactPolicy,
   ContactRouteType,
@@ -93,8 +100,7 @@ export async function upsertContactRoute(
     .filter(Boolean)
     .map(toStoredObjectId)
     .filter((id): id is mongoose.Types.ObjectId => !!id);
-  const sourceEvidenceId =
-    toStoredObjectId(input.sourceEvidenceId) || sourceEvidenceIds[0];
+  const sourceEvidenceId = toStoredObjectId(input.sourceEvidenceId) || sourceEvidenceIds[0];
   const email = normalizeEmail(input.email);
   const name = publicAccessText(input.name);
   const role = publicAccessText(input.role);
@@ -107,6 +113,9 @@ export async function upsertContactRoute(
 
   const filter = compactObject({ researchEntityId, derivationKey });
   const existing = await findReviewLockedRecord(ContactRoute, filter);
+  const projectionGeneration = !deps.model
+    ? await invalidateAdminAccessReviewProjection(researchEntityId)
+    : null;
 
   const update = {
     $setOnInsert: compactObject({
@@ -114,24 +123,27 @@ export async function upsertContactRoute(
       routeType: input.routeType,
       derivationKey,
     }),
-    $set: omitReviewLockedFields(compactObject({
-      entryPathwayId,
-      sourceEvidenceId,
-      name,
-      personName: name,
-      label: name || role,
-      email,
-      role,
-      url,
-      priority: input.priority,
-      visibility: input.visibility,
-      contactPolicy: input.contactPolicy,
-      rationale: publicAccessText(input.rationale),
-      observedAt: input.observedAt,
-      sourceName: input.sourceName,
-      sourceUrl,
-      lastMaterializedAt: new Date(),
-    }), existing),
+    $set: omitReviewLockedFields(
+      compactObject({
+        entryPathwayId,
+        sourceEvidenceId,
+        name,
+        personName: name,
+        label: name || role,
+        email,
+        role,
+        url,
+        priority: input.priority,
+        visibility: input.visibility,
+        contactPolicy: input.contactPolicy,
+        rationale: publicAccessText(input.rationale),
+        observedAt: input.observedAt,
+        sourceName: input.sourceName,
+        sourceUrl,
+        lastMaterializedAt: new Date(),
+      }),
+      existing,
+    ),
     $addToSet: {
       sourceEvidenceIds: { $each: sourceEvidenceIds },
     },
@@ -143,6 +155,9 @@ export async function upsertContactRoute(
     setDefaultsOnInsert: true,
   });
   const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  if (!deps.model && projectionGeneration !== null) {
+    await refreshAdminAccessReviewProjection(researchEntityId, projectionGeneration);
+  }
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
     const entryPathwayId = serializedDocumentId(doc?.entryPathwayId);
     const researchEntityId = serializedDocumentId(doc?.researchEntityId);

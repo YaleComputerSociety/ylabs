@@ -3,6 +3,10 @@
  */
 export { User } from './user';
 export { AdminGrant } from './adminGrant';
+export {
+  AdminAccessReviewProjection,
+  AdminAccessReviewProjectionState,
+} from './adminAccessReviewProjection';
 export { Listing } from './listing';
 export { ListingClaimRequest } from './listingClaimRequest';
 export { Fellowship } from './fellowship';

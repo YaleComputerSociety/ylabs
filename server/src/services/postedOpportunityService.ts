@@ -9,6 +9,10 @@ import { upsertEntryPathway } from './entryPathwayService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
+import {
+  invalidateAdminAccessReviewProjection,
+  refreshAdminAccessReviewProjection,
+} from './adminAccessReviewProjectionService';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -104,6 +108,11 @@ export async function upsertPostedOpportunity(
     ? compactObject({ entryPathwayId, derivationKey: input.derivationKey })
     : compactObject({ entryPathwayId, listingId, title: input.title });
   const existing = await findReviewLockedRecord(PostedOpportunity, filter);
+  const projectionEntityId = researchEntityId || (existing as any)?.researchEntityId;
+  const projectionGeneration =
+    !deps.model && projectionEntityId
+      ? await invalidateAdminAccessReviewProjection(projectionEntityId)
+      : null;
 
   const update = {
     $setOnInsert: compactObject({
@@ -139,11 +148,15 @@ export async function upsertPostedOpportunity(
     setDefaultsOnInsert: true,
   });
   const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  if (!deps.model && projectionEntityId && projectionGeneration !== null) {
+    await refreshAdminAccessReviewProjection(projectionEntityId, projectionGeneration);
+  }
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true' && doc?.entryPathwayId) {
     const entryPathwayId = serializedDocumentId(doc.entryPathwayId);
-    if (entryPathwayId) await syncPathwaySearchIndexDocument(entryPathwayId).catch((error) => {
-      console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
-    });
+    if (entryPathwayId)
+      await syncPathwaySearchIndexDocument(entryPathwayId).catch((error) => {
+        console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
+      });
   }
 
   return {
@@ -354,9 +367,9 @@ export async function backfillPostedOpportunitiesFromListings(
     )
     .sort({ updatedAt: -1, createdAt: -1 })
     .limit(limit);
-  const listings = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
-  const listingIds = (listings as any[])
-    .flatMap((listing) => idToString(listing._id) ?? []);
+  const listings =
+    typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  const listingIds = (listings as any[]).flatMap((listing) => idToString(listing._id) ?? []);
   const existingListingIds = new Set(
     (
       await postedOpportunityModel.distinct('listingId', {
@@ -365,12 +378,10 @@ export async function backfillPostedOpportunitiesFromListings(
       })
     ).flatMap((id) => idToString(id) ?? []),
   );
-  const candidates = (listings as ListingPostedOpportunityInput[]).filter(
-    (listing) => {
-      const listingId = idToString(listing._id);
-      return Boolean(listingId && !existingListingIds.has(listingId));
-    },
-  );
+  const candidates = (listings as ListingPostedOpportunityInput[]).filter((listing) => {
+    const listingId = idToString(listing._id);
+    return Boolean(listingId && !existingListingIds.has(listingId));
+  });
   const skippedReasons: Record<string, number> = {};
   const materializedListingIds: string[] = [];
 
@@ -393,7 +404,9 @@ export async function backfillPostedOpportunitiesFromListings(
     materialized: materializedListingIds.length,
     skipped: dryRun ? 0 : candidates.length - materializedListingIds.length,
     skippedReasons,
-    candidateListingIds: candidates.flatMap((listing) => idToString(listing._id) ?? []).slice(0, 50),
+    candidateListingIds: candidates
+      .flatMap((listing) => idToString(listing._id) ?? [])
+      .slice(0, 50),
     materializedListingIds,
   };
 }
@@ -437,7 +450,7 @@ export async function reapExpiredPostedOpportunities(
       status: 'OPEN',
       deadline: { $lt: now },
     })
-    .select('_id entryPathwayId review.status review.lockedFields')
+    .select('_id entryPathwayId researchEntityId review.status review.lockedFields')
     .sort({ deadline: 1, updatedAt: 1 })
     .limit(limit);
   const expired =
@@ -460,12 +473,19 @@ export async function reapExpiredPostedOpportunities(
       continue;
     }
 
+    const projectionGeneration =
+      !deps.model && opportunity.researchEntityId
+        ? await invalidateAdminAccessReviewProjection(opportunity.researchEntityId)
+        : null;
     const updateResult = await postedOpportunityModel.updateOne(
       { _id: opportunity._id },
       { $set: { status: 'CLOSED' } },
     );
     if ((updateResult as any).modifiedCount || (updateResult as any).matchedCount) {
       closedOpportunities++;
+    }
+    if (projectionGeneration !== null) {
+      await refreshAdminAccessReviewProjection(opportunity.researchEntityId, projectionGeneration);
     }
   }
 

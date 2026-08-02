@@ -509,7 +509,14 @@ Initial implementation note: `accessSummaryService.ts` computes a compatibility 
 
 Admins need a way to inspect derived access records before deeper editorial workflows are built.
 
-Implementation note: `GET /api/admin/access-review` returns research entities with counts of related `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` rows. `GET /api/admin/access-review/:id` returns the full derived access bundle for one entity. `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status/notes/locks. For faculty-submitted opportunities, approval, needs-source, dispute, or reset review also updates the linked pathway and advances the opportunity revision so stale faculty writes conflict. The admin UI can inspect source evidence, update review state, manage locks, and filter records by review/evidence/contact/archive gaps before Beta.
+Implementation note: `GET /api/admin/access-review` filters, sorts, and paginates the environment-local `AdminAccessReviewProjection` before it hydrates the selected parent `ResearchEntity` rows.
+The projection stores only bounded queue search prefixes, sort keys, aggregate counts, the parent reference, and reconciliation state.
+Canonical access-record services invalidate the affected generation before a write and recompute it afterward, so concurrent writes cannot clear a newer invalidation.
+The list fails with a temporary unavailable response when the projection is uninitialized, rebuilding, or stale.
+`GET /api/admin/access-review/:id` remains a separately bounded full derived access bundle for one entity.
+`PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status, notes, and locks.
+For faculty-submitted opportunities, approval, needs-source, dispute, or reset review also updates the linked pathway and advances the opportunity revision so stale faculty writes conflict.
+The admin UI can inspect source evidence, update review state, manage locks, and filter records by review, evidence, contact, and archive gaps before Beta.
 
 ### Student publication readiness
 

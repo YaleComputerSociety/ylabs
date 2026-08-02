@@ -376,6 +376,48 @@ Latency is diagnostic only unless the environments use comparable network and co
 
 ## Private MongoDB hot-path query-cost evidence
 
+### Admin access-review projection
+
+The admin access-review list reads an environment-local projection instead of joining every access record before pagination.
+The projection stores only the parent `ResearchEntity` reference, bounded normalized queue search prefixes, queue sort keys, aggregate record and unreviewed counts, official-application presence, and reconciliation fields.
+It never stores evidence excerpts, contact destinations, review notes, or other detail payloads.
+The list verifies projection readiness, filters and paginates the projection, and only then hydrates the selected parent rows.
+The existing detail route remains separately bounded and protected by the shared admin authentication and private `no-store` middleware.
+
+Canonical `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` service writes increment a per-entity generation before writing and refresh only that generation afterward.
+A concurrent or failed refresh leaves the queue stale and unavailable until reconciliation.
+Run reconciliation after deployment, after any bulk migration that bypasses canonical services, and at least once every six hours while scraper or moderation writes are active.
+
+Reconciliation is dry-run-first.
+Apply accepts only the exact plan fingerprint from a reviewed mode-`0600` artifact for the same environment and database.
+Production is not an allowed target.
+Run Development first, then Beta, then ProductionCopy from a clean current Beta worktree with the matching database URL injected locally.
+Do not run these commands on Render.
+
+```bash
+umask 077
+export MONGODBURL
+
+yarn --cwd server model-refactor:access-review-projection \
+  --environment=development \
+  --output=/tmp/ylabs-access-review-development-plan.json
+
+yarn --cwd server model-refactor:access-review-projection \
+  --environment=development \
+  --apply \
+  --apply-from=/tmp/ylabs-access-review-development-plan.json \
+  --confirm-admin-access-review-projection=development \
+  --output=/tmp/ylabs-access-review-development-apply.json
+
+unset MONGODBURL
+```
+
+Repeat with `--environment=beta` and a fresh Beta artifact while `MONGODBURL` points to Beta.
+Repeat with `--environment=production-copy` and a fresh ProductionCopy artifact only after its restore and rollback evidence have been accepted.
+Never reuse a reviewed artifact across environments or after drift.
+If apply reports drift or verification failure, leave the queue unavailable, stop writers, generate a fresh dry-run, and inspect the canonical records before retrying.
+Keep all artifacts private and never post their counts, identifiers, fingerprints, paths, hashes, or storage references to GitHub.
+
 The query-cost audit measures deployed MongoDB indexes and redacted `executionStats` for every representative query shape in the [Phase 0 hot-path audit](./research-model-refactor-phase0-hot-paths.md).
 It covers Research browse and detail, opportunity detail, account planning, and admin access review.
 It does not call HTTP routes, execute application writes, retain fixture identifiers, or replace the separate Meilisearch baseline.

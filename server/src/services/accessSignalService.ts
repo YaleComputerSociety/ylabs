@@ -1,19 +1,20 @@
 import mongoose from 'mongoose';
 import { AccessSignal } from '../models/accessSignal';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
-import { syncPathwaySearchIndexDocument, syncPathwaySearchIndexDocumentsForEntity } from './pathwaySearchIndexService';
+import {
+  syncPathwaySearchIndexDocument,
+  syncPathwaySearchIndexDocumentsForEntity,
+} from './pathwaySearchIndexService';
 import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArtifact';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
-import type {
-  AccessSignalConfidence,
-  AccessSignalType,
-} from '../models/researchAccessTypes';
+import {
+  invalidateAdminAccessReviewProjection,
+  refreshAdminAccessReviewProjection,
+} from './adminAccessReviewProjectionService';
+import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 
-export type {
-  AccessSignalConfidence,
-  AccessSignalType,
-} from '../models/researchAccessTypes';
+export type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 
 export interface UpsertAccessSignalInput {
   researchEntityId: string;
@@ -85,6 +86,9 @@ export async function upsertAccessSignal(
     derivationKey,
   });
   const existing = await findReviewLockedRecord(AccessSignal, filter);
+  const projectionGeneration = !deps.model
+    ? await invalidateAdminAccessReviewProjection(researchEntityId)
+    : null;
 
   const update = {
     $setOnInsert: compactObject({
@@ -92,20 +96,23 @@ export async function upsertAccessSignal(
       signalType: input.signalType,
       derivationKey,
     }),
-    $set: omitReviewLockedFields(compactObject({
-      entryPathwayId,
-      sourceEvidenceId,
-      observationId: sourceEvidenceId,
-      confidence: input.confidence,
-      confidenceScore: input.confidenceScore ?? input.originalConfidence,
-      observedAt: input.observedAt,
-      excerpt: publicAccessText(input.excerpt),
-      sourceName: input.sourceName,
-      sourceUrl: publicAccessHttpUrl(input.sourceUrl),
-      originalConfidence: input.originalConfidence,
-      archived: input.archived,
-      lastMaterializedAt: new Date(),
-    }), existing),
+    $set: omitReviewLockedFields(
+      compactObject({
+        entryPathwayId,
+        sourceEvidenceId,
+        observationId: sourceEvidenceId,
+        confidence: input.confidence,
+        confidenceScore: input.confidenceScore ?? input.originalConfidence,
+        observedAt: input.observedAt,
+        excerpt: publicAccessText(input.excerpt),
+        sourceName: input.sourceName,
+        sourceUrl: publicAccessHttpUrl(input.sourceUrl),
+        originalConfidence: input.originalConfidence,
+        archived: input.archived,
+        lastMaterializedAt: new Date(),
+      }),
+      existing,
+    ),
   };
 
   const query = AccessSignal.findOneAndUpdate(filter, update, {
@@ -114,6 +121,9 @@ export async function upsertAccessSignal(
     setDefaultsOnInsert: true,
   });
   const doc = typeof (query as any).lean === 'function' ? await (query as any).lean() : await query;
+  if (!deps.model && projectionGeneration !== null) {
+    await refreshAdminAccessReviewProjection(researchEntityId, projectionGeneration);
+  }
   if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
     const entryPathwayId = serializedDocumentId(doc?.entryPathwayId);
     const researchEntityId = serializedDocumentId(doc?.researchEntityId);
