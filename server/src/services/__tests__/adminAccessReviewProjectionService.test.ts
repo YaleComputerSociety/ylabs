@@ -42,7 +42,7 @@ vi.mock('../../models/postedOpportunity', () => ({
 }));
 
 vi.mock('../../models/adminAccessReviewProjection', () => ({
-  ADMIN_ACCESS_REVIEW_PROJECTION_SCHEMA_VERSION: 1,
+  ADMIN_ACCESS_REVIEW_PROJECTION_SCHEMA_VERSION: 2,
   ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID: 'admin-access-review',
   AdminAccessReviewProjection: {
     findOneAndUpdate: vi.fn(() => {
@@ -57,6 +57,7 @@ vi.mock('../../models/adminAccessReviewProjection', () => ({
     findOne: vi.fn(() => {
       const query: any = {
         select: vi.fn(() => query),
+        session: vi.fn(() => query),
         lean: mocks.staleLean,
       };
       return query;
@@ -66,6 +67,7 @@ vi.mock('../../models/adminAccessReviewProjection', () => ({
     findById: vi.fn(() => {
       const query: any = {
         select: vi.fn(() => query),
+        session: vi.fn(() => query),
         lean: mocks.stateLean,
       };
       return query;
@@ -100,7 +102,7 @@ describe('adminAccessReviewProjectionService', () => {
     mocks.projectionFindOneAndUpdateLean.mockResolvedValue({ generation: 4 });
     mocks.projectionUpdateOne.mockResolvedValue({ matchedCount: 1 });
     mocks.projectionDeleteOne.mockResolvedValue({ deletedCount: 1 });
-    mocks.stateLean.mockResolvedValue({ schemaVersion: 1, ready: true, rebuilding: false });
+    mocks.stateLean.mockResolvedValue({ schemaVersion: 2, ready: true, rebuilding: false });
     mocks.staleLean.mockResolvedValue(null);
   });
 
@@ -110,7 +112,14 @@ describe('adminAccessReviewProjectionService', () => {
 
     expect(value).toMatchObject({
       researchEntityId: id,
-      searchPrefixes: expect.arrayContaining(['example', 'lab', 'research', 'computer', 'machine']),
+      searchPrefixes: expect.arrayContaining([
+        'example',
+        'ample',
+        'lab',
+        'research',
+        'computer',
+        'machine',
+      ]),
       counts: {
         entryPathways: 3,
         accessSignals: 2,
@@ -119,7 +128,7 @@ describe('adminAccessReviewProjectionService', () => {
       },
       totalUnreviewed: 4,
       hasOfficialApplication: true,
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
     const pathwayPipeline = mocks.pathwayExec.mock.calls[0][0];
     const opportunityPipeline = mocks.opportunityExec.mock.calls[0][0];
@@ -173,5 +182,27 @@ describe('adminAccessReviewProjectionService', () => {
     await expect(assertAdminAccessReviewProjectionReady()).rejects.toBeInstanceOf(
       AdminAccessReviewProjectionUnavailableError,
     );
+  });
+
+  it('checks readiness sequentially on a supplied transaction session', async () => {
+    let activeReads = 0;
+    let maximumConcurrentReads = 0;
+    const trackedRead = async <T>(value: T): Promise<T> => {
+      activeReads += 1;
+      maximumConcurrentReads = Math.max(maximumConcurrentReads, activeReads);
+      await Promise.resolve();
+      activeReads -= 1;
+      return value;
+    };
+    mocks.stateLean.mockImplementation(() =>
+      trackedRead({ schemaVersion: 2, ready: true, rebuilding: false }),
+    );
+    mocks.staleLean.mockImplementation(() => trackedRead(null));
+
+    await expect(
+      assertAdminAccessReviewProjectionReady({} as mongoose.ClientSession),
+    ).resolves.toBeUndefined();
+
+    expect(maximumConcurrentReads).toBe(1);
   });
 });

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-export const ADMIN_ACCESS_REVIEW_PROJECTION_SCHEMA_VERSION = 1;
+export const ADMIN_ACCESS_REVIEW_PROJECTION_SCHEMA_VERSION = 2;
 export const ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID = 'admin-access-review';
 
 const accessReviewCountSchema = new mongoose.Schema(

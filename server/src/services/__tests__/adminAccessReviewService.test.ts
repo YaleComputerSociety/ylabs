@@ -53,6 +53,7 @@ vi.mock('../../models/adminAccessReviewProjection', () => ({
           return query;
         },
         select: vi.fn(() => query),
+        session: vi.fn(() => query),
         lean: mocks.projectionLean,
       };
       return query;
@@ -127,6 +128,9 @@ import {
 describe('adminAccessReviewService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(mongoose.connection, 'transaction').mockImplementation(async (work: any) =>
+      work({} as mongoose.ClientSession),
+    );
     mocks.syncPathwaySearchIndexDocument.mockResolvedValue(undefined);
     mocks.assertProjectionReady.mockResolvedValue(undefined);
     mocks.projectionLean.mockResolvedValue([]);
@@ -161,6 +165,30 @@ describe('adminAccessReviewService', () => {
       pageSize: 100,
       totalPages: 0,
     });
+    expect(mongoose.connection.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      readConcern: { level: 'snapshot' },
+      readPreference: 'primary',
+    });
+    expect(mocks.assertProjectionReady).toHaveBeenCalledWith(expect.any(Object));
+  });
+
+  it('runs snapshot transaction reads sequentially on one MongoDB session', async () => {
+    let activeReads = 0;
+    let maximumConcurrentReads = 0;
+    const trackedRead = async <T>(value: T): Promise<T> => {
+      activeReads += 1;
+      maximumConcurrentReads = Math.max(maximumConcurrentReads, activeReads);
+      await Promise.resolve();
+      activeReads -= 1;
+      return value;
+    };
+    mocks.projectionLean.mockImplementation(() => trackedRead([]));
+    mocks.projectionCountDocuments.mockImplementation(() => trackedRead(0));
+    mocks.countDocuments.mockImplementation(() => trackedRead(0));
+
+    await listAccessReviewEntities();
+
+    expect(maximumConcurrentReads).toBe(1);
   });
 
   it('rejects oversized access review search before model lookup', async () => {
@@ -174,14 +202,30 @@ describe('adminAccessReviewService', () => {
     expect(mocks.researchEntityCountDocuments).not.toHaveBeenCalled();
   });
 
-  it('uses bounded indexed word prefixes for queue search', async () => {
+  it('uses bounded indexed substring prefixes for queue search', async () => {
     mocks.countDocuments.mockResolvedValue(0);
 
     await listAccessReviewEntities({ search: ' Example   Lab ' });
 
     expect(mocks.projectionFind).toHaveBeenCalledWith({
-      searchPrefixes: { $all: ['example', 'lab'] },
+      searchPrefixes: { $all: [/^example/, /^lab/] },
     });
+  });
+
+  it('returns no queue matches for punctuation-only search', async () => {
+    mocks.countDocuments.mockResolvedValue(0);
+
+    await listAccessReviewEntities({ search: '---' });
+
+    expect(mocks.projectionFind).toHaveBeenCalledWith({ searchPrefixes: { $in: [] } });
+  });
+
+  it('preserves substring matching within queue search words', async () => {
+    mocks.countDocuments.mockResolvedValue(0);
+
+    await listAccessReviewEntities({ search: 'ale' });
+
+    expect(mocks.projectionFind).toHaveBeenCalledWith({ searchPrefixes: { $all: [/^ale/] } });
   });
 
   it('filters and sorts the queue by aggregate unreviewed work without returning record data', async () => {
@@ -208,6 +252,7 @@ describe('adminAccessReviewService', () => {
     mocks.projectionCountDocuments.mockResolvedValue(1);
     const entityQuery: any = {
       select: vi.fn(() => entityQuery),
+      session: vi.fn(() => entityQuery),
       lean: vi
         .fn()
         .mockResolvedValue([{ _id: researchEntityId, name: 'Example Lab', slug: 'example' }]),

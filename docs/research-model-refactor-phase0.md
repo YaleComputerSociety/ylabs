@@ -379,7 +379,7 @@ Latency is diagnostic only unless the environments use comparable network and co
 ### Admin access-review projection
 
 The admin access-review list reads an environment-local projection instead of joining every access record before pagination.
-The projection stores only the parent `ResearchEntity` reference, bounded normalized queue search prefixes, queue sort keys, aggregate record and unreviewed counts, official-application presence, and reconciliation fields.
+The projection stores only the parent `ResearchEntity` reference, bounded normalized word suffixes that preserve case-insensitive substring search, queue sort keys, aggregate record and unreviewed counts, official-application presence, and reconciliation fields.
 It never stores evidence excerpts, contact destinations, review notes, or other detail payloads.
 The list verifies projection readiness, filters and paginates the projection, and only then hydrates the selected parent rows.
 The existing detail route remains separate from the list projection and protected by the shared admin authentication and private `no-store` middleware.
@@ -389,6 +389,7 @@ A concurrent or failed refresh leaves the queue stale and unavailable until reco
 Run reconciliation after deployment, after any bulk migration that bypasses canonical services, and at least once every six hours while scraper or moderation writes are active.
 
 Reconciliation is dry-run-first.
+Its planning reads use one snapshot transaction so counts, current projections, and parent entities describe the same database state.
 Apply accepts only the exact plan fingerprint from a reviewed mode-`0600` artifact for the same environment and database.
 Production is not an allowed target.
 Run Development first, then Beta, then ProductionCopy from a clean current Beta worktree with the matching database URL injected locally.
