@@ -32,7 +32,8 @@ describe('backfillNarrativeValueHashes', () => {
       },
     ]);
     const findLimit = vi.fn(() => ({ lean: findLean }));
-    const findSelect = vi.fn(() => ({ limit: findLimit }));
+    const findSort = vi.fn(() => ({ limit: findLimit }));
+    const findSelect = vi.fn(() => ({ sort: findSort }));
     vi.spyOn(ResearchEntity, 'find').mockReturnValue({ select: findSelect } as never);
 
     const observation = {
@@ -52,6 +53,7 @@ describe('backfillNarrativeValueHashes', () => {
     const plans = await planNarrativeValueHashBackfill(25);
 
     expect(ResearchEntity.find).toHaveBeenCalledWith({ archived: { $ne: true } });
+    expect(findSort).toHaveBeenCalledWith({ _id: 1 });
     expect(findLimit).toHaveBeenCalledWith(25);
     expect(findOne).toHaveBeenCalledOnce();
     expect(findOne).toHaveBeenCalledWith({

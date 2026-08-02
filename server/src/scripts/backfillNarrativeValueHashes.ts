@@ -49,6 +49,7 @@ export async function planNarrativeValueHashBackfill(limit: number): Promise<
 > {
   const entities = await ResearchEntity.find({ archived: { $ne: true } })
     .select(`_id ${narrativeFields.join(' ')} fieldProvenance`)
+    .sort({ _id: 1 })
     .limit(limit)
     .lean();
   const plans = [];
@@ -93,6 +94,13 @@ async function main(): Promise<void> {
     mongoUrl: process.env.MONGODBURL,
   });
   await initializeConnections();
+  const scannedRecordIds = (
+    await ResearchEntity.find({ archived: { $ne: true } })
+      .select('_id')
+      .sort({ _id: 1 })
+      .limit(options.limit)
+      .lean()
+  ).map((entity) => String(entity._id));
   const plans = await planNarrativeValueHashBackfill(options.limit);
   if (options.apply) {
     for (const plan of plans) {
@@ -101,12 +109,11 @@ async function main(): Promise<void> {
         { $set: { [`fieldProvenance.${plan.field}`]: plan.provenance } },
       );
     }
-    const recordIds = [...new Set(plans.map((plan) => String(plan.entityId)))];
-    if (recordIds.length > 0) {
+    if (scannedRecordIds.length > 0) {
       const visibilityPlans = await planStudentVisibilityGate({
         collection: 'research',
         mode: 'apply',
-        recordIds,
+        recordIds: scannedRecordIds,
       });
       await applyStudentVisibilityGatePlans(visibilityPlans);
     }
@@ -117,6 +124,7 @@ async function main(): Promise<void> {
         environment: guard.environment,
         db: guard.dbLabel,
         mode: options.apply ? 'apply' : 'dry-run',
+        scanned: scannedRecordIds.length,
         matched: plans.length,
       },
       null,

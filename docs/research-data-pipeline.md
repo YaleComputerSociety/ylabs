@@ -70,7 +70,8 @@ The release queue is written by `yarn --cwd server student-visibility:gate`. Scr
 Research-scope classifier releases must reconcile stored research visibility before deployment.
 Run `yarn --cwd server research-scope:backfill --mode=dry-run --limit=<reviewedEntityCount>` first and review the matched provenance updates.
 Then run `yarn --cwd server research-scope:backfill --mode=apply --limit=<reviewedEntityCount> --confirm-narrative-value-hashes` under the existing environment write guards.
-The guarded migration certifies a narrative field only when a current, non-superseded observation exactly matches its value and has an HTTP source URL, then reconciles visibility for the affected research entities after persisting those hashes.
+The guarded migration certifies a narrative field only when a current, non-superseded observation exactly matches its value and has an HTTP source URL.
+After persisting those hashes, it reconciles every scanned research entity so unmatched, synthesized, and stale claims also fail closed instead of retaining an earlier public tier.
 
 Beta repair is dry-run-first through `yarn --cwd server beta:repair-queue --mode=dry-run --collection=all --output <artifact>`, then apply mode must use `--apply-from <artifact> --confirm-beta-repair-queue-apply` after reviewing the fresh Beta artifact.
 Source-description repair fails closed when an exact `https://medicine.yale.edu/lab/<slug>` URL, with an optional trailing slash, belongs to another active research entity: it reports `official_source_url_collision`, applies no patch, and does not use that URL as description evidence until ownership is resolved.
