@@ -61,18 +61,6 @@ describe('student access publication policy', () => {
     expect(studentPathwayMongoMatch()).not.toHaveProperty('review.status');
   });
 
-  it('admits only approved faculty pathways to opportunity-aware Mongo queries', () => {
-    expect(studentPathwayMongoMatch({ includeApprovedFacultyOpportunities: true })).toMatchObject({
-      $or: [
-        { derivationKey: { $not: /^faculty-opportunity:/ } },
-        {
-          derivationKey: /^faculty-opportunity:/,
-          'review.status': 'approved',
-        },
-      ],
-    });
-  });
-
   it('publishes only source-discovered opportunities', () => {
     expect(publicPostedOpportunityMongoMatch({ archived: false })).toEqual({
       archived: false,

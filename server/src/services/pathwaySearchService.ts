@@ -325,7 +325,7 @@ function buildPathwayMatch(filters: PathwaySearchFilters): Record<string, unknow
 
   return compactMatch({
     archived: { $ne: true },
-    ...studentPathwayMongoMatch({ includeApprovedFacultyOpportunities: true }),
+    ...studentPathwayMongoMatch(),
     _id: hasPathwayIdFilter ? { $in: pathwayIds } : undefined,
     pathwayType,
     compensation:
@@ -506,24 +506,7 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
                   { $eq: ['$entryPathwayId', '$$pathwayId'] },
                   { $ne: ['$archived', true] },
                   { $in: ['$status', ['OPEN', 'ROLLING']] },
-                  {
-                    $or: [
-                      {
-                        $ne: [{ $ifNull: ['$origin', null] }, 'FACULTY_SUBMITTED'],
-                      },
-                      {
-                        $and: [
-                          { $eq: ['$review.status', 'approved'] },
-                          {
-                            $or: [
-                              { $eq: [{ $ifNull: ['$deadline', null] }, null] },
-                              { $gte: ['$deadline', '$$NOW'] },
-                            ],
-                          },
-                        ],
-                      },
-                    ],
-                  },
+                  { $ne: [{ $ifNull: ['$origin', null] }, 'FACULTY_SUBMITTED'] },
                 ],
               },
             },
@@ -548,17 +531,6 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
     {
       $addFields: {
         activePostedOpportunity: { $arrayElemAt: ['$activePostedOpportunities', 0] },
-      },
-    },
-    {
-      $match: {
-        $or: [
-          { derivationKey: { $not: /^faculty-opportunity:/ } },
-          {
-            derivationKey: /^faculty-opportunity:/,
-            'activePostedOpportunity.origin': 'FACULTY_SUBMITTED',
-          },
-        ],
       },
     },
   ];

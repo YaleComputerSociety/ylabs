@@ -26,30 +26,15 @@ const isFacultyOpportunityPathway = (pathway: Record<string, unknown>): boolean 
   pathway.derivationKey.startsWith('faculty-opportunity:');
 
 export const isStudentPublishablePathway = (pathway: Record<string, unknown>): boolean =>
-  (!isFacultyOpportunityPathway(pathway) ||
-    (pathway.review as Record<string, unknown> | undefined)?.status === 'approved') &&
+  !isFacultyOpportunityPathway(pathway) &&
   STUDENT_PATHWAY_STATUSES.includes(pathway.status as any) &&
   STUDENT_PATHWAY_EVIDENCE_STRENGTHS.includes(pathway.evidenceStrength as any) &&
   typeof pathway.confidence === 'number' &&
   pathway.confidence >= STUDENT_PATHWAY_MIN_CONFIDENCE &&
   hasPublicUrl(pathway.sourceUrls);
 
-export const studentPathwayMongoMatch = (
-  options: {
-    includeApprovedFacultyOpportunities?: boolean;
-  } = {},
-): Record<string, unknown> => ({
-  ...(options.includeApprovedFacultyOpportunities
-    ? {
-        $or: [
-          { derivationKey: { $not: /^faculty-opportunity:/ } },
-          {
-            derivationKey: /^faculty-opportunity:/,
-            'review.status': 'approved',
-          },
-        ],
-      }
-    : { derivationKey: { $not: /^faculty-opportunity:/ } }),
+export const studentPathwayMongoMatch = (): Record<string, unknown> => ({
+  derivationKey: { $not: /^faculty-opportunity:/ },
   status: { $in: [...STUDENT_PATHWAY_STATUSES] },
   evidenceStrength: { $in: [...STUDENT_PATHWAY_EVIDENCE_STRENGTHS] },
   confidence: { $gte: STUDENT_PATHWAY_MIN_CONFIDENCE },

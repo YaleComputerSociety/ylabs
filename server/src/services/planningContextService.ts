@@ -7,6 +7,7 @@ import { publicHttpUrl } from '../utils/urlSafety';
 import {
   isApprovedPublicContactRoute,
   isStudentPublishablePathway,
+  publicPostedOpportunityMongoMatch,
 } from './studentAccessPublicationPolicy';
 
 export const PLANNING_CONTEXT_CATEGORIES = [
@@ -100,30 +101,16 @@ export function selectPlanningContexts(input: {
   const pathwaysById = new Map(
     input.pathways.map((pathway) => [serializedDocumentId(pathway._id), pathway]),
   );
-  const approvedFacultyOpportunityPathwayIds = new Set(
-    input.opportunities.flatMap((opportunity) => {
-      const pathwayId = serializedDocumentId(opportunity.entryPathwayId);
-      return opportunity.origin === 'FACULTY_SUBMITTED' &&
-        opportunity.archived !== true &&
-        approved(opportunity) &&
-        isCurrentOpportunity(opportunity) &&
-        pathwayId
-        ? [pathwayId]
-        : [];
-    }),
-  );
   const candidates: Candidate[] = [];
 
   for (const opportunity of input.opportunities) {
     const pathway = pathwaysById.get(serializedDocumentId(opportunity.entryPathwayId));
     const id = entityId(opportunity.researchEntityId) || entityId(pathway?.researchEntityId);
-    const url =
-      opportunity.origin === 'FACULTY_SUBMITTED'
-        ? usableUrl(opportunity.applicationUrl)
-        : usableActionableUrl(opportunity.applicationUrl);
+    const url = usableActionableUrl(opportunity.applicationUrl);
     if (
       !id ||
       !url ||
+      opportunity.origin === 'FACULTY_SUBMITTED' ||
       opportunity.archived === true ||
       !isCurrentOpportunity(opportunity) ||
       !approved(opportunity) ||
@@ -146,13 +133,6 @@ export function selectPlanningContexts(input: {
 
   for (const pathway of input.pathways) {
     const id = entityId(pathway.researchEntityId);
-    const pathwayId = serializedDocumentId(pathway._id);
-    if (
-      String(pathway.derivationKey || '').startsWith('faculty-opportunity:') &&
-      (!pathwayId || !approvedFacultyOpportunityPathwayIds.has(pathwayId))
-    ) {
-      continue;
-    }
     const url = usableActionableUrl(
       ...(Array.isArray(pathway.sourceUrls) ? pathway.sourceUrls : []),
     );
@@ -244,14 +224,16 @@ export async function listPlanningContextsForResearchEntities(
     const id = entityId(pathway._id);
     return id ? [new mongoose.Types.ObjectId(id)] : [];
   });
-  const opportunities = await PostedOpportunity.find({
-    $or: [
-      { researchEntityId: { $in: objectIds } },
-      ...(pathwayIds.length > 0 ? [{ entryPathwayId: { $in: pathwayIds } }] : []),
-    ],
-    archived: false,
-    status: { $in: ['OPEN', 'ROLLING'] },
-  }).lean();
+  const opportunities = await PostedOpportunity.find(
+    publicPostedOpportunityMongoMatch({
+      $or: [
+        { researchEntityId: { $in: objectIds } },
+        ...(pathwayIds.length > 0 ? [{ entryPathwayId: { $in: pathwayIds } }] : []),
+      ],
+      archived: false,
+      status: { $in: ['OPEN', 'ROLLING'] },
+    }),
+  ).lean();
   return selectPlanningContexts({
     pathways: pathways as any[],
     opportunities: opportunities as any[],
