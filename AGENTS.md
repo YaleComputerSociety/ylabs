@@ -32,6 +32,7 @@ If refresh is unavailable, state the fallback and use targeted source search.
 4. Make the smallest safe change using existing repo patterns.
 5. Run focused verification and review the diff.
 6. Fold durable changes back into docs and refresh the ignored local Graphify cache when the architectural shape changed.
+7. When an action becomes a recurring workflow, improve the relevant skill with the reusable procedure and verify that its guidance still matches the repository.
 
 Source files, tests, `AGENTS.md`, and `docs/*.md` are canonical.
 Graphify is a navigation layer, not the source of truth.
@@ -52,6 +53,10 @@ Prefer quality, simplicity, robustness, scalability, and long-term maintainabili
 If something clearly looks off, try to fix it too.
 - Treat lint, test failures, and flakiness seriously.
 If you see a failure, even if it is not caused by the current work, try to get it fixed.
+- Never expose internal personal data in tests, fixtures, snapshots, logs, screenshots, or committed artifacts.
+Use synthetic or redacted values, and write ephemeral test files under `/tmp` when a filesystem artifact is needed.
+- Track substantive repository work in GitHub issues and link the issue from the implementation pull request.
+GitHub issues are repository-wide; open pull requests against the `beta` base branch unless explicitly directed otherwise.
 
 ## Implementation Rules
 
