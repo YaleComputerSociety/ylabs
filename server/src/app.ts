@@ -10,7 +10,7 @@ import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
-import { isIP } from 'node:net';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -92,6 +92,7 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+const RATE_LIMIT_ANONYMOUS_ID_RE = /^[a-f0-9]{32}$/;
 
 const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -99,12 +100,20 @@ const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   return RATE_LIMIT_NETID_RE.test(normalized) ? normalized : undefined;
 };
 
-const getEdgeVisitorIp = (req: express.Request): string | undefined => {
-  const cloudflareIp = req.get?.('cf-connecting-ip')?.trim();
-  if (cloudflareIp && isIP(cloudflareIp)) return cloudflareIp;
+const normalizedAnonymousRateLimitId = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  return RATE_LIMIT_ANONYMOUS_ID_RE.test(value) ? value : undefined;
+};
 
-  const forwardedIp = req.get?.('x-forwarded-for')?.split(',', 1)[0]?.trim();
-  return forwardedIp && isIP(forwardedIp) ? forwardedIp : undefined;
+const ensureAnonymousRateLimitId = (
+  req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) => {
+  if (req.session && !normalizedAnonymousRateLimitId(req.session.rateLimitId)) {
+    req.session.rateLimitId = randomBytes(16).toString('hex');
+  }
+  next();
 };
 
 const getRateLimitKey = (req: express.Request): string => {
@@ -114,7 +123,10 @@ const getRateLimitKey = (req: express.Request): string => {
     return `user:${netId}`;
   }
 
-  return `ip:${ipKeyGenerator(getEdgeVisitorIp(req) ?? req.ip ?? '')}`;
+  const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
+  return anonymousId
+    ? `anonymous:${anonymousId}`
+    : `ip:${ipKeyGenerator(req.ip ?? '')}`;
 };
 
 // The CAS login callback is always unauthenticated, so it keys by IP —
@@ -287,6 +299,7 @@ const app = express()
       sameSite: 'lax',
     }),
   )
+  .use('/api', ensureAnonymousRateLimitId)
   // cookie-session is stateless and does not implement session.regenerate /
   // session.save, which Passport >= 0.6 calls during req.logIn (session-
   // fixation hardening). Without these shims every login throws
