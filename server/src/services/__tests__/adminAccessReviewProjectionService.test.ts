@@ -112,7 +112,7 @@ describe('adminAccessReviewProjectionService', () => {
       researchEntityId: id,
       searchPrefixes: expect.arrayContaining([
         'example',
-        'ale',
+        'ample',
         'lab',
         'research',
         'computer',
