@@ -102,12 +102,16 @@ let trustedProxyAddressCount = 0;
 for (const entry of (process.env.TRUSTED_PROXY_CIDRS || '').split(',')) {
   const value = entry.trim();
   if (!value) continue;
-  const [address, prefixValue] = value.split('/');
+  const cidrParts = value.split('/');
+  const [address, prefixValue] = cidrParts;
   const addressType = isIP(address);
+  const hasValidPrefixSyntax = prefixValue === undefined || /^\d+$/.test(prefixValue);
   const prefix = prefixValue === undefined ? undefined : Number(prefixValue);
   const maximumPrefix = addressType === 4 ? 32 : 128;
   if (
+    cidrParts.length > 2 ||
     addressType === 0 ||
+    !hasValidPrefixSyntax ||
     (prefix !== undefined && (!Number.isInteger(prefix) || prefix < 0 || prefix > maximumPrefix))
   ) {
     throw new Error(`TRUSTED_PROXY_CIDRS contains an invalid address or CIDR: ${value}`);
