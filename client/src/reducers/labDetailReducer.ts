@@ -2,16 +2,12 @@
  * Pure reducer for the research detail page (`/research/:slug`).
  *
  * Models the fetch lifecycle for the `GET /api/research/:slug` payload
- * (idle → loading → loaded/error), plus a UI-only toggle for the Inquire modal.
+ * (idle → loading → loaded/error).
  *
  * Following the convention from `configReducer` and `profilePageReducer`:
  * stale data is preserved on FETCH_FAILURE so a transient network blip does
  * not blank out the page if a prior load succeeded.
  *
- * The Inquire-modal toggle is intentionally inside the same reducer (rather
- * than a separate `useState`) so all transitions tied to the lab record live
- * in one place — closing the modal on a fresh fetch, for instance, becomes
- * a single state transition rather than a coordination dance between hooks.
  */
 import { ResearchEntityDetailPayload } from '../types/researchEntity';
 
