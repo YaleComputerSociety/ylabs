@@ -67,7 +67,13 @@ Pending Meili sync is an operator warning, not a worker. Local or VPN jobs may m
 
 The release queue is written by `yarn --cwd server student-visibility:gate`. Scraper `--auto-materialize`, manual materialize, and production cron paths run the gate after clean write materialization. Standalone manual materialize writes require `--confirm-materialize` in addition to the existing scraper environment write guards; use `--dry-run --output <path>` first for review artifacts. Scheduled or manual global reconciliation should run the same command in dry-run mode first, then apply only with `--collection=all --mode=apply --confirm-student-visibility-apply --max-apply=<reviewedScannedCount>` under the existing environment write guards. For research entities, both public tiers require source-backed complete card copy plus source/lead identity quality; `limited_but_safe` means the record is usable but lacks action/access evidence, not that weak bios or sparse cards are allowed into public Beta.
 
-Beta repair is dry-run-first through `yarn --cwd server beta:repair-queue --mode=dry-run --collection=all --output <artifact>`, then apply mode must use `--apply-from <artifact> --confirm-beta-repair-queue-apply` after reviewing the fresh Beta artifact. The repair runner plans ordered lanes from blocker reasons: source/description first, PI identity second, and action evidence third. Only deterministic source-backed patches are applied automatically. Repair code must block archived research entities before PI member, pathway, access-signal, or contact-route upserts; archived duplicates should be repaired through the guarded member/artifact cleanup scripts instead. PI identity conflicts, same-name risks, suppression decisions, and unsupported action-evidence gaps remain queued as exceptions instead of being guessed into student-visible data.
+Beta repair is dry-run-first through `yarn --cwd server beta:repair-queue --mode=dry-run --collection=all --output <artifact>`, then apply mode must use `--apply-from <artifact> --confirm-beta-repair-queue-apply` after reviewing the fresh Beta artifact.
+The same reviewed-artifact workflow supports Development repairs when the dry-run artifact and guarded database target are both Development.
+Development artifacts cannot be applied to Beta, Beta artifacts cannot be applied to Development, and production repair-queue apply remains unsupported.
+The repair runner plans ordered lanes from blocker reasons: source/description first, PI identity second, and action evidence third.
+Only deterministic source-backed patches are applied automatically.
+Repair code must block archived research entities before PI member, pathway, access-signal, or contact-route upserts; archived duplicates should be repaired through the guarded member/artifact cleanup scripts instead.
+PI identity conflicts, same-name risks, suppression decisions, and unsupported action-evidence gaps remain queued as exceptions instead of being guessed into student-visible data.
 
 Formalization-only programs are deliberately capped. Fellowship funding, research travel grants, senior thesis funding, and secure-mentor-before-apply funding rows can be useful after a student has a research home, but they are not entry pathways by themselves. The visibility gate marks these records with `formalization_only`, keeps them out of `student_ready`, and routes them to exception review rather than source-description auto-repair unless evidence shows mentor matching, project placement, an internship, an RA program, or another real entry route.
 
@@ -107,6 +113,13 @@ Use the returned repair lanes and commands as the fix plan, then re-run the visi
 YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into `research_entity_members` PI rows so public detail pages and visibility computation share the same lead evidence.
 
 Grant-source PI matching must remain conservative because award APIs are funding evidence, not official Yale profile identity evidence. NSF PI matching requires exact last name plus exact first name, then exact last name plus first-name prefix; it may use a bare first-initial fallback only when the source itself provides only an initial. Do not match a full source given name to a different Yale first name by initial alone, such as `Leying Guan` to `Lawrence Guan`.
+
+The shared canonical-home resolver distinguishes a safe absence of memberships from one canonical official home and ambiguous or ineligible memberships.
+Grant scrapers create a synthetic shell only for the safe-absence case and emit no research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.
+Canonical-home enrichment emits grant evidence without replacing official identity or source URL fields.
+Ambiguous Yale user matches and archived or non-current lead memberships are ineligible, not safe absences.
+At materialization, only each source's latest grant snapshot participates.
+The public grant display is a recency-sorted, deduplicated union capped at ten records, while `recentGrantCount` sums the independent latest source totals without applying that display cap and funding agencies are unioned across sources.
 
 ## Canonical Collections
 

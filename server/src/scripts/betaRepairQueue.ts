@@ -108,7 +108,9 @@ export function parseBetaRepairQueueArgs(argv: string[]): BetaRepairQueueCliOpti
 
   options.mode = options.mode as VisibilityRepairMode;
   if (options.recordIds) {
-    options.recordIds = Array.from(new Set(options.recordIds.map((id) => id.trim()).filter(Boolean)));
+    options.recordIds = Array.from(
+      new Set(options.recordIds.map((id) => id.trim()).filter(Boolean)),
+    );
   }
   return options;
 }
@@ -118,7 +120,7 @@ export function assertBetaRepairQueueApplyReviewedArtifact(
 ): void {
   if (options.mode === 'apply' && !options.applyFrom) {
     throw new Error(
-      '--apply-from is required when --apply is set for beta:repair-queue; review a fresh Beta dry-run artifact before applying repairs.',
+      '--apply-from is required when --apply is set for beta:repair-queue; review a fresh dry-run artifact for the guarded Development or Beta target before applying repairs.',
     );
   }
   if (options.mode === 'apply' && !options.confirmBetaRepairQueueApply) {
@@ -130,21 +132,31 @@ export function assertBetaRepairQueueApplyReviewedArtifact(
 
 const APPLY_FROM_MAX_AGE_HOURS = 48;
 
-const textValue = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
+const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 const objectValue = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 
-const arrayValue = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+const arrayValue = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 export function validateBetaRepairQueueApplyArtifact(
   artifact: Record<string, unknown>,
   options: BetaRepairQueueCliOptions,
   now = new Date(),
+  expectedEnvironment = 'beta',
+  expectedDbFingerprint = '',
 ): BetaRepairQueueApplyArtifactValidation {
-  if (textValue(artifact.environment).toLowerCase() !== 'beta') {
-    throw new Error('Apply-from artifact must target beta.');
+  const normalizedExpectedEnvironment = expectedEnvironment.trim().toLowerCase();
+  if (!['development', 'beta'].includes(normalizedExpectedEnvironment)) {
+    throw new Error('Repair queue apply artifacts are limited to Development and Beta.');
+  }
+  if (textValue(artifact.environment).toLowerCase() !== normalizedExpectedEnvironment) {
+    throw new Error(`Apply-from artifact must target ${normalizedExpectedEnvironment}.`);
+  }
+  if (!expectedDbFingerprint || textValue(artifact.dbFingerprint) !== expectedDbFingerprint) {
+    throw new Error('Apply-from artifact database target does not match the guarded target.');
   }
   if (textValue(artifact.mode) !== 'dry-run') {
     throw new Error('Apply-from artifact must be a dry-run report.');
@@ -225,7 +237,12 @@ export function writeBetaRepairQueueOutput(report: Record<string, unknown>, outp
 }
 
 export function buildBetaRepairQueueOutput(
-  target: { environment: string; db: string; options?: BetaRepairQueueCliOptions },
+  target: {
+    environment: string;
+    db: string;
+    dbFingerprint: string;
+    options?: BetaRepairQueueCliOptions;
+  },
   report: Record<string, unknown>,
   now = new Date(),
 ): Record<string, unknown> {
@@ -234,15 +251,14 @@ export function buildBetaRepairQueueOutput(
     generatedAt: now.toISOString(),
     environment: target.environment,
     db: target.db,
+    dbFingerprint: target.dbFingerprint,
     ...(target.options ? { options: target.options } : {}),
     ...(blockedReasonCounts.length > 0 ? { blockedReasonCounts } : {}),
     ...report,
   };
 }
 
-function summarizeBlockedReasonCounts(
-  attempts: unknown,
-): Array<{ reason: string; count: number }> {
+function summarizeBlockedReasonCounts(attempts: unknown): Array<{ reason: string; count: number }> {
   if (!Array.isArray(attempts)) {
     return [];
   }
@@ -297,13 +313,24 @@ async function main() {
     }
     const artifactPath = resolveSafeJsonReportOutputPath(options.applyFrom, '--apply-from');
     const artifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
-    const validation = validateBetaRepairQueueApplyArtifact(artifact, options);
+    const validation = validateBetaRepairQueueApplyArtifact(
+      artifact,
+      options,
+      new Date(),
+      guard.environment,
+      guard.dbFingerprint,
+    );
     runOptions = buildApplyFromArtifactOptions(validation, options);
   }
   const report = await runVisibilityRepairQueue(runOptions);
 
   const outputReport = buildBetaRepairQueueOutput(
-    { environment: guard.environment, db: guard.dbLabel, options },
+    {
+      environment: guard.environment,
+      db: guard.dbLabel,
+      dbFingerprint: guard.dbFingerprint,
+      options,
+    },
     report as unknown as Record<string, unknown>,
   );
 

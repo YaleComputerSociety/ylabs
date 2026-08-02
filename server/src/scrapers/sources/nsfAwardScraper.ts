@@ -17,16 +17,15 @@
  *      ago) using `awardeeName="Yale University"` (quoted = exact phrase) and
  *      offset/rpp pagination. Stop on an empty page.
  *   2. Group awards by PI (`piFirstName` + `piLastName`).
- *   3. For each PI: try to match an existing User by exact lname+fname, then by
- *      lname + given-name prefix (or first initial when NSF only gives an initial). If matched, use a slug derived from that user; if
- *      not, emit a User observation under entityKey `nsf-pi:<normalized-name>`
- *      so the materializer at least records the person's existence.
- *   4. Emit a ResearchGroup observation per PI:
+ *   3. For each PI, resolve an unambiguous Yale User by exact or conservative
+ *      prefix matching. Enrich one eligible official research home when present,
+ *      fail closed on ambiguous or ineligible identity/home evidence, or use a
+ *      synthetic shell only when no research-home membership exists.
+ *   4. Emit grant evidence without replacing identity fields on an official home:
  *        - `recentGrants`: full embedded array of up to MAX_GRANTS_PER_PI
  *          (latest by start date).
  *        - `recentGrantCount`: count of active awards for this PI.
- *        - `fundingAgencies`: ['NSF']  (NIH scraper emits ['NIH']; the resolver
- *          merges array-typed fields with an agreement bonus across sources.)
+ *        - `fundingAgencies`: ['NSF'] (materialization unions latest source snapshots).
  *        - `lastObservedAt`: max(startDate) across this PI's awards.
  *   5. Co-PIs (`coPDPI`) → emit ResearchGroupMember observations with role
  *      'co-pi' but ONLY when we can resolve the co-PI to an existing Yale User
@@ -39,13 +38,12 @@ import axios from 'axios';
 import { User } from '../../models/user';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  resolveCanonicalResearchHomeForUser,
+  type CanonicalResearchHomeResolution,
+} from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import type {
-  IScraper,
-  ObservationInput,
-  ScraperContext,
-  ScraperResult,
-} from '../types';
+import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -144,7 +142,9 @@ export interface RecentGrantRecord {
  */
 export function parseNsfDate(s: string | undefined | null): Date | undefined {
   if (!s) return undefined;
-  const m = String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const m = String(s)
+    .trim()
+    .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return undefined;
   const [_all, mm, dd, yyyy] = m;
   const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
@@ -227,8 +227,7 @@ export function awardToRecord(
     startDate: parseNsfDate(award.startDate),
     endDate: parseNsfDate(award.expDate),
     dollarAmount:
-      parseDollarAmount(award.fundsObligatedAmt) ??
-      parseDollarAmount(award.estimatedTotalAmt),
+      parseDollarAmount(award.fundsObligatedAmt) ?? parseDollarAmount(award.estimatedTotalAmt),
     url,
     role,
   };
@@ -312,9 +311,22 @@ export async function findUserForPi(
   name: { firstName: string; lastName: string },
   finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>> = defaultUserFinder,
 ): Promise<string | null> {
-  const first = (name.firstName || '').trim();
-  const last = (name.lastName || '').trim();
-  if (!last) return null;
+  const result = await resolveUserForPi(name, finder);
+  return result.status === 'matched' ? result.userId : null;
+}
+
+export type NsfPiUserResolution =
+  | { status: 'matched'; userId: string }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
+export async function resolveUserForPi(
+  pi: { firstName?: string; lastName?: string },
+  finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>> = defaultUserFinder,
+): Promise<NsfPiUserResolution> {
+  const first = (pi.firstName || '').trim();
+  const last = (pi.lastName || '').trim();
+  if (!last) return { status: 'absent' };
 
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const lnameRe = new RegExp(`^${escapeRe(last)}$`, 'i');
@@ -328,9 +340,9 @@ export async function findUserForPi(
       fname: fnameRe,
       userType: userTypeFilter,
     });
-    if (matches.length === 1) return String(matches[0]._id);
+    if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     // multiple exact matches → ambiguous, give up (don't fall through to initial)
-    if (matches.length > 1) return null;
+    if (matches.length > 1) return { status: 'ambiguous' };
   }
 
   // pass 2: exact lname + given-name prefix. Only fall back to a bare initial
@@ -345,14 +357,13 @@ export async function findUserForPi(
       fname: initRe,
       userType: userTypeFilter,
     });
-    if (matches.length === 1) return String(matches[0]._id);
+    if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
+    if (matches.length > 1) return { status: 'ambiguous' };
   }
-  return null;
+  return { status: 'absent' };
 }
 
-async function defaultUserFinder(
-  q: Record<string, unknown>,
-): Promise<Array<{ _id: unknown }>> {
+async function defaultUserFinder(q: Record<string, unknown>): Promise<Array<{ _id: unknown }>> {
   return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(5).lean();
 }
 
@@ -431,12 +442,13 @@ function buildPiUserObservations(
   return { observations: obs, entityKey };
 }
 
-function buildResearchGroupObservations(
+export function buildResearchGroupObservations(
   group: PiAwardsGroup,
   piUserId: string | null,
   sourceUrl: string,
+  canonicalResearchHomeSlug?: string | null,
 ): ObservationInput[] {
-  const slug = piSlug(piUserId, group.piFirstName, group.piLastName);
+  const slug = canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
   const piName = piDisplayName(group.awards[0] || ({} as NsfAward));
   const labName = piName ? `${piName} Lab` : `NSF PI ${slug}`;
 
@@ -448,9 +460,13 @@ function buildResearchGroupObservations(
 
   const base = { entityType: 'researchEntity' as const, entityKey: slug, sourceUrl };
   const out: ObservationInput[] = [
-    { ...base, field: 'slug', value: slug },
-    { ...base, field: 'name', value: labName },
-    { ...base, field: 'kind', value: 'lab' },
+    ...(!canonicalResearchHomeSlug
+      ? [
+          { ...base, field: 'slug', value: slug },
+          { ...base, field: 'name', value: labName },
+          { ...base, field: 'kind', value: 'lab' },
+        ]
+      : []),
     { ...base, field: 'recentGrants', value: top },
     { ...base, field: 'recentGrantCount', value: records.length },
     { ...base, field: 'fundingAgencies', value: ['NSF'] },
@@ -518,6 +534,7 @@ export interface NsfAwardScraperDeps {
   fetchPage?: typeof fetchPage;
   /** Override the lookback start date (default: today minus 5 years). */
   dateStart?: string;
+  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 function defaultDateStart(): string {
@@ -538,6 +555,8 @@ export class NsfAwardScraper implements IScraper {
     const dateStart = this.deps.dateStart ?? defaultDateStart();
     const finder = this.deps.userFinder ?? defaultUserFinder;
     const fetcher = this.deps.fetchPage ?? fetchPage;
+    const researchHomeResolver =
+      this.deps.researchHomeResolver ?? resolveCanonicalResearchHomeForUser;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -572,7 +591,9 @@ export class NsfAwardScraper implements IScraper {
       if (payload.awards.length < PAGE_SIZE) break;
       offset += PAGE_SIZE;
     }
-    ctx.log(`Fetched ${awards.length} awards across ${Math.ceil(awards.length / PAGE_SIZE)} page(s)`);
+    ctx.log(
+      `Fetched ${awards.length} awards across ${Math.ceil(awards.length / PAGE_SIZE)} page(s)`,
+    );
 
     // 2. Group by PI.
     const groups = groupAwardsByPi(awards);
@@ -585,11 +606,24 @@ export class NsfAwardScraper implements IScraper {
 
     for (const group of groups) {
       // 3a. Match PI to existing User (best-effort).
-      const piUserId = await findUserForPi(
+      const userResolution = await resolveUserForPi(
         { firstName: group.piFirstName, lastName: group.piLastName },
         finder,
       );
+      if (userResolution.status === 'ambiguous') continue;
+      const piUserId = userResolution.status === 'matched' ? userResolution.userId : null;
       if (piUserId) piMatched++;
+      const researchHomeResolution = piUserId
+        ? await researchHomeResolver(piUserId)
+        : { status: 'safe-shell' as const };
+      if (
+        researchHomeResolution.status === 'ambiguous' ||
+        researchHomeResolution.status === 'ineligible'
+      ) {
+        continue;
+      }
+      const canonicalResearchHomeSlug =
+        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
 
       // 3b. User observations — under nsf-pi:<key> entityKey if no match.
       // (Matched PIs already have a real User row; we don't re-emit User obs
@@ -602,12 +636,18 @@ export class NsfAwardScraper implements IScraper {
       }
 
       // 3c. ResearchGroup observations — always emitted.
-      const rgObs = buildResearchGroupObservations(group, piUserId, sourceUrl);
+      const rgObs = buildResearchGroupObservations(
+        group,
+        piUserId,
+        sourceUrl,
+        canonicalResearchHomeSlug,
+      );
       await ctx.emit(rgObs);
       totalObs += rgObs.length;
 
       // 3d. Co-PI member observations — only when co-PI is a known Yale User.
-      const slug = piSlug(piUserId, group.piFirstName, group.piLastName);
+      const slug =
+        canonicalResearchHomeSlug || piSlug(piUserId, group.piFirstName, group.piLastName);
       const coPiObs = await buildCoPiObservations(group, slug, sourceUrl, finder);
       if (coPiObs.length > 0) {
         await ctx.emit(coPiObs);

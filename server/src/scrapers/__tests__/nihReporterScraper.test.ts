@@ -19,6 +19,7 @@ import {
   grantToRecord,
   piGrantsToObservations,
   findUserForPi,
+  resolveUserForPi,
   type NihGrant,
 } from '../sources/nihReporterScraper';
 import type { ScraperContext, ObservationInput } from '../types';
@@ -237,15 +238,26 @@ function mockUserModel(rows: any[]) {
 }
 
 describe('findUserForPi', () => {
+  it('distinguishes absent and ambiguous identities', async () => {
+    expect(await resolveUserForPi('Amy Arnsten', mockUserModel([]))).toEqual({ status: 'absent' });
+    expect(
+      await resolveUserForPi(
+        'Amy Arnsten',
+        mockUserModel([
+          { _id: 'u1', fname: 'Amy', lname: 'Arnsten' },
+          { _id: 'u2', fname: 'Amy', lname: 'Arnsten' },
+        ]),
+      ),
+    ).toEqual({ status: 'ambiguous' });
+  });
+
   it('returns null when no candidates match the surname', async () => {
     const um = mockUserModel([]);
     expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
   });
 
   it('returns the unique candidate when there is exactly one exact first-name surname match', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' },
-    ]);
+    const um = mockUserModel([{ _id: 'u1', fname: 'Amy', lname: 'Arnsten', netid: 'aa1' }]);
     expect(await findUserForPi('Amy Arnsten', um)).toEqual({
       _id: 'u1',
       netid: 'aa1',
@@ -254,9 +266,7 @@ describe('findUserForPi', () => {
   });
 
   it('does not match a unique surname candidate when the full first name conflicts', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' },
-    ]);
+    const um = mockUserModel([{ _id: 'u1', fname: 'Frederick', lname: 'Wilson', netid: 'fpw2' }]);
     expect(await findUserForPi('Francis Wilson', um)).toBeNull();
   });
 
@@ -385,9 +395,7 @@ describe('piGrantsToObservations', () => {
     expect(lastObserved).toBeInstanceOf(Date);
     expect(lastObserved.toISOString().slice(0, 10)).toBe('2025-04-01');
 
-    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe(
-      'nih-pi:amy-arnsten',
-    );
+    expect(groupObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('nih-pi:amy-arnsten');
     expect(groupObs.find((o) => o.field === 'inferredPiUserId')).toBeUndefined();
   });
 
@@ -402,6 +410,24 @@ describe('piGrantsToObservations', () => {
     expect(piId?.value).toBe('user-abc');
     expect(piId?.confidenceOverride).toBeGreaterThanOrEqual(0.8);
     expect(groupObs.find((o) => o.field === 'inferredPiUserKey')).toBeUndefined();
+  });
+
+  it('enriches one canonical research home without overwriting its identity fields', () => {
+    const obs = piGrantsToObservations(
+      'Riley Roster',
+      [grantRoster],
+      { _id: 'user-abc', netid: 'rrb1' },
+      'dept-mcdb-riley-roster',
+    );
+    const groupObs = obs.filter((o) => o.entityType === 'researchEntity');
+    expect(groupObs.every((o) => o.entityKey === 'dept-mcdb-riley-roster')).toBe(true);
+    expect(groupObs.find((o) => o.field === 'slug')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'name')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'kind')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'departments')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'sourceUrls')).toBeUndefined();
+    expect(groupObs.find((o) => o.field === 'recentGrants')).toBeDefined();
+    expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
   });
 
   it('emits no research-home observations for known non-owner grant PIs', () => {
@@ -426,11 +452,10 @@ describe('piGrantsToObservations', () => {
       (o) => o.entityType === 'researchEntity' && o.field === 'recentGrants',
     )?.value as any[];
     expect(recentGrants).toHaveLength(10);
+    expect(obs.find((o) => o.field === 'recentGrantCount')?.value).toBe(20);
     expect(
-      obs.find(
-        (o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount',
-      )?.value,
-    ).toBe(10);
+      obs.find((o) => o.entityType === 'researchEntity' && o.field === 'recentGrantCount')?.value,
+    ).toBe(20);
   });
 
   it('returns no observations on empty inputs', () => {
@@ -476,7 +501,10 @@ describe('NihReporterScraper.run', () => {
       // Page 1 returns 2 grants for Arnsten + 1 for Roster; page 2 returns empty.
       if (offset === 0) {
         return {
-          data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
+          data: {
+            meta: { total: 3, offset: 0, limit: 500 },
+            results: [grantArnsten, grantArnsten2, grantRoster],
+          },
         } as any;
       }
       return { data: { meta: { total: 3, offset, limit: 500 }, results: [] } } as any;
@@ -498,7 +526,8 @@ describe('NihReporterScraper.run', () => {
       })) as any,
     };
 
-    const scraper = new NihReporterScraper({ userModel });
+    const researchHomeResolver = vi.fn().mockResolvedValue({ status: 'safe-shell' });
+    const scraper = new NihReporterScraper({ userModel, researchHomeResolver });
     const { ctx, emitted } = makeContext();
     const result = await scraper.run(ctx);
 
@@ -506,6 +535,7 @@ describe('NihReporterScraper.run', () => {
     expect(result.entitiesObserved).toBe(2); // 2 unique PIs
     expect(result.notes).toContain('matched 1');
     expect(result.notes).toContain('stubbed 1');
+    expect(researchHomeResolver).toHaveBeenCalledWith('breaker-id');
 
     // Arnsten unmatched → user obs present
     const arnstenUserObs = emitted.filter(
@@ -534,7 +564,10 @@ describe('NihReporterScraper.run', () => {
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
-      data: { meta: { total: 3, offset: 0, limit: 500 }, results: [grantArnsten, grantArnsten2, grantRoster] },
+      data: {
+        meta: { total: 3, offset: 0, limit: 500 },
+        results: [grantArnsten, grantArnsten2, grantRoster],
+      },
     } as any);
     vi.spyOn(axios, 'post').mockResolvedValueOnce({
       data: { meta: { total: 3, offset: 3, limit: 500 }, results: [] },
@@ -547,9 +580,7 @@ describe('NihReporterScraper.run', () => {
 
     // Only one PI should have been emitted observations for.
     const groupKeys = new Set(
-      emitted
-        .filter((o) => o.entityType === 'researchEntity')
-        .map((o) => o.entityKey),
+      emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
     );
     expect(groupKeys.size).toBe(1);
     expect(result.entitiesObserved).toBe(1);

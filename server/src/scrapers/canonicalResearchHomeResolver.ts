@@ -1,0 +1,102 @@
+import { ResearchEntity } from '../models/researchEntity';
+import { ResearchGroupMember } from '../models/researchGroupMember';
+import mongoose from 'mongoose';
+
+const GRANT_SHELL_SLUG = /^(?:nih|nsf)-pi-/i;
+const GRANT_SOURCE_URL =
+  /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov)/i;
+const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
+
+export interface ResearchHomeCandidate {
+  slug?: unknown;
+  website?: unknown;
+  websiteUrl?: unknown;
+  sourceUrls?: unknown;
+  archived?: unknown;
+}
+
+export type CanonicalResearchHomeResolution =
+  | { status: 'safe-shell' }
+  | { status: 'canonical'; slug: string }
+  | { status: 'ineligible' }
+  | { status: 'ambiguous' };
+
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+export function hasIneligibleLeadMembership(
+  memberships: Array<{ archived?: unknown; isCurrentMember?: unknown }>,
+): boolean {
+  return memberships.some(
+    (membership) => membership.archived === true || membership.isCurrentMember === false,
+  );
+}
+
+export function isOfficialResearchHomeCandidate(candidate: ResearchHomeCandidate): boolean {
+  const slug = text(candidate.slug);
+  if (!slug || candidate.archived === true || GRANT_SHELL_SLUG.test(slug)) return false;
+
+  const urls = [
+    text(candidate.websiteUrl),
+    text(candidate.website),
+    ...(Array.isArray(candidate.sourceUrls) ? candidate.sourceUrls.map(text) : []),
+  ].filter(Boolean);
+  return urls.some((url) => /^https?:\/\//i.test(url) && !GRANT_SOURCE_URL.test(url));
+}
+
+export function selectCanonicalResearchHomeSlug(
+  candidates: ResearchHomeCandidate[],
+): string | null {
+  const eligible = candidates.filter(isOfficialResearchHomeCandidate);
+  const slugs = Array.from(
+    new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)),
+  );
+  return slugs.length === 1 ? slugs[0] : null;
+}
+
+export function resolveCanonicalResearchHome(
+  candidates: ResearchHomeCandidate[],
+): CanonicalResearchHomeResolution {
+  if (candidates.length === 0) return { status: 'safe-shell' };
+  const eligible = candidates.filter(isOfficialResearchHomeCandidate);
+  const slugs = Array.from(
+    new Set(eligible.map((candidate) => text(candidate.slug)).filter(Boolean)),
+  );
+  if (slugs.length === 1) return { status: 'canonical', slug: slugs[0] };
+  if (slugs.length > 1) return { status: 'ambiguous' };
+  return { status: 'ineligible' };
+}
+
+export async function resolveCanonicalResearchHomeForUser(
+  userId: string,
+): Promise<CanonicalResearchHomeResolution> {
+  if (!mongoose.isValidObjectId(userId)) return { status: 'ineligible' };
+  const memberships = await ResearchGroupMember.find({
+    userId,
+    role: { $in: LEAD_ROLES },
+  })
+    .select('researchEntityId isCurrentMember archived')
+    .lean();
+  if (hasIneligibleLeadMembership(memberships)) {
+    return { status: 'ineligible' };
+  }
+  const entityIds = Array.from(
+    new Set(
+      memberships.map((membership) => String(membership.researchEntityId || '')).filter(Boolean),
+    ),
+  );
+  if (entityIds.length === 0) return { status: 'safe-shell' };
+
+  const entities = await ResearchEntity.find({ _id: { $in: entityIds } })
+    .select('slug website websiteUrl sourceUrls archived')
+    .lean();
+  if (entities.length === 0) return { status: 'ineligible' };
+  return resolveCanonicalResearchHome(
+    entities.map((entity) => ({
+      slug: entity.slug,
+      website: entity.website,
+      websiteUrl: entity.websiteUrl,
+      sourceUrls: entity.sourceUrls,
+      archived: entity.archived,
+    })),
+  );
+}

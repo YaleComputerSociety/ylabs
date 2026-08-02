@@ -11,6 +11,7 @@ import {
   NsfAwardScraper,
   awardToRecord,
   findUserForPi,
+  resolveUserForPi,
   groupAwardsByPi,
   maxStartDate,
   parseCoPdpiLine,
@@ -161,10 +162,7 @@ describe('groupAwardsByPi', () => {
   });
 
   it('drops awards with no PI name', () => {
-    const groups = groupAwardsByPi([
-      { id: 'x', awardeeName: 'Yale University' },
-      GRANT_AWARD,
-    ]);
+    const groups = groupAwardsByPi([{ id: 'x', awardeeName: 'Yale University' }, GRANT_AWARD]);
     expect(groups).toHaveLength(1);
     expect(groups[0].piLastName).toBe('Grant');
   });
@@ -278,12 +276,24 @@ describe('piSlug', () => {
 // ---------------------------------------------------------------------------
 
 describe('findUserForPi', () => {
+  it('distinguishes absent and ambiguous identities', async () => {
+    expect(
+      await resolveUserForPi(
+        { firstName: 'Parker', lastName: 'Grant' },
+        vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+      ),
+    ).toEqual({ status: 'absent' });
+    expect(
+      await resolveUserForPi(
+        { firstName: 'Parker', lastName: 'Grant' },
+        vi.fn().mockResolvedValue([{ _id: 'a' }, { _id: 'b' }]),
+      ),
+    ).toEqual({ status: 'ambiguous' });
+  });
+
   it('returns the matched user id on exact lname+fname', async () => {
     const finder = vi.fn(async () => [{ _id: 'user-1' }]);
-    const id = await findUserForPi(
-      { firstName: 'Parker', lastName: 'Grant' },
-      finder as any,
-    );
+    const id = await findUserForPi({ firstName: 'Parker', lastName: 'Grant' }, finder as any);
     expect(id).toBe('user-1');
     expect(finder).toHaveBeenCalledTimes(1);
   });
@@ -479,6 +489,7 @@ describe('NsfAwardScraper.run', () => {
       fetchPage: fetchPage as any,
       userFinder: userFinder as any,
       dateStart: '01/01/2020',
+      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
     });
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
@@ -491,6 +502,32 @@ describe('NsfAwardScraper.run', () => {
     expect(rgObs.find((o) => o.field === 'inferredPiUserId')?.value).toBe('user-holland');
     const inferredObs = rgObs.find((o) => o.field === 'inferredPiUserId');
     expect(inferredObs?.confidenceOverride).toBe(0.7);
+  });
+
+  it('targets one resolved canonical home and preserves its identity fields', async () => {
+    const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
+    const userFinder = vi.fn(async () => [{ _id: '507f1f77bcf86cd799439011' }]);
+    const researchHomeResolver = vi.fn().mockResolvedValue({
+      status: 'canonical',
+      slug: 'dept-chem-parker-grant',
+    });
+    const scraper = new NsfAwardScraper({
+      fetchPage: fetchPage as any,
+      userFinder: userFinder as any,
+      researchHomeResolver,
+      dateStart: '01/01/2020',
+    });
+    const { ctx, emitted } = buildContext();
+    await scraper.run(ctx);
+
+    const rgObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(researchHomeResolver).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+    expect(rgObs.every((o) => o.entityKey === 'dept-chem-parker-grant')).toBe(true);
+    expect(rgObs.find((o) => o.field === 'slug')).toBeUndefined();
+    expect(rgObs.find((o) => o.field === 'name')).toBeUndefined();
+    expect(rgObs.find((o) => o.field === 'kind')).toBeUndefined();
+    expect(rgObs.find((o) => o.field === 'recentGrants')).toBeDefined();
+    expect(rgObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NSF']);
   });
 
   it('emits ResearchGroupMember observations only for co-PIs that match Yale Users', async () => {
@@ -533,7 +570,9 @@ describe('NsfAwardScraper.run', () => {
     expect(emails).toContain('rowan.circuit@yale.edu');
     expect(emails).toContain('harper.signal@yale.edu');
     // Non-Yale co-PI Raghavendra should NOT appear
-    expect(emails.find((e) => typeof e === 'string' && (e as string).includes('cs.unc.edu'))).toBeUndefined();
+    expect(
+      emails.find((e) => typeof e === 'string' && (e as string).includes('cs.unc.edu')),
+    ).toBeUndefined();
   });
 
   it('respects ctx.options.limit by capping awards mid-page', async () => {

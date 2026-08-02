@@ -258,6 +258,80 @@ function materializedFieldValue(
   return value;
 }
 
+const grantIdentity = (value: unknown): string => {
+  const grant = objectRecord(value);
+  const id = textValue(grant.id);
+  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(grant)}`;
+};
+
+export function aggregateResearchEntityGrantEvidence(observations: MaterializerObservationLike[]): {
+  recentGrants?: unknown[];
+  recentGrantCount?: number;
+  fundingAgencies?: string[];
+} {
+  const latest = new Map<string, MaterializerObservationLike>();
+  for (const observation of observations) {
+    if (
+      observation.field !== 'recentGrants' &&
+      observation.field !== 'recentGrantCount' &&
+      observation.field !== 'fundingAgencies'
+    )
+      continue;
+    const key = `${observation.sourceName || ''}:${observation.field}`;
+    const current = latest.get(key);
+    if (
+      !current ||
+      (observation.observedAt?.getTime() || 0) >= (current.observedAt?.getTime() || 0)
+    ) {
+      latest.set(key, observation);
+    }
+  }
+  const grants = new Map<string, unknown>();
+  const agencies = new Map<string, string>();
+  let hasGrantSnapshot = false;
+  let hasGrantCountSnapshot = false;
+  let hasAgencySnapshot = false;
+  let recentGrantCount = 0;
+  for (const observation of latest.values()) {
+    if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
+      hasGrantSnapshot = true;
+      for (const grant of observation.value) grants.set(grantIdentity(grant), grant);
+    }
+    if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
+      hasAgencySnapshot = true;
+      for (const agency of observation.value) {
+        const normalized = textValue(agency);
+        if (normalized && !agencies.has(normalized.toLowerCase())) {
+          agencies.set(normalized.toLowerCase(), normalized);
+        }
+      }
+    }
+    if (
+      observation.field === 'recentGrantCount' &&
+      typeof observation.value === 'number' &&
+      Number.isFinite(observation.value) &&
+      observation.value >= 0
+    ) {
+      hasGrantCountSnapshot = true;
+      recentGrantCount += Math.floor(observation.value);
+    }
+  }
+  const recentGrants = [...grants.values()]
+    .sort((left, right) => {
+      const leftTime = new Date(objectRecord(left).startDate as any).getTime();
+      const rightTime = new Date(objectRecord(right).startDate as any).getTime();
+      return (
+        (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
+      );
+    })
+    .slice(0, 10);
+  return {
+    ...(hasGrantSnapshot ? { recentGrants } : {}),
+    ...(hasGrantCountSnapshot ? { recentGrantCount } : {}),
+    ...(hasAgencySnapshot ? { fundingAgencies: [...agencies.values()] } : {}),
+  };
+}
+
 const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | undefined => {
   const enrichment = objectRecord(value);
   if (!['current', 'partial'].includes(textValue(enrichment.state))) return undefined;
@@ -2181,6 +2255,18 @@ export async function materializeEntity(
     manuallyLockedFields,
     manualValues,
   });
+  if (isResearchEntityObservationType(entityType)) {
+    const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
+    if (grantEvidence.recentGrants && resolved.recentGrants) {
+      resolved.recentGrants.value = grantEvidence.recentGrants;
+    }
+    if (grantEvidence.recentGrantCount !== undefined && resolved.recentGrantCount) {
+      resolved.recentGrantCount.value = grantEvidence.recentGrantCount;
+    }
+    if (grantEvidence.fundingAgencies && resolved.fundingAgencies) {
+      resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
+    }
+  }
 
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};

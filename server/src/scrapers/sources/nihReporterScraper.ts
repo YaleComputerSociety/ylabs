@@ -15,13 +15,11 @@
  *   - Paginate through Yale grants (offset/limit, max 500 per request).
  *   - Group grants by contact PI name.
  *   - For each PI:
- *       - Try to resolve to a User by (lname exact + fname exact), then
- *         (lname exact + first initial). If unmatched, emit a User observation
- *         keyed by `nih-pi:<normalized>` so the materializer can stub a User.
- *       - Compute a deterministic ResearchGroup slug `nih-pi-<normalized>`.
- *       - Emit ResearchGroup observations: name, kind, school (for YSM only),
- *         recentGrants (full array of up to 10 most-recent grants), recentGrantCount,
- *         fundingAgencies=['NIH'], lastObservedAt = max(start_date), sourceUrls.
+ *       - Resolve an unambiguous Yale User by exact or conservative prefix name matching.
+ *       - Enrich the PI's one eligible official research home when present, fail closed
+ *         on ambiguous or ineligible identity/home evidence, or use a synthetic shell
+ *         only when no research-home membership exists.
+ *       - Emit grant evidence without replacing identity fields on an official home.
  *
  * Honors:
  *   - ctx.options.useCache — caches each (offset/limit/fiscal_year) page payload.
@@ -32,6 +30,10 @@ import { User } from '../../models/user';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  resolveCanonicalResearchHomeForUser,
+  type CanonicalResearchHomeResolution,
+} from '../canonicalResearchHomeResolver';
 import { slugify, splitName } from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -141,11 +143,7 @@ export function canonicalPiName(raw: string | undefined | null): string {
     const first_t = titleCaseToken(firstChunk);
     return [first_t, last_t].filter(Boolean).join(' ');
   }
-  return trimmed
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(titleCaseToken)
-    .join(' ');
+  return trimmed.split(/\s+/).filter(Boolean).map(titleCaseToken).join(' ');
 }
 
 function titleCaseToken(token: string): string {
@@ -223,7 +221,9 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
   const dollarAmount = typeof grant.award_amount === 'number' ? grant.award_amount : 0;
   const url =
     grant.project_detail_url ||
-    (grant.appl_id ? `https://reporter.nih.gov/project-details/${grant.appl_id}` : REPORTER_ENDPOINT);
+    (grant.appl_id
+      ? `https://reporter.nih.gov/project-details/${grant.appl_id}`
+      : REPORTER_ENDPOINT);
   return {
     id,
     agency,
@@ -257,9 +257,22 @@ export async function findUserForPi(
   canonicalName: string,
   userModel: { find: typeof User.find } = User,
 ): Promise<{ _id: string; netid?: string; researchHomeEligible?: boolean } | null> {
-  if (!canonicalName) return null;
+  const result = await resolveUserForPi(canonicalName, userModel);
+  return result.status === 'matched' ? result.user : null;
+}
+
+export type NihPiUserResolution =
+  | { status: 'matched'; user: { _id: string; netid?: string; researchHomeEligible?: boolean } }
+  | { status: 'absent' }
+  | { status: 'ambiguous' };
+
+export async function resolveUserForPi(
+  canonicalName: string,
+  userModel: { find: typeof User.find } = User,
+): Promise<NihPiUserResolution> {
+  if (!canonicalName) return { status: 'absent' };
   const { first, last } = splitName(canonicalName);
-  if (!last) return null;
+  if (!last) return { status: 'absent' };
   const lnameRe = new RegExp(`^${escapeRegex(last)}$`, 'i');
   const candidates: any[] = await userModel
     .find(
@@ -271,14 +284,13 @@ export async function findUserForPi(
     )
     .limit(10)
     .lean();
-  if (!first) return null;
+  if (!first) return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
   // Exact first name match wins.
-  const exact = candidates.filter(
-    (c) => (c.fname || '').toLowerCase() === first.toLowerCase(),
-  );
+  const exact = candidates.filter((c) => (c.fname || '').toLowerCase() === first.toLowerCase());
   if (exact.length === 1) {
-    return userPiMatchResult(exact[0]);
+    return { status: 'matched', user: userPiMatchResult(exact[0]) };
   }
+  if (exact.length > 1) return { status: 'ambiguous' };
 
   // Fall back to a given-name prefix. Only use a bare first initial when the
   // source itself only provided an initial; otherwise same-initial matches are
@@ -288,10 +300,11 @@ export async function findUserForPi(
   const prefix = (isInitialOnly ? firstToken : first).toLowerCase();
   const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
   if (byPrefix.length === 1) {
-    return userPiMatchResult(byPrefix[0]);
+    return { status: 'matched', user: userPiMatchResult(byPrefix[0]) };
   }
-  // Ambiguous — refuse to guess.
-  return null;
+  return byPrefix.length > 1 || candidates.length > 0
+    ? { status: 'ambiguous' }
+    : { status: 'absent' };
 }
 
 function userPiMatchResult(candidate: any): {
@@ -335,12 +348,13 @@ export function piGrantsToObservations(
   canonicalName: string,
   grants: NihGrant[],
   matchedUser: { _id: string; netid?: string; researchHomeEligible?: boolean } | null,
+  canonicalResearchHomeSlug?: string | null,
 ): ObservationInput[] {
   const out: ObservationInput[] = [];
   if (!canonicalName || grants.length === 0) return out;
   if (matchedUser?.researchHomeEligible === false) return out;
 
-  const slug = piSlugForResearchGroup(canonicalName);
+  const slug = canonicalResearchHomeSlug || piSlugForResearchGroup(canonicalName);
   if (!slug) return out;
 
   // Sort grants by start date (desc), keep top N for the recentGrants array.
@@ -355,9 +369,7 @@ export function piGrantsToObservations(
     .filter((t): t is number => typeof t === 'number')
     .reduce((max, t) => (t > max ? t : max), 0);
 
-  const sourceUrls = sorted
-    .map((g) => g.project_detail_url)
-    .filter((u): u is string => !!u);
+  const sourceUrls = sorted.map((g) => g.project_detail_url).filter((u): u is string => !!u);
 
   // Determine school/department hint from organization.dept_type when present.
   // We only use it as a soft signal; the resolver will dedupe against other sources.
@@ -391,17 +403,23 @@ export function piGrantsToObservations(
     sourceUrl: sorted[0]?.project_detail_url || REPORTER_ENDPOINT,
   };
   const piDisplayName = canonicalName;
-  out.push({ ...groupBase, field: 'slug', value: slug });
-  out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
-  out.push({ ...groupBase, field: 'kind', value: 'lab' });
+  if (!canonicalResearchHomeSlug) {
+    out.push({ ...groupBase, field: 'slug', value: slug });
+    out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
+    out.push({ ...groupBase, field: 'kind', value: 'lab' });
+  }
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });
-  out.push({ ...groupBase, field: 'recentGrantCount', value: recentRecords.length });
+  out.push({ ...groupBase, field: 'recentGrantCount', value: sorted.length });
   out.push({ ...groupBase, field: 'fundingAgencies', value: ['NIH'] });
   if (lastObservedAt > 0) {
     out.push({ ...groupBase, field: 'lastObservedAt', value: new Date(lastObservedAt) });
   }
-  if (sourceUrls.length > 0) {
-    out.push({ ...groupBase, field: 'sourceUrls', value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI) });
+  if (sourceUrls.length > 0 && !canonicalResearchHomeSlug) {
+    out.push({
+      ...groupBase,
+      field: 'sourceUrls',
+      value: sourceUrls.slice(0, RECENT_GRANTS_PER_PI),
+    });
   }
   if (matchedUser) {
     out.push({
@@ -419,7 +437,7 @@ export function piGrantsToObservations(
       confidenceOverride: 0.6,
     });
   }
-  if (deptTypes.size > 0) {
+  if (deptTypes.size > 0 && !canonicalResearchHomeSlug) {
     out.push({
       ...groupBase,
       field: 'departments',
@@ -479,9 +497,7 @@ async function fetchPage({
     results: (res.data?.results as NihGrant[]) || [],
   };
   if (useCache) await setCached('nih-reporter', cacheKey, payload);
-  ctx.log(
-    `fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`,
-  );
+  ctx.log(`fetched offset=${offset} got=${payload.results.length} total=${payload.meta.total}`);
   return payload;
 }
 
@@ -494,6 +510,7 @@ export interface NihReporterScraperOptions {
   fiscalYears?: number[];
   /** Inject a custom User model (used by tests to mock the DB). */
   userModel?: { find: typeof User.find };
+  researchHomeResolver?: (userId: string) => Promise<CanonicalResearchHomeResolution>;
 }
 
 export class NihReporterScraper implements IScraper {
@@ -505,6 +522,8 @@ export class NihReporterScraper implements IScraper {
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const fiscalYears = this.opts.fiscalYears || DEFAULT_FISCAL_YEARS;
     const userModel = this.opts.userModel || User;
+    const researchHomeResolver =
+      this.opts.researchHomeResolver || resolveCanonicalResearchHomeForUser;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -552,16 +571,34 @@ export class NihReporterScraper implements IScraper {
     let unmatched = 0;
     let processed = 0;
     for (const [piName, grants] of piEntries) {
-      let matchedUser: { _id: string; netid?: string } | null = null;
+      let userResolution: NihPiUserResolution = { status: 'ambiguous' };
       try {
-        matchedUser = await findUserForPi(piName, userModel);
+        userResolution = await resolveUserForPi(piName, userModel);
       } catch (err: any) {
         ctx.log(`user-lookup error for PI candidate: ${sanitizeLogValue(err)}`);
       }
-      if (matchedUser) matched++;
-      else unmatched++;
+      const matchedUser = userResolution.status === 'matched' ? userResolution.user : null;
+      if (userResolution.status === 'matched') matched++;
+      else if (userResolution.status === 'absent') unmatched++;
+      else continue;
 
-      const observations = piGrantsToObservations(piName, grants, matchedUser);
+      const researchHomeResolution = matchedUser
+        ? await researchHomeResolver(matchedUser._id)
+        : { status: 'safe-shell' as const };
+      if (
+        researchHomeResolution.status === 'ambiguous' ||
+        researchHomeResolution.status === 'ineligible'
+      ) {
+        continue;
+      }
+      const canonicalResearchHomeSlug =
+        researchHomeResolution.status === 'canonical' ? researchHomeResolution.slug : null;
+      const observations = piGrantsToObservations(
+        piName,
+        grants,
+        matchedUser,
+        canonicalResearchHomeSlug,
+      );
       if (observations.length > 0) {
         await ctx.emit(observations);
         totalObs += observations.length;
