@@ -19,7 +19,6 @@ import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDe
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
-import LabPapersList from '../components/labs/LabPapersList';
 import LabInquireModal from '../components/labs/LabInquireModal';
 import LongText from '../components/shared/LongText';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
@@ -34,7 +33,6 @@ import {
   LabMember,
   LabPostedOpportunity,
   LabRelatedResearchEntitySummary,
-  LabResearchActivityLink,
 } from '../types/labDetail';
 import type { ResearchEntityRepairFlag } from '../types/researchEntity';
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
@@ -1058,12 +1056,6 @@ const LabDetail = () => {
       truncated: false,
       withheldCount: 0,
     },
-    researchActivityLinks: payloadResearchActivityLinks = [],
-    earlierResearchActivityLinks = [],
-    scholarlyLinks = [],
-    memberScholarlyLinks = [],
-    recentPapers = [],
-    recentArxivPreprints = [],
     contactRoutes = [],
     entryPathways = [],
     accessSignals = [],
@@ -1075,43 +1067,12 @@ const LabDetail = () => {
     undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
-  const researchActivityLinks: LabResearchActivityLink[] =
-    payloadResearchActivityLinks.length > 0
-      ? payloadResearchActivityLinks
-      : [
-          ...scholarlyLinks.map((link) => ({
-            ...link,
-            relationshipBasis: 'explicit_entity_link' as const,
-            evidenceLabel: 'Linked to this research profile',
-          })),
-          ...memberScholarlyLinks.map((link) => ({
-            ...link,
-            relationshipBasis: 'member_authorship' as const,
-            evidenceLabel: 'Authored by a listed professor',
-          })),
-        ];
-  const memberRecentWorkLinks = researchActivityLinks.filter(
-    (link) =>
-      Boolean(link.memberKey) ||
-      link.relationshipBasis === 'member_authorship' ||
-      link.relationshipBasis === 'identity_authorship',
-  );
-  const directRelatedResearchLinks = researchActivityLinks.filter(
-    (link) => !memberRecentWorkLinks.includes(link),
-  );
   const hasActivePostedOpportunity = postedOpportunities.length > 0;
-  const hasDirectRelatedResearch =
-    directRelatedResearchLinks.length > 0 ||
-    recentPapers.length > 0 ||
-    recentArxivPreprints.length > 0;
-  const hasMemberRecentWork = memberRecentWorkLinks.length > 0;
-  const hasResearchActivity = hasDirectRelatedResearch || hasMemberRecentWork;
   const hasWaysIn = entryPathways.length > 0 || postedOpportunities.length > 0;
   const hasRelatedResearchEntities = relatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = affiliatedResearchEntities.length > 0;
   const showWaysToApproach = hasSpecificWaysToApproach(entryPathways, postedOpportunities);
   const missingSparseItems = [
-    !hasResearchActivity ? 'Research activity links have not been attached yet.' : '',
     !hasWaysIn ? 'No indexed planning routes are attached yet.' : '',
     accessSignals.length === 0 ? 'Access evidence has not been attached yet.' : '',
   ].filter(Boolean);
@@ -1141,14 +1102,6 @@ const LabDetail = () => {
       : undefined;
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
-  const membersById = new Map(members.map((member) => [memberId(member), member]));
-  const primaryRecentWorkMember =
-    memberRecentWorkLinks
-      .map((link) => (link.memberKey ? membersById.get(link.memberKey) : undefined))
-      .find((member): member is LabMember => Boolean(member)) || principalInvestigators[0];
-  const primaryRecentWorkMemberName = primaryRecentWorkMember
-    ? memberDisplayName(primaryRecentWorkMember)
-    : 'the lead professor';
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
   const canRequestListingReview =
     Boolean(user?.userConfirmed) &&
@@ -1302,45 +1255,6 @@ const LabDetail = () => {
           )}
 
           <ResearchTeamSection members={members} roster={roster} />
-
-          {hasDirectRelatedResearch && (
-            <section>
-              <SectionHeading>Related Research</SectionHeading>
-              <LabPapersList
-                papers={
-                  directRelatedResearchLinks.length > 0
-                    ? directRelatedResearchLinks
-                    : [...recentPapers, ...recentArxivPreprints]
-                }
-                emptyText="No scholarly links are attached to this research profile yet."
-                showPreprintMeta={
-                  directRelatedResearchLinks.length === 0 && recentPapers.length === 0
-                }
-              />
-            </section>
-          )}
-
-          {hasMemberRecentWork && (
-            <section>
-              <SectionHeading>Recent work by {primaryRecentWorkMemberName}</SectionHeading>
-              <div className="space-y-3">
-                <LabPapersList
-                  papers={memberRecentWorkLinks.slice(0, 3)}
-                  emptyText="No professor research activity is attached yet."
-                />
-              </div>
-            </section>
-          )}
-
-          {earlierResearchActivityLinks.length > 0 && (
-            <section>
-              <SectionHeading>Earlier work by listed professors</SectionHeading>
-              <LabPapersList
-                papers={earlierResearchActivityLinks.slice(0, 3)}
-                emptyText="No earlier work is attached."
-              />
-            </section>
-          )}
 
           {showWaysToApproach && (
             <WaysToApproachSection
