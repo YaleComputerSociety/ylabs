@@ -216,6 +216,7 @@ describe('accessSummaryService', () => {
     expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
     const opportunityFilter = mocks.postedOpportunityFind.mock.calls[0][0];
     expect(opportunityFilter).toEqual({
+      researchEntityId: { $in: [entityId] },
       origin: { $ne: 'FACULTY_SUBMITTED' },
       archived: false,
       status: { $in: ['OPEN', 'ROLLING'] },

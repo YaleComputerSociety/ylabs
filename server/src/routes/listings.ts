@@ -1,5 +1,6 @@
 /**
- * Express routes for listing browsing, search, and CRUD.
+ * Legacy authenticated listing reads, outreach, claims, and view tracking.
+ * Listing authoring is retired.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import {
