@@ -1,4 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import mongoose from 'mongoose';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID,
+  AdminAccessReviewProjection,
+  AdminAccessReviewProjectionState,
+} from '../../models/adminAccessReviewProjection';
+import { AccessSignal } from '../../models/accessSignal';
+import { ResearchEntity } from '../../models/researchEntity';
+import { rebuildAdminAccessReviewProjection } from '../../services/adminAccessReviewProjectionService';
 import { parseRebuildAdminAccessReviewProjectionArgs } from '../rebuildAdminAccessReviewProjection';
 
 describe('rebuildAdminAccessReviewProjection CLI', () => {
@@ -39,6 +48,85 @@ describe('rebuildAdminAccessReviewProjection CLI', () => {
   it('rejects direct production projection writes', () => {
     expect(() => parseRebuildAdminAccessReviewProjectionArgs(['--environment=production'])).toThrow(
       /Production is not a permitted/,
+    );
+  });
+});
+
+const liveMongoUrl = process.env.ACCESS_REVIEW_TEST_MONGO_URL;
+
+describe.runIf(liveMongoUrl)('admin access-review projection reconciliation with MongoDB', () => {
+  beforeEach(async () => {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(liveMongoUrl as string);
+    }
+    await mongoose.connection.dropDatabase();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+  });
+
+  it('applies a fingerprint-bound plan idempotently and rejects drift', async () => {
+    const researchEntityId = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id: researchEntityId,
+      name: 'Synthetic Research Group',
+      slug: 'synthetic-research-group',
+      departments: ['Synthetic Studies'],
+      researchAreas: ['Testing'],
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    const dryRun = await rebuildAdminAccessReviewProjection();
+    expect(dryRun).toMatchObject({
+      mode: 'dry-run',
+      scanned: 1,
+      missing: 1,
+      writesPlanned: 1,
+      writesApplied: 0,
+    });
+
+    const applied = await rebuildAdminAccessReviewProjection({
+      apply: true,
+      expectedPlanFingerprint: dryRun.planFingerprint,
+    });
+    expect(applied).toMatchObject({ mode: 'apply', writesPlanned: 1, writesApplied: 1 });
+    await expect(
+      AdminAccessReviewProjectionState.findById(ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID).lean(),
+    ).resolves.toMatchObject({ ready: true, rebuilding: false });
+
+    const repeatedDryRun = await rebuildAdminAccessReviewProjection();
+    expect(repeatedDryRun).toMatchObject({
+      mode: 'dry-run',
+      scanned: 1,
+      unchanged: 1,
+      writesPlanned: 0,
+      writesApplied: 0,
+    });
+    const repeatedApply = await rebuildAdminAccessReviewProjection({
+      apply: true,
+      expectedPlanFingerprint: repeatedDryRun.planFingerprint,
+    });
+    expect(repeatedApply).toMatchObject({ mode: 'apply', writesPlanned: 0, writesApplied: 0 });
+
+    await AccessSignal.collection.insertOne({
+      researchEntityId,
+      signalType: 'DIRECT_EMAIL',
+      confidence: 'HIGH',
+      observedAt: new Date('2026-01-02T00:00:00.000Z'),
+      review: { status: 'unreviewed' },
+    });
+    await expect(
+      rebuildAdminAccessReviewProjection({
+        apply: true,
+        expectedPlanFingerprint: repeatedDryRun.planFingerprint,
+      }),
+    ).rejects.toThrow(/plan drifted/i);
+    await expect(AdminAccessReviewProjection.findOne({ researchEntityId }).lean()).resolves.toMatchObject(
+      {
+        counts: { accessSignals: 0 },
+        stale: false,
+      },
     );
   });
 });
