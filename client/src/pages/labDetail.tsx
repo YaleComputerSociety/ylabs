@@ -1113,37 +1113,6 @@ const LabDetail = () => {
 
           <UndergraduateLogisticsSection logistics={undergraduateLogistics} />
 
-          <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-            <SectionHeading>Contact options</SectionHeading>
-            {approvedOutreachRoute ? (
-              <>
-                <p className="text-sm leading-relaxed text-gray-700">
-                  An administrator reviewed this official route and its source. Direct email is
-                  withheld; review the current instructions before contacting the research home.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOutreachRecordError('');
-                    dispatch({ type: 'OPEN_INQUIRE_MODAL' });
-                  }}
-                  className="mt-3 inline-flex min-h-11 items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  Prepare inquiry
-                </button>
-              </>
-            ) : (
-              <p className="text-sm leading-relaxed text-gray-700">
-                No verified contact route is available yet. Administrators must approve an official
-                source before outreach is enabled.
-              </p>
-            )}
-            {outreachRecordError && (
-              <p role="alert" className="mt-2 text-sm text-amber-800">
-                {outreachRecordError}
-              </p>
-            )}
-          </section>
           {showDedicatedPrincipalInvestigatorSection && (
             <section>
               <SectionHeading>

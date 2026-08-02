@@ -84,7 +84,7 @@ describe('app security runtime classification', () => {
       keyGenerator: (req: {
         user?: unknown;
         ip?: string;
-        get?: (name: string) => string | undefined;
+        socket?: { remoteAddress?: string };
       }) => string;
     }> = [];
     const ipKeyGenerator = vi.fn((ip: string) => `ip-key:${ip}`);
@@ -115,24 +115,20 @@ describe('app security runtime classification', () => {
     };
 
     expect(keyGenerator({ user: { netId: 'AbC123' }, ip: '127.0.0.1' })).toBe('user:abc123');
-    expect(keyGenerator({ user: { netId: objectNetId }, ip: '203.0.113.7' })).toBe(
-      'ip:ip-key:203.0.113.7',
-    );
+    expect(
+      keyGenerator({
+        user: { netId: objectNetId },
+        ip: '203.0.113.7',
+        socket: { remoteAddress: '198.51.100.20' },
+      }),
+    ).toBe('ip:ip-key:198.51.100.20');
     expect(coerced).toBe(false);
 
-    const edgeRequest = {
-      ip: '198.51.100.20',
-      get: (name: string) => (name === 'cf-connecting-ip' ? '2001:db8::1234' : undefined),
+    const spoofedForwardingHeaders = {
+      ip: '2001:db8::1234',
+      socket: { remoteAddress: '198.51.100.20' },
     };
-    expect(keyGenerator(edgeRequest)).toBe('ip:ip-key:2001:db8::1234');
-    expect(ipKeyGenerator).toHaveBeenCalledWith('2001:db8::1234');
-
-    const malformedEdgeRequest = {
-      ip: '203.0.113.8',
-      get: (name: string) =>
-        name === 'cf-connecting-ip' ? '198.51.100.1, 198.51.100.2' : undefined,
-    };
-    expect(keyGenerator(malformedEdgeRequest)).toBe('ip:ip-key:203.0.113.8');
+    expect(keyGenerator(spoofedForwardingHeaders)).toBe('ip:ip-key:198.51.100.20');
   });
 
   it('keeps Express query parsing flat before request-shape sanitization', async () => {

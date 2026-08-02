@@ -26,7 +26,7 @@ dotenv.config({ path: path.join(SERVER_ROOT, '.env') });
 type SyncMode = 'dry-run' | 'apply';
 type SyncCollectionCategory = 'research-discovery' | 'source-audit' | 'base-support';
 
-interface SyncCollection {
+export interface SyncCollection {
   name: string;
   category: SyncCollectionCategory;
   filter?: Document;
@@ -499,8 +499,9 @@ async function copyCollection(
   betaDb: Db,
   developmentDb: Db,
   collection: SyncCollection,
-): Promise<void> {
-  const stagingName = `__beta_sync_${collection.name}_${process.pid}`;
+  operationId: string,
+): Promise<string> {
+  const stagingName = `__beta_sync_${operationId}_${collection.name}`;
   const staging = developmentDb.collection(stagingName);
   if (await collectionExists(developmentDb, stagingName)) {
     await staging.drop();
@@ -540,7 +541,7 @@ async function copyCollection(
         `Count mismatch for ${collection.name}: expected ${expectedCount}, copied ${actualCount}`,
       );
     }
-    await staging.rename(collection.name, { dropTarget: true });
+    return stagingName;
   } catch (error) {
     if (await collectionExists(developmentDb, stagingName)) {
       await staging.drop();
@@ -549,31 +550,91 @@ async function copyCollection(
   }
 }
 
-async function applySync(
+export async function applySync(
   betaDb: Db,
   developmentDb: Db,
   collections: SyncCollection[],
+  clearedCollectionNames: string[],
+  verify: () => Promise<void>,
 ): Promise<void> {
-  for (const collection of collections) {
-    await copyCollection(betaDb, developmentDb, collection);
-  }
-}
+  const operationId = `${process.pid}_${Date.now()}`;
+  const staged = new Map<string, string>();
+  const backups = new Map<string, string>();
+  const replaced: string[] = [];
+  let cutoverVerified = false;
 
-async function clearDevelopmentNonMirrorCollections(
-  developmentDb: Db,
-  mirrorCollectionNames: string[],
-): Promise<string[]> {
-  const collections = await developmentDb.listCollections({}, { nameOnly: true }).toArray();
-  const targets = localNonMirrorCollectionNames(
-    collections.map((collection) => collection.name),
-    mirrorCollectionNames,
-  );
-  const removed: string[] = [];
-  for (const collectionName of targets) {
-    await developmentDb.collection(collectionName).drop();
-    removed.push(collectionName);
+  try {
+    for (const collection of collections) {
+      staged.set(
+        collection.name,
+        await copyCollection(betaDb, developmentDb, collection, operationId),
+      );
+    }
+
+    for (const collection of collections) {
+      const targetName = collection.name;
+      const backupName = `__beta_backup_${operationId}_${targetName}`;
+      if (await collectionExists(developmentDb, targetName)) {
+        await developmentDb.collection(targetName).rename(backupName);
+        backups.set(targetName, backupName);
+      }
+      await developmentDb.collection(staged.get(targetName)!).rename(targetName);
+      replaced.push(targetName);
+    }
+
+    for (const targetName of clearedCollectionNames) {
+      if (!(await collectionExists(developmentDb, targetName))) continue;
+      const backupName = `__beta_backup_${operationId}_${targetName}`;
+      await developmentDb.collection(targetName).rename(backupName);
+      backups.set(targetName, backupName);
+    }
+
+    await verify();
+    cutoverVerified = true;
+
+    for (const backupName of backups.values()) {
+      if (await collectionExists(developmentDb, backupName)) {
+        await developmentDb.collection(backupName).drop();
+      }
+    }
+  } catch (error) {
+    if (cutoverVerified) {
+      throw error;
+    }
+    let rollbackError: unknown;
+    try {
+      for (const targetName of [...replaced].reverse()) {
+        if (await collectionExists(developmentDb, targetName)) {
+          await developmentDb.collection(targetName).drop();
+        }
+        const backupName = backups.get(targetName);
+        if (backupName && (await collectionExists(developmentDb, backupName))) {
+          await developmentDb.collection(backupName).rename(targetName);
+          backups.delete(targetName);
+        }
+      }
+      for (const [targetName, backupName] of backups) {
+        if (await collectionExists(developmentDb, backupName)) {
+          await developmentDb.collection(backupName).rename(targetName);
+        }
+      }
+    } catch (caughtRollbackError) {
+      rollbackError = caughtRollbackError;
+    }
+    if (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        'Beta to Development sync and rollback failed',
+      );
+    }
+    throw error;
+  } finally {
+    for (const stagingName of staged.values()) {
+      if (await collectionExists(developmentDb, stagingName)) {
+        await developmentDb.collection(stagingName).drop();
+      }
+    }
   }
-  return removed;
 }
 
 async function main(): Promise<void> {
@@ -619,17 +680,23 @@ async function main(): Promise<void> {
     }
 
     assertNoUnclassifiedBetaCollections(unclassifiedBetaCollections);
-    await applySync(betaDb, developmentDb, collections);
-    const clearedDevelopmentCollections = options.clearDevelopmentNonMirrorData
-      ? await clearDevelopmentNonMirrorCollections(developmentDb, approvedMirrorCollectionNames)
-      : [];
-    const after = await buildPlan(betaDb, developmentDb, collections);
-    const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
-    if (mismatches.length > 0) {
-      throw new Error(
-        `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
-      );
-    }
+    const clearedDevelopmentCollections = localCollectionsClearedOnApply;
+    let after: SyncCollectionPlan[] = [];
+    await applySync(
+      betaDb,
+      developmentDb,
+      collections,
+      clearedDevelopmentCollections,
+      async () => {
+        after = await buildPlan(betaDb, developmentDb, collections);
+        const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
+        if (mismatches.length > 0) {
+          throw new Error(
+            `Post-sync count verification failed for: ${mismatches.map((row) => row.name).join(', ')}`,
+          );
+        }
+      },
+    );
     const result = {
       ...summary,
       status: 'applied',

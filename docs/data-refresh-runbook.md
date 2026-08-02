@@ -168,6 +168,8 @@ It never reads Beta analytics, admin grants, job locks, scraper caches, student 
 Every Beta user ID and role has a Development counterpart so references and role distributions remain valid.
 Public faculty identities remain recognizable, while other identities are deterministically pseudonymized and all copied users have student and account-activity fields removed.
 An unclassified Beta collection blocks apply until its mirror or exclusion policy is reviewed.
+Apply stages and validates every mirrored collection before cutover.
+It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
 The local Development ResearchEntity Meilisearch index is rebuilt after the MongoDB sync.
 Development Pathways continue to use their supported MongoDB path because the Pathways Meilisearch rollout is restricted to Beta and Production.
 

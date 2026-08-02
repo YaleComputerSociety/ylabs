@@ -11,7 +11,6 @@ import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
 import { readFile } from 'fs/promises';
-import { isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -99,11 +98,6 @@ const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   return RATE_LIMIT_NETID_RE.test(normalized) ? normalized : undefined;
 };
 
-const cloudflareClientIp = (req: express.Request): string | undefined => {
-  const value = req.get?.('cf-connecting-ip')?.trim();
-  return value && isIP(value) !== 0 ? value : undefined;
-};
-
 const getRateLimitKey = (req: express.Request): string => {
   const user = req.user as { netId?: unknown; netid?: unknown } | undefined;
   const netId = normalizedRateLimitNetId(user?.netId ?? user?.netid);
@@ -111,12 +105,7 @@ const getRateLimitKey = (req: express.Request): string => {
     return `user:${netId}`;
   }
 
-  // Render receives public traffic through Cloudflare and its own load balancer.
-  // With a numeric Express trust-proxy setting, req.ip can therefore identify a
-  // shared edge hop rather than the visitor. Cloudflare supplies the original
-  // visitor address as a single-value header. Accept it only when it is a valid
-  // IP address, and fail closed to req.ip when it is absent or malformed.
-  const clientIp = cloudflareClientIp(req) ?? req.ip ?? '';
+  const clientIp = req.socket?.remoteAddress ?? '';
   return `ip:${ipKeyGenerator(clientIp)}`;
 };
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ObjectId } from 'mongodb';
+import { ObjectId, type Db, type Document } from 'mongodb';
 import {
+  applySync,
   assertNoUnclassifiedBetaCollections,
   assertSafeBetaToDevelopmentOptions,
   betaToDevelopmentCollectionNames,
@@ -17,6 +18,75 @@ const baseEnv = {
 };
 
 describe('Beta to Development sync guards', () => {
+  it('rolls back every collection when post-cutover verification fails', async () => {
+    const createFakeDb = (initial: Record<string, Document[]>) => {
+      const data = new Map(
+        Object.entries(initial).map(([name, documents]) => [
+          name,
+          documents.map((document) => ({ ...document })),
+        ]),
+      );
+      const db = {
+        createCollection: async (name: string) => {
+          data.set(name, []);
+        },
+        listCollections: (filter: { name?: string } = {}) => ({
+          hasNext: async () => (filter.name ? data.has(filter.name) : data.size > 0),
+          toArray: async () =>
+            [...data.keys()]
+              .filter((name) => !filter.name || name === filter.name)
+              .map((name) => ({ name })),
+        }),
+        collection: (name: string) => ({
+          indexes: async () => [{ name: '_id_', key: { _id: 1 } }],
+          find: () => ({
+            async *[Symbol.asyncIterator]() {
+              for (const document of data.get(name) || []) yield { ...document };
+            },
+            close: async () => undefined,
+          }),
+          countDocuments: async () => (data.get(name) || []).length,
+          bulkWrite: async (operations: Array<{ insertOne: { document: Document } }>) => {
+            data.get(name)!.push(...operations.map((operation) => operation.insertOne.document));
+          },
+          createIndexes: async () => undefined,
+          rename: async (targetName: string) => {
+            if (!data.has(name)) throw new Error(`Missing collection ${name}`);
+            if (data.has(targetName)) throw new Error(`Existing collection ${targetName}`);
+            data.set(targetName, data.get(name)!);
+            data.delete(name);
+          },
+          drop: async () => {
+            data.delete(name);
+          },
+        }),
+      };
+      return { db: db as unknown as Db, data };
+    };
+
+    const beta = createFakeDb({ research_entities: [{ _id: 'beta' }] });
+    const development = createFakeDb({
+      research_entities: [{ _id: 'development' }],
+      analytics_events: [{ _id: 'local' }],
+    });
+
+    await expect(
+      applySync(
+        beta.db,
+        development.db,
+        [{ name: 'research_entities', category: 'research-discovery' }],
+        ['analytics_events'],
+        async () => {
+          throw new Error('verification failed');
+        },
+      ),
+    ).rejects.toThrow('verification failed');
+
+    expect(development.data.get('research_entities')).toEqual([{ _id: 'development' }]);
+    expect(development.data.get('analytics_events')).toEqual([{ _id: 'local' }]);
+    expect([...development.data.keys()].some((name) => name.startsWith('__beta_'))).toBe(false);
+  });
+
   it('defaults to a dry-run from remote Beta to local Development', () => {
     const options = parseBetaToDevelopmentOptions([], baseEnv);
 
