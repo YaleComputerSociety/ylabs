@@ -70,6 +70,8 @@ export type Fellowship = {
   programDates: string;
   bestNextStep: string;
   prepSteps: string[];
+  researchFocused?: boolean;
+  applicationMaterials?: string[];
   title: string;
   competitionType: string;
   summary: string;

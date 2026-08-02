@@ -9,9 +9,10 @@ const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string
         const record = link as Record<string, unknown>;
         const url = publicHttpUrl(record.url);
         if (!url) return [];
-        const label = typeof record.label === 'string' && record.label.trim()
-          ? redactDirectContactInfo(record.label.trim())
-          : undefined;
+        const label =
+          typeof record.label === 'string' && record.label.trim()
+            ? redactDirectContactInfo(record.label.trim())
+            : undefined;
         return [{ ...(label ? { label } : {}), url }];
       })
     : [];
@@ -21,9 +22,7 @@ const publicProgramText = (value: unknown): unknown =>
 
 const publicProgramTextArray = (value: unknown): string[] =>
   Array.isArray(value)
-    ? value.flatMap((item) =>
-        typeof item === 'string' ? [redactDirectContactInfo(item)] : [],
-      )
+    ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
     : [];
 
 export const publicProgramForReader = (program: any) => {
@@ -44,6 +43,8 @@ export const publicProgramForReader = (program: any) => {
     programDates: publicProgramText(program.programDates),
     bestNextStep: publicProgramText(program.bestNextStep),
     prepSteps: publicProgramTextArray(program.prepSteps),
+    researchFocused: program.researchFocused === true,
+    applicationMaterials: publicProgramTextArray(program.applicationMaterials),
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
     summary: publicProgramText(program.summary),

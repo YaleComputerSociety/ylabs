@@ -379,10 +379,7 @@ describe('programController search visibility', () => {
       totalPages: 1,
     });
 
-    await searchProgramsController(
-      { query: {}, user: { userType: 'student' } } as any,
-      res as any,
-    );
+    await searchProgramsController({ query: {}, user: { userType: 'student' } } as any, res as any);
 
     expectPublicProgram(res.json.mock.calls[0][0].results[0]);
   });
@@ -413,10 +410,7 @@ describe('programController search visibility', () => {
       totalPages: 1,
     });
 
-    await searchProgramsController(
-      { query: {}, user: { userType: 'student' } } as any,
-      res as any,
-    );
+    await searchProgramsController({ query: {}, user: { userType: 'student' } } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
     expect(payload.links).toEqual([
@@ -445,10 +439,7 @@ describe('programController search visibility', () => {
       totalPages: 1,
     });
 
-    await searchProgramsController(
-      { query: {}, user: { userType: 'student' } } as any,
-      res as any,
-    );
+    await searchProgramsController({ query: {}, user: { userType: 'student' } } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
     expect(payload.contactEmail).toBeUndefined();
@@ -466,6 +457,7 @@ describe('programController search visibility', () => {
           applicationInformation: 'Call 203.555.3434 for the form.',
           eligibility: 'Ask hidden@yale.edu about eligibility.',
           prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
+          applicationMaterials: ['Email materials-contact@yale.edu or call 203-555-8888.'],
           contactPhone: '203-555-9999',
           contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
         },
@@ -476,17 +468,19 @@ describe('programController search visibility', () => {
       totalPages: 1,
     });
 
-    await searchProgramsController(
-      { query: {}, user: { userType: 'student' } } as any,
-      res as any,
-    );
+    await searchProgramsController({ query: {}, user: { userType: 'student' } } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
-    expect(payload.summary).toBe('Email [email redacted] or call [phone redacted] before applying.');
+    expect(payload.summary).toBe(
+      'Email [email redacted] or call [phone redacted] before applying.',
+    );
     expect(payload.description).toBe('Questions: [email redacted].');
     expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
     expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
     expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
+    expect(payload.applicationMaterials).toEqual([
+      'Email [email redacted] or call [phone redacted].',
+    ]);
     expect(payload.contactPhone).toBeUndefined();
     expect(payload.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
     expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
@@ -574,10 +568,7 @@ describe('programController search visibility', () => {
     const res = response();
     mocks.addProgramView.mockResolvedValue(privateProgram);
 
-    await addViewToProgram(
-      { params: { id: '64a000000000000000000010' } } as any,
-      res as any,
-    );
+    await addViewToProgram({ params: { id: '64a000000000000000000010' } } as any, res as any);
 
     const body = res.json.mock.calls[0][0];
     expectPublicProgram(body.program);
@@ -588,10 +579,7 @@ describe('programController search visibility', () => {
     const res = response();
     mocks.addProgramFavorite.mockResolvedValue(privateProgram);
 
-    await addFavoriteToProgram(
-      { params: { id: '64a000000000000000000010' } } as any,
-      res as any,
-    );
+    await addFavoriteToProgram({ params: { id: '64a000000000000000000010' } } as any, res as any);
 
     const body = res.json.mock.calls[0][0];
     expectPublicProgram(body.program);

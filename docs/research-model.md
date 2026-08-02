@@ -329,6 +329,7 @@ Checklist state uses stable item ids so copy edits do not erase checked state.
 
 Saved-research fellowship matching should stay source-cautious.
 The backend normalizes fellowship application-cycle evidence from `applicationLink`, official link rows, accepting status, dates, deadlines, and office contact context.
+Official Yale fellowship detail pages may also supply a source-backed `researchFocused` flag, bounded `applicationInformation`, and deduplicated `applicationMaterials`; missing headings or material language must remain unknown rather than producing invented requirements.
 Public match payloads may expose source URLs, application route flags, deadline status, and contact office, but should not expose direct contact emails without a guarded contact-route policy.
 Standalone fellowship rows usually support funding/formalization matches, not entry pathways; structured mentor-matching fellowship programs can support pathways or posted opportunities when the source describes a hosted application into the program.
 

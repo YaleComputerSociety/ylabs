@@ -7,10 +7,7 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
-import {
-  formatFellowshipDate,
-  getFellowshipApplicationStatus,
-} from '../../utils/fellowshipStatus';
+import { formatFellowshipDate, getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -172,7 +169,10 @@ const FellowshipModal = ({
 
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === titleRef.current)) {
+    if (
+      event.shiftKey &&
+      (document.activeElement === first || document.activeElement === titleRef.current)
+    ) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -233,15 +233,15 @@ const FellowshipModal = ({
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
-  const applicationActionLabel =
-    applicationStatus.isApplicationWindowOpen
-      ? 'Apply'
-      : 'Open source';
+  const applicationActionLabel = applicationStatus.isApplicationWindowOpen
+    ? 'Apply'
+    : 'Open source';
   const applicationHref = safeHttpUrl(fellowship.applicationLink);
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
   const safeLinks = (fellowship.links || [])
     .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
     .filter((link) => link.href);
+  const applicationMaterials = fellowship.applicationMaterials || [];
 
   return (
     <div
@@ -271,6 +271,11 @@ const FellowshipModal = ({
                   {fellowship.competitionType && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium">
                       {fellowship.competitionType}
+                    </span>
+                  )}
+                  {fellowship.researchFocused && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 font-medium">
+                      Research-focused
                     </span>
                   )}
                   <span
@@ -413,7 +418,8 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-slate-500">What this is</span>
                       <p className="text-sm font-medium text-slate-900">
-                        {fellowship.studentFacingCategory || programKindLabel(fellowship.programKind)}
+                        {fellowship.studentFacingCategory ||
+                          programKindLabel(fellowship.programKind)}
                       </p>
                     </div>
                     <div>
@@ -443,7 +449,9 @@ const FellowshipModal = ({
                   <div className="bg-[var(--yr-blue-soft)] rounded-lg p-3 space-y-3">
                     <div>
                       <span className="text-xs text-blue-600">Current Status</span>
-                      <p className="text-sm font-semibold text-blue-900">{applicationStatus.label}</p>
+                      <p className="text-sm font-semibold text-blue-900">
+                        {applicationStatus.label}
+                      </p>
                       <p className="text-xs text-blue-700">{applicationStatus.detail}</p>
                     </div>
                     {cycleStatus.category === 'nextCycle' && (
@@ -520,7 +528,9 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {(fellowship.compensationSummary || fellowship.hoursPerWeek || fellowship.programDates) && (
+                {(fellowship.compensationSummary ||
+                  fellowship.hoursPerWeek ||
+                  fellowship.programDates) && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       Time & Funding
@@ -700,6 +710,53 @@ const FellowshipModal = ({
                   </section>
                 )}
 
+                {(fellowship.applicationInformation || applicationMaterials.length > 0) && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                      Application Process
+                    </h3>
+                    <div className="space-y-3 rounded-lg border border-blue-100 bg-[var(--yr-blue-soft)]/50 p-4">
+                      {applicationMaterials.length > 0 && (
+                        <div>
+                          <p className="mb-2 text-xs font-semibold text-blue-900">
+                            Materials listed by the official source
+                          </p>
+                          <ul className="grid gap-2 sm:grid-cols-2">
+                            {applicationMaterials.map((material) => (
+                              <li
+                                key={material}
+                                className="flex items-start gap-2 text-sm text-slate-700"
+                              >
+                                <span aria-hidden="true" className="mt-0.5 text-blue-600">
+                                  ✓
+                                </span>
+                                <span>{material}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {fellowship.applicationInformation && (
+                        <RichTextBlock
+                          text={fellowship.applicationInformation}
+                          className="text-sm leading-relaxed text-slate-700"
+                        />
+                      )}
+                      {applicationHref && (
+                        <a
+                          href={applicationHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
+                          className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+                        >
+                          Open official application
+                        </a>
+                      )}
+                    </div>
+                  </section>
+                )}
+
                 {fellowship.summary && (
                   <section>
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
@@ -720,18 +777,6 @@ const FellowshipModal = ({
                     <RichTextBlock
                       text={fellowship.description}
                       className="text-sm text-gray-700 leading-relaxed"
-                    />
-                  </section>
-                )}
-
-                {fellowship.applicationInformation && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Application Information
-                    </h3>
-                    <RichTextBlock
-                      text={fellowship.applicationInformation}
-                      className="text-sm text-gray-700 leading-relaxed bg-[var(--yr-blue-soft)]/50 border border-blue-100 rounded-lg p-4"
                     />
                   </section>
                 )}

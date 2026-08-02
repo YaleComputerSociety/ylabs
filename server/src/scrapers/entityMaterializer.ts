@@ -15,6 +15,7 @@ import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { ScrapeRun } from '../models/scrapeRun';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { Fellowship } from '../models/fellowship';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
@@ -1630,6 +1631,8 @@ function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | n
     case 'researchEntity':
     case 'researchGroup':
       return ResearchEntity;
+    case 'fellowship':
+      return Fellowship;
     default:
       return null;
   }
@@ -1644,6 +1647,8 @@ function uniqueKeyFieldFor(entityType: ObservedEntityType): string | null {
     case 'researchEntity':
     case 'researchGroup':
       return 'slug';
+    case 'fellowship':
+      return 'sourceKey';
     default:
       return null;
   }
