@@ -320,8 +320,7 @@ describe('visibilityRepairQueueService', () => {
       sourceId: 'source-1',
       observationId: 'observation-1',
       sourceName: 'visibility-repair-queue',
-      sourceUrl:
-        'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
+      sourceUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/drew-fixture',
       valueHash: 'certified-value-hash',
     };
     const deps = {
