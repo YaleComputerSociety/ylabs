@@ -6,7 +6,6 @@ import {
   exportFellowshipAcceptedCsv,
   normalizeOrcid,
   resolveOrcidCrosswalk,
-  validateArxivOrcidList,
   validateFellowshipAcceptedCsv,
   validateScholarAcceptedCsv,
   type AcceptedInputUser,
@@ -52,9 +51,7 @@ const noYaleEvidence: AcceptedInputUser = {
 
 describe('normalizeOrcid', () => {
   it('normalizes ORCID URLs and compact strings', () => {
-    expect(normalizeOrcid('https://orcid.org/0000-0000-0000-0001')).toBe(
-      '0000-0000-0000-0001',
-    );
+    expect(normalizeOrcid('https://orcid.org/0000-0000-0000-0001')).toBe('0000-0000-0000-0001');
     expect(normalizeOrcid('000000000000001X')).toBe('0000-0000-0000-001X');
   });
 
@@ -140,10 +137,7 @@ describe('fellowship accepted CSV validation', () => {
   });
 
   it('exports scraper-compatible rows and fills advisorName from resolved ORCID', () => {
-    const csv = [
-      'advisorOrcid,year,studentName',
-      '0000-0000-0000-0001,2024,=Alice Liu',
-    ].join('\n');
+    const csv = ['advisorOrcid,year,studentName', '0000-0000-0000-0001,2024,=Alice Liu'].join('\n');
     const result = exportFellowshipAcceptedCsv('stars-ii', csv, [ada]);
     expect(result.exportedRows).toBe(1);
     expect(result.csv).toContain('Ada Lovelace,0000-0000-0000-0001,2024');
@@ -236,33 +230,5 @@ describe('ORCID crosswalk apply', () => {
 
     expect(result.appliedRows).toBe(0);
     expect(updates).toEqual([]);
-  });
-});
-
-describe('arXiv accepted ORCID validation', () => {
-  it('converts accepted ORCIDs to current scraper-compatible internal targets', () => {
-    const graceWithOrcid: AcceptedInputUser = {
-      ...grace,
-      orcid: '0000-0000-0000-0028',
-      primaryDepartment: 'Physics',
-    };
-    const result = validateArxivOrcidList(
-      [
-        '# comments allowed',
-        '0000-0000-0000-0001 # Ada Lovelace',
-        '0000-0000-0000-0028',
-      ].join('\n'),
-      [ada, graceWithOrcid],
-    );
-
-    expect(result.status).toBe('ready');
-    expect(result.readyRows).toBe(2);
-    expect(result.scraperOnlyValues).toEqual(['ada1', 'grace1']);
-  });
-
-  it('blocks unresolved ORCIDs instead of creating users', () => {
-    const result = validateArxivOrcidList('0000-0000-0000-0028', [ada]);
-    expect(result.status).toBe('blocked');
-    expect(result.issues[0].status).toBe('unresolved');
   });
 });

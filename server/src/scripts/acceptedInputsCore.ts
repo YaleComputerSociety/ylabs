@@ -119,20 +119,6 @@ export interface ScholarApplyResult {
   }>;
 }
 
-export interface ArxivResolvedTarget {
-  row: number;
-  orcid: string;
-  userId: string;
-  name: string;
-  diagnosticNetid?: string;
-  scraperOnlyValue: string;
-}
-
-export interface ArxivValidationResult extends FileValidationResult {
-  resolvedTargets: ArxivResolvedTarget[];
-  scraperOnlyValues: string[];
-}
-
 export interface OrcidCrosswalkApplyResult {
   dryRun: boolean;
   totalRows: number;
@@ -147,10 +133,7 @@ export interface OrcidCrosswalkApplyResult {
   }>;
 }
 
-export type UpdateUserFn = (
-  userId: unknown,
-  update: Record<string, unknown>,
-) => Promise<unknown>;
+export type UpdateUserFn = (userId: unknown, update: Record<string, unknown>) => Promise<unknown>;
 
 type CsvRecord = Record<string, string>;
 
@@ -226,10 +209,7 @@ export function parseCsvRecords(input: string): CsvRecord[] {
 
 import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
 
-export function serializeCsv(
-  rows: Array<Record<string, unknown>>,
-  headers: string[],
-): string {
+export function serializeCsv(rows: Array<Record<string, unknown>>, headers: string[]): string {
   const lines = [headers.map((header) => escapeCsvCell(header)).join(',')];
   for (const row of rows) {
     lines.push(headers.map((header) => escapeCsvCell(row[header])).join(','));
@@ -348,8 +328,7 @@ export function resolveOrcidCrosswalk(
   }
 
   const hintName = normalizePersonName(hints.name);
-  const hasOfficialYaleSource =
-    isYaleUrl(hints.profileUrl) || isYaleUrl(hints.sourceUrl);
+  const hasOfficialYaleSource = isYaleUrl(hints.profileUrl) || isYaleUrl(hints.sourceUrl);
   if (hintName && hasOfficialYaleSource) {
     for (const user of users) {
       if (normalizePersonName(userDisplayName(user)) === hintName) {
@@ -366,8 +345,7 @@ export function resolveOrcidCrosswalk(
       candidates: [],
       basis: [],
       canPersist: false,
-      message:
-        'No existing Yale-confirmed user matched the supplied ORCID crosswalk evidence',
+      message: 'No existing Yale-confirmed user matched the supplied ORCID crosswalk evidence',
     };
   }
   if (candidates.length > 1) {
@@ -442,8 +420,7 @@ export function validateFellowshipAcceptedCsv(
       rowIssues.push({
         row: rowNumber,
         status: 'manual-required',
-        message:
-          'Rows without advisorOrcid require advisorName, sourceUrl, and reviewNote',
+        message: 'Rows without advisorOrcid require advisorName, sourceUrl, and reviewNote',
       });
     } else if (!isHttpUrl(sourceUrl)) {
       rowIssues.push({
@@ -652,60 +629,6 @@ export async function applyScholarAcceptedCsv(
   };
 }
 
-export function validateArxivOrcidList(
-  input: string,
-  users: AcceptedInputUser[],
-): ArxivValidationResult {
-  const rows = parseOrcidLines(input);
-  const issues: AcceptedInputIssue[] = [];
-  const resolvedTargets: ArxivResolvedTarget[] = [];
-
-  rows.forEach(({ raw, row }) => {
-    const normalizedOrcid = normalizeOrcid(raw);
-    if (!normalizedOrcid) {
-      issues.push({
-        row,
-        orcid: raw,
-        status: 'invalid-orcid',
-        message: 'ORCID failed format or checksum validation',
-      });
-      return;
-    }
-    const resolved = resolveOrcidCrosswalk(normalizedOrcid, users);
-    if (resolved.status !== 'matched-existing' || !resolved.user) {
-      issues.push({
-        row,
-        orcid: normalizedOrcid,
-        status: resolved.status,
-        message:
-          resolved.message ||
-          'arXiv accepted ORCID must already resolve to one Yale-confirmed user',
-      });
-      return;
-    }
-    const name = userDisplayName(resolved.user);
-    const scraperOnlyValue = resolved.user.netid || name;
-    resolvedTargets.push({
-      row,
-      orcid: normalizedOrcid,
-      userId: stringifyId(resolved.user._id),
-      name,
-      diagnosticNetid: resolved.user.netid || undefined,
-      scraperOnlyValue,
-    });
-  });
-
-  return {
-    status: issues.length === 0 && rows.length > 0 ? 'ready' : 'blocked',
-    totalRows: rows.length,
-    readyRows: resolvedTargets.length,
-    blockedRows: rows.length - resolvedTargets.length,
-    issues,
-    resolvedTargets,
-    scraperOnlyValues: resolvedTargets.map((target) => target.scraperOnlyValue),
-  };
-}
-
 export async function applyOrcidCrosswalkCsv(
   csv: string,
   users: AcceptedInputUser[],
@@ -811,39 +734,6 @@ export function buildScholarCandidateRows(
     });
 }
 
-export function buildArxivCandidateRows(
-  users: AcceptedInputUser[],
-  limit = Infinity,
-): Array<Record<string, unknown>> {
-  return users
-    .filter(isResearchFacultyUser)
-    .filter(isMathPhysicsStatsUser)
-    .filter((user) => normalizeOrcid(user.orcid))
-    .slice(0, limit)
-    .map((user) => ({
-      orcid: normalizeOrcid(user.orcid) || '',
-      name: userDisplayName(user),
-      primaryDepartment: user.primaryDepartment || '',
-      diagnosticNetid: user.netid || '',
-    }));
-}
-
-export function buildArxivCandidateText(users: AcceptedInputUser[], limit = Infinity): string {
-  const rows = buildArxivCandidateRows(users, limit);
-  const lines = [
-    '# Review before copying accepted lines to arxiv-math-physics-stat-orcids.txt',
-    '# One ORCID per line; trailing comments are ignored by accepted-inputs arxiv:validate.',
-  ];
-  for (const row of rows) {
-    const comment = [row.name, row.primaryDepartment]
-      .map((value) => String(value || '').trim())
-      .filter(Boolean)
-      .join(' | ');
-    lines.push(comment ? `${row.orcid} # ${comment}` : String(row.orcid));
-  }
-  return `${lines.join('\n')}\n`;
-}
-
 export async function buildAcceptedInputsStatus(
   root: string,
   users: AcceptedInputUser[],
@@ -876,13 +766,6 @@ export async function buildAcceptedInputsStatus(
       ? { path: scholarPath, status: 'missing' }
       : { path: scholarPath, ...validateScholarAcceptedCsv(scholarContent, users) };
 
-  const arxivPath = path.join(root, 'arxiv-math-physics-stat-orcids.txt');
-  const arxivContent = await readFileIfExists(arxivPath);
-  const arxiv =
-    arxivContent === null
-      ? { path: arxivPath, status: 'missing' }
-      : { path: arxivPath, ...validateArxivOrcidList(arxivContent, users) };
-
   const crosswalkPath = path.join(root, 'orcid-crosswalk.csv');
   const crosswalkContent = await readFileIfExists(crosswalkPath);
   const crosswalk =
@@ -894,7 +777,6 @@ export async function buildAcceptedInputsStatus(
     root,
     fellowship,
     scholar,
-    arxiv,
     crosswalk: {
       path: crosswalkPath,
       ...crosswalk,
@@ -968,23 +850,20 @@ function parseAwardYear(raw: string): number | null {
   return year >= 1980 && year <= max ? year : null;
 }
 
-function parseOrcidLines(input: string): Array<{ row: number; raw: string }> {
-  return input
-    .split(/\r?\n/)
-    .map((line, index) => ({ row: index + 1, raw: line.replace(/\s+#.*$/, '').trim() }))
-    .filter(({ raw }) => raw.length > 0 && !raw.startsWith('#'));
-}
-
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
 function normalizeEmail(value: string | undefined): string {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeExternalId(value: string | undefined): string {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function normalizePersonName(value: string | undefined): string {
@@ -1071,35 +950,12 @@ function collectProfileUrls(value: unknown, urls: string[]): void {
 
 function hasSourceBackedBasis(basis: string[]): boolean {
   return basis.some((item) =>
-    ['yale-email', 'openalex', 'official-profile-url', 'name-with-yale-source'].includes(
-      item,
-    ),
+    ['yale-email', 'openalex', 'official-profile-url', 'name-with-yale-source'].includes(item),
   );
 }
 
 function isResearchFacultyUser(user: AcceptedInputUser): boolean {
   return ['professor', 'faculty'].includes(String(user.userType || '').toLowerCase());
-}
-
-function isMathPhysicsStatsUser(user: AcceptedInputUser): boolean {
-  const text = [
-    user.primaryDepartment,
-    ...(user.secondaryDepartments || []),
-    ...(user.departments || []),
-    user.title,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return [
-    /\bmath(?:ematics)?\b/,
-    /\bstatistics?\b/,
-    /\bdata science\b/,
-    /\bphysics\b/,
-    /\bapplied physics\b/,
-    /\bastronomy\b/,
-    /\bastrophysics\b/,
-  ].some((pattern) => pattern.test(text));
 }
 
 function asString(value: unknown): string | undefined {

@@ -110,51 +110,6 @@ export const workPlannerSourcePolicies = [
     notes:
       'Derived student-facing decision guidance; run only as a bounded/manual enrichment after source-backed access evidence exists.',
   },
-  {
-    sourceName: 'openalex',
-    entityType: 'user',
-    targetFields: ['openAlexWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'monthly',
-    notes:
-      'Publication enrichment policy; concrete integration should emit a user-level freshness marker after a successful faculty sync.',
-  },
-  {
-    sourceName: 'orcid',
-    entityType: 'user',
-    targetFields: ['orcidWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'monthly',
-    notes:
-      'Identity-backed ORCID public works ingestion for accepted Yale user ORCIDs.',
-  },
-  {
-    sourceName: 'europe-pmc',
-    entityType: 'user',
-    targetFields: ['europePmcWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'monthly',
-    notes:
-      'Biomedical ORCID-backed paper discovery; no name-only authorship.',
-  },
-  {
-    sourceName: 'pubmed',
-    entityType: 'user',
-    targetFields: ['pubmedWorksSyncedAt'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'monthly',
-    notes:
-      'PubMed-facing ORCID-backed biomedical paper discovery via Europe PMC.',
-  },
-  {
-    sourceName: 'crossref',
-    entityType: 'paper',
-    targetFields: ['crossrefHydratedAt'],
-    freshnessWindowMs: 90 * WORK_PLANNER_DAY_MS,
-    defaultRecurringCadence: 'quarterly',
-    notes:
-      'DOI metadata hydration only; never creates Yale authorship links.',
-  },
 ] satisfies WorkPlannerSourcePolicy[];
 
 export function getWorkPlannerSourcePolicy(
@@ -208,10 +163,7 @@ export function buildEntityWorkPlan(options: BuildEntityWorkPlanOptions): Entity
 
     const lastObservedAt = latestObservedAt(
       options.observations.filter(
-        (obs) =>
-          !obs.superseded &&
-          obs.sourceName === options.sourceName &&
-          obs.field === field,
+        (obs) => !obs.superseded && obs.sourceName === options.sourceName && obs.field === field,
       ),
     );
 

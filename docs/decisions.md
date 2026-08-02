@@ -13,7 +13,8 @@ CI installs the pinned Graphify version, generates twice to verify deterministic
 
 ## 2026-07-26: Retire The Bibliographic Paper Pipeline
 
-The bibliographic ingestion sources (OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref) are deprecated: they are deregistered so they cannot run, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.
+The bibliographic ingestion implementations for OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are removed, along with their CLI, scheduling, active source metadata, and source-seeding paths, so they cannot run through ordinary scraper operations.
+Historical source rows and observations remain disabled and available for rollback, and the launch-trust release gate no longer enforces paper-quality or research-activity checks.
 Yale Research navigates to verified official Yale profile URLs and keeps ORCID and Google Scholar only as optional outbound identity links, not as a works feed, verification badge, or activity signal.
 The confirmed Phase 3 scope also retires the curated official-profile scholarly-activity surface.
 The implementation proceeds in reversible increments: producers and consumers stop before any stored paper or scholarly collection is archived or removed.

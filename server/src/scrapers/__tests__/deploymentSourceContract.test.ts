@@ -6,6 +6,7 @@ import {
   GATED_SOURCES,
 } from '../../scripts/betaReadinessGate';
 import { buildOrchestrator } from '../registry';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
 
 const renderBlueprint = fs.readFileSync(
   new URL('../../../../render.yaml', import.meta.url),
@@ -18,6 +19,7 @@ const serverPackage = JSON.parse(
 };
 const serverEnvExample = fs.readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8');
 const scraperCli = fs.readFileSync(new URL('../cli.ts', import.meta.url), 'utf8');
+const scraperCliHelpers = fs.readFileSync(new URL('../cliHelpers.ts', import.meta.url), 'utf8');
 const departmentRosterScraper = fs.readFileSync(
   new URL('../sources/departmentRosterScraper.ts', import.meta.url),
   'utf8',
@@ -31,13 +33,12 @@ const retiredPaperPipeline = fs.readFileSync(
   'utf8',
 );
 
-const RETIRED_BIBLIOGRAPHIC_SOURCES = [
-  'arxiv',
-  'openalex',
-  'orcid',
-  'europe-pmc',
-  'pubmed',
-  'crossref',
+const RETIRED_SCRAPER_MODULES = [
+  'arxivPreprintScraper.ts',
+  'crossrefPaperScraper.ts',
+  'europePmcPaperScraper.ts',
+  'openAlexPaperScraper.ts',
+  'orcidWorksScraper.ts',
 ] as const;
 
 function registeredSourceNames(): Set<string> {
@@ -91,15 +92,23 @@ describe('deployed scraper source contract', () => {
       ...GATED_SOURCES,
     ]);
 
-    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCES) {
+    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
       expect(scheduled.has(sourceName)).toBe(false);
       expect(readinessSources.has(sourceName)).toBe(false);
+    }
+    for (const moduleName of RETIRED_SCRAPER_MODULES) {
+      expect(fs.existsSync(new URL(`../sources/${moduleName}`, import.meta.url)), moduleName).toBe(
+        false,
+      );
     }
     expect(serverPackage.scripts?.['papers:authorship-audit']).toBeUndefined();
     expect(
       serverPackage.scripts?.['scholarly-links:repair-official-profile-pointers'],
     ).toBeUndefined();
     expect(scraperCli).not.toMatch(/--discover-openalex-authors|--max-openalex-pages-per-author/);
+    expect(scraperCliHelpers).not.toMatch(
+      /discoverOpenAlexAuthors|maxOpenAlexPagesPerAuthor|discover-openalex-authors|max-openalex-pages-per-author/,
+    );
     expect(scraperCli).not.toMatch(/--source openalex/);
   });
 

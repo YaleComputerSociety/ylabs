@@ -4,11 +4,14 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ACTIVE_SOURCE_NAMES,
+  RETIRED_SOURCE_NAMES,
   assertSeedSourcesWriteAllowed,
   buildSeedSourcesOutput,
   parseSeedSourcesArgs,
   writeSeedSourcesOutput,
 } from '../seedSources';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
 
 const productionEnv = {
   SCRAPER_ENV: 'production',
@@ -16,6 +19,13 @@ const productionEnv = {
 } as NodeJS.ProcessEnv;
 
 describe('seedSources CLI helpers', () => {
+  it('retires bibliography sources instead of seeding them as active', () => {
+    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
+      expect(ACTIVE_SOURCE_NAMES, sourceName).not.toContain(sourceName);
+      expect(RETIRED_SOURCE_NAMES, sourceName).toContain(sourceName);
+    }
+  });
+
   it('parses reset, dry-run, and output flags', () => {
     expect(parseSeedSourcesArgs([])).toEqual({
       apply: false,

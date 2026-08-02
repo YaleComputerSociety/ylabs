@@ -312,68 +312,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Funding activity enriches entity context but is not undergraduate-access evidence alone.',
   },
-  openalex: {
-    priority: 7,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS', 'TOPICS'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'Research-activity enrichment source. ORCID is the identity anchor when present; stored OpenAlex author ids are used only without ORCID; name search is review-only.',
-  },
-  orcid: {
-    priority: 7,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS', 'TOPICS'],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Accepted Yale user ORCID public works prove authorship for that user; downstream sources may enrich the paper metadata.',
-  },
-  arxiv: {
-    priority: 7,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS', 'TOPICS'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'Preprint and recent research activity enrichment; not undergraduate-access evidence by itself.',
-  },
-  crossref: {
-    priority: 8,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'DOI-backed compact scholarly-link hydration. Crossref improves real destination metadata and never creates Yale authorship or access evidence by itself.',
-  },
-  pubmed: {
-    priority: 8,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS'],
-    defaultConfidence: 'HIGH',
-    notes:
-      'Biomedical metadata/authorship enrichment only when records identify the Yale user by accepted ORCID.',
-  },
-  'europe-pmc': {
-    priority: 8,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS'],
-    defaultConfidence: 'HIGH',
-    notes: 'Europe PMC ORCID-backed paper discovery; author links require ORCID identity evidence.',
-  },
-  'semantic-scholar': {
-    priority: 8,
-    tier: 'THIRD_PARTY_ENRICHMENT',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['PUBLICATIONS', 'TOPICS'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      'Paper metadata and TLDR enrichment; author-paper lists attach Yale authorship only for accepted Semantic Scholar author IDs.',
-  },
 } satisfies Record<string, SourceCoverageMetadata>;
 
 export type SourceCoverageName = keyof typeof sourceCoverageRegistry;

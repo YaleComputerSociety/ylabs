@@ -17,6 +17,7 @@ import {
 } from '../scripts/scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { getSourceCoverage } from './sourceCoverageRegistry';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from './retiredPaperPipeline';
 import type { SourceCoverageMetadata } from '../models/sourceCoverageTypes';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -181,84 +182,12 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'orcid',
-    displayName: 'ORCID',
-    description: 'Author-curated paper and biographical metadata from ORCID.',
-    baseUrl: 'https://pub.orcid.org/v3.0',
-    defaultWeight: 0.95,
-    cadence: 'weekly',
-  },
-  {
-    name: 'crossref',
-    displayName: 'Crossref',
-    description: 'DOI-of-record metadata; canonical title/year/venue precision.',
-    baseUrl: 'https://api.crossref.org',
-    defaultWeight: 0.9,
-    cadence: 'as-needed',
-  },
-  {
-    name: 'pubmed',
-    displayName: 'PubMed',
-    description: 'NLM-curated biomedical paper metadata.',
-    baseUrl: 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils',
-    defaultWeight: 0.9,
-    cadence: 'weekly',
-  },
-  {
-    name: 'europe-pmc',
-    displayName: 'Europe PMC',
-    description: 'ORCID-backed biomedical and life-science paper metadata.',
-    baseUrl: 'https://www.ebi.ac.uk/europepmc/webservices/rest',
-    defaultWeight: 0.9,
-    cadence: 'weekly',
-  },
-  {
     name: 'yale-directory',
     displayName: 'Yale Directory',
     description: 'Yale-wide faculty roster and appointment metadata.',
     baseUrl: 'https://directory.yale.edu',
     defaultWeight: 0.9,
     cadence: 'nightly',
-  },
-  {
-    name: 'arxiv',
-    displayName: 'arXiv',
-    description: 'Preprints in CS / Physics / Math; author-submitted.',
-    baseUrl: 'http://export.arxiv.org/api/query',
-    defaultWeight: 0.85,
-    cadence: 'weekly',
-  },
-  {
-    name: 'openalex',
-    displayName: 'OpenAlex',
-    description: 'Broad institutional paper coverage; primary trunk for paper sync.',
-    baseUrl: 'https://api.openalex.org',
-    defaultWeight: 0.85,
-    cadence: 'weekly',
-  },
-  {
-    name: 'semantic-scholar',
-    displayName: 'Semantic Scholar',
-    description: 'Cross-validation source with TLDRs and citation context.',
-    baseUrl: 'https://api.semanticscholar.org/graph/v1',
-    defaultWeight: 0.85,
-    cadence: 'weekly',
-  },
-  {
-    name: 'ssrn',
-    displayName: 'SSRN',
-    description: 'Working papers in social sciences / law / economics.',
-    baseUrl: 'https://www.ssrn.com',
-    defaultWeight: 0.8,
-    cadence: 'weekly',
-  },
-  {
-    name: 'nber',
-    displayName: 'NBER',
-    description: 'Curated working papers in economics.',
-    baseUrl: 'https://www.nber.org',
-    defaultWeight: 0.8,
-    cadence: 'weekly',
   },
   {
     name: 'ysm-atoz-index',
@@ -414,10 +343,13 @@ const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({
   coverage: getSourceCoverage(seed.name),
 }));
 
-const RETIRED_SOURCE_NAMES = [
+export const ACTIVE_SOURCE_NAMES = SOURCES_WITH_COVERAGE.map((source) => source.name);
+
+export const RETIRED_SOURCE_NAMES = [
   'yale-course-catalog',
   'apify-google-scholar-bootstrap',
   'apify-google-scholar',
+  ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
 ];
 
 export async function seedSources(options: SeedSourcesCliOptions) {

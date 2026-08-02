@@ -17,11 +17,9 @@ import {
   applyOrcidCrosswalkCsv,
   applyScholarAcceptedCsv,
   buildAcceptedInputsStatus,
-  buildArxivCandidateText,
   buildScholarCandidateRows,
   loadAcceptedInputUsers,
   serializeCsv,
-  validateArxivOrcidList,
 } from './acceptedInputsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -48,8 +46,6 @@ const COMMANDS_REQUIRING_DB = new Set([
   'fellowship:export',
   'scholar:candidates',
   'scholar:apply',
-  'arxiv:candidates',
-  'arxiv:validate',
 ]);
 
 const COMMANDS_SUPPORTING_APPLY = new Set(['orcid:crosswalk', 'scholar:apply']);
@@ -194,8 +190,6 @@ Commands:
   fellowship:export      Export accepted review rows for one fellowship program
   scholar:candidates     Generate Google Scholar review CSV
   scholar:apply          Apply accepted Google Scholar IDs
-  arxiv:candidates       Generate arXiv ORCID candidate file
-  arxiv:validate         Validate accepted arXiv ORCID file
 
 Options:
   --root <path>           Accepted input root
@@ -299,36 +293,6 @@ async function main() {
       outputPayload = { inputPath, mode: options.apply ? 'apply' : 'dry-run', ...result };
       break;
     }
-    case 'arxiv:candidates': {
-      const outputPath =
-        options.output ||
-        path.join(options.root, 'arxiv-math-physics-stat-orcids.candidates.txt');
-      const text = buildArxivCandidateText(users, options.limit);
-      await writeText(outputPath, text);
-      outputPayload = {
-        outputPath,
-        rows: text
-          .split(/\r?\n/)
-          .filter((line) => line.trim() && !line.trim().startsWith('#')).length,
-      };
-      break;
-    }
-    case 'arxiv:validate': {
-      const inputPath =
-        options.input || path.join(options.root, 'arxiv-math-physics-stat-orcids.txt');
-      const text = await readRequired(inputPath, '--input');
-      const result = validateArxivOrcidList(text, users);
-      outputPayload = {
-        inputPath,
-        ...result,
-        internalCompatibility: {
-          scraperOnlyValues: result.scraperOnlyValues,
-          note:
-            'Pass these values to the current arXiv scraper --only flag only after validation.',
-        },
-      };
-      break;
-    }
     default:
       throw new Error(`Unknown accepted-inputs command: ${options.command}`);
   }
@@ -344,8 +308,7 @@ async function main() {
   });
 
   printJson(output);
-  const hasCommandOutputConflict =
-    options.command === 'scholar:candidates' || options.command === 'arxiv:candidates';
+  const hasCommandOutputConflict = options.command === 'scholar:candidates';
   if (!hasCommandOutputConflict) {
     await writeAcceptedInputsOutput(output, options.output);
   }
@@ -374,10 +337,7 @@ async function writeText(filePath: string, text: string): Promise<void> {
   await fs.writeFile(safePath, text, 'utf8');
 }
 
-export async function writeAcceptedInputsOutput(
-  report: unknown,
-  output?: string,
-): Promise<void> {
+export async function writeAcceptedInputsOutput(report: unknown, output?: string): Promise<void> {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
   await fs.mkdir(path.dirname(safeOutput), { recursive: true });
@@ -388,7 +348,9 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-const isDirectRun = process.argv[1] ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) : false;
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
 
 if (isDirectRun) {
   main()

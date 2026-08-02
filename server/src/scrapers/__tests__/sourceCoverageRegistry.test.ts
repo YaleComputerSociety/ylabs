@@ -5,6 +5,7 @@ import {
   sourceCoverageTiers,
 } from '../../models/sourceCoverageTypes';
 import { getSourceCoverage, sourceCoverageRegistry } from '../sourceCoverageRegistry';
+import { RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES } from '../retiredPaperPipeline';
 
 const prioritySources = [
   'lab-microsite-description-llm',
@@ -29,6 +30,12 @@ describe('sourceCoverageRegistry', () => {
 
   it('does not expose retired Apify Scholar as active coverage', () => {
     expect(getSourceCoverage('apify-google-scholar')).toBeUndefined();
+  });
+
+  it('does not expose retired bibliography sources as active coverage', () => {
+    for (const sourceName of RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES) {
+      expect(getSourceCoverage(sourceName), sourceName).toBeUndefined();
+    }
   });
 
   it('uses only supported artifact, evidence, and tier values', () => {
