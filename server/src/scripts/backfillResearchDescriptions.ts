@@ -14,8 +14,8 @@
  *    `assessResearchEntityDescriptionQuality` bar AND (b) it is GROUNDED — a
  *    minimum fraction of its content words appear in the source text
  *    (anti-hallucination). Ungrounded or empty rewrites are skipped.
- *  - Accepted text is emitted as durable observations (same path the
- *    description scraper uses) so the materializer resolves them normally.
+ *  - Accepted text can inherit trusted provenance only from an exact, current,
+ *    source-linked observation that already existed before the rewrite run.
  *
  * Dry-run-first; apply requires --confirm-research-descriptions + explicit
  * --limit; blocked against production unless CONFIRM_PROD_SCRAPE=true.
@@ -29,13 +29,10 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
-import { serializedDocumentId } from '../utils/idSerialization';
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import type { ObservationInput } from '../scrapers/types';
 import { researchScopeEvidenceValueHash } from '../services/researchEntityResearchScope';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,8 +47,6 @@ const DESC_BLOCK_REASONS = [
 ];
 const MIN_SOURCE_CHARS = 150;
 const MIN_GROUNDING = 0.6;
-const SOURCE_NAME = 'lab-microsite-description-llm';
-const REWRITE_CONFIDENCE = 0.85;
 const MAX_REWRITE_PROMPT_SOURCE_CHARS = 12000;
 const MAX_REWRITE_PROMPT_NAME_CHARS = 240;
 
@@ -270,6 +265,38 @@ async function narrativeSourceUrl(entity: any, sourceText: string): Promise<stri
   );
 }
 
+async function preExistingNarrativeProvenance(
+  entityId: unknown,
+  field: 'fullDescription' | 'shortDescription',
+  value: string,
+  rewriteStartedAt: Date,
+): Promise<Record<string, unknown> | null> {
+  const observation = await Observation.findOne({
+    entityType: { $in: ['researchEntity', 'researchGroup'] },
+    entityId,
+    field,
+    value,
+    sourceId: { $exists: true },
+    sourceName: { $type: 'string', $ne: '' },
+    sourceUrl: { $regex: '^https?://', $options: 'i' },
+    observedAt: { $lt: rewriteStartedAt },
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+  })
+    .sort({ observedAt: -1 })
+    .lean();
+  if (!observation) return null;
+  return {
+    sourceId: observation.sourceId,
+    observationId: observation._id,
+    sourceName: observation.sourceName,
+    sourceUrl: observation.sourceUrl,
+    valueHash: researchScopeEvidenceValueHash(value),
+    observedAt: observation.observedAt,
+    confidence: observation.confidence,
+  };
+}
+
 export interface ResearchDescriptionBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
@@ -317,8 +344,7 @@ export async function runResearchDescriptionBackfill(options: {
     samples: [],
   };
 
-  const source = options.dryRun ? null : await getSourceByName(SOURCE_NAME);
-  const backfillRunId = new mongoose.Types.ObjectId().toString();
+  const rewriteStartedAt = new Date();
 
   for (const entity of entities as any[]) {
     if (options.limit && result.scanned >= options.limit) break;
@@ -373,61 +399,35 @@ export async function runResearchDescriptionBackfill(options: {
           shortDescription: out.shortDescription,
         });
       }
-      if (!options.dryRun && source) {
-        const entityId = serializedDocumentId(entity._id);
-        const observations: ObservationInput[] = [
-          {
-            entityType: 'researchEntity',
-            entityId,
-            entityKey: entity.slug,
-            field: 'fullDescription',
-            value: out.fullDescription,
-            sourceUrl,
-            confidenceOverride: REWRITE_CONFIDENCE,
-          },
-          {
-            entityType: 'researchEntity',
-            entityId,
-            entityKey: entity.slug,
-            field: 'shortDescription',
-            value: out.shortDescription,
-            sourceUrl,
-            confidenceOverride: REWRITE_CONFIDENCE,
-          },
-        ];
-        await appendObservations(observations, {
-          sourceId: source._id,
-          sourceName: SOURCE_NAME,
-          scrapeRunId: backfillRunId,
-          sourceWeight: REWRITE_CONFIDENCE,
-          dryRun: false,
-        });
-        // Also apply to the entity now so the visibility gate sees it
-        // immediately; the observations above are the durable provenance record
-        // that keeps the description on future re-materialization.
+      if (!options.dryRun) {
+        const [fullProvenance, shortProvenance] = await Promise.all([
+          preExistingNarrativeProvenance(
+            entity._id,
+            'fullDescription',
+            out.fullDescription,
+            rewriteStartedAt,
+          ),
+          preExistingNarrativeProvenance(
+            entity._id,
+            'shortDescription',
+            out.shortDescription,
+            rewriteStartedAt,
+          ),
+        ]);
+        const set: Record<string, unknown> = {
+          fullDescription: out.fullDescription,
+          shortDescription: out.shortDescription,
+        };
+        const unset: Record<string, ''> = {};
+        if (fullProvenance) set['fieldProvenance.fullDescription'] = fullProvenance;
+        else unset['fieldProvenance.fullDescription'] = '';
+        if (shortProvenance) set['fieldProvenance.shortDescription'] = shortProvenance;
+        else unset['fieldProvenance.shortDescription'] = '';
         await ResearchEntity.updateOne(
           { _id: entity._id },
           {
-            $set: {
-              fullDescription: out.fullDescription,
-              shortDescription: out.shortDescription,
-              'fieldProvenance.fullDescription': {
-                sourceId: source._id,
-                sourceName: SOURCE_NAME,
-                sourceUrl,
-                valueHash: researchScopeEvidenceValueHash(out.fullDescription),
-                observedAt: new Date(),
-                confidence: REWRITE_CONFIDENCE,
-              },
-              'fieldProvenance.shortDescription': {
-                sourceId: source._id,
-                sourceName: SOURCE_NAME,
-                sourceUrl,
-                valueHash: researchScopeEvidenceValueHash(out.shortDescription),
-                observedAt: new Date(),
-                confidence: REWRITE_CONFIDENCE,
-              },
-            },
+            $set: set,
+            $unset: unset,
           },
         );
       }
