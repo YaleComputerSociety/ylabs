@@ -414,24 +414,28 @@ async function defaultCallLLM(input: {
   return JSON.parse(content) as DescriptionExtraction;
 }
 
-async function defaultLabFinder(options: { only?: string[] } = {}): Promise<CandidateDescriptionLab[]> {
+async function defaultLabFinder(
+  options: { only?: string[]; exhaustive?: boolean } = {},
+): Promise<CandidateDescriptionLab[]> {
   const only = uniqueStrings(options.only || []);
   const onlyObjectIds = only
     .map((value) => normalizeDescriptionLlmObjectId(value))
     .filter((value): value is string => Boolean(value))
     .map((value) => new mongoose.Types.ObjectId(value));
-  const queueItems = only.length
-    ? []
-    : await VisibilityReleaseQueueItem.find({
+  let queueItems: Array<{ recordId?: unknown }> = [];
+  if (!only.length) {
+    const queueQuery = VisibilityReleaseQueueItem.find({
         collection: 'research',
         status: 'open',
         repairStage: 'source_description',
         repairStatus: { $in: ['queued', 'blocked', 'attempted'] },
       })
-        .sort({ lastSeenAt: -1, _id: 1 })
-        .limit(1000)
-        .select('recordId')
-        .lean();
+      .sort({ lastSeenAt: -1, _id: 1 });
+    if (!options.exhaustive) {
+      queueQuery.limit(1000);
+    }
+    queueItems = (await queueQuery.select('recordId').lean()) as Array<{ recordId?: unknown }>;
+  }
   const queueOrder = uniqueStrings(queueItems.map((item: any) => item.recordId));
   const identityFilter = only.length
     ? {
@@ -494,7 +498,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
   private readonly fetchPage: FetchDescriptionPageFn;
   private readonly callLLM: CallDescriptionLLMFn;
   private readonly workPlanLoader: DescriptionWorkPlanLoaderFn;
-  private readonly labFinder: (options?: { only?: string[] }) => Promise<CandidateDescriptionLab[]>;
+  private readonly labFinder: (
+    options?: { only?: string[]; exhaustive?: boolean },
+  ) => Promise<CandidateDescriptionLab[]>;
   private readonly apiKey?: string;
   private readonly model: string;
 
@@ -519,12 +525,15 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
       label: 'non-negative',
       fallback: 0,
     });
-    const limit = parseRuntimeIntegerOption(ctx.options.limit, '--limit', {
-      min: 1,
-      label: 'positive',
-      fallback: 100,
-    });
-    const candidates = (await this.labFinder({ only }))
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : parseRuntimeIntegerOption(ctx.options.limit, '--limit', {
+            min: 1,
+            label: 'positive',
+            fallback: 100,
+          });
+    const candidates = (await this.labFinder({ only, exhaustive: ctx.options.exhaustive }))
       .filter(
         (candidate) =>
           candidateKeyMatches(candidate, only) &&

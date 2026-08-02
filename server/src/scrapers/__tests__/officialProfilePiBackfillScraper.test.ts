@@ -2994,6 +2994,24 @@ describe('officialProfilePiBackfillScraper', () => {
     );
   });
 
+  it('does not apply the default profile candidate cap in exhaustive mode', async () => {
+    const profileDescriptionSelector = vi.fn(async () => []);
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => profileHtml),
+      vi.fn(async () => []),
+      vi.fn(async () => null),
+      vi.fn(async () => []),
+      vi.fn(async () => []),
+      profileDescriptionSelector,
+    );
+    const ctx = profileDescriptionContextFor([]);
+    ctx.options.exhaustive = true;
+
+    await scraper.run(ctx);
+
+    expect(profileDescriptionSelector).toHaveBeenCalledWith(Number.POSITIVE_INFINITY, []);
+  });
+
   it('generates bounded official profile candidates from Yale lead identity', () => {
     expect(
       generatedOfficialProfileUrlCandidatesForPerson({

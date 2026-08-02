@@ -292,6 +292,41 @@ function localAuthBypassUser(
   };
 }
 
+async function ensureLocalAuthBypassUser(
+  env: NodeJS.ProcessEnv = process.env,
+  headers: express.Request['headers'] = {},
+): Promise<AuthenticatedSessionUser> {
+  if (!isLocalAuthBypassAllowed(env)) {
+    throw new Error('Local auth bypass is disabled for this environment');
+  }
+
+  const bypassUser = localAuthBypassUser(env, headers);
+  const existing = await validateUser(bypassUser.netId);
+  if (existing) {
+    return bypassUser;
+  }
+
+  try {
+    await createUser({
+      netid: bypassUser.netId,
+      email: `${bypassUser.netId.toLowerCase()}@example.invalid`,
+      fname: 'Development',
+      lname: 'User',
+      userType: bypassUser.userType,
+      userConfirmed: true,
+      profileVerified: true,
+    });
+  } catch (error) {
+    // Two first requests can race to create the same unique netid.
+    // Accept the duplicate only when the user now exists.
+    if (!(await validateUser(bypassUser.netId))) {
+      throw error;
+    }
+  }
+
+  return bypassUser;
+}
+
 function shouldSkipLocalAuthBypass(path: string): boolean {
   return ['/cas', '/logout', '/dev-login'].some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`),
@@ -622,7 +657,12 @@ const router = express.Router();
 
 router.use(async (req, res, next) => {
   if (!req.user && isLocalAuthBypassAllowed() && !shouldSkipLocalAuthBypass(req.path)) {
-    req.user = localAuthBypassUser(process.env, req.headers) as Express.User;
+    try {
+      req.user = (await ensureLocalAuthBypassUser(process.env, req.headers)) as Express.User;
+    } catch (error) {
+      next(error);
+      return;
+    }
   }
 
   if (req.isAuthenticated() && !req.session!.visitorLogged) {
@@ -768,6 +808,7 @@ if (isDevLoginAllowed()) {
 
 export {
   ensureDevLoginUser,
+  ensureLocalAuthBypassUser,
   isDevLoginAllowed,
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,

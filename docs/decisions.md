@@ -19,6 +19,21 @@ Yale Research navigates to verified official Yale profile URLs and keeps ORCID a
 The confirmed Phase 3 scope also retires the curated official-profile scholarly-activity surface.
 The implementation proceeds in reversible increments: producers and consumers stop before any stored paper or scholarly collection is archived or removed.
 
+## 2026-07-25: Development Uses Atlas MongoDB And Local Meilisearch
+
+Development uses the Atlas `Development` database and local Docker Meilisearch so operators share a disposable integration dataset while keeping search iteration local.
+Development can be refreshed one way from accepted Beta through an allowlist-only, Atlas-Beta-to-Atlas-Development copy.
+The Development refresh mirrors every approved Beta product, scraper-audit, support, compatibility, and user document.
+It never reads Beta operational or student-workflow collections, clears Atlas Development non-mirror collections, preserves public faculty identities, pseudonymizes other users, removes account activity fields, and rebuilds local Meilisearch separately.
+Unclassified Beta collections block apply until their mirror policy is reviewed.
+The VPN-connected local Beta operator fetches observations into the Atlas `Beta` database but does not materialize them locally.
+The Beta Render service materializes accepted run IDs and updates its private Beta Meilisearch indexes.
+Production receives data only through the guarded accepted-Beta promotion, followed by the Production search and smoke gates.
+Environment-specific database users and exact database-name checks enforce the boundary.
+Operators authenticate to Yale VPN with their own NetID and Duo, and the team maintains at least two trained Yale-affiliated operators.
+Interactive Yale VPN credentials are never stored for cron.
+The long-term automation target is an approved team-managed runner on the Yale network rather than a member's personal laptop.
+
 ## 2026-07-24: Refactor Around Research Navigation And Evidence
 
 The accepted target separates accounts, public people, role assignments, research entities, evidence claims, and private research plans while retaining bounded REST projections.

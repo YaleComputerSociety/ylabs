@@ -13,7 +13,7 @@
  */
 import { useContext, useEffect, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
@@ -34,7 +34,6 @@ import {
   LabPostedOpportunity,
   LabRelatedResearchEntitySummary,
 } from '../types/labDetail';
-import type { ResearchEntityRepairFlag } from '../types/researchEntity';
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
@@ -44,10 +43,7 @@ import {
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
 import { formatTitleCaseLabel } from '../utils/displayText';
-import {
-  getEvidenceSignalLabel,
-  getEvidenceStrengthLabel,
-} from '../utils/researchDiscoveryAdapters';
+import { getEvidenceStrengthLabel } from '../utils/researchDiscoveryAdapters';
 import { computeAcceptanceVerdict, EvidenceItem, verdictLabel } from '../utils/undergradAcceptance';
 import {
   approachHeadingLabel,
@@ -55,7 +51,6 @@ import {
   isFacultyResearchEntity,
   relationshipTypeLabel,
   researchStructureLabel,
-  researchWebsiteLabel,
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
@@ -456,31 +451,6 @@ const dedupeLeadMembers = (members: LabMember[]): LabMember[] => {
 
 const memberId = (member: LabMember): string => String(member.user.publicKey || '');
 
-const adminQualityNotes = (flags: ResearchEntityRepairFlag[] = []): string[] => {
-  const flagSet = new Set(flags);
-  const notes: string[] = [];
-
-  if (flagSet.has('missing_description')) {
-    notes.push('Missing public research description.');
-  } else if (flagSet.has('thin_description')) {
-    notes.push('Thin public research description.');
-  }
-  if (flagSet.has('profile_fallback_only')) {
-    notes.push('Only profile-derived context is available.');
-  }
-  if (flagSet.has('missing_lead')) {
-    notes.push('No lead professor is attached to this research profile.');
-  }
-  if (flagSet.has('pi_identity_conflict')) {
-    notes.push('Lead identity needs review before this profile is student-ready.');
-  }
-  if (flagSet.has('missing_source_url')) {
-    notes.push('No official source URL is attached.');
-  }
-
-  return notes;
-};
-
 /**
  * Summarize recent grants like "Funded: 2x NIH R01, 1x NSF". Bucketed by agency
  * since the chip conveys breadth, not specific awards. (Relocated from the
@@ -776,67 +746,6 @@ const DecisionSummary = ({
   );
 };
 
-const ProfileStatusSection = ({
-  group,
-  missingItems,
-  accessSignals,
-  fallbackSourceUrl,
-}: {
-  group: any;
-  missingItems: string[];
-  accessSignals: LabAccessSignal[];
-  fallbackSourceUrl?: string;
-}) => {
-  const structureLabel = researchStructureLabel(group);
-  const websiteLabel = researchWebsiteLabel(group);
-  const knownItems = uniqueCompact([
-    group.description || group.shortDescription
-      ? `A public profile describes what this ${structureLabel} covers.`
-      : '',
-    accessSignals.length > 0
-      ? `Access signal: ${getEvidenceSignalLabel(accessSignals[0].signalType)}.`
-      : '',
-    fallbackSourceUrl ? `An official profile or ${websiteLabel} is available.` : '',
-  ]);
-  const missingProfileItems =
-    missingItems.length > 0 ? missingItems : ['No major profile gaps are currently flagged.'];
-  const qualityNotes = adminQualityNotes(group.qualitySummary?.repairFlags);
-
-  return (
-    <section className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-      <SectionHeading>Profile status</SectionHeading>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Source-backed details</h3>
-          <div className="mt-2">
-            <BulletList
-              items={
-                knownItems.length > 0
-                  ? knownItems
-                  : ['This research home is indexed from Yale source metadata.']
-              }
-            />
-          </div>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Still missing</h3>
-          <div className="mt-2">
-            <BulletList items={missingProfileItems} />
-          </div>
-        </div>
-      </div>
-      {qualityNotes.length > 0 && (
-        <div className="mt-4 border-t border-amber-100 pt-4">
-          <h3 className="text-sm font-semibold text-amber-950">Admin quality notes</h3>
-          <div className="mt-2">
-            <BulletList items={qualityNotes} />
-          </div>
-        </div>
-      )}
-    </section>
-  );
-};
-
 const WaysToApproachSection = ({
   group,
   pathways,
@@ -966,17 +875,17 @@ const hasSpecificWaysToApproach = (
   );
 
 const LabDetail = () => {
-  const { user } = useContext(UserContext);
+  const { isAuthenticated, user } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const location = useLocation();
   const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
     createInitialLabDetailState(),
   );
-  const { payload, loading, error, isInquireModalOpen } = state;
+  const { payload, loading, error } = state;
   const requestIdRef = useRef(0);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const [showResearchPlanSavedCallout, setShowResearchPlanSavedCallout] = useState(false);
-  const [outreachRecordError, setOutreachRecordError] = useState('');
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
     useFavorites('researchPlans');
   const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
@@ -1091,9 +1000,6 @@ const LabDetail = () => {
     contactRoutes,
     group,
   );
-  const approvedOutreachRoute = contactRoutes.find(
-    (route) => route.reviewStatus === 'approved' && Boolean(safeHttpUrl(route.url)),
-  );
   const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const singlePrincipalInvestigator =
@@ -1149,9 +1055,18 @@ const LabDetail = () => {
     });
   };
 
-  const handleToggleSavedResearchPlan = (entityId: string, shouldSave: boolean) => {
-    setSavedResearchPlanFavorite(entityId, shouldSave);
-    if (shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
+  const handleToggleSavedResearchPlan = async (entityId: string, shouldSave: boolean) => {
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: `${location.pathname}${location.search}` } });
+      return;
+    }
+
+    const saved = await setSavedResearchPlanFavorite(entityId, shouldSave);
+    if (
+      saved &&
+      shouldSave &&
+      !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)
+    ) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
     }
@@ -1180,7 +1095,7 @@ const LabDetail = () => {
                 isSaved={isResearchEntitySaved}
                 onToggle={(e) => {
                   e.stopPropagation();
-                  handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
+                  void handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
                 }}
               />
             }
@@ -1229,7 +1144,6 @@ const LabDetail = () => {
               </p>
             )}
           </section>
-
           {showDedicatedPrincipalInvestigatorSection && (
             <section>
               <SectionHeading>
@@ -1277,13 +1191,6 @@ const LabDetail = () => {
             />
           )}
 
-          <ProfileStatusSection
-            group={group}
-            missingItems={missingSparseItems}
-            accessSignals={accessSignals}
-            fallbackSourceUrl={fallbackSourceUrl}
-          />
-
           {canRequestListingReview && <ListingClaimRequestPanel listing={activeListings[0]} />}
 
           {sources.length > 0 && (
@@ -1295,22 +1202,6 @@ const LabDetail = () => {
         </div>
       </div>
 
-      <LabInquireModal
-        isOpen={isInquireModalOpen}
-        onClose={() => dispatch({ type: 'CLOSE_INQUIRE_MODAL' })}
-        group={group}
-        members={members}
-        contactRoutes={contactRoutes}
-        onOfficialRouteOpen={() => {
-          axios.post(`/research/${safeRouteSegment(slug || '')}/outreach`, {}).catch((err) => {
-            setOutreachRecordError(
-              err?.response?.status === 401 || err?.response?.status === 403
-                ? 'Sign in with a student profile to record this outreach attempt.'
-                : 'The official route opened, but this outreach attempt was not recorded.',
-            );
-          });
-        }}
-      />
     </div>
   );
 };

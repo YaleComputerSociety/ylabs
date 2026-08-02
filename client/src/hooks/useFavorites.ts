@@ -44,7 +44,7 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
     collectionPath: '/users/savedResearchEntities',
     payloadKey: 'savedResearchEntities',
     warnOnLoadError: false,
-    warnOnMutationError: false,
+    warnOnMutationError: true,
   },
 };
 
@@ -96,6 +96,7 @@ export const useFavorites = (kind: FavoritesKind) => {
             dedupeKey: createResearchAnalyticsInteractionId('save'),
           });
         }
+        return true;
       } catch {
         console.error(`Error ${favorite ? 'favoriting' : 'unfavoriting'} ${kind.slice(0, -1)}.`);
         setFavIds(previous);
@@ -105,7 +106,8 @@ export const useFavorites = (kind: FavoritesKind) => {
             icon: 'warning',
           });
         }
-        reload();
+        await reload();
+        return false;
       }
     },
     [favIds, kind, config.collectionPath, config.payloadKey, config.warnOnMutationError, reload],

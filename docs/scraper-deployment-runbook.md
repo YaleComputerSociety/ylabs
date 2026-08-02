@@ -2,7 +2,10 @@
 
 Status: active runbook
 
-Last updated: 2026-07-21
+Last updated: 2026-07-24
+
+For the concise Development -> local Beta fetch -> Beta Render materialization -> Production operator sequence, use [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md).
+This longer document remains the source-specific deployment and recovery reference.
 
 ## Goal
 

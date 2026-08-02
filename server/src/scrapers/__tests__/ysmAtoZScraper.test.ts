@@ -8,6 +8,7 @@ import {
   extractResearchFacultyUrl,
   extractSoleResearchFacultyProfile,
   inferPiNameFromLabName,
+  buildPiUserLookupQuery,
   labResearchFacultyToObservations,
   labToObservations,
 } from '../sources/ysmAtoZScraper';
@@ -183,6 +184,25 @@ describe('inferPiNameFromLabName', () => {
       firstName: '',
       lastName: 'Arnsten',
     });
+  });
+});
+
+describe('buildPiUserLookupQuery', () => {
+  it('allows a unique exact name from an official lab profile to resolve an unclassified user', () => {
+    const query = buildPiUserLookupQuery(
+      { firstName: 'Jeffrey', lastName: 'Townsend' },
+      { allowUnknownExactName: true, allowSurnameFallback: false },
+    );
+
+    expect(query).not.toHaveProperty('userType');
+    expect(String(query.fname)).toBe('/^Jeffrey$/i');
+    expect(String(query.lname)).toBe('/^Townsend$/i');
+  });
+
+  it('keeps surname-only fallback restricted to classified faculty', () => {
+    const query = buildPiUserLookupQuery({ firstName: '', lastName: 'Townsend' });
+
+    expect(query).toHaveProperty('userType');
   });
 });
 

@@ -258,7 +258,10 @@ export class CenterAffiliationLLMExtractor implements IScraper {
 
     const only = Array.from(new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)));
     const offset = Math.max(0, Number(ctx.options.offset) || 0);
-    const limit = Math.max(1, Number(ctx.options.limit) || 100);
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, Number(ctx.options.limit) || 100);
     const candidates = (await this.centerFinder({ only }))
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);

@@ -10,6 +10,7 @@ vi.mock('../services/userService', () => userServiceMock);
 
 import {
   ensureDevLoginUser,
+  ensureLocalAuthBypassUser,
   isDevLoginAllowed,
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,
@@ -171,6 +172,81 @@ describe('auth environment guards', () => {
       netId: 'test123',
       userType: 'undergraduate',
     });
+  });
+
+  it('creates the database user required by account endpoints for a new local bypass identity', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    };
+    userServiceMock.validateUser.mockResolvedValue(null);
+    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+
+    try {
+      await expect(ensureLocalAuthBypassUser(env)).resolves.toEqual({
+        netId: 'devadmin',
+        userType: 'admin',
+        userConfirmed: true,
+        profileVerified: true,
+      });
+      expect(userServiceMock.createUser).toHaveBeenCalledWith({
+        netid: 'devadmin',
+        email: 'devadmin@example.invalid',
+        fname: 'Development',
+        lname: 'User',
+        userType: 'admin',
+        userConfirmed: true,
+        profileVerified: true,
+      });
+    } finally {
+      userServiceMock.validateUser.mockReset();
+      userServiceMock.createUser.mockReset();
+    }
+  });
+
+  it('does not overwrite an existing user selected by the local auth bypass', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'existing1',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    };
+    userServiceMock.validateUser.mockResolvedValue({
+      netid: 'existing1',
+      userType: 'undergraduate',
+    });
+
+    try {
+      await expect(ensureLocalAuthBypassUser(env)).resolves.toMatchObject({
+        netId: 'existing1',
+        userType: 'admin',
+      });
+      expect(userServiceMock.createUser).not.toHaveBeenCalled();
+      expect(userServiceMock.updateUser).not.toHaveBeenCalled();
+    } finally {
+      userServiceMock.validateUser.mockReset();
+    }
+  });
+
+  it('fails closed when the local bypass identity cannot be persisted', async () => {
+    const env = {
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+      LOCAL_AUTH_BYPASS: 'true',
+    };
+    userServiceMock.validateUser.mockResolvedValue(null);
+    userServiceMock.createUser.mockRejectedValue(new Error('database unavailable'));
+
+    try {
+      await expect(ensureLocalAuthBypassUser(env)).rejects.toThrow('database unavailable');
+    } finally {
+      userServiceMock.validateUser.mockReset();
+      userServiceMock.createUser.mockReset();
+    }
   });
 
   it('does not promote malformed local auth bypass user types to admin', () => {

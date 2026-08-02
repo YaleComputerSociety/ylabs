@@ -2,17 +2,28 @@
 
 ## North Star
 
-Yale Research makes the hidden undergraduate research ecosystem legible: where formal openings exist, where credible pathways exist, and how students can move from curiosity to a specific, evidence-based next step.
+Yale Research is a source-driven directory that makes Yale research homes and undergraduate-access context legible.
+Its first responsibility is comprehensive, accurate discovery of labs and other useful research homes with the correct PI and official links.
+Its second responsibility is to add restrained, source-backed access evidence and real opportunities when those records exist.
+Source-backed affiliations help students understand how labs relate to centers, institutes, programs, and other research homes.
 
-The product is not a simple "find lab openings" job board. It should help Yale students discover and navigate real paths into research, including paths that are not formally posted.
+The product is not a faculty-maintained job board.
+Directory coverage comes from official-source discovery and scraping rather than requiring professors to create accounts, upload profiles, or maintain duplicate listings.
 
-In product shorthand: Yale Research is research-home-first navigation. It helps students move from a topic, person, method, or question to a credible research home, inspect source-backed evidence, review source and planning context, and choose the safest next step. Posted opportunities are only the active or time-bound posting subset. Course credit, paid RA work, fellowship funding, thesis advising, and volunteer arrangements are usually later formalization options after home/mentor fit, unless a structured program itself provides the entry route.
+In product shorthand, Yale Research is an enriched research-home directory.
+It helps students move from a topic, person, method, or question to a credible research home, inspect the PI and official source, and review access context when evidence exists.
+The visible directory listing is a REST projection of the research home rather than a reason to maintain a separate legacy listing record.
+Posted opportunities are the active or time-bound posting subset.
+Course credit, paid RA work, fellowship funding, thesis advising, and volunteer arrangements are usually later formalization options after home and mentor fit unless a structured program itself provides the entry route.
 
 ## Product Premise
 
-Undergraduate research at Yale is decentralized. Students first need to identify plausible research homes: labs, faculty projects, centers, archives, collections, digital humanities initiatives, RA programs, institutes, mentor-matching fellowship programs, and adviser-like research areas. Once a home and supervisor are plausible, the relationship may be formalized through paid roles, course credit, volunteer arrangements, fellowships, senior essays, work-study, center programs, lab-manager coordination, faculty supervision, or posted opportunities. STEM often looks like faculty-led labs; humanities often looks like faculty projects, collections work, digital humanities, or fellowship-supported independent work; social science and economics often mix project teams, centers, thesis advising, and term-specific RA programs.
+Undergraduate research at Yale is decentralized.
+Students first need a reliable directory of plausible research homes such as labs, faculty projects, centers, archives, collections, digital humanities initiatives, RA programs, institutes, mentor-matching fellowship programs, and adviser-like research areas.
+Once a home and supervisor are plausible, the relationship may be formalized through paid roles, course credit, volunteer arrangements, fellowships, senior essays, work-study, center programs, lab-manager coordination, faculty supervision, or posted opportunities.
+STEM often looks like faculty-led labs, humanities often looks like faculty projects or collections work, and social science often mixes project teams, centers, thesis advising, and term-specific RA programs.
 
-The app should make this ecosystem navigable without forcing every discipline into a lab-opening model.
+The app should make this ecosystem navigable without forcing every discipline into a lab-opening model or forcing every directory record to have a pathway.
 
 ## Primary Surfaces
 
@@ -54,7 +65,13 @@ Practical context for how a student might evaluate a research home, embedded ins
 - digital humanities
 - policy research
 
-This context should emphasize concrete source review and next-step planning toward a plausible research home. "Ways in" remains the internal and model-level umbrella for practical approaches such as official lab or faculty pages, recurring programs, internships, structured mentor-matching fellowships, and real posted openings, but beta student-facing browse and detail copy should not imply yLabs provides a reachable official outreach or inquiry channel. Course credit is not itself an entry pathway; it is a formalization option after the student has found a research home and mentor. Fellowship funding is usually also formalization after mentor/home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right. Only call something an open or posted opportunity when there is a real active or time-bound posting.
+This context is optional enrichment.
+It should appear only when evidence answers a student question and should not make the directory harder to scan.
+"Ways in" may describe real recurring programs, internships, mentor-matching programs, and official application processes, but it must not be manufactured for every lab.
+The existence of a PI profile or the generic possibility of email is not an entry pathway.
+Course credit is a formalization option after the student has found a research home and mentor.
+Fellowship funding is usually also formalization after mentor and home fit, but a fellowship that matches students with mentors or runs a cohort research program can be a pathway in its own right.
+Only call something open when there is a real current posting or explicit current source.
 
 ## Navigation Shape
 
@@ -62,17 +79,25 @@ Target surfaces:
 
 - `/`: authenticated default redirect to `/research`.
 - `/research`: explore research entities, even when no opening exists.
-- `/research/:slug`: show what the entity does, who is involved, evidence of undergraduate access, source context, saved research-plan actions, and planning routes when they are supported.
-- `/opportunities/:id`: show real active/time-bound postings only. These must be backed by `PostedOpportunity`.
+- `/research/:slug`: show what the entity does, who is involved, important affiliations, evidence of undergraduate access, saved research-plan actions, and planning routes when they are supported.
+- `/opportunities/:id`: show real active or time-bound postings only.
+These must be backed by `PostedOpportunity`.
 - `/programs`: active authenticated program and fellowship discovery surface.
 - `/listings`: retired compatibility URL that redirects to `/research`.
 - `/fellowships`: retired compatibility URL that redirects to `/programs`.
 
 The hard-pivot migration removes `/labs` as a runtime compatibility surface; `/research` is the canonical Explore Research route.
 
-Implementation note: the separate practical-routes page has been retired because it degraded the unified research-home experience. Planning context derived from ways-in evidence should now appear inside `/research` results and `/research/:slug` detail pages without exposing a standalone public pathways search. `/opportunities/:id` has a first implementation for specific posted instances and should not render generic exploratory pathways.
+Implementation note: the separate practical-routes page has been retired because it degraded the directory experience.
+Planning context should appear inside `/research` results and `/research/:slug` only when useful, without exposing a standalone public pathways search.
+`/opportunities/:id` should render real posted instances and should not render generic exploratory pathways.
+Research detail should not render research papers or an aggregated Sources section.
+Source provenance remains available to operators and may appear as a compact inline evidence link for a specific access claim or opportunity.
 
-Implementation note: legacy listings now bridge into `PostedOpportunity` records. Public CTAs should prefer official application URLs, source review, saved planning, and public source routes over raw emails or yLabs-hosted outreach promises. Student-facing navigation should not present Listings as the primary product surface; use Research, Evidence, Best Next Step, and Posted Roles/Posted Opportunities language instead.
+Implementation note: legacy listings now bridge into `PostedOpportunity` records.
+Public CTAs should prefer official application URLs, official profiles, source review, and saved planning over raw emails or yLabs-hosted outreach promises.
+Faculty should normally publish openings on official Yale, department, program, or lab pages for ingestion.
+A correction flow may accept an official source URL, but Yale Research should not add a general self-service job board without evidence that official-source ingestion is insufficient.
 
 Confirmed, profile-verified faculty can manage real opportunities from their account only for canonical research entities where they hold a current, non-conflicting lead membership.
 Their drafts and previews are private, submission requires complete bounded fields and a safe official HTTPS application route, and admin approval is required before any student-facing publication or search enrichment.
@@ -86,17 +111,31 @@ Each research entity page should answer:
 - Who leads it?
 - Who might supervise undergrads day to day?
 - What methods does it use?
+- What center, institute, program, or other research home is it affiliated with?
+- Where can the student find the PI's publications on a maintained external profile?
 - Have undergrads participated before?
 - What access evidence and practical next steps exist?
 - What should the student do next?
 - How might the research relationship later be formalized?
 - What source verifies this?
 
+Leadership should be presented without redundant cards.
+A sole verified principal investigator appears once in the decision summary.
+When several principal investigators are attached, keep them together in a pluralized section and identify a separate Lead professor only from a unique match between the entity's official profile evidence and that member's official Yale faculty profile.
+If lead identity evidence conflicts, preserve an explicit review state instead of displaying the disputed person.
+The PI name should prefer a verified official Yale profile.
+When no official Yale profile exists, it may link to a verified person-specific about or biography page on the lab website or a verified personal academic page.
+Verified Google Scholar and ORCID links may appear as small secondary links beside the PI.
+They should not create a research-paper section, display metrics, or replace the official Yale profile as the primary identity destination.
+
 ## CTA Vocabulary
 
 CTA options should depend on the access evidence, route, and current next step:
 
 - Apply
+- View official profile
+- View Google Scholar
+- View ORCID
 - Ask about credit after mentor/home fit
 - Find funding
 - Apply to structured research program
@@ -107,7 +146,9 @@ CTA options should depend on the access evidence, route, and current next step:
 - Save for thesis planning
 - Check back later
 
-Exploratory planning should be specific and evidence-based. The product should not encourage students to spam faculty or imply that yLabs has verified an official outreach channel. Prefer official applications, public source routes, source review, saved planning, or check-back guidance when those are the supported actions.
+Exploratory planning should be specific and evidence-based.
+The product should not encourage students to spam faculty or imply that yLabs has verified an official outreach channel.
+Prefer official applications, official profiles, public source routes, saved planning, or check-back guidance when those are the supported actions.
 
 Student-facing labels should use warmer language than internal model names:
 
@@ -117,14 +158,20 @@ Student-facing labels should use warmer language than internal model names:
 
 ## Saved Planning And Advising
 
-Saved research plans are private student planning space by default. They may include thesis ideas, planning notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
+Saved research plans are private student planning space by default.
+They may include thesis ideas, planning notes, funding cues, deadlines, and checklist progress, but exports should exclude private notes unless the student explicitly opts in.
 
-Advising-oriented sharing should use source-backed pathway context and explicit visibility choices. It should help a student discuss options with an advisor, not create mass-email or broad outreach behavior.
+Advising-oriented sharing should use source-backed pathway context and explicit visibility choices.
+It should help a student discuss options with an advisor, not create mass-email or broad outreach behavior.
 
 ## Product Principles
 
-- Exploration-first: support discovery before a student knows the exact structure they need.
-- Evidence-scored: show why a pathway is credible and where the information came from.
-- Pathway-aware: distinguish finding a research home from later formalization and from active postings.
+- Directory-first: maximize accurate research-home, PI, and official-link coverage.
+- Source-driven: scale through maintained official-source adapters rather than faculty uploads.
+- Evidence-scored: show why an access conclusion is credible and where it came from.
+- Affiliation-aware: retain important source-backed relationships among labs, centers, institutes, programs, and other research homes.
+- Publication-light: link to verified official, Google Scholar, and ORCID profiles instead of rendering or maintaining research papers and publication-derived activity.
+- Pathway-aware: keep pathways optional and distinguish them from access evidence, contact destinations, later formalization, and active postings.
 - Discipline-flexible: do not make STEM lab hierarchy the universal model.
-- Student-actionable: every page should help a student decide a plausible next step.
+- Progressively disclosed: do not expose model complexity that does not improve a student decision.
+- Student-actionable: keep official-source navigation useful even when access evidence is unknown.

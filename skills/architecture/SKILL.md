@@ -29,7 +29,7 @@ Models are Mongoose schemas with indexes.
 | Client          | React 19, TypeScript 5.3, Vite 6.3, React Router v7, MUI v7, styled-components, TailwindCSS v3              |
 | Server          | Express 4, TypeScript 5.3, Passport.js 0.5, Mongoose 8                                                      |
 | Search          | Meilisearch 0.57 with keyword search plus OpenAI `text-embedding-3-small` semantic search where appropriate |
-| Database        | MongoDB Atlas, single cluster with separate databases per environment                                       |
+| Database        | MongoDB Atlas with separate Development, Beta, and Production databases                                     |
 | Package Manager | Yarn 4 via Corepack                                                                                         |
 | Tooling         | concurrently, nodemon, ts-node, cross-env                                                                   |
 
@@ -142,11 +142,16 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 Code flows Local -> Beta -> Prod.
 Beta is the staging gate.
 
-| Environment | Hosting                          | `MEILISEARCH_INDEX_PREFIX` |
-| ----------- | -------------------------------- | -------------------------- |
-| Local       | localhost                        | unset                      |
-| Beta        | Render `ylabs-gr4v.onrender.com` | `beta`                     |
-| Prod        | Render `yalelabs.onrender.com`   | `prod`                     |
+| Environment | Hosting                           | `MEILISEARCH_INDEX_PREFIX` |
+| ----------- | --------------------------------- | -------------------------- |
+| Development | Atlas MongoDB + local Meilisearch | unset                      |
+| Beta        | Render `ylabs-gr4v.onrender.com`  | `beta`                     |
+| Prod        | Render `yalelabs.onrender.com`    | `prod`                     |
+
+Yale-network scraper fetches run from the VPN-connected local machine.
+Development runs can fetch and materialize locally.
+Beta operator runs fetch observations into the `Beta` database without local materialization, then the Beta Render service materializes the recorded run ID and updates private Beta Meilisearch.
+Use `docs/data-refresh-runbook.md` for the canonical commands.
 
 ## External integrations
 

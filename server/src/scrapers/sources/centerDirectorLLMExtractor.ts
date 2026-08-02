@@ -4,8 +4,8 @@
  * Organizational research homes (CENTER / INSTITUTE / INITIATIVE / CORE_FACILITY)
  * have no single PI, so the membership rosters scraped by
  * `centersInstitutesScraper` tag everyone `core-faculty` and the public
- * "Principal Investigator" panel renders empty. The actual leader — the
- * center's Director / Executive Director / Faculty Director — is named on a
+ * research detail leadership display renders empty. The actual leader - the
+ * center's Director / Executive Director / Faculty Director - is named on a
  * separate leadership/about page that the roster scrape never reads.
  *
  * This source closes that gap. For each organizational home with an official
@@ -408,7 +408,10 @@ export class CenterDirectorLLMExtractor implements IScraper {
       new Set((ctx.options.only || []).map((v) => String(v).trim()).filter(Boolean)),
     );
     const offset = Math.max(0, Number(ctx.options.offset) || 0);
-    const limit = Math.max(1, Number(ctx.options.limit) || 100);
+    const limit =
+      ctx.options.exhaustive && ctx.options.limit === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, Number(ctx.options.limit) || 100);
     const candidates = (await this.centerFinder({ only, missingLeadOnly: true }))
       .filter((c) => c.websiteUrl && c.slug)
       .slice(offset, offset + limit);

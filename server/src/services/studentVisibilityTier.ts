@@ -6,6 +6,7 @@ import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
+import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
 
@@ -311,8 +312,11 @@ export function computeResearchEntityStudentVisibility({
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
+  const researchScope = classifyResearchEntityResearchScope(entity);
+  const outsideResearchScope = !researchScope.researchHomeEligible;
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
+  if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
     textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
   ) {
@@ -340,6 +344,7 @@ export function computeResearchEntityStudentVisibility({
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (
     entity.activeAtYaleCache === false ||
+    outsideResearchScope ||
     contentPageRisk ||
     exactUrlDuplicateRisk ||
     genericDirectoryShell ||

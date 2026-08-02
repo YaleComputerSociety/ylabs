@@ -196,6 +196,25 @@ describe('CenterDirectorLLMExtractor.run', () => {
     expect(emitted).toEqual([]);
   });
 
+  it('processes candidates beyond the default cap in exhaustive mode', async () => {
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      _id: String(index),
+      slug: `center-${index}`,
+      name: `Center ${index}`,
+      websiteUrl: `https://example.yale.edu/center-${index}`,
+    }));
+    const fetchPage = vi.fn(async (url: string) => ({ url, html: '<main>Empty</main>' }));
+    const scraper = new CenterDirectorLLMExtractor({
+      fetchPage,
+      centerFinder: vi.fn(async () => candidates),
+      apiKey: 'test-key',
+    });
+
+    await scraper.run(makeContext({ exhaustive: true }).ctx);
+
+    expect(fetchPage).toHaveBeenCalledTimes(101);
+  });
+
   it('no-ops without an API key', async () => {
     const centerFinder = vi.fn(async () => [center]);
     const scraper = new CenterDirectorLLMExtractor({ centerFinder, apiKey: undefined });

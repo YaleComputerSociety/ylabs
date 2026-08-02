@@ -47,6 +47,9 @@ jobs:
       - name: Run model inventory operator tests
         run: yarn model-refactor:inventory:test-operator-tools
 
+      - name: Run data profile safety tests
+        run: yarn test:data-profiles
+
       - name: Run client tests
         run: yarn --cwd client test:ci
 

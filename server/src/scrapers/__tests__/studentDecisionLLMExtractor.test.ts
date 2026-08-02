@@ -127,6 +127,15 @@ describe('studentDecisionLLMExtractor', () => {
     ).toEqual(['example-lab', 'other-lab']);
   });
 
+  it('does not apply the default cap in exhaustive mode', () => {
+    const candidates = Array.from({ length: 101 }, (_, index) => ({
+      ...candidate,
+      _id: `entity-${index}`,
+      slug: `entity-${index}`,
+    }));
+    expect(selectDecisionCandidates(candidates, { exhaustive: true })).toHaveLength(101);
+  });
+
   it('skips candidates that have only summary text and no source-backed evidence URLs', () => {
     expect(
       selectDecisionCandidates([

@@ -19,15 +19,12 @@ export interface LabDetailState {
   payload: ResearchEntityDetailPayload | null;
   loading: boolean;
   error: string | null;
-  isInquireModalOpen: boolean;
 }
 
 export type LabDetailAction =
   | { type: 'FETCH_START' }
   | { type: 'FETCH_SUCCESS'; payload: ResearchEntityDetailPayload }
-  | { type: 'FETCH_FAILURE'; payload: string }
-  | { type: 'OPEN_INQUIRE_MODAL' }
-  | { type: 'CLOSE_INQUIRE_MODAL' };
+  | { type: 'FETCH_FAILURE'; payload: string };
 
 export const createInitialLabDetailState = (
   overrides: Partial<LabDetailState> = {},
@@ -35,7 +32,6 @@ export const createInitialLabDetailState = (
   payload: null,
   loading: true,
   error: null,
-  isInquireModalOpen: false,
   ...overrides,
 });
 
@@ -45,8 +41,7 @@ export function labDetailReducer(
 ): LabDetailState {
   switch (action.type) {
     case 'FETCH_START':
-      // Close any open inquire modal — the contact info may change after refetch.
-      return { ...state, loading: true, error: null, isInquireModalOpen: false };
+      return { ...state, loading: true, error: null };
 
     case 'FETCH_SUCCESS':
       return {
@@ -63,14 +58,6 @@ export function labDetailReducer(
         loading: false,
         error: action.payload,
       };
-
-    case 'OPEN_INQUIRE_MODAL':
-      // No-op if there is no payload yet; the modal needs contact info to render.
-      if (!state.payload) return state;
-      return { ...state, isInquireModalOpen: true };
-
-    case 'CLOSE_INQUIRE_MODAL':
-      return { ...state, isInquireModalOpen: false };
 
     default:
       return state;

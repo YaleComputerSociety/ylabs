@@ -53,6 +53,7 @@ export interface DecisionCandidate {
 export interface DecisionCandidateSelectionOptions {
   only?: string[];
   limit?: number;
+  exhaustive?: boolean;
 }
 
 export type StudentDecisionLLMCall = (
@@ -282,7 +283,12 @@ export function selectDecisionCandidates(
   options: DecisionCandidateSelectionOptions = {},
 ): DecisionCandidate[] {
   const only = new Set((options.only || []).map((value) => value.trim().toLowerCase()).filter(Boolean));
-  const limit = options.limit && options.limit > 0 ? options.limit : DEFAULT_LIMIT;
+  const limit =
+    options.limit && options.limit > 0
+      ? options.limit
+      : options.exhaustive
+        ? Number.POSITIVE_INFINITY
+        : DEFAULT_LIMIT;
   return candidates
     .filter((candidate) => candidateMatchesOnly(candidate, only))
     .filter(hasActionEvidence)
@@ -513,9 +519,10 @@ export class StudentDecisionLLMExtractor implements IScraper {
     const candidates = selectDecisionCandidates(await this.candidateLoader(), {
       only: ctx.options.only,
       limit: limitOption,
+      exhaustive: ctx.options.exhaustive,
     });
     ctx.log(
-      `Processing ${candidates.length} student-decision candidates (limit=${limitOption ?? DEFAULT_LIMIT}, only=${(ctx.options.only || []).join(',') || 'none'})`,
+      `Processing ${candidates.length} student-decision candidates (limit=${ctx.options.exhaustive && limitOption === undefined ? 'all' : (limitOption ?? DEFAULT_LIMIT)}, only=${(ctx.options.only || []).join(',') || 'none'})`,
     );
     let observationCount = 0;
     let entitiesObserved = 0;

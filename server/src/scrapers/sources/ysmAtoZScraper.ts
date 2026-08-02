@@ -5,9 +5,10 @@
  * https://medicine.yale.edu/about/a-to-z-index/lab-websites/
  *
  * The page is a single HTML table with ~266 rows, each `<tr>` containing a lab name
- * (link) and the lab website URL. No PI names are shown directly; we infer the PI
- * surname from the lab name ("Arnsten Lab" -> "Arnsten") and try to match it against
- * existing Yale faculty Users.
+ * (link) and the lab website URL. The scraper prefers a person explicitly named on
+ * the official lab homepage or Research Faculty page. Surname-only inference from
+ * the lab name is a final fallback because common surnames can identify the wrong
+ * Yale faculty member.
  *
  * Each row produces ResearchGroup observations keyed by slug (derived from the URL or
  * from the lab name). The slug is the unique identifier `EntityMaterializer` uses to
@@ -407,23 +408,44 @@ function parseLabs(html: string): RawLab[] {
   return labs;
 }
 
-async function findPiUserId(nameHint: PiNameHint | null): Promise<string | null> {
-  if (!nameHint?.lastName) return null;
+interface PiUserLookupOptions {
+  allowUnknownExactName?: boolean;
+  allowSurnameFallback?: boolean;
+}
+
+export function buildPiUserLookupQuery(
+  nameHint: PiNameHint,
+  options: PiUserLookupOptions = {},
+): Record<string, unknown> {
+  const hasExactFirstName = nameHint.firstName.trim().length > 0;
   const baseQuery: Record<string, unknown> = {
     lname: new RegExp(`^${escapeRegex(nameHint.lastName)}$`, 'i'),
-    userType: { $in: ['professor', 'faculty'] },
+    ...(!options.allowUnknownExactName || !hasExactFirstName
+      ? { userType: { $in: ['professor', 'faculty'] } }
+      : {}),
   };
-  const query =
-    nameHint.firstName.trim().length > 0
-      ? {
-          ...baseQuery,
-          fname: new RegExp(`^${escapeRegex(nameHint.firstName.trim())}$`, 'i'),
-        }
-      : baseQuery;
+  return hasExactFirstName
+    ? {
+        ...baseQuery,
+        fname: new RegExp(`^${escapeRegex(nameHint.firstName.trim())}$`, 'i'),
+      }
+    : baseQuery;
+}
+
+async function findPiUserId(
+  nameHint: PiNameHint | null,
+  options: PiUserLookupOptions = {},
+): Promise<string | null> {
+  if (!nameHint?.lastName) return null;
+  const query = buildPiUserLookupQuery(nameHint, options);
   const matches = await User.find(query, { _id: 1, fname: 1, lname: 1, primaryDepartment: 1 })
     .limit(5)
     .lean();
-  if (matches.length === 0 && nameHint.firstName.trim().length > 0) {
+  if (
+    matches.length === 0 &&
+    nameHint.firstName.trim().length > 0 &&
+    options.allowSurnameFallback !== false
+  ) {
     return findPiUserId({ firstName: '', lastName: nameHint.lastName });
   }
   if (matches.length !== 1) return null;
@@ -641,8 +663,8 @@ export class YsmAtoZScraper implements IScraper {
         if (homepageDescription) descriptionsFound++;
       }
       let piSourceUrl = PAGE_URL;
-      let piUserId = await findPiUserId(inferPiNameFromLabName(lab.name));
-      if (!piUserId && homepageHtml) {
+      let piUserId: string | null = null;
+      if (homepageHtml) {
         const researchFacultyUrl = extractResearchFacultyUrl(homepageHtml, lab.url);
         const researchFacultyHtml = researchFacultyUrl
           ? await fetchLabHomepage(researchFacultyUrl, ctx.options.useCache)
@@ -653,7 +675,10 @@ export class YsmAtoZScraper implements IScraper {
         observations.push(
           ...labResearchFacultyToObservations(lab, researchFacultyProfile, researchFacultyUrl),
         );
-        piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''));
+        piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''), {
+          allowUnknownExactName: true,
+          allowSurnameFallback: false,
+        });
         if (piUserId) piSourceUrl = researchFacultyProfile?.profileUrl || researchFacultyUrl || piSourceUrl;
       }
       if (!piUserId && homepageHtml) {
@@ -661,8 +686,14 @@ export class YsmAtoZScraper implements IScraper {
         observations.push(
           ...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url),
         );
-        piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''));
+        piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''), {
+          allowUnknownExactName: true,
+          allowSurnameFallback: false,
+        });
         if (piUserId) piSourceUrl = contactWidgetProfile?.profileUrl || lab.url;
+      }
+      if (!piUserId) {
+        piUserId = await findPiUserId(inferPiNameFromLabName(lab.name));
       }
       if (piUserId) {
         observations.push({

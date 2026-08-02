@@ -2127,16 +2127,30 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   return html;
 }
 
+function applyFiniteCandidateLimit<T extends { limit(value: number): T }>(
+  query: T,
+  limit: number,
+  multiplier: number,
+  minimum: number,
+): T {
+  if (Number.isFinite(limit)) {
+    query.limit(Math.max(limit * multiplier, minimum));
+  }
+  return query;
+}
+
 async function selectQueuedEntities(limit: number): Promise<Array<Record<string, any>>> {
-  const queueItems = await VisibilityReleaseQueueItem.find({
-    collection: 'research',
-    status: 'open',
-    repairStage: 'pi_identity',
-    blockerReasons: 'missing_lead',
-  })
-    .sort({ lastSeenAt: -1 })
-    .limit(Math.max(limit * 10, 100))
-    .lean();
+  const queueItems = await applyFiniteCandidateLimit(
+    VisibilityReleaseQueueItem.find({
+      collection: 'research',
+      status: 'open',
+      repairStage: 'pi_identity',
+      blockerReasons: 'missing_lead',
+    }).sort({ lastSeenAt: -1 }),
+    limit,
+    10,
+    100,
+  ).lean();
   const entityIds = uniqueStrings(queueItems.map((item: any) => String(item.recordId || '')));
   if (entityIds.length === 0) return [];
 
@@ -2172,20 +2186,23 @@ async function selectDirectVisibleProfileBioUserTargets(
 ): Promise<Array<Record<string, any>>> {
   if (limit <= 0) return [];
 
-  const users = await User.find({
-    archived: { $ne: true },
-    userType: 'faculty',
-    netid: { $exists: true, $ne: '' },
-    $or: [
-      { profileUrls: { $exists: true, $ne: null } },
-      { website: /yale\.edu/i },
-      { websiteUrl: /yale\.edu/i },
-    ],
-  })
-    .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
-    .sort({ updatedAt: 1 })
-    .limit(Math.max(limit * 4, 50))
-    .lean();
+  const users = await applyFiniteCandidateLimit(
+    User.find({
+      archived: { $ne: true },
+      userType: 'faculty',
+      netid: { $exists: true, $ne: '' },
+      $or: [
+        { profileUrls: { $exists: true, $ne: null } },
+        { website: /yale\.edu/i },
+        { websiteUrl: /yale\.edu/i },
+      ],
+    })
+      .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
+      .sort({ updatedAt: 1 }),
+    limit,
+    4,
+    50,
+  ).lean();
 
   return (users as any[])
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)) && publicBioNeedsBackfill(user))
@@ -2285,14 +2302,17 @@ async function selectProfileDescriptionTargets(
           _id: {
             $in: uniqueStrings(
               (
-                await VisibilityReleaseQueueItem.find({
-                  collection: 'research',
-                  status: 'open',
-                  repairStage: 'source_description',
-                  blockerReasons: { $in: sourceDescriptionProfileBlockers },
-                })
-                  .sort({ lastSeenAt: -1, _id: 1 })
-                  .limit(Math.max(limit * 20, 100))
+                await applyFiniteCandidateLimit(
+                  VisibilityReleaseQueueItem.find({
+                    collection: 'research',
+                    status: 'open',
+                    repairStage: 'source_description',
+                    blockerReasons: { $in: sourceDescriptionProfileBlockers },
+                  }).sort({ lastSeenAt: -1, _id: 1 }),
+                  limit,
+                  20,
+                  100,
+                )
                   .select('recordId')
                   .lean()
               ).map((item: any) => String(item.recordId || '')),
@@ -2300,14 +2320,17 @@ async function selectProfileDescriptionTargets(
           },
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...identityFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...identityFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
 
   const entitiesWithLeadUsers = await annotateEntitiesWithLeadUsers(entities);
   const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(
@@ -2493,14 +2516,17 @@ async function selectResearchHomeProfileTargets(
           ],
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...targetFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...targetFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
   const members = (await ResearchGroupMember.find({
@@ -2578,14 +2604,17 @@ async function selectLeadDirectWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...targetFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...targetFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
   const members = (await ResearchGroupMember.find({
@@ -2665,14 +2694,17 @@ async function selectSourceUrlWebsiteTargets(
           studentVisibilityTier: { $ne: 'suppressed' },
         };
 
-  const entities = (await ResearchEntity.find({
-    archived: { $ne: true },
-    ...targetFilter,
-  })
-    .select('_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls')
-    .sort({ lastObservedAt: -1, _id: 1 })
-    .limit(Math.max(limit * 20, 100))
-    .lean()) as Array<Record<string, any>>;
+  const entities = (await applyFiniteCandidateLimit(
+    ResearchEntity.find({
+      archived: { $ne: true },
+      ...targetFilter,
+    })
+      .select('_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls')
+      .sort({ lastObservedAt: -1, _id: 1 }),
+    limit,
+    20,
+    100,
+  ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
   const entitiesWithObservationUrls = await annotateEntitiesWithSourceObservationUrls(entities);
@@ -2876,7 +2908,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
     }
-    const limit = limitOption ?? 25;
+    const limit =
+      ctx.options.exhaustive && limitOption === undefined
+        ? Number.POSITIVE_INFINITY
+        : (limitOption ?? 25);
     const selectedEntities = [
       ...(runQueuedPiBackfill ? await this.entitySelector(limit) : []),
       ...(runVisibleProfileBioBackfill ? await this.visibleProfileSelector(limit) : []),

@@ -18,6 +18,7 @@
  *   --only <keys>   Comma-separated source-specific keys/netids to process
  *   --since <date>  Restrict scrapers that support recency filters
  *   --ignore-work-planner  Bypass freshness skips for full audit/backfill runs
+ *   --exhaustive     Process every eligible entity instead of source safety defaults
  *   --auto-materialize   After successful run, immediately materialize observations
  */
 import dotenv from 'dotenv';
@@ -83,6 +84,7 @@ Run flags:
                        For undergrad-fellowships-recipients, read <programKey>.csv files
   --ignore-work-planner
                        Bypass freshness skips for full audit/backfill runs
+  --exhaustive         Process every eligible entity instead of source safety defaults
   --auto-materialize   Materialize immediately after a successful run
   --output <path>      Save the ScrapeRun report JSON
 

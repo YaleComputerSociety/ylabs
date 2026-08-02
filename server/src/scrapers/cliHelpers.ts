@@ -62,6 +62,7 @@ const BOOLEAN_FLAGS = new Set([
   'confirm-materialize',
   'confirm-observation-prune',
   'dry-run',
+  'exhaustive',
   'force-disabled',
   'ignore-work-planner',
   'release',
@@ -127,6 +128,7 @@ export function parseScraperOptions(flags: Record<string, string | boolean>): Sc
         ? flags['manual-recipient-csv-dir']
         : undefined,
     ignoreWorkPlanner: !!flags['ignore-work-planner'],
+    exhaustive: !!flags.exhaustive,
     since: flags.since ? new Date(String(flags.since)) : undefined,
   };
 

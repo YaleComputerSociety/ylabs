@@ -86,7 +86,7 @@ describe('PFR-3 rollout core', () => {
       assertPathwayIndexRolloutTarget({
         environment: 'beta',
         meiliHost: 'http://localhost:7700',
-        indexPrefix: 'beta_',
+        indexPrefix: 'beta',
         restorePoint: 'snapshot-123',
       }),
     ).toThrow(/localhost/);
@@ -94,24 +94,36 @@ describe('PFR-3 rollout core', () => {
       assertPathwayIndexRolloutTarget({
         environment: 'beta',
         meiliHost: 'https://search.example.test',
-        indexPrefix: 'production_',
+        indexPrefix: 'prod',
         restorePoint: 'snapshot-123',
       }),
-    ).toThrow(/match/);
+    ).toThrow(/must be "beta"/);
     expect(() =>
       assertPathwayIndexRolloutTarget({
         environment: 'production',
         meiliHost: 'https://search.example.test',
-        indexPrefix: 'production_',
+        indexPrefix: 'prod',
       }),
     ).toThrow(/RESTORE_POINT/);
     expect(
       assertPathwayIndexRolloutTarget({
         environment: 'beta',
         meiliHost: 'https://search.example.test',
-        indexPrefix: 'beta_',
+        indexPrefix: 'beta',
         restorePoint: 'snapshot-2026-07-10',
       }),
-    ).toEqual({ environment: 'beta', indexPrefix: 'beta_', restorePoint: 'snapshot-2026-07-10' });
+    ).toEqual({ environment: 'beta', indexPrefix: 'beta', restorePoint: 'snapshot-2026-07-10' });
+    expect(
+      assertPathwayIndexRolloutTarget({
+        environment: 'production',
+        meiliHost: 'https://search.example.test',
+        indexPrefix: 'prod',
+        restorePoint: 'snapshot-2026-07-10',
+      }),
+    ).toEqual({
+      environment: 'production',
+      indexPrefix: 'prod',
+      restorePoint: 'snapshot-2026-07-10',
+    });
   });
 });

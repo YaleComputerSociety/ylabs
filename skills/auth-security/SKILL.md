@@ -142,6 +142,9 @@ Never commit them.
 | `SCRAPER_ENV` | No | Scraper write guards. |
 | `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
 | `CONFIRM_PROD_SCRAPE` | No | Enables production scraper writes with production env. |
+| `SCRAPER_DEVELOPMENT_DB_NAME` | No | Overrides the exact Development database name expected by scraper guards. |
+| `SCRAPER_BETA_DB_NAME` | No | Overrides the exact Beta database name expected by scraper guards. |
+| `SCRAPER_PRODUCTION_DB_NAME` | No | Overrides the exact Production database name expected by scraper guards. |
 | `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
 | `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
 | `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |

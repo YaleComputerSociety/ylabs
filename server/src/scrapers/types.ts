@@ -41,6 +41,7 @@ export interface ScraperOptions {
   since?: Date;
   manualRecipientCsvDir?: string;
   ignoreWorkPlanner?: boolean;
+  exhaustive?: boolean;
   dbReview?: boolean;
   triggeredBy?: 'cli' | 'cron' | 'admin';
 }
