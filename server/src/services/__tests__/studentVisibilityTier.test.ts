@@ -597,6 +597,25 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('operator_override');
   });
 
+  it('does not treat serving researchers as positive research evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Teaching Research Center',
+        entityType: 'CENTER',
+        shortDescription:
+          'Provides teaching consultations, instructional support, and educational resources to researchers and investigators.',
+        fullDescription:
+          'The center operates as a teaching-support facility with workshops and course-design resources for researchers, laboratories, and research centers.',
+        sourceUrls: ['https://example.yale.edu/teaching-support'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+  });
+
   it('keeps a center that conducts research on teaching in research scope', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
