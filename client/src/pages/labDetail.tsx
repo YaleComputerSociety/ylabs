@@ -13,7 +13,7 @@
  */
 import { useContext, useEffect, useReducer, useRef, useState } from 'react';
 import { isCancel } from 'axios';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
@@ -966,8 +966,9 @@ const hasSpecificWaysToApproach = (
   );
 
 const LabDetail = () => {
-  const { user } = useContext(UserContext);
+  const { isAuthenticated, user } = useContext(UserContext);
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const location = useLocation();
   const [state, dispatch] = useReducer(labDetailReducer, undefined, () =>
     createInitialLabDetailState(),
@@ -1149,9 +1150,14 @@ const LabDetail = () => {
     });
   };
 
-  const handleToggleSavedResearchPlan = (entityId: string, shouldSave: boolean) => {
-    setSavedResearchPlanFavorite(entityId, shouldSave);
-    if (shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
+  const handleToggleSavedResearchPlan = async (entityId: string, shouldSave: boolean) => {
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: `${location.pathname}${location.search}` } });
+      return;
+    }
+
+    const saved = await setSavedResearchPlanFavorite(entityId, shouldSave);
+    if (saved && shouldSave && !window.localStorage.getItem(FIRST_RESEARCH_PLAN_SAVE_KEY)) {
       window.localStorage.setItem(FIRST_RESEARCH_PLAN_SAVE_KEY, 'true');
       setShowResearchPlanSavedCallout(true);
     }
@@ -1180,7 +1186,7 @@ const LabDetail = () => {
                 isSaved={isResearchEntitySaved}
                 onToggle={(e) => {
                   e.stopPropagation();
-                  handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
+                  void handleToggleSavedResearchPlan(group._id, !isResearchEntitySaved);
                 }}
               />
             }
