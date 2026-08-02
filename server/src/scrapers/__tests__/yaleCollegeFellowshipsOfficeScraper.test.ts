@@ -301,6 +301,46 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidates[0]?.title).toBe('Fixture Undergraduate Research Fellowship');
   });
 
+  it('does not recursively crawl links discovered on fellowship detail pages', async () => {
+    const applicationInfoUrl = `${sciencePageUrl}/stars/application-information`;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === detailPageUrl) {
+        return `
+          <main>
+            <h1>Fixture Undergraduate Research Fellowship</h1>
+            <p>Students complete an original research project.</p>
+            <a href="${applicationInfoUrl}">Application information</a>
+          </main>
+        `;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [detailPageUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage).toHaveBeenCalledWith(detailPageUrl, false);
+    expect(result.entitiesObserved).toBe(1);
+    expect(emitted.find((observation) => observation.field === 'title')?.value).toBe(
+      'Fixture Undergraduate Research Fellowship',
+    );
+  });
+
   it('ignores navigation and footer text when classifying a detail page', () => {
     const candidates = parseFellowshipCatalogPage(
       `

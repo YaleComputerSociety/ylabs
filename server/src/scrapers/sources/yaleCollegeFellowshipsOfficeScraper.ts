@@ -729,9 +729,11 @@ function mergeCandidates(
         ? incoming
         : existing
       : incomingSpecificity > existingSpecificity ||
-          (incomingSpecificity === existingSpecificity && incoming.description && !existing.description)
-      ? incoming
-      : existing;
+          (incomingSpecificity === existingSpecificity &&
+            incoming.description &&
+            !existing.description)
+        ? incoming
+        : existing;
   const sourceUrl = evidenceOwner.sourceUrl;
   const researchEvidenceOwner = evidenceOwner;
   const researchFocusExplicitNegative =
@@ -982,7 +984,7 @@ export class YaleCollegeFellowshipsOfficeScraper implements IScraper {
     const detailUrls = Array.from(
       new Set(
         Array.from(candidatesByKey.values()).flatMap((candidate) =>
-          candidate.links.map((link) => link.url),
+          candidate.sourcePageKind === 'catalog' ? candidate.links.map((link) => link.url) : [],
         ),
       ),
     ).filter(
