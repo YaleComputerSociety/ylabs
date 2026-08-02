@@ -113,14 +113,14 @@ describe('faculty import identity guards', () => {
         {
           netid: 'one1',
           name: 'First Person',
-          orcid: '0000-0001-1111-1111',
-          profileUrls: { orcid: 'https://orcid.org/0000-0001-1111-1111' },
+          orcid: '0000-0002-1825-0097',
+          profileUrls: { orcid: 'https://orcid.org/0000-0002-1825-0097' },
         },
         new Set(),
       ),
     ).toEqual({
-      orcid: '0000-0001-1111-1111',
-      profileUrls: { orcid: 'https://orcid.org/0000-0001-1111-1111' },
+      orcid: '0000-0002-1825-0097',
+      profileUrls: { orcid: 'https://orcid.org/0000-0002-1825-0097' },
       clearOrcid: false,
     });
   });

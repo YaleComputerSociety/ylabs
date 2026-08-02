@@ -1,5 +1,7 @@
 /**
  * Import enriched faculty data into the User collection.
+ * Name-shaped Yale emails must match the faculty member or fall back to their NetID address.
+ * ORCIDs claimed by different faculty identities are cleared without removing unrelated profile URLs.
  *
  * Usage:
  *   MONGODBURL="mongodb://..." npx ts-node server/src/scripts/importFaculty.ts [path-to-json]

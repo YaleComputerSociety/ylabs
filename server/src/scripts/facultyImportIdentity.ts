@@ -11,21 +11,24 @@ export interface FacultyImportIdentityInput {
   profileUrls?: Record<string, string>;
 }
 
-const normalizedText = (value: unknown): string =>
-  typeof value === 'string' ? value.trim() : '';
+const normalizedText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
 const normalizedNetid = (value: string): string => normalizedText(value).toLowerCase();
 
 export function facultyImportDisplayName(entry: FacultyImportIdentityInput): string {
   const explicit = normalizedText(entry.name);
   if (explicit) return explicit;
-  return [normalizedText(entry.firstName), normalizedText(entry.lastName)].filter(Boolean).join(' ');
+  return [normalizedText(entry.firstName), normalizedText(entry.lastName)]
+    .filter(Boolean)
+    .join(' ');
 }
 
 export function safeFacultyImportEmail(entry: FacultyImportIdentityInput): string {
   const netid = normalizedNetid(entry.netid);
   const fallback = `${netid}@yale.edu`;
-  const candidate = normalizedText(entry.email).toLowerCase().replace(/^mailto:/, '');
+  const candidate = normalizedText(entry.email)
+    .toLowerCase()
+    .replace(/^mailto:/, '');
   if (!candidate) return fallback;
   if (candidate === fallback) return fallback;
   return isLikelyPersonSpecificYaleEmail(candidate, facultyImportDisplayName(entry))
@@ -65,7 +68,10 @@ export function safeFacultyImportExternalIdentity(
     if (profileOrcid) profileUrls.orcid = `https://orcid.org/${profileOrcid}`;
     else delete profileUrls.orcid;
   }
-  if ((orcid && collidingOrcids.has(orcid)) || (profileOrcid && collidingOrcids.has(profileOrcid))) {
+  if (
+    (orcid && collidingOrcids.has(orcid)) ||
+    (profileOrcid && collidingOrcids.has(profileOrcid))
+  ) {
     delete profileUrls.orcid;
     return { profileUrls, clearOrcid: true };
   }
