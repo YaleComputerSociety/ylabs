@@ -34,8 +34,10 @@ const ORGANIZATIONAL_ENTITY_TYPES = new Set([
 const SERVICE_OR_INSTRUCTIONAL_SUPPORT =
   /\b(teaching and learning|teaching support|instructional support|faculty development|educational development|pedagogical support|course design|teaching consultation|teaching consultations|writing center|tutoring|academic support)\b/i;
 
-const CONDUCTS_OR_ORGANIZES_RESEARCH =
-  /\b(conducts? research|research center|research institute|research initiative|research program|research programs|research project|research projects|researchers?|investigators?|laborator(?:y|ies)|fieldwork|clinical trials?|research fellows?|postdoctoral research|data collection|empirical research|scholarly research)\b/i;
+const CONDUCTS_OR_ORGANIZES_RESEARCH = [
+  /\b(conducts?|leads?|coordinates?|organizes?|operates?|sponsors?)\b(?:\s+[\w-]+){0,5}\s+\b(research|research (?:activities|programs?|projects?|studies)|empirical studies|fieldwork|clinical trials?|data collection)\b/i,
+  /\b(research|research (?:activities|programs?|projects?|studies)|empirical studies|fieldwork|clinical trials?|data collection)\b(?:\s+[\w-]+){0,5}\s+\b(is|are)\s+(?:actively\s+)?(conducted|led|coordinated|organized|operated|sponsored)\b/i,
+];
 
 const text = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -65,7 +67,9 @@ export function classifyResearchEntityResearchScope(
     .filter(Boolean)
     .join(' ');
   const serviceOrInstructionalSupport = SERVICE_OR_INSTRUCTIONAL_SUPPORT.test(narrative);
-  const positiveResearchEvidence = CONDUCTS_OR_ORGANIZES_RESEARCH.test(narrative);
+  const positiveResearchEvidence = CONDUCTS_OR_ORGANIZES_RESEARCH.some((pattern) =>
+    pattern.test(narrative),
+  );
 
   if (serviceOrInstructionalSupport && !positiveResearchEvidence) {
     return {
