@@ -10,8 +10,8 @@ import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
+import { randomBytes } from 'node:crypto';
 import { readFile } from 'fs/promises';
-import { isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -92,6 +92,7 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
 const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+const RATE_LIMIT_ANONYMOUS_ID_RE = /^[a-f0-9]{32}$/;
 
 const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -99,9 +100,20 @@ const normalizedRateLimitNetId = (value: unknown): string | undefined => {
   return RATE_LIMIT_NETID_RE.test(normalized) ? normalized : undefined;
 };
 
-const cloudflareClientIp = (req: express.Request): string | undefined => {
-  const value = req.get?.('cf-connecting-ip')?.trim();
-  return value && isIP(value) !== 0 ? value : undefined;
+const normalizedAnonymousRateLimitId = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  return RATE_LIMIT_ANONYMOUS_ID_RE.test(value) ? value : undefined;
+};
+
+const ensureAnonymousRateLimitId = (
+  req: express.Request,
+  _res: express.Response,
+  next: express.NextFunction,
+) => {
+  if (req.session && !normalizedAnonymousRateLimitId(req.session.rateLimitId)) {
+    req.session.rateLimitId = randomBytes(16).toString('hex');
+  }
+  next();
 };
 
 const getRateLimitKey = (req: express.Request): string => {
@@ -111,13 +123,10 @@ const getRateLimitKey = (req: express.Request): string => {
     return `user:${netId}`;
   }
 
-  // Render receives public traffic through Cloudflare and its own load balancer.
-  // With a numeric Express trust-proxy setting, req.ip can therefore identify a
-  // shared edge hop rather than the visitor. Cloudflare supplies the original
-  // visitor address as a single-value header. Accept it only when it is a valid
-  // IP address, and fail closed to req.ip when it is absent or malformed.
-  const clientIp = cloudflareClientIp(req) ?? req.ip ?? '';
-  return `ip:${ipKeyGenerator(clientIp)}`;
+  const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
+  return anonymousId
+    ? `anonymous:${anonymousId}`
+    : `ip:${ipKeyGenerator(req.ip ?? '')}`;
 };
 
 // The CAS login callback is always unauthenticated, so it keys by IP —
@@ -290,6 +299,7 @@ const app = express()
       sameSite: 'lax',
     }),
   )
+  .use(ensureAnonymousRateLimitId)
   // cookie-session is stateless and does not implement session.regenerate /
   // session.save, which Passport >= 0.6 calls during req.logIn (session-
   // fixation hardening). Without these shims every login throws
