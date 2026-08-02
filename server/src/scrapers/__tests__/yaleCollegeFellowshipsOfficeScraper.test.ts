@@ -122,6 +122,21 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidates[0]?.deadline).toEqual(new Date('2026-02-06T23:59:59.999Z'));
   });
 
+  it('does not use a preceding program date as the application deadline', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <h1>Fixture Summer Research Program</h1>
+          <p>Program dates May 25 - July 24, 2026. Application deadline Friday, February 6, 2026.</p>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.deadline).toEqual(new Date('2026-02-06T23:59:59.999Z'));
+  });
+
   it('extracts application requirements introduced by a strong inline label', () => {
     const candidates = parseFellowshipCatalogPage(
       `
@@ -155,6 +170,47 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
 
     expect(candidates[0]?.researchFocused).toBe(false);
+  });
+
+  it('preserves explicit negative research evidence when merging catalog and detail pages', async () => {
+    const catalogUrl = fundingPageUrl;
+    const programUrl = `${detailPageUrl}-academic-year`;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === catalogUrl) {
+        return `<main><a href="${programUrl}">Fixture Academic Year Research Program</a></main>`;
+      }
+      if (url === programUrl) {
+        return `
+          <main>
+            <h1>Fixture Academic Year Research Program</h1>
+            <p>The program does not primarily focus on research.</p>
+          </main>
+        `;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [catalogUrl],
+      fetchPage,
+    });
+
+    await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(emitted.find((observation) => observation.field === 'researchFocused')?.value).toBe(
+      false,
+    );
+    expect(emitted.find((observation) => observation.field === 'purpose')).toBeUndefined();
   });
 
   it('does not promote links on a fellowship detail page into separate programs', () => {
@@ -452,6 +508,25 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
         },
       ],
     });
+  });
+
+  it('keeps distinct programs separate on a parameterized generic portal', async () => {
+    const genericPortal = 'https://yale.communityforce.com/Funds/Search.aspx?cycle=2026';
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <a href="${genericPortal}">Fixture First Research Fellowship</a>
+          <a href="${genericPortal}">Fixture Second Research Fellowship</a>
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture First Research Fellowship',
+      'Fixture Second Research Fellowship',
+    ]);
   });
 
   it('parses Month Day Year deadlines as UTC end-of-day and ignores fuzzy dates', () => {

@@ -69,6 +69,7 @@ export interface FellowshipCatalogCandidate {
   applicationInformation?: string;
   applicationMaterials?: string[];
   researchFocused?: boolean;
+  researchFocusExplicitNegative?: boolean;
   sourceUrl: string;
   applicationLink?: string;
   links: Array<{ label: string; url: string }>;
@@ -177,7 +178,7 @@ function isRecordSpecificApplicationUrl(url: string | undefined): boolean {
   if (!url || !isCommunityForceUrl(url)) return false;
   try {
     const parsed = new URL(url);
-    return parsed.searchParams.size > 0;
+    return /^\/Funds\/FundDetails\.aspx$/i.test(parsed.pathname) && parsed.searchParams.size > 0;
   } catch {
     return false;
   }
@@ -267,7 +268,7 @@ function inferTerm(text: string): string[] {
 
 function inferPurpose(text: string): string[] {
   const purposes: string[] = [];
-  if (/\bresearch\b/i.test(text)) purposes.push('Research');
+  if (isResearchFocused(text)) purposes.push('Research');
   if (/\bstudy\b|\bcourse\b/i.test(text)) purposes.push('Study');
   if (/\btravel\b|\binternational\b|\babroad\b/i.test(text)) purposes.push('Travel');
   if (/\bservice\b|\bpublic service\b/i.test(text)) purposes.push('Service');
@@ -357,14 +358,14 @@ function inferApplicationMaterials(text: string): string[] {
   });
 }
 
+function hasExplicitNegativeResearchFocus(text: string): boolean {
+  return /\bdoes not (?:primarily )?focus on\b[^.]{0,80}\bresearch\b|\bnot (?:primarily )?a research\b/i.test(
+    text,
+  );
+}
+
 function isResearchFocused(text: string): boolean {
-  if (
-    /\bdoes not (?:primarily )?focus on\b[^.]{0,80}\bresearch\b|\bnot (?:primarily )?a research\b/i.test(
-      text,
-    )
-  ) {
-    return false;
-  }
+  if (hasExplicitNegativeResearchFocus(text)) return false;
   return /\b(?:original|independent|summer|faculty[- ]mentored|undergraduate) research\b|\bresearch (?:project|proposal|experience|fellowship|program)\b/i.test(
     text,
   );
@@ -380,7 +381,11 @@ function hasExplicitActiveApplicationLanguage(text: string): boolean {
   );
 }
 
-function nearestDateTextForLabel(text: string, labelPattern: RegExp): string {
+function nearestDateTextForLabel(
+  text: string,
+  labelPattern: RegExp,
+  preferredDirection: 'before' | 'after',
+): string {
   const normalized = normalizeWhitespace(text);
   const label = labelPattern.exec(normalized);
   if (!label || label.index === undefined) return '';
@@ -399,8 +404,9 @@ function nearestDateTextForLabel(text: string, labelPattern: RegExp): string {
   datePattern.lastIndex = 0;
   const closestBeforeMatch = datesBefore.at(-1);
   const closestAfterMatch = datePattern.exec(after);
-  const labelIntroducesFollowingDate = /^\s*(?::|is\b|on\b)/i.test(after);
-  if (labelIntroducesFollowingDate && closestAfterMatch) return closestAfterMatch[0];
+  if (preferredDirection === 'after') {
+    return closestAfterMatch?.[0] || closestBeforeMatch?.[0] || '';
+  }
   return closestBeforeMatch?.[0] || closestAfterMatch?.[0] || '';
 }
 
@@ -408,6 +414,7 @@ function bestDeadlineText(text: string): string {
   return nearestDateTextForLabel(
     text,
     /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b/i,
+    'after',
   );
 }
 
@@ -415,6 +422,7 @@ function bestApplicationOpenText(text: string): string {
   return nearestDateTextForLabel(
     text,
     /\bapplication\s+(?:opens?|open\s+date)\b|\bapplications?\s+open\b/i,
+    'before',
   );
 }
 
@@ -461,6 +469,7 @@ function fingerprintCandidate(
     applicationInformation: candidate.applicationInformation || '',
     applicationMaterials: candidate.applicationMaterials || [],
     researchFocused: candidate.researchFocused === true,
+    researchFocusExplicitNegative: candidate.researchFocusExplicitNegative === true,
     sourceUrl: candidate.sourceUrl,
     applicationLink: candidate.applicationLink || '',
     deadline: candidate.deadline?.toISOString() || '',
@@ -592,6 +601,7 @@ function candidateFromLink(
       ? inferApplicationMaterials(contextText)
       : [],
     researchFocused: isResearchFocused(contextText),
+    researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(contextText),
     sourceUrl,
     applicationLink,
     links,
@@ -654,6 +664,7 @@ function candidateFromDetailPage(
       ? inferApplicationMaterials(applicationInformation)
       : [],
     researchFocused: isResearchFocused(bodyText),
+    researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(bodyText),
     sourceUrl: pageUrl,
     applicationLink,
     links,
@@ -696,6 +707,12 @@ function mergeCandidates(
     sourceSpecificity(incoming.sourceUrl) > sourceSpecificity(existing.sourceUrl)
       ? incoming.sourceUrl
       : existing.sourceUrl;
+  const researchFocusExplicitNegative =
+    existing.researchFocusExplicitNegative === true ||
+    incoming.researchFocusExplicitNegative === true;
+  const purpose = Array.from(new Set([...existing.purpose, ...incoming.purpose])).filter(
+    (value) => !researchFocusExplicitNegative || value !== 'Research',
+  );
   return finalizeCandidate({
     ...existing,
     title: preferredTitle(existing, incoming),
@@ -706,7 +723,10 @@ function mergeCandidates(
     applicationMaterials: Array.from(
       new Set([...(existing.applicationMaterials || []), ...(incoming.applicationMaterials || [])]),
     ),
-    researchFocused: existing.researchFocused || incoming.researchFocused,
+    researchFocused: researchFocusExplicitNegative
+      ? false
+      : existing.researchFocused || incoming.researchFocused,
+    researchFocusExplicitNegative,
     sourceUrl,
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
     links,
@@ -716,7 +736,7 @@ function mergeCandidates(
     contactEmail: incoming.contactEmail || existing.contactEmail,
     yearOfStudy: Array.from(new Set([...existing.yearOfStudy, ...incoming.yearOfStudy])),
     termOfAward: Array.from(new Set([...existing.termOfAward, ...incoming.termOfAward])),
-    purpose: Array.from(new Set([...existing.purpose, ...incoming.purpose])),
+    purpose,
     globalRegions: Array.from(new Set([...existing.globalRegions, ...incoming.globalRegions])),
     citizenshipStatus: Array.from(
       new Set([...existing.citizenshipStatus, ...incoming.citizenshipStatus]),
