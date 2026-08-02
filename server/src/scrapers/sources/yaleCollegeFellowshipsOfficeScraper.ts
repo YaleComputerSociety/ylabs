@@ -404,6 +404,19 @@ function nearestDateTextForLabel(
   datePattern.lastIndex = 0;
   const closestBeforeMatch = datesBefore.at(-1);
   const closestAfterMatch = datePattern.exec(after);
+  const sentenceBoundaryPattern = /[.!?](?:\s|$)/;
+  const beforeIsInSentence =
+    closestBeforeMatch !== undefined &&
+    !sentenceBoundaryPattern.test(
+      before.slice((closestBeforeMatch.index || 0) + closestBeforeMatch[0].length),
+    );
+  const afterIsInSentence =
+    closestAfterMatch !== null &&
+    !sentenceBoundaryPattern.test(after.slice(0, closestAfterMatch.index));
+
+  if (beforeIsInSentence !== afterIsInSentence) {
+    return beforeIsInSentence ? closestBeforeMatch?.[0] || '' : closestAfterMatch?.[0] || '';
+  }
   if (preferredDirection === 'after') {
     return closestAfterMatch?.[0] || closestBeforeMatch?.[0] || '';
   }
@@ -703,16 +716,24 @@ function mergeCandidates(
       return -100;
     }
   };
+  const existingSpecificity = sourceSpecificity(existing.sourceUrl);
+  const incomingSpecificity = sourceSpecificity(incoming.sourceUrl);
   const sourceUrl =
-    sourceSpecificity(incoming.sourceUrl) > sourceSpecificity(existing.sourceUrl)
-      ? incoming.sourceUrl
-      : existing.sourceUrl;
+    incomingSpecificity > existingSpecificity ? incoming.sourceUrl : existing.sourceUrl;
+  const researchEvidenceOwner =
+    incomingSpecificity > existingSpecificity ||
+    (incomingSpecificity === existingSpecificity && incoming.description && !existing.description)
+      ? incoming
+      : existing;
   const researchFocusExplicitNegative =
-    existing.researchFocusExplicitNegative === true ||
-    incoming.researchFocusExplicitNegative === true;
+    researchEvidenceOwner.researchFocusExplicitNegative === true;
+  const researchFocused = researchFocusExplicitNegative
+    ? false
+    : researchEvidenceOwner.researchFocused === true;
   const purpose = Array.from(new Set([...existing.purpose, ...incoming.purpose])).filter(
-    (value) => !researchFocusExplicitNegative || value !== 'Research',
+    (value) => value !== 'Research',
   );
+  if (researchFocused) purpose.unshift('Research');
   return finalizeCandidate({
     ...existing,
     title: preferredTitle(existing, incoming),
@@ -723,9 +744,7 @@ function mergeCandidates(
     applicationMaterials: Array.from(
       new Set([...(existing.applicationMaterials || []), ...(incoming.applicationMaterials || [])]),
     ),
-    researchFocused: researchFocusExplicitNegative
-      ? false
-      : existing.researchFocused || incoming.researchFocused,
+    researchFocused,
     researchFocusExplicitNegative,
     sourceUrl,
     applicationLink: applicationLink ? normalizeLinkUrl(applicationLink) : undefined,
