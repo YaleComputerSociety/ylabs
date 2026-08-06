@@ -610,14 +610,17 @@ function quoteSupportsClaim(
   const negatedAvailability =
     /\b(?:not|never)\s+(?:currently\s+|now\s+)?(?:accepting|taking|hiring|recruiting|open)\b|\bno\s+(?:longer\s+)?(?:openings?|positions?|opportunities)|\bapplications?\s+(?:are|is)\s+not\s+open\b|\b(?:positions?|roles?|opportunities)\s+(?:are|is)\s+(?:closed|filled)\b|\bunable\s+to\s+(?:accept|take|hire)\b/i;
   const openPolicy =
-    /\b(?:currently|now)\s+(?:accepting|taking|hiring|recruiting)\b|\bapplications?\s+(?:are\s+|is\s+)?open\b|\b(?:positions?|roles?|opportunities)\s+(?:are\s+|is\s+)?open\b|\bopen\s+(?:positions?|roles?|opportunities)\b|\b(?:accepting|taking)\s+applications?\b|\brecruiting\s+(?:now|currently)\b/i;
+    /\b(?:currently|now)\s+(?:accepting|taking|hiring|recruiting|looking\s+for|seeking)\b|\b(?:is|are)\s+recruiting\b|\bapplications?\s+(?:are\s+|is\s+)?open\b|\b(?:positions?|roles?|opportunities)\s+(?:are\s+|is\s+)?open\b|\bopen\s+(?:positions?|roles?|opportunities)\b|\b(?:accepting|taking)\s+applications?\b|\brecruiting\s+(?:now|currently)\b/i;
+  const directUndergraduateRecruitingPolicy =
+    /\b(?:lab|laboratory|section|program)(?:\s+(?:of|for)\s+[a-z][a-z\s&-]{0,60})?\s+(?:is|are)\s+(?:currently\s+)?(?:looking\s+for|seeking|recruiting)\b[^.!?;]{0,120}\b(?:undergrads?|undergraduates?|undergraduate\s+students?|undergraduate\s+student\s+body|students?\s+to\s+join\s+(?:the\s+)?undergraduate\s+research)\b/i;
   return clauses.some(
     (clause) =>
-      clauseHasUndergraduateAvailabilitySubject(clause) &&
       clauseIsDeclarative(clause) &&
       !negatedAvailability.test(clause) &&
-      openPolicy.test(clause) &&
-      predicateGovernedByUndergraduateSubject(clause, openPolicy),
+      ((clauseHasUndergraduateAvailabilitySubject(clause) &&
+        openPolicy.test(clause) &&
+        predicateGovernedByUndergraduateSubject(clause, openPolicy)) ||
+        directUndergraduateRecruitingPolicy.test(clause)),
   );
 }
 

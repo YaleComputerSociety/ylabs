@@ -106,14 +106,24 @@ describe('buildObservationFingerprint', () => {
     }
   });
 
-  it('makes source-owned fellowship guidance latest-wins', () => {
+  it('makes every source-owned fellowship snapshot field latest-wins', () => {
     const base = {
       sourceName: 'yale-college-fellowships-office',
       entityType: 'fellowship',
       entityKey: 'yale-college-fellowships-office:fixture',
     };
 
-    for (const field of ['applicationInformation', 'applicationMaterials', 'researchFocused']) {
+    for (const field of [
+      'applicationInformation',
+      'applicationMaterials',
+      'researchFocused',
+      'sourceFingerprint',
+      'purpose',
+      'links',
+      'sourceUrl',
+      'programCategory',
+      'reviewRequired',
+    ]) {
       const populated = buildObservationFingerprint({
         ...base,
         field,
@@ -126,6 +136,21 @@ describe('buildObservationFingerprint', () => {
       });
       expect(populated).toBe(cleared);
     }
+
+    expect(
+      buildObservationFingerprint({
+        ...base,
+        field: 'sourceUrl',
+        value: 'https://example.yale.edu/fixture',
+      }),
+    ).not.toBe(
+      buildObservationFingerprint({
+        ...base,
+        sourceName: 'manual-fellowship-review',
+        field: 'sourceUrl',
+        value: 'https://example.yale.edu/fixture',
+      }),
+    );
   });
 
   it('still distinguishes values for non-latest-wins fields', () => {
@@ -244,6 +269,49 @@ describe('appendObservations', () => {
     expect(bulkWrite).toHaveBeenCalledTimes(1);
     expect(bulkWrite.mock.calls[0][0]).toHaveLength(2);
     expect(result).toEqual({ inserted: 2, skipped: 0, superseded: 2 });
+  });
+
+  it('supersedes legacy fellowship values by source, entity, and field', async () => {
+    vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      {
+        _id: 'new-fellowship-title',
+        observationFingerprint: 'latest-wins-fellowship-title',
+      },
+    ] as any);
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
+      modifiedCount: 2,
+    } as any);
+
+    await appendObservations(
+      [
+        {
+          entityType: 'fellowship',
+          entityKey: 'yale-college-fellowships-office:fixture',
+          field: 'title',
+          value: 'Current Fixture Fellowship',
+        },
+      ],
+      {
+        scrapeRunId: 'run-2',
+        sourceId: 'source-1',
+        sourceName: 'yale-college-fellowships-office',
+        sourceWeight: 0.95,
+        dryRun: false,
+      },
+    );
+
+    expect(bulkWrite.mock.calls[0][0][0]).toMatchObject({
+      updateMany: {
+        filter: {
+          sourceName: 'yale-college-fellowships-office',
+          entityType: 'fellowship',
+          entityKey: 'yale-college-fellowships-office:fixture',
+          field: 'title',
+          superseded: false,
+          _id: { $ne: 'new-fellowship-title' },
+        },
+      },
+    });
   });
 
   it('does not supersede anything during dry runs', async () => {
