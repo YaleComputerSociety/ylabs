@@ -39,6 +39,8 @@
     "scrape:beta:all:fetch": "node scripts/run-data-profile.mjs beta-operator --write -- yarn --cwd server scrape:sweep --mode=beta-fetch --confirm-beta-release-candidate",
     "development:refresh-from-beta:plan": "yarn --cwd server development:refresh-from-beta --clear-development-non-mirror-data --output /tmp/ylabs-beta-to-development-plan.json",
     "development:refresh-from-beta:apply": "yarn --cwd server development:refresh-from-beta --apply --confirm-beta-to-development --confirm-overwrite-atlas-development --clear-development-non-mirror-data --output /tmp/ylabs-beta-to-development-result.json",
+    "beta:refresh-from-development:plan": "yarn --cwd server beta:refresh-from-development --output /tmp/ylabs-development-to-beta-plan.json",
+    "beta:refresh-from-development:apply": "yarn --cwd server beta:refresh-from-development --apply --confirm-development-to-beta --output /tmp/ylabs-development-to-beta-result.json",
     "development:search:rebuild": "node scripts/run-data-profile.mjs development --write -- yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild",
     "migrate:mongo-naming": "yarn --cwd server migrate:mongo-naming",
     "model-refactor:search-baseline": "yarn --cwd server model-refactor:search-baseline",
