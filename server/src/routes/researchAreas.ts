@@ -9,6 +9,7 @@ import { escapeRegex, buildSafeSearchRegex } from '../utils/regex';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { replaceAsciiControls } from '../utils/asciiControl';
+import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 const MAX_RESEARCH_AREA_NAME_LENGTH = 120;
@@ -44,7 +45,7 @@ router.get('/', isAuthenticated, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/', isAuthenticated, isProfessor, async (req: Request, res: Response) => {
+router.post('/', writeLimit, isAuthenticated, isProfessor, async (req: Request, res: Response) => {
   try {
     const { name, field } = req.body;
     const currentUser = req.user as { netId?: string };

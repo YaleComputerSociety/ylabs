@@ -83,16 +83,25 @@ Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate
 
 ## Rate limits
 
-Rate limiters are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
+The limiters live in `server/src/middleware/rateLimiters.ts`.
+Request-scoped limiters (`globalLimiter`, `writeLimit`) are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
 The anonymous identifier is initialized only for `/api` requests.
 This prevents shared proxy buckets without trusting forwarding headers.
+`authLimiter` is keyed by the real TCP peer IP so login cannot be brute-forced from one host regardless of session.
 All limiters are skipped in CI, development, and test.
 Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 
+Write limiting is opt-in per route, not inferred from the HTTP method.
+A route is billed as a write only if it lists the `writeLimit` middleware in its definition, so reads and telemetry (search, exports, `addView`, the `/analytics/research` beacon) can never exhaust the mutation budget, and a new route defaults to read-safe.
+
 | Limiter | Scope | Limit |
 |---------|-------|-------|
-| `apiLimiter` | All `/api` except `/api/cas`. | 200 per 15 minutes. |
-| `writeLimiter` | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes. |
+| `globalLimiter` | All `/api` except `/api/cas`. Safety net across reads, telemetry, and writes. | 1000 per 15 minutes. |
+| `writeLimit` | Opt-in per route on genuine mutations (favorites/saves, profile edits, claims, research outreach, admin writes). | 50 per 15 minutes. |
+| `authLimiter` | `/api/cas` login callback, keyed per IP. | 20 per 15 minutes. |
+
+`globalLimiter` is sized high because un-batched view and impression telemetry rides this budget; lower it once analytics beacons are batched client-side.
+The limiters use express-rate-limit's in-process MemoryStore, which is correct only because the Render web service runs a single instance; if it is ever scaled beyond one instance, move to a shared store (e.g. Redis) first.
 
 Yale Research has no faculty lab or opportunity authoring routes.
 Source-discovered opportunity detail is public and returns only the student-safe projection.

@@ -3,8 +3,6 @@
  */
 import cors from 'cors';
 import express from 'express';
-import rateLimit from 'express-rate-limit';
-import { ipKeyGenerator } from 'express-rate-limit';
 import {
   allowsNonProductionSecurityBypass,
   requiresSecureSessionCookie,
@@ -13,7 +11,6 @@ import passport, { passportRoutes } from './passport';
 import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
-import { randomBytes } from 'node:crypto';
 import { BlockList, isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -23,35 +20,18 @@ import { sanitizeMongo } from './middleware/sanitizeMongo';
 import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
-import { createRateLimitHandler } from './middleware/rateLimitResponse';
+import { globalLimiter, ensureAnonymousRateLimitId } from './middleware/rateLimiters';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDistPath = path.join(__dirname, '../../client/dist');
 const clientIndexPath = path.join(clientDistPath, 'index.html');
 const API_BODY_LIMIT = '64kb';
 const API_URLENCODED_PARAMETER_LIMIT = 100;
-const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-// No GET routes currently need write-limiter treatment; logout is protected by
-// isTrustedLogoutRequest (Sec-Fetch-Site + Origin/Referer) inside its own handler.
+// GET/HEAD/OPTIONS paths the CSRF origin guard must still treat as
+// state-changing. Empty today; logout is protected by isTrustedLogoutRequest
+// (Sec-Fetch-Site + Origin/Referer) inside its own handler. Write-limiting is
+// opt-in per route via writeLimit, so no read/telemetry path lists are needed.
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
-// Unsafe-method POSTs that are reads or analytics telemetry, not user mutations.
-// They stay behind the CSRF origin guard and the general per-user limiter, but
-// must not consume the write budget: research/pathway search and the research
-// analytics beacon fire throughout ordinary browsing, so billing them as writes
-// would throttle browsing at 50/15min.
-const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>([
-  '/research/search',
-  '/pathways/search',
-  '/analytics/research',
-  '/users/savedResearchEntityPlans/export',
-  '/users/savedResearchPlanDetails/export',
-  '/users/favPathwayPlans/export',
-]);
-// View-telemetry PUTs fired on every detail-page open. Billing them as writes
-// lets ordinary browsing exhaust the 50/15min budget and 429 the user's real
-// mutations (favorites, tracking, profile edits). They remain under the
-// general per-user limiter.
-const READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS = [/^\/[a-zA-Z]+\/[0-9a-fA-F]{24}\/addView$/];
 
 dotenv.config();
 
@@ -93,8 +73,6 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
 }
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
-const RATE_LIMIT_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
-const RATE_LIMIT_ANONYMOUS_ID_RE = /^[a-f0-9]{32}$/;
 
 const trustedProxyAddresses = new BlockList();
 let trustedProxyAddressCount = 0;
@@ -139,89 +117,6 @@ const isTrustedProxyAddress = (value: string): boolean => {
   return (
     addressType !== 0 && trustedProxyAddresses.check(address, addressType === 4 ? 'ipv4' : 'ipv6')
   );
-};
-
-const normalizedRateLimitNetId = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().toLowerCase();
-  return RATE_LIMIT_NETID_RE.test(normalized) ? normalized : undefined;
-};
-
-const normalizedAnonymousRateLimitId = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  return RATE_LIMIT_ANONYMOUS_ID_RE.test(value) ? value : undefined;
-};
-
-const ensureAnonymousRateLimitId = (
-  req: express.Request,
-  _res: express.Response,
-  next: express.NextFunction,
-) => {
-  if (req.session && !normalizedAnonymousRateLimitId(req.session.rateLimitId)) {
-    req.session.rateLimitId = randomBytes(16).toString('hex');
-  }
-  next();
-};
-
-const getRateLimitKey = (req: express.Request): string => {
-  const user = req.user as { netId?: unknown; netid?: unknown } | undefined;
-  const netId = normalizedRateLimitNetId(user?.netId ?? user?.netid);
-  if (netId) {
-    return `user:${netId}`;
-  }
-
-  const anonymousId = normalizedAnonymousRateLimitId(req.session?.rateLimitId);
-  return anonymousId
-    ? `anonymous:${anonymousId}`
-    : `ip:${ipKeyGenerator(req.socket.remoteAddress ?? '')}`;
-};
-
-// Login availability must not depend on the general API traffic budget.
-// CAS ticket validation already gates the callback, so it is exempt from the
-// general limiter.
-const isCasLoginCallback = (req: express.Request): boolean => req.path === '/cas';
-
-// A 5xx is our failure, not the caller's: counting it against their budget
-// turns a transient outage (e.g. a MongoDB reconnect returning 503) into a
-// full-window lockout on a backend that has already recovered. 4xx still
-// counts so genuine abuse and bad input remain limited.
-const requestWasSuccessful = (_req: express.Request, res: express.Response): boolean =>
-  res.statusCode < 500;
-
-// General rate limiter: 200 requests per 15 minutes per validated session bucket.
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  keyGenerator: getRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipFailedRequests: true,
-  requestWasSuccessful,
-  message: { error: 'Too many requests, please try again later.' },
-  handler: createRateLimitHandler('Too many requests, please try again later.'),
-  skip: (req) => bypassRuntimeSecurity || isCasLoginCallback(req),
-});
-
-// Write limiter for API mutations
-const writeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-  keyGenerator: getRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipFailedRequests: true,
-  requestWasSuccessful,
-  message: { error: 'Too many write requests, please try again later.' },
-  handler: createRateLimitHandler('Too many write requests, please try again later.'),
-  skip: () => bypassRuntimeSecurity,
-});
-
-const shouldApplyWriteLimiter = (req: express.Request): boolean => {
-  if (READ_ONLY_UNSAFE_METHOD_API_PATHS.has(req.path)) return false;
-  if (READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS.some((pattern) => pattern.test(req.path))) {
-    return false;
-  }
-  return WRITE_LIKE_SAFE_METHOD_API_PATHS.has(req.path) || !SAFE_RATE_LIMIT_METHODS.has(req.method);
 };
 
 const deployedBrowserOrigins = new Set([
@@ -366,13 +261,7 @@ const app = express()
   .use(passport.initialize())
   .use(passport.session())
   .use('/api', sanitizeMongo)
-  .use('/api', apiLimiter)
-  .use('/api', (req, res, next) => {
-    if (!shouldApplyWriteLimiter(req)) {
-      return next();
-    }
-    return writeLimiter(req, res, next);
-  })
+  .use('/api', globalLimiter)
   .use('/api', passportRoutes)
   .use('/api', routes);
 

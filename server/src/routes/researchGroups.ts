@@ -9,6 +9,7 @@
 import { Router } from 'express';
 import * as researchGroupController from '../controllers/researchGroupController';
 import { asyncHandler, isAuthenticated } from '../middleware/index';
+import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 
@@ -16,6 +17,7 @@ router.post('/search', isAuthenticated, asyncHandler(researchGroupController.sea
 
 router.post(
   '/:slug/outreach',
+  writeLimit,
   isAuthenticated,
   asyncHandler(researchGroupController.recordResearchOutreach),
 );

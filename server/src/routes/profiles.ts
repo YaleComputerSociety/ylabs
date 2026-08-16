@@ -13,6 +13,7 @@ import {
 } from '../controllers/profileController';
 import { AnalyticsEventType } from '../models/index';
 import { logResearchEventOnSuccess } from '../services/researchAnalytics';
+import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ router.get('/:netid/publications', isAuthenticated, validateNetid('netid'), getP
 router.get('/:netid/listings', isAuthenticated, validateNetid('netid'), getProfileListings);
 router.get('/:netid/courses', isAuthenticated, validateNetid('netid'), getProfileCourses);
 
-router.put('/me', isAuthenticated, isProfessor, updateProfile);
-router.put('/me/verify', isAuthenticated, isProfessor, verifyProfile);
+router.put('/me', writeLimit, isAuthenticated, isProfessor, updateProfile);
+router.put('/me/verify', writeLimit, isAuthenticated, isProfessor, verifyProfile);
 
 export default router;
