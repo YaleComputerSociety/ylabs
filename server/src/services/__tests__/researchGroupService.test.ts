@@ -2043,6 +2043,7 @@ describe('publicMemberUserForRow', () => {
       },
       new Map(),
       new Map(),
+      new Date('2026-07-14T00:00:00Z'),
     );
 
     expect(publicUser).toMatchObject({ fname: 'Fixture', lname: 'Scholar' });

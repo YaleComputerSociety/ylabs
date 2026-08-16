@@ -1245,6 +1245,7 @@ export function publicMemberUserForRow(
   row: any,
   usersById: Map<string, any>,
   facultyMembersById: Map<string, any>,
+  now = new Date(),
 ): any | null {
   const user = row.userId ? usersById.get(researchGroupDocumentId(row.userId)) || null : null;
   const faculty = row.facultyMemberId
@@ -1257,7 +1258,7 @@ export function publicMemberUserForRow(
     return publicMemberUserFromFaculty(faculty);
   }
 
-  if (!user && !faculty && isVerifiedOfficialRosterRow(row)) {
+  if (!user && !faculty && isVerifiedOfficialRosterRow(row, now)) {
     const nameParts = String(row.name || '')
       .trim()
       .split(/\s+/)
