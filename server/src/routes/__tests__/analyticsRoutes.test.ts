@@ -161,6 +161,70 @@ describe('analytics routes', () => {
     expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
   });
 
+  it('accepts a batch of research events and reports the accepted count', async () => {
+    mocks.emitResearchEvent.mockResolvedValue(true);
+    mocks.researchEntityExists.mockResolvedValue(true);
+
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: [
+          {
+            eventType: 'research_search',
+            payload: {
+              outcome: 'results',
+              resultCountBucket: '6-20',
+              searchKind: 'query',
+              filterCountBucket: '0',
+            },
+          },
+          {
+            eventType: 'research_entity_impression',
+            entityType: 'research_entity',
+            entityId: '507f1f77bcf86cd799439011',
+            payload: { surface: 'browse', positionBucket: '1-3' },
+          },
+        ],
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toEqual({ accepted: 2 });
+    expect(mocks.emitResearchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a batch that is not a non-empty array', async () => {
+    const res = await invokeRouteHandler('/research/batch', {
+      body: { events: [] },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized research event batch before emitting', async () => {
+    const res = await invokeRouteHandler('/research/batch', {
+      body: {
+        events: Array.from({ length: 51 }, () => ({
+          eventType: 'research_search',
+          payload: {
+            outcome: 'results',
+            resultCountBucket: '6-20',
+            searchKind: 'query',
+            filterCountBucket: '0',
+          },
+        })),
+      },
+      user: { netId: 'test123', userType: 'undergraduate' },
+    });
+
+    expect(res.statusCode).toBe(413);
+    expect(mocks.emitResearchEvent).not.toHaveBeenCalled();
+  });
+
   it('does not leak internal messages from analytics helper-backed route failures', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getSearchQualityAnalytics.mockRejectedValue(

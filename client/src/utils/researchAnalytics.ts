@@ -1,4 +1,5 @@
 import axios from './axios';
+import { getApiBaseUrl } from './apiBaseUrl';
 
 export type LegacyResearchEventType =
   | 'research_view'
@@ -109,32 +110,106 @@ export const researchCountBucket = (count: number): '1' | '2' | '3-4' | '5+' => 
   return '5+';
 };
 
-/**
- * Fire-and-forget analytics. The promise always resolves so a blocked tracker,
- * offline browser, or server failure can never affect the student interaction.
- */
-export const trackResearchEvent = async ({
+type OutgoingResearchEvent = {
+  eventType: ResearchEventType;
+  entityType?: ResearchEntityType;
+  entityId?: string;
+  payload?: Record<string, string> | ResearchJourneyPayload;
+  dedupeKey?: string;
+};
+
+const RESEARCH_EVENT_FLUSH_DELAY_MS = 2000;
+const RESEARCH_EVENT_MAX_BATCH = 20;
+
+let eventBuffer: OutgoingResearchEvent[] = [];
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let unloadFlushBound = false;
+
+const buildOutgoingEvent = ({
   eventType,
   entityType,
   entityId,
   payload,
   dedupeKey,
-}: TrackResearchEventParams): Promise<void> => {
+}: TrackResearchEventParams): OutgoingResearchEvent => ({
+  eventType,
+  ...(entityType ? { entityType } : {}),
+  ...(entityId ? { entityId } : {}),
+  ...(payload ? { payload } : {}),
+  ...(dedupeKey ? { dedupeKey } : {}),
+});
+
+const sendResearchEventBatch = async (events: OutgoingResearchEvent[]): Promise<void> => {
+  if (events.length === 0) return;
   try {
-    await axios.post(
-      '/analytics/research',
-      {
-        eventType,
-        ...(entityType ? { entityType } : {}),
-        ...(entityId ? { entityId } : {}),
-        ...(payload ? { payload } : {}),
-        ...(dedupeKey ? { dedupeKey } : {}),
-      },
-      { withCredentials: true },
-    );
+    await axios.post('/analytics/research/batch', { events }, { withCredentials: true });
   } catch {
     // Analytics is deliberately non-blocking and invisible.
   }
+};
+
+const takeBufferedEvents = (): OutgoingResearchEvent[] => {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  const events = eventBuffer;
+  eventBuffer = [];
+  return events;
+};
+
+/**
+ * Flush buffered research analytics immediately. Exposed so tests can assert the
+ * batched request deterministically; also called on the size threshold.
+ */
+export const flushResearchAnalytics = async (): Promise<void> => {
+  await sendResearchEventBatch(takeBufferedEvents());
+};
+
+const flushResearchAnalyticsViaBeacon = (): void => {
+  const events = takeBufferedEvents();
+  if (events.length === 0) return;
+  const body = JSON.stringify({ events });
+  if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+    const blob = new Blob([body], { type: 'application/json' });
+    if (navigator.sendBeacon(`${getApiBaseUrl()}/analytics/research/batch`, blob)) return;
+  }
+  void sendResearchEventBatch(events);
+};
+
+const bindUnloadFlush = (): void => {
+  if (unloadFlushBound || typeof document === 'undefined') return;
+  unloadFlushBound = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushResearchAnalyticsViaBeacon();
+  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', flushResearchAnalyticsViaBeacon);
+  }
+};
+
+const scheduleResearchAnalyticsFlush = (): void => {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushResearchAnalytics();
+  }, RESEARCH_EVENT_FLUSH_DELAY_MS);
+};
+
+/**
+ * Fire-and-forget analytics. Events are buffered and delivered in batches so
+ * ordinary browsing does not emit one request per impression; delivery is
+ * guaranteed on the size threshold, a short timer, and tab hide/unload. The
+ * promise always resolves so a blocked tracker can never affect interaction.
+ */
+export const trackResearchEvent = async (params: TrackResearchEventParams): Promise<void> => {
+  bindUnloadFlush();
+  eventBuffer.push(buildOutgoingEvent(params));
+  if (eventBuffer.length >= RESEARCH_EVENT_MAX_BATCH) {
+    await flushResearchAnalytics();
+    return;
+  }
+  scheduleResearchAnalyticsFlush();
 };
 
 export const trackResearchEventOnce = (
@@ -149,4 +224,9 @@ export const trackResearchEventOnce = (
 export const resetResearchAnalyticsDedupeForTests = (): void => {
   sentOnceKeys.clear();
   fallbackInteractionSequence = 0;
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  eventBuffer = [];
 };

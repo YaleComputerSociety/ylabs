@@ -94,6 +94,59 @@ router.post(
   }),
 );
 
+const MAX_RESEARCH_EVENT_BATCH = 50;
+
+const acceptResearchEvent = async (
+  event: unknown,
+  user: { netId?: string; userType?: string },
+): Promise<boolean> => {
+  const { eventType, entityType, entityId, payload, dedupeKey } =
+    (event as Record<string, unknown>) || {};
+
+  if (!isResearchEventType(eventType)) return false;
+
+  const requiresEntity =
+    !isResearchJourneyEventType(eventType) || researchJourneyEventRequiresEntity(eventType);
+
+  if (requiresEntity && !isResearchEntityType(entityType)) return false;
+  if (requiresEntity && (typeof entityId !== 'string' || entityId.trim() === '')) return false;
+  if (
+    requiresEntity &&
+    !(await researchEntityExists(
+      entityType as Parameters<typeof researchEntityExists>[0],
+      entityId as Parameters<typeof researchEntityExists>[1],
+    ))
+  ) {
+    return false;
+  }
+
+  return emitResearchEvent({ eventType, entityType, entityId, payload, dedupeKey, user });
+};
+
+router.post(
+  '/research/batch',
+  isAuthenticated,
+  asyncHandler(async (request: Request, response: Response) => {
+    const events = (request.body as { events?: unknown })?.events;
+
+    if (!Array.isArray(events) || events.length === 0) {
+      return response.status(400).json({ error: 'Invalid research analytics batch' });
+    }
+
+    if (events.length > MAX_RESEARCH_EVENT_BATCH) {
+      return response.status(413).json({ error: 'Research analytics batch too large' });
+    }
+
+    const user = request.user as { netId?: string; userType?: string };
+    let accepted = 0;
+    for (const event of events) {
+      if (await acceptResearchEvent(event, user)) accepted += 1;
+    }
+
+    return response.status(202).json({ accepted });
+  }),
+);
+
 const parseAnalyticsRange = (range: unknown): AnalyticsDateRange => {
   if (range === 'all') {
     return {};

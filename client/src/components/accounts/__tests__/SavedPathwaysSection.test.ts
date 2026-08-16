@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UserContext from '../../../contexts/UserContext';
 import type { PathwaySearchHit } from '../../../types/pathway';
 import axios from '../../../utils/axios';
+import { flushResearchAnalytics } from '../../../utils/researchAnalytics';
 import SavedPathwaysSection, {
   MAX_PLAN_STORAGE_VALUE_LENGTH,
   PLAN_STORAGE_KEY,
@@ -629,14 +630,18 @@ describe('SavedPathwaysSection advising export', () => {
     });
     expect(screen.getByText('Checklist for: Outreach')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe('Plan saved.');
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      '/analytics/research',
+    await flushResearchAnalytics();
+    const batchCall = mockedAxios.post.mock.calls.find(
+      (call) => call[0] === '/analytics/research/batch',
+    );
+    expect(batchCall).toBeTruthy();
+    expect(batchCall?.[2]).toEqual({ withCredentials: true });
+    expect(batchCall?.[1].events).toContainEqual(
       expect.objectContaining({
         eventType: 'research_plan_update',
         entityId: 'entity-1',
         payload: { field: 'checklist' },
       }),
-      { withCredentials: true },
     );
   });
 
@@ -1057,14 +1062,18 @@ describe('SavedPathwaysSection advising export', () => {
     await user.click(screen.getByRole('button', { name: 'Preview advising export' }));
     expect(screen.getByRole('dialog')).toHaveFocus();
     expect(screen.queryByText('Discuss with my advisor.')).toBeNull();
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      '/analytics/research',
+    await flushResearchAnalytics();
+    const batchCall = mockedAxios.post.mock.calls.find(
+      (call) => call[0] === '/analytics/research/batch',
+    );
+    expect(batchCall).toBeTruthy();
+    expect(batchCall?.[2]).toEqual({ withCredentials: true });
+    expect(batchCall?.[1].events).toContainEqual(
       expect.objectContaining({
         eventType: 'research_compare',
         entityId: 'entity-1',
         payload: { entityCountBucket: '1' },
       }),
-      { withCredentials: true },
     );
     expect(JSON.stringify(mockedAxios.post.mock.calls)).not.toContain('Discuss with my advisor.');
   });
