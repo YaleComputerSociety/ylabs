@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import LabDetail from '../labDetail';
 import axios from '../../utils/axios';
 import { LabDetailPayload } from '../../types/labDetail';
-import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
+import {
+  flushResearchAnalytics,
+  resetResearchAnalyticsDedupeForTests,
+} from '../../utils/researchAnalytics';
 import { captureClientError } from '../../utils/errorTracking';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 
@@ -120,21 +123,28 @@ describe('LabDetail page', () => {
     renderLabDetail();
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
+    await flushResearchAnalytics();
     await waitFor(() =>
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/analytics/research',
-        expect.objectContaining({
-          eventType: 'research_profile_open',
-          entityType: 'research_entity',
-          entityId: 'entity-1',
-          payload: { source: 'direct' },
-        }),
+        '/analytics/research/batch',
+        {
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              eventType: 'research_profile_open',
+              entityType: 'research_entity',
+              entityId: 'entity-1',
+              payload: { source: 'direct' },
+            }),
+          ]),
+        },
         { withCredentials: true },
       ),
     );
-    expect(
-      mockedAxios.post.mock.calls.filter((call) => call[1]?.eventType === 'research_profile_open'),
-    ).toHaveLength(1);
+    const profileOpenEvents = mockedAxios.post.mock.calls
+      .filter((call) => call[0] === '/analytics/research/batch')
+      .flatMap((call) => call[1]?.events ?? [])
+      .filter((event: { eventType?: string }) => event?.eventType === 'research_profile_open');
+    expect(profileOpenEvents).toHaveLength(1);
   });
 
   it('keeps generic source review separate from a qualified action', async () => {
@@ -143,22 +153,27 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     fireEvent.click(screen.getByRole('link', { name: 'Open source' }));
+    await flushResearchAnalytics();
 
     await waitFor(() =>
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/analytics/research',
-        expect.objectContaining({
-          eventType: 'research_source_review',
-          payload: { sourceCategory: 'faculty_profile' },
-        }),
+        '/analytics/research/batch',
+        {
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              eventType: 'research_source_review',
+              payload: { sourceCategory: 'faculty_profile' },
+            }),
+          ]),
+        },
         { withCredentials: true },
       ),
     );
-    expect(
-      mockedAxios.post.mock.calls.some(
-        (call) => call[1]?.eventType === 'research_qualified_action',
-      ),
-    ).toBe(false);
+    const qualifiedActionEvents = mockedAxios.post.mock.calls
+      .filter((call) => call[0] === '/analytics/research/batch')
+      .flatMap((call) => call[1]?.events ?? [])
+      .filter((event: { eventType?: string }) => event?.eventType === 'research_qualified_action');
+    expect(qualifiedActionEvents).toHaveLength(0);
   });
 
   it('emits the server-owned category for a matching qualified route without its URL', async () => {
@@ -182,22 +197,28 @@ describe('LabDetail page', () => {
     expect(actionLink).toBeTruthy();
 
     fireEvent.click(actionLink!);
+    await flushResearchAnalytics();
 
     await waitFor(() =>
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/analytics/research',
-        expect.objectContaining({
-          eventType: 'research_qualified_action',
-          entityId: 'entity-1',
-          payload: { actionCategory: 'official_application' },
-        }),
+        '/analytics/research/batch',
+        {
+          events: expect.arrayContaining([
+            expect.objectContaining({
+              eventType: 'research_qualified_action',
+              entityId: 'entity-1',
+              payload: { actionCategory: 'official_application' },
+            }),
+          ]),
+        },
         { withCredentials: true },
       ),
     );
-    const actionCall = mockedAxios.post.mock.calls.find(
-      (call) => call[1]?.eventType === 'research_qualified_action',
-    );
-    expect(JSON.stringify(actionCall)).not.toContain(JOIN_PAGE_URL);
+    const actionEvent = mockedAxios.post.mock.calls
+      .filter((call) => call[0] === '/analytics/research/batch')
+      .flatMap((call) => call[1]?.events ?? [])
+      .find((event: { eventType?: string }) => event?.eventType === 'research_qualified_action');
+    expect(JSON.stringify(actionEvent)).not.toContain(JOIN_PAGE_URL);
   });
 
   it('shows an official-profile next step when no pathways or contact routes exist', async () => {

@@ -8,7 +8,10 @@ import axios from '../../utils/axios';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 import type { User } from '../../types/types';
-import { resetResearchAnalyticsDedupeForTests } from '../../utils/researchAnalytics';
+import {
+  flushResearchAnalytics,
+  resetResearchAnalyticsDedupeForTests,
+} from '../../utils/researchAnalytics';
 
 vi.mock('../../utils/axios', () => ({
   default: {
@@ -77,8 +80,8 @@ const mockSearchResponses = (
         qualityFilters?: string[];
       },
     ) =>
-      url === '/analytics/research'
-        ? Promise.resolve({ data: { ok: true }, status: 202 })
+      url === '/analytics/research' || url === '/analytics/research/batch'
+        ? Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 })
         : Promise.resolve(resolver(url, body)),
   );
 };
@@ -1711,17 +1714,19 @@ describe('Research page', () => {
     expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/pathways/search')).toHaveLength(
       0,
     );
-    const searchJourneyCalls = mockedAxios.post.mock.calls.filter(
-      ([url, body]) => url === '/analytics/research' && body.eventType === 'research_search',
-    );
-    expect(searchJourneyCalls).toHaveLength(1);
-    expect(searchJourneyCalls[0][1].payload).toEqual({
+    await flushResearchAnalytics();
+    const searchJourneyEvents = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/analytics/research/batch')
+      .flatMap(([, body]) => body.events)
+      .filter((event) => event.eventType === 'research_search');
+    expect(searchJourneyEvents).toHaveLength(1);
+    expect(searchJourneyEvents[0].payload).toEqual({
       outcome: 'results',
       resultCountBucket: '1-5',
       searchKind: 'query',
       filterCountBucket: '0',
     });
-    expect(JSON.stringify(searchJourneyCalls[0][1])).not.toContain('machine learning');
+    expect(JSON.stringify(searchJourneyEvents[0])).not.toContain('machine learning');
   });
 
   it('dedupes browse impressions per StrictMode load but records a later visit', async () => {
@@ -1731,33 +1736,35 @@ describe('Research page', () => {
         : unexpectedSearchEndpoint(url),
     );
 
+    const collectImpressionEvents = () =>
+      mockedAxios.post.mock.calls
+        .filter(([url]) => url === '/analytics/research/batch')
+        .flatMap(([, body]) => body.events)
+        .filter((event) => event.eventType === 'research_entity_impression');
+
     const firstVisit = renderResearchStrict();
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    await waitFor(() => {
-      expect(
-        mockedAxios.post.mock.calls.filter(
-          ([url, body]) =>
-            url === '/analytics/research' && body.eventType === 'research_entity_impression',
-        ),
-      ).toHaveLength(1);
+    await waitFor(async () => {
+      await flushResearchAnalytics();
+      expect(collectImpressionEvents()).toHaveLength(1);
     });
     firstVisit.unmount();
 
     renderResearchStrict();
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    await waitFor(() => {
-      const impressionCalls = mockedAxios.post.mock.calls.filter(
-        ([url, body]) =>
-          url === '/analytics/research' && body.eventType === 'research_entity_impression',
-      );
-      expect(impressionCalls).toHaveLength(2);
-      expect(impressionCalls[0][1].dedupeKey).not.toBe(impressionCalls[1][1].dedupeKey);
+    await waitFor(async () => {
+      await flushResearchAnalytics();
+      const impressionEvents = collectImpressionEvents();
+      expect(impressionEvents).toHaveLength(2);
+      expect(impressionEvents[0].dedupeKey).not.toBe(impressionEvents[1].dedupeKey);
     });
   });
 
   it('records exactly one terminal error outcome without the raw query', async () => {
     mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {
-      if (url === '/analytics/research') return Promise.resolve({ status: 202 });
+      if (url === '/analytics/research' || url === '/analytics/research/batch') {
+        return Promise.resolve({ status: 202, data: { accepted: 1 } });
+      }
       if (url === '/research/search' && body.q === '') {
         return Promise.resolve(researchSearchResponse());
       }
@@ -1778,12 +1785,14 @@ describe('Research page', () => {
         'Live search metadata is unavailable right now. Try another topic or check back soon.',
       ),
     ).toBeTruthy();
-    const searchJourneyCalls = mockedAxios.post.mock.calls.filter(
-      ([url, body]) => url === '/analytics/research' && body.eventType === 'research_search',
-    );
-    expect(searchJourneyCalls).toHaveLength(1);
-    expect(searchJourneyCalls[0][1].payload).toMatchObject({ outcome: 'error' });
-    expect(JSON.stringify(searchJourneyCalls[0][1])).not.toContain('private mentor query');
+    await flushResearchAnalytics();
+    const searchJourneyEvents = mockedAxios.post.mock.calls
+      .filter(([url]) => url === '/analytics/research/batch')
+      .flatMap(([, body]) => body.events)
+      .filter((event) => event.eventType === 'research_search');
+    expect(searchJourneyEvents).toHaveLength(1);
+    expect(searchJourneyEvents[0].payload).toMatchObject({ outcome: 'error' });
+    expect(JSON.stringify(searchJourneyEvents[0])).not.toContain('private mentor query');
   });
 
   it('reveals one research-home result stream with inline ways-in context after a search', async () => {

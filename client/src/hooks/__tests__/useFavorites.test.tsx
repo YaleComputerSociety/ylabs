@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useFavorites from '../useFavorites';
 import axios from '../../utils/axios';
+import { flushResearchAnalytics } from '../../utils/researchAnalytics';
 import swal from 'sweetalert';
 
 vi.mock('../../utils/axios', () => ({
@@ -88,16 +89,23 @@ describe('useFavorites', () => {
       await result.current.setFavorite('entity-1', true);
     });
 
-    expect(mockedAxios.post).toHaveBeenCalledWith(
-      '/analytics/research',
-      expect.objectContaining({
-        eventType: 'research_save',
-        entityType: 'research_entity',
-        entityId: 'entity-1',
-        payload: { operation: 'save', surface: 'profile' },
-      }),
-      { withCredentials: true },
+    await flushResearchAnalytics();
+
+    const batchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/analytics/research/batch',
     );
+    expect(batchCall).toBeDefined();
+    expect(batchCall?.[1].events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'research_save',
+          entityType: 'research_entity',
+          entityId: 'entity-1',
+          payload: { operation: 'save', surface: 'profile' },
+        }),
+      ]),
+    );
+    expect(batchCall?.[2]).toEqual({ withCredentials: true });
   });
 
   it('does not record a save when the canonical mutation fails', async () => {
@@ -116,6 +124,9 @@ describe('useFavorites', () => {
     expect(result.current.favIds).toEqual([]);
     expect(mockedAxios.get).toHaveBeenCalledTimes(2);
     expect(mockedSwal).toHaveBeenCalledWith(expect.objectContaining({ icon: 'warning' }));
+
+    await flushResearchAnalytics();
+
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 });

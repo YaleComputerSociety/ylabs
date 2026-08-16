@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import axios from '../axios';
 import {
+  flushResearchAnalytics,
   researchCountBucket,
   researchPositionBucket,
   researchResultCountBucket,
@@ -37,18 +38,23 @@ describe('research journey analytics client', () => {
       },
       dedupeKey: 'search:fixture-1',
     });
+    await flushResearchAnalytics();
 
     expect(post).toHaveBeenCalledWith(
-      '/analytics/research',
+      '/analytics/research/batch',
       {
-        eventType: 'research_search',
-        payload: {
-          outcome: 'zero_results',
-          resultCountBucket: '0',
-          searchKind: 'query',
-          filterCountBucket: '0',
-        },
-        dedupeKey: 'search:fixture-1',
+        events: [
+          {
+            eventType: 'research_search',
+            payload: {
+              outcome: 'zero_results',
+              resultCountBucket: '0',
+              searchKind: 'query',
+              filterCountBucket: '0',
+            },
+            dedupeKey: 'search:fixture-1',
+          },
+        ],
       },
       { withCredentials: true },
     );
@@ -72,15 +78,20 @@ describe('research journey analytics client', () => {
       payload,
       dedupeKey: `${eventType}:fixture-1`,
     });
+    await flushResearchAnalytics();
 
     expect(post).toHaveBeenCalledWith(
-      '/analytics/research',
-      expect.objectContaining({
-        eventType,
-        entityType: 'research_entity',
-        entityId: '507f1f77bcf86cd799439011',
-        payload,
-      }),
+      '/analytics/research/batch',
+      {
+        events: [
+          expect.objectContaining({
+            eventType,
+            entityType: 'research_entity',
+            entityId: '507f1f77bcf86cd799439011',
+            payload,
+          }),
+        ],
+      },
       { withCredentials: true },
     );
   });
@@ -98,8 +109,10 @@ describe('research journey analytics client', () => {
       trackResearchEventOnce('profile:route1:entity1', event),
       trackResearchEventOnce('profile:route1:entity1', event),
     ]);
+    await flushResearchAnalytics();
 
     expect(post).toHaveBeenCalledOnce();
+    expect(post.mock.calls[0][1]).toEqual({ events: [expect.objectContaining(event)] });
   });
 
   it('swallows blocked-tracker and offline failures', async () => {
@@ -113,6 +126,7 @@ describe('research journey analytics client', () => {
         payload: { operation: 'save', surface: 'profile' },
       }),
     ).resolves.toBeUndefined();
+    await expect(flushResearchAnalytics()).resolves.toBeUndefined();
   });
 
   it('uses bounded result, position, and comparison buckets', () => {
