@@ -459,4 +459,58 @@ describe('app security runtime classification', () => {
       });
     }
   });
+
+  it('does not bill entity view telemetry against the write limiter', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      let lastStatus = 0;
+      let sessionCookie: string | undefined;
+
+      for (let attempt = 0; attempt < 51; attempt += 1) {
+        const response = await fetch(
+          `http://127.0.0.1:${address.port}/api/fellowships/64a000000000000000000030/addView`,
+          {
+            method: 'PUT',
+            headers: {
+              origin: 'https://yalelabs.io',
+              'content-type': 'application/json',
+              'x-forwarded-proto': 'https',
+              ...(sessionCookie ? { cookie: sessionCookie } : {}),
+            },
+          },
+        );
+        if (!sessionCookie) {
+          sessionCookie = response.headers
+            .getSetCookie()
+            .map((cookie) => cookie.split(';', 1)[0])
+            .join('; ');
+        }
+        lastStatus = response.status;
+        await response.text();
+      }
+
+      expect(lastStatus).not.toBe(429);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
 });

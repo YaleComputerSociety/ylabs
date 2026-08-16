@@ -44,7 +44,7 @@ const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>(['/research/search']);
 // mutations (favorites, tracking, profile edits). They remain under the
 // general per-user limiter.
 const READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS = [
-  /^\/(?:programs|listings)\/[0-9a-fA-F]{24}\/addView$/,
+  /^\/[a-zA-Z]+\/[0-9a-fA-F]{24}\/addView$/,
 ];
 
 dotenv.config();
