@@ -1069,7 +1069,7 @@ const Analytics = () => {
             <StatCard
               title="Active Research Entities"
               value={researchCoverage.overview.active}
-              subtitle={`${formatNumber(researchCoverage.overview.archived)} archived`}
+              subtitle="Source-discovered catalog"
             />
             <StatCard
               title="Student-Ready"

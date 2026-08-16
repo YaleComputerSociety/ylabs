@@ -2252,8 +2252,6 @@ export const getAnalytics = async () => {
     },
   ]);
 
-  const archivedResearchEntityCount = await ResearchEntity.countDocuments({ archived: true });
-
   const visitors = visitorStats[0];
   const engagement = engagementStats[0];
   const listings = listingStats[0];
@@ -2388,8 +2386,7 @@ export const getAnalytics = async () => {
     researchEntities: {
       overview: {
         active: activeResearchEntityCount,
-        archived: archivedResearchEntityCount,
-        total: activeResearchEntityCount + archivedResearchEntityCount,
+        total: activeResearchEntityCount,
       },
       byType: researchEntities.byType || [],
       byVisibilityTier: researchEntities.byVisibilityTier || [],

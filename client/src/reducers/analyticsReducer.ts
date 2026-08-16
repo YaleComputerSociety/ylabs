@@ -134,7 +134,7 @@ export interface AnalyticsData {
     newUsersTodayByType: Array<{ userType: string; count: number }>;
   };
   researchEntities: {
-    overview: { active: number; archived: number; total: number };
+    overview: { active: number; total: number };
     byType: Array<{ entityType: string; count: number }>;
     byVisibilityTier: Array<{ tier: string; count: number }>;
     byOpenness: Array<{ status: string; count: number }>;

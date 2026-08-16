@@ -255,17 +255,15 @@ PostedOpportunity {
 
 Only use `PostedOpportunity` when there is a real active, rolling, or archived instance. Do not create fake posted opportunities for general exploratory outreach.
 
-Initial implementation note: `PostedOpportunity` is a separate collection that belongs to an `EntryPathway` and may reference an existing legacy `Listing` through optional `listingId`. Legacy listing behavior remains unchanged during migration.
+`PostedOpportunity` is a separate collection that belongs to an `EntryPathway` and may reference an existing legacy `Listing` through optional `listingId`.
+Legacy listing reads, outreach, claims, and view tracking remain as authenticated compatibility routes, but listing authoring is retired.
 
 Listing bridge note: legacy `Listing` rows with a `researchGroupId` now materialize into a `POSTED_ROLE` `EntryPathway`, `POSTED_OPENING` `AccessSignal`, and linked `PostedOpportunity`. Open listings with future deadlines become `OPEN`, listings without deadlines become `ROLLING`, expired/unconfirmed listings become `CLOSED`, and archived/deleted listings become `ARCHIVED`. Existing rows can be backfilled with [`server/src/scripts/backfillPostedOpportunitiesFromListings.ts`](../server/src/scripts/backfillPostedOpportunitiesFromListings.ts).
 
-Faculty posting note: confirmed faculty with a verified profile and a current lead membership may create a private draft for an owned canonical `ResearchEntity`, preview it, and submit it for admin review.
-The draft creates a linked `POSTED_ROLE` pathway, but neither record is student-publishable until the opportunity is approved.
-Edits revoke approval and return the opportunity to draft, while close and archive actions retain author, ownership, revision, and audit provenance.
-Ownership ambiguity, stale revisions, unsafe application URLs, and incomplete submissions fail closed.
-The faculty account surface lists owned entities and author-owned records through `/api/opportunities/mine`, supports validation-only preview, and uses owner-scoped idempotency keys for creation plus expected revisions for every later mutation.
-Only admin-approved, non-archived `OPEN` opportunities with a future deadline or approved `ROLLING` opportunities are public; pending, rejected, disputed, expired, closed, and archived records are excluded from entity detail, planning context, QA-01 qualification, and pathway search enrichment.
-Admin review of a faculty-submitted opportunity synchronizes its linked pathway review state, while optional Meilisearch synchronization is best effort and cannot roll back the canonical moderation decision.
+Yale Research does not host faculty-authored labs or opportunities.
+Posted opportunities and official application routes enter the product through source-backed ingestion, and the public opportunity API is read-only.
+Legacy faculty-submitted records retain their ownership, revision, and audit fields during migration, but no runtime authoring surface writes new records or changes them.
+Only non-archived source-backed `OPEN` opportunities with a future deadline or `ROLLING` opportunities are public; pending, rejected, disputed, expired, closed, and archived records are excluded from entity detail, planning context, QA-01 qualification, and pathway search enrichment.
 
 Opportunity detail note: `/api/opportunities/:id` exposes explicit public state for posted opportunities: `deadlineState`, `applicationState`, `applicationLabel`, and listing-bridged versus scraper-derived provenance. Attached observation evidence may include a short public excerpt, but direct contact details are redacted before the payload reaches the student-facing page.
 
@@ -516,7 +514,7 @@ The list checks readiness and performs projection, progress-count, and parent-hy
 The list fails with a temporary unavailable response when the projection is uninitialized, rebuilding, or stale.
 `GET /api/admin/access-review/:id` remains a separate full derived access bundle for one entity rather than reading through the list projection.
 `PUT /api/admin/access-review/:id/manual-locks` updates manually locked entity fields, and record-level review endpoints update per-record status, notes, and locks.
-For faculty-submitted opportunities, approval, needs-source, dispute, or reset review also updates the linked pathway and advances the opportunity revision so stale faculty writes conflict.
+Legacy faculty-submitted opportunities remain distinguishable and reviewable during migration, but the runtime no longer exposes their faculty authoring lifecycle.
 The admin UI can inspect source evidence, update review state, manage locks, and filter records by review, evidence, contact, and archive gaps before Beta.
 
 ### Student publication readiness

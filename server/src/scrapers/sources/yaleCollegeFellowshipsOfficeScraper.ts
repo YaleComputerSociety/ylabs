@@ -135,6 +135,7 @@ function normalizeLinkUrl(url: string): string {
     const parsed = new URL(url);
     parsed.hostname = parsed.hostname.toLowerCase();
     if (parsed.hostname.endsWith('communityforce.com')) parsed.protocol = 'https:';
+    if (parsed.hostname.toLowerCase() === 'studentgrants.yale.edu') parsed.protocol = 'https:';
     if (parsed.hostname === 'yalecollege.yale.edu') {
       const movedUrl =
         MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS[parsed.pathname.toLowerCase().replace(/\/$/, '')];
@@ -185,6 +186,15 @@ function isRecordSpecificApplicationUrl(url: string | undefined): boolean {
   }
 }
 
+function isStudentGrantsUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).hostname.toLowerCase() === 'studentgrants.yale.edu';
+  } catch {
+    return false;
+  }
+}
+
 function isHtmlLikeUrl(url: string): boolean {
   try {
     const pathname = new URL(url).pathname.toLowerCase();
@@ -198,7 +208,7 @@ function isGenericCatalogTitle(title: string): boolean {
   const normalized = normalizeWhitespace(title);
   return (
     /^(?:about|advising|administering|contact|connect|find|prepare|search)\b/i.test(normalized) ||
-    /\b(?:alternative funding|funding options|funding sources|student grants database)\b/i.test(
+    /\b(?:alternative funding|funding options|funding sources|(?:student )?grants?(?: and| &)? fellowships? database|student grants database)\b/i.test(
       normalized,
     ) ||
     /\b(?:faculty|staff|advisers?|advisors?|resources|directory|subjects?)\b/i.test(normalized) ||
@@ -535,6 +545,23 @@ function existingKeyForCandidate(
     }
   }
 
+  const sourceUrl = normalizeLinkUrl(candidate.sourceUrl);
+  for (const [key, existing] of byKey) {
+    const existingSourceUrl = normalizeLinkUrl(existing.sourceUrl);
+    const existingLinkedUrls = existing.links.map((link) => normalizeLinkUrl(link.url));
+    const candidateLinkedUrls = candidate.links.map((link) => normalizeLinkUrl(link.url));
+    if (
+      (candidate.sourcePageKind === 'detail' &&
+        existing.sourcePageKind === 'catalog' &&
+        existingLinkedUrls.includes(sourceUrl)) ||
+      (existing.sourcePageKind === 'detail' &&
+        candidate.sourcePageKind === 'catalog' &&
+        candidateLinkedUrls.includes(existingSourceUrl))
+    ) {
+      return key;
+    }
+  }
+
   const titleIdentity = compactTitleIdentity(candidate.title);
   for (const [key, existing] of byKey) {
     if (compactTitleIdentity(existing.title) === titleIdentity) return key;
@@ -643,8 +670,14 @@ function candidateFromDetailPage(
   if (!title || !isLikelyFellowshipTitle(title)) return undefined;
   if (isGenericCatalogTitle(title)) return undefined;
 
-  const primaryContent = $('main, [role="main"], article').first();
-  const contentRoot = primaryContent.length > 0 ? primaryContent : $('body');
+  const specificContent = $('.node, article').first();
+  const primaryContent = $('main, [role="main"]').first();
+  const contentRoot =
+    specificContent.length > 0
+      ? specificContent
+      : primaryContent.length > 0
+        ? primaryContent
+        : $('body');
   const bodyText = normalizeWhitespace(contentRoot.text());
   const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
@@ -654,6 +687,7 @@ function candidateFromDetailPage(
   const links = contentRoot
     .find('a')
     .toArray()
+    .filter((link) => !isInExcludedPageRegion($(link)))
     .map((link) => {
       const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
       const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
@@ -664,6 +698,7 @@ function candidateFromDetailPage(
     .filter((item): item is { label: string; url: string } => !!item);
   const applicationLink =
     links.find((link) => isCommunityForceUrl(link.url))?.url ||
+    links.find((link) => isStudentGrantsUrl(link.url))?.url ||
     links.find((link) => /apply|application|student grants/i.test(link.label))?.url;
   const isAcceptingApplications =
     (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
@@ -747,8 +782,12 @@ function mergeCandidates(
   if (researchFocused) purpose.unshift('Research');
   return finalizeCandidate({
     ...existing,
-    title: preferredTitle(existing, incoming),
-    sourceKey: existing.sourceKey,
+    title:
+      evidenceOwner.sourcePageKind === 'detail'
+        ? evidenceOwner.title
+        : preferredTitle(existing, incoming),
+    sourceKey:
+      evidenceOwner.sourcePageKind === 'detail' ? evidenceOwner.sourceKey : existing.sourceKey,
     summary: incoming.summary || existing.summary,
     description: incoming.description || existing.description,
     applicationInformation: incoming.applicationInformation || existing.applicationInformation,
@@ -872,6 +911,7 @@ export function candidateToObservations(candidate: FellowshipCatalogCandidate): 
       candidate,
     ),
     currentSourceObservation('researchFocused', candidate.researchFocused === true, candidate),
+    currentSourceObservation('archived', false, candidate),
     observation('applicationLink', candidate.applicationLink, candidate),
     observation('links', candidate.links, candidate),
     observation('deadline', candidate.deadline, candidate),

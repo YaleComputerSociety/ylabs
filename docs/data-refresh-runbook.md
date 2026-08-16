@@ -83,8 +83,9 @@ Render automation remains appropriate for work that does not need Yale network a
 | Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Clean staging candidate and human audit                    |
 | Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                    |
 
-Development data is never copied wholesale into Beta.
-The tested scraper code is rerun against Beta from the local VPN-connected machine.
+Development data may be promoted into Beta only through the guarded research-data mirror described below.
+The mirror replaces approved research and evidence collections while preserving Beta operational collections and sanitizing copied account state.
+The tested scraper code may instead be rerun against Beta from the local VPN-connected machine when a source-level refresh is required.
 The local Beta run writes observations only.
 The Beta Render service materializes those observations by run ID and updates its private Meilisearch indexes.
 
@@ -122,7 +123,8 @@ test -d server
 - Never point ordinary local development at the `Beta` or `Production` database.
 - Never give the Development or Beta database user access to `Production`.
 - Never add `--auto-materialize` to a local Beta operator run.
-- Never copy Development users, sessions, analytics, caches, locks, or experimental edits into Beta.
+- Never copy Development into Beta outside the guarded research-data mirror.
+- Never copy Development sessions, analytics, caches, locks, or experimental operational data into Beta.
 - Never run the production copy without a reviewed dry-run and a real Production restore point.
 - Never assume that changing MongoDB also updates a Render-private Meilisearch index.
 
@@ -325,6 +327,31 @@ Inspect the local application and local search after each materialized source.
 Stop this phase if the report status is not `success`, materialization errors are nonzero, conflicts are unexplained, or public contact data is unsafe.
 
 ## Phase 2: Beta Staging Fetch - Run Locally on Yale VPN
+
+### Fast path: mirror an accepted Development research dataset
+
+Use this path when the complete Development dataset already passed the same release quality gates and rerunning every scraper against Beta would duplicate accepted work.
+The command replaces only the approved research-discovery, source-audit, base-support, and sanitized user collections.
+It preserves Beta operational collections such as sessions, analytics, admin grants, student workflows, locks, caches, and release queues.
+It never writes to Meilisearch.
+
+Generate and review the plan locally:
+
+```bash
+yarn beta:refresh-from-development:plan
+```
+
+Confirm that the source is `Development`, the target is `Beta`, and every proposed source count is expected.
+Apply the reviewed mirror with the explicit staging-overwrite confirmation:
+
+```bash
+yarn beta:refresh-from-development:apply
+```
+
+Stop if the result does not report `"status": "applied"` or any post-copy target count differs from its source copy count.
+Continue with the Beta Meilisearch rebuild and strict readiness gate in Phase 3.
+
+The source-level Beta fetch below remains the supported path when Development has not passed the release gates or the operator needs fresh Beta observations and exact Beta run IDs.
 
 Beta Render does not perform the Yale-only fetch.
 The local machine performs the fetch while targeting Atlas `Beta`.

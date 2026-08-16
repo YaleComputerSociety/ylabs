@@ -52,27 +52,36 @@ export async function appendObservations(
   }
 
   const result = await Observation.insertMany(docs, { ordered: false });
-  const latestByFingerprint = new Map<string, any>();
-  for (const doc of result as any[]) {
+  const latestByFingerprint = new Map<string, { id: any; input: (typeof docs)[number] }>();
+  for (const [index, doc] of (result as any[]).entries()) {
     if (!doc.observationFingerprint) continue;
-    latestByFingerprint.set(doc.observationFingerprint, doc._id);
+    latestByFingerprint.set(doc.observationFingerprint, { id: doc._id, input: docs[index] });
   }
 
-  const supersedeOps = Array.from(latestByFingerprint.entries()).map(([fingerprint, latestId]) => ({
-    updateMany: {
-      filter: {
-        observationFingerprint: fingerprint,
-        superseded: false,
-        _id: { $ne: latestId },
-      },
-      update: {
-        $set: {
-          superseded: true,
-          supersededBy: latestId,
+  const supersedeOps = Array.from(latestByFingerprint.entries()).map(
+    ([fingerprint, { id: latestId, input }]) => ({
+      updateMany: {
+        filter: {
+          ...(usesLatestWinsFingerprint(input)
+            ? {
+                sourceName: input.sourceName,
+                entityType: input.entityType,
+                ...(input.entityId ? { entityId: input.entityId } : { entityKey: input.entityKey }),
+                field: input.field,
+              }
+            : { observationFingerprint: fingerprint }),
+          superseded: false,
+          _id: { $ne: latestId },
+        },
+        update: {
+          $set: {
+            superseded: true,
+            supersededBy: latestId,
+          },
         },
       },
-    },
-  }));
+    }),
+  );
 
   const superseded =
     supersedeOps.length > 0
@@ -91,6 +100,10 @@ export async function appendObservations(
  * every paraphrase produced a distinct fingerprint that never superseded its predecessor, so
  * the resolver saw hundreds of competing active values per field and flagged spurious
  * materialization conflicts (which in turn tripped sourceHealthWarnings → data-quality block).
+ *
+ * Fellowship observations are also source-owned snapshots. The sole fellowship producer emits
+ * exactly one value per (entity, field) per run, so all fellowship fields use latest-wins
+ * fingerprints rather than retaining stale competing values after each catalog refresh.
  *
  * SAFETY: only add a field here if NO source emits it as multiple rows per (entity, field) in a
  * single run. A value-less fingerprint makes same-run rows share a fingerprint and supersede each
@@ -115,6 +128,10 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   'researchFocused',
 ]);
 
+function usesLatestWinsFingerprint(input: { entityType: string; field: string }): boolean {
+  return input.entityType === 'fellowship' || LATEST_WINS_FINGERPRINT_FIELDS.has(input.field);
+}
+
 export function buildObservationFingerprint(input: {
   sourceName: string;
   entityType: string;
@@ -129,7 +146,7 @@ export function buildObservationFingerprint(input: {
   if (!entity) return undefined;
 
   const parts: unknown[] = [input.sourceName, input.entityType, entity, input.field];
-  if (!LATEST_WINS_FINGERPRINT_FIELDS.has(input.field)) {
+  if (!usesLatestWinsFingerprint(input)) {
     parts.push(input.value);
   }
   return stableSerialize(parts);

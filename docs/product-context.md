@@ -99,10 +99,9 @@ A deduplicated Sources section may expose the official links that support the pa
 Implementation note: legacy listings now bridge into `PostedOpportunity` records.
 Public CTAs should prefer official application URLs, official profiles, source review, and saved planning over raw emails or yLabs-hosted outreach promises.
 Faculty should normally publish openings on official Yale, department, program, or lab pages for ingestion.
-A correction flow may accept an official source URL, but Yale Research should not add a general self-service job board without evidence that official-source ingestion is insufficient.
-
-Confirmed, profile-verified faculty can manage real opportunities from their account only for canonical research entities where they hold a current, non-conflicting lead membership.
-Their drafts and previews are private, submission requires complete bounded fields and a safe official HTTPS application route, and admin approval is required before any student-facing publication or search enrichment.
+A correction flow may accept an official source URL, but Yale Research does not host faculty-authored lab or opportunity submissions.
+Official application routes remain outbound source-backed links discovered through ingestion rather than applications submitted to Yale Research.
+When a professor or research home is missing, operators should resolve the canonical research entities for that professor and run bounded entity-targeted scraper backfills.
 
 ## Entity Page Questions
 

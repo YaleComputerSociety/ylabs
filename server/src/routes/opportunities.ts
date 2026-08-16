@@ -1,83 +1,15 @@
 /**
- * Authenticated detail and faculty-authoring routes for real opportunities.
+ * Authenticated detail routes for source-discovered opportunities.
  *
  * - GET /:id -> detail payload for one non-archived PostedOpportunity.
- * - /mine, /preview, and mutation routes -> verified faculty-owned records.
- *
  * The route is intentionally backed by PostedOpportunity only. Durable
  * exploratory EntryPathway records appear as planning context on Research.
  */
 import { Router } from 'express';
 import * as opportunityController from '../controllers/opportunityController';
-import {
-  asyncHandler,
-  canManagePostedOpportunities,
-  isAuthenticated,
-  requireBody,
-  validateObjectId,
-} from '../middleware/index';
+import { asyncHandler, isAuthenticated, validateObjectId } from '../middleware/index';
 
 const router = Router();
-
-const facultyWriteGuards = [isAuthenticated, canManagePostedOpportunities];
-
-router.get(
-  '/mine',
-  ...facultyWriteGuards,
-  asyncHandler(opportunityController.listMyFacultyOpportunities),
-);
-
-router.get(
-  '/mine/research-entities',
-  ...facultyWriteGuards,
-  asyncHandler(opportunityController.listMyOwnedResearchEntities),
-);
-
-router.post(
-  '/preview',
-  ...facultyWriteGuards,
-  requireBody,
-  asyncHandler(opportunityController.previewMyFacultyOpportunity),
-);
-
-router.post(
-  '/',
-  ...facultyWriteGuards,
-  requireBody,
-  asyncHandler(opportunityController.createMyFacultyOpportunity),
-);
-
-router.put(
-  '/:id',
-  ...facultyWriteGuards,
-  validateObjectId('id'),
-  requireBody,
-  asyncHandler(opportunityController.updateMyFacultyOpportunity),
-);
-
-router.post(
-  '/:id/submit',
-  ...facultyWriteGuards,
-  validateObjectId('id'),
-  requireBody,
-  asyncHandler(opportunityController.submitMyFacultyOpportunity),
-);
-
-router.post(
-  '/:id/close',
-  ...facultyWriteGuards,
-  validateObjectId('id'),
-  requireBody,
-  asyncHandler(opportunityController.closeMyFacultyOpportunity),
-);
-
-router.post(
-  '/:id/archive',
-  ...facultyWriteGuards,
-  validateObjectId('id'),
-  requireBody,
-  asyncHandler(opportunityController.archiveMyFacultyOpportunity),
-);
 
 router.get(
   '/:id',

@@ -82,6 +82,14 @@ describe('orphaned Observation reference repair core', () => {
 
     expect(direct).toContainEqual({ $limit: 25 });
     expect(direct).toContainEqual({ $match: { '__observation.0': { $exists: false } } });
+    expect(direct).toContainEqual({
+      $project: {
+        _id: 0,
+        owner: '$__owner',
+        missingObservationId: '$__refs',
+        arrayIndex: { $cond: ['$__wasArray', '$__arrayIndex', '$$REMOVE'] },
+      },
+    });
     expect(provenance).toContainEqual({ $limit: 10 });
     expect(provenance).toContainEqual({
       $match: { '__provenance.v.observationId': { $type: 'objectId' } },

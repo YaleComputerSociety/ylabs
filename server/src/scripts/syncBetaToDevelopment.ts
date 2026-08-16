@@ -334,7 +334,7 @@ async function distinctObjectIds(
   );
 }
 
-async function referencedFacultyUserIds(betaDb: Db): Promise<ObjectId[]> {
+export async function referencedFacultyUserIds(betaDb: Db): Promise<ObjectId[]> {
   const [memberUserIds, facultyUserIds] = await Promise.all([
     distinctObjectIds(betaDb, 'research_entity_members', 'userId', {
       role: { $in: FACULTY_MEMBER_ROLES },
@@ -346,7 +346,7 @@ async function referencedFacultyUserIds(betaDb: Db): Promise<ObjectId[]> {
   ];
 }
 
-function collectionsForOptions(
+export function collectionsForOptions(
   options: BetaToDevelopmentOptions,
   facultyUserIds: ObjectId[],
 ): SyncCollection[] {
@@ -404,7 +404,7 @@ async function countSourceCollection(
   };
 }
 
-async function buildPlan(
+export async function buildPlan(
   betaDb: Db,
   developmentDb: Db,
   collections: SyncCollection[],

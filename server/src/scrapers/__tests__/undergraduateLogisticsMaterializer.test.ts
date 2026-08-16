@@ -224,6 +224,40 @@ describe('undergraduate logistics materialization', () => {
   );
 
   it.each([
+    ['The Navon Lab is currently looking for driven students from the undergraduate student body.'],
+    [
+      'The Yale Section of Pediatric Emergency Medicine is recruiting students to join the Undergraduate Research Associate Program.',
+    ],
+  ])('accepts explicit present-tense undergraduate recruiting language: %s', (evidenceQuote) => {
+    const result = validateUndergraduateLogisticsObservation(
+      observation(
+        'undergraduateLogisticsCurrentAvailability',
+        'CURRENT_AVAILABILITY',
+        { status: 'OPEN' },
+        evidenceQuote,
+      ),
+    );
+
+    expect(result.accepted?.value).toEqual({ status: 'OPEN' });
+  });
+
+  it.each([
+    ['The Lake Lab is recruiting!'],
+    ['The Yale Section is recruiting graduate students to join the research program.'],
+  ])('rejects recruiting language without an undergraduate subject: %s', (evidenceQuote) => {
+    const result = validateUndergraduateLogisticsObservation(
+      observation(
+        'undergraduateLogisticsCurrentAvailability',
+        'CURRENT_AVAILABILITY',
+        { status: 'OPEN' },
+        evidenceQuote,
+      ),
+    );
+
+    expect(result).toEqual({ rejectedReason: 'evidence_does_not_support_exact_claim' });
+  });
+
+  it.each([
     [
       'undergraduateLogisticsTimeCommitment',
       'TIME_COMMITMENT',

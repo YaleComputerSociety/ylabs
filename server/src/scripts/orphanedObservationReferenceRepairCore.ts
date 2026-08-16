@@ -675,6 +675,7 @@ export function buildDirectReferenceAggregationPipeline(
     {
       $project: {
         __owner: 1,
+        __wasArray: { $isArray: `$${spec.field}` },
         __refs: {
           $cond: [{ $isArray: `$${spec.field}` }, `$${spec.field}`, [`$${spec.field}`]],
         },
@@ -697,7 +698,7 @@ export function buildDirectReferenceAggregationPipeline(
         _id: 0,
         owner: '$__owner',
         missingObservationId: '$__refs',
-        arrayIndex: '$__arrayIndex',
+        arrayIndex: { $cond: ['$__wasArray', '$__arrayIndex', '$$REMOVE'] },
       },
     },
   ];

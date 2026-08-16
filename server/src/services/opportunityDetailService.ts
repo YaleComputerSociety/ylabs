@@ -299,7 +299,7 @@ export async function getOpportunityDetail(
     .findOne(
       {
         _id: new Types.ObjectId(safeId),
-        ...publicPostedOpportunityMongoMatch({ archived: false }, now),
+        ...publicPostedOpportunityMongoMatch({ archived: false }),
       },
       [
         'entryPathwayId',

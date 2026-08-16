@@ -7,6 +7,14 @@ const middlewareNames = () =>
     .map((layer: any) => layer.handle?.name)
     .filter(Boolean);
 
+const registeredRoutes = () =>
+  (router as any).stack
+    .map((layer: any) => layer.route)
+    .filter(Boolean)
+    .flatMap((route: any) =>
+      Object.keys(route.methods).map((method) => ({ method, path: route.path })),
+    );
+
 const invokeMiddleware = async (name: string) => {
   const layer = (router as any).stack.find(
     (candidate: any) => !candidate.route && candidate.handle?.name === name,
@@ -28,11 +36,19 @@ describe('listings routes', () => {
 
     const { res, next } = await invokeMiddleware('setPrivateListingCacheHeaders');
 
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store, private, max-age=0',
-    );
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
     expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('exposes read and student interaction routes without listing authoring routes', () => {
+    expect(registeredRoutes()).toEqual([
+      { method: 'get', path: '/search' },
+      { method: 'get', path: '/claims/mine' },
+      { method: 'get', path: '/:id' },
+      { method: 'post', path: '/:id/outreach' },
+      { method: 'post', path: '/:id/claim' },
+      { method: 'put', path: '/:id/addView' },
+    ]);
   });
 });
