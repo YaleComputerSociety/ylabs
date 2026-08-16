@@ -17,6 +17,7 @@ import { isPrivateOrLocalHostname } from './utils/urlSafety';
 import { allowsLegacyAdminUserType, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { triggerReconnect } from './db/connections';
+import { authLimiter } from './middleware/rateLimiters';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -699,7 +700,7 @@ router.get('/check', (req, res) => {
   return res.json({ auth: false });
 });
 
-router.get('/cas', casLogin);
+router.get('/cas', authLimiter, casLogin);
 
 const logoutRouteHandler = async (
   req: express.Request,

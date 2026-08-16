@@ -5,6 +5,7 @@ import { Router, Request, Response } from 'express';
 import { getConfig, invalidateConfigCache } from '../services/configService';
 import { isAuthenticated, isAdmin } from '../middleware/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.post(
   '/refresh',
   setPrivateConfigRefreshCacheHeaders,
+  writeLimit,
   isAuthenticated,
   isAdmin,
   async (req: Request, res: Response) => {

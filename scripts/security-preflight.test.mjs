@@ -1301,38 +1301,43 @@ test('API body parsers have explicit abuse-resistant size and parameter limits',
 test('all API traffic is metered by a single per-user limiter with no anonymous discovery carve-out', () => {
   const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
 
-  assert.match(source, /const SAFE_RATE_LIMIT_METHODS = new Set\(\['GET', 'HEAD', 'OPTIONS'\]\)/);
-  assert.match(source, /const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>\(\)/);
-  assert.match(source, /const shouldApplyWriteLimiter = \(req: express\.Request\): boolean =>/);
-  assert.match(
-    source,
-    /WRITE_LIKE_SAFE_METHOD_API_PATHS\.has\(req\.path\) \|\| !SAFE_RATE_LIMIT_METHODS\.has\(req\.method\)/,
+  const limiterSource = fs.readFileSync(
+    new URL('../server/src/middleware/rateLimiters.ts', import.meta.url),
+    'utf8',
   );
-  assert.match(source, /const RATE_LIMIT_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\/;/);
+
+  assert.match(source, /const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>\(\)/);
+  assert.match(limiterSource, /const RATE_LIMIT_NETID_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\/;/);
   assert.match(
-    source,
+    limiterSource,
     /const normalizedRateLimitNetId = \(value: unknown\): string \| undefined =>/,
   );
-  assert.match(source, /if \(typeof value !== 'string'\) return undefined/);
-  assert.match(source, /RATE_LIMIT_NETID_RE\.test\(normalized\) \? normalized : undefined/);
-  assert.match(source, /normalizedRateLimitNetId\(user\?\.netId \?\? user\?\.netid\)/);
-  assert.doesNotMatch(source, /return `user:\$\{user\.netId\}`/);
+  assert.match(limiterSource, /if \(typeof value !== 'string'\) return undefined/);
+  assert.match(limiterSource, /RATE_LIMIT_NETID_RE\.test\(normalized\) \? normalized : undefined/);
+  assert.match(limiterSource, /normalizedRateLimitNetId\(user\?\.netId \?\? user\?\.netid\)/);
+  assert.doesNotMatch(limiterSource, /return `user:\$\{user\.netId\}`/);
+  assert.doesNotMatch(limiterSource, /publicDiscoveryLimiter/);
   assert.doesNotMatch(source, /publicDiscoveryLimiter/);
-  assert.doesNotMatch(source, /Too many discovery requests/);
-  assert.match(source, /const apiLimiter = rateLimit\(\{/);
-  assert.match(source, /max: 200,/);
+  assert.doesNotMatch(limiterSource, /Too many discovery requests/);
+  assert.match(limiterSource, /export const globalLimiter = rateLimit\(\{/);
+  assert.match(limiterSource, /max: 1000,/);
   assert.match(
-    source,
-    /const requestWasSuccessful = \(_req: express\.Request, res: express\.Response\): boolean =>\s*res\.statusCode < 500/,
+    limiterSource,
+    /const requestWasSuccessful = \(_req: Request, res: Response\): boolean => res\.statusCode < 500/,
   );
-  assert.match(source, /skipFailedRequests: true,/);
-  assert.match(source, /\.use\('\/api', apiLimiter\)/);
+  assert.match(limiterSource, /skipFailedRequests: true,/);
+  assert.match(source, /\.use\('\/api', globalLimiter\)/);
   assert.doesNotMatch(source, /\.use\('\/api\/research'/);
   assert.doesNotMatch(source, /\.use\('\/api\/opportunities'/);
   assert.doesNotMatch(
     source,
     /req\.method === 'GET' \|\| req\.method === 'HEAD' \|\| req\.method === 'OPTIONS'/,
   );
+
+  // Write limiting is opt-in per route and login has a dedicated per-IP limiter;
+  // neither introduces an anonymous discovery carve-out.
+  assert.match(limiterSource, /export const writeLimit = rateLimit\(\{/);
+  assert.match(limiterSource, /export const authLimiter = rateLimit\(\{/);
 });
 
 test('API responses default to private no-store cache headers', () => {
@@ -4965,7 +4970,7 @@ test('config refresh is an admin-only no-store mutation while public config stay
   assert.match(source, /res\.setHeader\('X-Content-Type-Options', 'nosniff'\)/);
   assert.match(
     source,
-    /router\.post\(\s*'\/refresh',\s*setPrivateConfigRefreshCacheHeaders,\s*isAuthenticated,\s*isAdmin,/,
+    /router\.post\(\s*'\/refresh',\s*setPrivateConfigRefreshCacheHeaders,\s*writeLimit,\s*isAuthenticated,\s*isAdmin,/,
   );
 });
 

@@ -569,4 +569,44 @@ describe('app security runtime classification', () => {
       });
     }
   });
+
+  it('applies a per-IP auth limiter to the CAS login callback', async () => {
+    vi.doUnmock('cookie-session');
+    process.env = {
+      ...ORIGINAL_ENV,
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://yalelabs.io',
+      SSOBASEURL: 'https://secure.its.yale.edu/cas',
+      SESSION_SECRET: STRONG_SESSION_SECRET,
+      TRUSTED_PROXY_CIDRS: '127.0.0.1/32',
+    };
+
+    const { default: app } = await import('../app');
+    const server = http.createServer(app);
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+
+    try {
+      const address = server.address() as AddressInfo;
+      let lastStatus = 0;
+
+      for (let attempt = 0; attempt < 21; attempt += 1) {
+        const response = await fetch(`http://127.0.0.1:${address.port}/api/cas`, {
+          method: 'GET',
+          headers: { 'x-forwarded-proto': 'https' },
+          redirect: 'manual',
+        });
+        lastStatus = response.status;
+        await response.text();
+      }
+
+      expect(lastStatus).toBe(429);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  });
 });

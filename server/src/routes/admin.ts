@@ -10,6 +10,7 @@ import { containsAsciiControl, replaceAsciiControls } from '../utils/asciiContro
 // Re-exported for back-compat with existing imports/tests that reference these from this module.
 export { isPrivateAddress, isPublicHostname, ssrfSafeLookup };
 import { isAuthenticated, isAdmin, validateObjectId, validateNetid } from '../middleware/index';
+import { writeLimit } from '../middleware/rateLimiters';
 import { updateListing, deleteListing } from '../services/listingService';
 import { getListingModel } from '../db/connections';
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
@@ -553,7 +554,7 @@ router.get('/admin-grants', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/admin-grants', async (req: Request, res: Response) => {
+router.post('/admin-grants', writeLimit, async (req: Request, res: Response) => {
   try {
     const grant = await grantAdminAccess({
       netid: req.body?.netid,
@@ -568,6 +569,7 @@ router.post('/admin-grants', async (req: Request, res: Response) => {
 
 router.post(
   '/admin-grants/:netid/revoke',
+  writeLimit,
   validateNetid('netid'),
   async (req: Request, res: Response) => {
     try {
@@ -649,6 +651,7 @@ router.get('/access-review/:id', validateObjectId('id'), async (req: Request, re
 
 router.put(
   '/access-review/:id/manual-locks',
+  writeLimit,
   validateObjectId('id'),
   async (req: Request, res: Response) => {
     try {
@@ -664,6 +667,7 @@ router.put(
 
 router.put(
   '/access-review/records/:type/:recordId/review',
+  writeLimit,
   validateObjectId('recordId'),
   async (req: Request, res: Response) => {
     try {
@@ -691,7 +695,7 @@ router.put(
 
 router.get('/listing-claims', listAdminListingClaimRequests);
 router.get('/listing-claims/:id', validateObjectId('id'), getAdminListingClaimRequest);
-router.put('/listing-claims/:id', validateObjectId('id'), reviewAdminListingClaimRequest);
+router.put('/listing-claims/:id', writeLimit, validateObjectId('id'), reviewAdminListingClaimRequest);
 
 router.get('/listings', async (req: Request, res: Response) => {
   try {
@@ -875,7 +879,7 @@ router.get('/listings', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/listings/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.put('/listings/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
@@ -902,7 +906,7 @@ router.put('/listings/:id', validateObjectId('id'), async (req: Request, res: Re
   }
 });
 
-router.delete('/listings/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.delete('/listings/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
@@ -924,7 +928,7 @@ router.get('/research-areas', async (_req: Request, res: Response) => {
   }
 });
 
-router.put('/research-areas/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.put('/research-areas/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
@@ -965,6 +969,7 @@ router.put('/research-areas/:id', validateObjectId('id'), async (req: Request, r
 
 router.delete(
   '/research-areas/:id',
+  writeLimit,
   validateObjectId('id'),
   async (req: Request, res: Response) => {
     try {
@@ -994,7 +999,7 @@ router.get('/departments', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/departments', async (req: Request, res: Response) => {
+router.post('/departments', writeLimit, async (req: Request, res: Response) => {
   try {
     const { abbreviation, name, displayName, categories, primaryCategory } = req.body;
 
@@ -1039,7 +1044,7 @@ router.post('/departments', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/departments/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.put('/departments/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
@@ -1083,7 +1088,7 @@ router.put('/departments/:id', validateObjectId('id'), async (req: Request, res:
   }
 });
 
-router.delete('/departments/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.delete('/departments/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     const safeId = normalizeAdminObjectId(req.params.id);
     if (!safeId) return res.status(400).json({ error: 'Invalid id' });
@@ -1319,7 +1324,7 @@ router.get('/profiles/:netid', validateNetid('netid'), async (req: Request, res:
   }
 });
 
-router.put('/profiles/:netid', validateNetid('netid'), async (req: Request, res: Response) => {
+router.put('/profiles/:netid', writeLimit, validateNetid('netid'), async (req: Request, res: Response) => {
   try {
     const data = req.body?.data;
     if (!data || typeof data !== 'object') {
@@ -1408,7 +1413,7 @@ router.get('/fellowships', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/fellowships/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.put('/fellowships/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     const fellowship = await updateFellowship(req.params.id, req.body.data);
     res.json({ fellowship: adminFellowshipDto(fellowship) });
@@ -1420,6 +1425,7 @@ router.put('/fellowships/:id', validateObjectId('id'), async (req: Request, res:
 
 router.put(
   '/fellowships/:id/archive',
+  writeLimit,
   validateObjectId('id'),
   async (req: Request, res: Response) => {
     try {
@@ -1434,6 +1440,7 @@ router.put(
 
 router.put(
   '/fellowships/:id/unarchive',
+  writeLimit,
   validateObjectId('id'),
   async (req: Request, res: Response) => {
     try {
@@ -1446,7 +1453,7 @@ router.put(
   },
 );
 
-router.delete('/fellowships/:id', validateObjectId('id'), async (req: Request, res: Response) => {
+router.delete('/fellowships/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
   try {
     await deleteFellowship(req.params.id);
     res.json({ message: 'Fellowship deleted' });

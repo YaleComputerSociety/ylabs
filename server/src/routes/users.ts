@@ -3,6 +3,7 @@
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated, validateObjectId } from '../middleware/index';
+import { writeLimit } from '../middleware/rateLimiters';
 import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
@@ -212,9 +213,16 @@ const logProfileUpdateEvent = async (req: Request, res: Response, next: NextFunc
 };
 
 router.get('/favListingsIds', isAuthenticated, userController.getFavListingsIds);
-router.put('/favListings', isAuthenticated, logFavoriteEvent(true), userController.addFavListings);
+router.put(
+  '/favListings',
+  writeLimit,
+  isAuthenticated,
+  logFavoriteEvent(true),
+  userController.addFavListings,
+);
 router.delete(
   '/favListings',
+  writeLimit,
   isAuthenticated,
   logFavoriteEvent(false),
   userController.removeFavListings,
@@ -225,18 +233,21 @@ router.get('/savedPrograms', isAuthenticated, userController.getSavedPrograms);
 router.get('/savedProgramTracking', isAuthenticated, userController.getSavedProgramTracking);
 router.put(
   '/savedProgramTracking/:programId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('programId'),
   userController.updateSavedProgramTracking,
 );
 router.put(
   '/savedPrograms',
+  writeLimit,
   isAuthenticated,
   logFavoriteEvent(true, 'program', 'savedPrograms'),
   userController.addSavedPrograms,
 );
 router.delete(
   '/savedPrograms',
+  writeLimit,
   isAuthenticated,
   logFavoriteEvent(false, 'program', 'savedPrograms'),
   userController.removeSavedPrograms,
@@ -256,6 +267,7 @@ router.get(
 );
 router.put(
   '/favFellowships',
+  writeLimit,
   isAuthenticated,
   deprecateFavFellowshipEndpoint,
   logFavoriteEvent(true, 'fellowship'),
@@ -263,6 +275,7 @@ router.put(
 );
 router.delete(
   '/favFellowships',
+  writeLimit,
   isAuthenticated,
   deprecateFavFellowshipEndpoint,
   logFavoriteEvent(false, 'fellowship'),
@@ -276,17 +289,28 @@ router.get(
   isAuthenticated,
   userController.getFavPathwayFundingMatches,
 );
-router.put('/favPathways', isAuthenticated, userController.addFavPathways);
-router.delete('/favPathways', isAuthenticated, userController.removeFavPathways);
+router.put('/favPathways', writeLimit, isAuthenticated, userController.addFavPathways);
+router.delete('/favPathways', writeLimit, isAuthenticated, userController.removeFavPathways);
 router.get('/savedResearchPlanIds', isAuthenticated, userController.getSavedResearchPlanIds);
 router.get('/savedResearchPlans', isAuthenticated, userController.getSavedResearchPlans);
-router.put('/savedResearchPlans', isAuthenticated, userController.addSavedResearchPlans);
-router.delete('/savedResearchPlans', isAuthenticated, userController.removeSavedResearchPlans);
+router.put('/savedResearchPlans', writeLimit, isAuthenticated, userController.addSavedResearchPlans);
+router.delete(
+  '/savedResearchPlans',
+  writeLimit,
+  isAuthenticated,
+  userController.removeSavedResearchPlans,
+);
 router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
 router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);
-router.put('/savedResearchEntities', isAuthenticated, userController.addSavedResearchEntities);
+router.put(
+  '/savedResearchEntities',
+  writeLimit,
+  isAuthenticated,
+  userController.addSavedResearchEntities,
+);
 router.delete(
   '/savedResearchEntities',
+  writeLimit,
   isAuthenticated,
   userController.removeSavedResearchEntities,
 );
@@ -307,12 +331,14 @@ router.post(
 );
 router.put(
   '/savedResearchEntityPlans/:entityId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('entityId'),
   userController.updateSavedResearchEntityPlan,
 );
 router.delete(
   '/savedResearchEntityPlans/:entityId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('entityId'),
   userController.deleteSavedResearchEntityPlan,
@@ -339,12 +365,14 @@ router.post(
 );
 router.put(
   '/savedResearchPlanDetails/:pathwayId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('pathwayId'),
   userController.updateSavedResearchPlanDetail,
 );
 router.delete(
   '/savedResearchPlanDetails/:pathwayId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('pathwayId'),
   userController.deleteSavedResearchPlanDetail,
@@ -354,18 +382,20 @@ router.get('/favPathwayPlans/export', isAuthenticated, userController.exportSave
 router.post('/favPathwayPlans/export', isAuthenticated, userController.exportSavedPathwayPlans);
 router.put(
   '/favPathwayPlans/:pathwayId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('pathwayId'),
   userController.updateSavedPathwayPlan,
 );
 router.delete(
   '/favPathwayPlans/:pathwayId',
+  writeLimit,
   isAuthenticated,
   validateObjectId('pathwayId'),
   userController.deleteSavedPathwayPlan,
 );
 
 router.get('/listings', isAuthenticated, userController.getUserListings);
-router.put('/', isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);
+router.put('/', writeLimit, isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);
 
 export default router;

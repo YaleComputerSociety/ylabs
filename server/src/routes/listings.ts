@@ -15,6 +15,7 @@ import { logEvent } from '../services/analyticsService';
 import { AnalyticsEventType } from '../models/index';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { logResearchEventOnSuccess } from '../services/researchAnalytics';
+import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 
@@ -149,6 +150,7 @@ router.post(
 
 router.post(
   '/:id/claim',
+  writeLimit,
   isAuthenticated,
   canSubmitListingClaimRequest,
   validateObjectId('id'),
