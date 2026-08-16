@@ -1298,7 +1298,7 @@ test('API body parsers have explicit abuse-resistant size and parameter limits',
   assert.doesNotMatch(source, /express\.urlencoded\(\{ extended: false \}\)/);
 });
 
-test('public discovery endpoints have a narrower read limiter than general API traffic', () => {
+test('all API traffic is metered by a single per-user limiter with no anonymous discovery carve-out', () => {
   const source = fs.readFileSync(new URL('../server/src/app.ts', import.meta.url), 'utf8');
 
   assert.match(source, /const SAFE_RATE_LIMIT_METHODS = new Set\(\['GET', 'HEAD', 'OPTIONS'\]\)/);
@@ -1317,16 +1317,18 @@ test('public discovery endpoints have a narrower read limiter than general API t
   assert.match(source, /RATE_LIMIT_NETID_RE\.test\(normalized\) \? normalized : undefined/);
   assert.match(source, /normalizedRateLimitNetId\(user\?\.netId \?\? user\?\.netid\)/);
   assert.doesNotMatch(source, /return `user:\$\{user\.netId\}`/);
-  assert.match(source, /const publicDiscoveryLimiter = rateLimit\(\{/);
-  assert.match(source, /max: 300/);
+  assert.doesNotMatch(source, /publicDiscoveryLimiter/);
+  assert.doesNotMatch(source, /Too many discovery requests/);
+  assert.match(source, /const apiLimiter = rateLimit\(\{/);
+  assert.match(source, /max: 200,/);
   assert.match(
     source,
-    /message: \{ error: 'Too many discovery requests, please try again later\.' \}/,
+    /const requestWasSuccessful = \(_req: express\.Request, res: express\.Response\): boolean =>\s*res\.statusCode < 500/,
   );
-  assert.match(
-    source,
-    /\.use\('\/api', apiLimiter\)\s*\.use\('\/api\/research', publicDiscoveryLimiter\)\s*\.use\('\/api\/opportunities', publicDiscoveryLimiter\)/,
-  );
+  assert.match(source, /skipFailedRequests: true,/);
+  assert.match(source, /\.use\('\/api', apiLimiter\)/);
+  assert.doesNotMatch(source, /\.use\('\/api\/research'/);
+  assert.doesNotMatch(source, /\.use\('\/api\/opportunities'/);
   assert.doesNotMatch(
     source,
     /req\.method === 'GET' \|\| req\.method === 'HEAD' \|\| req\.method === 'OPTIONS'/,
@@ -2378,7 +2380,7 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
   assert.match(middlewareImport[1], /\bvalidateObjectId\b/);
   assert.match(
     opportunitiesRouteSource,
-    /router\.get\(\s*'\/:id',\s*setPublicDetailCacheHeaders,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/,
+    /router\.get\(\s*'\/:id',\s*isAuthenticated,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/,
   );
 });
 
