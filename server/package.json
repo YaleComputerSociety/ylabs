@@ -69,6 +69,7 @@
     "launch:acquisition-report": "tsx src/scripts/launchAcquisitionReport.ts",
     "launch:review-exceptions": "tsx src/scripts/launchReviewExceptions.ts",
     "development:refresh-from-beta": "tsx src/scripts/syncBetaToDevelopment.ts",
+    "beta:refresh-from-development": "tsx src/scripts/syncDevelopmentToBeta.ts",
     "production:promote-beta-copy": "tsx src/scripts/promoteAcceptedBetaCopy.ts",
     "beta:readiness": "tsx src/scripts/betaReadinessGate.ts",
     "pathway:relevance-review": "tsx src/scripts/pathwayRelevanceReview.ts",

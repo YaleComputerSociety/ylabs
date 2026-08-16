@@ -13,6 +13,143 @@ const detailPageUrl =
   'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/fixture-research-fellowship';
 
 describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
+  it('suppresses grants and fellowship database navigation links', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <a href="https://yale.communityforce.com/Funds/Search.aspx">
+            Student Grants and Fellowships database
+          </a>
+          <a href="https://yale.communityforce.com/Funds/Search.aspx">
+            Yale Student Grant & Fellowship Database
+          </a>
+          <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=123">
+            Fixture Family Research Fellowship
+          </a>
+        </main>
+      `,
+      sciencePageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates.map((candidate) => candidate.title)).toEqual([
+      'Fixture Family Research Fellowship',
+    ]);
+  });
+
+  it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
+    const programUrl = `${detailPageUrl}-official`;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === fundingPageUrl) {
+        return `<main><a href="${programUrl}">Fixture Research Program</a></main>`;
+      }
+      if (url === programUrl) {
+        return `
+          <main>
+            <h1>Fixture Undergraduate Research Fellowship</h1>
+            <p>Students conduct independent research.</p>
+          </main>
+        `;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [fundingPageUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (items) => {
+        emitted.push(...(Array.isArray(items) ? items : [items]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(1);
+    expect(emitted.find((observation) => observation.field === 'title')?.value).toBe(
+      'Fixture Undergraduate Research Fellowship',
+    );
+    expect(emitted.find((observation) => observation.field === 'sourceUrl')?.value).toBe(
+      programUrl,
+    );
+    expect(emitted.find((observation) => observation.field === 'sourceKey')?.value).toBe(
+      'yale-college-fellowships-office:fixture-undergraduate-research-fellowship',
+    );
+    expect(emitted.find((observation) => observation.field === 'archived')?.value).toBe(false);
+  });
+
+  it('does not merge detail pages merely because one links to the other', async () => {
+    const firstUrl = `${detailPageUrl}-first`;
+    const secondUrl = `${detailPageUrl}-second`;
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === firstUrl) {
+        return `<main><h1>Fixture First Research Fellowship</h1><a href="${secondUrl}">Related fellowship</a></main>`;
+      }
+      if (url === secondUrl) {
+        return `<main><h1>Fixture Second Research Fellowship</h1><a href="${firstUrl}">Related fellowship</a></main>`;
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [firstUrl, secondUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (items) => {
+        emitted.push(...(Array.isArray(items) ? items : [items]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(2);
+    expect(
+      emitted
+        .filter((observation) => observation.field === 'title')
+        .map((observation) => observation.value),
+    ).toEqual(['Fixture First Research Fellowship', 'Fixture Second Research Fellowship']);
+  });
+
+  it('scopes detail links to program content and prefers the Student Grants host', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <nav><a href="/about-us">About Us</a></nav>
+          <div class="node">
+            <h1>Fixture Undergraduate Research Fellowship</h1>
+            <p>
+              Apply through
+              <a href="http://studentgrants.yale.edu/">Student Grants & Fellowships database</a>.
+            </p>
+          </div>
+          <footer><a href="/privacy">Privacy</a></footer>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.applicationLink).toBe('https://studentgrants.yale.edu/');
+    expect(candidates[0]?.links).toEqual([
+      {
+        label: 'Student Grants & Fellowships database',
+        url: 'https://studentgrants.yale.edu/',
+      },
+    ]);
+  });
+
   it('extracts funding.yale.edu research fellowship rows without fetching CommunityForce', () => {
     const candidates = parseFellowshipCatalogPage(
       `
