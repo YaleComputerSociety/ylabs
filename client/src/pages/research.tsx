@@ -1219,6 +1219,30 @@ const Research = () => {
     }
   };
 
+  const [isWideFilterLayout, setIsWideFilterLayout] = useState(
+    () => window.matchMedia?.('(min-width: 1536px)').matches ?? false,
+  );
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(min-width: 1536px)');
+    if (!mediaQuery) return;
+    const handleChange = (event: MediaQueryListEvent) => setIsWideFilterLayout(event.matches);
+    setIsWideFilterLayout(mediaQuery.matches);
+    mediaQuery.addEventListener?.('change', handleChange);
+    return () => mediaQuery.removeEventListener?.('change', handleChange);
+  }, []);
+
+  const researchFilterProps = {
+    facetDistribution,
+    selectedSchool,
+    selectedDepartment,
+    isApplying: searchLoading,
+    hasFacetError,
+    departmentLabel: departmentFacetLabel,
+    onSchoolChange: (school: string) => applyStudentFacets(school, selectedDepartment),
+    onDepartmentChange: (department: string) => applyStudentFacets(selectedSchool, department),
+    onClearAll: () => applyStudentFacets('', ''),
+  };
+
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
@@ -1294,6 +1318,12 @@ const Research = () => {
                 </div>
               </div>
             </form>
+
+            {hasSubmittedSearch && isWideFilterLayout && (
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6">
+                <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
+              </div>
+            )}
           </header>
 
           <div className="min-w-0">
@@ -1436,19 +1466,7 @@ const Research = () => {
                   </div>
                 </div>
 
-                <ResearchFilterDisclosure
-                  facetDistribution={facetDistribution}
-                  selectedSchool={selectedSchool}
-                  selectedDepartment={selectedDepartment}
-                  isApplying={searchLoading}
-                  hasFacetError={hasFacetError}
-                  departmentLabel={departmentFacetLabel}
-                  onSchoolChange={(school) => applyStudentFacets(school, selectedDepartment)}
-                  onDepartmentChange={(department) =>
-                    applyStudentFacets(selectedSchool, department)
-                  }
-                  onClearAll={() => applyStudentFacets('', '')}
-                />
+                {!isWideFilterLayout && <ResearchFilterDisclosure {...researchFilterProps} />}
 
                 {searchError && (
                   <div

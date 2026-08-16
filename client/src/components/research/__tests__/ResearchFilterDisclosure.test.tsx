@@ -109,6 +109,17 @@ describe('ResearchFilterDisclosure', () => {
     },
   );
 
+  it('renders the sidebar variant as an always-open static panel without a trigger', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
+
+    expect(screen.queryByRole('button', { name: /^Filters/ })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Research filters' })).toBeTruthy();
+    expect(screen.getByLabelText('Filter by school')).toBeTruthy();
+    expect(screen.getByLabelText('Filter by department')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
+  });
+
   it('hides single and non-positive facets unless selected', () => {
     renderFilters({
       facetDistribution: {

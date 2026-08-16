@@ -12,6 +12,7 @@ interface ResearchFilterDisclosureProps {
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onClearAll: () => void;
+  variant?: 'popover' | 'sidebar';
 }
 
 interface FacetOption {
@@ -40,7 +41,9 @@ const ResearchFilterDisclosure = ({
   onSchoolChange,
   onDepartmentChange,
   onClearAll,
+  variant = 'popover',
 }: ResearchFilterDisclosureProps) => {
+  const isSidebar = variant === 'sidebar';
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(
     () => window.matchMedia?.('(min-width: 640px)').matches ?? false,
@@ -103,21 +106,21 @@ const ResearchFilterDisclosure = ({
   };
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (isSidebar || !isOpen) return;
     const timeout = window.setTimeout(focusFirstControl, 0);
     return () => window.clearTimeout(timeout);
-  }, [focusFirstControl, isOpen]);
+  }, [focusFirstControl, isOpen, isSidebar]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (isSidebar || !isOpen) return;
     const timeout = window.setTimeout(() => {
       if (!panelRef.current?.contains(document.activeElement)) focusFirstControl();
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [focusFirstControl, isOpen, visibleFacetKey]);
+  }, [focusFirstControl, isOpen, isSidebar, visibleFacetKey]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (isSidebar || !isOpen) return;
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -125,10 +128,10 @@ const ResearchFilterDisclosure = ({
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
+  }, [isOpen, isSidebar]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (isSidebar || !isOpen) return;
     const handlePointerOutside = (event: MouseEvent) => {
       if (!isDesktop) return;
       if (
@@ -141,13 +144,147 @@ const ResearchFilterDisclosure = ({
     };
     document.addEventListener('mousedown', handlePointerOutside);
     return () => document.removeEventListener('mousedown', handlePointerOutside);
-  }, [isDesktop, isOpen]);
+  }, [isDesktop, isOpen, isSidebar]);
 
   const emptyMessage = hasFacetError
     ? 'Filter options are temporarily unavailable. Your search still works, and active filters can be cleared.'
     : isApplying
       ? 'Filter options will appear when this search finishes.'
       : 'No additional filters can narrow these results.';
+
+  const facetCountWarning = hasFacetError && (showSchool || showDepartment) && (
+    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      Current filter counts are unavailable. Active values remain clearable.
+    </p>
+  );
+
+  const filterFields =
+    showSchool || showDepartment ? (
+      <fieldset className="min-w-0 space-y-4 border-0 p-0">
+        <legend className="sr-only">Narrow research results</legend>
+        {showSchool && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            School
+            <select
+              ref={firstSchoolRef}
+              aria-label="Filter by school"
+              value={selectedSchool}
+              onChange={(event) => onSchoolChange(event.target.value)}
+              className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              <option value="">All schools</option>
+              {schoolOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.value}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {showDepartment && (
+          <label className="block min-w-0 text-sm font-medium text-slate-800">
+            Department
+            <select
+              ref={!showSchool ? firstDepartmentRef : undefined}
+              aria-label="Filter by department"
+              value={selectedDepartment}
+              onChange={(event) => onDepartmentChange(event.target.value)}
+              className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              <option value="">All departments</option>
+              {departmentOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {departmentLabel(option.value)}
+                  {option.count !== undefined ? ` (${option.count})` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </fieldset>
+    ) : (
+      <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+    );
+
+  const clearAllButton = activeCount > 0 && (
+    <button
+      type="button"
+      onClick={onClearAll}
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+    >
+      Clear all filters
+    </button>
+  );
+
+  const activeChips = activeCount > 0 && (
+    <div
+      className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
+      aria-label="Active research filters"
+    >
+      {selectedSchool && (
+        <button
+          type="button"
+          onClick={() => onSchoolChange('')}
+          aria-label={`Remove School: ${selectedSchool}`}
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">School: {selectedSchool}</span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      )}
+      {selectedDepartment && (
+        <button
+          type="button"
+          onClick={() => onDepartmentChange('')}
+          aria-label={`Remove Department: ${departmentLabel(selectedDepartment)}`}
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">
+            Department: {departmentLabel(selectedDepartment)}
+          </span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClearAll}
+        className="inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-sm font-semibold text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+      >
+        Clear all active filters
+      </button>
+    </div>
+  );
+
+  if (isSidebar) {
+    return (
+      <section aria-label="Research filters" aria-busy={isApplying} className="min-w-0 max-w-full">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <h3 className="text-base font-semibold text-slate-950">Research filters</h3>
+          {activeCount > 0 && (
+            <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
+              {activeCount}
+            </span>
+          )}
+        </div>
+        {isApplying && (
+          <p role="status" className="mt-1 text-xs text-slate-600">
+            Applying filters...
+          </p>
+        )}
+        <div className="mt-4 min-w-0 space-y-4">
+          {facetCountWarning}
+          {filterFields}
+          {clearAllButton}
+        </div>
+        {activeChips}
+      </section>
+    );
+  }
 
   return (
     <div className="mt-3 min-w-0 max-w-full">
@@ -246,116 +383,16 @@ const ResearchFilterDisclosure = ({
               </div>
 
               <div className="min-w-0 space-y-4 p-4">
-                {hasFacetError && (showSchool || showDepartment) && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    Current filter counts are unavailable. Active values remain clearable.
-                  </p>
-                )}
-                {showSchool || showDepartment ? (
-                  <fieldset className="min-w-0 space-y-4 border-0 p-0">
-                    <legend className="sr-only">Narrow research results</legend>
-                    {showSchool && (
-                      <label className="block min-w-0 text-sm font-medium text-slate-800">
-                        School
-                        <select
-                          ref={firstSchoolRef}
-                          aria-label="Filter by school"
-                          value={selectedSchool}
-                          onChange={(event) => onSchoolChange(event.target.value)}
-                          className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                        >
-                          <option value="">All schools</option>
-                          {schoolOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.value}
-                              {option.count !== undefined ? ` (${option.count})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    {showDepartment && (
-                      <label className="block min-w-0 text-sm font-medium text-slate-800">
-                        Department
-                        <select
-                          ref={!showSchool ? firstDepartmentRef : undefined}
-                          aria-label="Filter by department"
-                          value={selectedDepartment}
-                          onChange={(event) => onDepartmentChange(event.target.value)}
-                          className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                        >
-                          <option value="">All departments</option>
-                          {departmentOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {departmentLabel(option.value)}
-                              {option.count !== undefined ? ` (${option.count})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                  </fieldset>
-                ) : (
-                  <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
-                )}
-
-                {activeCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={onClearAll}
-                    className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                  >
-                    Clear all filters
-                  </button>
-                )}
+                {facetCountWarning}
+                {filterFields}
+                {clearAllButton}
               </div>
             </div>
           </>
         )}
       </div>
 
-      {activeCount > 0 && (
-        <div
-          className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2"
-          aria-label="Active research filters"
-        >
-          {selectedSchool && (
-            <button
-              type="button"
-              onClick={() => onSchoolChange('')}
-              aria-label={`Remove School: ${selectedSchool}`}
-              className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              <span className="min-w-0 truncate">School: {selectedSchool}</span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
-          )}
-          {selectedDepartment && (
-            <button
-              type="button"
-              onClick={() => onDepartmentChange('')}
-              aria-label={`Remove Department: ${departmentLabel(selectedDepartment)}`}
-              className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              <span className="min-w-0 truncate">
-                Department: {departmentLabel(selectedDepartment)}
-              </span>
-              <span aria-hidden="true" className="shrink-0">
-                ×
-              </span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClearAll}
-            className="inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-sm font-semibold text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-          >
-            Clear all active filters
-          </button>
-        </div>
-      )}
+      {activeChips}
     </div>
   );
 };
