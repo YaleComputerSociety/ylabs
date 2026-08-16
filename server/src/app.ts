@@ -34,18 +34,24 @@ const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 // No GET routes currently need write-limiter treatment; logout is protected by
 // isTrustedLogoutRequest (Sec-Fetch-Site + Origin/Referer) inside its own handler.
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
-// POST routes that are pure reads (search bodies too rich for a query string).
+// Unsafe-method POSTs that are reads or analytics telemetry, not user mutations.
 // They stay behind the CSRF origin guard and the general per-user limiter, but
-// must not consume the write budget: research search drives the main browse
-// page, so billing it as a write would throttle ordinary browsing at 50/15min.
-const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>(['/research/search']);
+// must not consume the write budget: research/pathway search and the research
+// analytics beacon fire throughout ordinary browsing, so billing them as writes
+// would throttle browsing at 50/15min.
+const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>([
+  '/research/search',
+  '/pathways/search',
+  '/analytics/research',
+  '/users/savedResearchEntityPlans/export',
+  '/users/savedResearchPlanDetails/export',
+  '/users/favPathwayPlans/export',
+]);
 // View-telemetry PUTs fired on every detail-page open. Billing them as writes
 // lets ordinary browsing exhaust the 50/15min budget and 429 the user's real
 // mutations (favorites, tracking, profile edits). They remain under the
 // general per-user limiter.
-const READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS = [
-  /^\/[a-zA-Z]+\/[0-9a-fA-F]{24}\/addView$/,
-];
+const READ_ONLY_UNSAFE_METHOD_API_PATH_PATTERNS = [/^\/[a-zA-Z]+\/[0-9a-fA-F]{24}\/addView$/];
 
 dotenv.config();
 
