@@ -396,6 +396,7 @@ const Research = () => {
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
   const [searchLoading, setSearchLoading] = useState(false);
+  const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(
     () => restoredSnapshotRef.current?.searchError ?? '',
@@ -580,6 +581,7 @@ const Research = () => {
       departmentSearch?: DepartmentSearchTarget | null;
       syncUrl?: boolean;
       filterChanges?: ResearchFilterAnalyticsChange[];
+      preserveResults?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -629,11 +631,16 @@ const Research = () => {
     setQuery(trimmed);
     setSubmittedQuery(resultQueryLabel);
     setDepartmentSearch(options.departmentSearch ?? null);
-    setFacetDistribution({});
+    if (!options.preserveResults) {
+      setFacetDistribution({});
+    }
     setSearchLoading(true);
+    setIsApplyingFilters(Boolean(options.preserveResults));
     setSearchError('');
     setHasFacetError(false);
-    setGroupedResults(emptyGroupedResults(resultQueryLabel));
+    if (!options.preserveResults) {
+      setGroupedResults(emptyGroupedResults(resultQueryLabel));
+    }
     if (options.syncUrl !== false) {
       writeResearchSearchParams(
         {
@@ -733,6 +740,7 @@ const Research = () => {
       if (activeSearchKeyRef.current === requestKey) activeSearchKeyRef.current = null;
       if (requestId === searchRequestIdRef.current && !controller.signal.aborted) {
         setSearchLoading(false);
+        setIsApplyingFilters(false);
       }
     }
   };
@@ -1154,6 +1162,7 @@ const Research = () => {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
+      preserveResults: true,
     });
   };
   const runDepartmentSearch = (target: DepartmentSearchTarget) =>
@@ -1219,6 +1228,30 @@ const Research = () => {
     }
   };
 
+  const [isWideFilterLayout, setIsWideFilterLayout] = useState(
+    () => window.matchMedia?.('(min-width: 1536px)').matches ?? false,
+  );
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(min-width: 1536px)');
+    if (!mediaQuery) return;
+    const handleChange = (event: MediaQueryListEvent) => setIsWideFilterLayout(event.matches);
+    setIsWideFilterLayout(mediaQuery.matches);
+    mediaQuery.addEventListener?.('change', handleChange);
+    return () => mediaQuery.removeEventListener?.('change', handleChange);
+  }, []);
+
+  const researchFilterProps = {
+    facetDistribution,
+    selectedSchool,
+    selectedDepartment,
+    isApplying: searchLoading,
+    hasFacetError,
+    departmentLabel: departmentFacetLabel,
+    onSchoolChange: (school: string) => applyStudentFacets(school, selectedDepartment),
+    onDepartmentChange: (department: string) => applyStudentFacets(selectedSchool, department),
+    onClearAll: () => applyStudentFacets('', ''),
+  };
+
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
@@ -1230,7 +1263,9 @@ const Research = () => {
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
+              className={`mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base ${
+                hasSubmittedSearch ? '2xl:hidden' : ''
+              }`}
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
@@ -1272,28 +1307,36 @@ const Research = () => {
               <p id="research-search-help" className="mt-2 text-sm text-slate-600">
                 {searchHelpText}
               </p>
-              <div
-                className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
-                aria-label="Suggested research searches"
-              >
-                <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
-                <div className="flex flex-wrap gap-2">
-                  {QUICK_START_PROMPTS.map((prompt) => (
-                    <button
-                      key={prompt.query}
-                      type="button"
-                      onClick={() => {
-                        setQuery(prompt.query);
-                        runSearch(prompt.query);
-                      }}
-                      className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                    >
-                      {prompt.label}
-                    </button>
-                  ))}
+              {!hasSubmittedSearch && (
+                <div
+                  className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+                  aria-label="Suggested research searches"
+                >
+                  <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_START_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt.query}
+                        type="button"
+                        onClick={() => {
+                          setQuery(prompt.query);
+                          runSearch(prompt.query);
+                        }}
+                        className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      >
+                        {prompt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </form>
+
+            {hasSubmittedSearch && isWideFilterLayout && (
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6">
+                <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
+              </div>
+            )}
           </header>
 
           <div className="min-w-0">
@@ -1436,19 +1479,7 @@ const Research = () => {
                   </div>
                 </div>
 
-                <ResearchFilterDisclosure
-                  facetDistribution={facetDistribution}
-                  selectedSchool={selectedSchool}
-                  selectedDepartment={selectedDepartment}
-                  isApplying={searchLoading}
-                  hasFacetError={hasFacetError}
-                  departmentLabel={departmentFacetLabel}
-                  onSchoolChange={(school) => applyStudentFacets(school, selectedDepartment)}
-                  onDepartmentChange={(department) =>
-                    applyStudentFacets(selectedSchool, department)
-                  }
-                  onClearAll={() => applyStudentFacets('', '')}
-                />
+                {!isWideFilterLayout && <ResearchFilterDisclosure {...researchFilterProps} />}
 
                 {searchError && (
                   <div
@@ -1469,7 +1500,12 @@ const Research = () => {
                     </div>
                   ) : activeResults.clusters.length > 0 ? (
                     <>
-                      <div className="grid gap-5">
+                      <div
+                        aria-busy={isApplyingFilters}
+                        className={`grid gap-5 transition-opacity ${
+                          isApplyingFilters ? 'opacity-50' : ''
+                        }`}
+                      >
                         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
                           {activeResults.clusters.map((cluster) => (
                             <ResearchHomeCard
@@ -1481,7 +1517,7 @@ const Research = () => {
                           ))}
                         </div>
                       </div>
-                      {searchLoading && activeResults.clusters.length > 0 && (
+                      {searchLoading && !isApplyingFilters && activeResults.clusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
