@@ -18,7 +18,7 @@
     "axios": "^1.18.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.18.1",
+    "react-router-dom": "^7.18.2",
     "react-spinners": "^0.17.0",
     "react-virtuoso": "^4.18.5",
     "styled-components": "^6.1.19",
@@ -67,13 +67,15 @@
   },
   "resolutions": {
     "form-data": "4.0.6",
-    "undici": "7.28.0",
-    "brace-expansion": "5.0.8",
+    "undici": "7.29.0",
+    "brace-expansion": "5.0.9",
     "glob": "13.0.6",
-    "ip-address": "10.2.0",
+    "ip-address": "10.3.1",
     "minimatch": "10.2.5",
+    "nanoid": "3.3.18",
     "picomatch": "4.0.4",
     "postcss": "8.5.23",
+    "react-router": "7.18.2",
     "tar": "7.5.22",
     "yaml": "1.10.3"
   }
