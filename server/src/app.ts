@@ -14,7 +14,6 @@ import routes from './routes/index';
 import cookieSession from 'cookie-session';
 import dotenv from 'dotenv';
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'fs/promises';
 import { BlockList, isIP } from 'node:net';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -25,12 +24,6 @@ import { csrfOriginGuard } from './middleware/csrfOriginGuard';
 import { createCorsOriginHandler } from './middleware/corsOrigin';
 import { sessionCookieName } from './utils/sessionCookie';
 import { createRateLimitHandler } from './middleware/rateLimitResponse';
-import { getResearchGroupBySlug } from './services/researchGroupService';
-import {
-  buildPublicResearchSeoMetadata,
-  injectSeoMetadata,
-  resolvePublicBaseUrl,
-} from './utils/publicResearchSeo';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDistPath = path.join(__dirname, '../../client/dist');
@@ -42,9 +35,9 @@ const SAFE_RATE_LIMIT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 // isTrustedLogoutRequest (Sec-Fetch-Site + Origin/Referer) inside its own handler.
 const WRITE_LIKE_SAFE_METHOD_API_PATHS = new Set<string>();
 // POST routes that are pure reads (search bodies too rich for a query string).
-// They stay behind the CSRF origin guard and their surface limiter, but must
-// not consume the write budget: research search is public and uses the
-// anonymous discovery budget, so 50/15min would throttle the main browse page.
+// They stay behind the CSRF origin guard and the general per-user limiter, but
+// must not consume the write budget: research search drives the main browse
+// page, so billing it as a write would throttle ordinary browsing at 50/15min.
 const READ_ONLY_UNSAFE_METHOD_API_PATHS = new Set<string>(['/research/search']);
 // View-telemetry PUTs fired on every detail-page open. Billing them as writes
 // lets ordinary browsing exhaust the 50/15min budget and 429 the user's real
@@ -182,15 +175,12 @@ const getRateLimitKey = (req: express.Request): string => {
 // general limiter.
 const isCasLoginCallback = (req: express.Request): boolean => req.path === '/cas';
 
-// Surfaces governed by publicDiscoveryLimiter below; exempt from the general
-// limiter so the discovery budget is the single, deliberately sized cap for
-// the anonymous browse experience. Both mounts hold only public
-// search/detail reads.
-const isPublicDiscoveryPath = (req: express.Request): boolean =>
-  req.path === '/research' ||
-  req.path.startsWith('/research/') ||
-  req.path === '/opportunities' ||
-  req.path.startsWith('/opportunities/');
+// A 5xx is our failure, not the caller's: counting it against their budget
+// turns a transient outage (e.g. a MongoDB reconnect returning 503) into a
+// full-window lockout on a backend that has already recovered. 4xx still
+// counts so genuine abuse and bad input remain limited.
+const requestWasSuccessful = (_req: express.Request, res: express.Response): boolean =>
+  res.statusCode < 500;
 
 // General rate limiter: 200 requests per 15 minutes per validated session bucket.
 const apiLimiter = rateLimit({
@@ -199,9 +189,11 @@ const apiLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skipFailedRequests: true,
+  requestWasSuccessful,
   message: { error: 'Too many requests, please try again later.' },
   handler: createRateLimitHandler('Too many requests, please try again later.'),
-  skip: (req) => bypassRuntimeSecurity || isCasLoginCallback(req) || isPublicDiscoveryPath(req),
+  skip: (req) => bypassRuntimeSecurity || isCasLoginCallback(req),
 });
 
 // Write limiter for API mutations
@@ -211,23 +203,10 @@ const writeLimiter = rateLimit({
   keyGenerator: getRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  skipFailedRequests: true,
+  requestWasSuccessful,
   message: { error: 'Too many write requests, please try again later.' },
   handler: createRateLimitHandler('Too many write requests, please try again later.'),
-  skip: () => bypassRuntimeSecurity,
-});
-
-// Public discovery endpoints (research/opportunity search + detail) are the
-// sole rate budget for the anonymous browse surface. The ceiling must absorb
-// debounced search-as-you-type, filter toggles, infinite scroll, and detail
-// views; the fan-out behind it is Meilisearch, which is cheap.
-const publicDiscoveryLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  keyGenerator: getRateLimitKey,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many discovery requests, please try again later.' },
-  handler: createRateLimitHandler('Too many discovery requests, please try again later.'),
   skip: () => bypassRuntimeSecurity,
 });
 
@@ -382,8 +361,6 @@ const app = express()
   .use(passport.session())
   .use('/api', sanitizeMongo)
   .use('/api', apiLimiter)
-  .use('/api/research', publicDiscoveryLimiter)
-  .use('/api/opportunities', publicDiscoveryLimiter)
   .use('/api', (req, res, next) => {
     if (!shouldApplyWriteLimiter(req)) {
       return next();
@@ -395,35 +372,6 @@ const app = express()
 
 app.use('/api', notFoundHandler);
 
-const sendPublicResearchIndex = async (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  try {
-    const indexHtml = await readFile(clientIndexPath, 'utf8');
-    let researchEntity = null;
-
-    if (req.params.slug) {
-      try {
-        researchEntity = await getResearchGroupBySlug(req.params.slug);
-      } catch (error) {
-        console.error('Unable to load public research SEO metadata:', error);
-      }
-    }
-
-    const metadata = buildPublicResearchSeoMetadata({
-      baseUrl: resolvePublicBaseUrl(req),
-      path: req.path,
-      researchEntity,
-    });
-
-    res.type('html').send(injectSeoMetadata(indexHtml, metadata));
-  } catch (error) {
-    next(error);
-  }
-};
-
 app.use(blockSourceMapAssetRequests);
 app.use(setOAuthCallbackAssetCacheHeaders);
 app.use(
@@ -433,9 +381,6 @@ app.use(
     index: false,
   }),
 );
-
-app.get('/research', sendPublicResearchIndex);
-app.get('/research/:slug', sendPublicResearchIndex);
 
 app.get('*', (req, res) => {
   if (!shouldServeSpaFallback(req)) {
