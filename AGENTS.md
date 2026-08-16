@@ -78,3 +78,19 @@ Do not use subagents for tightly coupled changes, tiny tasks, or decisions that 
 When using git worktrees, subagents work in isolated worktrees.
 The main thread reviews, tests, and integrates accepted work back into the active branch before calling the task done.
 If integration is unsafe, stop and report the blocker instead of leaving finished work stranded.
+
+### Worktree workflow
+
+Each parallel workstream gets its own git worktree and branch so agents can run and test independently at the same time.
+
+- The primary checkout (`~/Personal/ylabs`) is the integration and review spot only.
+Never `git switch`, commit, or edit feature work directly in it.
+Multiple agents sharing one checkout will switch branches under each other and serve the wrong code.
+- Create one worktree plus branch per workstream, based on `beta`:
+`scripts/new-agent-worktree.sh <branch-name>`.
+The helper creates the worktree, runs `yarn install:all` so dependencies are fully isolated, and reserves a free client dev-server port.
+- Do not symlink `node_modules` between worktrees when running dev servers concurrently.
+They share Vite's `node_modules/.vite` cache and clobber each other.
+A real per-worktree install is the isolation boundary.
+- Run each worktree's client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
+- Integrate an approved branch by merging or landing its pull request, then remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.

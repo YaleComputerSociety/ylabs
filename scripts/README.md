@@ -17,6 +17,7 @@ Check this inventory before deleting or moving anything in this directory.
 | `security-preflight.test.mjs` | Root `security:policy` script and broad security policy coverage. |
 | `unified-research-search-audit.mjs` | Root `audit:unified-research` script. |
 | `with-playwright-libs.sh` | Root `playwright:run` wrapper and Playwright MCP setup helper. |
+| `new-agent-worktree.sh` | Creates an isolated git worktree + branch off `beta`, installs dependencies, and reserves a free client dev-server port for parallel agent work. See the Worktree workflow in `AGENTS.md`. |
 
 The root audit scripts are intentionally kept here because they exercise the built application across client and server boundaries.
 Server-only data repair, scraper, and migration commands belong under `server/src/scripts/`.
