@@ -119,7 +119,7 @@
     "mongoose": "^8.9.5",
     "passport": "^0.7.0",
     "passport-cas": "git+https://github.com/coursetable/passport-cas#79612f1",
-    "pdfjs-dist": "^5.4.54"
+    "pdfjs-dist": "^6.2.108"
   },
   "resolutions": {
     "form-data": "4.0.6",
