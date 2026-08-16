@@ -87,13 +87,13 @@ Use `assertPublicHttpUrl`, `ssrfSafeLookup`, and `ssrfSafeAgents` as appropriate
 
 Rate limiters are keyed by authenticated user's normalized `netId`, then by a server-generated high-entropy identifier in the signed cookie session, with IP fallback when no valid signed session is available.
 The anonymous identifier is initialized only for `/api` requests.
-This prevents shared proxy buckets without trusting forwarding headers, but clearing the session cookie lets an anonymous visitor rotate their bucket.
+This prevents shared proxy buckets without trusting forwarding headers.
 All limiters are skipped in CI, development, and test.
+Responses with a `5x` status do not count against a caller's budget (`skipFailedRequests` with `requestWasSuccessful` = status under 500), so a transient backend outage (e.g. a MongoDB reconnect returning 503) cannot lock a user out for the rest of the window; `4xx` still counts.
 
 | Limiter | Scope | Limit |
 |---------|-------|-------|
-| `apiLimiter` | All `/api` except `/api/cas` and public discovery mounts. | 200 per 15 minutes. |
-| `publicDiscoveryLimiter` | `/api/research` and `/api/opportunities`. | 300 per 15 minutes. |
+| `apiLimiter` | All `/api` except `/api/cas`. | 200 per 15 minutes. |
 | `writeLimiter` | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes. |
 
 Faculty opportunity routes repeat ownership and conflict checks in the service layer.
