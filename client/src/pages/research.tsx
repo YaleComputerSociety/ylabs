@@ -1254,7 +1254,9 @@ const Research = () => {
             </h1>
             <p
               id="research-search-context"
-              className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base"
+              className={`mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base ${
+                hasSubmittedSearch ? '2xl:hidden' : ''
+              }`}
             >
               Search by interest, professor, course topic, method, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
@@ -1296,27 +1298,29 @@ const Research = () => {
               <p id="research-search-help" className="mt-2 text-sm text-slate-600">
                 {searchHelpText}
               </p>
-              <div
-                className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
-                aria-label="Suggested research searches"
-              >
-                <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
-                <div className="flex flex-wrap gap-2">
-                  {QUICK_START_PROMPTS.map((prompt) => (
-                    <button
-                      key={prompt.query}
-                      type="button"
-                      onClick={() => {
-                        setQuery(prompt.query);
-                        runSearch(prompt.query);
-                      }}
-                      className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                    >
-                      {prompt.label}
-                    </button>
-                  ))}
+              {!hasSubmittedSearch && (
+                <div
+                  className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"
+                  aria-label="Suggested research searches"
+                >
+                  <span className="yr-kicker text-[0.7rem]">Try a starting point</span>
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_START_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt.query}
+                        type="button"
+                        onClick={() => {
+                          setQuery(prompt.query);
+                          runSearch(prompt.query);
+                        }}
+                        className="yr-pill yr-pill-blue min-h-[44px] rounded-md px-3 py-2 transition-colors hover:border-blue-300 hover:bg-[var(--yr-panel)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                      >
+                        {prompt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </form>
 
             {hasSubmittedSearch && isWideFilterLayout && (
