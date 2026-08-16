@@ -215,7 +215,7 @@ describe('pathwaySearchIndexService', () => {
     expect(doc.studentPublishable).toBe(false);
   });
 
-  it('publishes an approved faculty pathway only with a current linked opportunity', () => {
+  it('does not publish an approved faculty pathway with a current linked opportunity', () => {
     const [doc] = buildPathwaySearchIndexDocuments([
       {
         _id: 'faculty-opportunity-pathway',
@@ -239,7 +239,7 @@ describe('pathwaySearchIndexService', () => {
       },
     ]);
 
-    expect(doc.studentPublishable).toBe(true);
+    expect(doc.studentPublishable).toBe(false);
   });
 
   it('does not publish a faculty pathway from a linked legacy opportunity', () => {

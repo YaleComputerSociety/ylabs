@@ -59,7 +59,7 @@ describe('opportunityDetailService', () => {
     expect(calls).toEqual([]);
   });
 
-  it('preserves legacy detail visibility while gating faculty submissions', async () => {
+  it('preserves source-discovered detail visibility while excluding faculty submissions', async () => {
     const calls: any[] = [];
     const id = new Types.ObjectId().toString();
 
@@ -69,17 +69,10 @@ describe('opportunityDetailService', () => {
 
     expect(detail).toBeNull();
     expect(String(calls[0].filter._id)).toBe(id);
-    expect(calls[0].filter.$or[0]).toEqual({
+    expect(calls[0].filter).toMatchObject({
       origin: { $ne: 'FACULTY_SUBMITTED' },
       archived: false,
     });
-    expect(calls[0].filter.$or[1]).toMatchObject({
-      origin: 'FACULTY_SUBMITTED',
-      archived: false,
-      status: { $in: ['OPEN', 'ROLLING'] },
-      'review.status': 'approved',
-    });
-    expect(calls[0].filter.$or[1].$or[2].deadline.$gte).toBeInstanceOf(Date);
   });
 
   it('requires public student visibility for the host research entity', async () => {

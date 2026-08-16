@@ -85,7 +85,7 @@ describe('planningContextService qualification policy', () => {
     expect(contexts.size).toBe(1);
   });
 
-  it('qualifies an approved faculty-submitted HTTPS form through the shared projection', () => {
+  it('rejects an approved faculty-submitted HTTPS form', () => {
     const context = selectPlanningContexts({
       pathways: [
         {
@@ -113,11 +113,7 @@ describe('planningContextService qualification policy', () => {
       routes: [],
     }).get(entityId.toString());
 
-    expect(context).toEqual({
-      category: 'open_position',
-      label: 'Open position',
-      url: 'https://forms.office.com/r/AbCdEf1234',
-    });
+    expect(context).toBeUndefined();
   });
 
   it('does not let an opportunity-managed pathway qualify before its posting is approved', () => {

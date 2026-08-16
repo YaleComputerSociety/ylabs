@@ -226,24 +226,7 @@ describe('pathwaySearchService', () => {
     const pipeline = mocks.aggregate.mock.calls[0][0];
     expect(pipeline[0].$match).toMatchObject({
       archived: { $ne: true },
-      $or: [
-        { derivationKey: { $not: /^faculty-opportunity:/ } },
-        {
-          derivationKey: /^faculty-opportunity:/,
-          'review.status': 'approved',
-        },
-      ],
-    });
-    expect(pipeline).toContainEqual({
-      $match: {
-        $or: [
-          { derivationKey: { $not: /^faculty-opportunity:/ } },
-          {
-            derivationKey: /^faculty-opportunity:/,
-            'activePostedOpportunity.origin': 'FACULTY_SUBMITTED',
-          },
-        ],
-      },
+      derivationKey: { $not: /^faculty-opportunity:/ },
     });
     const facetStage = pipeline.find((stage: any) => stage.$facet);
     expect(facetStage.$facet.hits).toEqual(

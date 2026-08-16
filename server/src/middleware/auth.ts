@@ -129,46 +129,6 @@ export const canCreateListing = (
 };
 
 /**
- * Faculty opportunity writes are intentionally narrower than legacy listing
- * creation. Administrators moderate these records through the review queue,
- * but only verified faculty principals may author them.
- */
-export const canManagePostedOpportunities = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  const currentUser = req.user as AuthenticatedUser;
-
-  if (!hasAuthenticatedPrincipal(currentUser)) {
-    return sendAuthRequired(res);
-  }
-
-  if (!['professor', 'faculty'].includes(String(currentUser.userType ?? ''))) {
-    return res.status(403).json({
-      error: 'Verified faculty access is required',
-      code: 'FACULTY_ACCESS_REQUIRED',
-    });
-  }
-
-  if (currentUser.userConfirmed !== true) {
-    return res.status(403).json({
-      error: 'Account confirmation is required',
-      code: 'ACCOUNT_CONFIRMATION_REQUIRED',
-    });
-  }
-
-  if (currentUser.profileVerified !== true) {
-    return res.status(403).json({
-      error: 'Faculty profile verification is required',
-      code: 'PROFILE_VERIFICATION_REQUIRED',
-    });
-  }
-
-  next();
-};
-
-/**
  * Middleware to check if user can submit listing claim/correction requests.
  * These requests create admin-review work items, so they are limited to
  * confirmed faculty/staff/operator accounts rather than all authenticated users.

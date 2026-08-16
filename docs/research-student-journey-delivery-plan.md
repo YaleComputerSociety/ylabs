@@ -338,12 +338,9 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### SM-07 - Faculty Posts A Real Opportunity - FR-32
 
-- **Status:** Implemented.
-- **Depends on:** confirmed professor/faculty authorization, verified profile readiness, canonical entity ownership/claim resolution, and PostedOpportunity validation.
-- **Acceptance criteria:** a CAS-authenticated, confirmed, authorized faculty user can create a bounded real posting linked to a canonical entity; students, unknown users, unconfirmed accounts, and unverified owners are denied server-side; preview, deadline/status, application route, archive, audit, and public visibility behavior are explicit; creation does not bypass evidence or moderation policy.
-- **Validation evidence:** issue `#182` adds authoritative verified-faculty and ownership checks, private preview and draft editing, idempotent creation, revision-guarded submission and lifecycle actions, synchronized moderation review, approved-only public projection, and focused server/client coverage for denial, validation, review, expiration, redaction, and optional search enrichment.
-- **PRs:** [#153](https://github.com/YaleComputerSociety/ylabs/pull/153) and [#160](https://github.com/YaleComputerSociety/ylabs/pull/160) are dependencies; [#182](https://github.com/YaleComputerSociety/ylabs/issues/182) tracks this implementation.
-- **CAS boundary:** this is never an anonymous capability.
+- **Status:** Retired.
+- **Current contract:** Yale Research does not host faculty-authored opportunities.
+  See the source-driven catalog decision in [`decisions.md`](./decisions.md).
 
 #### SM-08 - Pending-Confirmation Path Forward - FR-35
 

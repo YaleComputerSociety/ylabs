@@ -2361,6 +2361,10 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
     new URL('../server/src/routes/opportunities.ts', import.meta.url),
     'utf8',
   );
+  const listingsRouteSource = fs.readFileSync(
+    new URL('../server/src/routes/listings.ts', import.meta.url),
+    'utf8',
+  );
 
   assert.match(source, /const SAFE_REGEX_OPTIONS = new Set\(\['i', 'm', 's', 'x'\]\)/);
   assert.match(source, /const normalizeRegexOptions = \(options: string\): string => \{/);
@@ -2372,10 +2376,10 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
   );
   assert.ok(middlewareImport, 'opportunity routes must import the shared middleware boundary');
   assert.match(middlewareImport[1], /\basyncHandler\b/);
-  assert.match(middlewareImport[1], /\bcanManagePostedOpportunities\b/);
-  assert.match(middlewareImport[1], /\bisAuthenticated\b/);
-  assert.match(middlewareImport[1], /\brequireBody\b/);
   assert.match(middlewareImport[1], /\bvalidateObjectId\b/);
+  assert.doesNotMatch(opportunitiesRouteSource, /router\.(post|put|patch|delete)\(/);
+  assert.doesNotMatch(opportunitiesRouteSource, /canManagePostedOpportunities/);
+  assert.doesNotMatch(listingsRouteSource, /listingController\.(create|update|archive|unarchive)/);
   assert.match(
     opportunitiesRouteSource,
     /router\.get\(\s*'\/:id',\s*setPublicDetailCacheHeaders,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/,

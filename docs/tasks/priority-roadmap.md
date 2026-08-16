@@ -35,6 +35,7 @@ Active themes:
 - Improve evidence trust: dedupe repeated evidence, distinguish synthesized fallback from observed access evidence, and show observed/freshness dates.
 - Keep the operator gate flow compact and artifact-driven without committing transient reports.
 - Reduce maintenance surface by deleting obsolete docs, screenshots, proposals, dead routes, dead indexes, and unused dependencies.
+- Keep research coverage source-driven, remove faculty-authored submission surfaces, and repair missing professors through bounded targeted backfills.
 
 ## Completed Repository Foundations
 
@@ -71,7 +72,8 @@ They do not claim configured private environments, delivered telemetry, outage e
 - Beta is the staging gate.
 - Production promotion requires a human-reviewed Atlas restore point, guarded copy dry-run, rollback posture, and production smoke result.
 - Scraper and repair writes must be evidence-first, dry-run-first, and fail closed on contact data.
-- Faculty-authored opportunities require verified ownership, private drafts, revision-guarded writes, admin moderation, and approved-current publication before search or student-facing enrichment.
+- Research homes and opportunities are source-discovered.
+  Yale Research does not host faculty-authored submissions, while verified official application URLs remain outbound student actions.
 - Bibliographic ingestion and publication-derived ranking are retired.
   Official Yale, Google Scholar, and ORCID profiles are outbound links under the accepted research-model boundary, and later cleanup remains gated by the migration execution status.
 - Do not run production writes, production copies, destructive migrations, retention apply jobs, or data deletion without explicit user direction.

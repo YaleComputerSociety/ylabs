@@ -55,7 +55,7 @@ const sampleData: AnalyticsData = {
     newUsersTodayByType: [],
   },
   researchEntities: {
-    overview: { active: 40, archived: 5, total: 45 },
+    overview: { active: 40, total: 40 },
     byType: [{ entityType: 'LAB', count: 30 }],
     byVisibilityTier: [{ tier: 'student_ready', count: 12 }],
     byOpenness: [{ status: 'unknown', count: 25 }],

@@ -44,8 +44,6 @@ Defined in `server/src/middleware/auth.ts`.
 | `isProfessor` | `userType` is `professor`, `faculty`, or `admin`. |
 | `isTrustworthy` | confirmed admin, professor, or faculty. |
 | `isConfirmed` | `userConfirmed === true`. |
-| `canCreateListing` | professor, faculty, or admin plus confirmed user and verified profile. |
-| `canManagePostedOpportunities` | professor or faculty plus confirmed user and verified profile; admins moderate but cannot author. |
 
 Client route guards:
 
@@ -96,8 +94,8 @@ All limiters are skipped in CI, development, and test.
 | `publicDiscoveryLimiter` | `/api/research` and `/api/opportunities`. | 300 per 15 minutes. |
 | `writeLimiter` | Non-GET API routes, except known read-shaped unsafe methods. | 50 per 15 minutes. |
 
-Faculty opportunity routes repeat ownership and conflict checks in the service layer.
-Only current, non-archived PI, co-PI, director, or co-director memberships tied to the authenticated user qualify, and identity conflicts fail closed.
+Yale Research has no faculty lab or opportunity authoring routes.
+Source-discovered opportunity detail is public and returns only the student-safe projection.
 
 ## Error handling
 
