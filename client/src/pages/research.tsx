@@ -396,6 +396,7 @@ const Research = () => {
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
   const [searchLoading, setSearchLoading] = useState(false);
+  const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(
     () => restoredSnapshotRef.current?.searchError ?? '',
@@ -580,6 +581,7 @@ const Research = () => {
       departmentSearch?: DepartmentSearchTarget | null;
       syncUrl?: boolean;
       filterChanges?: ResearchFilterAnalyticsChange[];
+      preserveResults?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -629,11 +631,16 @@ const Research = () => {
     setQuery(trimmed);
     setSubmittedQuery(resultQueryLabel);
     setDepartmentSearch(options.departmentSearch ?? null);
-    setFacetDistribution({});
+    if (!options.preserveResults) {
+      setFacetDistribution({});
+    }
     setSearchLoading(true);
+    setIsApplyingFilters(Boolean(options.preserveResults));
     setSearchError('');
     setHasFacetError(false);
-    setGroupedResults(emptyGroupedResults(resultQueryLabel));
+    if (!options.preserveResults) {
+      setGroupedResults(emptyGroupedResults(resultQueryLabel));
+    }
     if (options.syncUrl !== false) {
       writeResearchSearchParams(
         {
@@ -733,6 +740,7 @@ const Research = () => {
       if (activeSearchKeyRef.current === requestKey) activeSearchKeyRef.current = null;
       if (requestId === searchRequestIdRef.current && !controller.signal.aborted) {
         setSearchLoading(false);
+        setIsApplyingFilters(false);
       }
     }
   };
@@ -1154,6 +1162,7 @@ const Research = () => {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       filterChanges,
+      preserveResults: true,
     });
   };
   const runDepartmentSearch = (target: DepartmentSearchTarget) =>
@@ -1491,7 +1500,12 @@ const Research = () => {
                     </div>
                   ) : activeResults.clusters.length > 0 ? (
                     <>
-                      <div className="grid gap-5">
+                      <div
+                        aria-busy={isApplyingFilters}
+                        className={`grid gap-5 transition-opacity ${
+                          isApplyingFilters ? 'opacity-50' : ''
+                        }`}
+                      >
                         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
                           {activeResults.clusters.map((cluster) => (
                             <ResearchHomeCard
@@ -1503,7 +1517,7 @@ const Research = () => {
                           ))}
                         </div>
                       </div>
-                      {searchLoading && activeResults.clusters.length > 0 && (
+                      {searchLoading && !isApplyingFilters && activeResults.clusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
