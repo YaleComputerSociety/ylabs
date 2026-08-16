@@ -719,7 +719,7 @@ export function deriveAccessArtifactsFromObservations(
  * the student can plan specific outreach to a named faculty mentor whose
  * documented work matches their interest. This is the same EXPLORATORY_CONTACT
  * framing the observation pipeline already produces for current-undergrad /
- * accepting / past-advisee evidence — extended to the common case where the
+ * accepting / past-advisee evidence - extended to the common case where the
  * only evidence is the faculty member's own official research page.
  *
  * Excluded by design: programs/fellowships (own program logic), core
@@ -743,7 +743,7 @@ const IDENTIFIED_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']
 
 /**
  * Organizational research homes (centers, institutes, initiatives, core
- * facilities) are institutionally contactable via their official page — so they
+ * facilities) are institutionally contactable via their official page - so they
  * get a center-level ways-in even when no single named director is published.
  */
 const ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES = new Set([
@@ -1076,8 +1076,8 @@ export async function deriveAccessArtifactsForResearchGroup(
   // action evidence), a research home with an identified faculty lead and an
   // official source page is still a legitimate, evidence-based exploratory
   // contact route. This removes the dominant `missing_action_evidence` blocker
-  // for real faculty research homes — including those left with only empty-URL
-  // legacy pathways — without manufacturing undergrad-access claims.
+  // for real faculty research homes - including those left with only empty-URL
+  // legacy pathways - without manufacturing undergrad-access claims.
   const hasQualifyingPathway = artifacts.entryPathways.some((pathway) =>
     (pathway.sourceUrls || []).some((url) => /^https?:\/\//i.test(String(url || ''))),
   );
