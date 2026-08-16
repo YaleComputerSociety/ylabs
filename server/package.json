@@ -20,6 +20,7 @@
     "research-entity:duplicate-name-review": "tsx src/scripts/duplicateEntityNameReview.ts",
     "research-entity:disambiguate-surname-labs": "tsx src/scripts/disambiguateSurnameLabNames.ts",
     "research-entity:repair-archived-artifacts": "tsx src/scripts/repairArchivedEntityArtifacts.ts",
+    "research-entity:cleanup-archived": "tsx src/scripts/cleanupArchivedResearchEntities.ts",
     "research-entity-members:audit-user-refs": "tsx src/scripts/researchEntityMemberReferenceAudit.ts",
     "research-entity:audit-lead-identity": "tsx src/scripts/leadIdentityConsistencyAudit.ts",
     "research-homes:audit-rosters": "tsx src/scripts/researchHomeRosterAudit.ts",
