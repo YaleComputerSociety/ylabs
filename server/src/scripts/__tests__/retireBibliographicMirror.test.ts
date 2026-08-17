@@ -163,7 +163,9 @@ describe('retireBibliographicMirror with MongoDB', () => {
     await expect(db.collection('papers').countDocuments()).resolves.toBe(2);
     await expect(db.collection('paper_authors').countDocuments()).resolves.toBe(1);
     await expect(db.collection('research_scholarly_links').countDocuments()).resolves.toBe(3);
-    await expect(db.collection('research_scholarly_attributions').countDocuments()).resolves.toBe(3);
+    await expect(db.collection('research_scholarly_attributions').countDocuments()).resolves.toBe(
+      3,
+    );
     const user = await db.collection('users').findOne({ netid: 'synthetic.person' });
     expect(user?.hIndex).toBe(7);
   });
@@ -208,7 +210,9 @@ describe('retireBibliographicMirror with MongoDB', () => {
     expect(entity?.lastPaperAtCache).toBeUndefined();
     expect(entity?.name).toBe('Synthetic Home');
 
-    expect(result.after.officialProfileScholarlyLinks).toBe(result.before.officialProfileScholarlyLinks);
+    expect(result.after.officialProfileScholarlyLinks).toBe(
+      result.before.officialProfileScholarlyLinks,
+    );
     expect(result.after.nonOfficialScholarlyLinks).toBe(0);
   });
 });

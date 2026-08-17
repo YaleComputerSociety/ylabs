@@ -53,10 +53,7 @@ import {
   type PublicResearchEntityDto,
   type PublicResearchEntitySummaryDto,
 } from './researchEntityDto';
-import {
-  isPublicResearchPaperLink,
-  scholarlyLinkToPublicLink,
-} from './profileService';
+import { isPublicResearchPaperLink, scholarlyLinkToPublicLink } from './profileService';
 import {
   isLikelyPublicProfileImageUrl,
   isSharedProfileImageAcrossDifferentNames,

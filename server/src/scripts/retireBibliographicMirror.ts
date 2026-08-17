@@ -120,18 +120,23 @@ async function countCollection(
 }
 
 async function snapshotCounts(db: MongoDb): Promise<RetireBibliographicMirrorCounts> {
-  const [papers, paperAuthors, officialProfileScholarlyLinks, nonOfficialScholarlyLinks, scholarlyAttributions] =
-    await Promise.all([
-      countCollection(db, 'papers'),
-      countCollection(db, 'paper_authors'),
-      countCollection(db, 'research_scholarly_links', {
-        discoveredVia: OFFICIAL_PROFILE_DISCOVERED_VIA,
-      }),
-      countCollection(db, 'research_scholarly_links', {
-        discoveredVia: { $ne: OFFICIAL_PROFILE_DISCOVERED_VIA },
-      }),
-      countCollection(db, 'research_scholarly_attributions'),
-    ]);
+  const [
+    papers,
+    paperAuthors,
+    officialProfileScholarlyLinks,
+    nonOfficialScholarlyLinks,
+    scholarlyAttributions,
+  ] = await Promise.all([
+    countCollection(db, 'papers'),
+    countCollection(db, 'paper_authors'),
+    countCollection(db, 'research_scholarly_links', {
+      discoveredVia: OFFICIAL_PROFILE_DISCOVERED_VIA,
+    }),
+    countCollection(db, 'research_scholarly_links', {
+      discoveredVia: { $ne: OFFICIAL_PROFILE_DISCOVERED_VIA },
+    }),
+    countCollection(db, 'research_scholarly_attributions'),
+  ]);
 
   return {
     papers,
@@ -201,7 +206,11 @@ export async function retireBibliographicMirror(options: {
     }
 
     unsetUserFields = await unsetFields(db, 'users', RETIRED_USER_FIELDS);
-    unsetResearchEntityFields = await unsetFields(db, 'research_entities', RETIRED_RESEARCH_ENTITY_FIELDS);
+    unsetResearchEntityFields = await unsetFields(
+      db,
+      'research_entities',
+      RETIRED_RESEARCH_ENTITY_FIELDS,
+    );
   }
 
   const after = await snapshotCounts(db);

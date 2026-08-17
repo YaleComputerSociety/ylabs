@@ -1886,7 +1886,6 @@ describe('buildResearchActivityLinkPayload', () => {
       }),
     ]);
   });
-
 });
 
 describe('publicMemberUserForRow', () => {

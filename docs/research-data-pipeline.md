@@ -134,8 +134,6 @@ Runtime research discovery is centered on:
 - `posted_opportunities`
 - `undergraduate_logistics_claims`
 - `users`
-- `papers`
-- `paper_authors`
 - `fellowships`
 - `sources`
 - `scrape_runs`
