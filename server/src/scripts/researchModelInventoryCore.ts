@@ -172,6 +172,13 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     target: 'ContactRoute (retained)',
   },
   {
+    collection: 'undergraduate_logistics_claims',
+    model: 'UndergraduateLogisticsClaim',
+    group: 'canonical-domain',
+    phase: 4,
+    target: 'UndergraduateLogisticsClaim (retained)',
+  },
+  {
     collection: 'admin_grants',
     model: 'AdminGrant',
     group: 'canonical-domain',
