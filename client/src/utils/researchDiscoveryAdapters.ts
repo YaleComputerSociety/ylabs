@@ -491,9 +491,6 @@ export const buildResearchHomeEvidenceStatus = (
   entity: ResearchEntity | undefined,
   pathways: PathwaySearchHit[],
 ): ResearchHomeEvidenceStatus => {
-  if ((entity?.recentPaperCount || 0) > 0) {
-    return { label: 'Recent research activity', state: 'publications' };
-  }
   if (hasOfficialYaleSource(entity)) {
     return { label: 'Official Yale source found', state: 'official' };
   }
@@ -622,7 +619,7 @@ const buildProfileDiscoveryClusters = (
       evidenceStatus,
       matchReason,
       entityCount: 1,
-      paperCount: entity.recentPaperCount || 0,
+      paperCount: 0,
       pathwayCount: pathways.length,
       peopleCount: hasPersonContextForDiscovery(entity) ? 1 : 0,
       labels: methodLabels.length > 0 ? methodLabels : researchAreaLabels,

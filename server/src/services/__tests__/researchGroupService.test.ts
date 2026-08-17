@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   accountFind: vi.fn(),
   userFind: vi.fn(),
   facultyMemberFind: vi.fn(),
-  paperFind: vi.fn(),
   researchScholarlyAttributionFind: vi.fn(),
   researchScholarlyLinkFind: vi.fn(),
   entryPathwayFind: vi.fn(),
@@ -86,12 +85,6 @@ vi.mock('../../models/user', () => ({
 vi.mock('../../models/facultyMember', () => ({
   FacultyMember: {
     find: mocks.facultyMemberFind,
-  },
-}));
-
-vi.mock('../../models/paper', () => ({
-  Paper: {
-    find: mocks.paperFind,
   },
 }));
 
@@ -207,7 +200,6 @@ beforeEach(() => {
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
   mocks.facultyMemberFind.mockReset();
-  mocks.paperFind.mockReset();
   mocks.researchScholarlyAttributionFind.mockReset();
   mocks.researchScholarlyLinkFind.mockReset();
   mocks.entryPathwayFind.mockReset();
@@ -225,7 +217,6 @@ beforeEach(() => {
   mocks.accountFind.mockReturnValue(queryResult([]));
   mocks.userFind.mockReturnValue(leanResult([]));
   mocks.facultyMemberFind.mockReturnValue(selectLeanResult([]));
-  mocks.paperFind.mockReturnValue(sortLimitLeanResult([]));
   mocks.researchScholarlyAttributionFind.mockReturnValue(selectSortLimitLeanResult([]));
   mocks.researchScholarlyLinkFind.mockReturnValue(sortLimitLeanResult([]));
   mocks.entryPathwayFind.mockReturnValue(queryResult([]));
@@ -814,7 +805,6 @@ describe('getResearchGroupDetail', () => {
     const detail = await getResearchGroupDetail('correct-person-research');
 
     expect(detail).toBeNull();
-    expect(mocks.paperFind).not.toHaveBeenCalled();
     expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
   });
 

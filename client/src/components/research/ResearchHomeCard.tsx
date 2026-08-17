@@ -271,12 +271,14 @@ const ResearchHomeCard = ({
               {home.contextLabel}
             </span>
           )}
-          {home.evidenceStatus?.state === 'publications' && (
-            <span className="yr-pill yr-pill-blue min-h-0 rounded px-2 py-0.5">
+          {home.evidenceStatus?.state === 'official' && (
+            <span
+              className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
+            >
               {home.evidenceStatus.label}
             </span>
           )}
-          {!isCompact && home.evidenceStatus && home.evidenceStatus.state !== 'publications' && (
+          {!isCompact && home.evidenceStatus && home.evidenceStatus.state !== 'official' && (
             <span
               className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
             >
