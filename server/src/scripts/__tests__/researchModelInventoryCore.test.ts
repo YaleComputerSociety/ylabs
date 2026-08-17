@@ -54,6 +54,14 @@ describe('INVENTORY_COLLECTIONS', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it('classifies undergraduate_logistics_claims so it is not flagged as unclassified', () => {
+    const spec = INVENTORY_COLLECTIONS.find(
+      (entry) => entry.collection === 'undergraduate_logistics_claims',
+    );
+    expect(spec).toMatchObject({ group: 'canonical-domain', phase: 4 });
+    expect(findUnclassifiedCollections(['undergraduate_logistics_claims'])).toEqual([]);
+  });
+
   it('classifies every phase 1 canonical identity collection', () => {
     expect(
       INVENTORY_COLLECTIONS.filter((spec) => spec.phase === 1).map(
