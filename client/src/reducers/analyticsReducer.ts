@@ -145,7 +145,6 @@ export interface AnalyticsData {
       staleOver90Days: number;
     };
     scholarly: {
-      withRecentPapers: number;
       withRecentGrants: number;
     };
   };

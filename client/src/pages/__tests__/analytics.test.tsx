@@ -100,7 +100,7 @@ const analyticsData: AnalyticsData = {
       neverObserved: 4,
       staleOver90Days: 6,
     },
-    scholarly: { withRecentPapers: 18, withRecentGrants: 9 },
+    scholarly: { withRecentGrants: 9 },
   },
   timestamp: '2026-05-17T00:00:00.000Z',
 };
