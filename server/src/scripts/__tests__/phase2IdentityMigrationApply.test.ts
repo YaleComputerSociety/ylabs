@@ -93,7 +93,7 @@ describe('buildCanonicalWriteDocuments key resolution', () => {
             accountKey: 'account:user:u1',
             sourceUserId: 'u1',
             netid: 'jdoe',
-            email: 'jane.doe@yale.edu',
+            email: 'person1@yale.edu',
             status: 'ACTIVE',
           },
         ],
@@ -216,7 +216,7 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     await db.collection('users').insertOne({
       _id: userId,
       netid: 'jdoe',
-      email: 'jane.doe@yale.edu',
+      email: 'person1@yale.edu',
       userType: 'professor',
       fname: 'Jane',
       lname: 'Doe',
@@ -226,7 +226,7 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     await db.collection('faculty_members').insertOne({
       _id: facultyId,
       netid: 'scarter',
-      email: 'sam.carter@yale.edu',
+      email: 'person2@yale.edu',
       name: 'Sam Carter',
       archived: false,
     });
@@ -284,7 +284,7 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
 
     const account = await Account.findOne({ netid: 'jdoe' }).lean<WithObjectId<AccountRecord>>();
     expect(account).not.toBeNull();
-    expect(account?.email).toBe('jane.doe@yale.edu');
+    expect(account?.email).toBe('person1@yale.edu');
     expect(account?.status).toBe('ACTIVE');
 
     const accountedPerson = await Person.findOne({ displayName: 'Jane Doe' }).lean<
