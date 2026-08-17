@@ -7,11 +7,13 @@ import {
   extractProfileContactWidgetProfile,
   extractResearchFacultyUrl,
   extractSoleResearchFacultyProfile,
+  findPiUserId,
   inferPiNameFromLabName,
   buildPiUserLookupQuery,
   labResearchFacultyToObservations,
   labToObservations,
 } from '../sources/ysmAtoZScraper';
+import { User } from '../../models/user';
 import type { ObservationInput, ScraperContext } from '../types';
 
 vi.mock('axios', () => ({
@@ -19,6 +21,18 @@ vi.mock('axios', () => ({
     get: vi.fn(),
   },
 }));
+
+vi.mock('../../models/user', () => ({
+  User: {
+    find: vi.fn(),
+  },
+}));
+
+function mockUserFindResult(matches: Array<Record<string, unknown>>) {
+  vi.mocked(User.find).mockReturnValue({
+    limit: () => ({ lean: () => Promise.resolve(matches) }),
+  } as unknown as ReturnType<typeof User.find>);
+}
 
 const SAMPLE_HTML = `
 <html><body>
@@ -203,6 +217,46 @@ describe('buildPiUserLookupQuery', () => {
     const query = buildPiUserLookupQuery({ firstName: '', lastName: 'Townsend' });
 
     expect(query).toHaveProperty('userType');
+  });
+});
+
+describe('findPiUserId surname-only safeguard', () => {
+  it('rejects a surname-only match when the sole faculty candidate is outside a medicine department', async () => {
+    mockUserFindResult([
+      { _id: 'engineering-dixit', fname: 'Purushottam', lname: 'Dixit', primaryDepartment: 'Biomedical Engineering' },
+    ]);
+
+    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
+  });
+
+  it('resolves a surname-only match when the sole faculty candidate is in a medicine department', async () => {
+    mockUserFindResult([
+      { _id: 'medicine-dixit', fname: 'Vishwa', lname: 'Dixit', primaryDepartment: 'Comparative Medicine' },
+    ]);
+
+    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBe('medicine-dixit');
+  });
+
+  it('rejects a surname-only match when more than one candidate shares the surname', async () => {
+    mockUserFindResult([
+      { _id: 'a', fname: 'Vishwa', lname: 'Dixit', primaryDepartment: 'Comparative Medicine' },
+      { _id: 'b', fname: 'Purushottam', lname: 'Dixit', primaryDepartment: 'Internal Medicine' },
+    ]);
+
+    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
+  });
+
+  it('resolves a unique exact full-name match regardless of department', async () => {
+    mockUserFindResult([
+      { _id: 'townsend', fname: 'Jeffrey', lname: 'Townsend', primaryDepartment: 'Biostatistics' },
+    ]);
+
+    expect(
+      await findPiUserId(
+        { firstName: 'Jeffrey', lastName: 'Townsend' },
+        { allowUnknownExactName: true, allowSurnameFallback: false },
+      ),
+    ).toBe('townsend');
   });
 });
 

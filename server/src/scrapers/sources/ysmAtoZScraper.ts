@@ -413,6 +413,8 @@ interface PiUserLookupOptions {
   allowSurnameFallback?: boolean;
 }
 
+const MEDICINE_DEPARTMENT_PATTERN = /medicine|health|nursing|public health/i;
+
 export function buildPiUserLookupQuery(
   nameHint: PiNameHint,
   options: PiUserLookupOptions = {},
@@ -432,28 +434,28 @@ export function buildPiUserLookupQuery(
     : baseQuery;
 }
 
-async function findPiUserId(
+export async function findPiUserId(
   nameHint: PiNameHint | null,
   options: PiUserLookupOptions = {},
 ): Promise<string | null> {
   if (!nameHint?.lastName) return null;
+  const hasExactFirstName = nameHint.firstName.trim().length > 0;
   const query = buildPiUserLookupQuery(nameHint, options);
   const matches = await User.find(query, { _id: 1, fname: 1, lname: 1, primaryDepartment: 1 })
     .limit(5)
     .lean();
-  if (
-    matches.length === 0 &&
-    nameHint.firstName.trim().length > 0 &&
-    options.allowSurnameFallback !== false
-  ) {
+  if (matches.length === 0 && hasExactFirstName && options.allowSurnameFallback !== false) {
     return findPiUserId({ firstName: '', lastName: nameHint.lastName });
   }
   if (matches.length !== 1) return null;
-  const m: any = matches[0];
-  if (m.primaryDepartment && /medicine|health|nursing|public health/i.test(m.primaryDepartment)) {
-    return serializedDocumentId(m._id) || null;
+  const match: any = matches[0];
+  if (
+    !hasExactFirstName &&
+    !MEDICINE_DEPARTMENT_PATTERN.test(String(match.primaryDepartment || ''))
+  ) {
+    return null;
   }
-  return serializedDocumentId(m._id) || null;
+  return serializedDocumentId(match._id) || null;
 }
 
 export function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {
