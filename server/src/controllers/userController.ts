@@ -26,7 +26,7 @@ import {
   getSavedProgramTracking as getSavedProgramTrackingService,
   updateSavedProgramTracking as updateSavedProgramTrackingService,
   getSavedResearchEntities as getSavedResearchEntitiesService,
-  getSavedResearchEntityIds as getSavedResearchEntityIdsService,
+  getSavedResearchEntitySlugs as getSavedResearchEntitySlugsService,
   getSavedResearchEntityPlans as getSavedResearchEntityPlansService,
   addSavedResearchEntities as addSavedResearchEntitiesService,
   removeSavedResearchEntities as removeSavedResearchEntitiesService,
@@ -997,7 +997,7 @@ export const getSavedResearchEntityIds = async (request: Request, response: Resp
   try {
     const currentUser = request.user as { netId?: string };
     response.status(200).json({
-      savedResearchEntityIds: await getSavedResearchEntityIdsService(currentUser.netId),
+      savedResearchEntityIds: await getSavedResearchEntitySlugsService(currentUser.netId),
     });
   } catch (error) {
     console.error('Saved research entity id fetch failed:', sanitizeLogValue(error));
