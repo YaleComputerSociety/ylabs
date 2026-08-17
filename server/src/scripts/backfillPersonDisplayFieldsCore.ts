@@ -1,0 +1,93 @@
+export const PERSON_DISPLAY_PROFILE_FIELDS = [
+  'title',
+  'primaryDepartment',
+  'imageUrl',
+  'websiteUrl',
+  'bio',
+] as const;
+
+export type PersonDisplayProfileField = (typeof PERSON_DISPLAY_PROFILE_FIELDS)[number];
+
+export const PROTECTED_PERSON_IDENTITY_FIELDS = [
+  'displayName',
+  'accountId',
+  'identifiers',
+  'status',
+  'schemaVersion',
+] as const;
+
+export interface LegacyUserDisplaySource {
+  title?: unknown;
+  primaryDepartment?: unknown;
+  imageUrl?: unknown;
+  website?: unknown;
+  bio?: unknown;
+}
+
+export interface LegacyFacultyDisplaySource {
+  title?: unknown;
+  primarySchool?: unknown;
+  photoUrl?: unknown;
+  websiteUrl?: unknown;
+  bio?: unknown;
+}
+
+export interface LegacyDisplaySources {
+  user?: LegacyUserDisplaySource | null;
+  facultyMember?: LegacyFacultyDisplaySource | null;
+}
+
+export type PersonDisplayProfileValues = Partial<Record<PersonDisplayProfileField, string>>;
+
+const cleanString = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+export function composeDisplayProfileFromLegacy(
+  sources: LegacyDisplaySources,
+): PersonDisplayProfileValues {
+  const user = sources.user || undefined;
+  const faculty = sources.facultyMember || undefined;
+  const composed: PersonDisplayProfileValues = {};
+
+  const title = cleanString(user?.title) || cleanString(faculty?.title);
+  const primaryDepartment =
+    cleanString(user?.primaryDepartment) || cleanString(faculty?.primarySchool);
+  const imageUrl = cleanString(user?.imageUrl) || cleanString(faculty?.photoUrl);
+  const websiteUrl = cleanString(user?.website) || cleanString(faculty?.websiteUrl);
+  const bio = cleanString(user?.bio) || cleanString(faculty?.bio);
+
+  if (title) composed.title = title;
+  if (primaryDepartment) composed.primaryDepartment = primaryDepartment;
+  if (imageUrl) composed.imageUrl = imageUrl;
+  if (websiteUrl) composed.websiteUrl = websiteUrl;
+  if (bio) composed.bio = bio;
+
+  return composed;
+}
+
+export function displayProfileFillUpdate(
+  existing: PersonDisplayProfileValues | undefined,
+  composed: PersonDisplayProfileValues,
+): PersonDisplayProfileValues {
+  const update: PersonDisplayProfileValues = {};
+  for (const field of PERSON_DISPLAY_PROFILE_FIELDS) {
+    if (cleanString(existing?.[field])) continue;
+    const next = composed[field];
+    if (next) update[field] = next;
+  }
+  return update;
+}
+
+export function assertBackfillUpdateIsDisplayOnly(update: Record<string, unknown>): void {
+  for (const key of Object.keys(update)) {
+    const [head] = key.split('.');
+    if (head !== 'profile') {
+      throw new Error(
+        `backfill:person-display-fields invariant violated: update touches non-profile field "${key}".`,
+      );
+    }
+  }
+}
