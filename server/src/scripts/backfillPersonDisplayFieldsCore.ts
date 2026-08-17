@@ -8,6 +8,14 @@ export const PERSON_DISPLAY_PROFILE_FIELDS = [
 
 export type PersonDisplayProfileField = (typeof PERSON_DISPLAY_PROFILE_FIELDS)[number];
 
+export const PERSON_DISPLAY_PROFILE_MAXLENGTHS: Record<PersonDisplayProfileField, number> = {
+  title: 240,
+  primaryDepartment: 240,
+  imageUrl: 2048,
+  websiteUrl: 2048,
+  bio: 5000,
+};
+
 export const PROTECTED_PERSON_IDENTITY_FIELDS = [
   'displayName',
   'accountId',
@@ -45,6 +53,16 @@ const cleanString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const boundDisplayValue = (
+  field: PersonDisplayProfileField,
+  value: string | undefined,
+): string | undefined => {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return undefined;
+  return trimmed.slice(0, PERSON_DISPLAY_PROFILE_MAXLENGTHS[field]);
+};
+
 export function composeDisplayProfileFromLegacy(
   sources: LegacyDisplaySources,
 ): PersonDisplayProfileValues {
@@ -52,12 +70,20 @@ export function composeDisplayProfileFromLegacy(
   const faculty = sources.facultyMember || undefined;
   const composed: PersonDisplayProfileValues = {};
 
-  const title = cleanString(user?.title) || cleanString(faculty?.title);
-  const primaryDepartment =
-    cleanString(user?.primaryDepartment) || cleanString(faculty?.primarySchool);
-  const imageUrl = cleanString(user?.imageUrl) || cleanString(faculty?.photoUrl);
-  const websiteUrl = cleanString(user?.website) || cleanString(faculty?.websiteUrl);
-  const bio = cleanString(user?.bio) || cleanString(faculty?.bio);
+  const title = boundDisplayValue('title', cleanString(user?.title) || cleanString(faculty?.title));
+  const primaryDepartment = boundDisplayValue(
+    'primaryDepartment',
+    cleanString(user?.primaryDepartment) || cleanString(faculty?.primarySchool),
+  );
+  const imageUrl = boundDisplayValue(
+    'imageUrl',
+    cleanString(user?.imageUrl) || cleanString(faculty?.photoUrl),
+  );
+  const websiteUrl = boundDisplayValue(
+    'websiteUrl',
+    cleanString(user?.website) || cleanString(faculty?.websiteUrl),
+  );
+  const bio = boundDisplayValue('bio', cleanString(user?.bio) || cleanString(faculty?.bio));
 
   if (title) composed.title = title;
   if (primaryDepartment) composed.primaryDepartment = primaryDepartment;

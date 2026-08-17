@@ -81,6 +81,27 @@ describe('backfillPersonDisplayFields core', () => {
     });
   });
 
+  it('truncates oversize display values to their schema bounds', () => {
+    const composed = composeDisplayProfileFromLegacy({
+      user: {
+        title: 't'.repeat(300),
+        primaryDepartment: 'd'.repeat(300),
+        imageUrl: `https://img.example.test/${'a'.repeat(3000)}`,
+        website: `https://site.example.test/${'b'.repeat(3000)}`,
+        bio: 'z'.repeat(6000),
+      },
+    });
+    expect(composed.title).toHaveLength(240);
+    expect(composed.primaryDepartment).toHaveLength(240);
+    expect(composed.imageUrl).toHaveLength(2048);
+    expect(composed.websiteUrl).toHaveLength(2048);
+    expect(composed.bio).toHaveLength(5000);
+
+    const update = displayProfileFillUpdate(undefined, composed);
+    expect(update.bio).toHaveLength(5000);
+    expect(update.title).toHaveLength(240);
+  });
+
   it('only fills fields that are currently empty', () => {
     const update = displayProfileFillUpdate(
       { title: 'Existing Title', bio: '' },
