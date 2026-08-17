@@ -4,9 +4,10 @@ import { describe, expect, it } from 'vitest';
 import EvidenceSourceRow from '../EvidenceSourceRow';
 
 describe('EvidenceSourceRow', () => {
-  it('renders source type, confidence, observed date, excerpt, and link when available', () => {
+  it('renders source type, confidence, observed date, excerpt, and link for admins', () => {
     const { container } = render(
       <EvidenceSourceRow
+        isAdmin
         evidence={[
           {
             claim: 'This cluster is based on shared research-area metadata.',
@@ -28,6 +29,25 @@ describe('EvidenceSourceRow', () => {
     expect(container.querySelector('a[href="https://source.example.test/source"]')?.textContent).toBe('Open source');
   });
 
+  it('hides the confidence score from non-admins', () => {
+    const { container } = render(
+      <EvidenceSourceRow
+        evidence={[
+          {
+            claim: 'This cluster is based on shared research-area metadata.',
+            sourceType: 'Research metadata',
+            observedDate: '2026-01-15T00:00:00.000Z',
+            confidence: 0.82,
+          },
+        ]}
+      />,
+    );
+
+    expect(container.textContent).toContain('Research metadata');
+    expect(container.textContent).toContain('Observed Jan 15, 2026');
+    expect(container.textContent).not.toContain('82% confidence');
+  });
+
   it('shows a quiet empty state when no source evidence is attached', () => {
     const { container } = render(<EvidenceSourceRow evidence={[]} />);
 
@@ -38,6 +58,7 @@ describe('EvidenceSourceRow', () => {
   it('renders metadata fallback confidence as user-facing trust copy', () => {
     const { container } = render(
       <EvidenceSourceRow
+        isAdmin
         evidence={[
           {
             claim: 'Profiles share research-area metadata.',

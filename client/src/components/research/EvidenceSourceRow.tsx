@@ -4,6 +4,7 @@ import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
 interface EvidenceSourceRowProps {
   evidence: EvidenceSourceRowData[];
   compact?: boolean;
+  isAdmin?: boolean;
   className?: string;
 }
 
@@ -46,6 +47,7 @@ const formatConfidence = (value?: number | string): string => {
 const EvidenceSourceRow = ({
   evidence,
   compact = false,
+  isAdmin = false,
   className = '',
 }: EvidenceSourceRowProps) => {
   if (!evidence || evidence.length === 0) {
@@ -59,7 +61,7 @@ const EvidenceSourceRow = ({
   return (
     <div className={`space-y-2 ${className}`.trim()}>
       {evidence.map((item, index) => {
-        const confidence = compact ? '' : formatConfidence(item.confidence);
+        const confidence = compact || !isAdmin ? '' : formatConfidence(item.confidence);
         const observedDate = compact ? '' : formatDate(item.observedDate);
         const sourceType = compact ? '' : formatSourceType(item.sourceType);
         const sourceUrl = safeHttpUrl(item.url);

@@ -1,6 +1,8 @@
+import { useContext } from 'react';
 import { Link } from 'react-router-dom';
 
 import EvidenceSourceRow from './EvidenceSourceRow';
+import UserContext from '../../contexts/UserContext';
 import type { PathwaySearchHit } from '../../types/pathway';
 import {
   buildPathwayEvidenceRows,
@@ -42,6 +44,8 @@ const directoryFirstNextStep = (label: string): string =>
     .replace(/targeted outreach/gi, 'source review');
 
 const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
+  const { user } = useContext(UserContext);
+  const isAdmin = user?.userType === 'admin';
   const researchEntity = pathway.researchEntity;
   const researchEntityLabel =
     researchEntity?.displayName || researchEntity?.name || 'Research profile';
@@ -107,7 +111,7 @@ const PathwayActionCard = ({ pathway }: PathwayActionCardProps) => {
       )}
 
       <div className="mt-3">
-        <EvidenceSourceRow evidence={buildPathwayEvidenceRows(pathway)} compact />
+        <EvidenceSourceRow evidence={buildPathwayEvidenceRows(pathway)} compact isAdmin={isAdmin} />
       </div>
     </article>
   );
