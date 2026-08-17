@@ -7036,10 +7036,7 @@ test('shared URL sanitizers bound values before parsing', () => {
 
 test('publication DOI links use the shared DOI sanitizer', () => {
   const urlSource = fs.readFileSync(new URL('../client/src/utils/url.ts', import.meta.url), 'utf8');
-  const doiRenderers = [
-    '../client/src/components/labs/LabPapersList.tsx',
-    '../client/src/components/admin/AdminProfileEditModal.tsx',
-  ];
+  const doiRenderers = ['../client/src/components/admin/AdminProfileEditModal.tsx'];
 
   assert.match(urlSource, /export const safeDoiUrl = \(rawDoi: unknown\): string => \{/);
   assert.match(urlSource, /DOI_PATTERN/);

@@ -174,7 +174,6 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(grouped.clusters.map((cluster) => cluster.label)).toEqual([
@@ -200,7 +199,6 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(buildResearchHomeContextLine(grouped.clusters[0].entities[0])).toBe(
@@ -228,7 +226,6 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(grouped.people).toHaveLength(1);
@@ -237,7 +234,7 @@ describe('buildGroupedSearchResults', () => {
     expect(grouped.people[0].labSlug).toBe('safe-ai');
   });
 
-  it('returns clusters, people, pathways, papers, and interpretation chips', () => {
+  it('returns clusters, people, pathways, and interpretation chips', () => {
     const grouped = buildGroupedSearchResults({
       query: 'AI safety mechanism design',
       researchEntities: [
@@ -252,12 +249,10 @@ describe('buildGroupedSearchResults', () => {
         }),
       ],
       pathways: [],
-      papers: [],
     });
 
     expect(grouped.clusters).toHaveLength(1);
     expect(grouped.people).toHaveLength(1);
-    expect(grouped.papers).toEqual([]);
     expect(grouped.pathways).toEqual([]);
     expect(grouped.interpretationChips).toEqual([
       'Query: AI safety mechanism design',

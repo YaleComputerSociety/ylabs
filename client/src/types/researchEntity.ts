@@ -190,8 +190,6 @@ export function normalizeResearchEntityDetailPayload(
     earlierResearchActivityLinks: payload.earlierResearchActivityLinks ?? [],
     scholarlyLinks: payload.scholarlyLinks ?? [],
     memberScholarlyLinks: payload.memberScholarlyLinks ?? [],
-    recentPapers: payload.recentPapers ?? [],
-    recentArxivPreprints: payload.recentArxivPreprints ?? [],
     activeListings: payload.activeListings ?? [],
     entryPathways: payload.entryPathways ?? [],
     accessSignals: payload.accessSignals ?? [],

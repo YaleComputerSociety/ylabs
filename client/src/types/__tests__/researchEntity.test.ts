@@ -89,7 +89,6 @@ describe('normalizeResearchEntityDetailPayload', () => {
       researchEntity: canonical,
       group: legacy,
       members: [],
-      recentPapers: [],
       activeListings: [],
     });
 

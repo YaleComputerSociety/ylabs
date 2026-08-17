@@ -1,4 +1,3 @@
-import type { LabPaper } from '../types/labDetail';
 import type { PathwayBestNextStepCategory, PathwaySearchHit } from '../types/pathway';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
@@ -95,7 +94,6 @@ export interface ResearchCluster {
   evidenceStatus: ResearchHomeEvidenceStatus;
   matchReason: string;
   entityCount: number;
-  paperCount: number;
   pathwayCount: number;
   peopleCount: number;
   labels: string[];
@@ -104,13 +102,11 @@ export interface ResearchCluster {
   activePostedOpportunity?: PathwaySearchHit['activePostedOpportunity'];
   entities: ResearchEntity[];
   pathways: PathwaySearchHit[];
-  papers: LabPaper[];
   evidence: EvidenceSourceRowData[];
 }
 
 export interface GroupedResearchResults {
   clusters: ResearchCluster[];
-  papers: LabPaper[];
   people: ResearchIdentityConfidence[];
   pathways: PathwaySearchHit[];
   interpretationChips: string[];
@@ -118,7 +114,6 @@ export interface GroupedResearchResults {
 
 interface ClusterOptions {
   pathways?: PathwaySearchHit[];
-  papers?: LabPaper[];
 }
 
 const titleizeValue = (value?: string): string =>
@@ -619,7 +614,6 @@ const buildProfileDiscoveryClusters = (
       evidenceStatus,
       matchReason,
       entityCount: 1,
-      paperCount: 0,
       pathwayCount: pathways.length,
       peopleCount: hasPersonContextForDiscovery(entity) ? 1 : 0,
       labels: methodLabels.length > 0 ? methodLabels : researchAreaLabels,
@@ -632,7 +626,6 @@ const buildProfileDiscoveryClusters = (
       activePostedOpportunity,
       entities: [entity],
       pathways,
-      papers: [],
       evidence: [
         {
           claim: matchReason,
@@ -798,19 +791,16 @@ export function buildGroupedSearchResults({
   query,
   researchEntities,
   pathways,
-  papers = [],
 }: {
   query: string;
   researchEntities: ResearchEntity[];
   pathways: PathwaySearchHit[];
-  papers?: LabPaper[];
 }): GroupedResearchResults {
   const relevantPathways = pathways.filter(isPathwayResultRelevant);
   const people = identitiesFromResearchEntities(researchEntities);
 
   return {
-    clusters: buildProfileDiscoveryClusters(researchEntities, { pathways: relevantPathways, papers }),
-    papers,
+    clusters: buildProfileDiscoveryClusters(researchEntities, { pathways: relevantPathways }),
     people: people.filter((person) =>
       person.identityLabel === 'Identity: Yale-confirmed' || person.sourceCount > 1 || person.departments.length > 0,
     ),
