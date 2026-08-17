@@ -681,7 +681,6 @@ describe('admin routes', () => {
         dedupeReason: 'duplicate',
         publications: Array.from({ length: 501 }, (_, index) => ({ title: `Paper ${index}` })),
       },
-      true,
     );
 
     expect(payload).toMatchObject({
@@ -692,7 +691,7 @@ describe('admin routes', () => {
       hIndex: 42,
       h_index: 42,
     });
-    expect(payload.publications as unknown[]).toHaveLength(500);
+    expect(payload).not.toHaveProperty('publications');
     expect(payload).not.toHaveProperty('_id');
     expect(payload).not.toHaveProperty('ownListings');
     expect(payload).not.toHaveProperty('favListings');

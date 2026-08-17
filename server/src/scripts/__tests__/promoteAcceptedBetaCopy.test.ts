@@ -110,6 +110,8 @@ describe('promote accepted Beta copy guards', () => {
       'research_scholarly_attributions',
     ]));
     expect(skipObservationNames).not.toContain('observations');
+    expect(defaultNames).not.toContain('papers');
+    expect(defaultNames).not.toContain('paper_authors');
   });
 
   it('builds a reviewable dry-run summary without requiring MongoDB connections', () => {

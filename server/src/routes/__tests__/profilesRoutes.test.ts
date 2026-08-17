@@ -45,7 +45,7 @@ describe('profile routes', () => {
   });
 
   it('bounds profile netid path params before controller work', () => {
-    for (const path of ['/:netid', '/:netid/publications', '/:netid/listings', '/:netid/courses']) {
+    for (const path of ['/:netid', '/:netid/listings', '/:netid/courses']) {
       const handlers = routeHandlers(path);
       expect(handlers[0].name).toBe('isAuthenticated');
       expect(handlers.length).toBe(path === '/:netid' ? 4 : 3);

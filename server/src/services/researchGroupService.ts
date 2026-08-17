@@ -18,7 +18,6 @@ import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { Department, DepartmentCategory } from '../models/department';
-import { Paper } from '../models/paper';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
 import { FacultyMember } from '../models/facultyMember';
@@ -56,7 +55,6 @@ import {
 } from './researchEntityDto';
 import {
   isPublicResearchPaperLink,
-  paperToScholarlyLink,
   scholarlyLinkToPublicLink,
 } from './profileService';
 import {
@@ -1977,15 +1975,11 @@ export function dedupeSameNameLeadMembers<T extends { user: any; role: string; r
 export function buildResearchActivityLinkPayload({
   researchEntityId,
   entityTopicEvidence = [],
-  entityLinkedPapers = [],
-  memberPaperPairs = [],
   entityScholarlyLinks = [],
   memberScholarlyLinkPairs = [],
 }: {
   researchEntityId: unknown;
   entityTopicEvidence?: unknown;
-  entityLinkedPapers?: Array<Record<string, any>>;
-  memberPaperPairs?: Array<{ paper: Record<string, any>; memberDisplayId?: unknown }>;
   entityScholarlyLinks?: Array<Record<string, any>>;
   memberScholarlyLinkPairs?: Array<{
     link: Record<string, any>;
@@ -2020,11 +2014,6 @@ export function buildResearchActivityLinkPayload({
         }),
       ),
     ),
-    ...entityLinkedPapers.map((paper) => ({
-      ...paperToScholarlyLink(paper),
-      relationshipBasis: 'explicit_entity_link',
-      evidenceLabel: 'Linked to this research profile',
-    })),
   ].filter((link) => {
     const key = uniqueKey(link.relationshipBasis || '', link._id);
     const canonicalKey = canonicalScholarlyWorkKey(link);
@@ -2059,14 +2048,6 @@ export function buildResearchActivityLinkPayload({
     ...integrityDecisions
       .filter((decision) => decision.disposition === 'current')
       .map((pair) => publicMemberLink(pair.candidate)),
-    ...memberPaperPairs
-      .filter((pair) => pair.memberDisplayId)
-      .map((pair) => ({
-        ...paperToScholarlyLink(pair.paper),
-        memberKey: pair.memberDisplayId,
-        relationshipBasis: 'member_authorship',
-        evidenceLabel: 'Authored by a listed professor',
-      })),
   ].filter((link: any) => {
     const key = uniqueKey(link.relationshipBasis || '', link._id, link.memberKey);
     const canonicalKey = canonicalScholarlyWorkKey(link);
@@ -2120,72 +2101,6 @@ const publicStringArray = (values: unknown): string[] =>
   Array.isArray(values)
     ? values.slice(0, MAX_PUBLIC_DETAIL_ARRAY_ITEMS).flatMap((value) => publicString(value) ?? [])
     : [];
-
-const publicPaperDate = (value: unknown): string | undefined => {
-  const date =
-    value instanceof Date ? value : typeof value === 'string' ? new Date(value) : undefined;
-  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
-};
-
-const publicPaperNumber = (value: unknown, min = 0, max = 1_000_000): number | undefined => {
-  const number = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(number) || number < min || number > max) return undefined;
-  return number;
-};
-
-const PUBLIC_PAPER_STAGES = new Set(['PREPRINT', 'PUBLISHED', 'UNKNOWN']);
-
-const publicPaperKeyForResearchDetail = (paper: any): string => {
-  const stableSource =
-    publicString(paper?.arxivId) ||
-    publicString(paper?.doi) ||
-    publicString(paper?.title) ||
-    'paper';
-  const year = publicPaperNumber(paper?.year, 1000, 3000);
-  return [stableSource, year]
-    .filter(Boolean)
-    .join('-')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 160);
-};
-
-const addPublicPaperField = (target: Record<string, unknown>, key: string, value: unknown) => {
-  if (value !== undefined && value !== null && value !== '') {
-    target[key] = value;
-  }
-};
-
-const publicPaperForResearchDetail = (paper: any) => {
-  const publicationStage = publicString(paper?.publicationStage);
-  const publicPaper: Record<string, unknown> = {
-    _id: publicPaperKeyForResearchDetail(paper),
-    title: publicString(paper?.title) || 'Untitled research activity',
-  };
-
-  addPublicPaperField(publicPaper, 'authors', publicStringArray(paper?.authors));
-  addPublicPaperField(publicPaper, 'year', publicPaperNumber(paper?.year, 1000, 3000));
-  addPublicPaperField(publicPaper, 'venue', publicString(paper?.venue));
-  addPublicPaperField(publicPaper, 'abstract', publicString(paper?.abstract));
-  addPublicPaperField(publicPaper, 'tldr', publicString(paper?.tldr || paper?.plainSummary));
-  addPublicPaperField(publicPaper, 'url', publicHttpUrl(paper?.url));
-  addPublicPaperField(publicPaper, 'openAccessUrl', publicHttpUrl(paper?.openAccessUrl));
-  addPublicPaperField(publicPaper, 'landingPageUrl', publicHttpUrl(paper?.landingPageUrl));
-  addPublicPaperField(publicPaper, 'pdfUrl', publicHttpUrl(paper?.pdfUrl));
-  addPublicPaperField(publicPaper, 'arxivId', publicString(paper?.arxivId));
-  addPublicPaperField(publicPaper, 'doi', publicString(paper?.doi));
-  addPublicPaperField(publicPaper, 'citationCount', publicPaperNumber(paper?.citationCount));
-  addPublicPaperField(publicPaper, 'publishedAt', publicPaperDate(paper?.publishedAt));
-  addPublicPaperField(publicPaper, 'postedAt', publicPaperDate(paper?.postedAt));
-  addPublicPaperField(publicPaper, 'versionDate', publicPaperDate(paper?.versionDate));
-  if (publicationStage && PUBLIC_PAPER_STAGES.has(publicationStage)) {
-    publicPaper.publicationStage = publicationStage;
-  }
-  addPublicPaperField(publicPaper, 'preprintServer', publicString(paper?.preprintServer));
-
-  return publicPaper;
-};
 
 const publicListingForResearchDetail = (listing: any) => ({
   _id: researchGroupDocumentId(listing._id),
@@ -2348,8 +2263,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
   roster: PublicRosterDisclosure;
-  recentPapers: any[];
-  recentArxivPreprints: any[];
   researchActivityLinks: any[];
   earlierResearchActivityLinks: any[];
   scholarlyLinks: any[];
@@ -2602,8 +2515,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   );
 
   const [
-    recentPapersRaw,
-    recentArxivPreprintsRaw,
     entityScholarlyLinks,
     attributedScholarlyLinks,
     activeListingsRaw,
@@ -2615,28 +2526,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     planningContexts,
     undergraduateLogistics,
   ] = await Promise.all([
-    memberUserIds.length
-      ? Paper.find({
-          yaleAuthorIds: { $in: memberUserIds },
-          $or: [
-            { publicationStage: { $exists: false } },
-            { publicationStage: { $ne: 'PREPRINT' } },
-          ],
-        })
-          .sort({ publishedAt: -1 })
-          .limit(10)
-          .lean()
-      : Promise.resolve([]),
-    memberUserIds.length
-      ? Paper.find({
-          archived: false,
-          yaleAuthorIds: { $in: memberUserIds },
-          $or: [{ preprintServer: 'arxiv' }, { publicationStage: 'PREPRINT' }],
-        })
-          .sort({ postedAt: -1, versionDate: -1, publishedAt: -1 })
-          .limit(10)
-          .lean()
-      : Promise.resolve([]),
     ResearchScholarlyLink.find({
       researchEntityId: (group as any)._id,
       archived: { $ne: true },
@@ -2692,8 +2581,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     optionalPlanningContexts([(group as any)._id]),
     optionalUndergraduateLogistics((group as any)._id),
   ]);
-  const recentPapers = (recentPapersRaw as any[]).map(publicPaperForResearchDetail);
-  const recentArxivPreprints = (recentArxivPreprintsRaw as any[]).map(publicPaperForResearchDetail);
   const entityContactRoutes = (contactRoutes as any[]).filter(
     (route) => !isResearchWebsiteFacultyPiRoute(route, group),
   );
@@ -2778,8 +2665,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     members,
     roster,
     ...researchActivity,
-    recentPapers,
-    recentArxivPreprints,
     activeListings,
     entryPathways: publicEntryPathways,
     accessSignals: publicAccessSignals,

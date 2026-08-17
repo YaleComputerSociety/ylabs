@@ -16,6 +16,7 @@
     "research-entity:migrate": "tsx src/scripts/migrateResearchEntities.ts",
     "research-entity:cleanup-collections": "tsx src/scripts/migrateResearchEntityCollections.ts",
     "legacy:cleanup": "tsx src/scripts/cleanupLegacyMongoCollections.ts",
+    "retire:bibliographic-mirror": "tsx src/scripts/retireBibliographicMirror.ts",
     "research-entity:dedupe-by-pi": "tsx src/scripts/dedupeResearchEntitiesByPi.ts",
     "research-entity:duplicate-name-review": "tsx src/scripts/duplicateEntityNameReview.ts",
     "research-entity:disambiguate-surname-labs": "tsx src/scripts/disambiguateSurnameLabNames.ts",

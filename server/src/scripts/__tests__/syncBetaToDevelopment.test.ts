@@ -201,9 +201,6 @@ describe('Beta to Development sync guards', () => {
         'access_signals',
         'contact_routes',
         'posted_opportunities',
-        'papers',
-        'paper_authors',
-        'paper_entity_links',
         'research_entity_stats',
         'research_scholarly_links',
         'research_scholarly_attributions',
@@ -221,6 +218,9 @@ describe('Beta to Development sync guards', () => {
         'admin_grants',
         'scrape_job_locks',
         'student_profiles',
+        'papers',
+        'paper_authors',
+        'paper_entity_links',
       ]),
     );
     expect(betaToDevelopmentCollectionNames(false)).not.toContain('observations');
