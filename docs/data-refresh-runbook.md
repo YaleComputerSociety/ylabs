@@ -75,11 +75,41 @@ The durable long-term replacement is an approved team-managed runner on the Yale
 Until that runner exists, use a semester calendar reminder and this operator checklist rather than an unattended scraping cron.
 Render automation remains appropriate for work that does not need Yale network access, including materialization, Meilisearch synchronization, and gates.
 
+## Environment Sizing and Where the Release Candidate Is Built
+
+Development holds a representative sample for script and scraper testing and dry runs, not a full copy of the dataset.
+The full release candidate is built and run at scale on Beta.
+This keeps two full copies of the roughly one million document dataset out of Development and Beta at the same time, which matters on a constrained Atlas tier.
+
+Under this model Development proves correctness and Beta is the single full-scale environment.
+
+Development responsibilities:
+
+- Validate scraper and script logic with bounded runs such as `scrape:development:all:plan` and `scrape:development:all:sample`.
+- Keep every registered source and representative edge cases present so a dry run is trustworthy.
+- Stay disposable and cheap to reset.
+
+Beta responsibilities:
+
+- Run the full exhaustive release-candidate fetch at scale with `scrape:beta:all:fetch`.
+- Materialize, gate, and audit the accepted dataset as described in Phase 3.
+- Serve as the accepted source for the guarded Beta to Production promotion.
+
+Tradeoffs this model accepts:
+
+- The Yale VPN fetch runs against Beta, so the expensive fetch is not reused from a prior Development sweep.
+- Development validates correctness rather than scale, so scale and query-cost review happens on Beta and ProductionCopy.
+- Development must stay representative enough that a passing dry run is trustworthy, so keep the full source list rather than trimming to a tiny subset.
+
+The alternative model runs the full exhaustive sweep on Development and mirrors the accepted result up with `beta:refresh-from-development`.
+Choose it only when running the Yale fetch once and copying the result is worth keeping a second full dataset copy in Development.
+Phase 1 below documents that optional full Development sweep, and Phase 2 documents the primary Beta release-candidate fetch.
+
 ## Fixed Environment Responsibilities
 
 | Environment | MongoDB                      | Meilisearch                               | Responsibility                                             |
 | ----------- | ---------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
-| Development | Atlas `Development` database | Local Docker                              | Full-data iteration, debugging, and disposable experiments |
+| Development | Atlas `Development` database | Local Docker                              | Representative-sample script and scraper testing, dry runs, and disposable experiments |
 | Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Clean staging candidate and human audit                    |
 | Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                    |
 
@@ -268,7 +298,8 @@ yarn scrape:development:all:sample
 ```
 
 Fix and rerun individual sources until the bounded sweep has no unexplained failures, conflicts, unsafe contact data, or missing credentials.
-Then run the full Development release-candidate sweep:
+Under the primary model the release candidate is fetched at scale on Beta in Phase 2, so the bounded Development sample above is the normal stopping point.
+Run the full Development sweep below only for the optional fetch-once-and-mirror model described in Environment Sizing:
 
 ```bash
 yarn scrape:development:all:full
