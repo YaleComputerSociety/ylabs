@@ -72,6 +72,7 @@ function comment(label: string): string {
 
 export function assertHardenedQueryCostProfile(environment: string): void {
   if (environment === 'development') return;
+  if (process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET === 'true') return;
   const expected =
     environment === 'beta'
       ? { name: 'beta-inventory', file: 'beta-inventory.env', database: 'Beta' }

@@ -127,6 +127,7 @@ export function searchBaselineTaskActivityDetected(
 
 export function assertHardenedSearchBaselineProfile(environment: string): void {
   if (environment === 'development') return;
+  if (process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET === 'true') return;
   const expected =
     protectedSearchProfileSpecs[environment as keyof typeof protectedSearchProfileSpecs];
   const profileName = process.env.YLABS_INVENTORY_PROFILE_NAME;

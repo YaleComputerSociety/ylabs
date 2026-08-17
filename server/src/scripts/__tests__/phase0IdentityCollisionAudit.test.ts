@@ -22,6 +22,21 @@ function atlasUrl(database: string): string {
 }
 
 describe('phase0IdentityCollisionAudit CLI', () => {
+  it('allows beta on ambient target opt-in but still refuses Production', () => {
+    expect(() =>
+      assertHardenedIdentityCollisionProfile('beta', {
+        YLABS_PHASE0_ALLOW_AMBIENT_TARGET: 'true',
+        MONGODBURL: atlasUrl('Beta'),
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertHardenedIdentityCollisionProfile('beta', {
+        YLABS_PHASE0_ALLOW_AMBIENT_TARGET: 'true',
+        MONGODBURL: atlasUrl('Production'),
+      }),
+    ).toThrow(/must never target Production/);
+  });
+
   it('requires explicit bounded read-only arguments and parses strict mode', () => {
     expect(
       parsePhase0IdentityCollisionAuditArgs([

@@ -218,6 +218,12 @@ export function assertHardenedIdentityCollisionProfile(
     }
     return;
   }
+  if (env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET === 'true') {
+    if (databaseNameFromMongoUrl(env.MONGODBURL || '').toLowerCase() === 'production') {
+      throw new Error('Identity-collision audits must never target Production.');
+    }
+    return;
+  }
   const expected = PROTECTED_PROFILE_SPECS[environment];
   const inventoryPathValue = env.YLABS_INVENTORY_PROFILE_PATH;
   if (
