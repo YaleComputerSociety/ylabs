@@ -99,6 +99,8 @@ describe('promote accepted Beta copy guards', () => {
     );
 
     expect(defaultNames).toEqual(expect.arrayContaining([
+      'research_entity_relationships',
+      'faculty_members',
       'research_scholarly_links',
       'research_scholarly_attributions',
       'observations',

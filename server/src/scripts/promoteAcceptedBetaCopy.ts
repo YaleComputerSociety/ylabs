@@ -33,6 +33,8 @@ const SYNTHETIC_USER_FILTER: Document = { $nor: SYNTHETIC_USER_MATCHES };
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
   { name: 'research_entity_members', category: 'research-discovery' },
+  { name: 'research_entity_relationships', category: 'research-discovery' },
+  { name: 'faculty_members', category: 'research-discovery' },
   { name: 'entry_pathways', category: 'research-discovery' },
   { name: 'access_signals', category: 'research-discovery' },
   { name: 'contact_routes', category: 'research-discovery' },
@@ -107,6 +109,7 @@ export interface PromotionSummary {
 
 const USER_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
   { collection: 'research_entity_members', field: 'userId' },
+  { collection: 'faculty_members', field: 'userId' },
   { collection: 'research_entities', field: 'claimedByUserId' },
   { collection: 'research_entities', field: 'studentVisibilityReviewedByUserId' },
   { collection: 'entry_pathways', field: 'review.reviewedByUserId' },
