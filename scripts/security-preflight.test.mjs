@@ -2589,15 +2589,22 @@ test('research entity browse-rank service ids use safe serialization for map key
     source,
     /const browseRankDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
-  assert.match(
-    source,
-    /browseRankDocumentId\(member\.researchEntityId\) \|\| browseRankDocumentId\(member\.researchGroupId\)/,
-  );
   assert.match(source, /const key = browseRankDocumentId\(signal\.researchEntityId\)/);
   assert.match(source, /const id = browseRankDocumentId\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(member\.researchEntityId \|\| member\.researchGroupId/);
   assert.doesNotMatch(source, /String\(signal\.researchEntityId/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
+});
+
+test('research entity membership accessor keys rosters with safe serialization', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/services/researchEntityMembershipAccessor.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
+  assert.match(source, /const key = serializedDocumentId\(entry\.researchEntityId\)/);
+  assert.doesNotMatch(source, /const key = String\(entry\.researchEntityId/);
+  assert.doesNotMatch(source, /const key = entry\.researchEntityId\.toString\(\)/);
 });
 
 test('student visibility gate ObjectId model work is primitive-normalized', () => {
@@ -4880,10 +4887,6 @@ test('legacy research group public DTO ids use safe serialization', () => {
   );
   assert.match(source, /_id: researchGroupDocumentId\(listing\._id\)/);
   assert.match(source, /id: researchGroupDocumentId\(listing\._id\)/);
-  assert.match(
-    source,
-    /const key = researchGroupDocumentId\(member\.researchEntityId \|\| member\.researchGroupId\)/,
-  );
   assert.match(source, /leadMembersByEntityId\.get\(researchGroupDocumentId\(entity\._id\)\)/);
   assert.match(source, /\[researchGroupDocumentId\(entity\._id\), entity\]/);
   assert.match(source, /visibleEntitiesById\.has\(researchGroupDocumentId\(id\)\)/);

@@ -16,6 +16,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { Department, DepartmentCategory } from '../models/department';
 import { Paper } from '../models/paper';
 import { Listing } from '../models/listing';
@@ -495,17 +496,15 @@ const mongoFilterFromResearchFilters = (
   return mongoFilter;
 };
 
+const LEAD_MEMBER_ROLES = new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead']);
+
 const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
-  const members = await ResearchGroupMember.find({
-    researchEntityId: { $in: entityIds },
-    role: { $in: ['pi', 'principal_investigator', 'lead', 'faculty_lead'] },
-  }).lean();
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const byEntityId = new Map<string, any[]>();
-  for (const member of members as any[]) {
-    const key = researchGroupDocumentId(member.researchEntityId || member.researchGroupId);
-    if (!key) continue;
-    byEntityId.set(key, [...(byEntityId.get(key) || []), member]);
+  for (const [key, roster] of rosterByEntityId) {
+    const leads = roster.filter((member) => LEAD_MEMBER_ROLES.has(member.role));
+    if (leads.length > 0) byEntityId.set(key, leads);
   }
   return byEntityId;
 };

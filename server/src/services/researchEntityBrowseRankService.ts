@@ -8,27 +8,22 @@
  * (no-query) browse can sort on it.
  */
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
 import { AccessSignal } from '../models/accessSignal';
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
 
-const LEAD_ROLES = ['pi', 'principal_investigator', 'lead', 'faculty_lead'];
+const LEAD_ROLES = new Set(['pi', 'principal_investigator', 'lead', 'faculty_lead']);
 const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
 const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
-  const members = await ResearchGroupMember.find({
-    researchEntityId: { $in: entityIds },
-    role: { $in: LEAD_ROLES },
-  }).lean();
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const byId = new Map<string, any[]>();
-  for (const member of members as any[]) {
-    const key =
-      browseRankDocumentId(member.researchEntityId) || browseRankDocumentId(member.researchGroupId);
-    if (!key) continue;
-    byId.set(key, [...(byId.get(key) || []), member]);
+  for (const [key, roster] of rosterByEntityId) {
+    const leads = roster.filter((member) => LEAD_ROLES.has(member.role));
+    if (leads.length > 0) byId.set(key, leads);
   }
   return byId;
 };

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => {
   const addDocuments = vi.fn();
@@ -7,6 +8,9 @@ const mocks = vi.hoisted(() => {
     addDocuments,
     deleteDocument,
     researchGroupMemberFind: vi.fn(),
+    roleAssignmentFind: vi.fn(),
+    personFind: vi.fn(),
+    accountFind: vi.fn(),
     userFind: vi.fn(),
     facultyMemberFind: vi.fn(),
     getMeiliIndex: vi.fn(async (_name: string) => ({
@@ -23,6 +27,24 @@ vi.mock('../../utils/meiliClient', () => ({
 vi.mock('../../models/researchGroupMember', () => ({
   ResearchGroupMember: {
     find: mocks.researchGroupMemberFind,
+  },
+}));
+
+vi.mock('../../models/roleAssignment', () => ({
+  RoleAssignment: {
+    find: mocks.roleAssignmentFind,
+  },
+}));
+
+vi.mock('../../models/person', () => ({
+  Person: {
+    find: mocks.personFind,
+  },
+}));
+
+vi.mock('../../models/account', () => ({
+  Account: {
+    find: mocks.accountFind,
   },
 }));
 
@@ -49,10 +71,16 @@ beforeEach(() => {
   mocks.addDocuments.mockReset();
   mocks.deleteDocument.mockReset();
   mocks.researchGroupMemberFind.mockReset();
+  mocks.roleAssignmentFind.mockReset();
+  mocks.personFind.mockReset();
+  mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
   mocks.facultyMemberFind.mockReset();
   mocks.getMeiliIndex.mockClear();
   mocks.researchGroupMemberFind.mockReturnValue({ lean: async () => [] });
+  mocks.roleAssignmentFind.mockReturnValue({ lean: async () => [] });
+  mocks.personFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+  mocks.accountFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.facultyMemberFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
 });
@@ -130,26 +158,23 @@ describe('syncEntity transform', () => {
 
   it('enriches researchEntity sync documents with searchable professor names', async () => {
     const entityId = '507f1f77bcf86cd799439011';
-    const userId = '507f1f77bcf86cd799439012';
-    mocks.researchGroupMemberFind.mockReturnValueOnce({
+    const personId = new mongoose.Types.ObjectId();
+    mocks.roleAssignmentFind.mockReturnValueOnce({
       lean: async () => [
         {
-          researchEntityId: entityId,
-          userId,
-          role: 'pi',
-          isCurrentMember: true,
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
         },
       ],
     });
-    mocks.userFind.mockReturnValueOnce({
+    mocks.personFind.mockReturnValueOnce({
       select: () => ({
-        lean: async () => [
-          {
-            _id: userId,
-            fname: 'Dennis',
-            lname: 'Spencer',
-          },
-        ],
+        lean: async () => [{ _id: personId, displayName: 'Dennis Spencer' }],
       }),
     });
 
