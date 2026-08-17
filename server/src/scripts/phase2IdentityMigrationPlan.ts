@@ -63,7 +63,7 @@ export const PHASE2_IDENTITY_MONGO_CLIENT_OPTIONS: Readonly<MongoClientOptions> 
 export const PHASE2_IDENTITY_SNAPSHOT_SESSION_OPTIONS: Readonly<ClientSessionOptions> =
   Object.freeze({ snapshot: true });
 
-const PHASE2_PROJECTIONS = Object.freeze({
+export const PHASE2_PROJECTIONS = Object.freeze({
   users: {
     _id: 1,
     netid: 1,
@@ -238,7 +238,7 @@ function optionalId(value: unknown): string | undefined {
   return value === null || value === undefined ? undefined : String(value);
 }
 
-function userFromDocument(document: Document): LegacyIdentityUser {
+export function userFromDocument(document: Document): LegacyIdentityUser {
   return {
     id: String(document._id),
     ...(optionalString(document.netid) ? { netid: optionalString(document.netid) } : {}),
@@ -274,7 +274,7 @@ function userFromDocument(document: Document): LegacyIdentityUser {
   };
 }
 
-function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMember {
+export function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMember {
   return {
     id: String(document._id),
     ...(optionalId(document.userId) ? { userId: optionalId(document.userId) } : {}),
@@ -297,7 +297,7 @@ function facultyMemberFromDocument(document: Document): LegacyIdentityFacultyMem
   };
 }
 
-function membershipFromDocument(document: Document): LegacyIdentityMembership {
+export function membershipFromDocument(document: Document): LegacyIdentityMembership {
   return {
     id: String(document._id),
     ...(optionalId(document.researchEntityId)
@@ -341,7 +341,7 @@ function membershipFromDocument(document: Document): LegacyIdentityMembership {
   };
 }
 
-function researchEntityIdFromDocument(document: Document): string {
+export function researchEntityIdFromDocument(document: Document): string {
   const id = optionalId(document._id);
   if (!id) throw new Error('Phase 2 identity planning found a research entity without an id.');
   return id;
