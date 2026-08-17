@@ -140,7 +140,7 @@ export async function backfillPersonDisplayFields(options: {
   const netids = Array.from(new Set([...netidByAccountId.values()]));
   const users = netids.length
     ? await User.find({ netid: { $in: netids } })
-        .select('netid title primaryDepartment imageUrl website bio facultyMemberId')
+        .select('netid title primaryDepartment imageUrl website facultyMemberId')
         .lean()
     : [];
   const userByNetid = new Map<string, any>();
@@ -157,7 +157,7 @@ export async function backfillPersonDisplayFields(options: {
   ).map((id) => new mongoose.Types.ObjectId(id));
   const facultyMembers = facultyMemberIds.length
     ? await FacultyMember.find({ _id: { $in: facultyMemberIds } })
-        .select('_id title primarySchool photoUrl websiteUrl bio')
+        .select('_id title primarySchool photoUrl websiteUrl')
         .lean()
     : [];
   const facultyById = new Map<string, any>();

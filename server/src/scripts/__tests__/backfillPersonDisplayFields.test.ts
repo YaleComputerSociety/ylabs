@@ -62,14 +62,12 @@ describe('backfillPersonDisplayFields core', () => {
         primaryDepartment: '',
         imageUrl: 'https://img.example.test/u.png',
         website: undefined,
-        bio: 'user bio',
       },
       facultyMember: {
         title: 'Faculty Fallback Title',
         primarySchool: 'School of Fallback',
         photoUrl: 'https://img.example.test/f.png',
         websiteUrl: 'https://faculty.example.test',
-        bio: 'faculty bio',
       },
     });
     expect(composed).toEqual({
@@ -77,7 +75,6 @@ describe('backfillPersonDisplayFields core', () => {
       primaryDepartment: 'School of Fallback',
       imageUrl: 'https://img.example.test/u.png',
       websiteUrl: 'https://faculty.example.test',
-      bio: 'user bio',
     });
   });
 
@@ -88,26 +85,27 @@ describe('backfillPersonDisplayFields core', () => {
         primaryDepartment: 'd'.repeat(300),
         imageUrl: `https://img.example.test/${'a'.repeat(3000)}`,
         website: `https://site.example.test/${'b'.repeat(3000)}`,
-        bio: 'z'.repeat(6000),
       },
     });
     expect(composed.title).toHaveLength(240);
     expect(composed.primaryDepartment).toHaveLength(240);
     expect(composed.imageUrl).toHaveLength(2048);
     expect(composed.websiteUrl).toHaveLength(2048);
-    expect(composed.bio).toHaveLength(5000);
 
     const update = displayProfileFillUpdate(undefined, composed);
-    expect(update.bio).toHaveLength(5000);
+    expect(update.imageUrl).toHaveLength(2048);
     expect(update.title).toHaveLength(240);
   });
 
   it('only fills fields that are currently empty', () => {
     const update = displayProfileFillUpdate(
-      { title: 'Existing Title', bio: '' },
-      { title: 'New Title', primaryDepartment: 'New Dept', bio: 'New Bio' },
+      { title: 'Existing Title', primaryDepartment: '' },
+      { title: 'New Title', primaryDepartment: 'New Dept', imageUrl: 'https://img.example.test/u.png' },
     );
-    expect(update).toEqual({ primaryDepartment: 'New Dept', bio: 'New Bio' });
+    expect(update).toEqual({
+      primaryDepartment: 'New Dept',
+      imageUrl: 'https://img.example.test/u.png',
+    });
   });
 
   it('rejects update documents that touch non-profile fields', () => {
@@ -115,7 +113,7 @@ describe('backfillPersonDisplayFields core', () => {
       assertBackfillUpdateIsDisplayOnly({ 'profile.title': 'ok', displayName: 'no' }),
     ).toThrow(/non-profile field "displayName"/);
     expect(() =>
-      assertBackfillUpdateIsDisplayOnly({ 'profile.title': 'ok', 'profile.bio': 'ok' }),
+      assertBackfillUpdateIsDisplayOnly({ 'profile.title': 'ok', 'profile.imageUrl': 'ok' }),
     ).not.toThrow();
   });
 });
@@ -162,7 +160,6 @@ describe('backfillPersonDisplayFields apply', () => {
       primarySchool: 'School of Fallback',
       photoUrl: 'https://img.example.test/f.png',
       websiteUrl: 'https://faculty.example.test',
-      bio: 'faculty bio',
     });
     await db.collection('users').insertOne({
       netid: 'ab123',
@@ -170,7 +167,6 @@ describe('backfillPersonDisplayFields apply', () => {
       primaryDepartment: 'Department of Testing',
       imageUrl: 'https://img.example.test/u.png',
       website: 'https://user.example.test',
-      bio: 'user bio',
       facultyMemberId,
     });
     await db.collection('people').insertOne({
@@ -218,14 +214,12 @@ describe('backfillPersonDisplayFields apply', () => {
     expect(result.populatedByField.primaryDepartment).toBe(1);
     expect(result.populatedByField.imageUrl).toBe(1);
     expect(result.populatedByField.websiteUrl).toBe(1);
-    expect(result.populatedByField.bio).toBe(1);
 
     const updated = await db.collection('people').findOne({ _id: personId });
     expect(updated?.profile?.title).toBe('Existing Title');
     expect(updated?.profile?.primaryDepartment).toBe('Department of Testing');
     expect(updated?.profile?.imageUrl).toBe('https://img.example.test/u.png');
     expect(updated?.profile?.websiteUrl).toBe('https://user.example.test');
-    expect(updated?.profile?.bio).toBe('user bio');
     expect(updated?.displayName).toBe('Synthetic Person');
     expect(updated?.accountId?.toString()).toBe(accountId.toString());
     expect(updated?.status).toBe('ACTIVE');

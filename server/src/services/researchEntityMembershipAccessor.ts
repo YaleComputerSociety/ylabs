@@ -17,7 +17,6 @@ export interface ResearchEntityRosterEntry {
   primaryDepartment?: string;
   imageUrl?: string;
   websiteUrl?: string;
-  bio?: string;
   role: string;
   roleCanonical: RoleAssignmentRole;
   state: string;
@@ -102,7 +101,6 @@ const buildRosterEntry = (
       : {}),
     ...(person.profile?.imageUrl ? { imageUrl: person.profile.imageUrl } : {}),
     ...(person.profile?.websiteUrl ? { websiteUrl: person.profile.websiteUrl } : {}),
-    ...(person.profile?.bio ? { bio: person.profile.bio } : {}),
     role: legacyRole,
     roleCanonical,
     state: assignment.state,

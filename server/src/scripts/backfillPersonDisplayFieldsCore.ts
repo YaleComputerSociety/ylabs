@@ -3,7 +3,6 @@ export const PERSON_DISPLAY_PROFILE_FIELDS = [
   'primaryDepartment',
   'imageUrl',
   'websiteUrl',
-  'bio',
 ] as const;
 
 export type PersonDisplayProfileField = (typeof PERSON_DISPLAY_PROFILE_FIELDS)[number];
@@ -13,7 +12,6 @@ export const PERSON_DISPLAY_PROFILE_MAXLENGTHS: Record<PersonDisplayProfileField
   primaryDepartment: 240,
   imageUrl: 2048,
   websiteUrl: 2048,
-  bio: 5000,
 };
 
 export const PROTECTED_PERSON_IDENTITY_FIELDS = [
@@ -29,7 +27,6 @@ export interface LegacyUserDisplaySource {
   primaryDepartment?: unknown;
   imageUrl?: unknown;
   website?: unknown;
-  bio?: unknown;
 }
 
 export interface LegacyFacultyDisplaySource {
@@ -37,7 +34,6 @@ export interface LegacyFacultyDisplaySource {
   primarySchool?: unknown;
   photoUrl?: unknown;
   websiteUrl?: unknown;
-  bio?: unknown;
 }
 
 export interface LegacyDisplaySources {
@@ -83,13 +79,11 @@ export function composeDisplayProfileFromLegacy(
     'websiteUrl',
     cleanString(user?.website) || cleanString(faculty?.websiteUrl),
   );
-  const bio = boundDisplayValue('bio', cleanString(user?.bio) || cleanString(faculty?.bio));
 
   if (title) composed.title = title;
   if (primaryDepartment) composed.primaryDepartment = primaryDepartment;
   if (imageUrl) composed.imageUrl = imageUrl;
   if (websiteUrl) composed.websiteUrl = websiteUrl;
-  if (bio) composed.bio = bio;
 
   return composed;
 }

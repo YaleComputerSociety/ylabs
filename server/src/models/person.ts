@@ -41,7 +41,6 @@ export interface PersonDisplayProfile {
   primaryDepartment?: string;
   imageUrl?: string;
   websiteUrl?: string;
-  bio?: string;
 }
 
 export interface PersonRecord {
@@ -216,7 +215,6 @@ export const personDisplayProfileSchema = new mongoose.Schema<PersonDisplayProfi
     primaryDepartment: { type: String, trim: true, maxlength: 240 },
     imageUrl: { type: String, trim: true, maxlength: 2048 },
     websiteUrl: { type: String, trim: true, maxlength: 2048 },
-    bio: { type: String, trim: true, maxlength: 5000 },
   },
   {
     _id: false,
