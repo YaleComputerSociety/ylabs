@@ -167,9 +167,7 @@ export async function backfillPersonDisplayFields(options: {
 
   for (const person of people as any[]) {
     peopleScanned += 1;
-    const netid = person.accountId
-      ? netidByAccountId.get(person.accountId.toString())
-      : undefined;
+    const netid = person.accountId ? netidByAccountId.get(person.accountId.toString()) : undefined;
     if (!netid) continue;
     const user = userByNetid.get(netid);
     const facultyMemberKey = asObjectIdKey(user?.facultyMemberId);

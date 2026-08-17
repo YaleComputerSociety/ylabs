@@ -19,10 +19,7 @@ describe('backfillPersonDisplayFields CLI helpers', () => {
       confirmBackfillPersonDisplayFields: false,
     });
     expect(
-      parseBackfillPersonDisplayFieldsArgs([
-        '--apply',
-        '--confirm-backfill-person-display-fields',
-      ]),
+      parseBackfillPersonDisplayFieldsArgs(['--apply', '--confirm-backfill-person-display-fields']),
     ).toEqual({
       apply: true,
       confirmBackfillPersonDisplayFields: true,
@@ -100,7 +97,11 @@ describe('backfillPersonDisplayFields core', () => {
   it('only fills fields that are currently empty', () => {
     const update = displayProfileFillUpdate(
       { title: 'Existing Title', primaryDepartment: '' },
-      { title: 'New Title', primaryDepartment: 'New Dept', imageUrl: 'https://img.example.test/u.png' },
+      {
+        title: 'New Title',
+        primaryDepartment: 'New Dept',
+        imageUrl: 'https://img.example.test/u.png',
+      },
     );
     expect(update).toEqual({
       primaryDepartment: 'New Dept',

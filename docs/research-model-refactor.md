@@ -125,6 +125,12 @@ type Person = {
   identifiers?: {
     orcid?: string;
   };
+  profile?: {
+    title?: string;
+    primaryDepartment?: string;
+    imageUrl?: string;
+    websiteUrl?: string;
+  };
   status: 'ACTIVE' | 'DEPARTED' | 'UNKNOWN';
   archived: boolean;
 };
@@ -132,6 +138,8 @@ type Person = {
 
 `Person` must not become another full professor-profile document.
 It should not store mirrored biographies, publication arrays, citation metrics, h-index values, paper-derived topics, or copied contact information.
+The optional bounded `profile` sub-document carries only the student-facing display fields `title`, `primaryDepartment`, `imageUrl`, and `websiteUrl` so member cards keep their richness through the later leadership and member cutover.
+It deliberately excludes `bio`, whose descriptive text belongs to the research entity rather than the person.
 Search may index a person's display name through related research-entity projections so a professor-name query can return the research homes they lead.
 `profileLinks` is a small bounded set with at most one reviewed link of each kind.
 Public projections expose one selected primary profile and a bounded `researchProfiles` array containing only secondary link kind, label, and canonical URL.
