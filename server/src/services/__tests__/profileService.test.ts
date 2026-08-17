@@ -18,7 +18,6 @@ import {
   isPublicResearchPaperLink,
   normalizePublicProfile,
   orderProfileScholarlyLinks,
-  paperToScholarlyLink,
   scholarlyLinkToPublicLink,
   updateOwnProfile,
 } from '../profileService';
@@ -1711,33 +1710,6 @@ describe('profileService profile shaping', () => {
     ]);
   });
 
-  it('turns identity-backed papers into inspectable profile research activity links', () => {
-    const link = paperToScholarlyLink(
-      {
-        _id: 'paper-1',
-        title: 'A real paper',
-        doi: '10.1234/example',
-        openAccessUrl: 'https://example.test/free',
-        year: 2025,
-        venue: 'Journal of Examples',
-        sources: ['openalex'],
-      },
-      'user-1',
-    );
-
-    expect(link).toMatchObject({
-      title: 'A real paper',
-      url: 'https://doi.org/10.1234/example',
-      destinationKind: 'DOI',
-      displaySource: 'DOI',
-      freeFullTextUrl: 'https://example.test/free',
-      freeFullTextLabel: 'Free full text',
-      discoveredVia: 'OPENALEX',
-      year: 2025,
-      venue: 'Journal of Examples',
-    });
-  });
-
   it('prioritizes official-profile selected publications before trimming profile activity', () => {
     const links = [
       {
@@ -1966,18 +1938,6 @@ describe('profileService profile shaping', () => {
     expect(isPublicResearchPaperLink(freeTextLink)).toBe(true);
   });
 
-  it('keeps OpenAlex-derived open-access papers when the primary URL is viewable', () => {
-    const link = paperToScholarlyLink({
-      _id: 'paper-open-access',
-      title: 'Open access paper without DOI',
-      openAccessUrl: 'https://example.test/viewable-paper',
-      openAccessStatus: 'gold',
-      sources: ['openalex'],
-    });
-
-    expect(link.url).toBe('https://example.test/viewable-paper');
-    expect(isPublicResearchPaperLink(link)).toBe(true);
-  });
 });
 
 describe('profileService admin profile update persistence', () => {
@@ -1989,9 +1949,7 @@ describe('profileService admin profile update persistence', () => {
       }),
     });
     userModelMock.findOneAndUpdate.mockReturnValue({
-      select: vi.fn(() => ({
-        lean: vi.fn().mockResolvedValue({ netid: 'ada123' }),
-      })),
+      lean: vi.fn().mockResolvedValue({ netid: 'ada123' }),
     });
 
     await adminUpdateProfile('ada123', {
@@ -2013,7 +1971,6 @@ describe('profileService admin profile update persistence', () => {
       profileVerified: 'true',
       userConfirmed: true,
       userType: 'superadmin',
-      publications: 'not an array',
       arbitraryNested: { $set: { admin: true } },
     });
 
@@ -2040,14 +1997,14 @@ describe('profileService admin profile update persistence', () => {
     expect(update).not.toHaveProperty('profileVerified');
     expect(update.userConfirmed).toBe(true);
     expect(update).not.toHaveProperty('userType');
-    expect(update.publications).toEqual([]);
+    expect(update).not.toHaveProperty('publications');
     expect(update).not.toHaveProperty('arbitraryNested');
   });
 
   it('accepts every userType the AdminProfileEditModal dropdown actually offers', async () => {
     for (const userType of ['admin', 'professor', 'faculty', 'undergraduate', 'graduate', 'unknown']) {
       userModelMock.findOneAndUpdate.mockReturnValue({
-        select: vi.fn(() => ({ lean: vi.fn().mockResolvedValue({ netid: 'u123' }) })),
+        lean: vi.fn().mockResolvedValue({ netid: 'u123' }),
       });
 
       await adminUpdateProfile('u123', { userType });
@@ -2059,7 +2016,7 @@ describe('profileService admin profile update persistence', () => {
 
   it('drops the legacy generic student userType, which no real account uses and the dropdown never offers', async () => {
     userModelMock.findOneAndUpdate.mockReturnValue({
-      select: vi.fn(() => ({ lean: vi.fn().mockResolvedValue({ netid: 'u123' }) })),
+      lean: vi.fn().mockResolvedValue({ netid: 'u123' }),
     });
 
     await adminUpdateProfile('u123', { userType: 'student' });
@@ -2087,12 +2044,10 @@ describe('updateOwnProfile', () => {
 
   it('sanitizes admin profile URL fields before persisting a faculty profile', async () => {
     userModelMock.findOneAndUpdate.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        lean: vi.fn().mockResolvedValue({
-          netid: 'prof123',
-          website: 'https://faculty.example.test/',
-          profileUrls: { yale: 'https://faculty.example.test/profile' },
-        }),
+      lean: vi.fn().mockResolvedValue({
+        netid: 'prof123',
+        website: 'https://faculty.example.test/',
+        profileUrls: { yale: 'https://faculty.example.test/profile' },
       }),
     });
 
@@ -2120,55 +2075,6 @@ describe('updateOwnProfile', () => {
         runValidators: true,
       },
     );
-  });
-
-  it('bounds and allowlists admin profile publications before persistence', async () => {
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        lean: vi.fn().mockResolvedValue({
-          netid: 'prof123',
-          publications: [],
-        }),
-      }),
-    });
-
-    await adminUpdateProfile('prof123', {
-      publications: [
-        {
-          title: `Contact ada@example.edu about ${'A'.repeat(800)}`,
-          doi: '10.1234/example ada@example.edu',
-          year: '2026',
-          venue: 'Journal phone 203-555-1212',
-          cited_by_count: '42',
-          open_access_url: 'https://example.yale.edu/paper.pdf',
-          source: 'official-profile ada@example.edu',
-          ownerEmail: 'ada@example.edu',
-          raw: { private: true },
-        },
-        {
-          title: '',
-          raw: { private: true },
-        },
-        {
-          title: 'Unsafe URL paper',
-          openAccessUrl: 'javascript:alert(document.cookie)',
-        },
-      ],
-    });
-
-    const update = userModelMock.findOneAndUpdate.mock.lastCall![1];
-    expect(update.publications).toHaveLength(2);
-    expect(update.publications[0]).toMatchObject({
-      year: 2026,
-      citedByCount: 42,
-      openAccessUrl: 'https://example.yale.edu/paper.pdf',
-    });
-    expect(update.publications[0].title.length).toBeLessThanOrEqual(500);
-    expect(JSON.stringify(update.publications)).not.toContain('ada@example.edu');
-    expect(JSON.stringify(update.publications)).not.toContain('203-555-1212');
-    expect(JSON.stringify(update.publications)).not.toContain('ownerEmail');
-    expect(JSON.stringify(update.publications)).not.toContain('raw');
-    expect(update.publications[1]).toEqual({ title: 'Unsafe URL paper' });
   });
 
   it('bounds self-editable profile payload size before persisting a faculty profile', async () => {

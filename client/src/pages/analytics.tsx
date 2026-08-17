@@ -1165,12 +1165,6 @@ const Analytics = () => {
                   </div>
                 ))}
                 <div className="mt-3 flex items-center justify-between border-t border-[var(--yr-line)] pt-3">
-                  <span className="text-gray-600">With recent papers</span>
-                  <span className="font-medium text-gray-900">
-                    {formatNumber(researchCoverage.scholarly.withRecentPapers)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
                   <span className="text-gray-600">With recent grants</span>
                   <span className="font-medium text-gray-900">
                     {formatNumber(researchCoverage.scholarly.withRecentGrants)}

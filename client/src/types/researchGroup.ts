@@ -151,7 +151,6 @@ export interface ResearchGroup {
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
-  recentPaperCount?: number;
   /**
    * Denormalized 0–1 confidence score for `acceptingUndergrads`. Materializer
    * mirrors `confidenceByField['acceptingUndergrads']` here so Meili can filter

@@ -309,7 +309,7 @@ Gate:
 
 Minimum copy set for the accepted full Beta posture:
 
-- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `undergraduate_logistics_claims`, `papers`, `paper_authors`, and `grants`.
+- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `undergraduate_logistics_claims`, and `grants`.
 - Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
 - Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
 

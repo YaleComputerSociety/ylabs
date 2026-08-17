@@ -2239,9 +2239,6 @@ export const getAnalytics = async () => {
           {
             $group: {
               _id: null,
-              withRecentPapers: {
-                $sum: { $cond: [{ $gt: ['$recentPaperCount', 0] }, 1, 0] },
-              },
               withRecentGrants: {
                 $sum: { $cond: [{ $gt: ['$recentGrantCount', 0] }, 1, 0] },
               },
@@ -2398,7 +2395,6 @@ export const getAnalytics = async () => {
         staleOver90Days: 0,
       },
       scholarly: researchEntities.scholarly[0] || {
-        withRecentPapers: 0,
         withRecentGrants: 0,
       },
     },

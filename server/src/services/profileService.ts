@@ -3,8 +3,6 @@
  */
 import { User } from '../models/user';
 import { getListingModel } from '../db/connections';
-import { Paper } from '../models/paper';
-import { PaperAuthor } from '../models/paperAuthor';
 import { FacultyMember } from '../models/facultyMember';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
@@ -384,50 +382,6 @@ const withPublicProfileImageGuards = async (user: Record<string, any>) => {
   }
 
   return { ...user, imageUrl, image_url: imageUrl };
-};
-
-export const paperToScholarlyLink = (paper: Record<string, any>, _userId?: unknown) => {
-  const doi = typeof paper.doi === 'string' ? paper.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '') : '';
-  const doiUrl = doi ? `https://doi.org/${doi}` : '';
-  const url = doiUrl || paper.landingPageUrl || paper.openAccessUrl || paper.url || paper.pdfUrl || '';
-  const freeFullTextUrl =
-    paper.pdfUrl && paper.pdfUrl !== url
-      ? paper.pdfUrl
-      : paper.openAccessUrl && paper.openAccessUrl !== url
-        ? paper.openAccessUrl
-        : undefined;
-  const scholarlyLinkIdSource =
-    serializedDocumentId(doiUrl) ||
-    serializedDocumentId(url) ||
-    serializedDocumentId(paper.openAlexId) ||
-    serializedDocumentId(paper.arxivId) ||
-    serializedDocumentId(paper.title) ||
-    'research-activity';
-
-  return {
-    _id: scholarlyLinkIdSource
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 160),
-    title: paper.title || 'Untitled research activity',
-    url,
-    destinationKind: doiUrl ? 'DOI' : paper.openAccessUrl || paper.pdfUrl ? 'OPENALEX' : 'OTHER',
-    displaySource: doiUrl ? 'DOI' : paper.openAccessUrl || paper.pdfUrl ? 'Open access' : 'Paper',
-    freeFullTextUrl,
-    freeFullTextLabel: freeFullTextUrl ? 'Free full text' : undefined,
-    discoveredVia: paper.sources?.includes('orcid') ? 'ORCID' : 'OPENALEX',
-    openAccessStatus: paper.openAccessStatus || paper.open_access_status || undefined,
-    year: paper.year,
-    venue: paper.venue,
-    confidence: 0.9,
-    observedAt: paper.lastObservedAt?.toISOString?.() || paper.updatedAt?.toISOString?.(),
-    externalIds: {
-      doi: doi || undefined,
-      openAlexId: paper.openAlexId,
-      arxivId: paper.arxivId,
-    },
-  };
 };
 
 const normalizeDiscoveredVia = (value: unknown): 'OPENALEX' | 'ORCID' | 'OFFICIAL_PROFILE' | 'MANUAL' => {
@@ -1771,28 +1725,7 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
     return true;
   });
 
-  if (scholarlyLinks.length > 0) return orderProfileScholarlyLinks(scholarlyLinks).slice(0, 10);
-
-  const authorIdentityClauses: Record<string, unknown>[] = [{ userId }];
-  if (user.facultyMemberId) authorIdentityClauses.push({ facultyMemberId: user.facultyMemberId });
-
-  const authorRows = await PaperAuthor.find({ $or: authorIdentityClauses })
-    .select('paperId')
-    .sort({ lastObservedAt: -1, updatedAt: -1 })
-    .limit(50)
-    .lean();
-  const paperIds = [...new Set(authorRows.map((row: any) => profileDocumentId(row.paperId)).filter(Boolean))];
-  if (paperIds.length === 0) return [];
-
-  const papers = await Paper.find({ _id: { $in: paperIds }, archived: { $ne: true } })
-    .select(
-      '_id title doi openAlexId arxivId url openAccessUrl landingPageUrl pdfUrl year venue citationCount publishedAt postedAt versionDate sources lastObservedAt updatedAt',
-    )
-    .sort({ publishedAt: -1, year: -1, citationCount: -1 })
-    .limit(10)
-    .lean();
-
-  return papers.map((paper: any) => paperToScholarlyLink(paper, userId));
+  return orderProfileScholarlyLinks(scholarlyLinks).slice(0, 10);
 };
 
 export const buildProfileResearchMembershipFilter = (
@@ -1974,15 +1907,8 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
   }
 };
 
-/**
- * Get a faculty profile by netid, optionally including publications.
- */
-export const getProfileByNetid = async (netid: string, includePublications = false) => {
-  let query = User.findOne({ netid });
-  if (includePublications) {
-    query = query.select('+publications');
-  }
-  const user = await query.lean();
+export const getProfileByNetid = async (netid: string) => {
+  const user = await User.findOne({ netid }).lean();
   if (!user) return user;
 
   const [scholarlyLinks, researchEntities] = await Promise.all([
@@ -2020,9 +1946,6 @@ const MAX_SELF_PROFILE_ARRAY_VALUE_LENGTH = 120;
 const MAX_SELF_PROFILE_URLS = 20;
 const MAX_SELF_PROFILE_URL_KEY_LENGTH = 80;
 const MAX_SELF_PROFILE_URL_LENGTH = 2048;
-const MAX_ADMIN_PROFILE_PUBLICATIONS = 100;
-const MAX_ADMIN_PROFILE_PUBLICATION_TEXT_LENGTH = 500;
-const MAX_ADMIN_PROFILE_PUBLICATION_CITATIONS = 1_000_000;
 const SAFE_PROFILE_URL_KEY_RE = /^[A-Za-z0-9 _-]{1,80}$/;
 
 const selfProfileValidationError = (message: string): Error => {
@@ -2070,51 +1993,6 @@ const boundedHttpsProfileImageUrl = (value: unknown): string | undefined => {
   } catch {
     return undefined;
   }
-};
-
-const boundedPublicationText = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const text = redactDirectContactInfo(value).trim().slice(0, MAX_ADMIN_PROFILE_PUBLICATION_TEXT_LENGTH);
-  return text || undefined;
-};
-
-const boundedPublicationNumber = (
-  value: unknown,
-  { min = 0, max = Number.MAX_SAFE_INTEGER }: { min?: number; max?: number } = {},
-): number | undefined => {
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(number) || number < min || number > max) return undefined;
-  return Math.trunc(number);
-};
-
-const normalizeAdminProfilePublications = (value: unknown): Record<string, any>[] => {
-  if (!Array.isArray(value)) return [];
-
-  return value.slice(0, MAX_ADMIN_PROFILE_PUBLICATIONS).flatMap((item) => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
-    const record = item as Record<string, unknown>;
-    const title = boundedPublicationText(record.title);
-    if (!title) return [];
-
-    const publication: Record<string, any> = { title };
-    const doi = boundedPublicationText(record.doi);
-    const venue = boundedPublicationText(record.venue);
-    const source = boundedPublicationText(record.source);
-    const year = boundedPublicationNumber(record.year, { min: 1700, max: 2200 });
-    const citedByCount = boundedPublicationNumber(record.citedByCount ?? record.cited_by_count, {
-      max: MAX_ADMIN_PROFILE_PUBLICATION_CITATIONS,
-    });
-    const openAccessUrl = boundedPublicProfileUrl(record.openAccessUrl ?? record.open_access_url);
-
-    if (doi !== undefined) publication.doi = doi;
-    if (year !== undefined) publication.year = year;
-    if (venue !== undefined) publication.venue = venue;
-    if (citedByCount !== undefined) publication.citedByCount = citedByCount;
-    if (openAccessUrl !== undefined) publication.openAccessUrl = openAccessUrl;
-    if (source !== undefined) publication.source = source;
-
-    return [publication];
-  });
 };
 
 const sanitizeSelfEditableProfileTextFields = (update: Record<string, any>) => {
@@ -2395,16 +2273,10 @@ export const adminUpdateProfile = async (netid: string, data: any) => {
     update.departments = [primary, ...secondary].filter(Boolean);
   }
 
-  if (source.publications !== undefined) {
-    update.publications = normalizeAdminProfilePublications(source.publications);
-  }
-
   const user = await User.findOneAndUpdate({ netid }, update, {
     new: true,
     runValidators: true,
-  })
-    .select('+publications')
-    .lean();
+  }).lean();
 
   return user;
 };

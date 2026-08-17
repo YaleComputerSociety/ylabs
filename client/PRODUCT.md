@@ -15,14 +15,14 @@ Secondary stakeholders: faculty, lab managers, program managers, advisors, YCS m
 ## Primary User Jobs
 
 - Start with an idea, method, paper, or phrase and discover where that work happens at Yale.
-- Understand the papers, people, labs, centers, institutes, and programs behind a topic.
+- Understand the research groups, people, labs, centers, institutes, and programs behind a topic, plus the access evidence for getting involved.
 - Verify whether an author or professor is the correct person.
 - Find credible evidence that undergraduates can participate.
 - Decide the safest next step: apply when an official route exists, review source context, save for planning, or check back later.
 
 ## Core Flows
 
-1. Topic exploration: query -> cluster -> papers -> people/entities -> pathway -> next step.
+1. Topic exploration: query -> cluster -> people/entities/access -> pathway -> next step.
 2. Person lookup: search name -> compare identity candidates -> verify affiliation/source -> review research context -> act cautiously.
 3. Serendipitous discovery: cluster -> adjacent clusters -> under-discovered entities -> evidence, sources, and planning context.
 
@@ -46,4 +46,4 @@ Yale Research is not a marketing site, a complete public faculty directory, a so
 
 ## V1 Scope
 
-V1 should rebrand the shell, replace the homepage with topic-first search, refactor search results into research profiles with people, papers, evidence, sources, and planning context, add identity-confidence cards, and reuse existing Research, Evidence, and Best Next Step infrastructure.
+V1 should rebrand the shell, replace the homepage with topic-first search, refactor search results into research profiles with people, evidence, sources, and planning context, add identity-confidence cards, and reuse existing Research, Evidence, and Best Next Step infrastructure.

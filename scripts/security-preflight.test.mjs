@@ -2037,21 +2037,6 @@ test('paper quality duplicate samples use safe id serialization', () => {
   assert.doesNotMatch(source, /id: String\(link\._id \|\| ''\)/);
 });
 
-test('profile scholarly-link synthetic ids avoid generic object coercion', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const scholarlyLinkIdSource =\s*serializedDocumentId\(doiUrl\) \|\|[\s\S]*?serializedDocumentId\(paper\.title\) \|\|[\s\S]*?'research-activity'/,
-  );
-  assert.match(source, /_id: scholarlyLinkIdSource\s*\.toLowerCase\(\)/);
-  assert.doesNotMatch(source, /_id: String\(\s*doiUrl \|\|/);
-});
-
 test('student visibility repair-target artifact ids use safe serialization', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/studentVisibilityRepairTargets.ts', import.meta.url),
@@ -2117,18 +2102,10 @@ test('admin profile management payloads do not expose raw account state', () => 
     'utf8',
   );
 
-  assert.match(
-    routeSource,
-    /export const adminProfileDto = \(user: any, includePublications = false\) => \{/,
-  );
-  assert.match(routeSource, /const ADMIN_PROFILE_PUBLICATION_LIMIT = 500/);
-  assert.match(
-    routeSource,
-    /profile\.publications = adminProfilePublications\(user\?\.publications\)/,
-  );
+  assert.match(routeSource, /export const adminProfileDto = \(user: any\) => \{/);
   assert.match(routeSource, /ownListingCount: ownListings\.length/);
   assert.match(routeSource, /profiles: profiles\.map\(\(profile\) => adminProfileDto\(profile\)\)/);
-  assert.match(routeSource, /res\.json\(\{ profile: adminProfileDto\(user, true\) \}\)/);
+  assert.match(routeSource, /res\.json\(\{ profile: adminProfileDto\(user\) \}\)/);
   assert.match(routeSource, /res\.json\(\{ profile: adminProfileDto\(profile\) \}\)/);
   assert.doesNotMatch(
     routeSource,
@@ -3598,25 +3575,12 @@ test('profile read routes validate netid path params before controller work', ()
   );
   assert.match(
     routeSource,
-    /router\.get\('\/:netid\/publications', isAuthenticated, validateNetid\('netid'\), getPublications\)/,
-  );
-  assert.match(
-    routeSource,
     /router\.get\('\/:netid\/listings', isAuthenticated, validateNetid\('netid'\), getProfileListings\)/,
   );
   assert.match(
     routeSource,
     /router\.get\('\/:netid\/courses', isAuthenticated, validateNetid\('netid'\), getProfileCourses\)/,
   );
-  assert.match(controllerSource, /MAX_PUBLICATION_QUERY_PARAM_LENGTH = 16/);
-  assert.match(controllerSource, /const POSITIVE_INTEGER_PARAM_RE = \/\^\[1-9\]\\d\*\$\/;/);
-  assert.match(controllerSource, /typeof value !== 'string' && typeof value !== 'number'/);
-  assert.match(controllerSource, /raw\.length > MAX_PUBLICATION_QUERY_PARAM_LENGTH/);
-  assert.match(controllerSource, /Number\.isSafeInteger\(value\) && value > 0/);
-  assert.match(controllerSource, /!POSITIVE_INTEGER_PARAM_RE\.test\(raw\)/);
-  assert.match(controllerSource, /Number\.isSafeInteger\(parsed\) \? parsed : fallback/);
-  assert.doesNotMatch(controllerSource, /parseInt\(raw, 10\)/);
-  assert.doesNotMatch(controllerSource, /Number\.isFinite\(parsed\) && parsed > 0/);
   assert.match(controllerSource, /MAX_PUBLIC_PROFILE_URLS = 20/);
   assert.match(
     controllerSource,
@@ -5642,33 +5606,6 @@ test('public research detail subdocuments omit persistence metadata', () => {
     assert.doesNotMatch(serializerMatch[0], /entryPathwayId:/);
     assert.doesNotMatch(serializerMatch[0], /listingId:/);
   }
-
-  const paperSerializerMatch = source.match(
-    /const publicPaperForResearchDetail = \(paper: any\) => \{[\s\S]*?\n\};/,
-  );
-  assert.ok(paperSerializerMatch, 'publicPaperForResearchDetail serializer should exist');
-  assert.match(
-    source,
-    /const recentPapers = \(recentPapersRaw as any\[\]\)\.map\(publicPaperForResearchDetail\)/,
-  );
-  assert.match(
-    source,
-    /const recentArxivPreprints = \(recentArxivPreprintsRaw as any\[\]\)\.map\(publicPaperForResearchDetail\)/,
-  );
-  assert.match(paperSerializerMatch[0], /_id: publicPaperKeyForResearchDetail\(paper\)/);
-  assert.match(paperSerializerMatch[0], /title: publicString\(paper\?\.title\)/);
-  assert.match(paperSerializerMatch[0], /publicHttpUrl\(paper\?\.openAccessUrl\)/);
-  assert.doesNotMatch(paperSerializerMatch[0], /yaleAuthorIds/);
-  assert.doesNotMatch(paperSerializerMatch[0], /yaleAuthorNetIds/);
-  assert.doesNotMatch(paperSerializerMatch[0], /facultyMemberIds/);
-  assert.doesNotMatch(paperSerializerMatch[0], /researchEntityIds/);
-  assert.doesNotMatch(paperSerializerMatch[0], /sourceIds/);
-  assert.doesNotMatch(paperSerializerMatch[0], /fieldProvenance/);
-  assert.doesNotMatch(paperSerializerMatch[0], /confidenceByField/);
-  assert.doesNotMatch(paperSerializerMatch[0], /manuallyLockedFields/);
-  assert.doesNotMatch(paperSerializerMatch[0], /externalIds/);
-  assert.doesNotMatch(paperSerializerMatch[0], /createdAt:/);
-  assert.doesNotMatch(paperSerializerMatch[0], /updatedAt:/);
 });
 
 test('auth error logs pass through the shared sanitizer', () => {
@@ -6874,31 +6811,6 @@ test('public profile listing payloads redact direct contact text', () => {
   assert.doesNotMatch(source, /applicantDescription: listing\.applicantDescription/);
 });
 
-test('public profile publication payloads redact and bound text fields', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/profileController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_PUBLIC_PROFILE_PUBLICATION_TEXT_LENGTH = 500/);
-  assert.match(
-    source,
-    /const publicProfilePublicationText = \(value: unknown\): string \| undefined => \{/,
-  );
-  assert.match(
-    source,
-    /redactDirectContactInfo\(value\)\.trim\(\)\.slice\(0, MAX_PUBLIC_PROFILE_PUBLICATION_TEXT_LENGTH\)/,
-  );
-  assert.match(source, /title', publicProfilePublicationText\(publication\.title\)/);
-  assert.match(source, /doi', publicProfilePublicationText\(publication\.doi\)/);
-  assert.match(source, /venue', publicProfilePublicationText\(publication\.venue\)/);
-  assert.match(source, /source', publicProfilePublicationText\(publication\.source\)/);
-  assert.doesNotMatch(source, /title', publication\.title/);
-  assert.doesNotMatch(source, /doi', publication\.doi/);
-  assert.doesNotMatch(source, /venue', publication\.venue/);
-  assert.doesNotMatch(source, /source', publication\.source/);
-});
-
 test('profile update persistence sanitizes public URL fields for self and admin edits', () => {
   const profileServiceSource = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
@@ -7007,32 +6919,6 @@ test('public URL normalization rejects local and private-network browser targets
   assert.match(clientUrlSource, /if \(!isAllowedPublicHttpPort\(parsed\)\) return ''/);
 });
 
-test('admin profile publication persistence is bounded and allowlisted', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/profileService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_ADMIN_PROFILE_PUBLICATIONS = 100/);
-  assert.match(source, /MAX_ADMIN_PROFILE_PUBLICATION_TEXT_LENGTH = 500/);
-  assert.match(
-    source,
-    /const normalizeAdminProfilePublications = \(value: unknown\): Record<string, any>\[\] => \{/,
-  );
-  assert.match(source, /value\.slice\(0, MAX_ADMIN_PROFILE_PUBLICATIONS\)\.flatMap/);
-  assert.match(source, /const title = boundedPublicationText\(record\.title\)/);
-  assert.match(source, /if \(!title\) return \[\]/);
-  assert.match(
-    source,
-    /const openAccessUrl = boundedPublicProfileUrl\(record\.openAccessUrl \?\? record\.open_access_url\)/,
-  );
-  assert.match(
-    source,
-    /update\.publications = normalizeAdminProfilePublications\(source\.publications\)/,
-  );
-  assert.doesNotMatch(source, /update\.publications = data\.publications/);
-});
-
 test('admin profile updates bound allowlisted fields before persistence', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/profileService.ts', import.meta.url),
@@ -7052,7 +6938,6 @@ test('admin profile updates bound allowlisted fields before persistence', () => 
   assert.match(source, /sanitizeAdminProfileTextFields\(update\)/);
   assert.match(source, /sanitizeSelfEditableProfileUrlFields\(update\)/);
   assert.match(source, /sanitizeAdminProfileScalarFields\(update\)/);
-  assert.match(source, /normalizeAdminProfilePublications\(source\.publications\)/);
   assert.doesNotMatch(source, /if \(data\[field\] !== undefined\)/);
   assert.doesNotMatch(source, /update\[field\] = data\[field\]/);
 });

@@ -101,12 +101,8 @@ const ACCESS_REVIEW_RECORD_TYPES = new Set([
 const MAX_ADMIN_ACCESS_REVIEW_NOTE_LENGTH = 2000;
 const MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELDS = 100;
 const MAX_ADMIN_ACCESS_REVIEW_LOCKED_FIELD_LENGTH = 120;
-const ADMIN_PROFILE_PUBLICATION_LIMIT = 500;
 
-const adminProfilePublications = (value: unknown) =>
-  Array.isArray(value) ? value.slice(0, ADMIN_PROFILE_PUBLICATION_LIMIT) : [];
-
-export const adminProfileDto = (user: any, includePublications = false) => {
+export const adminProfileDto = (user: any) => {
   const ownListings = Array.isArray(user?.ownListings) ? user.ownListings : [];
   const secondaryDepartments = Array.isArray(user?.secondaryDepartments)
     ? user.secondaryDepartments
@@ -151,10 +147,6 @@ export const adminProfileDto = (user: any, includePublications = false) => {
     createdAt: user?.createdAt,
     updatedAt: user?.updatedAt,
   };
-
-  if (includePublications) {
-    profile.publications = adminProfilePublications(user?.publications);
-  }
 
   return profile;
 };
@@ -1288,7 +1280,6 @@ router.get('/profiles', async (req: Request, res: Response) => {
 
     const [profiles, total] = await Promise.all([
       User.find(filter)
-        .select('-publications')
         .sort(sort)
         .skip((pageNum - 1) * pageSizeNum)
         .limit(pageSizeNum)
@@ -1311,13 +1302,13 @@ router.get('/profiles', async (req: Request, res: Response) => {
 
 router.get('/profiles/:netid', validateNetid('netid'), async (req: Request, res: Response) => {
   try {
-    const user = await User.findOne({ netid: req.params.netid }).select('+publications').lean();
+    const user = await User.findOne({ netid: req.params.netid }).lean();
 
     if (!user) {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
-    res.json({ profile: adminProfileDto(user, true) });
+    res.json({ profile: adminProfileDto(user) });
   } catch (error: any) {
     console.error('Admin: Error fetching profile:', sanitizeLogValue(error));
     res.status(500).json({ error: 'Failed to fetch profile' });

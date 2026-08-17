@@ -65,7 +65,7 @@ const sampleData: AnalyticsData = {
       neverObserved: 4,
       staleOver90Days: 6,
     },
-    scholarly: { withRecentPapers: 18, withRecentGrants: 9 },
+    scholarly: { withRecentGrants: 9 },
   },
   timestamp: '2026-04-16T00:00:00.000Z',
 };

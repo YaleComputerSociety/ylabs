@@ -274,7 +274,7 @@ The separate public practical-routes search endpoint and page are retired. `Entr
 Current behavior:
 
 - Research search and detail payloads can use pathway type, compensation, status, evidence strength, entity type, departments, research areas, active posted opportunity, and computed best-next-step category as enrichment.
-- Student-facing browse status should count matching research homes, people, and papers without exposing a separate ways-in count.
+- Student-facing browse status should count matching research homes and people without exposing a separate ways-in count.
 - Join host `ResearchGroup` data as the current physical `ResearchEntity` backing.
 - Join active/rolling `PostedOpportunity` rows only when a real posted instance exists.
 - Join a small number of supporting `AccessSignal` rows as Evidence.
