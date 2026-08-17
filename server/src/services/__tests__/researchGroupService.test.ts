@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   researchEntityFind: vi.fn(),
   researchEntityRelationshipFind: vi.fn(),
   researchGroupMemberFind: vi.fn(),
+  roleAssignmentFind: vi.fn(),
+  personFind: vi.fn(),
+  accountFind: vi.fn(),
   userFind: vi.fn(),
   facultyMemberFind: vi.fn(),
   paperFind: vi.fn(),
@@ -53,6 +56,24 @@ vi.mock('../../models/researchEntityRelationship', () => ({
 vi.mock('../../models/researchGroupMember', () => ({
   ResearchGroupMember: {
     find: mocks.researchGroupMemberFind,
+  },
+}));
+
+vi.mock('../../models/roleAssignment', () => ({
+  RoleAssignment: {
+    find: mocks.roleAssignmentFind,
+  },
+}));
+
+vi.mock('../../models/person', () => ({
+  Person: {
+    find: mocks.personFind,
+  },
+}));
+
+vi.mock('../../models/account', () => ({
+  Account: {
+    find: mocks.accountFind,
   },
 }));
 
@@ -181,6 +202,9 @@ beforeEach(() => {
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
   mocks.researchGroupMemberFind.mockReset();
+  mocks.roleAssignmentFind.mockReset();
+  mocks.personFind.mockReset();
+  mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
   mocks.facultyMemberFind.mockReset();
   mocks.paperFind.mockReset();
@@ -196,6 +220,9 @@ beforeEach(() => {
   mocks.researchEntityFind.mockReturnValue(queryResult([]));
   mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([]));
   mocks.researchGroupMemberFind.mockReturnValue(queryResult([]));
+  mocks.roleAssignmentFind.mockReturnValue(queryResult([]));
+  mocks.personFind.mockReturnValue(queryResult([]));
+  mocks.accountFind.mockReturnValue(queryResult([]));
   mocks.userFind.mockReturnValue(leanResult([]));
   mocks.facultyMemberFind.mockReturnValue(selectLeanResult([]));
   mocks.paperFind.mockReturnValue(sortLimitLeanResult([]));
@@ -678,8 +705,22 @@ describe('searchResearchGroupsViaMeili', () => {
         },
       ]),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      queryResult([{ researchEntityId: strongEntityId, role: 'pi', userId: 'user-1' }]),
+    const strongPersonId = new mongoose.Types.ObjectId();
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: strongPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: strongEntityId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([{ _id: strongPersonId, displayName: 'Strong Lead' }]),
     );
 
     const result = await searchResearchGroupsViaMeili(

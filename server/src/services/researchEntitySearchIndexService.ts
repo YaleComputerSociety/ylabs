@@ -1,7 +1,5 @@
 import { ResearchEntity } from '../models/researchEntity';
-import { FacultyMember } from '../models/facultyMember';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -312,57 +310,24 @@ export async function fetchResearchEntitySearchMemberNames(
   const ids = uniqueObjectIdValues(entityIds);
   if (ids.length === 0) return new Map();
 
-  const members = await ResearchGroupMember.find({
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: Array.from(SEARCHABLE_PROFESSOR_MEMBER_ROLES) },
-    $or: [{ researchEntityId: { $in: ids } }, { researchGroupId: { $in: ids } }],
-  }).lean();
-
-  const memberRows = members as any[];
-  const userIds = uniqueObjectIdValues(memberRows.map((member) => member.userId));
-  const facultyMemberIds = uniqueObjectIdValues(memberRows.map((member) => member.facultyMemberId));
-  const [users, facultyMembers] = await Promise.all([
-    userIds.length > 0
-      ? User.find({ _id: { $in: userIds } })
-          .select('_id fname lname displayName name')
-          .lean()
-      : Promise.resolve([]),
-    facultyMemberIds.length > 0
-      ? FacultyMember.find({ _id: { $in: facultyMemberIds } })
-          .select('_id name firstName lastName')
-          .lean()
-      : Promise.resolve([]),
-  ]);
-
-  const usersById = new Map(
-    (users as any[]).flatMap((user) => {
-      const id = serializedDocumentId(user?._id);
-      return id ? [[id, user]] : [];
-    }),
-  );
-  const facultyMembersById = new Map(
-    (facultyMembers as any[]).flatMap((faculty) => {
-      const id = serializedDocumentId(faculty?._id);
-      return id ? [[id, faculty]] : [];
-    }),
-  );
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(ids);
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
 
-  for (const member of memberRows) {
-    const entityId =
-      serializedDocumentId(member.researchEntityId) || serializedDocumentId(member.researchGroupId);
-    if (!entityId) continue;
+  for (const [entityId, roster] of rosterByEntityId) {
+    for (const member of roster) {
+      if (!member.isCurrentMember) continue;
+      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
 
-    const name = trustedMemberDisplayName(member, usersById, facultyMembersById);
-    if (!name) continue;
+      const name = cleanPersonName(member.name);
+      if (!name) continue;
 
-    const fields = byEntityId.get(entityId) || emptyMemberNameFields();
-    fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
-    if (LEAD_PROFESSOR_MEMBER_ROLES.has(String(member.role || ''))) {
-      fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
+      const fields = byEntityId.get(entityId) || emptyMemberNameFields();
+      fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
+      if (LEAD_PROFESSOR_MEMBER_ROLES.has(member.role)) {
+        fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
+      }
+      byEntityId.set(entityId, fields);
     }
-    byEntityId.set(entityId, fields);
   }
 
   return byEntityId;
