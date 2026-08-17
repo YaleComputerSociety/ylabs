@@ -71,15 +71,6 @@ const samplePayload: ResearchEntityDetailPayload = {
       role: 'pi',
     },
   ],
-  recentPapers: [
-    {
-      _id: 'p1',
-      title: 'Synthetic systems note',
-      year: 1843,
-      venue: 'Fixture Research Notes',
-      tldr: 'A foundational paper.',
-    },
-  ],
   activeListings: [sampleListing],
 };
 

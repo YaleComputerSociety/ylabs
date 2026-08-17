@@ -316,11 +316,6 @@ const ResearchHomeCard = ({
               {countLabel(home.peopleCount, 'contact', 'contacts')}
             </span>
           )}
-          {home.paperCount > 1 && (
-            <span className="yr-pill min-h-0 rounded px-2 py-1">
-              {countLabel(home.paperCount, 'paper signal', 'paper signals')}
-            </span>
-          )}
           {home.pathwayCount > 1 && (
             <span className="yr-pill min-h-0 rounded px-2 py-1">
               {countLabel(home.pathwayCount, 'next step', 'next steps')}

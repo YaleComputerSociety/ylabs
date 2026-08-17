@@ -27,7 +27,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   },
   matchReason: 'Matched systems neuroscience.',
   entityCount: 1,
-  paperCount: 0,
   pathwayCount: 0,
   peopleCount: 0,
   labels: ['Systems neuroscience'],
@@ -56,7 +55,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
     },
   ],
   pathways: [],
-  papers: [],
   evidence: [
     {
       claim: 'Matched systems neuroscience.',

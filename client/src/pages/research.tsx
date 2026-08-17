@@ -5,7 +5,6 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
-import LabPapersList from '../components/labs/LabPapersList';
 import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
@@ -96,7 +95,6 @@ const emptyGroupedResults = (query: string): GroupedResearchResults =>
     query,
     researchEntities: [],
     pathways: [],
-    papers: [],
   });
 
 interface ResearchEntitySearchPage {
@@ -225,17 +223,13 @@ const resultSummary = (
     departmentGapLabel &&
     results.clusters.length === 0 &&
     matchingHomeCount === 0 &&
-    results.people.length === 0 &&
-    results.papers.length === 0
+    results.people.length === 0
   ) {
     return `No indexed research homes yet for ${departmentGapLabel}.`;
   }
   const parts = [pluralize(matchingHomeCount, 'research home')];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
-  }
-  if (results.papers.length > 0) {
-    parts.push(`${pluralize(results.papers.length, 'paper')} via profiles`);
   }
   if (results.pathways.length > 0) {
     parts.push(pluralize(results.pathways.length, 'verified way in', 'verified ways in'));
@@ -684,7 +678,6 @@ const Research = () => {
           query: resultQueryLabel,
           researchEntities,
           pathways: [],
-          papers: [],
         }),
       );
       const resultCount = researchEntitiesPage.estimatedTotalHits;
@@ -775,7 +768,6 @@ const Research = () => {
             query: submittedQuery,
             researchEntities: nextResearchEntities,
             pathways: currentResults.pathways,
-            papers: [],
           }),
         );
         return nextResearchEntities;
@@ -1109,7 +1101,6 @@ const Research = () => {
         query: DEFAULT_RESEARCH_HOME_LABEL,
         researchEntities: defaultResearchEntities,
         pathways: [],
-        papers: [],
       }),
     [defaultResearchEntities],
   );
@@ -1530,16 +1521,6 @@ const Research = () => {
                     </EmptyGroup>
                   )}
                 </section>
-
-                {activeResults.papers.length > 0 && (
-                  <section className="mt-5">
-                    <SectionHeading>Papers via profiles</SectionHeading>
-                    <LabPapersList
-                      papers={activeResults.papers}
-                      emptyText="No related profile papers matched this search yet."
-                    />
-                  </section>
-                )}
               </section>
             )}
           </div>

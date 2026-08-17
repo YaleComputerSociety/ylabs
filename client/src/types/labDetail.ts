@@ -2,7 +2,7 @@
  * Types for the research detail page payload (`GET /api/research/:slug`).
  *
  * The server returns canonical `researchEntity` detail data, along
- * with denormalized member info, recent papers, and active listings. The UI
+ * with denormalized member info, curated scholarly activity, and active listings. The UI
  * consumes those collections directly — no further joins on the client.
  */
 import { Listing } from './types';
@@ -62,28 +62,6 @@ export interface LabRosterDisclosure {
   sourceUrl?: string;
   observedAt?: string;
   freshnessExpiresAt?: string;
-}
-
-export interface LabPaper {
-  _id: string;
-  title: string;
-  authors?: string[];
-  year?: number;
-  venue?: string;
-  abstract?: string;
-  tldr?: string;
-  url?: string;
-  openAccessUrl?: string;
-  landingPageUrl?: string;
-  pdfUrl?: string;
-  arxivId?: string;
-  doi?: string;
-  citationCount?: number;
-  publishedAt?: string;
-  postedAt?: string;
-  versionDate?: string;
-  publicationStage?: string;
-  preprintServer?: string;
 }
 
 export interface LabScholarlyLink {
@@ -251,8 +229,6 @@ export interface LabDetailPayload {
   earlierResearchActivityLinks?: LabResearchActivityLink[];
   scholarlyLinks?: LabScholarlyLink[];
   memberScholarlyLinks?: LabScholarlyLink[];
-  recentPapers: LabPaper[];
-  recentArxivPreprints?: LabPaper[];
   activeListings: Listing[];
   entryPathways?: LabEntryPathway[];
   accessSignals?: LabAccessSignal[];

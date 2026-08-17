@@ -3,55 +3,19 @@
  * Research-activity link list for a research profile. Each row links to the
  * real scholarly destination students can inspect, with source evidence first.
  *
- * Pure presentational — receives the papers as a prop.
+ * Pure presentational - receives the scholarly links as a prop.
  */
-import { LabPaper, LabScholarlyLink } from '../../types/labDetail';
-import { ensureHttpPrefix, safeDoiUrl, safeHttpUrl } from '../../utils/url';
-
-type ResearchActivityLink = LabPaper | LabScholarlyLink;
+import { LabScholarlyLink } from '../../types/labDetail';
+import { safeHttpUrl } from '../../utils/url';
 
 interface LabPapersListProps {
-  papers: ResearchActivityLink[];
+  papers: LabScholarlyLink[];
   emptyText?: string;
-  showPreprintMeta?: boolean;
 }
 
-const isScholarlyLink = (paper: ResearchActivityLink): paper is LabScholarlyLink =>
-  'destinationKind' in paper && 'displaySource' in paper;
-
-const resolvePaperLink = (paper: ResearchActivityLink): string => {
-  if (isScholarlyLink(paper)) return safeHttpUrl(paper.url);
-  if (paper.doi) return safeDoiUrl(paper.doi);
-  const landing = paper.landingPageUrl ? safeHttpUrl(paper.landingPageUrl) : '';
-  if (landing) return landing;
-  const oa = paper.openAccessUrl ? safeHttpUrl(paper.openAccessUrl) : '';
-  if (oa) return oa;
-  return paper.url ? ensureHttpPrefix(paper.url) : '';
-};
-
-const resolveDisplayDate = (paper: ResearchActivityLink): string | undefined => {
-  if (isScholarlyLink(paper)) return undefined;
-  const rawDate = paper.postedAt || paper.versionDate || paper.publishedAt;
-  if (!rawDate) return undefined;
-  const date = new Date(rawDate);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-};
-
-const resolveYear = (paper: ResearchActivityLink): number | undefined => {
-  if (paper.year) return paper.year;
-  if (isScholarlyLink(paper)) return undefined;
-  if (paper.publishedAt) {
-    const d = new Date(paper.publishedAt);
-    if (!Number.isNaN(d.getTime())) return d.getFullYear();
-  }
-  return undefined;
-};
-
-const sourceTone = (paper: ResearchActivityLink, showPreprintMeta: boolean): string => {
-  if (!isScholarlyLink(paper)) return showPreprintMeta ? 'yr-pill-gold' : 'yr-pill-blue';
-  if (paper.destinationKind === 'PMC' || paper.freeFullTextUrl) return 'yr-pill-green';
-  if (paper.destinationKind === 'ARXIV' || paper.destinationKind === 'OPENALEX') return 'yr-pill-gold';
+const sourceTone = (link: LabScholarlyLink): string => {
+  if (link.destinationKind === 'PMC' || link.freeFullTextUrl) return 'yr-pill-green';
+  if (link.destinationKind === 'ARXIV' || link.destinationKind === 'OPENALEX') return 'yr-pill-gold';
   return 'yr-pill-blue';
 };
 
@@ -86,8 +50,7 @@ const normalizeResearchActivityTitle = (value: unknown): string => {
 
 const LabPapersList = ({
   papers,
-  emptyText = 'No recent papers.',
-  showPreprintMeta = false,
+  emptyText = 'No scholarly links yet.',
 }: LabPapersListProps) => {
   if (!papers || papers.length === 0) {
     return (
@@ -97,13 +60,7 @@ const LabPapersList = ({
     );
   }
 
-  const sourceLabels = Array.from(
-    new Set(
-      papers.slice(0, 4).map((paper) =>
-        isScholarlyLink(paper) ? paper.displaySource : showPreprintMeta ? 'arXiv' : 'Paper',
-      ),
-    ),
-  );
+  const sourceLabels = Array.from(new Set(papers.slice(0, 4).map((link) => link.displaySource)));
 
   return (
     <div className="overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)]">
@@ -123,19 +80,12 @@ const LabPapersList = ({
         </div>
       </div>
       <div className="divide-y divide-slate-200">
-        {papers.map((paper, index) => {
-          const link = resolvePaperLink(paper);
-          const scholarlyLink = isScholarlyLink(paper) ? paper : undefined;
-          const freeFullTextHref = scholarlyLink ? safeHttpUrl(scholarlyLink.freeFullTextUrl) : '';
-          const pdfHref = showPreprintMeta && !isScholarlyLink(paper) ? safeHttpUrl(paper.pdfUrl) : '';
-          const year = resolveYear(paper);
-          const displayDate = resolveDisplayDate(paper);
-          const title = normalizeResearchActivityTitle(paper.title) || 'Untitled research activity';
-          const sourceLabel = isScholarlyLink(paper)
-            ? paper.displaySource
-            : showPreprintMeta
-              ? 'arXiv preprint'
-              : 'Paper';
+        {papers.map((link, index) => {
+          const href = safeHttpUrl(link.url);
+          const freeFullTextHref = safeHttpUrl(link.freeFullTextUrl);
+          const year = link.year;
+          const title = normalizeResearchActivityTitle(link.title) || 'Untitled research activity';
+          const sourceLabel = link.displaySource;
           const titleEl = (
             <span className="text-base font-semibold leading-snug text-slate-950 transition-colors group-hover:text-[var(--yr-blue)]">
               {title}
@@ -143,7 +93,7 @@ const LabPapersList = ({
           );
           return (
             <article
-              key={paper._id}
+              key={link._id}
               className="group grid gap-3 px-4 py-4 transition-colors hover:bg-[var(--yr-blue-soft)]/45 sm:grid-cols-[2.75rem_minmax(0,1fr)_9rem] sm:px-5"
             >
             <div className="hidden sm:block">
@@ -153,28 +103,19 @@ const LabPapersList = ({
             </div>
             <div className="min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className={`yr-pill min-h-0 px-2.5 py-0.5 ${sourceTone(paper, showPreprintMeta)}`}>
+                <span className={`yr-pill min-h-0 px-2.5 py-0.5 ${sourceTone(link)}`}>
                   {sourceLabel}
                 </span>
-                {paper.venue && (
+                {link.venue && (
                   <span className="max-w-full truncate text-xs font-medium text-slate-600">
-                    {paper.venue}
+                    {link.venue}
                   </span>
                 )}
-                {displayDate ? (
-                  <span className="text-xs text-slate-500">posted {displayDate}</span>
-                ) : (
-                  year !== undefined && <span className="text-xs text-slate-500">{year}</span>
-                )}
-                {!isScholarlyLink(paper) && typeof paper.citationCount === 'number' && paper.citationCount > 0 && (
-                  <span className="text-xs text-slate-500">
-                    {paper.citationCount} citation{paper.citationCount !== 1 ? 's' : ''}
-                  </span>
-                )}
+                {year !== undefined && <span className="text-xs text-slate-500">{year}</span>}
               </div>
-              {link ? (
+              {href ? (
                 <a
-                  href={link}
+                  href={href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
@@ -184,12 +125,9 @@ const LabPapersList = ({
               ) : (
                 titleEl
               )}
-              {!isScholarlyLink(paper) && paper.tldr && (
-                <p className="mt-2 text-sm leading-relaxed text-slate-700">{paper.tldr}</p>
-              )}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold sm:hidden">
-                {link && (
-                  <a href={link} target="_blank" rel="noopener noreferrer" className="yr-link">
+                {href && (
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="yr-link">
                     Open source
                   </a>
                 )}
@@ -200,26 +138,16 @@ const LabPapersList = ({
                     rel="noopener noreferrer"
                     className="yr-link"
                   >
-                    {scholarlyLink?.freeFullTextLabel || 'Free full text'}
-                  </a>
-                )}
-                {pdfHref && (
-                  <a
-                    href={pdfHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yr-link"
-                  >
-                    PDF
+                    {link.freeFullTextLabel || 'Free full text'}
                   </a>
                 )}
               </div>
             </div>
             <div className="hidden items-start justify-end sm:flex">
               <div className="flex flex-col items-end gap-2 text-xs font-semibold">
-                {link && (
+                {href && (
                   <a
-                    href={link}
+                    href={href}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="yr-focus-ring rounded-md border border-blue-200 bg-[var(--yr-blue-soft)] px-3 py-2 text-[var(--yr-blue)] transition-colors hover:bg-[var(--yr-panel)]"
@@ -234,17 +162,7 @@ const LabPapersList = ({
                     rel="noopener noreferrer"
                     className="yr-link rounded-sm"
                   >
-                    {scholarlyLink?.freeFullTextLabel || 'Free full text'}
-                  </a>
-                )}
-                {pdfHref && (
-                  <a
-                    href={pdfHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="yr-link rounded-sm"
-                  >
-                    PDF
+                    {link.freeFullTextLabel || 'Free full text'}
                   </a>
                 )}
               </div>

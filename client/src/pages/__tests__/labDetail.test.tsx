@@ -75,8 +75,6 @@ const basePayload: LabDetailPayload = {
     sourceUrls: [],
   },
   members: [],
-  recentPapers: [],
-  recentArxivPreprints: [],
   activeListings: [],
   entryPathways: [],
   accessSignals: [],
