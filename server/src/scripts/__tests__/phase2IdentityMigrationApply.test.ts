@@ -111,7 +111,7 @@ describe('buildCanonicalWriteDocuments key resolution', () => {
             personKey: 'person:faculty_member:f1',
             sourceUserIds: [],
             sourceFacultyMemberIds: ['f1'],
-            displayName: 'Bob Smith',
+            displayName: 'Sam Carter',
             yaleEvidence: ['YALE_EMAIL'],
             externalIdentityHints: [],
           },
@@ -147,7 +147,7 @@ describe('buildCanonicalWriteDocuments key resolution', () => {
 
     const accountedPerson = documents.people.find((person) => person.accountId);
     expect(accountedPerson?.accountId?.toString()).toBe(documents.accounts[0]._id.toString());
-    expect(documents.people.find((person) => !person.accountId)?.displayName).toBe('Bob Smith');
+    expect(documents.people.find((person) => !person.accountId)?.displayName).toBe('Sam Carter');
 
     const pi = documents.roleAssignments.find((role) => role.role === 'PI');
     expect(pi?.personId.toString()).toBe(accountedPerson?._id.toString());
@@ -225,9 +225,9 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     });
     await db.collection('faculty_members').insertOne({
       _id: facultyId,
-      netid: 'bsmith',
-      email: 'bob.smith@yale.edu',
-      name: 'Bob Smith',
+      netid: 'scarter',
+      email: 'sam.carter@yale.edu',
+      name: 'Sam Carter',
       archived: false,
     });
     await db.collection('research_entity_members').insertMany([
@@ -290,7 +290,7 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     const accountedPerson = await Person.findOne({ displayName: 'Jane Doe' }).lean<
       WithObjectId<PersonRecord>
     >();
-    const facultyPerson = await Person.findOne({ displayName: 'Bob Smith' }).lean<
+    const facultyPerson = await Person.findOne({ displayName: 'Sam Carter' }).lean<
       WithObjectId<PersonRecord>
     >();
     expect(accountedPerson?.accountId?.toString()).toBe(account?._id.toString());
