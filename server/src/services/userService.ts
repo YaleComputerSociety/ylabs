@@ -1366,8 +1366,67 @@ export const getSavedResearchEntityIds = async (id: any) =>
 export const getSavedResearchEntityPlans = async (id: any) =>
   (await migrateSavedResearchEntitiesForUser(id)).plans;
 
+export const getSavedResearchEntitySlugs = async (id: any): Promise<string[]> =>
+  (await migrateSavedResearchEntitiesForUser(id)).entities.flatMap((entity) =>
+    entity.slug ? [entity.slug] : [],
+  );
+
+const OBJECT_ID_HEX_PATTERN = /^[a-f0-9]{24}$/i;
+const RESEARCH_ENTITY_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,159}$/i;
+
+export const resolveSavedResearchEntityObjectIds = async (
+  values: unknown[],
+): Promise<mongoose.Types.ObjectId[]> => {
+  if (!Array.isArray(values)) {
+    throw badRequestError('Invalid savedResearchEntities ids');
+  }
+  if (values.length > MAX_ACCOUNT_MUTATION_IDS) {
+    throw badRequestError('Too many savedResearchEntities ids');
+  }
+
+  const objectIds: mongoose.Types.ObjectId[] = [];
+  const slugs: string[] = [];
+  for (const value of values) {
+    if (value instanceof mongoose.Types.ObjectId) {
+      objectIds.push(value);
+      continue;
+    }
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (OBJECT_ID_HEX_PATTERN.test(text)) {
+      objectIds.push(new mongoose.Types.ObjectId(text.toLowerCase()));
+    } else if (RESEARCH_ENTITY_SLUG_PATTERN.test(text)) {
+      slugs.push(text);
+    } else {
+      throw badRequestError('Invalid savedResearchEntities id');
+    }
+  }
+
+  if (slugs.length) {
+    const entities = await ResearchEntity.find({
+      slug: { $in: slugs },
+      archived: { $ne: true },
+      studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    })
+      .select('_id')
+      .lean();
+    for (const entity of entities as Array<{ _id: mongoose.Types.ObjectId }>) {
+      objectIds.push(new mongoose.Types.ObjectId(entity._id));
+    }
+  }
+
+  const seen = new Set<string>();
+  const deduped: mongoose.Types.ObjectId[] = [];
+  for (const objectId of objectIds) {
+    const key = objectId.toHexString().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(objectId);
+  }
+  return deduped;
+};
+
 export const addSavedResearchEntities = async (id: any, values: unknown[]) => {
-  const ids = normalizeObjectIdsForUserMutation(values, 'savedResearchEntities');
+  const ids = await resolveSavedResearchEntityObjectIds(values);
   const visible = await visibleSavedResearchEntities(ids);
   for (const entity of visible) {
     await addFavoriteObjectIdIfMissing(
@@ -1376,12 +1435,12 @@ export const addSavedResearchEntities = async (id: any, values: unknown[]) => {
       new mongoose.Types.ObjectId(entity._id),
     );
   }
-  return getSavedResearchEntityIds(id);
+  return getSavedResearchEntitySlugs(id);
 };
 
 export const removeSavedResearchEntities = async (id: any, values: unknown[]) => {
   await migrateSavedResearchEntitiesForUser(id);
-  const ids = normalizeObjectIdsForUserMutation(values, 'savedResearchEntities');
+  const ids = await resolveSavedResearchEntityObjectIds(values);
   const unset = Object.fromEntries(
     ids.map((entityId) => [`savedResearchEntityPlans.${entityId}`, '']),
   );
@@ -1391,7 +1450,7 @@ export const removeSavedResearchEntities = async (id: any, values: unknown[]) =>
     { new: true, runValidators: true },
   );
   if (!user) throw new NotFoundError('User not found');
-  return getSavedResearchEntityIds(id);
+  return getSavedResearchEntitySlugs(id);
 };
 
 export const updateSavedResearchEntityPlan = async (
