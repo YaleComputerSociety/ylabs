@@ -30,6 +30,7 @@
     "observations:cross-source-conflict-review": "tsx src/scripts/crossSourceObservationConflictReview.ts",
     "observations:repair-profile-description-conflicts": "tsx src/scripts/repairProfileDescriptionBackfillConflicts.ts",
     "research-entities:repair-july-legacy-medicine": "tsx src/scripts/repairJulyLegacyMedicineImport.ts",
+    "research-entity:repair-surname-inferred-pi": "tsx src/scripts/repairSurnameInferredPiLinks.ts",
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",
     "observations:repair-orphaned-references": "tsx src/scripts/repairOrphanedObservationReferences.ts",
     "meili:rebuild-pathways": "tsx src/scripts/rebuildPathwaySearchIndex.ts",
