@@ -45,6 +45,21 @@ function fixtureReport(): Phase0ResearchSearchBaselineReport {
 }
 
 describe('Phase 0 ResearchEntity search baseline artifact writer', () => {
+  it('skips the profile for beta only when ambient target is explicitly opted in', () => {
+    const original = process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET;
+    try {
+      process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET = 'true';
+      expect(() => assertHardenedSearchBaselineProfile('beta')).not.toThrow();
+      delete process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET;
+      expect(() => assertHardenedSearchBaselineProfile('beta')).toThrow(
+        /hardened external profiles/,
+      );
+    } finally {
+      if (original === undefined) delete process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET;
+      else process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET = original;
+    }
+  });
+
   it('captures the latest watermark and active index mutation tasks', async () => {
     const queries: Array<Record<string, unknown>> = [];
     const client = {

@@ -55,6 +55,20 @@ function fixtureReport(): Phase0HotPathQueryCostReport {
 }
 
 describe('Phase 0 hot-path query-cost artifact writer', () => {
+  it('skips the profile for beta only when ambient target is explicitly opted in', () => {
+    const original = process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET;
+    try {
+      process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET = 'true';
+      expect(() => assertHardenedQueryCostProfile('beta')).not.toThrow();
+      expect(() => assertHardenedQueryCostProfile('production-copy')).not.toThrow();
+      delete process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET;
+      expect(() => assertHardenedQueryCostProfile('beta')).toThrow(/hardened inventory profile/);
+    } finally {
+      if (original === undefined) delete process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET;
+      else process.env.YLABS_PHASE0_ALLOW_AMBIENT_TARGET = original;
+    }
+  });
+
   it('revalidates the hardened external profile at the executable boundary', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-query-cost-profile-'));
     const profilePath = path.join(directory, 'beta-inventory.env');
