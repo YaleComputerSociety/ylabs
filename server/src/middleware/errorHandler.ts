@@ -10,7 +10,7 @@ import {
 } from '../utils/errors';
 import { sanitizeErrorForLog } from '../utils/logSanitizer';
 import { requiresDeployedRuntimeSecurity } from '../utils/environment';
-import { triggerReconnect } from '../db/connections';
+import { triggerReconnect, isTopologyLostError } from '../db/connections';
 import { captureServerError } from '../utils/errorTracking';
 
 const clientErrorStatus = (error: Error): number | null => {
@@ -85,8 +85,8 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     return res.status(409).json({ error: 'Duplicate key error' });
   }
 
-  if (error.name === 'MongoNotConnectedError') {
-    triggerReconnect();
+  if (isTopologyLostError(error)) {
+    void triggerReconnect();
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 

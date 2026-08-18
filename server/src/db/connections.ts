@@ -22,28 +22,48 @@ const mongoOptions = {
   serverSelectionTimeoutMS: 30000,
   socketTimeoutMS: 60000,
   // Close idle connections after 3.5 min so we beat the ~4-min AWS NAT TCP
-  // idle timeout before the NAT silently kills them under us.
+  // idle timeout before the NAT silently kills them under us. startMongoKeepAlive
+  // pings well inside this window so the live connection never hits the cap.
   maxIdleTimeMS: 210000,
-  // Keep at least one connection alive so the topology is never fully torn
-  // down between requests on a low-traffic server (Beta).
+  // minPoolSize keeps a warm connection while the process is running, but it
+  // cannot survive the host pausing an idle instance (Render): a frozen process
+  // runs no heartbeats, so the socket dies and the first request after wake sees
+  // a lost topology. withMongoReconnect heals that path; keepAlive prevents the
+  // idle-teardown path.
   minPoolSize: 1,
 };
 
 // Serialise reconnect attempts: if one is already in flight, later callers
-// wait for it rather than launching a second parallel reconnect.
+// await the same promise rather than launching a second parallel reconnect.
 let reconnectInFlight: Promise<void> | null = null;
 
 /**
- * Called by the error handler whenever a MongoNotConnectedError escapes to
- * application code. Once client.topology goes null the driver cannot
+ * True when an error (or any error in its VError cause chain) indicates the
+ * MongoDB topology was lost. Once client.topology goes null the driver cannot
  * self-recover; we must disconnect and reconnect explicitly.
  */
-export function triggerReconnect(): void {
-  if (reconnectInFlight) return;
+export function isTopologyLostError(error: unknown): boolean {
+  const e = error as { name?: string; message?: string; cause?: unknown } | null | undefined;
+  if (!e) return false;
+  if (e.name === 'MongoNotConnectedError') return true;
+  if (
+    typeof e.message === 'string' &&
+    e.message.includes('Client must be connected before running operations')
+  ) {
+    return true;
+  }
+  const cause = typeof (e as any).cause === 'function' ? (e as any).cause() : (e as any).cause;
+  return isTopologyLostError(cause);
+}
+
+/**
+ * Forces an explicit disconnect + reconnect when the topology is lost. Returns
+ * the in-flight promise so callers can await recovery and retry their operation
+ * (see withMongoReconnect) instead of surfacing the failure to the user.
+ */
+export function triggerReconnect(): Promise<void> {
+  if (reconnectInFlight) return reconnectInFlight;
   reconnectInFlight = (async () => {
-    // Brief pause so the in-flight 503 response can be flushed before we
-    // tear down and recreate the connections.
-    await new Promise((r) => setTimeout(r, 250));
     try {
       const mode = getApiMode();
       const primaryUrl = process.env.MONGODBURL;
@@ -74,6 +94,47 @@ export function triggerReconnect(): void {
       reconnectInFlight = null;
     }
   })();
+  return reconnectInFlight;
+}
+
+/**
+ * Runs a MongoDB operation and, if the topology was lost, awaits a reconnect
+ * and retries once so a cold connection becomes a brief latency blip instead of
+ * a user-visible failure. Only use for operations that are safe to retry.
+ */
+export async function withMongoReconnect<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isTopologyLostError(error)) throw error;
+    await triggerReconnect();
+    return operation();
+  }
+}
+
+let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Pings the primary connection on an interval inside maxIdleTimeMS so a
+ * low-traffic instance never lets its live connection go idle-closed, and so a
+ * silently dead socket is detected and healed before the next real request.
+ */
+export function startMongoKeepAlive(intervalMs = 120000): void {
+  if (keepAliveTimer) return;
+  keepAliveTimer = setInterval(() => {
+    void (async () => {
+      try {
+        await mongoose.connection.db?.admin().ping();
+      } catch (error) {
+        if (isTopologyLostError(error)) {
+          await triggerReconnect();
+        } else {
+          console.error('MongoDB: keepAlive ping failed:', (error as Error)?.message ?? error);
+        }
+      }
+    })();
+  }, intervalMs);
+  keepAliveTimer.unref?.();
 }
 
 export async function initializeConnections(): Promise<void> {
