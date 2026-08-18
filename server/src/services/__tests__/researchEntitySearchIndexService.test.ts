@@ -119,19 +119,15 @@ describe('researchEntitySearchIndexService', () => {
         'currentUndergradCount',
       ]),
     );
-    expect(getResearchEntitySearchIndexSettings().searchableAttributes).toEqual(
-      expect.arrayContaining(['leadProfessorNames', 'professorNames']),
+    const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
+    expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
+    expect(searchable).toEqual(
+      expect.arrayContaining(['description', 'shortDescription', 'fullDescription']),
     );
-    expect(
-      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('keywords'),
-    ).toBeLessThan(
-      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('description'),
-    );
-    expect(
-      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('researchAreas'),
-    ).toBeLessThan(
-      getResearchEntitySearchIndexSettings().searchableAttributes.indexOf('description'),
-    );
+    expect(searchable).not.toContain('keywords');
+    expect(searchable).not.toContain('summary');
+    expect(searchable.indexOf('researchAreas')).toBeLessThan(searchable.indexOf('description'));
+    expect(searchable.indexOf('description')).toBeLessThan(searchable.indexOf('shortDescription'));
     expect(getResearchEntitySearchIndexSettings().rankingRules).toEqual([
       'words',
       'proximity',
