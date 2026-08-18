@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
-import { Person, type PersonDisplayProfile } from '../models/person';
+import { Person, type PersonDisplayProfile, type PersonProfileLink } from '../models/person';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -17,6 +17,7 @@ export interface ResearchEntityRosterEntry {
   primaryDepartment?: string;
   imageUrl?: string;
   websiteUrl?: string;
+  profileLinks: PersonProfileLink[];
   role: string;
   roleCanonical: RoleAssignmentRole;
   state: string;
@@ -62,7 +63,12 @@ const normalizeEntityObjectId = (value: unknown): mongoose.Types.ObjectId | null
 interface RosterEntryBuildContext {
   peopleById: Map<
     string,
-    { displayName?: string; accountId?: mongoose.Types.ObjectId; profile?: PersonDisplayProfile }
+    {
+      displayName?: string;
+      accountId?: mongoose.Types.ObjectId;
+      profile?: PersonDisplayProfile;
+      profileLinks?: PersonProfileLink[];
+    }
   >;
   accountsById: Map<string, { netid?: string; email?: string }>;
 }
@@ -101,10 +107,11 @@ const buildRosterEntry = (
       : {}),
     ...(person.profile?.imageUrl ? { imageUrl: person.profile.imageUrl } : {}),
     ...(person.profile?.websiteUrl ? { websiteUrl: person.profile.websiteUrl } : {}),
+    profileLinks: Array.isArray(person.profileLinks) ? person.profileLinks : [],
     role: legacyRole,
     roleCanonical,
     state: assignment.state,
-    isCurrentMember: assignment.state === 'CURRENT',
+    isCurrentMember: assignment.state !== 'HISTORICAL',
     ...(assignment.startedAt ? { startedAt: assignment.startedAt } : {}),
     ...(assignment.endedAt ? { endedAt: assignment.endedAt } : {}),
     confidence: typeof assignment.confidence === 'number' ? assignment.confidence : 0,
@@ -129,13 +136,18 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Person.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId profile')
+        .select('_id displayName accountId profile profileLinks')
         .lean()
     : [];
 
   const peopleById = new Map<
     string,
-    { displayName?: string; accountId?: mongoose.Types.ObjectId; profile?: PersonDisplayProfile }
+    {
+      displayName?: string;
+      accountId?: mongoose.Types.ObjectId;
+      profile?: PersonDisplayProfile;
+      profileLinks?: PersonProfileLink[];
+    }
   >(people.map((person: any) => [person._id.toString(), person]));
 
   const accountIds = uniqueObjectIds(people.map((person: any) => person.accountId));

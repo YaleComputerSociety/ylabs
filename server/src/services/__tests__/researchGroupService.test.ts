@@ -177,6 +177,73 @@ const selectSortLimitLeanResult = <T>(value: T) => queryResult(value);
 
 const selectLeanResult = <T>(value: T) => queryResult(value);
 
+interface CanonicalMemberSpec {
+  personId?: string;
+  displayName: string;
+  role: string;
+  netid?: string;
+  email?: string;
+  profile?: {
+    title?: string;
+    primaryDepartment?: string;
+    imageUrl?: string;
+    websiteUrl?: string;
+  };
+  profileLinks?: Array<{ kind: string; url: string; purpose?: string }>;
+  state?: 'CURRENT' | 'HISTORICAL' | 'UNKNOWN';
+  reviewStatus?: 'UNREVIEWED' | 'APPROVED' | 'DISPUTED';
+  confidence?: number;
+  targetEntityId?: string;
+}
+
+const seedCanonicalRoster = (entityId: string, members: CanonicalMemberSpec[]) => {
+  const assignments: any[] = [];
+  const people: any[] = [];
+  const accounts: any[] = [];
+  for (const spec of members) {
+    const personId = new mongoose.Types.ObjectId(spec.personId);
+    const accountId = spec.netid || spec.email ? new mongoose.Types.ObjectId() : undefined;
+    assignments.push({
+      _id: new mongoose.Types.ObjectId(),
+      target: {
+        kind: 'RESEARCH_ENTITY',
+        id: new mongoose.Types.ObjectId(spec.targetEntityId || entityId),
+      },
+      personId,
+      role: spec.role,
+      state: spec.state || 'CURRENT',
+      confidence: spec.confidence ?? 0.9,
+      reviewStatus: spec.reviewStatus || 'APPROVED',
+    });
+    people.push({
+      _id: personId,
+      displayName: spec.displayName,
+      ...(accountId ? { accountId } : {}),
+      ...(spec.profile ? { profile: spec.profile } : {}),
+      profileLinks: (spec.profileLinks || []).map((link) => ({
+        purpose: 'PRIMARY_IDENTITY',
+        verifiedAt: new Date(0),
+        healthStatus: 'UNKNOWN',
+        ...link,
+      })),
+    });
+    if (accountId) {
+      accounts.push({ _id: accountId, netid: spec.netid || '', email: spec.email || '' });
+    }
+  }
+  mocks.roleAssignmentFind.mockReturnValue(leanResult(assignments));
+  mocks.personFind.mockReturnValue(selectLeanResult(people));
+  mocks.accountFind.mockReturnValue(selectLeanResult(accounts));
+  return { assignments, people, accounts };
+};
+
+const canonicalMemberPublicKey = (personId: string, role: string): string =>
+  `${personId}:${role}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 160);
+
 const validPublicDescriptions = {
   shortDescription:
     'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
@@ -816,9 +883,8 @@ describe('getResearchGroupDetail', () => {
     });
   });
 
-  it('keeps only member rows whose normalized research entity id matches the detail entity', async () => {
+  it('scopes public detail members to canonical role assignments for the detail entity', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const matchingUserId = '67d8928150621bcef434a1d7';
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
         _id: new mongoose.Types.ObjectId(entityId),
@@ -831,36 +897,20 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
-        {
-          _id: 'matching-member',
-          researchEntityId: entityId,
-          userId: matchingUserId,
-          role: 'affiliated',
-          archived: false,
-          isCurrentMember: true,
-        },
-        {
-          _id: 'cross-entity-member',
-          researchEntityId: '67d8928150621bcef434a1d6',
-          userId: 'cross-entity-user',
-          role: 'affiliated',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: matchingUserId,
-          fname: 'Matching',
-          lname: 'Scholar',
-          title: 'Research Scholar',
-        },
-      ]),
-    );
+    seedCanonicalRoster(entityId, [
+      {
+        personId: '67d8928150621bcef434a1e1',
+        displayName: 'Matching Scholar',
+        role: 'AFFILIATED',
+        profile: { title: 'Research Scholar' },
+      },
+      {
+        personId: '67d8928150621bcef434a1e2',
+        displayName: 'Cross Entity Scholar',
+        role: 'AFFILIATED',
+        targetEntityId: '67d8928150621bcef434a1d6',
+      },
+    ]);
 
     const detail = await getResearchGroupDetail('entity-isolation-lab');
 
@@ -869,7 +919,6 @@ describe('getResearchGroupDetail', () => {
       fname: 'Matching',
       lname: 'Scholar',
     });
-    expect(mocks.userFind.mock.calls[0]?.[0]).toEqual({ _id: { $in: [matchingUserId] } });
   });
 
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
@@ -1227,44 +1276,25 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'user-1',
-          role: 'affiliated',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'user-1',
-          netid: 'abc123',
-          fname: 'Fixture',
-          lname: 'Advisor',
-          displayName: 'Fixture Advisor',
-          email: 'fixture.advisor@example.edu',
-          imageUrl: '',
-          primaryDepartment: 'Computer Science',
+    const personId = '67d8928150621bcef434a1e3';
+    seedCanonicalRoster(entityId, [
+      {
+        personId,
+        displayName: 'Fixture Advisor',
+        role: 'AFFILIATED',
+        netid: 'abc123',
+        email: 'fixture.advisor@example.edu',
+        profile: {
           title: 'Professor of Computer Science',
-          secondaryDepartments: ['Mathematics'],
-          facultyMemberId: 'faculty-1',
-          profileUrls: {
-            official: 'https://cs.yale.edu/people/fixture-advisor',
-            orcid: 'https://orcid.org/0000-0000-0000-0000',
-          },
-          googleScholarId: 'private-scholar-id',
-          openAlexId: 'private-openalex-id',
-          userConfirmed: true,
-          userType: 'professor',
-          raw: { scrapePayload: true },
+          primaryDepartment: 'Computer Science',
+          imageUrl: '',
         },
-      ]),
-    );
+        profileLinks: [
+          { kind: 'YALE_OFFICIAL', url: 'https://cs.yale.edu/people/fixture-advisor' },
+          { kind: 'ORCID', url: 'https://orcid.org/0000-0002-1825-0097', purpose: 'SCHOLARLY' },
+        ],
+      },
+    ]);
 
     const detail = await getResearchGroupDetail('member-privacy-lab');
 
@@ -1284,19 +1314,12 @@ describe('getResearchGroupDetail', () => {
       profile_urls: {
         official: 'https://cs.yale.edu/people/fixture-advisor',
       },
-      publicKey: 'fixture-advisor-affiliated',
+      publicKey: canonicalMemberPublicKey(personId, 'affiliated'),
     });
     expect(detail?.members[0].user).not.toHaveProperty('_id');
     expect(detail?.members[0].user).not.toHaveProperty('netid');
     expect(detail?.members[0].user).not.toHaveProperty('email');
-    expect(detail?.members[0].user).not.toHaveProperty('secondaryDepartments');
-    expect(detail?.members[0].user).not.toHaveProperty('facultyMemberId');
     expect(detail?.members[0].user.profileUrls).not.toHaveProperty('orcid');
-    expect(detail?.members[0].user).not.toHaveProperty('googleScholarId');
-    expect(detail?.members[0].user).not.toHaveProperty('openAlexId');
-    expect(detail?.members[0].user).not.toHaveProperty('userConfirmed');
-    expect(detail?.members[0].user).not.toHaveProperty('userType');
-    expect(detail?.members[0].user).not.toHaveProperty('raw');
   });
 
   it('preserves internal profile path fallbacks through public detail member shaping', async () => {
@@ -1313,31 +1336,16 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'user-1',
-          role: 'pi',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'user-1',
-          netid: 'fx1001',
-          fname: 'Fixture',
-          lname: 'Scholar',
-          imageUrl: '',
-          primaryDepartment: 'Example Studies',
-          title: 'Professor',
-        },
-      ]),
-    );
+    const personId = '67d8928150621bcef434a1e4';
+    seedCanonicalRoster(entityId, [
+      {
+        personId,
+        displayName: 'Fixture Scholar',
+        role: 'PI',
+        netid: 'fx1001',
+        profile: { title: 'Professor', primaryDepartment: 'Example Studies', imageUrl: '' },
+      },
+    ]);
 
     const detail = await getResearchGroupDetail('member-internal-profile-lab');
 
@@ -1346,17 +1354,13 @@ describe('getResearchGroupDetail', () => {
       lname: 'Scholar',
       internalProfilePath: '/profile/fx1001',
       internal_profile_path: '/profile/fx1001',
-      publicKey: 'fixture-scholar-pi',
+      publicKey: canonicalMemberPublicKey(personId, 'pi'),
     });
     expect(detail?.members[0].user).not.toHaveProperty('netid');
   });
 
-  it('derives PI identity review from raw records before public member replacement', async () => {
+  it('marks lead identity under review when a canonical lead role assignment is disputed', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const wrongUserId = '67d8928150621bcef434a1d6';
-    const correctUserId = '67d8928150621bcef434a1d7';
-    const wrongFacultyId = '67d8928150621bcef434a1d8';
-    const correctFacultyId = '67d8928150621bcef434a1d9';
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
         _id: entityId,
@@ -1369,42 +1373,17 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: wrongUserId,
-          facultyMemberId: correctFacultyId,
-          role: 'pi',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: wrongUserId,
-          fname: 'Wrong',
-          lname: 'Person',
-          facultyMemberId: wrongFacultyId,
-        },
-      ]),
-    );
-    mocks.facultyMemberFind.mockReturnValue(
-      selectLeanResult([
-        {
-          _id: correctFacultyId,
-          userId: correctUserId,
-          firstName: 'Correct',
-          lastName: 'Scholar',
-          profileUrls: {
-            official: 'https://medicine.yale.edu/profile/correct-scholar/',
-          },
-        },
-      ]),
-    );
+    seedCanonicalRoster(entityId, [
+      {
+        personId: '67d8928150621bcef434a1e5',
+        displayName: 'Correct Scholar',
+        role: 'PI',
+        reviewStatus: 'DISPUTED',
+        profileLinks: [
+          { kind: 'YALE_OFFICIAL', url: 'https://medicine.yale.edu/profile/correct-scholar/' },
+        ],
+      },
+    ]);
 
     const detail = await getResearchGroupDetail('disputed-pi-lab');
 
@@ -1415,7 +1394,6 @@ describe('getResearchGroupDetail', () => {
       lname: 'Scholar',
     });
     expect(detail?.members[0].user).not.toHaveProperty('facultyMemberId');
-    expect(detail?.members[0].user).not.toHaveProperty('userId');
   });
 
   it('dedupes repeated stored public contact routes before returning detail payloads', async () => {
@@ -1504,53 +1482,37 @@ describe('getResearchGroupDetail', () => {
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
         _id: entityId,
-        slug: 'glahn-lab-dcg32',
-        name: 'Glahn Lab',
+        slug: 'sample-lab-xx001',
+        name: 'Sample Lab',
         ...validPublicDescriptions,
         kind: 'lab',
         entityType: 'LAB',
         departments: [],
         researchAreas: [],
-        sourceUrls: ['https://music.yale.edu/people/david-lang'],
+        sourceUrls: ['https://example.yale.edu/people/robin-sample'],
         description: '',
         profileSynthesisDescription:
-          "David Lang's lab studies how humans process complex sound patterns.",
+          "Jordan Other's lab studies how humans process complex sound patterns.",
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'fx1001',
-          role: 'pi',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'fx1001',
-          fname: 'David',
-          lname: 'Glahn',
-          displayName: 'David Glahn',
-          primaryDepartment: 'Psychiatry',
-          imageUrl: '',
-          netid: 'fx1001',
-        },
-      ]),
-    );
+    seedCanonicalRoster(entityId, [
+      {
+        personId: '67d8928150621bcef434a1e6',
+        displayName: 'Robin Sample',
+        role: 'PI',
+        netid: 'fx1001',
+        profile: { primaryDepartment: 'Example Studies', imageUrl: '' },
+      },
+    ]);
 
-    const detail = await getResearchGroupDetail('glahn-lab-dcg32');
+    const detail = await getResearchGroupDetail('sample-lab-xx001');
 
     expect(detail?.researchEntity.profileSynthesisDescription).toContain(
       'This lab studies how humans process complex sound patterns.',
     );
-    expect(detail?.researchEntity.profileSynthesisDescription).not.toContain("David Lang's");
+    expect(detail?.researchEntity.profileSynthesisDescription).not.toContain("Jordan Other's");
   });
 
   it('removes non-research PI profile synthesis content that does not match lead PI names', async () => {
@@ -1558,46 +1520,30 @@ describe('getResearchGroupDetail', () => {
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
         _id: entityId,
-        slug: 'glahn-lab-dcg32',
-        name: 'Glahn Lab',
+        slug: 'sample-lab-xx001',
+        name: 'Sample Lab',
         ...validPublicDescriptions,
         kind: 'lab',
         entityType: 'LAB',
         departments: [],
         researchAreas: [],
-        sourceUrls: ['https://music.yale.edu/people/david-lang'],
+        sourceUrls: ['https://example.yale.edu/people/robin-sample'],
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
         profileSynthesisDescription:
           'This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'fx1001',
-          role: 'pi',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'fx1001',
-          fname: 'David',
-          lname: 'Glahn',
-          displayName: 'David Glahn',
-          primaryDepartment: 'Psychiatry',
-          imageUrl: '',
-          netid: 'fx1001',
-        },
-      ]),
-    );
+    seedCanonicalRoster(entityId, [
+      {
+        personId: '67d8928150621bcef434a1e7',
+        displayName: 'Robin Sample',
+        role: 'PI',
+        netid: 'fx1001',
+        profile: { primaryDepartment: 'Example Studies', imageUrl: '' },
+      },
+    ]);
 
-    const detail = await getResearchGroupDetail('glahn-lab-dcg32');
+    const detail = await getResearchGroupDetail('sample-lab-xx001');
 
     expect(detail?.researchEntity.profileSynthesisDescription).toBe('');
   });

@@ -1,5 +1,6 @@
-import type { LabMember, LabMemberRole, LabRosterDisclosure } from '../../types/labDetail';
-import { EXTERNAL_LINK_REL, safeHttpUrl } from '../../utils/url';
+import type { LabMember, LabMemberRole } from '../../types/labDetail';
+import { principalInvestigatorLinkFromMemberUser } from '../../utils/principalInvestigatorLinks';
+import { EXTERNAL_LINK_REL } from '../../utils/url';
 
 const MAX_PRESENTED_TEAM_MEMBERS = 24;
 
@@ -9,41 +10,17 @@ const GROUPS: Array<{ role: LabMemberRole; label: string }> = [
   { role: 'undergrad', label: 'Undergraduate researchers' },
   { role: 'staff', label: 'Research staff' },
   { role: 'core-faculty', label: 'Faculty' },
-  { role: 'affiliate', label: 'Other current members' },
+  { role: 'affiliated', label: 'Other current members' },
 ];
+
+const TEAM_ROLES = new Set<LabMemberRole>(GROUPS.map((group) => group.role));
 
 const displayName = (member: LabMember): string =>
   member.user.displayName || [member.user.fname, member.user.lname].filter(Boolean).join(' ');
 
-const observedLabel = (value?: string): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
-};
-
-const emptyCopy = (status: LabRosterDisclosure['status']): string => {
-  if (status === 'optional-source-failure') {
-    return 'The optional official roster source could not be refreshed. Team size is unknown.';
-  }
-  if (status === 'withheld') {
-    return 'Current roster evidence is under review, so member names are withheld.';
-  }
-  return 'No verified current roster data is available. This does not mean the team is empty.';
-};
-
-export default function ResearchTeamSection({
-  members,
-  roster,
-}: {
-  members: LabMember[];
-  roster: LabRosterDisclosure;
-}) {
-  const teamMembers = members
-    .filter((member) => Boolean(member.rosterEvidence))
-    .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
-  const sourceUrl = safeHttpUrl(roster.sourceUrl);
-  const dateLabel = observedLabel(roster.observedAt);
+export default function ResearchTeamSection({ members }: { members: LabMember[] }) {
+  const teamMembers = members.filter((member) => TEAM_ROLES.has(member.role));
+  const presentedMembers = teamMembers.slice(0, MAX_PRESENTED_TEAM_MEMBERS);
 
   return (
     <section aria-labelledby="research-team-heading">
@@ -54,40 +31,19 @@ export default function ResearchTeamSection({
         >
           Current research team
         </h2>
-        {dateLabel && (
-          <span className="text-xs text-gray-500">Official roster observed {dateLabel}</span>
-        )}
       </div>
 
-      {teamMembers.length === 0 ? (
+      {presentedMembers.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-5">
-          <p className="text-sm leading-relaxed text-gray-700">{emptyCopy(roster.status)}</p>
-          {sourceUrl && (
-            <a
-              href={sourceUrl}
-              target="_blank"
-              rel={EXTERNAL_LINK_REL}
-              className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              Review official roster source
-            </a>
-          )}
+          <p className="text-sm leading-relaxed text-gray-700">
+            No current team members are listed for this research home. This does not mean the team
+            is empty.
+          </p>
         </div>
       ) : (
         <div className="space-y-5">
-          {roster.status === 'partial' && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              Some current members are withheld while their evidence is reviewed.
-            </p>
-          )}
-          {roster.status === 'optional-source-failure' && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-              The optional source could not be refreshed. This last verified snapshot is shown only
-              until its freshness window expires.
-            </p>
-          )}
           {GROUPS.map(({ role, label }) => {
-            const groupedMembers = teamMembers.filter((member) => member.role === role);
+            const groupedMembers = presentedMembers.filter((member) => member.role === role);
             if (groupedMembers.length === 0) return null;
             return (
               <div key={role}>
@@ -95,7 +51,10 @@ export default function ResearchTeamSection({
                 <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                   {groupedMembers.map((member) => {
                     const name = displayName(member);
-                    const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
+                    const link = principalInvestigatorLinkFromMemberUser(
+                      member.user as unknown as Record<string, unknown>,
+                    );
+                    const externalLink = link?.external ? link : undefined;
                     const content = (
                       <>
                         <span className="block font-semibold text-gray-900">{name}</span>
@@ -111,9 +70,9 @@ export default function ResearchTeamSection({
                         key={`${member.user.publicKey || name}-${member.role}`}
                         className="min-w-0 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
                       >
-                        {profileUrl ? (
+                        {externalLink ? (
                           <a
-                            href={profileUrl}
+                            href={externalLink.href}
                             target="_blank"
                             rel={EXTERNAL_LINK_REL}
                             className="block min-h-11 rounded-sm py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
@@ -134,22 +93,9 @@ export default function ResearchTeamSection({
           <p className="text-xs leading-relaxed text-gray-500">
             Membership is shown for team context only. It is not a recommendation to contact an
             individual.
-            {sourceUrl && (
-              <>
-                {' '}
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel={EXTERNAL_LINK_REL}
-                  className="font-semibold text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  Official roster source
-                </a>
-              </>
-            )}
           </p>
-          {roster.truncated && (
-            <p className="text-xs text-gray-500">Additional verified members are not shown here.</p>
+          {teamMembers.length > presentedMembers.length && (
+            <p className="text-xs text-gray-500">Additional current members are not shown here.</p>
           )}
         </div>
       )}

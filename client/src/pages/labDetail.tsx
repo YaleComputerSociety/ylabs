@@ -958,12 +958,6 @@ const LabDetail = () => {
     group: legacyGroup,
     researchEntity,
     members,
-    roster = {
-      status: 'no-verified-data',
-      returned: 0,
-      truncated: false,
-      withheldCount: 0,
-    },
     contactRoutes = [],
     entryPathways = [],
     accessSignals = [],
@@ -1127,7 +1121,7 @@ const LabDetail = () => {
             </section>
           )}
 
-          <ResearchTeamSection members={members} roster={roster} />
+          <ResearchTeamSection members={members} />
 
           {showWaysToApproach && (
             <WaysToApproachSection

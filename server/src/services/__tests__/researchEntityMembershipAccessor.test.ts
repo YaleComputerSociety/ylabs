@@ -95,4 +95,98 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.imageUrl).toBeUndefined();
     expect(entry.websiteUrl).toBeUndefined();
   });
+
+  it('carries Person.profileLinks onto roster entries', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const account = await Account.create({
+      netid: 'pl123',
+      email: 'pl123@example.test',
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const person = await Person.create({
+      displayName: 'Person pl123',
+      accountId: account._id,
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: 'https://medicine.yale.edu/profile/person-pl123/',
+          verifiedAt: new Date('2026-01-01T00:00:00Z'),
+          healthStatus: 'HEALTHY',
+        },
+      ],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+    });
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0].profileLinks).toHaveLength(1);
+    expect(roster[0].profileLinks[0]).toMatchObject({
+      kind: 'YALE_OFFICIAL',
+      url: 'https://medicine.yale.edu/profile/person-pl123/',
+    });
+  });
+
+  it('defaults profileLinks to an empty array when the Person has none', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, undefined, 'np777');
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster[0].profileLinks).toEqual([]);
+  });
+
+  const seedMemberWithState = async (
+    entityId: mongoose.Types.ObjectId,
+    state: 'CURRENT' | 'HISTORICAL' | 'UNKNOWN',
+    netid: string,
+  ) => {
+    const account = await Account.create({
+      netid,
+      email: `${netid}@example.test`,
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const person = await Person.create({
+      displayName: `Person ${netid}`,
+      accountId: account._id,
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state,
+      confidence: 0.9,
+    });
+  };
+
+  it('treats CURRENT and UNKNOWN assignments as current members but not HISTORICAL', async () => {
+    const currentEntity = new mongoose.Types.ObjectId();
+    const unknownEntity = new mongoose.Types.ObjectId();
+    const historicalEntity = new mongoose.Types.ObjectId();
+    await seedMemberWithState(currentEntity, 'CURRENT', 'cur001');
+    await seedMemberWithState(unknownEntity, 'UNKNOWN', 'unk001');
+    await seedMemberWithState(historicalEntity, 'HISTORICAL', 'his001');
+
+    const [current] = await getResearchEntityRoster(currentEntity);
+    const [unknown] = await getResearchEntityRoster(unknownEntity);
+    const [historical] = await getResearchEntityRoster(historicalEntity);
+
+    expect(current.isCurrentMember).toBe(true);
+    expect(unknown.isCurrentMember).toBe(true);
+    expect(historical.isCurrentMember).toBe(false);
+  });
 });
