@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
   buildStudentSearchTerms,
   getResearchEntitySearchIndexSettings,
+  RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
   rebuildResearchEntitySearchIndex,
@@ -193,6 +195,54 @@ describe('researchEntitySearchIndexService', () => {
     expect(calls[2].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
+  });
+
+  it('configures the OpenAI text-embedding-3-small embedder for the research index', () => {
+    const config = buildResearchEntitySearchEmbedderConfig('sk-test') as any;
+    expect(config.default).toMatchObject({
+      source: 'openAi',
+      apiKey: 'sk-test',
+      model: 'text-embedding-3-small',
+    });
+    expect(config.default.documentTemplate).toContain('{{doc.professorNames}}');
+    expect(config.default.documentTemplate).toContain('{{doc.researchAreas}}');
+    expect(config.default.documentTemplate).toContain('{{doc.shortDescription}}');
+    expect(RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL).toBe('text-embedding-3-small');
+  });
+
+  it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {
+    const embedderCalls: any[] = [];
+    const fakeIndex = {
+      updateSettings: async () => {},
+      updateEmbedders: async (embedders: unknown) => {
+        embedderCalls.push(embedders);
+      },
+      deleteAllDocuments: async () => {},
+      addDocuments: async () => {},
+    };
+    const fetchPage = async (page: number) =>
+      page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [];
+    const run = () =>
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage,
+        fetchMemberNames: async () => new Map(),
+      });
+
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+    await run();
+    expect(embedderCalls).toHaveLength(1);
+    expect(embedderCalls[0].default.model).toBe('text-embedding-3-small');
+
+    embedderCalls.length = 0;
+    delete process.env.OPENAI_API_KEY;
+    await run();
+    expect(embedderCalls).toHaveLength(0);
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
   });
 
   it('enriches rebuilt research entity documents with searchable professor names', async () => {

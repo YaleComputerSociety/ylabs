@@ -449,6 +449,23 @@ function normalizeRebuildPageSize(pageSize: number | undefined): number {
   return pageSize;
 }
 
+export const RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME = 'default';
+export const RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL = 'text-embedding-3-small';
+
+export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
+  [RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME]: {
+    source: 'openAi',
+    apiKey,
+    model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
+    documentTemplate:
+      'Name: {{doc.name}}\n' +
+      'Professors: {{doc.professorNames}}\n' +
+      'Departments: {{doc.departments}}\n' +
+      'Research areas: {{doc.researchAreas}}\n' +
+      'Description: {{doc.shortDescription}} {{doc.fullDescription}} {{doc.description}}',
+  },
+});
+
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
@@ -459,6 +476,10 @@ export async function rebuildResearchEntitySearchIndex(
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
 
   await index.updateSettings(getResearchEntitySearchIndexSettings());
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+  if (openAiApiKey && typeof (index as any).updateEmbedders === 'function') {
+    await (index as any).updateEmbedders(buildResearchEntitySearchEmbedderConfig(openAiApiKey));
+  }
   if (clearExisting) {
     await index.deleteAllDocuments();
   }
