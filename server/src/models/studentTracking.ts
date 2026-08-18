@@ -27,7 +27,7 @@ const studentTrackingSchema = new mongoose.Schema(
     },
     researchGroupId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'ResearchGroup',
+      ref: 'ResearchEntity',
       required: false,
     },
     researchEntityId: {
