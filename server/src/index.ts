@@ -3,7 +3,7 @@
  */
 import app from './app';
 import dotenv from 'dotenv';
-import { initializeConnections, getApiMode } from './db/connections';
+import { initializeConnections, getApiMode, startMongoKeepAlive } from './db/connections';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
@@ -21,6 +21,8 @@ const startApp = async () => {
 
     app.listen(port, () => {
       console.log(`Server is ready at: ${port} 🐶`);
+
+      startMongoKeepAlive();
 
       // Optional: keep the operator-board gate scorecards fresh in-process (off unless
       // GATE_REFRESH_INTERVAL_MINUTES is set). See gateRefreshScheduler.ts.

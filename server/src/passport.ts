@@ -16,7 +16,7 @@ import {
 import { isPrivateOrLocalHostname } from './utils/urlSafety';
 import { allowsLegacyAdminUserType, hasActiveAdminGrant } from './services/adminGrantService';
 import { sanitizeLogValue } from './utils/logSanitizer';
-import { triggerReconnect } from './db/connections';
+import { triggerReconnect, isTopologyLostError, withMongoReconnect } from './db/connections';
 import { authLimiter } from './middleware/rateLimiters';
 
 /**
@@ -519,7 +519,7 @@ passport.use(
     },
     async function (profile, done) {
       try {
-        const user = await findOrCreateUser(profile.user);
+        const user = await withMongoReconnect(() => findOrCreateUser(profile.user));
         done(null, await buildAuthenticatedSessionUser(user, profile.user));
       } catch (error) {
         console.log('Error in CAS login');
@@ -551,7 +551,7 @@ passport.deserializeUser(async (netId: string, done) => {
       done(null, null);
       return;
     }
-    const user = await validateUser(safeNetId);
+    const user = await withMongoReconnect(() => validateUser(safeNetId));
     if (!user) {
       done(null, null);
       return;
@@ -593,21 +593,8 @@ const casLogin = function (
           return res.redirect(errorRedirect);
         }
 
-        // VError 1.x exposes cause as .cause() method, not a property.
-        // Walk the chain via both APIs to catch the wrapped MongoNotConnectedError.
-        const isInfraError = (function checkInfra(e: any): boolean {
-          if (!e) return false;
-          if (e.name === 'MongoNotConnectedError') return true;
-          if (
-            typeof e.message === 'string' &&
-            e.message.includes('Client must be connected before running operations')
-          )
-            return true;
-          const cause = typeof e.cause === 'function' ? e.cause() : e.cause;
-          return checkInfra(cause);
-        })(err);
-        if (isInfraError) {
-          triggerReconnect();
+        if (isTopologyLostError(err)) {
+          void triggerReconnect();
           return res
             .status(503)
             .json({ error: 'Service temporarily unavailable, please try again' });

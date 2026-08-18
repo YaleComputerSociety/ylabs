@@ -3,6 +3,7 @@
  */
 import { ResearchArea, ResearchField, fieldColorKeys } from '../models/researchArea';
 import { Department, DepartmentCategory } from '../models/department';
+import { withMongoReconnect } from '../db/connections';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { replaceAsciiControls } from '../utils/asciiControl';
 
@@ -122,10 +123,12 @@ export const getConfig = async (
     return configCache;
   }
 
-  const [researchAreas, departments] = await Promise.all([
-    ResearchArea.find().select('name field colorKey isDefault').lean(),
-    Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean(),
-  ]);
+  const [researchAreas, departments] = await withMongoReconnect(() =>
+    Promise.all([
+      ResearchArea.find().select('name field colorKey isDefault').lean(),
+      Department.find({ isActive: true }).select('-__v -createdAt -updatedAt').lean(),
+    ]),
+  );
 
   const fields: Array<{ name: string; colorKey: string }> = Object.values(ResearchField).map(
     (field) => ({
