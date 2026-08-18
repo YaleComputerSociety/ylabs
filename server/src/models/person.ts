@@ -36,12 +36,20 @@ export interface PersonIdentifiers {
   orcid?: string;
 }
 
+export interface PersonDisplayProfile {
+  title?: string;
+  primaryDepartment?: string;
+  imageUrl?: string;
+  websiteUrl?: string;
+}
+
 export interface PersonRecord {
   schemaVersion: number;
   displayName: string;
   accountId?: mongoose.Types.ObjectId;
   profileLinks: PersonProfileLink[];
   identifiers?: PersonIdentifiers;
+  profile?: PersonDisplayProfile;
   status: PersonStatus;
   archived: boolean;
 }
@@ -201,6 +209,18 @@ function orcidProfileMatchesIdentifier(
   );
 }
 
+export const personDisplayProfileSchema = new mongoose.Schema<PersonDisplayProfile>(
+  {
+    title: { type: String, trim: true, maxlength: 240 },
+    primaryDepartment: { type: String, trim: true, maxlength: 240 },
+    imageUrl: { type: String, trim: true, maxlength: 2048 },
+    websiteUrl: { type: String, trim: true, maxlength: 2048 },
+  },
+  {
+    _id: false,
+  },
+);
+
 export const personSchema = new mongoose.Schema<PersonRecord>(
   {
     schemaVersion: canonicalSchemaVersionField(personSchemaVersion),
@@ -232,6 +252,10 @@ export const personSchema = new mongoose.Schema<PersonRecord>(
     },
     identifiers: {
       type: personIdentifiersSchema,
+      default: undefined,
+    },
+    profile: {
+      type: personDisplayProfileSchema,
       default: undefined,
     },
     status: {

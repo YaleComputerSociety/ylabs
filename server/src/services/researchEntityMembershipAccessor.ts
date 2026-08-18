@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
-import { Person } from '../models/person';
+import { Person, type PersonDisplayProfile } from '../models/person';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -13,6 +13,10 @@ export interface ResearchEntityRosterEntry {
   name: string;
   netid: string;
   email: string;
+  title?: string;
+  primaryDepartment?: string;
+  imageUrl?: string;
+  websiteUrl?: string;
   role: string;
   roleCanonical: RoleAssignmentRole;
   state: string;
@@ -56,7 +60,10 @@ const normalizeEntityObjectId = (value: unknown): mongoose.Types.ObjectId | null
 };
 
 interface RosterEntryBuildContext {
-  peopleById: Map<string, { displayName?: string; accountId?: mongoose.Types.ObjectId }>;
+  peopleById: Map<
+    string,
+    { displayName?: string; accountId?: mongoose.Types.ObjectId; profile?: PersonDisplayProfile }
+  >;
   accountsById: Map<string, { netid?: string; email?: string }>;
 }
 
@@ -88,6 +95,12 @@ const buildRosterEntry = (
     name: person.displayName || '',
     netid: account?.netid || '',
     email: account?.email || '',
+    ...(person.profile?.title ? { title: person.profile.title } : {}),
+    ...(person.profile?.primaryDepartment
+      ? { primaryDepartment: person.profile.primaryDepartment }
+      : {}),
+    ...(person.profile?.imageUrl ? { imageUrl: person.profile.imageUrl } : {}),
+    ...(person.profile?.websiteUrl ? { websiteUrl: person.profile.websiteUrl } : {}),
     role: legacyRole,
     roleCanonical,
     state: assignment.state,
@@ -116,13 +129,14 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Person.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId')
+        .select('_id displayName accountId profile')
         .lean()
     : [];
 
-  const peopleById = new Map<string, { displayName?: string; accountId?: mongoose.Types.ObjectId }>(
-    people.map((person: any) => [person._id.toString(), person]),
-  );
+  const peopleById = new Map<
+    string,
+    { displayName?: string; accountId?: mongoose.Types.ObjectId; profile?: PersonDisplayProfile }
+  >(people.map((person: any) => [person._id.toString(), person]));
 
   const accountIds = uniqueObjectIds(people.map((person: any) => person.accountId));
   const accounts = accountIds.length
