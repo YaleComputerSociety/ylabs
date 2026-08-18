@@ -22,8 +22,8 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   contextLabel: 'Research description',
   contextLine: 'Neuroscience · School of Medicine',
   evidenceStatus: {
-    label: 'Official Yale source found',
-    state: 'official',
+    label: 'Evidence limited',
+    state: 'limited',
   },
   matchReason: 'Matched systems neuroscience.',
   entityCount: 1,
@@ -77,7 +77,7 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByRole('heading', { name: 'Example Research Home' })).toBeTruthy();
     expect(container.textContent).toContain('Neuroscience · School of Medicine');
     expect(container.textContent).toContain('Systems Neuroscience');
-    expect(container.textContent).toContain('Official Yale source found');
+    expect(container.textContent).toContain('Evidence limited');
     expect(screen.queryByText('Research homes')).toBeNull();
     expect(container.textContent).toContain('Why it might fit');
     expect(container.textContent).toContain('Matched systems neuroscience.');
@@ -148,7 +148,7 @@ describe('ResearchHomeCard', () => {
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
     expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
     expect(text.indexOf('Research description')).toBeLessThan(
-      text.indexOf('Official Yale source found'),
+      text.indexOf('Evidence limited'),
     );
   });
 

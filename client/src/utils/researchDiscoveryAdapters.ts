@@ -36,7 +36,7 @@ export interface ResearchIdentityInput {
 }
 
 export type ResearchHomeContextState = 'complete' | 'sparse';
-export type ResearchHomeEvidenceState = 'official' | 'limited' | 'review' | 'publications';
+export type ResearchHomeEvidenceState = 'limited' | 'review' | 'publications';
 
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
@@ -57,7 +57,6 @@ export interface ResearchHomeContextSummary {
 
 export interface ResearchHomeEvidenceStatus {
   label:
-    | 'Official Yale source found'
     | 'Evidence limited'
     | 'Needs review'
     | 'Publications found'
@@ -470,25 +469,10 @@ export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined)
   return uniq([...getUniqueDepartmentLabels(entity.departments), entity.school]).slice(0, 3).join(' · ');
 };
 
-const hasOfficialYaleSource = (entity: ResearchEntity | undefined): boolean =>
-  (entity?.sourceUrls || []).some((url) => {
-    const safe = safeHttpUrl(url);
-    if (!safe) return false;
-    try {
-      const host = new URL(safe).hostname.toLowerCase();
-      return host === 'yale.edu' || host.endsWith('.yale.edu');
-    } catch {
-      return false;
-    }
-  });
-
 export const buildResearchHomeEvidenceStatus = (
   entity: ResearchEntity | undefined,
   pathways: PathwaySearchHit[],
 ): ResearchHomeEvidenceStatus => {
-  if (hasOfficialYaleSource(entity)) {
-    return { label: 'Official Yale source found', state: 'official' };
-  }
   if (
     entity?.accessSummary?.status === 'not-currently-available' ||
     entity?.accessSummary?.signalTypes?.includes('NOT_CURRENTLY_AVAILABLE')

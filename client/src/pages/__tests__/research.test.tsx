@@ -395,7 +395,7 @@ describe('Research page', () => {
       'Open a profile to review people, evidence, sources, and planning context.',
     );
     expect(container.textContent).not.toContain('possible ways in');
-    expect(container.textContent).toContain('Official Yale source found');
+    expect(container.textContent).toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
     const browseSection = screen.getByLabelText('Research homes to explore');
     const browseHeadingRow = within(browseSection).getByText(
@@ -1838,7 +1838,7 @@ describe('Research page', () => {
     expect(container.textContent).toContain('Studies reliable machine learning systems.');
     expect(container.textContent).toContain('Computer Science · Yale College');
     expect(container.textContent).not.toContain('Why it might fit');
-    expect(container.textContent).toContain('Official Yale source found');
+    expect(container.textContent).toContain('Evidence limited');
     const researchHomesSection = screen
       .getByRole('heading', { name: 'Research profiles' })
       .closest('section');
@@ -1881,7 +1881,7 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
-    expect(screen.getByText('Official Yale source found')).toBeTruthy();
+    expect(screen.getByText('Evidence limited')).toBeTruthy();
   });
 
   it('does not expose unsupported ways-in filters as factual refinements', async () => {
