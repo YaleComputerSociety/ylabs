@@ -1,11 +1,16 @@
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
+import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import mongoose from 'mongoose';
 
 const GRANT_SHELL_SLUG = /^(?:nih|nsf)-pi-/i;
 const GRANT_SOURCE_URL =
   /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov)/i;
 const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
+const CANONICAL_LEAD_ROLES = LEAD_ROLES.map((role) => canonicalRoleForLegacy(role)).filter(
+  (role): role is RoleAssignmentRole => Boolean(role),
+);
 
 export interface ResearchHomeCandidate {
   slug?: unknown;
@@ -70,12 +75,20 @@ export async function resolveCanonicalResearchHomeForUser(
   userId: string,
 ): Promise<CanonicalResearchHomeResolution> {
   if (!mongoose.isValidObjectId(userId)) return { status: 'ineligible' };
-  const memberships = await ResearchGroupMember.find({
-    userId,
-    role: { $in: LEAD_ROLES },
+  const personId = await resolveResearcherIdForLegacyUser(userId);
+  if (!personId) return { status: 'safe-shell' };
+  const assignments = await RoleAssignment.find({
+    personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: CANONICAL_LEAD_ROLES },
   })
-    .select('researchEntityId isCurrentMember archived')
+    .select('target state archived')
     .lean();
+  const memberships = (assignments as any[]).map((assignment) => ({
+    researchEntityId: assignment.target?.id,
+    isCurrentMember: assignment.state !== 'HISTORICAL',
+    archived: assignment.archived,
+  }));
   if (hasIneligibleLeadMembership(memberships)) {
     return { status: 'ineligible' };
   }

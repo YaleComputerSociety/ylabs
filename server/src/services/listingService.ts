@@ -11,7 +11,9 @@ import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils
 import * as itemOps from './itemOperations';
 import { findOrCreateForOwner } from './researchGroupService';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { canonicalRoleForLegacy } from '../models/canonicalRoleMapping';
+import { resolveResearcherIdForLegacyUser } from './researchEntityMembershipAccessor';
 import { buildListingResearchEntityProfilePatch } from './listingResearchEntityProfile';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
@@ -75,6 +77,9 @@ async function syncResearchEntityProfileFromListing(listing: any): Promise<void>
 }
 
 const LISTING_ENTITY_AUTHOR_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
+const CANONICAL_LISTING_AUTHOR_ROLES = LISTING_ENTITY_AUTHOR_ROLES.map((role) =>
+  canonicalRoleForLegacy(role),
+).filter((role): role is RoleAssignmentRole => Boolean(role));
 
 const hasListingEntityAuthority = async (
   researchEntityId: unknown,
@@ -85,31 +90,23 @@ const hasListingEntityAuthority = async (
     return false;
   }
 
-  const identityClauses: Record<string, any>[] = [];
-  const ownerUserId = normalizeListingObjectId(owner?._id);
-  if (ownerUserId) {
-    identityClauses.push({ userId: ownerUserId });
-  }
-  const ownerFacultyMemberId = normalizeListingObjectId(owner?.facultyMemberId);
-  if (ownerFacultyMemberId) {
-    identityClauses.push({ facultyMemberId: ownerFacultyMemberId });
-  }
-
-  if (identityClauses.length === 0) {
+  const personId = await resolveResearcherIdForLegacyUser(owner?._id, owner?.facultyMemberId);
+  if (!personId) {
     return false;
   }
 
-  const membership = await ResearchGroupMember.findOne({
-    researchEntityId: safeResearchEntityId,
+  const assignment = await RoleAssignment.findOne({
+    personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': new mongoose.Types.ObjectId(safeResearchEntityId),
+    role: { $in: CANONICAL_LISTING_AUTHOR_ROLES },
+    state: { $ne: 'HISTORICAL' },
     archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: LISTING_ENTITY_AUTHOR_ROLES },
-    $or: identityClauses,
   })
     .select('_id')
     .lean();
 
-  return Boolean(membership);
+  return Boolean(assignment);
 };
 
 const resolveListingResearchEntityId = async (data: any, owner: any): Promise<any> => {
