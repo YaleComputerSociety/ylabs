@@ -58,7 +58,7 @@ const paperSchema = new mongoose.Schema(
     },
     researchGroupIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'ResearchGroup',
+      ref: 'ResearchEntity',
       default: [],
     },
     researchEntityIds: {
