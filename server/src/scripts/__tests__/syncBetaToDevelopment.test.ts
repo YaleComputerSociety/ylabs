@@ -198,7 +198,7 @@ describe('Beta to Development sync guards', () => {
         'research_entity_relationships',
         'faculty_members',
         'entry_pathways',
-        'access_signals',
+        'signals',
         'contact_routes',
         'posted_opportunities',
         'research_entity_stats',

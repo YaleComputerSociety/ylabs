@@ -8,7 +8,8 @@
  * (no-query) browse can sort on it.
  */
 import { ResearchEntity } from '../models/researchEntity';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAccessTypes';
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { syncEntity } from './meiliSyncService';
@@ -30,17 +31,18 @@ const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[
 
 const accessSignalTypesByEntityId = async (entityIds: any[]): Promise<Map<string, string[]>> => {
   if (entityIds.length === 0) return new Map();
-  const signals = await AccessSignal.find({
+  const signals = await Signal.find({
     researchEntityId: { $in: entityIds },
+    type: { $in: ACCESS_SIGNAL_TYPES },
     archived: { $ne: true },
   })
-    .select('researchEntityId signalType')
+    .select('researchEntityId type')
     .lean();
   const byId = new Map<string, string[]>();
   for (const signal of signals as any[]) {
     const key = browseRankDocumentId(signal.researchEntityId);
-    if (!key || !signal.signalType) continue;
-    byId.set(key, [...(byId.get(key) || []), String(signal.signalType)]);
+    if (!key || !signal.type) continue;
+    byId.set(key, [...(byId.get(key) || []), String(signal.type)]);
   }
   return byId;
 };

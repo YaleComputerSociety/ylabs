@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { Listing } from '../models/listing';
@@ -306,8 +307,9 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
       researchEntityId: { $in: entityIds },
       archived: { $ne: true },
     }),
-    aggregateCountMap(AccessSignal, {
+    aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
+      type: { $in: [...accessSignalTypes] },
       archived: { $ne: true },
     }),
     aggregateCountMap(PostedOpportunity, {
@@ -462,10 +464,12 @@ async function buildSlugAudit(slug: string) {
           'pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey',
         )
         .lean(),
-      AccessSignal.find({ researchEntityId: entity._id, archived: { $ne: true } })
-        .select(
-          'signalType confidence confidenceScore excerpt sourceName sourceUrl observedAt derivationKey',
-        )
+      Signal.find({
+        researchEntityId: entity._id,
+        type: { $in: [...accessSignalTypes] },
+        archived: { $ne: true },
+      })
+        .select('type confidence confidenceScore source observedAt derivationKey')
         .sort({ observedAt: -1 })
         .lean(),
       ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
@@ -512,7 +516,7 @@ async function buildSlugAudit(slug: string) {
       activeListings: listings.length,
     },
     observationFlags: buildObservationFlags(observationHints),
-    signalTypes: signals.map((signal) => signal.signalType),
+    signalTypes: signals.map((signal) => signal.type),
   };
 
   const row = buildCoverageAuditRow(coverageFacts);

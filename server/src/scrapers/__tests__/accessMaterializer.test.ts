@@ -47,7 +47,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
 
     expect(result.entryPathways).toEqual([]);
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'CREDIT_FORMALIZATION_POSSIBLE',
       'FACULTY_SUPERVISES_STUDENT_PROJECTS',
     ]);
@@ -77,7 +77,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
 
     expect(result.entryPathways).toEqual([]);
-    expect(result.accessSignals.map((signal) => signal.signalType)).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type)).toEqual([
       'CREDIT_FORMALIZATION_POSSIBLE',
     ]);
   });
@@ -95,7 +95,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'CURRENT_UNDERGRADS',
+        type: 'CURRENT_UNDERGRADS',
         confidence: 'MEDIUM',
         confidenceScore: 0.5,
       },
@@ -120,7 +120,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
         bestNextStep: 'Plan outreach and ask how student projects are usually formalized.',
       },
     ]);
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'FELLOWSHIP_COMPATIBLE',
       'PAST_UNDERGRADS',
     ]);
@@ -149,7 +149,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       status: 'PLAUSIBLE',
       compensation: 'UNKNOWN',
     });
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'FELLOWSHIP_COMPATIBLE',
       'PAST_UNDERGRADS',
     ]);
@@ -167,7 +167,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'CURRENT_UNDERGRADS',
+        type: 'CURRENT_UNDERGRADS',
         confidence: 'LOW',
         confidenceScore: 0.32,
         originalConfidence: 0.32,
@@ -215,7 +215,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'NOT_CURRENTLY_AVAILABLE',
+        type: 'NOT_CURRENTLY_AVAILABLE',
         confidence: 'MEDIUM',
         excerpt: 'We are not taking undergraduate researchers this year.',
       },
@@ -262,7 +262,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
         }),
       ]),
     );
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'CONTACT_INSTRUCTIONS_EXIST',
       'REACH_OUT_PLAUSIBLE',
@@ -317,7 +317,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     ]);
     expect(result.accessSignals).toMatchObject([
       {
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         excerpt:
           'Students interested in research should contact the faculty member directly to explore opportunities.',
       },
@@ -361,7 +361,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
         }),
       ]),
     );
-    expect(result.accessSignals.map((signal) => signal.signalType).sort()).toEqual([
+    expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'REACH_OUT_PLAUSIBLE',
     ]);
@@ -419,11 +419,11 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          type: 'REACH_OUT_PLAUSIBLE',
           excerpt: 'Email [email redacted] to apply.',
         }),
         expect.objectContaining({
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          type: 'CONTACT_INSTRUCTIONS_EXIST',
           excerpt: 'Call [phone redacted] or email [email redacted].',
         }),
       ]),
@@ -450,7 +450,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          type: 'CONTACT_INSTRUCTIONS_EXIST',
           excerpt: 'Official contact listed: Ada Manager, Lab Manager.',
         }),
       ]),
@@ -541,7 +541,7 @@ describe('deriveAccessArtifactsForResearchGroup', () => {
       sourceEvidenceIds: ['64f000000000000000000099'],
     });
     expect(result.artifacts.accessSignals[0]).toMatchObject({
-      signalType: 'CURRENT_UNDERGRADS',
+      type: 'CURRENT_UNDERGRADS',
       sourceEvidenceId: '64f000000000000000000099',
     });
   });
@@ -572,7 +572,7 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     expect(result.entryPathways[0].derivationKey).toBe(
       'pathway:EXPLORATORY_CONTACT:IDENTIFIED_FACULTY_LEAD',
     );
-    expect(result.accessSignals.map((s) => s.signalType)).toEqual(['REACH_OUT_PLAUSIBLE']);
+    expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
     expect(result.contactRoutes.map((r) => r.routeType)).toEqual(['FACULTY_PI']);
     // confidence is intentionally conservative (LOW / WEAK)
     expect(result.accessSignals[0].confidenceScore).toBeLessThanOrEqual(0.4);

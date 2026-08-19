@@ -8,14 +8,16 @@ describe('undergraduateLogisticsService public projection', () => {
     const result = toPublicUndergraduateLogistics(
       [
         {
-          claimType: 'COMPENSATION',
+          type: 'COMPENSATION',
           status: 'KNOWN',
           value: { modes: ['STIPEND'] },
-          sourceName: 'private-scraper-name',
           confidence: 0.51,
-          sourceEvidenceIds: ['private-observation-id'],
-          sourceUrl: 'https://example.yale.edu/program',
-          evidenceExcerpt: 'The program provides a stipend. Contact hidden@yale.edu.',
+          source: {
+            name: 'private-scraper-name',
+            evidenceIds: ['private-observation-id'],
+            url: 'https://example.yale.edu/program',
+            excerpt: 'The program provides a stipend. Contact hidden@yale.edu.',
+          },
           observedAt: '2026-07-01T00:00:00.000Z',
           expiresAt: '2027-07-01T00:00:00.000Z',
         } as any,
@@ -44,14 +46,16 @@ describe('undergraduateLogisticsService public projection', () => {
     const result = toPublicUndergraduateLogistics(
       [
         {
-          claimType: 'CURRENT_AVAILABILITY',
+          type: 'CURRENT_AVAILABILITY',
           status: 'KNOWN',
           value: { status: 'OPEN' },
-          sourceUrl: 'https://example.yale.edu/join',
-          evidenceExcerpt: 'Applications are currently open.',
+          source: {
+            url: 'https://example.yale.edu/join',
+            excerpt: 'Applications are currently open.',
+          },
           observedAt: '2026-01-01T00:00:00.000Z',
           expiresAt: '2026-03-01T00:00:00.000Z',
-        },
+        } as any,
       ],
       NOW,
     );
@@ -72,14 +76,16 @@ describe('undergraduateLogisticsService public projection', () => {
     const result = toPublicUndergraduateLogistics(
       [
         {
-          claimType: 'MODALITY',
+          type: 'MODALITY',
           status: 'CONFLICTING_WITHHELD',
           value: { modes: ['REMOTE'] },
-          sourceUrl: 'https://example.yale.edu/join',
-          evidenceExcerpt: 'Remote work is possible.',
+          source: {
+            url: 'https://example.yale.edu/join',
+            excerpt: 'Remote work is possible.',
+          },
           observedAt: '2026-07-01T00:00:00.000Z',
           expiresAt: '2027-07-01T00:00:00.000Z',
-        },
+        } as any,
       ],
       NOW,
     );

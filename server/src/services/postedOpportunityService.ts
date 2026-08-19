@@ -4,7 +4,7 @@ import { Listing } from '../models/listing';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
-import { upsertAccessSignal } from './accessSignalService';
+import { upsertSignal } from './signalService';
 import { upsertEntryPathway } from './entryPathwayService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -272,10 +272,10 @@ export async function materializePostedOpportunityFromListing(
     return { skipped: 'missing-entry-pathway-id' };
   }
 
-  await upsertAccessSignal({
+  await upsertSignal({
     researchEntityId,
     entryPathwayId: pathway.pathwayId,
-    signalType: 'POSTED_OPENING',
+    type: 'POSTED_OPENING',
     confidence: 'HIGH',
     observedAt,
     excerpt: listing.title ? `Posted listing: ${listing.title}` : 'Posted research listing',

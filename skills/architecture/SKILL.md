@@ -71,7 +71,7 @@ Models are Mongoose schemas with indexes.
 | `yarn model-refactor:inventory:production-copy`                  | Run aggregate-only ProductionCopy inventory through its separate external read-only profile. |
 | `yarn model-refactor:inventory:validate-evidence`                | Validate a private inventory against its versioned recovery manifest.                        |
 | `yarn --cwd server model-refactor:query-cost`                    | Run the bounded Phase 0 MongoDB hot-path audit described in the Phase 0 runbook.             |
-| `yarn --cwd server model-refactor:access-review-projection`      | Dry-run or apply the environment-local admin access-review projection reconciliation.         |
+| `yarn --cwd server model-refactor:access-review-projection`      | Dry-run or apply the environment-local admin access-review projection reconciliation.        |
 | `yarn --cwd server model-refactor:identity-plan`                 | Produce the bounded read-only Phase 2 account, person, role, and quarantine plan.            |
 
 Migration scripts run from `data-migration/` with `npx tsx --transpile-only <script>.ts`.
@@ -92,37 +92,37 @@ Client: target ES5, module ESNext, JSX `react-jsx`, strict true, noEmit true.
 All application routes mount under `/api` in `app.ts`.
 Passport auth routes mount separately via `passportRoutes` before the main routes.
 
-| Prefix            | File                | Auth                                              |
-| ----------------- | ------------------- | ------------------------------------------------- |
-| `/research`       | `researchGroups.ts` | Varies, with public search and detail.            |
-| `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface. |
-| `/opportunities`  | `opportunities.ts`  | Public detail for source-discovered opportunities. |
-| `/pathways`       | `pathways.ts`       | Auth required.                                    |
+| Prefix            | File                | Auth                                                |
+| ----------------- | ------------------- | --------------------------------------------------- |
+| `/research`       | `researchGroups.ts` | Varies, with public search and detail.              |
+| `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
+| `/opportunities`  | `opportunities.ts`  | Public detail for source-discovered opportunities.  |
+| `/pathways`       | `pathways.ts`       | Auth required.                                      |
 | `/listings`       | `listings.ts`       | Legacy read and claim routes; authoring is retired. |
-| `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.  |
-| `/users`          | `users.ts`          | Auth required.                                    |
-| `/profiles`       | `profiles.ts`       | Varies.                                           |
-| `/analytics`      | `analytics.ts`      | Admin.                                            |
-| `/config`         | `config.ts`         | Public.                                           |
-| `/research-areas` | `researchAreas.ts`  | Admin for writes.                                 |
-| `/admin`          | `admin.ts`          | Admin.                                            |
-| `/seed`           | `seed.ts`           | Local development runtime only.                   |
+| `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
+| `/users`          | `users.ts`          | Auth required.                                      |
+| `/profiles`       | `profiles.ts`       | Varies.                                             |
+| `/analytics`      | `analytics.ts`      | Admin.                                              |
+| `/config`         | `config.ts`         | Public.                                             |
+| `/research-areas` | `researchAreas.ts`  | Admin for writes.                                   |
+| `/admin`          | `admin.ts`          | Admin.                                              |
+| `/seed`           | `seed.ts`           | Local development runtime only.                     |
 
 ## Key services
 
-| Service                                                                                                                                                                     | Responsibility                                                       |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
-| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
-| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts`                                                                          | Meilisearch index sync and query.                                    |
-| `meiliSyncService.ts`                                                                                                                                                       | Syncs collection upserts into Meilisearch indexes.                   |
-| `accessSignalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts` | Source-backed access and posted-opportunity read layer.               |
-| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                                                     | Operator board, access review, and admin grants.                     |
-| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                                                    | Scraper/source health and paper-quality scoring.                     |
-| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts`                                 | Student visibility tiering, repair queue, and decision explanations. |
-| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts`                                                                    | Fellowship matching, cycle evidence, and program classification.     |
-| `listingResearchEntityProfile.ts`                                                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
-| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                                                        | External integrations.                                               |
+| Service                                                                                                                                     | Responsibility                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
+| `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
+| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts`                                          | Meilisearch index sync and query.                                    |
+| `meiliSyncService.ts`                                                                                                                       | Syncs collection upserts into Meilisearch indexes.                   |
+| `signalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts`        | Source-backed access and posted-opportunity read layer.              |
+| `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
+| `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
+| `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, repair queue, and decision explanations. |
+| `fellowshipMatchingService.ts` / `fellowshipApplicationCycleEvidenceService.ts` / `programClassifier.ts`                                    | Fellowship matching, cycle evidence, and program classification.     |
+| `listingResearchEntityProfile.ts`                                                                                                           | Keeps legacy listings synced to ResearchEntity profiles.             |
+| `directoryService.ts` / `yaliesService.ts` / `courseTableService.ts`                                                                        | External integrations.                                               |
 
 ## Naming conventions
 

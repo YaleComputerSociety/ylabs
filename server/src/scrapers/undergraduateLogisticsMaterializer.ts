@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import { Signal } from '../models/signal';
 import {
-  UndergraduateLogisticsClaim,
-  undergraduateLogisticsClaimTypes,
-  type UndergraduateLogisticsClaimStatus,
-  type UndergraduateLogisticsClaimType,
-} from '../models/undergraduateLogisticsClaim';
+  undergraduateLogisticsSignalTypes as undergraduateLogisticsClaimTypes,
+  type SignalStatus as UndergraduateLogisticsClaimStatus,
+  type UndergraduateLogisticsSignalType as UndergraduateLogisticsClaimType,
+} from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -816,13 +816,28 @@ export async function materializeUndergraduateLogisticsForResearchEntity(input: 
   }
 
   for (const patch of resolution.patches) {
-    await UndergraduateLogisticsClaim.updateOne(
-      { researchEntityId: input.researchEntityId, claimType: patch.claimType },
+    await Signal.updateOne(
+      {
+        researchEntityId: input.researchEntityId,
+        type: patch.claimType,
+        derivationKey: `logistics:${patch.claimType}`,
+      },
       {
         $set: {
-          ...patch,
           researchEntityId: input.researchEntityId,
-          materializedAt: now,
+          type: patch.claimType,
+          derivationKey: `logistics:${patch.claimType}`,
+          status: patch.status,
+          'source.name': patch.sourceName,
+          'source.url': patch.sourceUrl,
+          'source.excerpt': patch.evidenceExcerpt,
+          'source.evidenceIds': patch.sourceEvidenceIds,
+          'source.scrapeRunIds': patch.sourceScrapeRunIds,
+          observedAt: patch.observedAt,
+          expiresAt: patch.expiresAt,
+          archived: patch.archived,
+          lastMaterializedAt: now,
+          ...(patch.value === undefined ? {} : { value: patch.value }),
         },
         ...(patch.value === undefined ? { $unset: { value: '' } } : {}),
       },
@@ -832,13 +847,13 @@ export async function materializeUndergraduateLogisticsForResearchEntity(input: 
 
   let archived = 0;
   if (resolution.missingClaimTypes.length > 0) {
-    const result = await UndergraduateLogisticsClaim.updateMany(
+    const result = await Signal.updateMany(
       {
         researchEntityId: input.researchEntityId,
-        claimType: { $in: resolution.missingClaimTypes },
+        type: { $in: resolution.missingClaimTypes },
         archived: { $ne: true },
       },
-      { $set: { archived: true, materializedAt: now } },
+      { $set: { archived: true, lastMaterializedAt: now } },
     );
     archived = result.modifiedCount;
   }

@@ -24,7 +24,7 @@ import { FacultyMember } from '../models/facultyMember';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -45,7 +45,10 @@ import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
 } from './researchEntityQuality';
-import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import {
+  accessSignalTypes,
+  mapResearchGroupKindToEntityType,
+} from '../models/researchAccessTypes';
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
@@ -2144,11 +2147,11 @@ const publicEntryPathwayForResearchDetail = (
 });
 
 const publicAccessSignalForResearchDetail = (signal: any) => ({
-  signalType: signal.signalType,
+  signalType: signal.type,
   confidence: signal.confidence,
   confidenceScore: signal.confidenceScore,
-  excerpt: publicString(signal.excerpt),
-  sourceUrl: publicHttpUrl(signal.sourceUrl),
+  excerpt: publicString(signal.source?.excerpt),
+  sourceUrl: publicHttpUrl(signal.source?.url),
   observedAt: signal.observedAt,
 });
 
@@ -2551,7 +2554,11 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ updatedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS)
       .lean(),
-    AccessSignal.find({ researchEntityId: (group as any)._id, archived: false })
+    Signal.find({
+      researchEntityId: (group as any)._id,
+      type: { $in: accessSignalTypes },
+      archived: false,
+    })
       .sort({ observedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),

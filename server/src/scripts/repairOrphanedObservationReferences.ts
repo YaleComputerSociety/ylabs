@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
+import { undergraduateLogisticsSignalTypes } from '../models/researchAccessTypes';
 import {
   deriveAccessArtifactsForResearchGroup,
   materializeAccessForResearchGroup,
@@ -225,8 +226,10 @@ function occurrenceFromRow(
     ...(stringValue(row.owner.derivationKey)
       ? { ownerDerivationKey: stringValue(row.owner.derivationKey) }
       : {}),
-    ...(stringValue(row.owner.claimType)
-      ? { ownerClaimType: stringValue(row.owner.claimType) }
+    ...((undergraduateLogisticsSignalTypes as readonly string[]).includes(
+      stringValue(row.owner.type),
+    )
+      ? { ownerClaimType: stringValue(row.owner.type) }
       : {}),
     ...(row.referenceKey
       ? {
@@ -362,7 +365,17 @@ async function currentMaterializationEvidenceIds(input: {
   }
   const { observations } = context;
 
-  if (['entry_pathways', 'access_signals', 'contact_routes'].includes(input.spec.collection)) {
+  if (input.spec.collection === 'signals' && input.occurrence.ownerClaimType) {
+    const claimType = input.occurrence.ownerClaimType;
+    const resolution = resolveUndergraduateLogisticsClaims(observations as any[]);
+    return {
+      evidenceIds:
+        resolution.patches.find((patch) => patch.claimType === claimType)?.sourceEvidenceIds || [],
+      replacesOwner: false,
+    };
+  }
+
+  if (['entry_pathways', 'signals', 'contact_routes'].includes(input.spec.collection)) {
     const key = input.occurrence.ownerDerivationKey;
     if (!key) return { evidenceIds: [], replacesOwner: false };
     if (!context.accessArtifacts) {
@@ -391,14 +404,14 @@ async function currentMaterializationEvidenceIds(input: {
         replacesOwner: !exact && Boolean(legacyReplacement),
       };
     }
-    if (input.spec.collection === 'access_signals') {
+    if (input.spec.collection === 'signals') {
       const exact = derived.accessSignals.find((item) => item.derivationKey === key);
       const legacyReplacement =
         key.startsWith('signal:REACH_OUT_PLAUSIBLE:OFFICIAL_PROFILE:') ||
         key.startsWith('visibility-repair:official-profile-outreach:')
           ? derived.accessSignals.find(
               (item) =>
-                item.signalType === 'REACH_OUT_PLAUSIBLE' &&
+                item.type === 'REACH_OUT_PLAUSIBLE' &&
                 /:(IDENTIFIED_FACULTY_LEAD|ORGANIZATIONAL_HOME)$/.test(item.derivationKey),
             )
           : undefined;
@@ -424,16 +437,6 @@ async function currentMaterializationEvidenceIds(input: {
     };
   }
 
-  if (input.spec.collection === 'undergraduate_logistics_claims') {
-    const claimType = input.occurrence.ownerClaimType;
-    if (!claimType) return { evidenceIds: [], replacesOwner: false };
-    const resolution = resolveUndergraduateLogisticsClaims(observations as any[]);
-    return {
-      evidenceIds:
-        resolution.patches.find((patch) => patch.claimType === claimType)?.sourceEvidenceIds || [],
-      replacesOwner: false,
-    };
-  }
   return { evidenceIds: [], replacesOwner: false };
 }
 

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
 import {
   syncPathwaySearchIndexDocument,
@@ -9,14 +9,14 @@ import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArti
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
-import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
+import type { SignalConfidence, SignalType } from '../models/researchAccessTypes';
 
-export type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
+export type { SignalConfidence, SignalType } from '../models/researchAccessTypes';
 
-export interface UpsertAccessSignalInput {
+export interface UpsertSignalInput {
   researchEntityId: string;
-  signalType: AccessSignalType;
-  confidence: AccessSignalConfidence;
+  type: SignalType;
+  confidence: SignalConfidence;
   sourceEvidenceId?: string;
   observedAt: Date;
   entryPathwayId?: string;
@@ -29,17 +29,17 @@ export interface UpsertAccessSignalInput {
   archived?: boolean;
 }
 
-export interface AccessSignalServiceDeps {
+export interface SignalServiceDeps {
   model?: mongoose.Model<any>;
 }
 
-export interface AccessSignalUpsertResult {
+export interface SignalUpsertResult {
   signalId?: string;
   doc?: any;
 }
 
-function getAccessSignalModel(deps: AccessSignalServiceDeps = {}): mongoose.Model<any> {
-  return deps.model || AccessSignal;
+function getSignalModel(deps: SignalServiceDeps = {}): mongoose.Model<any> {
+  return deps.model || Signal;
 }
 
 const STORED_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -65,42 +65,41 @@ function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> 
   ) as Partial<T>;
 }
 
-export async function upsertAccessSignal(
-  input: UpsertAccessSignalInput,
-  deps: AccessSignalServiceDeps = {},
-): Promise<AccessSignalUpsertResult> {
-  const AccessSignal = getAccessSignalModel(deps);
+export async function upsertSignal(
+  input: UpsertSignalInput,
+  deps: SignalServiceDeps = {},
+): Promise<SignalUpsertResult> {
+  const Signal = getSignalModel(deps);
   const researchEntityId = toStoredId(input.researchEntityId);
   if (!researchEntityId) return {};
   const entryPathwayId = input.entryPathwayId ? toStoredId(input.entryPathwayId) : undefined;
   const sourceEvidenceId = toStoredObjectId(input.sourceEvidenceId);
   const derivationKey =
-    input.derivationKey || `access-materializer:${input.signalType}:${input.sourceEvidenceId}`;
+    input.derivationKey || `access-materializer:${input.type}:${input.sourceEvidenceId}`;
 
   const filter = compactObject({
     researchEntityId,
-    signalType: input.signalType,
+    type: input.type,
     derivationKey,
   });
-  const existing = await findReviewLockedRecord(AccessSignal, filter);
+  const existing = await findReviewLockedRecord(Signal, filter);
 
   const update = {
     $setOnInsert: compactObject({
       researchEntityId,
-      signalType: input.signalType,
+      type: input.type,
       derivationKey,
     }),
     $set: omitReviewLockedFields(
       compactObject({
         entryPathwayId,
-        sourceEvidenceId,
-        observationId: sourceEvidenceId,
+        'source.evidenceIds': sourceEvidenceId ? [sourceEvidenceId] : undefined,
+        'source.name': input.sourceName,
+        'source.url': publicAccessHttpUrl(input.sourceUrl),
+        'source.excerpt': publicAccessText(input.excerpt),
         confidence: input.confidence,
         confidenceScore: input.confidenceScore ?? input.originalConfidence,
         observedAt: input.observedAt,
-        excerpt: publicAccessText(input.excerpt),
-        sourceName: input.sourceName,
-        sourceUrl: publicAccessHttpUrl(input.sourceUrl),
         originalConfidence: input.originalConfidence,
         archived: input.archived,
         lastMaterializedAt: new Date(),
@@ -110,7 +109,7 @@ export async function upsertAccessSignal(
   };
 
   const write = async (session?: mongoose.ClientSession) => {
-    const query = AccessSignal.findOneAndUpdate(filter, update, {
+    const query = Signal.findOneAndUpdate(filter, update, {
       upsert: true,
       new: true,
       setDefaultsOnInsert: true,

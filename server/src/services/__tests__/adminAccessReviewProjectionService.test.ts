@@ -35,7 +35,7 @@ vi.mock('../../models/researchEntity', () => ({
 }));
 
 vi.mock('../../models/entryPathway', () => ({ EntryPathway: aggregateModel(mocks.pathwayExec) }));
-vi.mock('../../models/accessSignal', () => ({ AccessSignal: aggregateModel(mocks.signalExec) }));
+vi.mock('../../models/signal', () => ({ Signal: aggregateModel(mocks.signalExec) }));
 vi.mock('../../models/contactRoute', () => ({ ContactRoute: aggregateModel(mocks.routeExec) }));
 vi.mock('../../models/postedOpportunity', () => ({
   PostedOpportunity: aggregateModel(mocks.opportunityExec),

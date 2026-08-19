@@ -46,12 +46,10 @@ describe('observation retention', () => {
       expect.arrayContaining([
         { collection: 'observations', field: 'supersededBy' },
         { collection: 'entry_pathways', field: 'sourceEvidenceIds' },
-        { collection: 'access_signals', field: 'sourceEvidenceId' },
-        { collection: 'access_signals', field: 'observationId' },
+        { collection: 'signals', field: 'source.evidenceIds' },
         { collection: 'contact_routes', field: 'sourceEvidenceId' },
         { collection: 'contact_routes', field: 'sourceEvidenceIds' },
         { collection: 'posted_opportunities', field: 'sourceEvidenceIds' },
-        { collection: 'undergraduate_logistics_claims', field: 'sourceEvidenceIds' },
         {
           collection: 'research_entities',
           field: 'fieldProvenance',

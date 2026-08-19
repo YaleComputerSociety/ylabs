@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Paper } from '../models/paper';
 import {
   buildDuplicateAccessSignalGroupsFromRows,
@@ -234,23 +235,33 @@ async function loadDuplicateAccessSignalReviewGroups(
     'sourceEvidenceId',
     'observationId',
   ];
+  const identityFieldPath: Record<DuplicateAccessSignalGroup['identityField'], string> = {
+    derivationKey: 'derivationKey',
+    sourceEvidenceId: 'source.evidenceIds',
+    observationId: 'source.evidenceIds',
+  };
   const groups: DuplicateAccessSignalGroup[] = [];
 
   for (const field of fields) {
-    const rows = await AccessSignal.aggregate([
+    const fieldPath = identityFieldPath[field];
+    const identityExpr =
+      field === 'derivationKey'
+        ? { $toString: `$${fieldPath}` }
+        : { $toString: { $arrayElemAt: [`$${fieldPath}`, 0] } };
+    const rows = await Signal.aggregate([
       {
         $match: {
           archived: { $ne: true },
           researchEntityId: { $exists: true, $ne: null },
-          signalType: { $exists: true, $ne: '' },
-          [field]: { $exists: true, $ne: null },
+          type: { $in: [...accessSignalTypes] },
+          [fieldPath]: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
           researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$signalType',
-          identityValue: { $toString: `$${field}` },
+          signalType: '$type',
+          identityValue: identityExpr,
           signalId: { $toString: '$_id' },
         },
       },

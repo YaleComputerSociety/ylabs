@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { upsertAccessSignal } from '../accessSignalService';
+import { upsertSignal } from '../signalService';
 
-describe('accessSignalService', () => {
+describe('signalService', () => {
   it('does not upsert when required research entity ids are object-shaped', async () => {
     const model = {
       findOneAndUpdate: () => {
@@ -9,10 +9,10 @@ describe('accessSignalService', () => {
       },
     };
 
-    const result = await upsertAccessSignal(
+    const result = await upsertSignal(
       {
         researchEntityId: { toString: () => '64f111111111111111111111' } as any,
-        signalType: 'POSTED_OPENING',
+        type: 'POSTED_OPENING',
         confidence: 'HIGH',
         observedAt: new Date('2026-06-11T00:00:00.000Z'),
       },
@@ -33,12 +33,12 @@ describe('accessSignalService', () => {
       },
     };
 
-    await upsertAccessSignal(
+    await upsertSignal(
       {
         researchEntityId: 'entity-1',
         entryPathwayId: { toString: () => '64f111111111111111111111' } as any,
         sourceEvidenceId: { toString: () => '64f222222222222222222222' } as any,
-        signalType: 'POSTED_OPENING',
+        type: 'POSTED_OPENING',
         confidence: 'HIGH',
         observedAt: new Date('2026-06-11T00:00:00.000Z'),
       },
@@ -46,6 +46,7 @@ describe('accessSignalService', () => {
     );
 
     expect(capturedUpdate.$set).not.toHaveProperty('entryPathwayId');
+    expect(capturedUpdate.$set).not.toHaveProperty('source.evidenceIds');
     expect(capturedUpdate.$set).not.toHaveProperty('sourceEvidenceId');
     expect(capturedUpdate.$set).not.toHaveProperty('observationId');
   });
@@ -65,10 +66,10 @@ describe('accessSignalService', () => {
       }),
     };
 
-    const result = await upsertAccessSignal(
+    const result = await upsertSignal(
       {
         researchEntityId: 'entity-1',
-        signalType: 'POSTED_OPENING',
+        type: 'POSTED_OPENING',
         confidence: 'HIGH',
         observedAt: new Date('2026-06-11T00:00:00.000Z'),
       },

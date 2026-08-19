@@ -6,7 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { UndergraduateLogisticsClaim } from '../models/undergraduateLogisticsClaim';
+import { Signal } from '../models/signal';
+import { undergraduateLogisticsSignalTypes } from '../models/researchAccessTypes';
 import {
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
   validateUndergraduateLogisticsObservation,
@@ -100,7 +101,10 @@ async function run(): Promise<void> {
     ResearchEntity.find({ archived: { $ne: true } })
       .select('_id slug')
       .lean(),
-    UndergraduateLogisticsClaim.find({ archived: { $ne: true } }).lean(),
+    Signal.find({
+      type: { $in: [...undergraduateLogisticsSignalTypes] },
+      archived: { $ne: true },
+    }).lean(),
     Observation.find({
       entityType: { $in: ['researchEntity', 'researchGroup'] },
       field: { $in: Array.from(UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET) },
@@ -116,13 +120,13 @@ async function run(): Promise<void> {
   const claims = claimRows.map((claim: any) => ({
     id: String(claim._id),
     researchEntityId: String(claim.researchEntityId),
-    claimType: claim.claimType,
+    claimType: claim.type,
     status: claim.status,
     value: claim.value,
-    sourceName: claim.sourceName,
-    sourceUrl: claim.sourceUrl,
-    evidenceExcerpt: claim.evidenceExcerpt,
-    sourceEvidenceIds: (claim.sourceEvidenceIds || []).map(String),
+    sourceName: claim.source?.name,
+    sourceUrl: claim.source?.url,
+    evidenceExcerpt: claim.source?.excerpt,
+    sourceEvidenceIds: (claim.source?.evidenceIds || []).map(String),
     observedAt: claim.observedAt,
     expiresAt: claim.expiresAt,
     archived: claim.archived,

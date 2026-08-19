@@ -1,8 +1,8 @@
-import { UndergraduateLogisticsClaim } from '../models/undergraduateLogisticsClaim';
+import { Signal } from '../models/signal';
 import {
-  undergraduateLogisticsClaimTypes,
-  type UndergraduateLogisticsClaimType,
-} from '../models/undergraduateLogisticsClaim';
+  undergraduateLogisticsSignalTypes as undergraduateLogisticsClaimTypes,
+  type UndergraduateLogisticsSignalType as UndergraduateLogisticsClaimType,
+} from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -30,11 +30,10 @@ export interface PublicUndergraduateLogistics {
 }
 
 interface UndergraduateLogisticsClaimLike {
-  claimType?: unknown;
+  type?: unknown;
   status?: unknown;
   value?: unknown;
-  sourceUrl?: unknown;
-  evidenceExcerpt?: unknown;
+  source?: { url?: unknown; excerpt?: unknown };
   observedAt?: unknown;
   expiresAt?: unknown;
   archived?: unknown;
@@ -124,7 +123,7 @@ export function toPublicUndergraduateLogistics(
 ): PublicUndergraduateLogistics {
   const byType = new Map<UndergraduateLogisticsClaimType, UndergraduateLogisticsClaimLike>();
   for (const row of rows) {
-    const claimType = typeof row.claimType === 'string' ? row.claimType : '';
+    const claimType = typeof row.type === 'string' ? row.type : '';
     if (row.archived === true || !CLAIM_TYPE_SET.has(claimType)) continue;
     byType.set(claimType as UndergraduateLogisticsClaimType, row);
   }
@@ -142,11 +141,11 @@ export function toPublicUndergraduateLogistics(
         return { claimType, state: 'stale_under_review' };
       }
       const value = publicClaimValue(claimType, row.value);
-      const sourceUrl = safeSourceUrl(row.sourceUrl);
+      const sourceUrl = safeSourceUrl(row.source?.url);
       const observedAt = validDate(row.observedAt);
       const excerpt =
-        typeof row.evidenceExcerpt === 'string'
-          ? redactDirectContactInfo(row.evidenceExcerpt).slice(0, 500).trim()
+        typeof row.source?.excerpt === 'string'
+          ? redactDirectContactInfo(row.source.excerpt).slice(0, 500).trim()
           : '';
       if (!value || !sourceUrl || !observedAt || !excerpt) {
         return { claimType, state: 'unknown' };
@@ -170,11 +169,12 @@ export async function getPublicUndergraduateLogistics(
   researchEntityId: unknown,
   now: Date = new Date(),
 ): Promise<PublicUndergraduateLogistics> {
-  const rows = await UndergraduateLogisticsClaim.find({
+  const rows = await Signal.find({
     researchEntityId,
+    type: { $in: undergraduateLogisticsClaimTypes },
     archived: { $ne: true },
   })
-    .select('claimType status value sourceUrl evidenceExcerpt observedAt expiresAt archived')
+    .select('type status value source observedAt expiresAt archived')
     .lean();
   return toPublicUndergraduateLogistics(rows, now);
 }

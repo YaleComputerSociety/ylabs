@@ -3,7 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -117,7 +118,9 @@ function stringId(value: unknown): string {
 export async function loadResearchAccessArtifacts(limit: number): Promise<AccessArtifactCandidate[]> {
   const [pathways, signals, routes, opportunities] = await Promise.all([
     EntryPathway.find({ archived: { $ne: true } }).limit(limit).lean(),
-    AccessSignal.find({ archived: { $ne: true } }).limit(limit).lean(),
+    Signal.find({ type: { $in: [...accessSignalTypes] }, archived: { $ne: true } })
+      .limit(limit)
+      .lean(),
     ContactRoute.find({ archived: { $ne: true } }).limit(limit).lean(),
     PostedOpportunity.find({ archived: { $ne: true } }).limit(limit).lean(),
   ]);
@@ -138,11 +141,11 @@ export async function loadResearchAccessArtifacts(limit: number): Promise<Access
       researchEntityId: stringId(signal.researchEntityId),
       entryPathwayId: stringId(signal.entryPathwayId),
       derivationKey: signal.derivationKey,
-      signalType: signal.signalType,
-      sourceEvidenceIds: strings([stringId(signal.sourceEvidenceId || signal.observationId)]),
-      sourceUrls: strings([signal.sourceUrl]),
-      sourceName: signal.sourceName,
-      sourceUrl: signal.sourceUrl,
+      signalType: signal.type,
+      sourceEvidenceIds: strings((signal.source?.evidenceIds || []).map(stringId)),
+      sourceUrls: strings([signal.source?.url]),
+      sourceName: signal.source?.name,
+      sourceUrl: signal.source?.url,
     })),
     ...routes.map((route: any): AccessArtifactCandidate => ({
       artifactType: 'ContactRoute',

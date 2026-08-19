@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -374,7 +375,10 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
         archived: { $ne: true },
         visibility: 'PUBLIC',
       }),
-      aggregateCountAndTypes(AccessSignal, validIds, 'signalType', { archived: { $ne: true } }),
+      aggregateCountAndTypes(Signal, validIds, 'type', {
+        type: { $in: [...accessSignalTypes] },
+        archived: { $ne: true },
+      }),
       aggregateCountMap(PostedOpportunity, validIds, { archived: { $ne: true } }),
     ]);
 

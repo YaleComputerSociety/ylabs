@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
 import {
-  undergraduateLogisticsClaimTypes,
-  type UndergraduateLogisticsClaimType,
-} from '../models/undergraduateLogisticsClaim';
+  undergraduateLogisticsSignalTypes as undergraduateLogisticsClaimTypes,
+  type UndergraduateLogisticsSignalType as UndergraduateLogisticsClaimType,
+} from '../models/researchAccessTypes';
 
 export interface LogisticsAuditEntity {
   id: string;

@@ -73,8 +73,8 @@ vi.mock('../../models/entryPathway', () => ({
   },
 }));
 
-vi.mock('../../models/accessSignal', () => ({
-  AccessSignal: {
+vi.mock('../../models/signal', () => ({
+  Signal: {
     aggregate: vi.fn(),
     countDocuments: mocks.countDocuments,
   },

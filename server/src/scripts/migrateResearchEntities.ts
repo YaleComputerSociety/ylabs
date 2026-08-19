@@ -37,7 +37,7 @@ const LIVE_MEMBER_FILTER = { archived: { $ne: true }, isCurrentMember: { $ne: fa
 
 export const RESEARCH_ENTITY_MIGRATION_REFERENCE_CHECKS: ReferenceCheck[] = [
   { collection: 'entry_pathways', field: 'researchEntityId', label: 'EntryPathway host entity' },
-  { collection: 'access_signals', field: 'researchEntityId', label: 'AccessSignal host entity' },
+  { collection: 'signals', field: 'researchEntityId', label: 'AccessSignal host entity' },
   { collection: 'contact_routes', field: 'researchEntityId', label: 'ContactRoute host entity' },
   { collection: 'posted_opportunities', field: 'researchEntityId', label: 'PostedOpportunity host entity' },
   { collection: 'listings', field: 'researchEntityId', label: 'Listing host entity' },

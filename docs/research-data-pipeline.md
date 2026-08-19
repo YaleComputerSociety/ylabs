@@ -15,8 +15,8 @@ Source metadata
   -> claim validation for access/pathway/contact/opportunity interpretations
   -> entity/materializer resolution
   -> ResearchEntity / User / Paper / Grant / Fellowship records
-  -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity when evidence supports it
-  -> UndergraduateLogisticsClaim when exact official evidence supports an independent logistics claim
+  -> EntryPathway / Signal (access types) / ContactRoute / PostedOpportunity when evidence supports it
+  -> Signal (logistics types) when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items
   -> beta repair queue applies deterministic trusted-source repairs and re-gates records
   -> Meilisearch rebuild or sync
@@ -30,7 +30,7 @@ A `student_ready` entity must have useful public full and card descriptions afte
 Run `yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json` against Beta before promotion.
 The strict Beta data-quality scorecard includes this audit as an error-level check.
 
-Access claim validation is the interpretation boundary before student-facing access artifacts are written. `accessMaterializer.ts` now treats derived `EntryPathway`, `AccessSignal`, and `ContactRoute` rows as candidate claims and filters them through deterministic validation before upsert. The V1 contract is intentionally narrow: official application signals/routes require either an accepted official-application pathway in the same materialization bundle or an already-linked pathway; formalization-only pathway types are routed to review rather than accepted as access routes; missing source evidence rejects materialization candidates. Operators can inspect current artifacts with `yarn --cwd server scraper:claim-gate --collection=research --include-samples`, or include the summary inside `scraper:integrity-gate --include-claim-gate`.
+Access claim validation is the interpretation boundary before student-facing access artifacts are written. `accessMaterializer.ts` now treats derived `EntryPathway`, `Signal`, and `ContactRoute` rows as candidate claims and filters them through deterministic validation before upsert. The V1 contract is intentionally narrow: official application signals/routes require either an accepted official-application pathway in the same materialization bundle or an already-linked pathway; formalization-only pathway types are routed to review rather than accepted as access routes; missing source evidence rejects materialization candidates. Operators can inspect current artifacts with `yarn --cwd server scraper:claim-gate --collection=research --include-samples`, or include the summary inside `scraper:integrity-gate --include-claim-gate`.
 
 Undergraduate logistics validation is claim-specific and independent from generic access validation.
 `undergraduateLogisticsMaterializer.ts` accepts only versioned observations whose exact excerpt was verified on the recorded official public source page.
@@ -129,15 +129,17 @@ Runtime research discovery is centered on:
 
 - `research_entities`
 - `entry_pathways`
-- `access_signals`
+- `signals`
 - `contact_routes`
 - `posted_opportunities`
-- `undergraduate_logistics_claims`
 - `users`
 - `fellowships`
 - `sources`
 - `scrape_runs`
 - `observations`
+
+The `signals` collection holds typed `Signal` rows and consolidates the former `access_signals` and `undergraduate_logistics_claims` collections; each former access `signalType` and each logistics claim type is now its own `Signal.type`.
+Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows, so reconciliation and copy work should account for all three until the migration completes.
 
 The legacy `research_groups` collection is intentionally absent after the hard `ResearchEntity` migration and should not be used as a data-health signal.
 

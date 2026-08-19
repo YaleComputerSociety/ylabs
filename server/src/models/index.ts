@@ -26,15 +26,10 @@ export { ResearchScholarlyLink } from './researchScholarlyLink';
 export { ResearchScholarlyAttribution } from './researchScholarlyAttribution';
 export { ResearchEntity } from './researchEntity';
 export { ResearchEntityRelationship } from './researchEntityRelationship';
-export { AccessSignal } from './accessSignal';
+export { Signal } from './signal';
 export { ContactRoute } from './contactRoute';
 export { EntryPathway } from './entryPathway';
 export { PostedOpportunity } from './postedOpportunity';
-export {
-  UndergraduateLogisticsClaim,
-  undergraduateLogisticsClaimTypes,
-  undergraduateLogisticsClaimStatuses,
-} from './undergraduateLogisticsClaim';
 export { ResearchGroupMember } from './researchGroupMember';
 export { ScrapeJobLock } from './scrapeJobLock';
 export { Source } from './source';

@@ -110,6 +110,36 @@ export const accessSignalConfidences = ['HIGH', 'MEDIUM', 'LOW'] as const;
 
 export type AccessSignalConfidence = (typeof accessSignalConfidences)[number];
 
+export const undergraduateLogisticsSignalTypes = [
+  'STUDENT_LEVEL',
+  'COMPENSATION',
+  'TIME_COMMITMENT',
+  'MODALITY',
+  'CURRENT_AVAILABILITY',
+] as const;
+
+export type UndergraduateLogisticsSignalType =
+  (typeof undergraduateLogisticsSignalTypes)[number];
+
+export const signalTypes = [
+  ...accessSignalTypes,
+  ...undergraduateLogisticsSignalTypes,
+] as const;
+
+export type SignalType = (typeof signalTypes)[number];
+
+export const signalConfidences = accessSignalConfidences;
+
+export type SignalConfidence = AccessSignalConfidence;
+
+export const signalStatuses = [
+  'KNOWN',
+  'STALE_UNDER_REVIEW',
+  'CONFLICTING_WITHHELD',
+] as const;
+
+export type SignalStatus = (typeof signalStatuses)[number];
+
 export const contactRouteTypes = [
   'OFFICIAL_APPLICATION',
   'LAB_MANAGER',
@@ -189,6 +219,10 @@ export const CompensationTypes = compensationTypes;
 export const PostedOpportunityStatuses = postedOpportunityStatuses;
 export const AccessSignalTypes = accessSignalTypes;
 export const AccessSignalConfidences = accessSignalConfidences;
+export const SignalTypes = signalTypes;
+export const SignalConfidences = signalConfidences;
+export const SignalStatuses = signalStatuses;
+export const UndergraduateLogisticsSignalTypes = undergraduateLogisticsSignalTypes;
 export const ContactRouteTypes = contactRouteTypes;
 export const ContactRouteVisibilities = contactRouteVisibilities;
 export const ContactPolicies = contactPolicies;

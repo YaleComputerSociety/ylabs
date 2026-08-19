@@ -1,7 +1,6 @@
 import type mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { Account } from '../account';
-import { AccessSignal } from '../accessSignal';
 import { AdminGrant } from '../adminGrant';
 import { AnalyticsEvent } from '../analytics';
 import { ContactRoute } from '../contactRoute';
@@ -22,6 +21,7 @@ import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
 import { ResearchGroupMember } from '../researchGroupMember';
 import { RoleAssignment } from '../roleAssignment';
+import { Signal } from '../signal';
 import { ResearchPlan } from '../researchPlan';
 import { ReviewDecision } from '../reviewDecision';
 import { ScrapeRun } from '../scrapeRun';
@@ -35,11 +35,9 @@ import { StudentProfile } from '../studentProfile';
 import { StudentTracking } from '../studentTracking';
 import { TaxonomyTerm } from '../taxonomyTerm';
 import { User } from '../user';
-import { UndergraduateLogisticsClaim } from '../undergraduateLogisticsClaim';
 
 const models: Array<[mongoose.Model<any>, string]> = [
   [Account, 'accounts'],
-  [AccessSignal, 'access_signals'],
   [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
   [ContactRoute, 'contact_routes'],
@@ -60,6 +58,7 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [ResearchEntity, 'research_entities'],
   [ResearchGroupMember, 'research_entity_members'],
   [RoleAssignment, 'role_assignments'],
+  [Signal, 'signals'],
   [ResearchPlan, 'research_plans'],
   [ReviewDecision, 'review_decisions'],
   [ScrapeRun, 'scrape_runs'],
@@ -73,7 +72,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [StudentTracking, 'student_trackings'],
   [TaxonomyTerm, 'taxonomy_terms'],
   [User, 'users'],
-  [UndergraduateLogisticsClaim, 'undergraduate_logistics_claims'],
 ];
 
 function schemaPathSegments(model: mongoose.Model<any>): string[] {

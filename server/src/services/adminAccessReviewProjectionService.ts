@@ -6,7 +6,8 @@ import {
   AdminAccessReviewProjection,
   AdminAccessReviewProjectionState,
 } from '../models/adminAccessReviewProjection';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -34,7 +35,7 @@ export interface AdminAccessReviewProjectionValue {
 interface ProjectionModelDeps {
   researchEntityModel?: typeof ResearchEntity;
   entryPathwayModel?: typeof EntryPathway;
-  accessSignalModel?: typeof AccessSignal;
+  accessSignalModel?: typeof Signal;
   contactRouteModel?: typeof ContactRoute;
   postedOpportunityModel?: typeof PostedOpportunity;
   projectionModel?: typeof AdminAccessReviewProjection;
@@ -136,7 +137,7 @@ function reviewAggregatePipeline(
 }
 
 async function aggregateReviewCounts(
-  model: typeof EntryPathway | typeof AccessSignal | typeof ContactRoute | typeof PostedOpportunity,
+  model: typeof EntryPathway | typeof Signal | typeof ContactRoute | typeof PostedOpportunity,
   researchEntityId: mongoose.Types.ObjectId,
   extraMatch: Record<string, unknown> = {},
   includeOfficialApplication = false,
@@ -203,7 +204,9 @@ export async function buildAdminAccessReviewProjection(
     aggregateReviewCounts(deps.entryPathwayModel || EntryPathway, researchEntityId, {
       derivationKey: { $not: /^faculty-opportunity:/ },
     }),
-    aggregateReviewCounts(deps.accessSignalModel || AccessSignal, researchEntityId),
+    aggregateReviewCounts(deps.accessSignalModel || Signal, researchEntityId, {
+      type: { $in: [...accessSignalTypes] },
+    }),
     aggregateReviewCounts(deps.contactRouteModel || ContactRoute, researchEntityId),
     aggregateReviewCounts(
       deps.postedOpportunityModel || PostedOpportunity,
@@ -363,7 +366,7 @@ const ZERO_REVIEW_COUNT: AggregateReviewCount = Object.freeze({
 });
 
 async function loadReviewCountMap(
-  model: typeof EntryPathway | typeof AccessSignal | typeof ContactRoute | typeof PostedOpportunity,
+  model: typeof EntryPathway | typeof Signal | typeof ContactRoute | typeof PostedOpportunity,
   batchSize: number,
   extraMatch: Record<string, unknown> = {},
   includeOfficialApplication = false,
@@ -438,7 +441,13 @@ export async function rebuildAdminAccessReviewProjection(
         false,
         session,
       );
-      const signalCounts = await loadReviewCountMap(AccessSignal, batchSize, {}, false, session);
+      const signalCounts = await loadReviewCountMap(
+        Signal,
+        batchSize,
+        { type: { $in: [...accessSignalTypes] } },
+        false,
+        session,
+      );
       const routeCounts = await loadReviewCountMap(ContactRoute, batchSize, {}, false, session);
       const opportunityCounts = await loadReviewCountMap(
         PostedOpportunity,

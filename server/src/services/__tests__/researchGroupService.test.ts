@@ -106,8 +106,8 @@ vi.mock('../../models/entryPathway', () => ({
   },
 }));
 
-vi.mock('../../models/accessSignal', () => ({
-  AccessSignal: {
+vi.mock('../../models/signal', () => ({
+  Signal: {
     find: mocks.accessSignalFind,
   },
 }));
@@ -1089,15 +1089,16 @@ describe('getResearchGroupDetail', () => {
           _id: '67d8928150621bcef434a1da',
           researchEntityId: entityId,
           entryPathwayId: '67d8928150621bcef434a1d8',
-          signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+          type: 'CONTACT_INSTRUCTIONS_EXIST',
           confidence: 'HIGH',
           confidenceScore: 0.91,
-          sourceEvidenceId: '67d8928150621bcef434a1d9',
-          observationId: '67d8928150621bcef434a1db',
-          sourceName: 'Lab site',
-          sourceUrl: 'javascript:alert(document.cookie)',
+          source: {
+            evidenceIds: ['67d8928150621bcef434a1d9'],
+            name: 'Lab site',
+            url: 'javascript:alert(document.cookie)',
+            excerpt: 'Questions can go to private-signal@yale.edu or 203-432-1234.',
+          },
           observedAt: new Date('2026-01-02T00:00:00.000Z'),
-          excerpt: 'Questions can go to private-signal@yale.edu or 203-432-1234.',
           originalConfidence: 0.98,
           derivationKey: 'private-signal-key',
           archived: false,

@@ -245,7 +245,7 @@ describe('orphaned Observation reference repair core', () => {
   it('uses current materializer evidence instead of guessing a direct access relink', () => {
     const classified = classifyOrphanReference({
       occurrence: occurrence({
-        ownerCollection: 'access_signals',
+        ownerCollection: 'signals',
         field: 'sourceEvidenceId',
         referenceKey: undefined,
         researchEntityId: '555555555555555555555555',
@@ -291,7 +291,7 @@ describe('orphaned Observation reference repair core', () => {
   it('binds reviewed decisions to a fresh untampered Development artifact', () => {
     const row = classifyOrphanReference({
       occurrence: occurrence({
-        ownerCollection: 'access_signals',
+        ownerCollection: 'signals',
         field: 'sourceEvidenceId',
         referenceKey: undefined,
         researchEntityId: '555555555555555555555555',

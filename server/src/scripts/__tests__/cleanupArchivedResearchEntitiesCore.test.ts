@@ -6,7 +6,7 @@ describe('buildArchivedResearchEntityCleanupPlan', () => {
     const plan = buildArchivedResearchEntityCleanupPlan({
       candidates: [
         { id: 'a', liveReferences: [] },
-        { id: 'b', liveReferences: [{ collection: 'access_signals', field: 'researchEntityId', count: 0 }] },
+        { id: 'b', liveReferences: [{ collection: 'signals', field: 'researchEntityId', count: 0 }] },
       ],
     });
     expect(plan).toMatchObject({ scanned: 2, eligibleCount: 2, blockedCount: 0 });

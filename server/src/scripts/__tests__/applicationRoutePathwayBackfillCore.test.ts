@@ -92,7 +92,7 @@ function depsFor(options: {
       writes.push(['pathway', input]);
       return { pathwayId: 'pathway-1' };
     }),
-    upsertAccessSignal: vi.fn(async (input: any) => {
+    upsertSignal: vi.fn(async (input: any) => {
       writes.push(['signal', input]);
       return { signalId: 'signal-1' };
     }),
@@ -176,7 +176,7 @@ describe('application route pathway backfill', () => {
       expect.objectContaining({
         researchEntityId: 'entity-1',
         entryPathwayId: 'pathway-1',
-        signalType: 'APPLICATION_FORM_EXISTS',
+        type: 'APPLICATION_FORM_EXISTS',
         derivationKey: 'application-route-backfill:obs-1:APPLICATION_FORM_EXISTS',
       }),
     ]);
