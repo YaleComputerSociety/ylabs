@@ -135,7 +135,7 @@ describe('backfillPersonDisplayFields apply', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['accounts', 'users', 'faculty_members', 'people']) {
+    for (const name of ['accounts', 'users', 'faculty_members', 'researchers']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -170,7 +170,7 @@ describe('backfillPersonDisplayFields apply', () => {
       website: 'https://user.example.test',
       facultyMemberId,
     });
-    await db.collection('people').insertOne({
+    await db.collection('researchers').insertOne({
       _id: personId,
       schemaVersion: 1,
       displayName: 'Synthetic Person',
@@ -190,7 +190,7 @@ describe('backfillPersonDisplayFields apply', () => {
       status: 'ACTIVE',
       archived: false,
     });
-    await db.collection('people').insertOne({
+    await db.collection('researchers').insertOne({
       _id: orphanPersonId,
       schemaVersion: 1,
       displayName: 'Orphan Person',
@@ -203,7 +203,7 @@ describe('backfillPersonDisplayFields apply', () => {
     const dryRun = await backfillPersonDisplayFields({ apply: false });
     expect(dryRun.mode).toBe('dry-run');
     expect(dryRun.peopleUpdated).toBe(1);
-    const untouched = await db.collection('people').findOne({ _id: personId });
+    const untouched = await db.collection('researchers').findOne({ _id: personId });
     expect(untouched?.profile?.primaryDepartment).toBeUndefined();
 
     const result = await backfillPersonDisplayFields({ apply: true });
@@ -216,7 +216,7 @@ describe('backfillPersonDisplayFields apply', () => {
     expect(result.populatedByField.imageUrl).toBe(1);
     expect(result.populatedByField.websiteUrl).toBe(1);
 
-    const updated = await db.collection('people').findOne({ _id: personId });
+    const updated = await db.collection('researchers').findOne({ _id: personId });
     expect(updated?.profile?.title).toBe('Existing Title');
     expect(updated?.profile?.primaryDepartment).toBe('Department of Testing');
     expect(updated?.profile?.imageUrl).toBe('https://img.example.test/u.png');
@@ -225,7 +225,7 @@ describe('backfillPersonDisplayFields apply', () => {
     expect(updated?.accountId?.toString()).toBe(accountId.toString());
     expect(updated?.status).toBe('ACTIVE');
 
-    const orphan = await db.collection('people').findOne({ _id: orphanPersonId });
+    const orphan = await db.collection('researchers').findOne({ _id: orphanPersonId });
     expect(orphan?.profile).toBeUndefined();
   });
 });

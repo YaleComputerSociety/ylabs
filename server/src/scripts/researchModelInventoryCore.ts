@@ -81,11 +81,11 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     target: 'Account',
   },
   {
-    collection: 'people',
-    model: 'Person',
+    collection: 'researchers',
+    model: 'Researcher',
     group: 'canonical-domain',
     phase: 1,
-    target: 'Person',
+    target: 'Researcher',
   },
   {
     collection: 'role_assignments',
@@ -113,14 +113,14 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'User',
     group: 'dual-truth',
     phase: 2,
-    target: 'Account + Person (+ StudentProfile, ResearchPlan)',
+    target: 'Account + Researcher (+ StudentProfile, ResearchPlan)',
   },
   {
     collection: 'faculty_members',
     model: 'FacultyMember',
     group: 'dual-truth',
     phase: 2,
-    target: 'Person (deterministic merge, quarantine conflicts)',
+    target: 'Researcher (deterministic merge, quarantine conflicts)',
   },
   {
     collection: 'research_entity_members',
@@ -600,13 +600,13 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     collection: 'users',
     field: 'orcid',
     meaning: 'External researcher identifier',
-    target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
+    target: 'Researcher.identifiers.orcid plus verified ResearcherProfileLink kind ORCID',
   },
   {
     collection: 'users',
     field: 'facultyMemberId',
     meaning: 'Faculty identity reference',
-    target: 'Person.accountId after identity reconciliation',
+    target: 'Researcher.accountId after identity reconciliation',
   },
   {
     collection: 'users',
@@ -618,7 +618,7 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     collection: 'users',
     field: 'googleScholarId',
     meaning: 'Legacy Google Scholar profile identifier',
-    target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
+    target: 'Verified ResearcherProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
   },
   {
     collection: 'users',
@@ -666,13 +666,13 @@ export const RETIREMENT_FIELD_PROBES: FieldProbe[] = [
     collection: 'faculty_members',
     field: 'orcidId',
     meaning: 'External researcher identifier',
-    target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
+    target: 'Researcher.identifiers.orcid plus verified ResearcherProfileLink kind ORCID',
   },
   {
     collection: 'faculty_members',
     field: 'googleScholarId',
     meaning: 'Legacy Google Scholar profile identifier',
-    target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
+    target: 'Verified ResearcherProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
   },
   {
     collection: 'faculty_members',

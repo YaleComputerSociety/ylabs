@@ -69,7 +69,12 @@ describe('INVENTORY_COLLECTIONS', () => {
       ),
     ).toEqual([
       { collection: 'accounts', model: 'Account', group: 'canonical-domain', target: 'Account' },
-      { collection: 'people', model: 'Person', group: 'canonical-domain', target: 'Person' },
+      {
+        collection: 'researchers',
+        model: 'Researcher',
+        group: 'canonical-domain',
+        target: 'Researcher',
+      },
       {
         collection: 'role_assignments',
         model: 'RoleAssignment',
@@ -328,18 +333,18 @@ describe('inventory coverage', () => {
     expect(RETIREMENT_FIELD_PROBES.filter((probe) => probe.field === 'googleScholarId')).toEqual([
       expect.objectContaining({
         collection: 'users',
-        target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
+        target: 'Verified ResearcherProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
       }),
       expect.objectContaining({
         collection: 'faculty_members',
-        target: 'Verified PersonProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
+        target: 'Verified ResearcherProfileLink kind GOOGLE_SCHOLAR, then remove legacy field',
       }),
     ]);
     expect(RETIREMENT_FIELD_PROBES.filter((probe) => /orcid/i.test(probe.field))).toEqual([
       expect.objectContaining({
         collection: 'users',
         field: 'orcid',
-        target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
+        target: 'Researcher.identifiers.orcid plus verified ResearcherProfileLink kind ORCID',
       }),
       expect.objectContaining({
         collection: 'users',
@@ -349,7 +354,7 @@ describe('inventory coverage', () => {
       expect.objectContaining({
         collection: 'faculty_members',
         field: 'orcidId',
-        target: 'Person.identifiers.orcid plus verified PersonProfileLink kind ORCID',
+        target: 'Researcher.identifiers.orcid plus verified ResearcherProfileLink kind ORCID',
       }),
     ]);
   });

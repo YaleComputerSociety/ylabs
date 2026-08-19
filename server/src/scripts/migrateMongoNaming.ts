@@ -26,6 +26,7 @@ const COLLECTION_RENAMES = [
   ['entrypathways', 'entry_pathways'],
   ['facultymembers', 'faculty_members'],
   ['paperauthors', 'paper_authors'],
+  ['people', 'researchers'],
   ['postedopportunities', 'posted_opportunities'],
   ['researchareas', 'research_areas'],
   ['researchAreas', 'research_areas'],
@@ -125,7 +126,9 @@ export function assertMongoNamingMigrationWriteAllowed(
   mongoUrl = process.env.MONGODBURL,
 ) {
   if (options.apply && !options.confirmMongoNaming) {
-    throw new Error('--confirm-mongo-naming is required when --apply is set for migrate:mongo-naming');
+    throw new Error(
+      '--confirm-mongo-naming is required when --apply is set for migrate:mongo-naming',
+    );
   }
 
   return assertScriptApplyAllowed({
@@ -198,18 +201,21 @@ async function renameCollections(apply: boolean): Promise<CollectionRenameResult
       let overlapCount = 0;
 
       if (fromCount > 0) {
-        const overlapResult = await db.collection(from).aggregate([
-          {
-            $lookup: {
-              from: to,
-              localField: '_id',
-              foreignField: '_id',
-              as: 'matchingTargetDocs',
+        const overlapResult = await db
+          .collection(from)
+          .aggregate([
+            {
+              $lookup: {
+                from: to,
+                localField: '_id',
+                foreignField: '_id',
+                as: 'matchingTargetDocs',
+              },
             },
-          },
-          { $match: { matchingTargetDocs: { $ne: [] } } },
-          { $count: 'count' },
-        ]).toArray();
+            { $match: { matchingTargetDocs: { $ne: [] } } },
+            { $count: 'count' },
+          ])
+          .toArray();
         overlapCount = overlapResult[0]?.count ?? 0;
 
         if (overlapCount > 0) {
@@ -224,16 +230,19 @@ async function renameCollections(apply: boolean): Promise<CollectionRenameResult
         }
 
         if (apply) {
-          await db.collection(from).aggregate([
-            {
-              $merge: {
-                into: to,
-                on: '_id',
-                whenMatched: 'fail',
-                whenNotMatched: 'insert',
+          await db
+            .collection(from)
+            .aggregate([
+              {
+                $merge: {
+                  into: to,
+                  on: '_id',
+                  whenMatched: 'fail',
+                  whenNotMatched: 'insert',
+                },
               },
-            },
-          ]).toArray();
+            ])
+            .toArray();
         }
       }
 
@@ -264,11 +273,7 @@ export function buildUserFieldSetStage() {
           { $ne: [{ $type: `$${to}` }, 'missing'] },
           `$${to}`,
           {
-            $cond: [
-              { $ne: [{ $type: `$${from}` }, 'missing'] },
-              `$${from}`,
-              '$$REMOVE',
-            ],
+            $cond: [{ $ne: [{ $type: `$${from}` }, 'missing'] }, `$${from}`, '$$REMOVE'],
           },
         ],
       },
@@ -310,73 +315,69 @@ async function renameUserFields(apply: boolean): Promise<UserFieldRenameResult> 
   let embeddedPublicationDocuments = await db.collection('users').countDocuments(publicationFilter);
 
   if (apply) {
-    const topLevelResult = await db.collection('users').updateMany(
-      {},
-      [
+    const topLevelResult = await db
+      .collection('users')
+      .updateMany({}, [
         { $set: buildUserFieldSetStage() },
         { $unset: Object.keys(USER_FIELD_RENAMES) },
-      ] as any,
-    );
+      ] as any);
     topLevelDocuments = topLevelResult.modifiedCount;
 
-    const publicationsResult = await db.collection('users').updateMany(
-      publicationFilter,
-      [
-        {
-          $set: {
-            publications: {
-              $map: {
-                input: '$publications',
-                as: 'publication',
-                in: {
-                  $arrayToObject: {
-                    $concatArrays: [
-                      {
-                        $filter: {
-                          input: { $objectToArray: '$$publication' },
-                          as: 'field',
-                          cond: {
-                            $not: {
-                              $in: ['$$field.k', PUBLICATION_FIELD_RENAMES],
-                            },
+    const publicationsResult = await db.collection('users').updateMany(publicationFilter, [
+      {
+        $set: {
+          publications: {
+            $map: {
+              input: '$publications',
+              as: 'publication',
+              in: {
+                $arrayToObject: {
+                  $concatArrays: [
+                    {
+                      $filter: {
+                        input: { $objectToArray: '$$publication' },
+                        as: 'field',
+                        cond: {
+                          $not: {
+                            $in: ['$$field.k', PUBLICATION_FIELD_RENAMES],
                           },
                         },
                       },
-                      {
-                        $cond: [
-                          { $ne: [{ $type: '$$publication.citedByCount' }, 'missing'] },
-                          [{ k: 'citedByCount', v: '$$publication.citedByCount' }],
-                          {
-                            $cond: [
-                              { $ne: [{ $type: '$$publication.cited_by_count' }, 'missing'] },
-                              [{ k: 'citedByCount', v: '$$publication.cited_by_count' }],
-                              [],
-                            ],
-                          },
-                        ],
-                      },
-                      {
-                        $cond: [
-                          { $ne: [{ $type: '$$publication.openAccessUrl' }, 'missing'] },
-                          [{ k: 'openAccessUrl', v: '$$publication.openAccessUrl' }],
-                          {
-                            $cond: [
-                              { $ne: [{ $type: '$$publication.open_access_url' }, 'missing'] },
-                              [{ k: 'openAccessUrl', v: '$$publication.open_access_url' }],
-                              [],
-                            ],
-                          },
-                        ],
-                      },
-                    ],
-                  },
+                    },
+                    {
+                      $cond: [
+                        { $ne: [{ $type: '$$publication.citedByCount' }, 'missing'] },
+                        [{ k: 'citedByCount', v: '$$publication.citedByCount' }],
+                        {
+                          $cond: [
+                            { $ne: [{ $type: '$$publication.cited_by_count' }, 'missing'] },
+                            [{ k: 'citedByCount', v: '$$publication.cited_by_count' }],
+                            [],
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      $cond: [
+                        { $ne: [{ $type: '$$publication.openAccessUrl' }, 'missing'] },
+                        [{ k: 'openAccessUrl', v: '$$publication.openAccessUrl' }],
+                        {
+                          $cond: [
+                            { $ne: [{ $type: '$$publication.open_access_url' }, 'missing'] },
+                            [{ k: 'openAccessUrl', v: '$$publication.open_access_url' }],
+                            [],
+                          ],
+                        },
+                      ],
+                    },
+                  ],
                 },
               },
             },
           },
         },
-      ] as any,
-    );
+      },
+    ] as any);
     embeddedPublicationDocuments = publicationsResult.modifiedCount;
   }
 

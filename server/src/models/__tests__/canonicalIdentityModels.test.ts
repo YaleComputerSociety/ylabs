@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { Account, accountSchema } from '../account';
 import { OrgUnit } from '../orgUnit';
-import { Person, personProfileLinkSchema } from '../person';
+import { Researcher, researcherProfileLinkSchema } from '../researcher';
 import { ResearchEntityRelationship } from '../researchEntityRelationship';
 import { RoleAssignment } from '../roleAssignment';
 import { TaxonomyTerm } from '../taxonomyTerm';
@@ -19,7 +19,7 @@ function validAccount(overrides: Record<string, unknown> = {}) {
 }
 
 function validPerson(overrides: Record<string, unknown> = {}) {
-  return new Person({
+  return new Researcher({
     displayName: 'Fixture Person',
     ...overrides,
   });
@@ -100,13 +100,13 @@ describe('canonical identity and reference models', () => {
   it('registers explicit canonical model and collection names', () => {
     expect([
       [Account.modelName, Account.collection.name],
-      [Person.modelName, Person.collection.name],
+      [Researcher.modelName, Researcher.collection.name],
       [RoleAssignment.modelName, RoleAssignment.collection.name],
       [OrgUnit.modelName, OrgUnit.collection.name],
       [TaxonomyTerm.modelName, TaxonomyTerm.collection.name],
     ]).toEqual([
       ['Account', 'accounts'],
-      ['Person', 'people'],
+      ['Researcher', 'researchers'],
       ['RoleAssignment', 'role_assignments'],
       ['OrgUnit', 'org_units'],
       ['TaxonomyTerm', 'taxonomy_terms'],
@@ -131,14 +131,14 @@ describe('canonical identity and reference models', () => {
   it('keeps the account-person relationship only on Person.accountId', () => {
     expect(accountSchema.path('personId')).toBeUndefined();
     expect(accountSchema.path('roles')).toBeUndefined();
-    expect(Person.schema.path('accountId')?.options.ref).toBe('Account');
+    expect(Researcher.schema.path('accountId')?.options.ref).toBe('Account');
 
-    const accountIndex = Person.schema
+    const accountIndex = Researcher.schema
       .indexes()
       .find(([fields]) => fields.accountId === 1 && Object.keys(fields).length === 1);
     expect(accountIndex?.[1]).toMatchObject({ unique: true, sparse: true });
     expect(
-      Person.schema
+      Researcher.schema
         .indexes()
         .some(([fields, options]) => fields.displayName === 1 && options.unique),
     ).toBe(false);
@@ -175,12 +175,12 @@ describe('canonical identity and reference models', () => {
     ];
 
     for (const field of forbiddenFields) {
-      expect(Person.schema.path(field)).toBeUndefined();
+      expect(Researcher.schema.path(field)).toBeUndefined();
     }
   });
 
   it('keeps the reviewed profile-link contract bounded to public outbound-link fields', () => {
-    expect(Object.keys(personProfileLinkSchema.paths).sort()).toEqual([
+    expect(Object.keys(researcherProfileLinkSchema.paths).sort()).toEqual([
       'healthStatus',
       'kind',
       'purpose',
@@ -351,7 +351,7 @@ describe('canonical identity and reference models', () => {
       expect.any(Object),
     ]);
     expect(RoleAssignment.schema.path('role')).toBeTruthy();
-    expect(Person.schema.path('role')).toBeUndefined();
+    expect(Researcher.schema.path('role')).toBeUndefined();
   });
 
   it('allows repeated historical terms instead of treating a role as permanent person identity', () => {
@@ -433,7 +433,7 @@ describe('canonical identity and reference models', () => {
       { slug: 1 },
       expect.objectContaining({ unique: true }),
     ]);
-    expect(Person.schema.indexes()).toContainEqual([
+    expect(Researcher.schema.indexes()).toContainEqual([
       { 'identifiers.orcid': 1 },
       expect.objectContaining({ unique: true, sparse: true }),
     ]);
@@ -457,7 +457,7 @@ describe('canonical identity and reference models', () => {
 
   it('exports all canonical models from the model barrel without collisions', () => {
     expect(modelExports.Account).toBe(Account);
-    expect(modelExports.Person).toBe(Person);
+    expect(modelExports.Researcher).toBe(Researcher);
     expect(modelExports.RoleAssignment).toBe(RoleAssignment);
     expect(modelExports.OrgUnit).toBe(OrgUnit);
     expect(modelExports.TaxonomyTerm).toBe(TaxonomyTerm);

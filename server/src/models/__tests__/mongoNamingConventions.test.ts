@@ -17,7 +17,7 @@ import { OrgUnit } from '../orgUnit';
 import { Paper } from '../paper';
 import { PaperAuthor } from '../paperAuthor';
 import { PostedOpportunity } from '../postedOpportunity';
-import { Person } from '../person';
+import { Researcher } from '../researcher';
 import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
 import { ResearchGroupMember } from '../researchGroupMember';
@@ -55,7 +55,7 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Paper, 'papers'],
   [PaperAuthor, 'paper_authors'],
   [PostedOpportunity, 'posted_opportunities'],
-  [Person, 'people'],
+  [Researcher, 'researchers'],
   [ResearchArea, 'research_areas'],
   [ResearchEntity, 'research_entities'],
   [ResearchGroupMember, 'research_entity_members'],
@@ -93,7 +93,7 @@ describe('Mongo naming conventions', () => {
     for (const [model, collectionName] of models) {
       expect(model.collection.name).toBe(collectionName);
       expect(collectionName).toMatch(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/);
-      expect(collectionName === 'people' || collectionName.endsWith('s')).toBe(true);
+      expect(collectionName.endsWith('s')).toBe(true);
     }
   });
 

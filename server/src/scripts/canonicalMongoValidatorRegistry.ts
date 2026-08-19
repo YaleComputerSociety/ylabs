@@ -23,7 +23,7 @@ import {
   MAX_SOURCE_DOCUMENT_URL_LENGTH,
   MAX_TAXONOMY_ALIASES,
   OrgUnit,
-  Person,
+  Researcher,
   ResearchPlan,
   REVIEW_DECISION_SCHEMA_VERSION,
   ReviewDecision,
@@ -32,8 +32,8 @@ import {
   SourceDocument,
   TaxonomyTerm,
   orgUnitSchemaVersion,
-  personProfileLinkKinds,
-  personSchemaVersion,
+  researcherProfileLinkKinds,
+  researcherSchemaVersion,
   roleAssignmentSchemaVersion,
   taxonomyTermSchemaVersion,
 } from '../models';
@@ -135,10 +135,10 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
     schemaVersion: accountSchemaVersion,
   },
   {
-    model: Person,
-    schemaVersion: personSchemaVersion,
+    model: Researcher,
+    schemaVersion: researcherSchemaVersion,
     propertyOverrides: {
-      profileLinks: { maxItems: personProfileLinkKinds.length },
+      profileLinks: { maxItems: researcherProfileLinkKinds.length },
     },
   },
   {

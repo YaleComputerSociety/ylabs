@@ -223,7 +223,12 @@ describe('buildPiUserLookupQuery', () => {
 describe('findPiUserId surname-only safeguard', () => {
   it('rejects a surname-only match when the sole faculty candidate is outside a medicine department', async () => {
     mockUserFindResult([
-      { _id: 'engineering-dixit', fname: 'Purushottam', lname: 'Dixit', primaryDepartment: 'Biomedical Engineering' },
+      {
+        _id: 'engineering-dixit',
+        fname: 'Purushottam',
+        lname: 'Dixit',
+        primaryDepartment: 'Biomedical Engineering',
+      },
     ]);
 
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
@@ -231,7 +236,12 @@ describe('findPiUserId surname-only safeguard', () => {
 
   it('resolves a surname-only match when the sole faculty candidate is in a medicine department', async () => {
     mockUserFindResult([
-      { _id: 'medicine-dixit', fname: 'Vishwa', lname: 'Dixit', primaryDepartment: 'Comparative Medicine' },
+      {
+        _id: 'medicine-dixit',
+        fname: 'Vishwa',
+        lname: 'Dixit',
+        primaryDepartment: 'Comparative Medicine',
+      },
     ]);
 
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBe('medicine-dixit');
@@ -401,8 +411,8 @@ describe('extractSoleResearchFacultyProfile', () => {
   it('returns null when a people page has multiple profile cards', () => {
     const html = `
       <html><body>
-        <a href="/profile/one-person/">One Person</a>
-        <a href="/profile/two-person/">Two Person</a>
+        <a href="/profile/one-person/">One Researcher</a>
+        <a href="/profile/two-person/">Two Researcher</a>
       </body></html>
     `;
 

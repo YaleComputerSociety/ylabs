@@ -6,7 +6,7 @@ import {
   SOURCE_DOCUMENT_SCHEMA_VERSION,
   accountSchemaVersion,
   orgUnitSchemaVersion,
-  personSchemaVersion,
+  researcherSchemaVersion,
   roleAssignmentSchemaVersion,
   taxonomyTermSchemaVersion,
 } from '../../models';
@@ -20,8 +20,8 @@ const EXPECTED_COLLECTIONS = [
   'accounts',
   'evidence_claims',
   'org_units',
-  'people',
   'research_plans',
+  'researchers',
   'review_decisions',
   'role_assignments',
   'source_documents',
@@ -32,7 +32,7 @@ const VERSION_BY_COLLECTION = new Map([
   ['accounts', accountSchemaVersion],
   ['evidence_claims', EVIDENCE_CLAIM_SCHEMA_VERSION],
   ['org_units', orgUnitSchemaVersion],
-  ['people', personSchemaVersion],
+  ['researchers', researcherSchemaVersion],
   ['research_plans', RESEARCH_PLAN_SCHEMA_VERSION],
   ['review_decisions', REVIEW_DECISION_SCHEMA_VERSION],
   ['role_assignments', roleAssignmentSchemaVersion],
@@ -66,12 +66,12 @@ describe('canonical MongoDB validator registry', () => {
       CANONICAL_MONGO_VALIDATORS.map((desired) => [desired.collectionName, desired]),
     );
 
-    expect(byCollection.get('people')?.validator.$jsonSchema.properties.profileLinks).toMatchObject(
-      {
-        bsonType: ['array', 'null'],
-        maxItems: 5,
-      },
-    );
+    expect(
+      byCollection.get('researchers')?.validator.$jsonSchema.properties.profileLinks,
+    ).toMatchObject({
+      bsonType: ['array', 'null'],
+      maxItems: 5,
+    });
     expect(
       byCollection.get('role_assignments')?.validator.$jsonSchema.properties.evidenceClaimIds,
     ).toMatchObject({
@@ -104,7 +104,7 @@ describe('canonical MongoDB validator registry', () => {
 
   it('requires an explicit review when generated validator contracts drift', () => {
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      'a8952be4e2bae3b4444648d9069c20d43ae158111c2fb60e1a3148594e85667a',
+      '74781f457d8e46bf04ec837349a9f5967497a46777ba3e9fd47d520410375ae9',
     );
   });
 });

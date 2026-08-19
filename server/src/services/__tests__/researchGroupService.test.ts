@@ -64,8 +64,8 @@ vi.mock('../../models/roleAssignment', () => ({
   },
 }));
 
-vi.mock('../../models/person', () => ({
-  Person: {
+vi.mock('../../models/researcher', () => ({
+  Researcher: {
     find: mocks.personFind,
   },
 }));
@@ -1918,7 +1918,7 @@ describe('publicMemberUserForRow', () => {
           _id: 'internal-user',
           netid: 'fx1001',
           fname: 'Jordan',
-          lname: 'Researcher',
+          lname: 'Person',
           title: 'Professor of Example Studies',
           profileUrls: {
             official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
@@ -1930,7 +1930,7 @@ describe('publicMemberUserForRow', () => {
     const publicUser = publicMemberUserForRow(row, usersById, new Map());
     expect(publicUser).toMatchObject({
       fname: 'Jordan',
-      lname: 'Researcher',
+      lname: 'Person',
       profileUrls: {
         official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
       },
@@ -2160,7 +2160,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             email: 'jordan.researcher@yale.edu',
           },
           row: { sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher' },
@@ -2171,8 +2171,8 @@ describe('buildLeadPiOutreachContactRoute', () => {
 
     expect(route).toMatchObject({
       routeType: 'FACULTY_PI',
-      label: 'Jordan Researcher',
-      name: 'Jordan Researcher',
+      label: 'Jordan Person',
+      name: 'Jordan Person',
       visibility: 'PUBLIC',
       contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
       sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher',
@@ -2188,7 +2188,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             email: 'jordan.researcher@yale.edu?bcc=attacker@example.test',
           },
           row: { sourceUrl: 'https://physics.yale.edu/people/faculty' },
@@ -2208,7 +2208,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             email: 'jordan.researcher@yale.edu',
             profileUrls: {
               official: 'https://medicine.yale.edu/profile/jordan-researcher/',
@@ -2235,7 +2235,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             profileUrls: {
               official: 'https://operator:secret@medicine.yale.edu/profile/jordan-researcher/',
             },
@@ -2259,7 +2259,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             profileUrls: {
               official: 'https://medicine.yale.edu/profile/jordan-researcher/',
             },
@@ -2271,7 +2271,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
 
     expect(route).toMatchObject({
       routeType: 'FACULTY_PI',
-      label: 'Jordan Researcher',
+      label: 'Jordan Person',
       url: 'https://medicine.yale.edu/profile/jordan-researcher/',
       sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher/',
       contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
@@ -2287,7 +2287,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             email: 'jordan.researcher@yale.edu',
             profileUrls: {
               official: 'https://medicine.yale.edu/profile/jordan-researcher/',
@@ -2314,7 +2314,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             email: 'jordan.researcher@yale.edu',
           },
           row: { sourceUrl: 'https://physics.yale.edu/people/faculty' },
@@ -2334,7 +2334,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
           },
           row: { sourceUrl: 'https://example.yale.edu/people/faculty/primary' },
         },
@@ -2353,7 +2353,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
           user: {
             _id: 'user-1',
             fname: 'Jordan',
-            lname: 'Researcher',
+            lname: 'Person',
             email: 'jordan.researcher@yale.edu',
             profileUrls: {
               departmental:
@@ -2381,7 +2381,7 @@ describe('buildLeadPiOutreachContactRoute', () => {
             role: 'pi',
             user: {
               fname: 'Jordan',
-              lname: 'Researcher',
+              lname: 'Person',
               email: 'jordan.researcher@yale.edu',
             },
           },

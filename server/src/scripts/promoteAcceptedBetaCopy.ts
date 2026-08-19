@@ -36,7 +36,7 @@ const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entity_relationships', category: 'research-discovery' },
   { name: 'faculty_members', category: 'research-discovery' },
   { name: 'accounts', category: 'research-discovery' },
-  { name: 'people', category: 'research-discovery' },
+  { name: 'researchers', category: 'research-discovery' },
   { name: 'role_assignments', category: 'research-discovery' },
   { name: 'entry_pathways', category: 'research-discovery' },
   { name: 'access_signals', category: 'research-discovery' },
@@ -225,9 +225,7 @@ export function assertSafeOptions(options: PromotionOptions) {
       throw new Error('Apply mode requires --restore-point or ATLAS_RESTORE_POINT');
     }
     if (!options.confirmLane || !options.confirmProd) {
-      throw new Error(
-        'Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true',
-      );
+      throw new Error('Apply mode requires CONFIRM_LANE_A_COPY=true and CONFIRM_PROD_SCRAPE=true');
     }
   }
 }
@@ -274,7 +272,8 @@ function buildApplyBlockers(blockedSyntheticUserReferences: SyntheticUserReferen
 
   const totalReferences = blockedSyntheticUserReferences.reduce((sum, row) => sum + row.count, 0);
   const referenceWord = totalReferences === 1 ? 'link' : 'links';
-  const fieldWord = blockedSyntheticUserReferences.length === 1 ? 'collection field' : 'collection fields';
+  const fieldWord =
+    blockedSyntheticUserReferences.length === 1 ? 'collection field' : 'collection fields';
 
   return [
     `Copied records reference ${totalReferences} excluded synthetic-user ${referenceWord} across ${blockedSyntheticUserReferences.length} ${fieldWord}.`,
@@ -357,9 +356,13 @@ async function syntheticUserReferences(betaDb: Db): Promise<SyntheticUserReferen
 
   const rows = await Promise.all(
     USER_REFERENCE_FIELDS.map(async ({ collection, field }) => {
-      const exists = await betaDb.listCollections({ name: collection }, { nameOnly: true }).hasNext();
+      const exists = await betaDb
+        .listCollections({ name: collection }, { nameOnly: true })
+        .hasNext();
       if (!exists) return { collection, field, count: 0 };
-      const count = await betaDb.collection(collection).countDocuments({ [field]: { $in: excludedIds } });
+      const count = await betaDb
+        .collection(collection)
+        .countDocuments({ [field]: { $in: excludedIds } });
       return { collection, field, count };
     }),
   );

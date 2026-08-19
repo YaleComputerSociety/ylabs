@@ -54,7 +54,7 @@ const RECIPIENTS_HTML_2024 = `
     <span class="advisor-name">Avery Atlas</span>
   </div>
   <div class="recipient-row" data-year="2024">
-    <span class="recipient-name">No Advisor Person</span>
+    <span class="recipient-name">No Advisor Researcher</span>
     <span class="project-title">Orphan project</span>
     <span class="advisor-name"></span>
   </div>
@@ -104,7 +104,7 @@ describe('drupalRecipientRowExtractor', () => {
   it('skips rows when neither data-year nor a defaultYear is available', () => {
     const html = `
       <div class="recipient-row">
-        <span class="recipient-name">No Year Person</span>
+        <span class="recipient-name">No Year Researcher</span>
         <span class="advisor-name">Some Advisor</span>
       </div>
     `;
@@ -117,7 +117,7 @@ describe('drupalRecipientRowExtractor', () => {
   it('does not partially parse malformed row year attributes', () => {
     const html = `
       <div class="recipient-row" data-year="2024abc">
-        <span class="recipient-name">Bad Year Person</span>
+        <span class="recipient-name">Bad Year Researcher</span>
         <span class="advisor-name">Some Advisor</span>
       </div>
     `;
@@ -201,13 +201,9 @@ describe('aggregateAdviseesByAdvisor', () => {
     const out = aggregateAdviseesByAdvisor(recipients, 'STARS Summer');
     expect(out.size).toBe(2);
     const roster = out.get('riley-roster')!;
-    expect(roster.advisees).toEqual([
-      { year: 2024, programName: 'STARS Summer', count: 2 },
-    ]);
+    expect(roster.advisees).toEqual([{ year: 2024, programName: 'STARS Summer', count: 2 }]);
     const atlas = out.get('avery-atlas')!;
-    expect(atlas.advisees).toEqual([
-      { year: 2024, programName: 'STARS Summer', count: 1 },
-    ]);
+    expect(atlas.advisees).toEqual([{ year: 2024, programName: 'STARS Summer', count: 1 }]);
   });
 
   it('keeps separate entries for different years and sorts year desc', () => {
@@ -351,7 +347,12 @@ describe('findUserForAdvisor', () => {
 
   it('returns null on missing/unparseable name', async () => {
     expect(await findUserForAdvisor('', vi.fn())).toBeNull();
-    expect(await findUserForAdvisor('Madonna', vi.fn(async () => []))).toBeNull();
+    expect(
+      await findUserForAdvisor(
+        'Madonna',
+        vi.fn(async () => []),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -432,13 +433,7 @@ describe('DEFAULT_PROGRAM_CONFIGS', () => {
   it('covers the active v1 fellowship programs and stubs each one for manual upload', () => {
     const keys = DEFAULT_PROGRAM_CONFIGS.map((c) => c.programKey).sort();
     expect(keys).toEqual(
-      [
-        'deans-research',
-        'mellon-mays',
-        'stars-ii',
-        'stars-summer',
-        'tetelman',
-      ].sort(),
+      ['deans-research', 'mellon-mays', 'stars-ii', 'stars-summer', 'tetelman'].sort(),
     );
     // All defaults are stubs until extractors are written for the real pages
     expect(DEFAULT_PROGRAM_CONFIGS.every((c) => c.manualUploadRequired)).toBe(true);
@@ -600,9 +595,9 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
     expect(() => resolveSafeManualRecipientInputPath('/etc', 'stars-ii', '.csv')).toThrow(
       'Manual recipient input root must be under system temp or ./tmp',
     );
-    expect(() =>
-      resolveSafeManualRecipientInputPath(safeRoot, '../stars-ii', '.csv'),
-    ).toThrow('Invalid manual recipient program key');
+    expect(() => resolveSafeManualRecipientInputPath(safeRoot, '../stars-ii', '.csv')).toThrow(
+      'Invalid manual recipient program key',
+    );
   });
 
   it('rejects unsafe manual recipient CSV roots before local file reads', async () => {

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Account } from '../models/account';
 import { FacultyMember } from '../models/facultyMember';
-import { Person } from '../models/person';
+import { Researcher } from '../models/researcher';
 import { User } from '../models/user';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -102,7 +102,7 @@ const asObjectIdKey = (value: unknown): string | undefined =>
 export async function backfillPersonDisplayFields(options: {
   apply: boolean;
 }): Promise<BackfillPersonDisplayFieldsResult> {
-  const people = await Person.find({ accountId: { $exists: true }, archived: { $ne: true } })
+  const people = await Researcher.find({ accountId: { $exists: true }, archived: { $ne: true } })
     .select('_id accountId profile')
     .lean();
 
@@ -190,7 +190,7 @@ export async function backfillPersonDisplayFields(options: {
     peopleUpdated += 1;
 
     if (options.apply) {
-      await Person.updateOne({ _id: person._id }, { $set: setDocument });
+      await Researcher.updateOne({ _id: person._id }, { $set: setDocument });
     }
   }
 

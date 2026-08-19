@@ -79,7 +79,7 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
     schemaVersion: canonicalSchemaVersionField(roleAssignmentSchemaVersion),
     personId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Person',
+      ref: 'Researcher',
       required: true,
     },
     target: {

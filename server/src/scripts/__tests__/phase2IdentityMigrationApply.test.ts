@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Account, type AccountRecord } from '../../models/account';
-import { Person, type PersonRecord } from '../../models/person';
+import { Researcher, type ResearcherRecord } from '../../models/researcher';
 import { RoleAssignment, type RoleAssignmentRecord } from '../../models/roleAssignment';
 
 type WithObjectId<T> = T & { _id: mongoose.Types.ObjectId };
@@ -45,9 +45,9 @@ describe('phase2IdentityMigrationApply CLI arguments', () => {
   });
 
   it('rejects Production, malformed, and unknown arguments', () => {
-    expect(() =>
-      parsePhase2IdentityMigrationApplyArgs(['--environment=production']),
-    ).toThrow(/development, beta, or production-copy/);
+    expect(() => parsePhase2IdentityMigrationApplyArgs(['--environment=production'])).toThrow(
+      /development, beta, or production-copy/,
+    );
     expect(() => parsePhase2IdentityMigrationApplyArgs([])).toThrow(/--environment requires/);
     expect(() =>
       parsePhase2IdentityMigrationApplyArgs([
@@ -83,8 +83,7 @@ describe('buildCanonicalWriteDocuments key resolution', () => {
   it('resolves synthetic linking keys into ObjectId references', () => {
     const researchEntityId = new mongoose.Types.ObjectId().toString();
     let counter = 0;
-    const objectIdFactory = () =>
-      new mongoose.Types.ObjectId(String(counter++).padStart(24, '0'));
+    const objectIdFactory = () => new mongoose.Types.ObjectId(String(counter++).padStart(24, '0'));
 
     const documents = buildCanonicalWriteDocuments(
       {
@@ -151,7 +150,10 @@ describe('buildCanonicalWriteDocuments key resolution', () => {
 
     const pi = documents.roleAssignments.find((role) => role.role === 'PI');
     expect(pi?.personId.toString()).toBe(accountedPerson?._id.toString());
-    expect(pi?.target).toEqual({ kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId(researchEntityId) });
+    expect(pi?.target).toEqual({
+      kind: 'RESEARCH_ENTITY',
+      id: new mongoose.Types.ObjectId(researchEntityId),
+    });
     expect(pi?.endedAt).toBeUndefined();
 
     const director = documents.roleAssignments.find((role) => role.role === 'DIRECTOR');
@@ -271,7 +273,7 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     expect(report.planned).toMatchObject({ accounts: 1, people: 2, roleAssignments: 2 });
     expect(report.written).toEqual({ accounts: 0, people: 0, roleAssignments: 0 });
     await expect(Account.countDocuments({})).resolves.toBe(0);
-    await expect(Person.countDocuments({})).resolves.toBe(0);
+    await expect(Researcher.countDocuments({})).resolves.toBe(0);
     await expect(RoleAssignment.countDocuments({})).resolves.toBe(0);
   });
 
@@ -287,11 +289,11 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     expect(account?.email).toBe('person1@yale.edu');
     expect(account?.status).toBe('ACTIVE');
 
-    const accountedPerson = await Person.findOne({ displayName: 'Jane Doe' }).lean<
-      WithObjectId<PersonRecord>
+    const accountedPerson = await Researcher.findOne({ displayName: 'Jane Doe' }).lean<
+      WithObjectId<ResearcherRecord>
     >();
-    const facultyPerson = await Person.findOne({ displayName: 'Sam Carter' }).lean<
-      WithObjectId<PersonRecord>
+    const facultyPerson = await Researcher.findOne({ displayName: 'Sam Carter' }).lean<
+      WithObjectId<ResearcherRecord>
     >();
     expect(accountedPerson?.accountId?.toString()).toBe(account?._id.toString());
     expect(facultyPerson?.accountId).toBeUndefined();
@@ -314,7 +316,7 @@ describe('phase2IdentityMigrationApply with MongoDB', () => {
     const second = await applyPhase2IdentityMigration({ apply: true, ...applyArgs });
     expect(second.written).toEqual({ accounts: 1, people: 2, roleAssignments: 2 });
     await expect(Account.countDocuments({})).resolves.toBe(1);
-    await expect(Person.countDocuments({})).resolves.toBe(2);
+    await expect(Researcher.countDocuments({})).resolves.toBe(2);
     await expect(RoleAssignment.countDocuments({})).resolves.toBe(2);
   });
 });

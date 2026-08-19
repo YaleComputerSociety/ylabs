@@ -36,8 +36,8 @@ vi.mock('../../models/roleAssignment', () => ({
   },
 }));
 
-vi.mock('../../models/person', () => ({
-  Person: {
+vi.mock('../../models/researcher', () => ({
+  Researcher: {
     find: mocks.personFind,
   },
 }));
@@ -252,9 +252,7 @@ describe('syncEntity transform', () => {
 
   it('swallows Meilisearch errors so callers do not break', async () => {
     mocks.addDocuments.mockRejectedValueOnce(new Error('meili down'));
-    await expect(
-      syncEntity('listing', { _id: 'a', title: 't' }),
-    ).resolves.toBeUndefined();
+    await expect(syncEntity('listing', { _id: 'a', title: 't' })).resolves.toBeUndefined();
   });
 });
 

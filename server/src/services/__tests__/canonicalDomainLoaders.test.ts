@@ -59,14 +59,14 @@ function fakeModel(rows: Record<string, unknown>[] = []): {
 function fixture() {
   const EvidenceClaim = fakeModel([{ predicate: 'ENTITY_HAS_DESCRIPTION' }]);
   const OrgUnit = fakeModel([{ name: 'Computer Science' }]);
-  const Person = fakeModel([{ displayName: 'Grace Hopper' }]);
+  const Researcher = fakeModel([{ displayName: 'Grace Hopper' }]);
   const ResearchPlan = fakeModel([{ stage: 'SAVED' }]);
   const RoleAssignment = fakeModel([{ role: 'PI' }]);
   const TaxonomyTerm = fakeModel([{ label: 'Machine Learning' }]);
   const models: CanonicalReadModels = {
     EvidenceClaim: EvidenceClaim.model,
     OrgUnit: OrgUnit.model,
-    Person: Person.model,
+    Researcher: Researcher.model,
     ResearchPlan: ResearchPlan.model,
     RoleAssignment: RoleAssignment.model,
     TaxonomyTerm: TaxonomyTerm.model,
@@ -75,7 +75,7 @@ function fixture() {
     loaders: createCanonicalDomainLoaders(models),
     EvidenceClaim,
     OrgUnit,
-    Person,
+    Researcher,
     ResearchPlan,
     RoleAssignment,
     TaxonomyTerm,
@@ -93,12 +93,12 @@ const ids = {
 
 describe('canonical domain loaders', () => {
   it('loads only public person identity fields and rejects object-shaped id coercion', async () => {
-    const { loaders, Person } = fixture();
+    const { loaders, Researcher } = fixture();
 
     await expect(loaders.loadPublicPeopleByIds([ids.person.toHexString()])).resolves.toEqual([
       { displayName: 'Grace Hopper' },
     ]);
-    expect(Person.calls[0]).toMatchObject({
+    expect(Researcher.calls[0]).toMatchObject({
       filter: {
         _id: { $in: [ids.person] },
         archived: false,
@@ -107,7 +107,7 @@ describe('canonical domain loaders', () => {
       fields: CANONICAL_PERSON_READ_FIELDS,
       limit: 1,
     });
-    expect(Person.calls[0].fields).not.toMatch(/accountId|identifiers/);
+    expect(Researcher.calls[0].fields).not.toMatch(/accountId|identifiers/);
 
     await expect(
       loaders.loadPublicPeopleByIds([

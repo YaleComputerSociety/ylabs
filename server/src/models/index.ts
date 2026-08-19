@@ -49,7 +49,7 @@ export * from './sourceCoverageTypes';
 export * from './modelPrimitives';
 export * from './canonicalSchemaVersion';
 export * from './account';
-export * from './person';
+export * from './researcher';
 export * from './roleAssignment';
 export * from './orgUnit';
 export * from './taxonomyTerm';

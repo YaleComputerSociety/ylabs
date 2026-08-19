@@ -1920,13 +1920,13 @@ describe('visibilityRepairQueueService', () => {
       findOpenQueueItems: vi.fn().mockResolvedValue([
         queueItem({
           blockerReasons: ['missing_lead'],
-          label: 'Fixture Researcher Lab',
+          label: 'Fixture Person Lab',
         }),
       ]),
       updateQueueItem: vi.fn().mockResolvedValue(undefined),
       findResearchEntity: vi.fn().mockResolvedValue({
         _id: 'entity-1',
-        name: 'Fixture Researcher Lab',
+        name: 'Fixture Person Lab',
         websiteUrl: 'https://physics.yale.edu/fixture-researcher',
       }),
       updateResearchEntity: vi.fn(),
