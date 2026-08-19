@@ -126,7 +126,7 @@ describe('canonical membership materialization (integration)', () => {
   });
 
   const entityId = () => new mongoose.Types.ObjectId().toString();
-  const ORCID = '0000-0002-1825-0097';
+  const ORCID = '9999-9999-9999-9994';
 
   it('creates an Account, Researcher, and CURRENT RoleAssignment for a netid-backed member', async () => {
     const id = entityId();
