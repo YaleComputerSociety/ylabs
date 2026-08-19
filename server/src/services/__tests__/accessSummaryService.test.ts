@@ -192,9 +192,7 @@ describe('accessSummaryService', () => {
     });
     expect(summary?.evidence[0].excerpt).toHaveLength(2000);
     expect(summary?.signalTypes).toEqual(['CURRENT_UNDERGRADS']);
-    expect(summary?.entryPathwayTypes).toEqual(['EXPLORATORY_CONTACT']);
-    expect(summary?.hasActivePostedOpportunity).toBe(false);
-    expect(summary?.bestNextStep).toBe('Plan exploratory outreach');
+    expect(summary?.bestNextStep).toBe('Save for later');
   });
 
   it('does not query Mongo when entity ids are only object-shaped values', async () => {

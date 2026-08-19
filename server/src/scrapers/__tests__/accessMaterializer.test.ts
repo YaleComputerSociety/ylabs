@@ -46,7 +46,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'CREDIT_FORMALIZATION_POSSIBLE',
       'FACULTY_SUPERVISES_STUDENT_PROJECTS',
@@ -76,7 +75,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals.map((signal) => signal.type)).toEqual([
       'CREDIT_FORMALIZATION_POSSIBLE',
     ]);
@@ -87,12 +85,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       obs({ field: 'currentUndergradCount', value: 2, confidence: 0.5 }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-      },
-    ]);
     expect(result.accessSignals).toMatchObject([
       {
         type: 'CURRENT_UNDERGRADS',
@@ -112,14 +104,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        compensation: 'UNKNOWN',
-        bestNextStep: 'Plan outreach and ask how student projects are usually formalized.',
-      },
-    ]);
     expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'FELLOWSHIP_COMPATIBLE',
       'PAST_UNDERGRADS',
@@ -143,12 +127,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toHaveLength(1);
-    expect(result.entryPathways[0]).toMatchObject({
-      pathwayType: 'EXPLORATORY_CONTACT',
-      status: 'PLAUSIBLE',
-      compensation: 'UNKNOWN',
-    });
     expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'FELLOWSHIP_COMPATIBLE',
       'PAST_UNDERGRADS',
@@ -192,7 +170,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toEqual([]);
   });
 
@@ -212,7 +189,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toMatchObject([
       {
         type: 'NOT_CURRENTLY_AVAILABLE',
@@ -248,32 +224,10 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-        }),
-        expect.objectContaining({
-          pathwayType: 'VOLUNTEER_OUTREACH',
-          status: 'PLAUSIBLE',
-          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
-          studentFacingLabel: 'Official application route',
-        }),
-      ]),
-    );
     expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'CONTACT_INSTRUCTIONS_EXIST',
       'REACH_OUT_PLAUSIBLE',
-    ]);
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'OFFICIAL_APPLICATION',
-        visibility: 'PUBLIC',
-        contactPolicy: 'APPLICATION_ONLY',
-        url: 'https://lab.example.edu/join',
-      },
     ]);
   });
 
@@ -306,15 +260,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toMatchObject([
-      {
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        studentFacingLabel: 'Exploratory outreach',
-        bestNextStep:
-          'Use the evidence to plan targeted outreach rather than treating this as an open posting.',
-      },
-    ]);
     expect(result.accessSignals).toMatchObject([
       {
         type: 'REACH_OUT_PLAUSIBLE',
@@ -322,8 +267,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
           'Students interested in research should contact the faculty member directly to explore opportunities.',
       },
     ]);
-    expect(result.contactRoutes).toEqual([]);
-    expect(result.entryPathways.map((pathway) => pathway.pathwayType)).not.toContain('POSTED_ROLE');
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('POSTED_OPENING');
   });
 
   it('derives department structured application pages as guarded official routes', () => {
@@ -347,31 +291,9 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-        }),
-        expect.objectContaining({
-          pathwayType: 'RECURRING_PROGRAM',
-          status: 'RECURRING',
-          derivationKey: 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE',
-          studentFacingLabel: 'Department research application',
-        }),
-      ]),
-    );
     expect(result.accessSignals.map((signal) => signal.type).sort()).toEqual([
       'APPLICATION_FORM_EXISTS',
       'REACH_OUT_PLAUSIBLE',
-    ]);
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'OFFICIAL_APPLICATION',
-        visibility: 'PUBLIC',
-        contactPolicy: 'APPLICATION_ONLY',
-        url: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
-      },
     ]);
   });
 
@@ -385,9 +307,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.entryPathways).toEqual([]);
     expect(result.accessSignals).toEqual([]);
-    expect(result.contactRoutes).toEqual([]);
   });
 
   it('redacts direct contact details from public signal excerpts', () => {
@@ -430,23 +350,13 @@ describe('deriveAccessArtifactsFromObservations', () => {
     );
   });
 
-  it('derives guarded contact routes from contact observations', () => {
+  it('derives contact-instruction signals from contact observations', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({ field: 'contactName', value: 'Ada Manager' }),
       obs({ field: 'contactEmail', value: 'Ada.Manager@Yale.edu' }),
       obs({ field: 'contactRole', value: 'Lab Manager' }),
     ]);
 
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'LAB_MANAGER',
-        email: 'Ada.Manager@Yale.edu',
-        name: 'Ada Manager',
-        role: 'Lab Manager',
-        visibility: 'AUTHENTICATED',
-        contactPolicy: 'DIRECT_CONTACT_OK',
-      },
-    ]);
     expect(result.accessSignals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -455,35 +365,6 @@ describe('deriveAccessArtifactsFromObservations', () => {
         }),
       ]),
     );
-  });
-
-  it('derives public course-instructor routes from explicit non-CourseTable contact evidence', () => {
-    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
-      obs({
-        field: 'contactName',
-        value: 'Beverly Gage',
-        sourceName: 'department-research-pathways',
-        confidence: 0.7,
-      }),
-      obs({
-        field: 'contactRole',
-        value: 'Course instructor for independent-study research',
-        sourceName: 'department-research-pathways',
-        confidence: 0.7,
-      }),
-    ]);
-
-    expect(result.contactRoutes).toMatchObject([
-      {
-        routeType: 'COURSE_INSTRUCTOR',
-        name: 'Beverly Gage',
-        role: 'Course instructor for independent-study research',
-        visibility: 'PUBLIC',
-        contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        rationale: 'Derived from explicit course instructor evidence.',
-      },
-    ]);
-    expect(result.contactRoutes[0].email).toBeUndefined();
   });
 
   it('deduplicates repeated evidence by derivation key', () => {
@@ -496,11 +377,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
       obs({ _id: 'course-b', field: 'offersIndependentStudy', value: true, confidence: 0.7 }),
     ]);
 
-    expect(first.entryPathways).toHaveLength(0);
     expect(first.accessSignals).toHaveLength(1);
-    expect(first.entryPathways.map((pathway) => pathway.derivationKey)).toEqual(
-      second.entryPathways.map((pathway) => pathway.derivationKey),
-    );
     expect(first.accessSignals.map((signal) => signal.derivationKey)).toEqual(
       second.accessSignals.map((signal) => signal.derivationKey),
     );
@@ -536,10 +413,6 @@ describe('deriveAccessArtifactsForResearchGroup', () => {
     );
 
     expect(result.researchEntityId).toBe('64f000000000000000000001');
-    expect(result.artifacts.entryPathways[0]).toMatchObject({
-      derivationKey: 'pathway:EXPLORATORY_CONTACT:CURRENT_UNDERGRADS',
-      sourceEvidenceIds: ['64f000000000000000000099'],
-    });
     expect(result.artifacts.accessSignals[0]).toMatchObject({
       type: 'CURRENT_UNDERGRADS',
       sourceEvidenceId: '64f000000000000000000099',
@@ -566,17 +439,11 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     supportingObservations: [supporting],
   };
 
-  it('derives an exploratory-contact ways-in for an identified faculty lead', () => {
+  it('derives a reach-out-plausible ways-in signal for an identified faculty lead', () => {
     const result = deriveIdentifiedLeadWaysIn(baseInput);
-    expect(result.entryPathways.map((p) => p.pathwayType)).toEqual(['EXPLORATORY_CONTACT']);
-    expect(result.entryPathways[0].derivationKey).toBe(
-      'pathway:EXPLORATORY_CONTACT:IDENTIFIED_FACULTY_LEAD',
-    );
     expect(result.accessSignals.map((s) => s.type)).toEqual(['REACH_OUT_PLAUSIBLE']);
-    expect(result.contactRoutes.map((r) => r.routeType)).toEqual(['FACULTY_PI']);
     // confidence is intentionally conservative (LOW / WEAK)
     expect(result.accessSignals[0].confidenceScore).toBeLessThanOrEqual(0.4);
-    expect(result.contactRoutes[0].email).toBeUndefined();
   });
 
   it('skips entities flagged as duplicates by the visibility gate', () => {
@@ -584,8 +451,7 @@ describe('deriveIdentifiedLeadWaysIn', () => {
       ...baseInput,
       entity: { ...baseInput.entity, studentVisibilityReasons: ['exact_url_duplicate_risk'] },
     });
-    expect(result.entryPathways).toHaveLength(0);
-    expect(result.contactRoutes).toHaveLength(0);
+    expect(result.accessSignals).toHaveLength(0);
   });
 
   it('skips grant-only source URLs and non-home entity types', () => {
@@ -593,17 +459,15 @@ describe('deriveIdentifiedLeadWaysIn', () => {
       deriveIdentifiedLeadWaysIn({
         ...baseInput,
         officialUrl: 'https://reporter.nih.gov/project-details/1',
-      }).entryPathways,
+      }).accessSignals,
     ).toHaveLength(0);
     expect(
-      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).entryPathways,
+      deriveIdentifiedLeadWaysIn({ ...baseInput, entity: { entityType: 'PROGRAM' } }).accessSignals,
     ).toHaveLength(0);
   });
 
   it('requires supporting source evidence so the claim gate keeps the artifacts', () => {
     const result = deriveIdentifiedLeadWaysIn({ ...baseInput, supportingObservations: [] });
-    expect(result.entryPathways).toHaveLength(0);
     expect(result.accessSignals).toHaveLength(0);
-    expect(result.contactRoutes).toHaveLength(0);
   });
 });

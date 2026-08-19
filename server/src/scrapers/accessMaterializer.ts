@@ -365,7 +365,7 @@ export function deriveAccessArtifactsFromObservations(
   const joinPageObservations = (byField.get('joinPageUrl') || []).filter((obs) =>
     firstUrlValue(obs.value),
   );
-  if (joinPageObservations.length > 0) {
+  if (joinPageObservations.length > 0 && positiveAccessEvidence.length > 0) {
     const score = maxConfidence(joinPageObservations);
     accessSignals.push(
       makeSignal({
