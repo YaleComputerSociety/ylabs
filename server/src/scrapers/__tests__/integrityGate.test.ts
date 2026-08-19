@@ -4,8 +4,8 @@ const modelMocks = vi.hoisted(() => ({
   aggregate: vi.fn(async () => []),
 }));
 
-vi.mock('../../models/accessSignal', () => ({
-  AccessSignal: { aggregate: modelMocks.aggregate },
+vi.mock('../../models/signal', () => ({
+  Signal: { aggregate: modelMocks.aggregate },
 }));
 
 vi.mock('../../models/contactRoute', () => ({

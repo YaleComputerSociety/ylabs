@@ -427,7 +427,7 @@ describe('visibilityRepairQueueService', () => {
       findResearchEntityMembers: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       updateResearchEntity: vi.fn(),
       findProgram: vi.fn(),
@@ -446,7 +446,7 @@ describe('visibilityRepairQueueService', () => {
     });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
     expect(deps.runGate).not.toHaveBeenCalled();
   });
@@ -1153,7 +1153,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -1767,7 +1767,7 @@ describe('visibilityRepairQueueService', () => {
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -1993,7 +1993,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2022,11 +2022,11 @@ describe('visibilityRepairQueueService', () => {
         sourceEvidenceIds: ['obs-1'],
       }),
     );
-    expect(deps.upsertAccessSignal).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
         entryPathwayId: 'pathway-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         sourceEvidenceId: 'obs-1',
       }),
@@ -2081,7 +2081,7 @@ describe('visibilityRepairQueueService', () => {
         doc: { _id: 'existing-pathway-1', pathwayType: 'EXPLORATORY_CONTACT' },
       }),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'new-pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2102,11 +2102,11 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findReusableExploratoryContactPathway).toHaveBeenCalledWith('entity-1');
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
         entryPathwayId: 'existing-pathway-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
@@ -2159,7 +2159,7 @@ describe('visibilityRepairQueueService', () => {
         },
       }),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       findProgram: vi.fn(),
@@ -2179,7 +2179,7 @@ describe('visibilityRepairQueueService', () => {
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         entryPathwayId: 'existing-pathway-1',
@@ -2226,7 +2226,7 @@ describe('visibilityRepairQueueService', () => {
         },
       }),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -2246,7 +2246,7 @@ describe('visibilityRepairQueueService', () => {
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).toHaveBeenCalledWith(
       expect.objectContaining({
         entryPathwayId: 'existing-pathway-1',
@@ -2336,7 +2336,7 @@ describe('visibilityRepairQueueService', () => {
       }),
       upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2420,7 +2420,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -2441,7 +2441,7 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 0, blocked: 1 });
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
   });
 
@@ -2478,7 +2478,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2542,7 +2542,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2607,7 +2607,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -2665,7 +2665,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2737,7 +2737,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -2800,7 +2800,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -2819,7 +2819,7 @@ describe('visibilityRepairQueueService', () => {
 
     expect(report).toMatchObject({ repaired: 0, blocked: 1 });
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
   });
 
@@ -2854,7 +2854,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -2894,11 +2894,11 @@ describe('visibilityRepairQueueService', () => {
         derivationKey: 'visibility-repair:entity-source-outreach:entity-1',
       }),
     );
-    expect(deps.upsertAccessSignal).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
         entryPathwayId: 'pathway-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         sourceEvidenceId: 'obs-1',
         sourceName: 'research-entity-cache-backfill',
@@ -2954,7 +2954,7 @@ describe('visibilityRepairQueueService', () => {
       ]),
       upsertResearchEntityMember: vi.fn(),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -3027,7 +3027,7 @@ describe('visibilityRepairQueueService', () => {
       findReusableExploratoryContactPathway: vi.fn().mockResolvedValue(null),
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findProgram: vi.fn(),
       updateProgram: vi.fn(),
@@ -3047,7 +3047,7 @@ describe('visibilityRepairQueueService', () => {
     expect(report).toMatchObject({ repaired: 0, blocked: 1 });
     expect(report.attempts[0].remainingBlockers).toContain('missing_source_evidence');
     expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertAccessSignal).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).not.toHaveBeenCalled();
     expect(deps.upsertContactRoute).not.toHaveBeenCalled();
   });
 
@@ -3085,7 +3085,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -3149,7 +3149,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
       findProgram: vi.fn(),
@@ -3215,7 +3215,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn(),
-      upsertAccessSignal: vi.fn(),
+      upsertSignal: vi.fn(),
       upsertContactRoute: vi.fn(),
       findActionEvidenceObservationIds: vi.fn(),
       findProgram: vi.fn(),
@@ -3272,7 +3272,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([
@@ -3356,7 +3356,7 @@ describe('visibilityRepairQueueService', () => {
         },
       ]),
       upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'pathway-1' }),
-      upsertAccessSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
+      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
       upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
       findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
       findEntityActionEvidenceObservationIds: vi.fn().mockResolvedValue([

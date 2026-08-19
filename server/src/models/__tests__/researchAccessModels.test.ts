@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
-import { AccessSignal } from '../accessSignal';
+import { Signal } from '../signal';
 import { ContactRoute } from '../contactRoute';
 import { EntryPathway } from '../entryPathway';
 import { PostedOpportunity } from '../postedOpportunity';
@@ -41,12 +41,25 @@ describe('research access models', () => {
   });
 
   it('validates access signals with source-backed confidence fields', () => {
-    const doc = new AccessSignal({
+    const doc = new Signal({
       researchEntityId: oid(),
-      signalType: 'CREDIT_FORMALIZATION_POSSIBLE',
+      type: 'CREDIT_FORMALIZATION_POSSIBLE',
       confidence: 'HIGH',
       confidenceScore: 0.8,
       observedAt: new Date('2026-05-07T12:00:00.000Z'),
+    });
+
+    expect(doc.validateSync()).toBeUndefined();
+  });
+
+  it('validates logistics signals folded into the same collection', () => {
+    const doc = new Signal({
+      researchEntityId: oid(),
+      type: 'COMPENSATION',
+      status: 'KNOWN',
+      value: { modes: ['STIPEND'] },
+      observedAt: new Date('2026-05-07T12:00:00.000Z'),
+      expiresAt: new Date('2027-05-07T12:00:00.000Z'),
     });
 
     expect(doc.validateSync()).toBeUndefined();

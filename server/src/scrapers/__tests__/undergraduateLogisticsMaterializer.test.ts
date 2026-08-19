@@ -10,11 +10,11 @@ vi.mock('../../models/observation', () => ({
   Observation: { find: persistenceMocks.observationFind },
 }));
 
-vi.mock('../../models/undergraduateLogisticsClaim', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../models/undergraduateLogisticsClaim')>();
+vi.mock('../../models/signal', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../models/signal')>();
   return {
     ...actual,
-    UndergraduateLogisticsClaim: {
+    Signal: {
       updateOne: persistenceMocks.claimUpdateOne,
       updateMany: persistenceMocks.claimUpdateMany,
     },
@@ -1081,11 +1081,13 @@ describe('undergraduate logistics materialization', () => {
     expect(persistenceMocks.claimUpdateOne.mock.calls.map(([filter]) => filter)).toEqual([
       {
         researchEntityId: input.researchEntityId,
-        claimType: 'COMPENSATION',
+        type: 'COMPENSATION',
+        derivationKey: 'logistics:COMPENSATION',
       },
       {
         researchEntityId: input.researchEntityId,
-        claimType: 'COMPENSATION',
+        type: 'COMPENSATION',
+        derivationKey: 'logistics:COMPENSATION',
       },
     ]);
     expect(

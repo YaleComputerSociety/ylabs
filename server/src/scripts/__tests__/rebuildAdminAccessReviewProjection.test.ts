@@ -6,7 +6,7 @@ import {
   AdminAccessReviewProjection,
   AdminAccessReviewProjectionState,
 } from '../../models/adminAccessReviewProjection';
-import { AccessSignal } from '../../models/accessSignal';
+import { Signal } from '../../models/signal';
 import { ResearchEntity } from '../../models/researchEntity';
 import { rebuildAdminAccessReviewProjection } from '../../services/adminAccessReviewProjectionService';
 import { parseRebuildAdminAccessReviewProjectionArgs } from '../rebuildAdminAccessReviewProjection';
@@ -120,9 +120,9 @@ describe('admin access-review projection reconciliation with MongoDB', () => {
     });
     expect(repeatedApply).toMatchObject({ mode: 'apply', writesPlanned: 0, writesApplied: 0 });
 
-    await AccessSignal.collection.insertOne({
+    await Signal.collection.insertOne({
       researchEntityId,
-      signalType: 'DIRECT_EMAIL',
+      type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'HIGH',
       observedAt: new Date('2026-01-02T00:00:00.000Z'),
       review: { status: 'unreviewed' },

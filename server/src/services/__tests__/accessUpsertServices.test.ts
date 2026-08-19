@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { upsertAccessSignal } from '../accessSignalService';
+import { upsertSignal } from '../signalService';
 import { upsertContactRoute } from '../contactRouteService';
 import { upsertEntryPathway } from '../entryPathwayService';
 
@@ -15,11 +15,11 @@ describe('access upsert services', () => {
       },
     };
 
-    await upsertAccessSignal(
+    await upsertSignal(
       {
         researchEntityId: 'research-1',
         entryPathwayId: 'entry-1',
-        signalType: 'POSTED_OPENING',
+        type: 'POSTED_OPENING',
         confidence: 'HIGH',
         observedAt: new Date('2026-05-12T00:00:00.000Z'),
         derivationKey: 'listing:listing-1:POSTED_OPENING',
@@ -75,10 +75,10 @@ describe('access upsert services', () => {
         },
       }) as any;
 
-    await upsertAccessSignal(
+    await upsertSignal(
       {
         researchEntityId: 'research-1',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'HIGH',
         observedAt: new Date('2026-05-12T00:00:00.000Z'),
         excerpt: 'Questions: hidden@example.edu or 203-432-1234.',
@@ -123,9 +123,9 @@ describe('access upsert services', () => {
     );
 
     expect(capturedUpdates.signal.$set).toMatchObject({
-      excerpt: 'Questions: [email redacted] or [phone redacted].',
+      'source.excerpt': 'Questions: [email redacted] or [phone redacted].',
     });
-    expect(capturedUpdates.signal.$set.sourceUrl).toBeUndefined();
+    expect(capturedUpdates.signal.$set['source.url']).toBeUndefined();
     expect(capturedUpdates.pathway.$set).toMatchObject({
       studentFacingLabel: 'Email [email redacted]',
       explanation: 'Call [phone redacted] before applying.',

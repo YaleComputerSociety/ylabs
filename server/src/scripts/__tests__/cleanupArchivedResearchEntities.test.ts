@@ -165,7 +165,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
   it('performs no writes in dry-run mode', async () => {
     const eligibleId = await insertArchivedEntity('Eligible Home');
-    await mongoose.connection.db!.collection('access_signals').insertOne({
+    await mongoose.connection.db!.collection('signals').insertOne({
       researchEntityId: eligibleId,
       archived: true,
     });
@@ -182,14 +182,14 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     expect(deleted).toEqual([]);
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(1);
     await expect(
-      mongoose.connection.db!.collection('access_signals').countDocuments({}),
+      mongoose.connection.db!.collection('signals').countDocuments({}),
     ).resolves.toBe(1);
   });
 
   it('applies deletions only to eligible archived entities and their dependents', async () => {
     const eligibleId = await insertArchivedEntity('Eligible Home');
     const blockedId = await insertArchivedEntity('Blocked Home');
-    await mongoose.connection.db!.collection('access_signals').insertMany([
+    await mongoose.connection.db!.collection('signals').insertMany([
       { researchEntityId: eligibleId, archived: true },
       { researchEntityId: blockedId, archived: true },
     ]);
@@ -207,13 +207,13 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
     expect(applied.mode).toBe('apply');
     expect(applied.deletedResearchEntities).toBe(1);
-    expect(applied.deletedDependents).toMatchObject({ access_signals: 1 });
+    expect(applied.deletedDependents).toMatchObject({ signals: 1 });
     expect(deleted).toEqual([[String(eligibleId)]]);
 
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(0);
     await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
     await expect(
-      mongoose.connection.db!.collection('access_signals').countDocuments({}),
+      mongoose.connection.db!.collection('signals').countDocuments({}),
     ).resolves.toBe(1);
   });
 });

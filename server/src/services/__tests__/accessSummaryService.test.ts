@@ -7,8 +7,8 @@ const mocks = vi.hoisted(() => ({
   postedOpportunityFind: vi.fn(),
 }));
 
-vi.mock('../../models/accessSignal', () => ({
-  AccessSignal: {
+vi.mock('../../models/signal', () => ({
+  Signal: {
     find: mocks.accessSignalFind,
   },
 }));
@@ -48,18 +48,22 @@ describe('accessSummaryService', () => {
       queryMany([
         {
           researchEntityId: entityId,
-          signalType: 'REACH_OUT_PLAUSIBLE',
+          type: 'REACH_OUT_PLAUSIBLE',
           confidence: 'HIGH',
           confidenceScore: 0.9,
-          excerpt: 'Questions: hidden@example.edu or 203-432-1234.',
-          sourceUrl: 'mailto:hidden@example.edu',
+          source: {
+            excerpt: 'Questions: hidden@example.edu or 203-432-1234.',
+            url: 'mailto:hidden@example.edu',
+          },
         },
         {
           researchEntityId: entityId,
-          signalType: 'CURRENT_UNDERGRADS',
+          type: 'CURRENT_UNDERGRADS',
           confidence: 'MEDIUM',
-          excerpt: 'Undergraduates are listed on the lab page.',
-          sourceUrl: 'https://lab.example.test/people',
+          source: {
+            excerpt: 'Undergraduates are listed on the lab page.',
+            url: 'https://lab.example.test/people',
+          },
         },
       ]),
     );
@@ -118,32 +122,36 @@ describe('accessSummaryService', () => {
       queryMany([
         {
           researchEntityId: entityId,
-          signalType: 'CURRENT_UNDERGRADS',
+          type: 'CURRENT_UNDERGRADS',
           confidence: 'HIGH',
           confidenceScore: 0.9,
-          excerpt: 'x'.repeat(3000),
-          sourceUrl: {
-            toString: () => {
-              throw new Error('access summary stringified an arbitrary source URL');
+          source: {
+            excerpt: 'x'.repeat(3000),
+            url: {
+              toString: () => {
+                throw new Error('access summary stringified an arbitrary source URL');
+              },
             },
           },
         },
         {
           researchEntityId: entityId,
-          signalType: {
+          type: {
             toString: () => {
               throw new Error('access summary stringified an arbitrary signal type');
             },
           },
           confidence: 'LOW',
-          excerpt: 'ignored signal type',
-          sourceUrl: 'https://lab.example.test/ignored',
+          source: {
+            excerpt: 'ignored signal type',
+            url: 'https://lab.example.test/ignored',
+          },
         },
         {
           researchEntityId: unsafeEntityId,
-          signalType: 'POSTED_OPENING',
+          type: 'POSTED_OPENING',
           confidence: 'HIGH',
-          excerpt: 'unsafe entity id row must be skipped',
+          source: { excerpt: 'unsafe entity id row must be skipped' },
         },
       ]),
     );
