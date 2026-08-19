@@ -120,7 +120,7 @@ describe('pathway display helpers', () => {
         }),
         [],
       ),
-    ).toEqual({ label: 'Official Yale source found', state: 'official' });
+    ).toEqual({ label: 'Evidence limited', state: 'limited' });
   });
 });
 

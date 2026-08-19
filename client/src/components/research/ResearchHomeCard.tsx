@@ -36,8 +36,6 @@ const contextLabelClass = (state?: string): string => {
 
 const evidenceStatusClass = (state?: string): string => {
   switch (state) {
-    case 'official':
-      return 'yr-pill-green';
     case 'publications':
       return 'yr-pill-blue';
     case 'review':
@@ -109,10 +107,25 @@ const ResearchHomeCard = ({
   const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
     : buildWayInBadges(home.entities[0], home.pathways || []);
-  const metadataBadges = Array.from(new Set(home.metadataTags));
+  const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
+  const contextLineKeys = new Set(
+    contextLine
+      .split('·')
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const isInContextLine = (label: string): boolean =>
+    contextLineKeys.has(label.trim().toLowerCase());
+  const metadataBadges = Array.from(new Set(home.metadataTags)).filter(
+    (label) => !isInContextLine(label),
+  );
   const metadataBadgeKeys = new Set(metadataBadges.map((label) => label.toLowerCase()));
   const topicBadges = Array.from(
-    new Set(home.labels.filter((label) => !metadataBadgeKeys.has(label.toLowerCase()))),
+    new Set(
+      home.labels.filter(
+        (label) => !metadataBadgeKeys.has(label.toLowerCase()) && !isInContextLine(label),
+      ),
+    ),
   );
   const mobileTopicCap = isCompact ? 2 : 3;
   const desktopTopicCap = isCompact ? 3 : 5;
@@ -125,7 +138,6 @@ const ResearchHomeCard = ({
   const nextStepLabel = home.pathways[0]
     ? directoryFirstPathwayLabel(getPathwayActionLabel(home.pathways[0].bestNextStepCategory))
     : '';
-  const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
   const description = sanitizeFacultyResearchCopy(home.description, home.entities[0]);
   const activePostedOpportunity =
     (home.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED'
@@ -271,14 +283,7 @@ const ResearchHomeCard = ({
               {home.contextLabel}
             </span>
           )}
-          {home.evidenceStatus?.state === 'official' && (
-            <span
-              className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
-            >
-              {home.evidenceStatus.label}
-            </span>
-          )}
-          {!isCompact && home.evidenceStatus && home.evidenceStatus.state !== 'official' && (
+          {home.evidenceStatus && (
             <span
               className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
             >
