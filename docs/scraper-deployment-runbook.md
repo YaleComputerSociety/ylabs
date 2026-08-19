@@ -57,9 +57,9 @@ Source metadata
   -> entity materialization
   -> ResearchGroup/User/Paper/etc.
   -> access materialization where evidence supports it
-  -> EntryPathway / AccessSignal / ContactRoute / PostedOpportunity
+  -> EntryPathway / Signal (access types) / ContactRoute / PostedOpportunity
   -> logistics materialization where exact official evidence supports each independent claim
-  -> UndergraduateLogisticsClaim
+  -> Signal (logistics types)
   -> Meilisearch sync or later reindex
 ```
 
@@ -309,7 +309,8 @@ Gate:
 
 Minimum copy set for the accepted full Beta posture:
 
-- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `access_signals`, `contact_routes`, `posted_opportunities`, `undergraduate_logistics_claims`, and `grants`.
+- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `signals`, `contact_routes`, `posted_opportunities`, and `grants`.
+- Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows and must also be copied and audited alongside `signals`.
 - Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
 - Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
 
