@@ -8,6 +8,7 @@ import {
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
   buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
+  canonicalRosterProvenanceFromSet,
   buildOfficialRosterArchiveFilter,
   countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
@@ -876,6 +877,38 @@ describe('entityMaterializer post-materialization metrics', () => {
         },
       },
     });
+  });
+
+  it('coerces ISO-string roster dates from the member upsert set into Date provenance', () => {
+    const observedAt = new Date('2026-07-14T00:00:00Z');
+    const field = (value: unknown) => ({
+      value,
+      confidence: 0.95,
+      sourceName: 'official-research-home-roster',
+      sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+      observedAt,
+      hasConflict: false,
+      contributingSources: ['official-research-home-roster'],
+    });
+    const upsert = buildResearchGroupMemberUpsert('64f000000000000000000010', {
+      role: field('grad-student'),
+      name: field('Fixture Scholar'),
+      profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
+      identityKey: field('official-profile:fixture-scholar'),
+      membershipKey: field('official-profile:fixture-scholar|grad-student'),
+      currentStatus: field('current'),
+      evidenceStatus: field('verified'),
+      freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
+    });
+    const set = (upsert?.update as { $set?: Record<string, unknown> }).$set ?? {};
+    expect(typeof set.freshnessExpiresAt).toBe('string');
+
+    const provenance = canonicalRosterProvenanceFromSet(set, 'verified');
+    expect(provenance.freshnessExpiresAt).toBeInstanceOf(Date);
+    expect((provenance.freshnessExpiresAt as Date).toISOString()).toBe('2026-08-04T00:00:00.000Z');
+    expect(provenance.observedAt).toBeInstanceOf(Date);
+    expect(provenance.membershipKey).toBe('official-profile:fixture-scholar|grad-student');
+    expect(provenance.evidenceStatus).toBe('verified');
   });
 
   it('refuses name-only roster identity and any stable-identity collision', () => {

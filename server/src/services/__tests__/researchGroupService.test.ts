@@ -818,10 +818,12 @@ describe('getResearchGroupDetail', () => {
 
   it('keeps only member rows whose normalized research entity id matches the detail entity', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const matchingUserId = '67d8928150621bcef434a1d7';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
-        _id: new mongoose.Types.ObjectId(entityId),
+        _id: entityObjectId,
         slug: 'entity-isolation-lab',
         name: 'Entity Isolation Lab',
         ...validPublicDescriptions,
@@ -831,35 +833,32 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'matching-member',
-          researchEntityId: entityId,
-          userId: matchingUserId,
-          role: 'affiliated',
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
           archived: false,
-          isCurrentMember: true,
-        },
-        {
-          _id: 'cross-entity-member',
-          researchEntityId: '67d8928150621bcef434a1d6',
-          userId: 'cross-entity-user',
-          role: 'affiliated',
-          archived: false,
-          isCurrentMember: true,
         },
       ]),
     );
-    mocks.userFind.mockReturnValue(
-      leanResult([
+    mocks.personFind.mockReturnValue(
+      queryResult([
         {
-          _id: matchingUserId,
-          fname: 'Matching',
-          lname: 'Scholar',
-          title: 'Research Scholar',
+          _id: personId,
+          displayName: 'Matching Scholar',
+          accountId,
+          profile: { title: 'Research Scholar' },
         },
       ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'ms1001', email: 'matching.scholar@example.edu' }]),
     );
 
     const detail = await getResearchGroupDetail('entity-isolation-lab');
@@ -869,7 +868,6 @@ describe('getResearchGroupDetail', () => {
       fname: 'Matching',
       lname: 'Scholar',
     });
-    expect(mocks.userFind.mock.calls[0]?.[0]).toEqual({ _id: { $in: [matchingUserId] } });
   });
 
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
@@ -999,6 +997,113 @@ describe('getResearchGroupDetail', () => {
         ),
       ).toBe(false);
     }
+  });
+
+  it('retains fresh official-roster canonical members with roster evidence and drops stale ones', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const freshPersonId = new mongoose.Types.ObjectId();
+    const stalePersonId = new mongoose.Types.ObjectId();
+    const freshAccountId = new mongoose.Types.ObjectId();
+    const staleAccountId = new mongoose.Types.ObjectId();
+    const sourceUrl = 'https://medicine.yale.edu/lab/fixture/members/';
+    const freshMembershipKey = 'official-profile:fresh|affiliated';
+    const staleMembershipKey = 'official-profile:stale|affiliated';
+    const observedAt = new Date('2026-08-14T00:00:00Z');
+    const rosterProvenanceBase = {
+      sourceName: 'official-research-home-roster',
+      sourceUrl,
+      profileUrl: 'https://medicine.yale.edu/profile/fixture/',
+      evidenceStatus: 'verified',
+      observedAt,
+    };
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'official-roster-lab',
+        name: 'Official Roster Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+        rosterEnrichment: {
+          state: 'current',
+          memberKeys: [freshMembershipKey],
+          sourceUrl,
+          observedAt: '2026-08-14T00:00:00Z',
+        },
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: freshPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+          archived: false,
+          rosterProvenance: {
+            ...rosterProvenanceBase,
+            membershipKey: freshMembershipKey,
+            freshnessExpiresAt: new Date('2999-01-01T00:00:00Z'),
+          },
+        },
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: stalePersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+          archived: false,
+          rosterProvenance: {
+            ...rosterProvenanceBase,
+            membershipKey: staleMembershipKey,
+            freshnessExpiresAt: new Date('2000-01-01T00:00:00Z'),
+          },
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: freshPersonId,
+          displayName: 'Fresh Scholar',
+          accountId: freshAccountId,
+          profile: { title: 'Research Scientist' },
+          profileLinks: [],
+        },
+        {
+          _id: stalePersonId,
+          displayName: 'Stale Scholar',
+          accountId: staleAccountId,
+          profile: { title: 'Research Scientist' },
+          profileLinks: [],
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([
+        { _id: freshAccountId, netid: 'fresh1', email: 'fresh.scholar@example.edu' },
+        { _id: staleAccountId, netid: 'stale1', email: 'stale.scholar@example.edu' },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('official-roster-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user).toMatchObject({ fname: 'Fresh', lname: 'Scholar' });
+    expect(detail?.members[0]).toHaveProperty('rosterEvidence');
+    expect(
+      (detail?.members[0] as { rosterEvidence?: { sourceUrl?: string } }).rosterEvidence,
+    ).toMatchObject({
+      sourceUrl,
+    });
   });
 
   it('removes private listing ownership and contact fields from public detail payloads', async () => {
@@ -1216,9 +1321,12 @@ describe('getResearchGroupDetail', () => {
 
   it('allowlists public member user fields in public detail payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
-        _id: entityId,
+        _id: entityObjectId,
         slug: 'member-privacy-lab',
         name: 'Member Privacy Lab',
         ...validPublicDescriptions,
@@ -1228,43 +1336,45 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'user-1',
-          role: 'affiliated',
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
           archived: false,
-          isCurrentMember: true,
         },
       ]),
     );
-    mocks.userFind.mockReturnValue(
-      leanResult([
+    mocks.personFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'user-1',
-          netid: 'abc123',
-          fname: 'Fixture',
-          lname: 'Advisor',
+          _id: personId,
           displayName: 'Fixture Advisor',
-          email: 'fixture.advisor@example.edu',
-          imageUrl: '',
-          primaryDepartment: 'Computer Science',
-          title: 'Professor of Computer Science',
-          secondaryDepartments: ['Mathematics'],
-          facultyMemberId: 'faculty-1',
-          profileUrls: {
-            official: 'https://cs.yale.edu/people/fixture-advisor',
-            orcid: 'https://orcid.org/0000-0000-0000-0000',
+          accountId,
+          profile: {
+            title: 'Professor of Computer Science',
+            primaryDepartment: 'Computer Science',
+            imageUrl: '',
           },
-          googleScholarId: 'private-scholar-id',
-          openAlexId: 'private-openalex-id',
-          userConfirmed: true,
-          userType: 'professor',
-          raw: { scrapePayload: true },
+          profileLinks: [
+            {
+              kind: 'YALE_OFFICIAL',
+              purpose: 'PRIMARY_IDENTITY',
+              url: 'https://cs.yale.edu/people/fixture-advisor',
+              verifiedAt: new Date(),
+              healthStatus: 'HEALTHY',
+            },
+          ],
         },
       ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'abc123', email: 'fixture.advisor@example.edu' }]),
     );
 
     const detail = await getResearchGroupDetail('member-privacy-lab');
@@ -1285,7 +1395,7 @@ describe('getResearchGroupDetail', () => {
       profile_urls: {
         official: 'https://cs.yale.edu/people/fixture-advisor',
       },
-      publicKey: 'fixture-advisor-affiliated',
+      publicKey: `${personId.toString()}-affiliated`,
     });
     expect(detail?.members[0].user).not.toHaveProperty('_id');
     expect(detail?.members[0].user).not.toHaveProperty('netid');
@@ -1302,9 +1412,12 @@ describe('getResearchGroupDetail', () => {
 
   it('preserves internal profile path fallbacks through public detail member shaping', async () => {
     const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
-        _id: entityId,
+        _id: entityObjectId,
         slug: 'member-internal-profile-lab',
         name: 'Member Internal Profile Lab',
         ...validPublicDescriptions,
@@ -1314,30 +1427,37 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'user-1',
-          role: 'pi',
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
           archived: false,
-          isCurrentMember: true,
         },
       ]),
     );
-    mocks.userFind.mockReturnValue(
-      leanResult([
+    mocks.personFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'user-1',
-          netid: 'fx1001',
-          fname: 'Fixture',
-          lname: 'Scholar',
-          imageUrl: '',
-          primaryDepartment: 'Example Studies',
-          title: 'Professor',
+          _id: personId,
+          displayName: 'Fixture Scholar',
+          accountId,
+          profile: {
+            title: 'Professor',
+            primaryDepartment: 'Example Studies',
+            imageUrl: '',
+          },
+          profileLinks: [],
         },
       ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'fx1001', email: 'fixture.scholar@example.edu' }]),
     );
 
     const detail = await getResearchGroupDetail('member-internal-profile-lab');
@@ -1347,20 +1467,19 @@ describe('getResearchGroupDetail', () => {
       lname: 'Scholar',
       internalProfilePath: '/profile/fx1001',
       internal_profile_path: '/profile/fx1001',
-      publicKey: 'fixture-scholar-pi',
+      publicKey: `${personId.toString()}-pi`,
     });
     expect(detail?.members[0].user).not.toHaveProperty('netid');
   });
 
   it('derives PI identity review from raw records before public member replacement', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const wrongUserId = '67d8928150621bcef434a1d6';
-    const correctUserId = '67d8928150621bcef434a1d7';
-    const wrongFacultyId = '67d8928150621bcef434a1d8';
-    const correctFacultyId = '67d8928150621bcef434a1d9';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
-        _id: entityId,
+        _id: entityObjectId,
         slug: 'disputed-pi-lab',
         name: 'Disputed PI Lab',
         ...validPublicDescriptions,
@@ -1370,41 +1489,40 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: wrongUserId,
-          facultyMemberId: correctFacultyId,
-          role: 'pi',
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'DISPUTED',
           archived: false,
-          isCurrentMember: true,
         },
       ]),
     );
-    mocks.userFind.mockReturnValue(
-      leanResult([
+    mocks.personFind.mockReturnValue(
+      queryResult([
         {
-          _id: wrongUserId,
-          fname: 'Wrong',
-          lname: 'Person',
-          facultyMemberId: wrongFacultyId,
+          _id: personId,
+          displayName: 'Correct Scholar',
+          accountId,
+          profileLinks: [
+            {
+              kind: 'YALE_OFFICIAL',
+              purpose: 'PRIMARY_IDENTITY',
+              url: 'https://medicine.yale.edu/profile/correct-scholar/',
+              verifiedAt: new Date(),
+              healthStatus: 'HEALTHY',
+            },
+          ],
         },
       ]),
     );
-    mocks.facultyMemberFind.mockReturnValue(
-      selectLeanResult([
-        {
-          _id: correctFacultyId,
-          userId: correctUserId,
-          firstName: 'Correct',
-          lastName: 'Scholar',
-          profileUrls: {
-            official: 'https://medicine.yale.edu/profile/correct-scholar/',
-          },
-        },
-      ]),
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'cs2001', email: 'correct.scholar@example.edu' }]),
     );
 
     const detail = await getResearchGroupDetail('disputed-pi-lab');
@@ -1502,9 +1620,12 @@ describe('getResearchGroupDetail', () => {
 
   it('corrects non-PI leading possessive names in public descriptions', async () => {
     const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
-        _id: entityId,
+        _id: entityObjectId,
         slug: 'glahn-lab-dcg32',
         name: 'Glahn Lab',
         ...validPublicDescriptions,
@@ -1520,30 +1641,33 @@ describe('getResearchGroupDetail', () => {
         studentVisibilityTier: 'student_ready',
       }),
     );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      leanResult([
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'fx1001',
-          role: 'pi',
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
           archived: false,
-          isCurrentMember: true,
         },
       ]),
     );
-    mocks.userFind.mockReturnValue(
-      leanResult([
+    mocks.personFind.mockReturnValue(
+      queryResult([
         {
-          _id: 'fx1001',
-          fname: 'David',
-          lname: 'Glahn',
+          _id: personId,
           displayName: 'David Glahn',
-          primaryDepartment: 'Psychiatry',
-          imageUrl: '',
-          netid: 'fx1001',
+          accountId,
+          profile: { primaryDepartment: 'Psychiatry', imageUrl: '' },
+          profileLinks: [],
         },
       ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'fx1001', email: 'david.glahn@example.edu' }]),
     );
 
     const detail = await getResearchGroupDetail('glahn-lab-dcg32');

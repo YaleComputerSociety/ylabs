@@ -788,7 +788,6 @@ test('public research detail queries cap unauthenticated fan-out before serializ
   );
 
   for (const constant of [
-    'MAX_PUBLIC_DETAIL_MEMBERS',
     'MAX_PUBLIC_DETAIL_LISTINGS',
     'MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS',
     'MAX_PUBLIC_DETAIL_ACCESS_SIGNALS',
@@ -799,6 +798,9 @@ test('public research detail queries cap unauthenticated fan-out before serializ
     assert.match(source, new RegExp(`const ${constant} = \\d+`));
     assert.match(source, new RegExp(`\\.limit\\(${constant}\\)`));
   }
+
+  assert.match(source, /const MAX_PUBLIC_DETAIL_MEMBERS = \d+/);
+  assert.match(source, /\.slice\(0, MAX_PUBLIC_DETAIL_MEMBERS\)/);
 
   assert.doesNotMatch(source, /ResearchEntityRelationship\.find\(\{[^;]*?\}\)\.lean\(\)/);
   assert.doesNotMatch(
@@ -4817,14 +4819,7 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   assert.match(source, /buildResearchGroupFilterString\(safeFilters\)/);
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
-  assert.match(
-    source,
-    /const idEquals\s*=\s*\(\s*left: unknown,\s*right: unknown\s*\)\s*:\s*boolean\s*=>/,
-  );
-  assert.match(source, /const leftId\s*=\s*normalizeResearchGroupObjectId\(left\)/);
-  assert.match(source, /const rightId\s*=\s*normalizeResearchGroupObjectId\(right\)/);
-  assert.match(source, /leftId\s*===\s*rightId/);
-  assert.match(source, /idEquals\(\s*row\.researchEntityId,\s*\(group as any\)\._id\s*\)/);
+  assert.match(source, /await getResearchEntityRoster\(\(group as any\)\._id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(entityId/);
 });
@@ -4870,8 +4865,7 @@ test('legacy research group public DTO ids use safe serialization', () => {
     source,
     /const key = \(researchGroupDocumentId\(lead\.user\?\._id\) \|\| name \|\| officialProfileUrl\)/,
   );
-  assert.match(source, /researchGroupDocumentId\(member\.user\._id\) \|\|/);
-  assert.match(source, /researchGroupDocumentId\(candidate\.user\._id\) \|\|/);
+  assert.match(source, /identityKey: researchGroupDocumentId\(entry\.personId\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
   assert.doesNotMatch(source, /id: String\(listing\._id\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
