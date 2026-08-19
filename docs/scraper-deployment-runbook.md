@@ -57,23 +57,13 @@ Source metadata
   -> entity materialization
   -> ResearchGroup/User/Paper/etc.
   -> access materialization where evidence supports it
-  -> EntryPathway / Signal (access types) / ContactRoute / PostedOpportunity
+  -> Signal (access types)
   -> logistics materialization where exact official evidence supports each independent claim
   -> Signal (logistics types)
   -> Meilisearch sync or later reindex
 ```
 
 The current system avoids most duplicate materialized entities through stable slugs, identifiers, derivation keys, and upserts. Observation rows are append-only during a run; identical observations can be superseded, and old unreferenced superseded rows can be pruned by the compact-retention command after reports are captured. Use the WorkPlanner task before unattended recurring runs for expensive sources.
-
-### PFR-3 pathway evidence review
-
-Resolve no more than 25 salted queue handles at a time with `pfr3:pathway-evidence-review`. The command defaults to dry-run, requires an explicit `--target=beta|prod`, and writes the minimum necessary record and lineage fields only to a mode-0600 JSON path under the system or project `tmp` directory. Never attach that PRIVATE artifact to a PR, ticket, chat, or log.
-
-Decision files require a safe public HTTP source, quoted or summarized evidence, and operator rationale for each recency, source-repair, or new-source decision. Use an envelope containing the exact `artifactHash` from the private artifact and a `decisions` array. Execute mode rejects a stale or differently salted artifact and additionally requires a matching target confirmation, backup/restore token, and a separate production confirmation.
-
-Only recency decisions have an automated application path. The workflow requires an existing `sourceEvidenceId` for the same research entity whose normalized source URL exactly matches the reviewed URL. It verifies the registered source provenance, creates an admin-triggered scrape-run lineage row, re-appends that existing observation through the observation store, and invokes normal access materialization. Replays are suppressed by an audit key derived from the target, artifact hash, handle, and URL. The audit stores only a hash of the restore token. The command never writes pathway status, evidence strength, confidence, or source fields directly.
-
-Source repairs remain `manual_only` because there is no authoritative field-level repair service that can preserve provenance without guessing which observation claim the URL supports. New-source acquisition remains `manual_only` because there is no durable bounded scraper-job queue; run the approved source-specific scraper workflow after review instead. Dry-run is still the default, and stdout remains aggregate-only.
 
 ## Environment Progression
 
@@ -115,7 +105,7 @@ yarn --cwd server scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources
 yarn --cwd server scrape:seed-sources --apply --confirm-seed-apply --output /tmp/ylabs-seed-sources-apply.json
 ```
 
-Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, canonical migration residue, and Pathway backend posture.
+Use `yarn --cwd server beta:readiness` without `--strict` for a diagnostic report. The command is read-only: it reports the Mongo target, accepted-input readiness, gated source posture, source metadata presence, and canonical migration residue.
 Use the seed-source dry-run artifact to confirm the target database and source actions before applying source metadata updates. Apply mode requires `--confirm-seed-apply`; production source seeding also requires `SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`.
 
 The canonical Beta operator wrapper is:
@@ -126,7 +116,7 @@ SCRAPER_ENV=beta yarn --cwd server beta:seed --output /tmp/ylabs-beta-seed-plan.
 SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed --output /tmp/ylabs-beta-seed-result.json
 ```
 
-Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, Meilisearch rebuilds, Pathway relevance review, and final Meili readiness acceptance. It does not run broad scrapers unless the operator explicitly names sources:
+Use `beta:seed-meili` on the Beta server when Mongo is already populated and the launch task is to rebuild Meilisearch plus run the related checks. The broader `beta:seed` wrapper plans or runs Beta readiness, Source registry seeding, the ResearchEntity Meilisearch rebuild, and final Meili readiness acceptance. It does not run broad scrapers unless the operator explicitly names sources:
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed \
@@ -134,7 +124,7 @@ SCRAPER_ENV=beta yarn --cwd server beta:seed --apply --confirm-beta-seed \
   --output /tmp/ylabs-beta-seed-result.json
 ```
 
-Use `--skip-meili`, `--skip-source-metadata`, `--skip-readiness`, or `--skip-pathway-relevance` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
+Use `--skip-meili`, `--skip-source-metadata`, or `--skip-readiness` only for a targeted recovery run after the omitted phase already has a fresh accepted artifact.
 
 Then run accepted sources in rollout order:
 
@@ -173,14 +163,6 @@ SCRAPER_ENV=beta yarn --cwd server undergraduate-logistics:audit \
 Review every sampled claim against its official source, record the decisions in the audit command's `{"decisions":[...]}` input shape, and rerun with `--decisions=<reviewed-file>`.
 Do not broaden the source list or enable recurring logistics acquisition until parent issue `#187` records the accepted bounded private Beta run, `precision.releaseReady=true`, and accepted unknown, stale, conflict, validation-rejection, and per-claim coverage totals.
 
-Before switching Pathway search traffic, run:
-
-```bash
-PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review
-```
-
-Keep runtime on Mongo until the review output is accepted. Rollback remains setting `PATHWAY_SEARCH_BACKEND=mongo`.
-
 Beta can be seeded from a local machine pointed at the Beta database. This is usually cheaper than paying for long-lived cloud compute during initial backfill.
 
 ### 3. Production Seeding
@@ -198,8 +180,8 @@ Record each item in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.
 - [ ] **Dataset versioning:** Assign a promotion dataset version such as `prod-promote-YYYY-MM-DD-<lane>` and attach it to the accepted Beta snapshot or per-source production run IDs, saved reports, and Meili rebuild outputs.
 - [ ] **Copy-vs-delta decision:** Choose exactly one lane: accepted Beta copy or guarded production delta. Do not mix the lanes in one promotion window.
 - [ ] **Privacy payload gate:** Sample public API payloads before promotion and confirm they exclude non-public scraped contact data, suppressed/operator-review programs, raw observations, internal review notes, and production-only usage/session data.
-- [ ] **Meili sync and rollback:** Decide whether production traffic stays on Mongo or switches to Meili after rebuild; keep `PATHWAY_SEARCH_BACKEND=mongo` as the rollback posture until production relevance review and document counts are accepted.
-- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/opportunities/:id` when a known public id is available, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
+- [ ] **Meili sync and rollback:** Rebuild the `researchentities` index after the Mongo copy and confirm the rebuilt document counts against the accepted Beta counts before opening production traffic.
+- [ ] **Smoke routes:** Assign an owner for `/api/config`, `/api/research/search`, `/research/:slug`, `/programs` or `/fellowships`, unauthenticated admin `401`, and removed legacy route checks.
 - [ ] **No recurring writes by default:** Keep production cron, compact-retention apply mode, and broad/paid source reruns disabled until the manual promotion smoke checklist passes.
 
 Required before any production copy or write:
@@ -225,9 +207,9 @@ Fill this packet before any production copy, guarded production write, Meilisear
 | Rollback owner                | Codex autonomous operator for routine gate coordination; BLOCKED for actual Atlas restore execution until a fresh restore point and tested restore procedure are recorded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Smoke owner                   | Codex autonomous operator for routine smoke coordination; BLOCKED until the smoke commands are run against the real target and results are recorded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Guarded copy dry-run reviewer | Codex autonomous operator; BLOCKED because the 2026-06-11 dry-run attempt could not start without `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`; rerun `production:promote-beta-copy --output /tmp/ylabs-lane-a-promotion-dry-run.json` after those separate targets are configured, then review the artifact before apply mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Meili backend before gate     | Mongo-backed Pathways                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Meili backend after gate      | Keep Mongo-backed Pathways until production Meili rebuild counts and relevance review are accepted                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Accepted warnings             | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; the latest strict Beta audit reports 70 active research entities without pathways, 62 without access signals, 553 without contact routes, 53 missing short descriptions, 186 weak short descriptions, and 2 synthetic/dev user emails that are excluded from Lane A copy; duplicate-name, source-health, launch-trust, and scraper-integrity promotion blockers are cleared in the latest Beta artifacts                                                                                                                                                                                                                                                                                                 |
+| Search index before gate      | `researchentities` at accepted Beta document counts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Search index after gate       | Rebuild `researchentities` and confirm document counts against the accepted Beta counts before opening traffic                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Accepted warnings             | Sparse coverage and missing/weak descriptions are accepted as hidden-row or post-promotion backlog; the latest strict Beta audit reports 62 active research entities without access signals, 53 missing short descriptions, 186 weak short descriptions, and 2 synthetic/dev user emails that are excluded from Lane A copy; duplicate-name, source-health, launch-trust, and scraper-integrity promotion blockers are cleared in the latest Beta artifacts                                                                                                                                                                                                                                                                                                                                                  |
 | Run IDs                       | Latest Beta preflight artifacts were refreshed on 2026-06-11: `launch:trust-contract --strict` wrote `/tmp/ylabs-launch-trust-final-after-dedupe.json` with `launchEligible=2291`, `limitedButSafe=0`, `held=0`, `suppressed=160`, and `publicVisibilityViolations=0`; `scraper:integrity-gate --include-samples` wrote `/tmp/ylabs-scraper-integrity-final-after-dedupe.json` with every hard count at 0; strict `beta:data-quality --include-samples` wrote `/tmp/ylabs-beta-data-quality-final-after-dedupe.json` with `promotionReady=true` and `promotionBlockerCount=0`; `student-visibility:gate --collection=all --mode=dry-run` wrote `/tmp/ylabs-student-visibility-gate-final-dryrun.json` with `changed=0`; dataset version should be `prod-promote-2026-06-11-lane-a-beta-copy` if copied today |
 | Rollback tested               | BLOCKED: restore drill/procedure not recorded or exercised                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
@@ -285,7 +267,6 @@ Integrity cleanup commands are dry-run first and Beta-only unless a production p
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --limit=10000
-SCRAPER_ENV=beta yarn --cwd server pathways:dedupe-exploratory --limit=1000
 ```
 
 Use `--apply` only after the dry-run output is reviewed and the target database is confirmed.
@@ -309,7 +290,7 @@ Gate:
 
 Minimum copy set for the accepted full Beta posture:
 
-- Research discovery: `research_entities`, `research_entity_members`, `entry_pathways`, `signals`, `contact_routes`, `posted_opportunities`, and `grants`.
+- Research discovery: `research_entities`, `research_entity_members`, `signals`, and `grants`.
 - Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows and must also be copied and audited alongside `signals`.
 - Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
 - Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
@@ -321,8 +302,8 @@ Dry-run rollback drill before using Lane A:
 1. Record the Atlas backup or point-in-time restore timestamp that would be used if the copy is rejected.
 2. Name the collections that would be restored: every copied research-discovery, source audit, and base/support collection in the accepted copy set above.
 3. Confirm who has Atlas restore permission and how they will avoid restoring unrelated operational collections unless the incident requires a full database restore.
-4. Record the Meilisearch recovery command sequence: `yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild`, `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`, then `yarn --cwd server pathway:relevance-review`.
-5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is the live rollback posture until the rebuilt Meili indexes pass review.
+4. Record the Meilisearch recovery command: `yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild`.
+5. Confirm the rebuilt `researchentities` index document count matches the restored dataset before opening traffic.
 
 #### Lane B: Guarded Production Delta
 
@@ -358,7 +339,6 @@ Rules:
 - Prefer a bounded first production pass for expensive or broad sources.
 - Run `report` immediately and inspect warnings before moving to the next source.
 - Treat Meilisearch failures as non-blocking for Mongo correctness, then reindex or batch-sync after accepted writes.
-- Keep `PATHWAY_SEARCH_BACKEND=mongo` as the Pathways rollback posture until Meili production relevance and parity are accepted.
 
 Dry-run rollback drill before using Lane B:
 
@@ -366,8 +346,7 @@ Dry-run rollback drill before using Lane B:
 2. Confirm the source can be stopped by disabling `Source.enabled` for cron or by stopping the manual rollout; do not start additional source runs until the incident is classified.
 3. Record the pre-run Atlas backup or restore point for broad bad materialization.
 4. Confirm minor field-quality issues will use manual locks or a fixed rerun only after inspection, while broad materialization problems restore from the pre-run backup.
-5. Confirm `PATHWAY_SEARCH_BACKEND=mongo` is set or remains set if Meili behavior is questionable after the delta.
-6. Record the Meilisearch recovery command sequence after any accepted restore or fixed rerun.
+5. Record the Meilisearch recovery command sequence after any accepted restore or fixed rerun.
 
 ### Meilisearch Gate
 
@@ -375,22 +354,16 @@ After accepted production copy or writes, run with production Mongo and Meili en
 
 ```bash
 SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server meili:rebuild-pathways --confirm-meili-rebuild --output /tmp/ylabs-prod-meili-pathways-rebuild.json
-SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true \
   yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild --output /tmp/ylabs-prod-meili-researchentities-rebuild.json
-SCRAPER_ENV=production \
-  yarn --cwd server pathway:relevance-review --output /tmp/ylabs-prod-pathway-relevance-review.json
 ```
 
-The pathway rebuild is mandatory after promotion because the production index must include
-the current filterable fields, including `entityStudentVisibilityTier`, before traffic can
-use Meili. Keep `PATHWAY_SEARCH_BACKEND=mongo` until the rebuild completes and
-`yarn --cwd server pathway:relevance-review` has been accepted against that production
-index. The rebuild commands write to Meili and therefore require
-`SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`; their saved artifacts include
+The rebuild is mandatory after promotion because the production `researchentities` index must
+include the current filterable fields, including `entityStudentVisibilityTier`, before browse
+traffic can use it. The rebuild command writes to Meili and therefore requires
+`SCRAPER_ENV=production` plus `CONFIRM_PROD_SCRAPE=true`; its saved artifact includes
 target `environment`, `db`, and parsed `options` metadata for promotion review.
 
-If Meili rebuild fails after Mongo writes succeeded, keep production traffic on Mongo-backed Pathways and complete the Mongo smoke checklist. Do not switch `PATHWAY_SEARCH_BACKEND=meili` until relevance review is accepted for the production index.
+If the Meili rebuild fails after Mongo writes succeeded, complete the Mongo smoke checklist and re-run the rebuild before opening browse traffic against the stale index.
 
 ### Smoke Checklist
 
@@ -400,9 +373,8 @@ Run these checks against the production app and production API after copy/delta 
 - Research search returns real `research_entities` results for broad terms such as `machine learning`, `biology`, and `history`.
 - Research relevance smoke checks cover short/noisy student queries such as `AI`, `Professor Zhong`, and `computer vision for medical imaging` without substring-only matches dominating true topic or person matches.
 - A known research detail page renders its simplified student-facing research summary, people, saved-plan action, and supported access context without legacy `/labs` or `/api/research-groups` dependencies.
-- Research detail and opportunity pages show evidence-backed planning context without exposing raw non-public scraped contact data.
-- Opportunity detail renders a listing-bridged open posting and a scraper-derived closed or historical posting.
-- Pathways and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
+- The research detail page shows evidence-backed planning context and the derived official-profile link-out without exposing raw non-public scraped contact data.
+- Research and Programs/Fellowships search require authentication when unauthenticated, and authenticated operator smoke checks show payloads without `operator_review` or `suppressed` records.
 - Unauthenticated admin/operator routes return `401`.
 - Legacy `/api/research-groups/search`, `/labs`, and `/labs/:slug` remain unavailable.
 - Source health is `0 error`; any warnings match the accepted warnings in the roadmap.
@@ -427,7 +399,7 @@ These are not automatic blockers if still accurate and accepted in the roadmap, 
 
 - `dept-faculty-roster` had reviewed non-fatal materialization conflicts.
 - Eight logged-in placeholder accounts remain for account repair, not deletion.
-- Many entities still lack public contact routes or pathways; this is sparse coverage, not broken referential integrity.
+- Many entities still lack public access signals; this is sparse coverage, not broken referential integrity.
 - Local Meili may lack the semantic `default` embedder; production Meili must be checked independently.
 - Browser smoke may require host libraries that are missing in some local workspaces; if Playwright cannot run locally, use production API smokes plus a browser from an environment with the required libraries.
 
@@ -446,7 +418,7 @@ After a successful gate, update [`docs/tasks/priority-roadmap.md`](./tasks/prior
 - Backup or restore-point identifier, without secrets.
 - Collections or sources promoted.
 - Production run IDs and saved report locations.
-- Meili rebuild/sync outcome and active Pathways backend.
+- Meili rebuild/sync outcome and `researchentities` document count.
 - Smoke checklist outcome.
 - Rollback posture and any accepted warnings.
 
@@ -556,7 +528,7 @@ Beta retention requires a new target-bound dry-run, the same restore-boundary re
 Never reuse Development candidate counts or an old Beta artifact.
 
 The retention command deletes only old `superseded: true` observations that are not referenced by durable materialized records.
-It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, pathways, access signals, contact routes, posted opportunities, logistics claims, or supersession links.
+It always preserves active observations, recent observations inside the age window, observations attached to the latest retained runs per source, and observations referenced by provenance, access signals, logistics claims, or supersession links.
 Use `--output <path>` on dry-runs and apply runs so the private promotion packet has eligible, protected, candidate, deleted, and retained-run counts plus command, target `environment`, `db`, and parsed `options`.
 
 Production retention stays disabled.
@@ -658,11 +630,10 @@ If a production run is bad:
 
 1. Disable the scheduled job or stop the manual rollout.
 2. Do not run more sources on top of questionable materialized data.
-3. Set `PATHWAY_SEARCH_BACKEND=mongo` if Pathways Meili behavior is questionable.
-4. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
-5. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
-6. Rebuild or resync Meilisearch after restoring MongoDB.
-7. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
+3. For minor field-quality issues, use manual locks or a fixed rerun after inspection.
+4. For a bad Beta copy or broad bad materialization, restore from the pre-run Atlas backup.
+5. Rebuild or resync Meilisearch after restoring MongoDB.
+6. Record the rollback and follow-up decision in [`docs/tasks/priority-roadmap.md`](./tasks/priority-roadmap.md).
 
 For a bad undergraduate logistics acquisition run, first generate a claim-local dry-run plan:
 

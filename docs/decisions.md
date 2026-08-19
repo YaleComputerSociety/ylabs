@@ -4,6 +4,12 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-19: Remove EntryPathway, ContactRoute, And PostedOpportunity
+
+The `EntryPathway`, `ContactRoute`, and `PostedOpportunity` models and the separate pathway search index were removed in issue #363, superseding the earlier 2026-05-11 and 2026-05-07 decisions.
+Access evidence is now materialized only as typed `Signal` rows, browse/discovery runs on the `researchentities` Meilisearch index with `Signal` driving the trust filter, and contact is a derived official-profile link-out rather than a stored contact route.
+See [`research-model-refactor.md`](./research-model-refactor.md) for the authoritative model.
+
 ## 2026-08-02: Make Research Coverage Source-Driven
 
 Yale Research does not host faculty-authored lab or opportunity submissions.
