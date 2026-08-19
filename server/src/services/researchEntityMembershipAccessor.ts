@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
-import { Person, type PersonDisplayProfile } from '../models/person';
+import { Researcher, type ResearcherDisplayProfile } from '../models/researcher';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -62,7 +62,11 @@ const normalizeEntityObjectId = (value: unknown): mongoose.Types.ObjectId | null
 interface RosterEntryBuildContext {
   peopleById: Map<
     string,
-    { displayName?: string; accountId?: mongoose.Types.ObjectId; profile?: PersonDisplayProfile }
+    {
+      displayName?: string;
+      accountId?: mongoose.Types.ObjectId;
+      profile?: ResearcherDisplayProfile;
+    }
   >;
   accountsById: Map<string, { netid?: string; email?: string }>;
 }
@@ -128,14 +132,18 @@ export async function getResearchEntityRosterByEntityId(
 
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
-    ? await Person.find({ _id: { $in: personIds }, archived: { $ne: true } })
+    ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
         .select('_id displayName accountId profile')
         .lean()
     : [];
 
   const peopleById = new Map<
     string,
-    { displayName?: string; accountId?: mongoose.Types.ObjectId; profile?: PersonDisplayProfile }
+    {
+      displayName?: string;
+      accountId?: mongoose.Types.ObjectId;
+      profile?: ResearcherDisplayProfile;
+    }
   >(people.map((person: any) => [person._id.toString(), person]));
 
   const accountIds = uniqueObjectIds(people.map((person: any) => person.accountId));

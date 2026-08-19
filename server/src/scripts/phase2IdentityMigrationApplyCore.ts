@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import type { AccountRecord } from '../models/account';
-import type { PersonRecord } from '../models/person';
+import type { ResearcherRecord } from '../models/researcher';
 import type { RoleAssignmentRecord } from '../models/roleAssignment';
 import {
   parsePhase0SummaryOnlyEnvironment,
@@ -113,7 +113,14 @@ export function parsePhase2IdentityMigrationApplyArgs(
       '--environment requires development, beta, or production-copy; Production is never allowed',
     );
   }
-  return { environment, apply, confirm, documentLimit, quarantineLimit, ...(output ? { output } : {}) };
+  return {
+    environment,
+    apply,
+    confirm,
+    documentLimit,
+    quarantineLimit,
+    ...(output ? { output } : {}),
+  };
 }
 
 export function assertPhase2IdentityMigrationApplyAllowed(args: {
@@ -140,7 +147,7 @@ export interface CanonicalPersonDocument {
   _id: mongoose.Types.ObjectId;
   displayName: string;
   accountId?: mongoose.Types.ObjectId;
-  profileLinks: PersonRecord['profileLinks'];
+  profileLinks: ResearcherRecord['profileLinks'];
   archived: boolean;
 }
 

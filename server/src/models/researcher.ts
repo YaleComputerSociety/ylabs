@@ -4,57 +4,61 @@ import {
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
 
-export const personSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
+export const researcherSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
-export const personProfileLinkKinds = [
+export const researcherProfileLinkKinds = [
   'YALE_OFFICIAL',
   'LAB_ABOUT',
   'PERSONAL_ACADEMIC',
   'GOOGLE_SCHOLAR',
   'ORCID',
 ] as const;
-export type PersonProfileLinkKind = (typeof personProfileLinkKinds)[number];
+export type ResearcherProfileLinkKind = (typeof researcherProfileLinkKinds)[number];
 
-export const personProfileLinkPurposes = ['PRIMARY_IDENTITY', 'SCHOLARLY'] as const;
-export type PersonProfileLinkPurpose = (typeof personProfileLinkPurposes)[number];
+export const researcherProfileLinkPurposes = ['PRIMARY_IDENTITY', 'SCHOLARLY'] as const;
+export type ResearcherProfileLinkPurpose = (typeof researcherProfileLinkPurposes)[number];
 
-export const personProfileLinkHealthStatuses = ['HEALTHY', 'UNAVAILABLE', 'UNKNOWN'] as const;
-export type PersonProfileLinkHealthStatus = (typeof personProfileLinkHealthStatuses)[number];
+export const researcherProfileLinkHealthStatuses = ['HEALTHY', 'UNAVAILABLE', 'UNKNOWN'] as const;
+export type ResearcherProfileLinkHealthStatus =
+  (typeof researcherProfileLinkHealthStatuses)[number];
 
-export interface PersonProfileLink {
-  kind: PersonProfileLinkKind;
-  purpose: PersonProfileLinkPurpose;
+export interface ResearcherProfileLink {
+  kind: ResearcherProfileLinkKind;
+  purpose: ResearcherProfileLinkPurpose;
   url: string;
   verifiedAt: Date;
-  healthStatus: PersonProfileLinkHealthStatus;
+  healthStatus: ResearcherProfileLinkHealthStatus;
 }
 
-export const personStatuses = ['ACTIVE', 'DEPARTED', 'UNKNOWN'] as const;
-export type PersonStatus = (typeof personStatuses)[number];
+export const researcherStatuses = ['ACTIVE', 'DEPARTED', 'UNKNOWN'] as const;
+export type ResearcherStatus = (typeof researcherStatuses)[number];
 
-export interface PersonIdentifiers {
+export interface ResearcherIdentifiers {
   orcid?: string;
 }
 
-export interface PersonDisplayProfile {
+export interface ResearcherDisplayProfile {
   title?: string;
   primaryDepartment?: string;
   imageUrl?: string;
   websiteUrl?: string;
 }
 
-export interface PersonRecord {
+export interface ResearcherRecord {
   schemaVersion: number;
   displayName: string;
   accountId?: mongoose.Types.ObjectId;
-  profileLinks: PersonProfileLink[];
-  identifiers?: PersonIdentifiers;
-  profile?: PersonDisplayProfile;
-  status: PersonStatus;
+  profileLinks: ResearcherProfileLink[];
+  identifiers?: ResearcherIdentifiers;
+  profile?: ResearcherDisplayProfile;
+  status: ResearcherStatus;
   archived: boolean;
 }
 
-const PROFILE_LINK_PURPOSE_BY_KIND: Record<PersonProfileLinkKind, PersonProfileLinkPurpose> = {
+const PROFILE_LINK_PURPOSE_BY_KIND: Record<
+  ResearcherProfileLinkKind,
+  ResearcherProfileLinkPurpose
+> = {
   YALE_OFFICIAL: 'PRIMARY_IDENTITY',
   LAB_ABOUT: 'PRIMARY_IDENTITY',
   PERSONAL_ACADEMIC: 'PRIMARY_IDENTITY',
@@ -94,7 +98,7 @@ function orcidFromUrl(url: URL): string | undefined {
   return match[1];
 }
 
-function isVerifiedProfileUrl(kind: PersonProfileLinkKind, value: string): boolean {
+function isVerifiedProfileUrl(kind: ResearcherProfileLinkKind, value: string): boolean {
   const url = parseHttpsUrl(value);
   if (!url || url.username || url.password) return false;
 
@@ -116,21 +120,21 @@ function isVerifiedProfileUrl(kind: PersonProfileLinkKind, value: string): boole
   return true;
 }
 
-export const personProfileLinkSchema = new mongoose.Schema<PersonProfileLink>(
+export const researcherProfileLinkSchema = new mongoose.Schema<ResearcherProfileLink>(
   {
     kind: {
       type: String,
-      enum: [...personProfileLinkKinds],
+      enum: [...researcherProfileLinkKinds],
       required: true,
     },
     purpose: {
       type: String,
-      enum: [...personProfileLinkPurposes],
+      enum: [...researcherProfileLinkPurposes],
       required: true,
       validate: {
         validator: function (
-          this: { kind?: PersonProfileLinkKind },
-          value: PersonProfileLinkPurpose,
+          this: { kind?: ResearcherProfileLinkKind },
+          value: ResearcherProfileLinkPurpose,
         ) {
           return this.kind !== undefined && PROFILE_LINK_PURPOSE_BY_KIND[this.kind] === value;
         },
@@ -143,7 +147,7 @@ export const personProfileLinkSchema = new mongoose.Schema<PersonProfileLink>(
       trim: true,
       maxlength: 2048,
       validate: {
-        validator: function (this: { kind?: PersonProfileLinkKind }, value: string) {
+        validator: function (this: { kind?: ResearcherProfileLinkKind }, value: string) {
           return this.kind !== undefined && isVerifiedProfileUrl(this.kind, value);
         },
         message: 'Profile link URL is not valid for its verified kind.',
@@ -159,7 +163,7 @@ export const personProfileLinkSchema = new mongoose.Schema<PersonProfileLink>(
     },
     healthStatus: {
       type: String,
-      enum: [...personProfileLinkHealthStatuses],
+      enum: [...researcherProfileLinkHealthStatuses],
       default: 'UNKNOWN',
     },
   },
@@ -168,7 +172,7 @@ export const personProfileLinkSchema = new mongoose.Schema<PersonProfileLink>(
   },
 );
 
-export const personIdentifiersSchema = new mongoose.Schema<PersonIdentifiers>(
+export const researcherIdentifiersSchema = new mongoose.Schema<ResearcherIdentifiers>(
   {
     orcid: {
       type: String,
@@ -186,16 +190,16 @@ export const personIdentifiersSchema = new mongoose.Schema<PersonIdentifiers>(
   },
 );
 
-function hasBoundedUniqueProfileKinds(values: readonly PersonProfileLink[]): boolean {
+function hasBoundedUniqueProfileKinds(values: readonly ResearcherProfileLink[]): boolean {
   return (
-    values.length <= personProfileLinkKinds.length &&
+    values.length <= researcherProfileLinkKinds.length &&
     new Set(values.map(({ kind }) => kind)).size === values.length
   );
 }
 
 function orcidProfileMatchesIdentifier(
   this: { identifiers?: { orcid?: string } },
-  values: readonly PersonProfileLink[],
+  values: readonly ResearcherProfileLink[],
 ): boolean {
   const link = values.find(({ kind }) => kind === 'ORCID');
   if (!link) return true;
@@ -209,7 +213,7 @@ function orcidProfileMatchesIdentifier(
   );
 }
 
-export const personDisplayProfileSchema = new mongoose.Schema<PersonDisplayProfile>(
+export const researcherDisplayProfileSchema = new mongoose.Schema<ResearcherDisplayProfile>(
   {
     title: { type: String, trim: true, maxlength: 240 },
     primaryDepartment: { type: String, trim: true, maxlength: 240 },
@@ -221,9 +225,9 @@ export const personDisplayProfileSchema = new mongoose.Schema<PersonDisplayProfi
   },
 );
 
-export const personSchema = new mongoose.Schema<PersonRecord>(
+export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
   {
-    schemaVersion: canonicalSchemaVersionField(personSchemaVersion),
+    schemaVersion: canonicalSchemaVersionField(researcherSchemaVersion),
     displayName: {
       type: String,
       required: true,
@@ -237,7 +241,7 @@ export const personSchema = new mongoose.Schema<PersonRecord>(
       required: false,
     },
     profileLinks: {
-      type: [personProfileLinkSchema],
+      type: [researcherProfileLinkSchema],
       default: [],
       validate: [
         {
@@ -251,16 +255,16 @@ export const personSchema = new mongoose.Schema<PersonRecord>(
       ],
     },
     identifiers: {
-      type: personIdentifiersSchema,
+      type: researcherIdentifiersSchema,
       default: undefined,
     },
     profile: {
-      type: personDisplayProfileSchema,
+      type: researcherDisplayProfileSchema,
       default: undefined,
     },
     status: {
       type: String,
-      enum: [...personStatuses],
+      enum: [...researcherStatuses],
       default: 'UNKNOWN',
     },
     archived: {
@@ -273,9 +277,10 @@ export const personSchema = new mongoose.Schema<PersonRecord>(
   },
 );
 
-personSchema.index({ accountId: 1 }, { unique: true, sparse: true });
-personSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true });
-personSchema.index({ displayName: 1, status: 1, archived: 1 });
+researcherSchema.index({ accountId: 1 }, { unique: true, sparse: true });
+researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true });
+researcherSchema.index({ displayName: 1, status: 1, archived: 1 });
 
-export const Person =
-  mongoose.models.Person || mongoose.model<PersonRecord>('Person', personSchema, 'people');
+export const Researcher =
+  mongoose.models.Researcher ||
+  mongoose.model<ResearcherRecord>('Researcher', researcherSchema, 'researchers');

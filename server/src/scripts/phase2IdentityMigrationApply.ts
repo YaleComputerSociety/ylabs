@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Account } from '../models/account';
-import { Person } from '../models/person';
+import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
   assertOperatorEnvironmentMatchesDatabase,
@@ -122,14 +122,14 @@ export async function replaceCanonicalIdentityCollections(
   documents: CanonicalWriteDocuments,
 ): Promise<{ accounts: number; people: number; roleAssignments: number }> {
   await RoleAssignment.deleteMany({});
-  await Person.deleteMany({});
+  await Researcher.deleteMany({});
   await Account.deleteMany({});
 
   const accounts = documents.accounts.length
     ? await Account.insertMany(documents.accounts, { ordered: true })
     : [];
   const people = documents.people.length
-    ? await Person.insertMany(documents.people, { ordered: true })
+    ? await Researcher.insertMany(documents.people, { ordered: true })
     : [];
   const roleAssignments = documents.roleAssignments.length
     ? await RoleAssignment.insertMany(documents.roleAssignments, { ordered: true })
@@ -251,9 +251,7 @@ async function main(): Promise<void> {
   await runPhase2IdentityMigrationApply(args, mongoUrl);
 }
 
-const isDirectRun = process.argv[1]
-  ? path.resolve(process.argv[1]) === __filename
-  : false;
+const isDirectRun = process.argv[1] ? path.resolve(process.argv[1]) === __filename : false;
 
 if (isDirectRun) {
   main().catch((error) => {

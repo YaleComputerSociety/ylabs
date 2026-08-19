@@ -5,10 +5,10 @@ import {
 } from '../models/evidencePredicateRegistry';
 import {
   isValidOrcid,
-  personProfileLinkKinds,
-  type PersonProfileLinkKind,
-  type PersonProfileLinkPurpose,
-} from '../models/person';
+  researcherProfileLinkKinds,
+  type ResearcherProfileLinkKind,
+  type ResearcherProfileLinkPurpose,
+} from '../models/researcher';
 import { roleAssignmentRoles, type RoleAssignmentRole } from '../models/roleAssignment';
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -41,13 +41,16 @@ export const researchEntityDiscoveryRecomputeTriggers = [
   'SCHEDULED_RECONCILIATION',
 ] as const;
 
-const PRIMARY_PROFILE_PRECEDENCE: readonly PersonProfileLinkKind[] = [
+const PRIMARY_PROFILE_PRECEDENCE: readonly ResearcherProfileLinkKind[] = [
   'YALE_OFFICIAL',
   'LAB_ABOUT',
   'PERSONAL_ACADEMIC',
 ];
-const RESEARCH_PROFILE_PRECEDENCE: readonly PersonProfileLinkKind[] = ['GOOGLE_SCHOLAR', 'ORCID'];
-const PROFILE_LABELS: Record<PersonProfileLinkKind, string> = {
+const RESEARCH_PROFILE_PRECEDENCE: readonly ResearcherProfileLinkKind[] = [
+  'GOOGLE_SCHOLAR',
+  'ORCID',
+];
+const PROFILE_LABELS: Record<ResearcherProfileLinkKind, string> = {
   YALE_OFFICIAL: 'Yale profile',
   LAB_ABOUT: 'Lab profile',
   PERSONAL_ACADEMIC: 'Academic profile',
@@ -56,7 +59,7 @@ const PROFILE_LABELS: Record<PersonProfileLinkKind, string> = {
 };
 
 export interface PublicPersonProfileDto {
-  kind: PersonProfileLinkKind;
+  kind: ResearcherProfileLinkKind;
   label: string;
   url: string;
 }
@@ -137,7 +140,7 @@ function validDate(value: unknown, now?: Date): Date | undefined {
   return date;
 }
 
-function canonicalProfileUrl(kind: PersonProfileLinkKind, value: unknown): string | undefined {
+function canonicalProfileUrl(kind: ResearcherProfileLinkKind, value: unknown): string | undefined {
   const url = publicHttpUrl(value);
   if (!url || !url.startsWith('https://')) return undefined;
   const parsed = new URL(url);
@@ -172,13 +175,13 @@ function canonicalProfileUrl(kind: PersonProfileLinkKind, value: unknown): strin
 
 function publicProfileLink(
   value: unknown,
-  expectedPurpose: PersonProfileLinkPurpose,
+  expectedPurpose: ResearcherProfileLinkPurpose,
   now: Date,
 ): PublicPersonProfileDto | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const link = value as Record<string, unknown>;
   if (
-    !personProfileLinkKinds.includes(link.kind as PersonProfileLinkKind) ||
+    !researcherProfileLinkKinds.includes(link.kind as ResearcherProfileLinkKind) ||
     link.purpose !== expectedPurpose ||
     (link.healthStatus !== 'HEALTHY' && link.healthStatus !== 'UNKNOWN') ||
     !validDate(link.verifiedAt, now)
@@ -186,7 +189,7 @@ function publicProfileLink(
     return undefined;
   }
 
-  const kind = link.kind as PersonProfileLinkKind;
+  const kind = link.kind as ResearcherProfileLinkKind;
   const url = canonicalProfileUrl(kind, link.url);
   if (!url) return undefined;
   return {
@@ -197,7 +200,7 @@ function publicProfileLink(
 }
 
 /**
- * Projects the only supported public Person shape.
+ * Projects the only supported public Researcher shape.
  *
  * ACTIVE people may render directly.
  * UNKNOWN people require a current approved role as corroboration.
@@ -221,7 +224,7 @@ export function toPublicPersonDto(
 
   const now = options.now ?? new Date();
   const links = Array.isArray(person.profileLinks)
-    ? person.profileLinks.slice(0, personProfileLinkKinds.length)
+    ? person.profileLinks.slice(0, researcherProfileLinkKinds.length)
     : [];
   const primaryProfile = PRIMARY_PROFILE_PRECEDENCE.flatMap((kind) => {
     const candidate = links.find(

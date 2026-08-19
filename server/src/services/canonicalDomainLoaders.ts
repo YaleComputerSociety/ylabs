@@ -12,11 +12,11 @@ import {
   type OrgUnitStatus,
 } from '../models/orgUnit';
 import {
-  Person,
-  personSchemaVersion,
-  type PersonProfileLink,
-  type PersonStatus,
-} from '../models/person';
+  Researcher,
+  researcherSchemaVersion,
+  type ResearcherProfileLink,
+  type ResearcherStatus,
+} from '../models/researcher';
 import {
   RESEARCH_PLAN_SCHEMA_VERSION,
   ResearchPlan,
@@ -63,8 +63,8 @@ export interface CanonicalPublicPersonRecord extends CanonicalRecord {
   _id: mongoose.Types.ObjectId;
   schemaVersion: number;
   displayName: string;
-  profileLinks: PersonProfileLink[];
-  status: PersonStatus;
+  profileLinks: ResearcherProfileLink[];
+  status: ResearcherStatus;
   archived: false;
 }
 
@@ -157,7 +157,7 @@ export interface CanonicalReadModel {
 export interface CanonicalReadModels {
   EvidenceClaim: CanonicalReadModel;
   OrgUnit: CanonicalReadModel;
-  Person: CanonicalReadModel;
+  Researcher: CanonicalReadModel;
   ResearchPlan: CanonicalReadModel;
   RoleAssignment: CanonicalReadModel;
   TaxonomyTerm: CanonicalReadModel;
@@ -194,7 +194,7 @@ export class CanonicalReadAuthorizationError extends Error {
 const DEFAULT_MODELS: CanonicalReadModels = {
   EvidenceClaim: EvidenceClaim as unknown as CanonicalReadModel,
   OrgUnit: OrgUnit as unknown as CanonicalReadModel,
-  Person: Person as unknown as CanonicalReadModel,
+  Researcher: Researcher as unknown as CanonicalReadModel,
   ResearchPlan: ResearchPlan as unknown as CanonicalReadModel,
   RoleAssignment: RoleAssignment as unknown as CanonicalReadModel,
   TaxonomyTerm: TaxonomyTerm as unknown as CanonicalReadModel,
@@ -320,10 +320,10 @@ export function createCanonicalDomainLoaders(models: CanonicalReadModels = DEFAU
       const ids = boundedObjectIds(values, 'person ids');
       if (ids.length === 0) return [];
       return findRecords({
-        model: models.Person,
+        model: models.Researcher,
         filter: {
           _id: { $in: ids },
-          schemaVersion: { $in: personSchemaVersion.supportedVersions },
+          schemaVersion: { $in: researcherSchemaVersion.supportedVersions },
           archived: false,
           status: { $in: ['ACTIVE', 'UNKNOWN'] },
         },

@@ -75,5 +75,5 @@ The official-profile publication producer and materializer retirement contract, 
 Follow `docs/scraper-deployment-runbook.md` for rollback flag handling and historical-run audit safety.
 The launch-trust gate no longer enforces paper-quality or research-activity checks.
 Historical source rows and observations, `paperAuthorshipPolicy.ts`, the guarded materializer, rollback audits, and stored paper/scholarly collections remain temporarily available for rollback.
-Verified Google Scholar and ORCID identity links stay on `Person`.
+Verified Google Scholar and ORCID identity links stay on `Researcher`.
 Readers, storage, and remaining references are removed incrementally under issue #207 (Phase 3); see `docs/research-model-refactor.md`.

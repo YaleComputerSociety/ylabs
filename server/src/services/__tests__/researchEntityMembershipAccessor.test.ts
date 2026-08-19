@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Account } from '../../models/account';
-import { Person } from '../../models/person';
+import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { getResearchEntityRoster } from '../researchEntityMembershipAccessor';
 
@@ -22,7 +22,7 @@ describe('getResearchEntityRoster display profile projection', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['accounts', 'people', 'role_assignments']) {
+    for (const name of ['accounts', 'researchers', 'role_assignments']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -38,7 +38,7 @@ describe('getResearchEntityRoster display profile projection', () => {
       status: 'ACTIVE',
       archived: false,
     });
-    const person = await Person.create({
+    const person = await Researcher.create({
       displayName: `Person ${netid}`,
       accountId: account._id,
       profileLinks: [],
