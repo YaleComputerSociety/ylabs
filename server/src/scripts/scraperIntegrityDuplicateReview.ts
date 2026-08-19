@@ -235,23 +235,33 @@ async function loadDuplicateAccessSignalReviewGroups(
     'sourceEvidenceId',
     'observationId',
   ];
+  const identityFieldPath: Record<DuplicateAccessSignalGroup['identityField'], string> = {
+    derivationKey: 'derivationKey',
+    sourceEvidenceId: 'source.evidenceIds',
+    observationId: 'source.evidenceIds',
+  };
   const groups: DuplicateAccessSignalGroup[] = [];
 
   for (const field of fields) {
+    const fieldPath = identityFieldPath[field];
+    const identityExpr =
+      field === 'derivationKey'
+        ? { $toString: `$${fieldPath}` }
+        : { $toString: { $arrayElemAt: [`$${fieldPath}`, 0] } };
     const rows = await Signal.aggregate([
       {
         $match: {
           archived: { $ne: true },
           researchEntityId: { $exists: true, $ne: null },
           type: { $in: [...accessSignalTypes] },
-          [field]: { $exists: true, $ne: null },
+          [fieldPath]: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
           researchEntityId: { $toString: '$researchEntityId' },
           signalType: '$type',
-          identityValue: { $toString: `$${field}` },
+          identityValue: identityExpr,
           signalId: { $toString: '$_id' },
         },
       },
