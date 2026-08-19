@@ -64,7 +64,7 @@ admin authority.
 
 Do not embed every pathway, signal, posted opportunity, logistics claim, and contact route directly inside `ResearchEntity` long term.
 That will become query-heavy as students filter across plausible homes, access evidence, funding or pay possibilities, summer timing, beginner-friendly paths, thesis fit, Python/coding, archival work, open deadlines, and similar constraints.
-Prefer first-class collections for `EntryPathway`, `PostedOpportunity`, `AccessSignal`, `UndergraduateLogisticsClaim`, and `ContactRoute`.
+Prefer first-class collections for `EntryPathway`, `PostedOpportunity`, `Signal`, and `ContactRoute`.
 Treat course credit as a formalization option after a student has identified a research home, not as an entry pathway by itself.
 
 External researcher identity note: accepted operator inputs should prefer ORCID over Yale netid. ORCID may enrich or disambiguate an existing Yale-confirmed `User`, including `User.orcid` and manually accepted `User.googleScholarId`, but ORCID must not create a Yale person record by itself. Netid remains an internal account/scraper compatibility key and should appear only as diagnostic or converted internal target data in accepted-input workflows.
@@ -260,7 +260,7 @@ Only use `PostedOpportunity` when there is a real active, rolling, or archived i
 `PostedOpportunity` is a separate collection that belongs to an `EntryPathway` and may reference an existing legacy `Listing` through optional `listingId`.
 Legacy listing reads, outreach, claims, and view tracking remain as authenticated compatibility routes, but listing authoring is retired.
 
-Listing bridge note: legacy `Listing` rows with a `researchGroupId` now materialize into a `POSTED_ROLE` `EntryPathway`, `POSTED_OPENING` `AccessSignal`, and linked `PostedOpportunity`. Open listings with future deadlines become `OPEN`, listings without deadlines become `ROLLING`, expired/unconfirmed listings become `CLOSED`, and archived/deleted listings become `ARCHIVED`. Existing rows can be backfilled with [`server/src/scripts/backfillPostedOpportunitiesFromListings.ts`](../server/src/scripts/backfillPostedOpportunitiesFromListings.ts).
+Listing bridge note: legacy `Listing` rows with a `researchGroupId` now materialize into a `POSTED_ROLE` `EntryPathway`, `POSTED_OPENING` `Signal`, and linked `PostedOpportunity`. Open listings with future deadlines become `OPEN`, listings without deadlines become `ROLLING`, expired/unconfirmed listings become `CLOSED`, and archived/deleted listings become `ARCHIVED`. Existing rows can be backfilled with [`server/src/scripts/backfillPostedOpportunitiesFromListings.ts`](../server/src/scripts/backfillPostedOpportunitiesFromListings.ts).
 
 Yale Research does not host faculty-authored labs or opportunities.
 Posted opportunities and official application routes enter the product through source-backed ingestion, and the public opportunity API is read-only.
@@ -279,7 +279,7 @@ Current behavior:
 - Student-facing browse status should count matching research homes and people without exposing a separate ways-in count.
 - Join host `ResearchGroup` data as the current physical `ResearchEntity` backing.
 - Join active/rolling `PostedOpportunity` rows only when a real posted instance exists.
-- Join a small number of supporting `AccessSignal` rows as Evidence.
+- Join a small number of supporting access `Signal` rows as Evidence.
 - Return only guarded public contact-route summaries; do not expose non-public scraped emails.
 
 The same contact guardrail applies to public research detail payloads: unauthenticated/public detail responses should include only public route summaries and should not expose authenticated or admin-only scraped contact data.
@@ -333,11 +333,13 @@ Official Yale fellowship detail pages may also supply a source-backed `researchF
 Public match payloads may expose source URLs, application route flags, deadline status, and contact office, but should not expose direct contact emails without a guarded contact-route policy.
 Standalone fellowship rows usually support funding/formalization matches, not entry pathways; structured mentor-matching fellowship programs can support pathways or posted opportunities when the source describes a hosted application into the program.
 
-## AccessSignal
+## Access Signals
 
-Evidence-backed signal about undergraduate access.
+Undergraduate-access evidence is now stored as `Signal` rows in the `signals` collection; the standalone `AccessSignal` model was folded into the unified `Signal` model.
+Each former `AccessSignal` `signalType` (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is now its own `Signal.type`, and the `HIGH`/`MEDIUM`/`LOW` `confidence` plus `confidenceScore` gradient is preserved because it drives the browse trust-filter.
+See the [`Signal`](./research-model-refactor.md#signal-signals) coverage in the ratified refactor document for the authoritative field shape.
 
-Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive `AccessSignal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
+Scrapers should not directly assert product conclusions as final truth. They should emit append-only observations/source evidence, then resolver/materializer logic should derive access `Signal`s. This keeps the raw evidence stable and lets signal logic evolve without rewriting scrape history. Avoid overconfident claims like `acceptingUndergrads: true`.
 
 Operational retention note: observations remain append-only within a scraper run, but old unreferenced superseded observations may be pruned by the compact-retention command after reports are captured.
 Active observations, recent observations, observations from the latest retained runs per source, supersession links, and observations referenced by durable materialized or rollback records remain available for audit and materialization.
@@ -360,21 +362,6 @@ Signal examples:
 - no evidence yet
 - not currently available
 
-Suggested fields:
-
-```ts
-AccessSignal {
-  id: string;
-  researchEntityId: string;
-  entryPathwayId?: string;
-  signalType: AccessSignalType;
-  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  sourceEvidenceId: string;
-  observedAt: Date;
-  excerpt?: string;
-}
-```
-
 Absence of evidence should usually be computed from missing signals, not stored as many `NO_EVIDENCE` records. Store negative signals only when a source explicitly states a limitation, such as application-only, not accepting students, or not currently available.
 
 Initial materialization in [`server/src/scrapers/accessMaterializer.ts`](../server/src/scrapers/accessMaterializer.ts) derives first-class access records from raw `Observation` rows using the original observation confidence and source metadata. Independent-study and course-credit evidence now supports `CREDIT_FORMALIZATION_POSSIBLE` signals or best-next-step hints after home/mentor fit, not standalone `EntryPathway` rows. Current undergraduate counts can support `CURRENT_UNDERGRADS` plus `EXPLORATORY_CONTACT`; past undergraduate advisees can support `PAST_UNDERGRADS`, `FELLOWSHIP_COMPATIBLE`, exploratory outreach, and thesis/advising fit. Fellowship funding remains a formalization/funding-planning cue unless a real hosted program or posted opportunity exists. Contact fields can support guarded `ContactRoute` records. Entity-discovery sources such as `ysm-atoz-index` and `yse-centers-index` should not emit undergraduate-access booleans; legacy observations from those sources are ignored for access derivation unless a more explicit undergraduate evidence observation exists.
@@ -383,30 +370,32 @@ Course-credit evidence is formalization-specific, not entry-specific. The Course
 
 Lab-microsite LLM evidence is now shaped as observations first. It may emit `undergradAccessEvidence`, `joinPageUrl`, `undergradRoleEvidenceQuote`, `contactInstructionsQuote`, and `undergradConstraintQuote`, while keeping legacy `acceptingUndergrads` only for compatibility. `accessMaterializer.ts` derives `REACH_OUT_PLAUSIBLE`, `APPLICATION_FORM_EXISTS`, `CONTACT_INSTRUCTIONS_EXIST`, `NOT_CURRENTLY_AVAILABLE`, and guarded official application routes from those evidence observations.
 
-Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `AccessSignal.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
+Public access excerpts should redact direct contact details. The scraper may keep raw structured evidence for audit, but materialized public quote fields and `Signal.source.excerpt` values should replace scraped emails and phone numbers before they reach student-facing payloads.
 
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
 Historical source rows and observations, the guarded materializer, rollback audits, and stored paper and scholarly collections remain temporarily available for an explicit rollback under issue #207.
 See [Retire The Bibliographic Paper Pipeline](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) for the authoritative product decision and [Publication and Professor-Profile Decision](./research-model-refactor.md#publication-and-professor-profile-decision) for the target model.
 
-## UndergraduateLogisticsClaim
+## Undergraduate Logistics
 
-`UndergraduateLogisticsClaim` stores one independently supported logistics claim for one research entity in `undergraduate_logistics_claims`.
-The supported claim types are student level, compensation or credit, time commitment, modality, and current availability.
-Each known claim requires a validated official public source URL, an exact supporting excerpt, observation time, expiry time, and source-run lineage.
+Logistics evidence is now stored as `Signal` rows in the `signals` collection; the standalone `UndergraduateLogisticsClaim` model was folded into the unified `Signal` model.
+Each former claim type (`STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY`, `CURRENT_AVAILABILITY`) is now its own `Signal.type` carrying a `status` and a structured `value`.
+See the [`Signal`](./research-model-refactor.md#signal-signals) coverage in the ratified refactor document for the authoritative field shape.
+
+Each known logistics `Signal` requires a validated official public source URL, an exact supporting excerpt, observation time, expiry time, and source-run lineage.
 The logistics materializer does not use confidence to choose a winner.
-Matching fresh observations may reinforce a claim, distinct fresh values produce `CONFLICTING_WITHHELD`, and evidence that has exceeded its claim-specific freshness window produces `STALE_UNDER_REVIEW`.
+Matching fresh observations may reinforce a logistics signal, distinct fresh values produce `CONFLICTING_WITHHELD`, and evidence that has exceeded its type-specific freshness window produces `STALE_UNDER_REVIEW`.
 Missing observations archive an old materialized row and the public DTO computes a neutral `unknown` state instead of a negative answer.
 An explicit source-backed negative such as `NOT_CURRENTLY_AVAILABLE` remains a known value until its short availability freshness window expires.
-Public payloads expose only the allowlisted value and public evidence for known claims.
+Public payloads expose only the allowlisted value and public evidence for known logistics signals.
 They never expose observation identifiers, scrape-run identifiers, internal source names, confidence, or direct contact data.
 
 ## Source Coverage Metadata
 
 `Source` rows can include optional `coverage` metadata seeded from [`server/src/scrapers/sourceCoverageRegistry.ts`](../server/src/scrapers/sourceCoverageRegistry.ts). Coverage records declare the source priority, source tier, artifact types a source can support, evidence categories it targets, default confidence stance, and planning notes.
 
-This metadata is a planning and review contract, not a substitute for evidence. A source that can emit `Observation` rows should not be treated as access evidence unless the materializer maps specific observations into `EntryPathway`, `AccessSignal`, `ContactRoute`, or `PostedOpportunity` rows. Discovery-only sources such as YSM/YSE indexes remain entity discovery inputs unless explicit undergraduate-access evidence is present.
+This metadata is a planning and review contract, not a substitute for evidence. A source that can emit `Observation` rows should not be treated as access evidence unless the materializer maps specific observations into `EntryPathway`, `Signal`, `ContactRoute`, or `PostedOpportunity` rows. Discovery-only sources such as YSM/YSE indexes remain entity discovery inputs unless explicit undergraduate-access evidence is present.
 
 ## Researcher Identity Signals
 
@@ -547,7 +536,7 @@ Use the unified Yale Research surface as the primary student-facing experience. 
 ## Migration Guidance
 
 1. Treat `/research` and `/opportunities/:id` as the canonical student-facing research routes.
-2. Use `ResearchEntity`, `EntryPathway`, `AccessSignal`, `ContactRoute`, and `PostedOpportunity` for new runtime work.
+2. Use `ResearchEntity`, `EntryPathway`, `Signal`, `ContactRoute`, and `PostedOpportunity` for new runtime work.
 3. Keep remaining `ResearchGroup`, `lab`, and `researchGroupId` naming as migration residue unless a file is explicitly part of rollback or compatibility support.
 4. Add explicit `PostedOpportunity` records only for real openings, deadlines, rolling applications, or archived postings.
 5. Teach scrapers to emit source evidence first, then materialize access signals/pathways/routes only when evidence supports them.
