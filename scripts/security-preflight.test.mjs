@@ -116,11 +116,9 @@ test('test fixtures do not contain known real Yale identifiers', () => {
 
 test('operator scripts sanitize raw caught error messages before logging', () => {
   const files = [
-    '../server/src/scripts/pathwayQualityAudit.ts',
     '../server/src/scripts/crossSourceObservationConflictReview.ts',
     '../server/src/scripts/researchEntityMemberReferenceAudit.ts',
     '../server/src/scripts/dedupeUsersByIdentity.ts',
-    '../server/src/scripts/backfillPostedOpportunitiesFromListings.ts',
     '../server/src/scripts/repairDuplicateAccessSignals.ts',
     '../server/src/scripts/betaDataQuality.ts',
     '../server/src/scripts/betaReadinessGate.ts',
@@ -132,13 +130,10 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     '../server/src/scripts/paperAuthorshipAudit.ts',
     '../server/src/scripts/repairMismatchedPersonEmails.ts',
     '../server/src/scripts/promoteAcceptedBetaCopy.ts',
-    '../server/src/scripts/backfillApplicationRoutePathways.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
-    '../server/src/scripts/reapPostedOpportunityStatuses.ts',
     '../server/src/scripts/duplicateEntityNameReview.ts',
     '../server/src/scripts/importFaculty.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
-    '../server/src/scripts/pfr3ContactRouteReview.ts',
     '../server/src/scripts/pfr3StudentOutreachReport.ts',
   ];
 
@@ -156,71 +151,28 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
 });
 
 test('PFR-3 rollout tooling stays aggregate-only and fail-closed', () => {
-  const core = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3RolloutCore.ts', import.meta.url),
-    'utf8',
-  );
-  const review = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3ContactRouteReview.ts', import.meta.url),
-    'utf8',
-  );
   const outreach = fs.readFileSync(
     new URL('../server/src/scripts/pfr3StudentOutreachReport.ts', import.meta.url),
     'utf8',
   );
-  const rebuild = fs.readFileSync(
-    new URL('../server/src/scripts/rebuildPathwaySearchIndex.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(core, /refuses a localhost Meilisearch target/);
-  assert.match(core, /PFR3_MEILI_RESTORE_POINT is required/);
-  assert.match(review, /review\.status.*\$ne: 'approved'/s);
-  assert.doesNotMatch(review, /\.update|\.save|findOneAnd/);
   assert.match(outreach, /studentConsentedToAggregateUse: true/);
   assert.match(outreach, /outcomeReportedAt/);
   assert.doesNotMatch(outreach, /studentProfileId|researchEntityId|trackingId|reachedOutAt/);
-  assert.match(rebuild, /assertPathwayIndexRolloutTarget/);
 });
 
 test('PFR-3 pathway source queue is read-only and redacted', () => {
-  const queue = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3PathwaySourceQueue.ts', import.meta.url),
-    'utf8',
-  );
   const core = fs.readFileSync(
     new URL('../server/src/scripts/pfr3PathwaySourceQueueCore.ts', import.meta.url),
     'utf8',
   );
-  assert.match(queue, /assertScriptApplyAllowed/);
-  assert.match(
-    queue,
-    /\.select\('_id status evidenceStrength confidence sourceUrls sourceEvidenceIds archived'\)/,
-  );
-  assert.doesNotMatch(queue, /\.update|\.save|findOneAnd|bulkWrite|insertMany|deleteMany/);
   assert.match(core, /createHash\('sha256'\)/);
   assert.doesNotMatch(core, /destination|email|phone|excerpt/);
 });
 
 test('PFR-3 pathway evidence review keeps private data off stdout and uses guarded materialization', () => {
-  const workflow = fs.readFileSync(
-    new URL('../server/src/scripts/pfr3PathwayEvidenceReview.ts', import.meta.url),
-    'utf8',
-  );
   const core = fs.readFileSync(
     new URL('../server/src/scripts/pfr3PathwayEvidenceReviewCore.ts', import.meta.url),
     'utf8',
-  );
-  assert.match(workflow, /mode: 0o600/);
-  assert.match(workflow, /appliedCount: applied\.applied/);
-  assert.doesNotMatch(workflow, /EntryPathway\.(update|findOneAndUpdate|bulkWrite)/);
-  assert.match(workflow, /appendObservations/);
-  assert.match(workflow, /materializeAccessForResearchGroup/);
-  assert.match(workflow, /decision artifact hash does not match/);
-  const stdoutPayload = workflow.match(/console\.log\(JSON\.stringify\(\{([\s\S]*?)\}\)\);/);
-  assert.ok(stdoutPayload, 'aggregate stdout serializer should exist');
-  assert.doesNotMatch(
-    stdoutPayload[1],
-    /handle:|recordId:|researchEntityId:|sourceUrls:|sourceEvidenceIds:|sourceUrl:|evidence:|rationale:|privateOutput/,
   );
   assert.match(core, /'apply_recency' \| 'manual_only'/);
   assert.doesNotMatch(core, /evidenceStrength:\s*['"](DIRECT|STRONG|MODERATE)['"]/);
@@ -432,9 +384,6 @@ test('student decision LLM prompt redacts materialized evidence before provider 
   assert.match(source, /compactSourceUrls\(candidate\)\.map\(\(url\) => safePromptUrl\(url\)\)/);
   assert.match(source, /safePromptText\(signal\.excerpt\)/);
   assert.match(source, /safePromptUrl\(signal\.sourceUrl\)/);
-  assert.match(source, /safePromptText\(pathway\.studentFacingLabel\)/);
-  assert.match(source, /safePromptUrl\(route\.url \|\| route\.sourceUrl\)/);
-  assert.match(source, /safePromptUrl\(opportunity\.applicationUrl\)/);
   assert.match(source, /`Research entity: \$\{safePromptText\(candidate\.name, 240\)\}`/);
   assert.match(source, /`Description: \$\{safePromptText\(candidate\.description\)\}`/);
   assert.doesNotMatch(source, /`Research entity: \$\{candidate\.name\}`/);
@@ -486,11 +435,7 @@ test('rendered fetch process boundary constrains env-selected command and bridge
 test('service-layer search and materialization sync logs sanitize caught errors', () => {
   const files = [
     '../server/src/services/listingService.ts',
-    '../server/src/services/entryPathwayService.ts',
-    '../server/src/services/signalService.ts',
-    '../server/src/services/postedOpportunityService.ts',
     '../server/src/services/meiliSyncService.ts',
-    '../server/src/services/contactRouteService.ts',
   ];
 
   for (const file of files) {
@@ -670,24 +615,6 @@ test('public research detail active listings redact direct contact text', () => 
   assert.doesNotMatch(source, /applicantDescription: listing\.applicantDescription/);
 });
 
-test('pathway application CTA only renders HTTP(S) URLs', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/components/research/PathwayActionCard.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /import \{ EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment \} from '\.\.\/\.\.\/utils\/url'/,
-  );
-  assert.match(
-    source,
-    /const applicationUrl = safeHttpUrl\(pathway\.activePostedOpportunity\?\.applicationUrl\)/,
-  );
-  assert.match(source, /safeRouteSegment\(researchEntity\.slug\)/);
-  assert.doesNotMatch(source, /safeUrl\(pathway\.activePostedOpportunity\?\.applicationUrl\)/);
-});
-
 test('client dynamic internal route segments are encoded before rendering', () => {
   const files = [];
   const visit = (dir) => {
@@ -737,10 +664,6 @@ test('client dynamic internal route segments are encoded before rendering', () =
 });
 
 test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
-  const opportunityDetail = fs.readFileSync(
-    new URL('../client/src/pages/opportunityDetail.tsx', import.meta.url),
-    'utf8',
-  );
   const adminAccessReview = fs.readFileSync(
     new URL('../client/src/components/admin/AdminAccessReview.tsx', import.meta.url),
     'utf8',
@@ -755,18 +678,11 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   );
 
   assert.match(
-    opportunityDetail,
-    /const applicationUrl = safeHttpUrl\(opportunity\.applicationUrl\)/,
-  );
-  assert.doesNotMatch(opportunityDetail, /safeUrl\(opportunity\.applicationUrl\)/);
-
-  assert.match(
     adminAccessReview,
     /const applicationUrl = safeHttpUrl\(opportunity\.applicationUrl\)/,
   );
   assert.doesNotMatch(adminAccessReview, /safeUrl\(opportunity\.applicationUrl\)/);
 
-  assert.match(labDetail, /const officialRouteUrl = safeHttpUrl\(officialRoute\?\.url\)/);
   assert.doesNotMatch(labDetail, /const officialRouteUrl = safeUrl\(officialRoute\?\.url\)/);
 
   assert.match(
@@ -789,10 +705,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
 
   for (const constant of [
     'MAX_PUBLIC_DETAIL_LISTINGS',
-    'MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS',
     'MAX_PUBLIC_DETAIL_ACCESS_SIGNALS',
-    'MAX_PUBLIC_DETAIL_CONTACT_ROUTES',
-    'MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES',
     'MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT',
   ]) {
     assert.match(source, new RegExp(`const ${constant} = \\d+`));
@@ -1082,7 +995,6 @@ test('credentialed lab microsite WorkPlanner logs avoid name fallbacks', () => {
 test('audit and index id stringifiers avoid arbitrary object toString coercion', () => {
   const files = [
     '../server/src/services/visibilityRepairQueueService.ts',
-    '../server/src/services/pathwaySearchIndexService.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
     '../server/src/scripts/betaDataQuality.ts',
     '../server/src/scripts/duplicateEntityNameReview.ts',
@@ -1095,24 +1007,6 @@ test('audit and index id stringifiers avoid arbitrary object toString coercion',
     assert.doesNotMatch(source, /\(value as \{ toString\(\): string \}\)\.toString\(\)/);
     assert.doesNotMatch(source, /value\.toString\(\)/);
   }
-});
-
-test('saved pathway account console logs avoid raw caught errors', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/components/accounts/SavedPathwaysSection.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.doesNotMatch(source, /console\.error\('Error reading saved research plans:',\s*err\)/);
-  assert.doesNotMatch(source, /console\.error\('Error loading saved research plans:',\s*err\)/);
-  assert.doesNotMatch(source, /console\.error\('Error loading saved research plans:',\s*planErr\)/);
-  assert.doesNotMatch(
-    source,
-    /console\.error\('Error loading saved research-plan funding matches:',\s*matchErr\)/,
-  );
-  assert.doesNotMatch(source, /console\.error\('Error saving research plan:',\s*err\)/);
-  assert.doesNotMatch(source, /console\.error\('Error removing saved research plan:',\s*err\)/);
-  assert.doesNotMatch(source, /console\.error\('Error exporting saved research plans:',\s*err\)/);
 });
 
 test('public client providers avoid raw auth and config error logs', () => {
@@ -1599,24 +1493,9 @@ test('admin access-review lock fields are bounded before persistence', () => {
 test('research discovery write services reject object-shaped ids before Mongo upserts', () => {
   for (const [name, file, requiredGuard] of [
     [
-      'entry pathway',
-      '../server/src/services/entryPathwayService.ts',
-      /if \(!researchEntityId\) return \{\}/,
-    ],
-    [
       'access signal',
       '../server/src/services/signalService.ts',
       /if \(!researchEntityId\) return \{\}/,
-    ],
-    [
-      'contact route',
-      '../server/src/services/contactRouteService.ts',
-      /if \(!researchEntityId\) return \{\}/,
-    ],
-    [
-      'posted opportunity',
-      '../server/src/services/postedOpportunityService.ts',
-      /if \(!entryPathwayId\) return \{\}/,
     ],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -1657,16 +1536,10 @@ test('research discovery write services reject object-shaped ids before Mongo up
 
 test('research discovery write service return ids use safe serialization', () => {
   for (const [name, file, returnPattern] of [
-    ['entry pathway', '../server/src/services/entryPathwayService.ts', /pathwayId,\n\s*doc,/],
     [
       'access signal',
       '../server/src/services/signalService.ts',
       /signalId: serializedDocumentId\(doc\?\._id\)/,
-    ],
-    [
-      'contact route',
-      '../server/src/services/contactRouteService.ts',
-      /contactRouteId: serializedDocumentId\(doc\?\._id\)/,
     ],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -1687,57 +1560,6 @@ test('research discovery write service return ids use safe serialization', () =>
       `${name} must not conditionally stringify returned ids`,
     );
   }
-});
-
-test('posted opportunity upsert and backfill ids use safe serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/postedOpportunityService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /const entryPathwayId = serializedDocumentId\(doc\.entryPathwayId\)/);
-  assert.match(source, /postedOpportunityId: serializedDocumentId\(doc\?\._id\)/);
-  assert.match(
-    source,
-    /function idToString\(value\?: unknown\): string \| undefined \{\n\s*return serializedDocumentId\(value\);\n\}/,
-  );
-  assert.match(source, /const pathwayId = idToString\(opportunity\.entryPathwayId\)/);
-  assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(listing\._id/);
-  assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(opportunity\.entryPathwayId/);
-  assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(doc\._id/);
-  assert.doesNotMatch(source, /(?:^|[^A-Za-z])String\(doc\.entryPathwayId/);
-  assert.doesNotMatch(source, /typeof \(value as \{ toString\?: unknown \}\)\.toString/);
-});
-
-test('faculty ways-in backfill candidate ids use safe serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/backfillFacultyWaysIn.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(source, /researchEntityId: serializedDocumentId\(entity\._id\) \|\| ''/);
-  assert.doesNotMatch(source, /researchEntityId: String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(entity\._id\)/);
-});
-
-test('posted opportunity upserts only persist public bounded URLs', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/postedOpportunityService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ publicHttpUrl \} from '\.\.\/utils\/urlSafety'/);
-  assert.match(source, /const MAX_POSTED_OPPORTUNITY_SOURCE_URLS = 50/);
-  assert.match(source, /function publicPostedOpportunityUrls\(values\??: unknown\): string\[\]/);
-  assert.match(source, /values\.slice\(0, MAX_POSTED_OPPORTUNITY_SOURCE_URLS\)/);
-  assert.match(source, /const applicationUrl = publicHttpUrl\(input\.applicationUrl\)/);
-  assert.match(source, /const sourceUrls = publicPostedOpportunityUrls\(input\.sourceUrls\)/);
-  assert.match(source, /applicationUrl,/);
-  assert.match(source, /sourceUrls: \{ \$each: sourceUrls \}/);
-  assert.doesNotMatch(source, /applicationUrl: input\.applicationUrl/);
-  assert.doesNotMatch(source, /sourceUrls: \{ \$each: input\.sourceUrls \|\| \[\] \}/);
 });
 
 test('listing research entity profile sync bounds public URLs before persistence', () => {
@@ -1948,22 +1770,6 @@ test('legacy cleanup ObjectId lookups reject object-shaped values', () => {
   assert.match(source, /const raw = value\.trim\(\)/);
   assert.doesNotMatch(source, /Types\.ObjectId\.isValid/);
   assert.doesNotMatch(source, /const raw = toString\(value\)/);
-});
-
-test('pathway quality audit entity fan-out rejects object-shaped IDs', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/pathwayQualityAudit.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const PATHWAY_QUALITY_AUDIT_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /export function normalizePathwayQualityAuditObjectId/);
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /typeof value !== 'string'/);
-  assert.match(source, /const trimmed = value\.trim\(\)/);
-  assert.match(source, /normalizePathwayQualityAuditObjectId\(id\)/);
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(id\)/);
 });
 
 test('research quality search review entity fan-out rejects object-shaped IDs', () => {
@@ -2343,10 +2149,6 @@ test('scraper cache invalidation escapes and bounds regex prefixes', () => {
 
 test('shared search regex helper bounds terms and allowlists Mongo regex options', () => {
   const source = fs.readFileSync(new URL('../server/src/utils/regex.ts', import.meta.url), 'utf8');
-  const opportunitiesRouteSource = fs.readFileSync(
-    new URL('../server/src/routes/opportunities.ts', import.meta.url),
-    'utf8',
-  );
   const listingsRouteSource = fs.readFileSync(
     new URL('../server/src/routes/listings.ts', import.meta.url),
     'utf8',
@@ -2357,19 +2159,7 @@ test('shared search regex helper bounds terms and allowlists Mongo regex options
   assert.match(source, /SAFE_REGEX_OPTIONS\.has\(option\)/);
   assert.match(source, /return normalized \|\| 'i'/);
   assert.match(source, /escapeRegex\(input\.trim\(\)\.slice\(0, MAX_SEARCH_LEN\)\)/);
-  const middlewareImport = opportunitiesRouteSource.match(
-    /import\s*\{([\s\S]*?)\}\s*from '\.\.\/middleware\/index'/,
-  );
-  assert.ok(middlewareImport, 'opportunity routes must import the shared middleware boundary');
-  assert.match(middlewareImport[1], /\basyncHandler\b/);
-  assert.match(middlewareImport[1], /\bvalidateObjectId\b/);
-  assert.doesNotMatch(opportunitiesRouteSource, /router\.(post|put|patch|delete)\(/);
-  assert.doesNotMatch(opportunitiesRouteSource, /canManagePostedOpportunities/);
   assert.doesNotMatch(listingsRouteSource, /listingController\.(create|update|archive|unarchive)/);
-  assert.match(
-    opportunitiesRouteSource,
-    /router\.get\(\s*'\/:id',\s*isAuthenticated,\s*validateObjectId\('id'\),\s*asyncHandler\(opportunityController\.getOpportunityById\),\s*\)/,
-  );
 });
 
 test('operator board gate artifact reads are constrained to safe JSON artifact paths', () => {
@@ -2847,30 +2637,6 @@ test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
   }
 });
 
-test('exploratory pathway dedupe reviewed plan ids are primitive-normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/dedupeExploratoryContactPathways.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /DEDUPE_EXPLORATORY_PATHWAY_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeDedupeExploratoryContactPathwayObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(
-    source,
-    /const canonicalPathwayId = normalizeDedupeExploratoryContactPathwayObjectId\(plan\.canonicalPathwayId\)/,
-  );
-  assert.match(source, /\.map\(\(id\) => normalizeDedupeExploratoryContactPathwayObjectId\(id\)\)/);
-  assert.doesNotMatch(
-    source,
-    /plan\.duplicatePathwayIds\.map\(\(id\) => new mongoose\.Types\.ObjectId\(id\)\)/,
-  );
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(plan\.canonicalPathwayId\)/);
-});
-
 test('profile description conflict repair plan ids are primitive-normalized', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts', import.meta.url),
@@ -2965,7 +2731,6 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
     '../server/src/scrapers/sources/officialProfilePiBackfillScraper.ts',
     '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts',
     '../server/src/scripts/profileBioCoverageAudit.ts',
-    '../server/src/scripts/dedupeExploratoryContactPathways.ts',
     '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/scripts/acceptedInputsCore.ts',
     '../server/src/services/visibilityRepairQueueService.ts',
@@ -3603,89 +3368,17 @@ test('user service validates netids before building regex lookup filters', () =>
   assert.doesNotMatch(source, /escapeRegex\(String\(id \?\? ''\)\)/);
 });
 
-test('saved pathway-plan routes validate pathway ids before controller work', () => {
-  const source = fs.readFileSync(new URL('../server/src/routes/users.ts', import.meta.url), 'utf8');
-
-  assert.match(
-    source,
-    /import \{ isAuthenticated, validateObjectId \} from '\.\.\/middleware\/index'/,
-  );
-  assert.match(
-    source,
-    /'\/savedResearchPlanDetails\/:pathwayId'[\s\S]*isAuthenticated,[\s\S]*validateObjectId\('pathwayId'\),[\s\S]*userController\.updateSavedResearchPlanDetail/,
-  );
-  assert.match(
-    source,
-    /'\/savedResearchPlanDetails\/:pathwayId'[\s\S]*isAuthenticated,[\s\S]*validateObjectId\('pathwayId'\),[\s\S]*userController\.deleteSavedResearchPlanDetail/,
-  );
-  assert.match(
-    source,
-    /'\/favPathwayPlans\/:pathwayId'[\s\S]*isAuthenticated,[\s\S]*validateObjectId\('pathwayId'\),[\s\S]*userController\.updateSavedPathwayPlan/,
-  );
-  assert.match(
-    source,
-    /'\/favPathwayPlans\/:pathwayId'[\s\S]*isAuthenticated,[\s\S]*validateObjectId\('pathwayId'\),[\s\S]*userController\.deleteSavedPathwayPlan/,
-  );
-});
-
-test('saved pathway-plan advising export remains client-only with per-plan note opt-in', () => {
-  const routeSource = fs.readFileSync(
-    new URL('../server/src/routes/users.ts', import.meta.url),
-    'utf8',
-  );
+test('saved research-entity export requires POST body opt-in for private notes', () => {
   const controllerSource = fs.readFileSync(
     new URL('../server/src/controllers/userController.ts', import.meta.url),
     'utf8',
   );
-  const clientSource = fs.readFileSync(
-    new URL('../client/src/components/accounts/SavedPathwaysSection.tsx', import.meta.url),
-    'utf8',
-  );
 
-  assert.match(
-    routeSource,
-    /router\.get\(\s*'\/savedResearchPlanDetails\/export'[\s\S]*?userController\.exportSavedResearchPlanDetails/,
-  );
-  assert.match(
-    routeSource,
-    /router\.post\(\s*'\/savedResearchPlanDetails\/export'[\s\S]*?userController\.exportSavedResearchPlanDetails/,
-  );
-  assert.match(
-    routeSource,
-    /router\.post\(\s*'\/favPathwayPlans\/export'[\s\S]*?userController\.exportSavedPathwayPlans/,
-  );
   assert.match(
     controllerSource,
-    /request\.method === 'POST'[\s\S]*request\.body\.includePrivateNotes === true/,
+    /includePrivateNotes: request\.method === 'POST' && request\.body\?\.includePrivateNotes === true/,
   );
   assert.doesNotMatch(controllerSource, /request\.query\.includePrivateNotes/);
-  assert.match(clientSource, /includeNote && plan\.note\.trim\(\)/);
-  assert.match(clientSource, /includedNoteIds\[pathway\._id\]/);
-  assert.doesNotMatch(
-    clientSource,
-    /axios\.(?:get|post)\(\s*'\/users\/savedResearchPlanDetails\/export'/,
-  );
-});
-
-test('public opportunity detail rejects malformed path ids before service work', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/opportunityController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_OPPORTUNITY_ID_LENGTH = 24/);
-  assert.match(source, /OPPORTUNITY_ID_PATTERN = \/\^\[a-fA-F0-9\]\{24\}\$\//);
-  assert.match(
-    source,
-    /const normalizeOpportunityIdParam = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /trimmed\.length !== MAX_OPPORTUNITY_ID_LENGTH/);
-  assert.match(source, /OPPORTUNITY_ID_PATTERN\.test\(trimmed\)/);
-  assert.match(
-    source,
-    /return response\.status\(400\)\.json\(\{ error: 'Invalid opportunity id' \}\)/,
-  );
-  assert.match(source, /const detail = await getOpportunityDetail\(id\)/);
 });
 
 test('self-service listing writes sanitize public URLs and bound stored payloads', () => {
@@ -3952,18 +3645,6 @@ test('fellowship application-cycle and matching evidence bound polluted record v
     /if \(!\(value instanceof Date\) && typeof value !== 'string'\) return undefined/,
   );
 
-  assert.match(matchingService, /MAX_FELLOWSHIP_MATCH_TEXT_LENGTH = 5000/);
-  assert.match(matchingService, /MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS = 50/);
-  assert.match(matchingService, /value\s*\.slice\(0, MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS\)/);
-  assert.match(matchingService, /values\.slice\(0, MAX_FELLOWSHIP_MATCH_ARRAY_ITEMS\)/);
-  assert.match(
-    matchingService,
-    /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(
-    matchingService,
-    /const fellowshipId = serializedDocumentId\(rawFellowshipId\) \|\| ''/,
-  );
   assert.doesNotMatch(matchingService, /typeof rawFellowshipId\?\.toHexString === 'function'/);
   assert.doesNotMatch(matchingService, /rawFellowshipId\.toHexString\(\)/);
 });
@@ -4521,182 +4202,22 @@ test('shared research-area creation normalizes labels and rejects direct contact
   assert.match(source, /Research area name cannot include contact information/);
 });
 
-test('pathway search service bounds direct Mongo search inputs', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchService.ts', import.meta.url),
-    'utf8',
-  );
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/pathwayController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_SEARCH_QUERY_LENGTH = 512/);
-  assert.match(source, /MAX_FILTER_VALUES = 50/);
-  assert.match(source, /MAX_FILTER_VALUE_LENGTH = 120/);
-  assert.match(source, /const PATHWAY_SEARCH_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /const sanitizePathwaySearchFilters = \(/);
-  assert.match(source, /\.filter\(\(value\): value is string => typeof value === 'string'\)/);
-  assert.match(source, /\.filter\(\(id\) => PATHWAY_SEARCH_OBJECT_ID_RE\.test\(id\)\)/);
-  assert.match(source, /const filters = sanitizePathwaySearchFilters\(input\.filters \|\| \{\}\)/);
-  assert.match(source, /const query = boundedSearchQuery\(input\.q\)/);
-  assert.doesNotMatch(source, /Types\.ObjectId\.isValid\(id\)/);
-  assert.match(controllerSource, /MAX_SEARCH_PAGINATION_PARAM_LENGTH = 16/);
-  assert.match(controllerSource, /const POSITIVE_INTEGER_PARAM_RE = \/\^\[1-9\]\\d\*\$\/;/);
-  assert.match(
-    controllerSource,
-    /\.filter\(\(item\): item is string => typeof item === 'string'\)/,
-  );
-  assert.match(
-    controllerSource,
-    /typeof item !== 'string' \|\| item\.trim\(\)\.length > MAX_FILTER_VALUE_LENGTH/,
-  );
-  assert.match(controllerSource, /typeof value !== 'string' && typeof value !== 'number'/);
-  assert.match(controllerSource, /Number\.isSafeInteger\(value\) && value > 0/);
-  assert.match(controllerSource, /!POSITIVE_INTEGER_PARAM_RE\.test\(rawValue\)/);
-  assert.match(controllerSource, /Number\.isSafeInteger\(parsed\) \? parsed : fallback/);
-  assert.doesNotMatch(controllerSource, /String\(item\)/);
-  assert.doesNotMatch(controllerSource, /Number\.isFinite\(parsed\) && parsed > 0/);
-});
-
 test('public pathway search omits persistence timestamp metadata', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/pathwayController.ts', import.meta.url),
-    'utf8',
-  );
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchService.ts', import.meta.url),
-    'utf8',
-  );
-  const indexSource = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchIndexService.ts', import.meta.url),
-    'utf8',
-  );
   const clientTypeSource = fs.readFileSync(
     new URL('../client/src/types/pathway.ts', import.meta.url),
     'utf8',
   );
 
-  assert.doesNotMatch(controllerSource, /record\.sortBy === 'createdAt'/);
-  assert.doesNotMatch(
-    serviceSource,
-    /sortBy\?: 'relevance' \| 'confidence' \| 'lastObservedAt' \| 'deadline' \| 'createdAt'/,
-  );
-  assert.doesNotMatch(serviceSource, /case 'createdAt':/);
-  assert.doesNotMatch(serviceSource, /createdAt: raw\.createdAt/);
-  assert.doesNotMatch(serviceSource, /return \{[^}]*createdAt: -1/s);
-  assert.doesNotMatch(indexSource, /'createdAtTimestamp'/);
-  assert.doesNotMatch(indexSource, /case 'createdAt':/);
-  assert.doesNotMatch(indexSource, /createdAt: doc\.createdAt/);
-  assert.doesNotMatch(indexSource, /createdAt: toIsoString\(record\.createdAt\)/);
   assert.doesNotMatch(clientTypeSource, /\| 'createdAt'/);
   assert.doesNotMatch(clientTypeSource, /createdAt\?: string/);
 });
 
-test('public pathway search does not expose research entity database ids', () => {
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchService.ts', import.meta.url),
-    'utf8',
-  );
-  const indexSource = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchIndexService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    serviceSource,
-    /const publicResearchEntityKey = \(entity: Record<string, any> \| undefined\): string =>/,
-  );
-  assert.match(
-    indexSource,
-    /const publicResearchEntityKey =\s*doc\.entitySlug \|\| doc\.entityDisplayName \|\| doc\.entityName \|\| ''/,
-  );
-  assert.doesNotMatch(serviceSource, /_id: String\(raw\.researchEntity\?\._id \|\| ''\)/);
-  assert.doesNotMatch(indexSource, /_id: doc\.entityId \|\| ''/);
-});
-
-test('pathway search index ids use safe serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchIndexService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const stringifyId = \(value: unknown\): string \| undefined => \{\n\s*return serializedDocumentId\(value\);\n\}/,
-  );
-  assert.doesNotMatch(source, /typeof \(value as any\)\.toHexString === 'function'/);
-  assert.doesNotMatch(source, /return \(value as any\)\.toHexString\(\)/);
-});
-
-test('Mongo pathway search result ids use safe serialization', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/);
-  assert.match(
-    source,
-    /const pathwaySearchDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
-  );
-  assert.match(source, /_id: pathwaySearchDocumentId\(raw\._id\)/);
-  assert.match(source, /_id: pathwaySearchDocumentId\(raw\.activePostedOpportunity\._id\)/);
-  assert.doesNotMatch(source, /_id: String\(raw\._id\)/);
-  assert.doesNotMatch(source, /_id: String\(raw\.activePostedOpportunity\._id\)/);
-});
-
 test('public pathway search hides research entity workflow metadata', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/pathwayController.ts', import.meta.url),
-    'utf8',
-  );
-  const serviceSource = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchService.ts', import.meta.url),
-    'utf8',
-  );
-  const indexSource = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchIndexService.ts', import.meta.url),
-    'utf8',
-  );
   const clientTypeSource = fs.readFileSync(
     new URL('../client/src/types/pathway.ts', import.meta.url),
     'utf8',
   );
-  const serviceResearchEntityInterface = serviceSource.match(
-    /export interface PathwaySearchResearchEntityHit \{[\s\S]*?\n\}/,
-  );
-  const mongoResearchEntitySerializer = serviceSource.match(
-    /researchEntity: \{\s*_id: publicResearchEntityKey\(raw\.researchEntity\),[\s\S]*?websiteUrl: publicHttpUrl\(raw\.researchEntity\?\.websiteUrl \|\| raw\.researchEntity\?\.website\),\s*\}/,
-  );
-  const meiliResearchEntitySerializer = indexSource.match(
-    /researchEntity: \{\s*_id: publicResearchEntityKey,[\s\S]*?websiteUrl: doc\.entityWebsiteUrl,\s*\}/,
-  );
 
-  assert.match(controllerSource, /const publicPathwayResearchEntity = \(/);
-  assert.match(
-    controllerSource,
-    /delete \(publicEntity as \{ studentVisibilityTier\?: string \}\)\.studentVisibilityTier/,
-  );
-  assert.match(controllerSource, /json\(publicPathwaySearchResult\(result\)\)/);
-  assert.ok(
-    serviceResearchEntityInterface,
-    'pathway research entity response interface should exist',
-  );
-  assert.ok(mongoResearchEntitySerializer, 'Mongo pathway research entity serializer should exist');
-  assert.ok(meiliResearchEntitySerializer, 'Meili pathway research entity serializer should exist');
-  assert.doesNotMatch(serviceResearchEntityInterface[0], /studentVisibilityTier/);
-  assert.doesNotMatch(mongoResearchEntitySerializer[0], /studentVisibilityTier/);
-  assert.doesNotMatch(meiliResearchEntitySerializer[0], /studentVisibilityTier/);
-  assert.match(
-    indexSource,
-    /entityStudentVisibilityTier: toStringValue\(researchEntity\.studentVisibilityTier\)/,
-  );
-  assert.match(
-    indexSource,
-    /anyFilter\('entityStudentVisibilityTier', publicStudentVisibilityTiers\)/,
-  );
   assert.doesNotMatch(clientTypeSource, /studentVisibilityTier/);
 });
 
@@ -4742,23 +4263,6 @@ test('public listing search omits persistence timestamp metadata', () => {
   assert.doesNotMatch(homePageSource, /new Date\(l\.createdAt\)/);
   assert.doesNotMatch(navbarSource, /Recently Added/);
   assert.doesNotMatch(navbarSource, /value: 'recent'/);
-});
-
-test('pathway Meilisearch service bounds direct search inputs', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/pathwaySearchIndexService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_SEARCH_QUERY_LENGTH = 512/);
-  assert.match(source, /MAX_FILTER_VALUES = 50/);
-  assert.match(source, /MAX_FILTER_VALUE_LENGTH = 120/);
-  assert.match(source, /const sanitizePathwayMeiliFilters = \(/);
-  assert.match(source, /if \(typeof value !== 'string'\) continue/);
-  assert.match(source, /const sanitizePathwayMeiliSearchInput = \(/);
-  assert.match(source, /const safeInput = sanitizePathwayMeiliSearchInput\(input\)/);
-  assert.match(source, /const filter = buildPathwayMeiliFilter\(safeInput\.filters\)/);
-  assert.match(source, /const result = await index\.search\(safeInput\.q \|\| '', params\)/);
 });
 
 test('public research Meilisearch service bounds direct search inputs', () => {
@@ -4848,22 +4352,6 @@ test('legacy research group public DTO ids use safe serialization', () => {
   assert.match(source, /leadMembersByEntityId\.get\(researchGroupDocumentId\(entity\._id\)\)/);
   assert.match(source, /\[researchGroupDocumentId\(entity\._id\), entity\]/);
   assert.match(source, /visibleEntitiesById\.has\(researchGroupDocumentId\(id\)\)/);
-  assert.match(
-    source,
-    /researchGroupDocumentId\(route\?\._id\)\.startsWith\('derived-pi-outreach-'\)/,
-  );
-  assert.match(
-    source,
-    /const fallbackKey = researchGroupDocumentId\(route\?\._id\) \|\| `route-\$\{index\}`/,
-  );
-  assert.match(
-    source,
-    /researchGroupDocumentId\(a\?\._id\)\.localeCompare\(researchGroupDocumentId\(b\?\._id\)\)/,
-  );
-  assert.match(
-    source,
-    /const key = \(researchGroupDocumentId\(lead\.user\?\._id\) \|\| name \|\| officialProfileUrl\)/,
-  );
   assert.match(source, /identityKey: researchGroupDocumentId\(entry\.personId\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
   assert.doesNotMatch(source, /id: String\(listing\._id\)/);
@@ -5124,29 +4612,11 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     /pathwayKey = normalizeObjectIdStringForUserMutation\(pathwayId, 'pathway'\)/,
   );
   assert.match(source, /sanitized\[pathwayKey\] = sanitizeSavedPathwayPlanForStorage\(plan\)/);
-  assert.match(
-    source,
-    /const savedPathwayPlans = sanitizeSavedPathwayPlansForResponse\(user\.savedPathwayPlans\)/,
-  );
-  assert.match(
-    source,
-    /const visiblePathways = await getPathwaysByIds\(Object\.keys\(savedPathwayPlans\)\)/,
-  );
-  assert.match(
-    source,
-    /return pruneSavedPathwayPlansForExistingPathways\(\s*savedPathwayPlans,\s*visiblePathways\.map\(\(pathway\) => pathway\._id\),\s*\)/,
-  );
   assert.doesNotMatch(
     source,
     /Object\.entries\(candidate\.checklist \|\| \{\}\)[\s\S]*\.slice\(0, MAX_SAVED_PATHWAY_CHECKLIST_ITEMS\)/,
   );
   assert.doesNotMatch(source, /return user\.savedPathwayPlans \|\| \{\}/);
-  assert.match(source, /const \[visiblePathway\] = await getPathwaysByIds\(\[pathwayKey\]\)/);
-  assert.match(
-    source,
-    /if \(!visiblePathway\) \{\s*throw new NotFoundError\('Pathway not found'\)/,
-  );
-  assert.match(source, /\[`savedPathwayPlans\.\$\{pathwayKey\}`\]: sanitized/);
   assert.match(source, /export function normalizeObjectIdStringForUserMutation/);
   assert.match(source, /typeof value === 'string'/);
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
@@ -5183,13 +4653,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   );
   assert.match(source, /const removeFavoriteObjectIdsWithoutCounters = async \(/);
   assert.match(source, /\{ \$pull: \{ \[fieldName\]: \{ \$in: values \} \} \}/);
-  assert.match(source, /const removeSavedPathwayIdsAndPlans = async \(/);
-  assert.match(source, /\$pull: \{ favPathways: \{ \$in: values \} \}/);
-  assert.match(
-    source,
-    /\.\.\.\(Object\.keys\(unset\)\.length > 0 \? \{ \$unset: unset \} : \{\}\)/,
-  );
-  assert.match(source, /storedObjectIdStringsForUserMutation\(user\.favPathways, 'favPathways'\)/);
   assert.match(source, /readPublicListings/);
   assert.match(source, /const visibleListings = await readPublicListings\(listingIds\)/);
   assert.match(
@@ -5297,19 +4760,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     source,
     /mergeStoredObjectIdsForUserMutation\(\s*user\.favFellowships,\s*fellowshipIds,\s*'favFellowships',\s*\)/,
   );
-  assert.match(
-    source,
-    /const visiblePathways = await getPathwaysByIds\(\s*pathwayIds\.map\(\(pathwayId\) => pathwayId\.toHexString\(\)\),?\s*\)/,
-  );
-  assert.match(
-    source,
-    /const visiblePathwayIds = normalizeObjectIdsForUserMutation\(\s*visiblePathways\.map\(\(pathway\) => pathway\._id\),\s*'favPathways',\s*\)/,
-  );
-  assert.match(
-    source,
-    /for \(const pathwayId of visiblePathwayIds\) \{\s*const result = await addFavoriteObjectIdIfMissing\(id, 'favPathways', pathwayId\);[\s\S]*newUser = result\.user;[\s\S]*\}/,
-  );
-  assert.match(source, /const newUser = await removeSavedPathwayIdsAndPlans\(id, pathwayIds\)/);
   assert.doesNotMatch(
     source,
     /mergeStoredObjectIdsForUserMutation\(\s*user\.favPathways,\s*visiblePathwayIds,\s*'favPathways',\s*\)/,
@@ -5346,11 +4796,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     /const normalizeStoredObjectIdsForAccountRead = \(values: unknown, fieldName: string\): string\[\] => \{/,
   );
   assert.match(controller, /normalizeObjectIdsForUserMutation\(ids, fieldName\)/);
-  assert.match(
-    controller,
-    /const normalizeStoredPathwayIdsForAccountRead = \(values: unknown\): string\[\] => \{/,
-  );
-  assert.match(controller, /normalizeStoredObjectIdsForAccountRead\(values, 'favPathways'\)/);
   assert.match(controller, /const favListings = await readPublicListings\(favListingIds\)/);
   assert.match(
     controller,
@@ -5384,39 +4829,6 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   );
   assert.match(controller, /const ownListings = await readListings\(ownListingIds\)/);
   assert.match(controller, /const favListings = await readPublicListings\(favListingIds\)/);
-  assert.match(
-    controller,
-    /const favPathwayIds = normalizeStoredPathwayIdsForAccountRead\(user\.favPathways\)/,
-  );
-  assert.match(
-    controller,
-    /const savedResearchPlanIds = normalizeStoredPathwayIdsForAccountRead\(user\.favPathways\)/,
-  );
-  assert.match(
-    controller,
-    /favPathwayIds: normalizeObjectIdsForUserMutation\(\s*favPathways\.map\(\(pathway\) => pathway\._id\),\s*'favPathways',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /savedResearchPlanIds: normalizeObjectIdsForUserMutation\(\s*savedResearchPlans\.map\(\(pathway\) => pathway\._id\),\s*'favPathways',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /normalizeObjectIdsForUserMutation\(\s*favPathways\.map\(\(pathway\) => pathway\._id\),\s*'favPathways',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /normalizeObjectIdsForUserMutation\(\s*savedResearchPlans\.map\(\(pathway\) => pathway\._id\),\s*'savedResearchPlans',\s*\)/,
-  );
-  assert.match(controller, /const favPathways = await getPathwaysByIds\(favPathwayIds\)/);
-  assert.match(
-    controller,
-    /const validIds = normalizeObjectIdsForUserMutation\(\s*favPathways\.map\(\(pathway\) => pathway\._id\),\s*'favPathways',\s*\)/,
-  );
-  assert.match(
-    controller,
-    /const matchesByPathwayId = await matchFellowshipsForPathways\(\s*validIds\.map\(\(pathwayId\) => pathwayId\.toHexString\(\)\),\s*\{\},\s*\{\s*userType: \(user as any\)\.userType,\s*classYear: \(user as any\)\.year,\s*plansByPathwayId: savedPathwayPlans,\s*\},\s*\)/,
-  );
   assert.doesNotMatch(controller, /matchFellowshipsForPathways\(favPathwayIds\)/);
   assert.doesNotMatch(controller, /new mongoose\.Types\.ObjectId\(pathway\._id\)/);
 });
@@ -5455,13 +4867,12 @@ test('saved research-plan exports redact system-derived direct contact details',
     source,
     /const exportChecklistForSpreadsheet = \(\s*checklist: Record<string, boolean>,?\s*\): Record<string, boolean> =>/,
   );
-  assert.match(source, /title:\s*exportTextWithoutDirectContact\(pathway\.studentFacingLabel\)/);
   assert.match(source, /name:\s*exportTextWithoutDirectContact\(/);
   assert.match(
     source,
     /checklist:\s*exportChecklistForSpreadsheet\(plan\.checklist as Record<string, boolean>\)/,
   );
-  assert.match(source, /item\.privateNote = exportUserTextForSpreadsheet\(plan\.note\)/);
+  assert.match(source, /privateNote: exportUserTextForSpreadsheet\(plan\.note\)/);
   assert.doesNotMatch(source, /title:\s*pathway\.studentFacingLabel/);
   assert.doesNotMatch(
     source,
@@ -5518,8 +4929,6 @@ test('public access summaries bound evidence text and avoid arbitrary object coe
   assert.match(source, /value\.slice\(0, maxLength\)\.trim\(\)/);
   assert.match(source, /researchEntityIds\s*\.slice\(0, MAX_ACCESS_SUMMARY_ENTITY_IDS\)/);
   assert.match(source, /accessSummaryEntityId\(signal\.researchEntityId\)/);
-  assert.match(source, /accessSummaryEntityId\(pathway\.researchEntityId\)/);
-  assert.match(source, /accessSummaryEntityId\(opportunity\.researchEntityId\)/);
   assert.match(source, /boundedString\(signal\.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH\)/);
   assert.match(source, /publicText\(signal\.source\?\.excerpt\)/);
   assert.match(source, /publicHttpUrl\(signal\.source\?\.url\)/);
@@ -5527,53 +4936,6 @@ test('public access summaries bound evidence text and avoid arbitrary object coe
   assert.doesNotMatch(source, /String\(signal\.researchEntityId\)/);
   assert.doesNotMatch(source, /String\(pathway\.researchEntityId\)/);
   assert.doesNotMatch(source, /String\(opportunity\.researchEntityId\)/);
-});
-
-test('public opportunity detail redacts research entity taxonomy arrays', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/services/opportunityDetailService.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /import \{ redactDirectContactInfo \} from '\.\.\/utils\/contactRedaction'/);
-  assert.match(source, /MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS = 50/);
-  assert.match(source, /MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH = 5000/);
-  assert.match(source, /MAX_OPPORTUNITY_DETAIL_URL_LENGTH = 2048/);
-  assert.match(source, /MAX_OPPORTUNITY_DETAIL_EVIDENCE_DEPTH = 4/);
-  assert.match(source, /OPPORTUNITY_DETAIL_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /const publicTextArray = \(values: unknown\): string\[\] =>/);
-  assert.match(source, /values\s*\.slice\(0, MAX_OPPORTUNITY_DETAIL_ARRAY_ITEMS\)/);
-  assert.match(source, /value\.slice\(0, MAX_OPPORTUNITY_DETAIL_TEXT_LENGTH\)\.trim\(\)/);
-  assert.match(source, /value\.slice\(0, MAX_OPPORTUNITY_DETAIL_URL_LENGTH\)\.trim\(\)/);
-  assert.match(source, /value instanceof Types\.ObjectId/);
-  assert.match(source, /const objectIdString = \(value: unknown\): string =>/);
-  assert.match(source, /return OPPORTUNITY_DETAIL_OBJECT_ID_RE\.test\(id\) \? id : ''/);
-  assert.match(source, /\.map\(\(value\) => objectIdString\(value\)\)/);
-  assert.match(source, /const safeId = objectIdString\(id\)/);
-  assert.doesNotMatch(source, /entryPathwayId: idString/);
-  assert.doesNotMatch(source, /researchEntityId: idString/);
-  assert.doesNotMatch(source, /listingId:/);
-  assert.doesNotMatch(source, /_id: documentId\(opportunity\)/);
-  assert.doesNotMatch(source, /_id: documentId\(pathway\)/);
-  assert.doesNotMatch(source, /_id: documentId\(researchEntity\)/);
-  assert.doesNotMatch(source, /_id: documentId\(item\)/);
-  assert.doesNotMatch(source, /createdAt\?: Date/);
-  assert.doesNotMatch(source, /updatedAt\?: Date/);
-  assert.doesNotMatch(source, /'createdAt'/);
-  assert.doesNotMatch(source, /'updatedAt'/);
-  assert.doesNotMatch(source, /createdAt: opportunity\.createdAt/);
-  assert.doesNotMatch(source, /updatedAt: opportunity\.updatedAt/);
-  assert.match(source, /depth > MAX_OPPORTUNITY_DETAIL_EVIDENCE_DEPTH/);
-  assert.match(source, /departments:\s*publicTextArray\(researchEntity\.departments\)/);
-  assert.match(source, /researchAreas:\s*publicTextArray\(researchEntity\.researchAreas\)/);
-  assert.match(source, /sourceName:\s*publicText\(item\.sourceName\)/);
-  assert.match(source, /field:\s*publicText\(item\.field\)/);
-  assert.doesNotMatch(source, /sourceName:\s*item\.sourceName/);
-  assert.doesNotMatch(source, /field:\s*item\.field/);
-  assert.doesNotMatch(source, /Types\.ObjectId\.isValid/);
-  assert.doesNotMatch(source, /typeof \(value as any\)\?\.toHexString === 'function'/);
-  assert.doesNotMatch(source, /departments:\s*researchEntity\.departments \|\| \[\]/);
-  assert.doesNotMatch(source, /researchAreas:\s*researchEntity\.researchAreas \|\| \[\]/);
 });
 
 test('public research detail subdocuments omit persistence metadata', () => {
@@ -5584,9 +4946,7 @@ test('public research detail subdocuments omit persistence metadata', () => {
 
   for (const serializerName of [
     'publicListingForResearchDetail',
-    'publicEntryPathwayForResearchDetail',
     'publicAccessSignalForResearchDetail',
-    'publicPostedOpportunityForResearchDetail',
   ]) {
     const serializerMatch = source.match(
       new RegExp(`const ${serializerName} = [\\s\\S]*?\\n\\}\\);`),
@@ -5740,7 +5100,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/betaRepairQueue.ts',
     '../server/src/scripts/backfillProgramClassifications.ts',
     '../server/src/scripts/scholarlyLinkSuppressionAudit.ts',
-    '../server/src/scripts/dedupeExploratoryContactPathways.ts',
     '../server/src/scripts/dedupeResearchEntitiesByPi.ts',
     '../server/src/scripts/normalizeFacultyUserTypes.ts',
     '../server/src/scripts/launchAcquisitionReport.ts',
@@ -5754,18 +5113,15 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/migrateResearchEntityCollections.ts',
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
-    '../server/src/scripts/rebuildPathwaySearchIndex.ts',
     '../server/src/scripts/researchQualitySearchReview.ts',
     '../server/src/scripts/profileBioCoverageAudit.ts',
     '../server/src/scripts/paperQualityAudit.ts',
     '../server/src/scripts/backfillStudentVisibilityTiers.ts',
     '../server/src/scripts/repairResearchEntityCanonicalNames.ts',
-    '../server/src/scripts/pathwayRelevanceReview.ts',
     '../server/src/scripts/disambiguateSurnameLabNames.ts',
     '../server/src/scripts/studentVisibilityGate.ts',
     '../server/src/scripts/cleanupLegacyMongoCollections.ts',
     '../server/src/scripts/backfillProgramOfficialSources.ts',
-    '../server/src/scripts/backfillFacultyWaysIn.ts',
     '../server/src/scripts/gateRefreshScheduler.ts',
     '../server/src/scripts/refreshGateScorecards.ts',
   ];
@@ -6368,7 +5724,7 @@ test('listing DTO URL arrays are capped before public serialization', () => {
   assert.match(userController, /const MAX_ACCOUNT_LISTING_URLS = 20/);
   assert.match(
     userController,
-    /values\.slice\(0, MAX_ACCOUNT_LISTING_URLS\)\.map\(publicHttpUrl\)/,
+    /values\s*\.slice\(0, MAX_ACCOUNT_LISTING_URLS\)\s*\.map\(publicHttpUrl\)/,
   );
   assert.doesNotMatch(userController, /values\.map\(publicHttpUrl\)\.filter/);
 });
@@ -6972,10 +6328,6 @@ test('public PI official profile routes reject credential-bearing URLs', () => {
     source,
     /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => publicHttpUrl\(url\)\s*,?\s*\)/,
   );
-  assert.match(
-    source,
-    /sourceUrl:\s*publicHttpUrl\(officialProfileUrl \|\| lead\.row\?\.sourceUrl \|\| group\?\.websiteUrl\) \|\| ''/,
-  );
 });
 
 test('research discovery source trust labels use safe HTTP URLs', () => {
@@ -7356,73 +6708,6 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
   assert.match(userServiceSource, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
 });
 
-test('saved research-plan local storage hydration is bounded and normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../client/src/components/accounts/SavedPathwaysSection.tsx', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_STORED_PLAN_COUNT = 100/);
-  assert.match(source, /MAX_PLAN_NOTE_LENGTH = 2000/);
-  assert.match(source, /MAX_PLAN_STORAGE_VALUE_LENGTH = 100_000/);
-  assert.match(source, /PLAN_STORAGE_OWNER_RE = \/\^\[A-Za-z0-9\]\{2,12\}\$\/;/);
-  assert.match(
-    source,
-    /export const normalizeSavedPlanStorageOwner = \(value: unknown\): string \| undefined =>/,
-  );
-  assert.match(
-    source,
-    /export const savedPlanStorageKeyForOwner = \(owner: unknown\): string \| undefined =>/,
-  );
-  assert.match(source, /STORAGE_PLAN_ID_RE = \/\^\[A-Za-z0-9_-\]\{1,80\}\$\//);
-  assert.match(source, /raw\.length > MAX_PLAN_STORAGE_VALUE_LENGTH/);
-  assert.match(source, /window\.localStorage\.removeItem\(PLAN_STORAGE_KEY\)/);
-  assert.match(
-    source,
-    /catch \{\s*console\.error\('Error reading saved research plans\.'\);\s*const storageKey = savedPlanStorageKeyForOwner\(owner\);/,
-  );
-  assert.match(source, /if \(storageKey\) window\.localStorage\.removeItem\(storageKey\);/);
-  assert.match(source, /normalizePathwayPlanMap\(JSON\.parse\(raw\)\)/);
-  assert.match(source, /const localStoragePlanMap = \(plans: PathwayPlanMap\): PathwayPlanMap =>/);
-  assert.match(source, /note: '',\s*checklist: \{\},/);
-  assert.match(source, /export const readStoredPlans = \(owner\?: unknown\): PathwayPlanMap => \{/);
-  assert.match(
-    source,
-    /export const writeStoredPlans = \(plans: PathwayPlanMap, owner\?: unknown\): void => \{/,
-  );
-  assert.match(source, /const serialized = JSON\.stringify\(localStoragePlanMap\(plans\)\)/);
-  assert.match(source, /serialized\.length > MAX_PLAN_STORAGE_VALUE_LENGTH/);
-  assert.match(source, /export const filterStoredPlansForSavedPathways = \(/);
-  assert.match(source, /const planStorageOwner = normalizeSavedPlanStorageOwner\(user\?\.netId\)/);
-  assert.match(
-    source,
-    /const \[hydratedPlanStorageOwner, setHydratedPlanStorageOwner\] = useState<string \| undefined>\(\)/,
-  );
-  assert.match(source, /activePlanStorageOwnerRef\.current = ownerAtLoad/);
-  assert.match(
-    source,
-    /if \(\s*!canRewriteStoredPlans \|\|\s*!planStorageOwner \|\|\s*hydratedPlanStorageOwner !== planStorageOwner\s*\) \{\s*return;\s*\}/,
-  );
-  assert.match(source, /const localPlans = readStoredPlans\(ownerAtLoad\)/);
-  assert.match(
-    source,
-    /const localPlansForSavedPathways = remapLegacyPathwayPlansToResearchEntities\(\s*localPlans,\s*entityIdByPathwayId,\s*savedResearchEntityIds,\s*\)/,
-  );
-  assert.match(
-    source,
-    /mergeSavedPathwayPlansForHydration\(\s*localPlansForSavedPathways,\s*serverPlans,\s*\)/,
-  );
-  assert.match(
-    source,
-    /getLocalOnlySavedPathwayPlanIds\(\s*localPlansForSavedPathways,\s*serverPlans,\s*savedResearchEntityIds,\s*\)/,
-  );
-  assert.match(source, /writeStoredPlans\(plans, planStorageOwner\)/);
-  assert.doesNotMatch(source, /window\.localStorage\.setItem\(PLAN_STORAGE_KEY, JSON\.stringify/);
-  assert.doesNotMatch(source, /readStoredPlans\(\)/);
-  assert.doesNotMatch(source, /writeStoredPlans\(plans\)/);
-  assert.match(source, /note: normalizePlanNote\(event\.target\.value\)/);
-});
-
 test('user account routes set full private no-store response headers', () => {
   const routeSource = fs.readFileSync(
     new URL('../server/src/routes/users.ts', import.meta.url),
@@ -7525,53 +6810,6 @@ test('account tracking local storage hydration is bounded and normalized', () =>
   assert.match(debounceStorageSource, /serialized\.length > MAX_DEBOUNCED_STORAGE_VALUE_LENGTH/);
 });
 
-test('posted-opportunity and application-route maintenance artifacts use safe JSON paths', () => {
-  const applicationRouteBackfill = fs.readFileSync(
-    new URL('../server/src/scripts/backfillApplicationRoutePathways.ts', import.meta.url),
-    'utf8',
-  );
-  const postedOpportunityBackfill = fs.readFileSync(
-    new URL('../server/src/scripts/backfillPostedOpportunitiesFromListings.ts', import.meta.url),
-    'utf8',
-  );
-  const postedOpportunityReaper = fs.readFileSync(
-    new URL('../server/src/scripts/reapPostedOpportunityStatuses.ts', import.meta.url),
-    'utf8',
-  );
-
-  for (const [name, source] of [
-    ['application route pathway backfill', applicationRouteBackfill],
-    ['posted opportunity backfill', postedOpportunityBackfill],
-    ['posted opportunity status reaper', postedOpportunityReaper],
-  ]) {
-    assert.match(
-      source,
-      /import \{ assertScriptApplyAllowed, resolveSafeJsonReportOutputPath \} from '\.\/scriptWriteGuards'/,
-      `${name} must import the shared safe JSON report path resolver`,
-    );
-    assert.match(
-      source,
-      /return resolveSafeJsonReportOutputPath\(value\)/,
-      `${name} must validate --output while parsing CLI flags`,
-    );
-    assert.match(
-      source,
-      /const safeOutput = resolveSafeJsonReportOutputPath\(output\)/,
-      `${name} writer must revalidate output paths before file I/O`,
-    );
-    assert.doesNotMatch(
-      source,
-      /fs\.writeFileSync\(output,/,
-      `${name} must not write raw --output paths`,
-    );
-    assert.doesNotMatch(
-      source,
-      /fs\.mkdirSync\(path\.dirname\(output\)/,
-      `${name} must not create raw --output directories`,
-    );
-  }
-});
-
 test('program maintenance artifacts use safe JSON paths and safe review inputs', () => {
   const programResearchRelevance = fs.readFileSync(
     new URL('../server/src/scripts/auditProgramResearchRelevance.ts', import.meta.url),
@@ -7643,19 +6881,12 @@ test('program maintenance artifacts use safe JSON paths and safe review inputs',
 });
 
 test('Meilisearch rebuild artifacts use safe JSON output paths', () => {
-  const pathwayRebuild = fs.readFileSync(
-    new URL('../server/src/scripts/rebuildPathwaySearchIndex.ts', import.meta.url),
-    'utf8',
-  );
   const researchEntityRebuild = fs.readFileSync(
     new URL('../server/src/scripts/rebuildResearchEntitySearchIndex.ts', import.meta.url),
     'utf8',
   );
 
-  for (const [name, source] of [
-    ['pathway search index rebuild', pathwayRebuild],
-    ['research entity search index rebuild', researchEntityRebuild],
-  ]) {
+  for (const [name, source] of [['research entity search index rebuild', researchEntityRebuild]]) {
     assert.match(
       source,
       /resolveSafeJsonReportOutputPath/,
@@ -7689,9 +6920,7 @@ test('quality and coverage audit artifacts use safe JSON output paths', () => {
     ['professor bio coverage audit', '../server/src/scripts/profileBioCoverageAudit.ts'],
     ['research entity coverage audit', '../server/src/scripts/researchEntityCoverageAudit.ts'],
     ['profile image quality audit', '../server/src/scripts/profileImageQualityAudit.ts'],
-    ['pathway quality audit', '../server/src/scripts/pathwayQualityAudit.ts'],
     ['research quality search review', '../server/src/scripts/researchQualitySearchReview.ts'],
-    ['pathway relevance review', '../server/src/scripts/pathwayRelevanceReview.ts'],
   ];
 
   for (const [name, file] of files) {
@@ -7809,7 +7038,6 @@ test('research and profile backfill artifacts use safe JSON output paths', () =>
     ['research description backfill', '../server/src/scripts/backfillResearchDescriptions.ts'],
     ['profile bio backfill', '../server/src/scripts/backfillProfileBiosFromOfficialUrls.ts'],
     ['center directors backfill', '../server/src/scripts/backfillCenterDirectors.ts'],
-    ['faculty ways-in backfill', '../server/src/scripts/backfillFacultyWaysIn.ts'],
     ['browse rank backfill', '../server/src/scripts/backfillBrowseRank.ts'],
   ];
 
@@ -7841,10 +7069,6 @@ test('research and profile backfill artifacts use safe JSON output paths', () =>
 test('repair and dedupe artifacts use safe JSON output paths', () => {
   const files = [
     ['archived entity artifact repair', '../server/src/scripts/repairArchivedEntityArtifacts.ts'],
-    [
-      'exploratory contact pathway dedupe',
-      '../server/src/scripts/dedupeExploratoryContactPathways.ts',
-    ],
     ['duplicate access signal repair', '../server/src/scripts/repairDuplicateAccessSignals.ts'],
     [
       'profile description conflict repair',
@@ -7887,12 +7111,6 @@ test('public research detail does not expose direct faculty contact emails or co
     'utf8',
   );
 
-  const contactRouteSerializer = source.match(
-    /const publicContactRouteForResearchDetail = \(route: any\) => \(\{[\s\S]*?\n\}\);/,
-  );
-  assert.ok(contactRouteSerializer, 'public contact-route serializer should exist');
-  assert.doesNotMatch(contactRouteSerializer[0], /_id:/);
-  assert.doesNotMatch(contactRouteSerializer[0], /email:/);
   assert.doesNotMatch(source, /\.\.\.route,[\s\S]*label: publicString\(route\.label\)/);
   assert.doesNotMatch(source, /email: publicContactEmail\(faculty\.email\)/);
   assert.doesNotMatch(source, /netid: faculty\.netid/);
@@ -8378,7 +7596,6 @@ test('source-acquisition report errors sanitize raw exception messages', () => {
     '../server/src/scrapers/sources/yaleCollegeFellowshipsOfficeScraper.ts',
     '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
     '../server/src/scripts/researchQualitySearchReview.ts',
-    '../server/src/scripts/pathwayRelevanceReview.ts',
   ];
   const source = files
     .map((file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8'))

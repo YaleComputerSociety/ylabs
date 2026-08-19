@@ -50,8 +50,6 @@ export interface AccessSummary {
     sourceUrl?: string;
   }>;
   signalTypes: string[];
-  entryPathwayTypes: string[];
-  hasActivePostedOpportunity: boolean;
   bestNextStep: string;
 }
 

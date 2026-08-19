@@ -32,11 +32,7 @@ function baseFacts(): CoverageAuditFacts {
       researchAreas: 0,
       sourceUrls: 2,
       members: 0,
-      pathways: 0,
-      publicContactRoutes: 0,
-      totalContactRoutes: 0,
-      accessSignals: 1,
-      postedOpportunities: 0,
+      accessSignals: 0,
       activeListings: 0,
     },
     observationFlags: {
@@ -44,7 +40,7 @@ function baseFacts(): CoverageAuditFacts {
       hasInferredPiObservation: true,
       suspiciousConstraintQuotes: ["I regrettably don't have bandwidth to respond to all of them."],
     },
-    signalTypes: ['CONTACT_INSTRUCTIONS_EXIST'],
+    signalTypes: [],
   };
 }
 
@@ -70,8 +66,7 @@ describe('buildCoverageIssues', () => {
 
     expect(issues).toContain('MISSING_DESCRIPTION');
     expect(issues).toContain('NO_MEMBERS');
-    expect(issues).toContain('NO_PATHWAYS');
-    expect(issues).toContain('NO_PUBLIC_CONTACT_ROUTE');
+    expect(issues).toContain('NO_ACCESS_SIGNALS');
     expect(issues).toContain('NO_ACTIONABLE_ACCESS');
     expect(issues).toContain('MICROSITE_OBSERVED_NO_ACTIONABLE_ARTIFACTS');
     expect(issues).toContain('INFERRED_PI_WITHOUT_MEMBERSHIP');
@@ -111,9 +106,6 @@ describe('summarizeIssueCounts', () => {
         ...baseFacts().counts,
         researchAreas: 3,
         members: 5,
-        pathways: 2,
-        publicContactRoutes: 1,
-        totalContactRoutes: 1,
         accessSignals: 3,
       },
       observationFlags: {
@@ -143,9 +135,6 @@ describe('selectCoverageAuditRows', () => {
       ...baseFacts().counts,
       researchAreas: 2,
       members: 2,
-      pathways: 1,
-      publicContactRoutes: 1,
-      totalContactRoutes: 1,
       accessSignals: 2,
     },
     observationFlags: {
@@ -164,9 +153,6 @@ describe('selectCoverageAuditRows', () => {
       ...baseFacts().counts,
       researchAreas: 2,
       members: 2,
-      pathways: 1,
-      publicContactRoutes: 1,
-      totalContactRoutes: 1,
       accessSignals: 2,
     },
     observationFlags: {

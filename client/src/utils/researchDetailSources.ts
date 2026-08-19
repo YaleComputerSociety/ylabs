@@ -6,29 +6,10 @@ interface DetailSourceGroup {
   sourceUrls?: string[];
 }
 
-interface DetailSourcePathway {
-  _id?: string;
-  sourceUrls?: string[];
-}
-
 interface DetailSourceSignal {
   _id?: string;
   signalType?: string;
   sourceUrl?: string;
-}
-
-interface DetailSourceContactRoute {
-  _id?: string;
-  routeType?: string;
-  label?: string;
-  name?: string;
-  url?: string;
-  sourceUrl?: string;
-}
-
-interface DetailSourcePostedOpportunity {
-  applicationUrl?: string;
-  sourceUrls?: string[];
 }
 
 interface DetailSourceUndergraduateLogistics {
@@ -41,10 +22,7 @@ interface DetailSourceUndergraduateLogistics {
 
 export interface BuildResearchDetailSourcesInput {
   group?: DetailSourceGroup | null;
-  pathways?: DetailSourcePathway[];
   accessSignals?: DetailSourceSignal[];
-  contactRoutes?: DetailSourceContactRoute[];
-  postedOpportunities?: DetailSourcePostedOpportunity[];
   undergraduateLogistics?: DetailSourceUndergraduateLogistics;
 }
 
@@ -153,10 +131,7 @@ export const sourceLabelForUrl = (url: string): string => {
 
 export const buildResearchDetailSources = ({
   group,
-  pathways = [],
   accessSignals = [],
-  contactRoutes = [],
-  postedOpportunities = [],
   undergraduateLogistics,
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
@@ -182,23 +157,8 @@ export const buildResearchDetailSources = ({
   addSource(group?.websiteUrl, 'Profile website');
   group?.sourceUrls?.forEach((url) => addSource(url, 'Profile source'));
 
-  pathways.forEach((pathway) => {
-    pathway.sourceUrls?.forEach((url) => addSource(url, 'Pathway source'));
-  });
-
   accessSignals.forEach((signal) => {
     addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
-  });
-
-  contactRoutes.forEach((route) => {
-    const label = route.label || route.name || labelizeResearchDetailValue(route.routeType);
-    addSource(route.url, `${label} route`);
-    addSource(route.sourceUrl, `${label} route`);
-  });
-
-  postedOpportunities.forEach((opportunity) => {
-    addSource(opportunity.applicationUrl, 'Application route');
-    opportunity.sourceUrls?.forEach((url) => addSource(url, 'Posted opportunity source'));
   });
 
   undergraduateLogistics?.claims?.forEach((claim) => {

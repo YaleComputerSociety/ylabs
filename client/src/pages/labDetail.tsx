@@ -25,30 +25,25 @@ import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
-  LabContactRoute,
   LabEntityRelationship,
-  LabEntryPathway,
   LabMember,
-  LabPostedOpportunity,
   LabRelatedResearchEntitySummary,
 } from '../types/labDetail';
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
+  isDepartmentRosterProvenanceUrl,
   normalizeActionDestination,
   normalizeSourceUrl,
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
 import { formatTitleCaseLabel } from '../utils/displayText';
-import { getEvidenceStrengthLabel } from '../utils/researchDiscoveryAdapters';
 import { computeAcceptanceVerdict, EvidenceItem, verdictLabel } from '../utils/undergradAcceptance';
 import {
-  approachHeadingLabel,
   decisionHeadingLabel,
   isFacultyResearchEntity,
   relationshipTypeLabel,
-  researchStructureLabel,
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
@@ -277,40 +272,20 @@ const directoryFirstPlanningCopy = (value: string | undefined | null, group: any
     .replace(/outreach note/gi, 'planning note');
 };
 
-const decisionNextStep = ({
-  group,
-  pathways,
-  contactRoutes,
-}: {
-  group: any;
-  pathways: LabEntryPathway[];
-  contactRoutes: LabContactRoute[];
-}): string => {
-  const pathwayStep = pathways.find((item) => item.bestNextStep)?.bestNextStep;
-  if (pathwayStep) {
-    return directoryFirstPlanningCopy(pathwayStep, group);
-  }
-  const route = contactRoutes[0];
-  if (route?.routeType === 'OFFICIAL_APPLICATION') {
-    return 'Use the official application route, then verify timing and eligibility on the source page.';
-  }
-  if (route) {
-    return 'Review the official profile first, then use the source details to plan what to verify next.';
+const decisionNextStep = ({ group }: { group: any }): string => {
+  const bestNextStep = group.accessSummary?.bestNextStep?.trim();
+  if (bestNextStep && bestNextStep !== 'Check back later') {
+    return directoryFirstPlanningCopy(bestNextStep, group);
   }
   return 'Review the official profile first, then use the source details to plan what to verify next.';
 };
 
-const reachOutStatus = ({
-  postedOpportunities,
-  pathways,
-  contactRoutes,
-}: {
-  postedOpportunities: LabPostedOpportunity[];
-  pathways: LabEntryPathway[];
-  contactRoutes: LabContactRoute[];
-}): string => {
-  if (postedOpportunities.length > 0) return 'Posted route available';
-  if (pathways.length > 0 || contactRoutes.length > 0) return 'Planning context available';
+const reachOutStatus = ({ group }: { group: any }): string => {
+  const status = group.accessSummary?.status;
+  if (status === 'posted-opening') return 'Posted route available';
+  if (status === 'reach-out-plausible' || status === 'evidence-backed') {
+    return 'Planning context available';
+  }
   return 'Source review needed';
 };
 
@@ -346,7 +321,6 @@ const ResearchPlanSaveButton = ({
 
 const resolveDecisionProfileUrl = (
   fallbackSourceUrl: string | undefined,
-  contactRoutes: LabContactRoute[],
   group?: any,
 ): string | undefined => {
   if (group?.leadIdentityStatus === 'under_review') return undefined;
@@ -356,45 +330,18 @@ const resolveDecisionProfileUrl = (
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
-  const facultyProfileRoute = contactRoutes.find(
-    (route) =>
-      route.routeType === 'FACULTY_PI' &&
-      Boolean(route.url) &&
-      !labWebsiteDestinations.has(normalizeActionDestination(route.url)),
-  );
-
-  if (facultyProfileRoute?.url) return normalizeSourceUrl(facultyProfileRoute.url) || undefined;
-  if (
-    fallbackSourceUrl &&
-    isProfileLikeWebsiteUrl(fallbackSourceUrl) &&
-    !labWebsiteDestinations.has(normalizeActionDestination(fallbackSourceUrl))
-  ) {
-    return normalizeSourceUrl(fallbackSourceUrl) || undefined;
+  const candidateUrls = [
+    fallbackSourceUrl,
+    ...(Array.isArray(group?.sourceUrls) ? group.sourceUrls : []),
+  ];
+  for (const url of candidateUrls) {
+    if (typeof url !== 'string') continue;
+    if (!isProfileLikeWebsiteUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
+    const destination = normalizeActionDestination(url);
+    if (labWebsiteDestinations.has(destination)) continue;
+    return normalizeSourceUrl(url) || undefined;
   }
   return undefined;
-};
-
-const resolveDecisionOfficialRoute = (
-  profileUrl: string | undefined,
-  contactRoutes: LabContactRoute[],
-  group?: any,
-): LabContactRoute | undefined => {
-  const normalizedProfileUrl = normalizeActionDestination(profileUrl);
-  const labWebsiteDestinations = new Set(
-    [group?.websiteUrl, group?.website]
-      .map((url) => normalizeActionDestination(url))
-      .filter(Boolean),
-  );
-
-  return contactRoutes.find((item) => {
-    const normalizedRouteUrl = normalizeActionDestination(item.url);
-    return (
-      normalizedRouteUrl &&
-      normalizedRouteUrl !== normalizedProfileUrl &&
-      !labWebsiteDestinations.has(normalizedRouteUrl) &&
-      item.routeType !== 'FACULTY_PI'
-    );
-  });
 };
 
 const memberDisplayName = (member: LabMember): string =>
@@ -534,19 +481,11 @@ const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
 
 const DecisionSummary = ({
   group,
-  pathways,
-  contactRoutes,
-  postedOpportunities,
-  fallbackSourceUrl,
-  hasActivePostedOpportunity,
+  profileUrl,
   principalInvestigator,
 }: {
   group: any;
-  pathways: LabEntryPathway[];
-  contactRoutes: LabContactRoute[];
-  postedOpportunities: LabPostedOpportunity[];
-  fallbackSourceUrl?: string;
-  hasActivePostedOpportunity: boolean;
+  profileUrl?: string;
   principalInvestigator?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
@@ -578,14 +517,11 @@ const DecisionSummary = ({
       ),
     );
   }, [description, group._id, group.slug]);
-  const { verdict, evidence } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
+  const { verdict, evidence } = computeAcceptanceVerdict(group);
   const evidenceLevel = verdictLabel(verdict);
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
   const hasEvidenceDetail = evidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
-  const profileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes, group);
-  const officialRoute = resolveDecisionOfficialRoute(profileUrl, contactRoutes, group);
-  const officialRouteUrl = safeHttpUrl(officialRoute?.url);
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -675,9 +611,7 @@ const DecisionSummary = ({
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Planning status
               </dt>
-              <dd className="mt-1 font-semibold text-gray-900">
-                {reachOutStatus({ postedOpportunities, pathways, contactRoutes })}
-              </dd>
+              <dd className="mt-1 font-semibold text-gray-900">{reachOutStatus({ group })}</dd>
             </div>
           </dl>
           {hasEvidenceDetail && (
@@ -716,7 +650,7 @@ const DecisionSummary = ({
               Recommended next step
             </p>
             <p className="mt-1 text-sm leading-relaxed text-gray-800">
-              {decisionNextStep({ group, pathways, contactRoutes })}
+              {decisionNextStep({ group })}
             </p>
             {profileUrl && (
               <a
@@ -728,79 +662,8 @@ const DecisionSummary = ({
                 Open official profile
               </a>
             )}
-            {officialRouteUrl && (
-              <a
-                href={officialRouteUrl}
-                target="_blank"
-                rel={EXTERNAL_LINK_REL}
-                className="mt-2 inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 bg-[var(--yr-panel)] px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-[var(--yr-blue-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-              >
-                Open official route
-              </a>
-            )}
           </div>
         </div>
-      </div>
-    </section>
-  );
-};
-
-const WaysToApproachSection = ({
-  group,
-  pathways,
-  postedOpportunities,
-}: {
-  group: any;
-  pathways: LabEntryPathway[];
-  postedOpportunities: LabPostedOpportunity[];
-}) => {
-  const posted = postedOpportunities[0];
-  const pathway = pathways[0];
-  const facultyResearch = isFacultyResearchEntity(group);
-  const structureLabel = researchStructureLabel(group);
-
-  return (
-    <section>
-      <SectionHeading>{approachHeadingLabel(group)}</SectionHeading>
-      <div className="grid gap-3 md:grid-cols-3">
-        <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Explore first</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">
-            {facultyResearch
-              ? 'Best if you are unsure whether this research area has undergraduate routes. Open the official profile and look for current instructions.'
-              : `Best if you are unsure whether this ${structureLabel} accepts undergrads. Open the official profile and look for current instructions.`}
-          </p>
-        </article>
-        <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Review source instructions</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">
-            Best if the research area strongly matches your interests. Check whether the official
-            source names current undergraduate instructions, timing, or eligibility.
-          </p>
-          {pathway?.evidenceStrength && (
-            <span className="mt-3 inline-flex rounded border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2 py-1 text-xs text-gray-600">
-              {getEvidenceStrengthLabel(pathway.evidenceStrength)}
-            </span>
-          )}
-        </article>
-        <article className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
-          <h3 className="text-sm font-semibold text-gray-900">
-            {posted ? 'Review posted opportunity' : 'Look for related research homes'}
-          </h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-700">
-            {posted
-              ? 'Use the posted opportunity when an official application or listing exists.'
-              : 'Best if you need clearer undergraduate opportunities in the same research area.'}
-          </p>
-          {posted && (
-            <Link
-              to={`/opportunities/${safeRouteSegment(posted._id)}`}
-              className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              View posted opportunity
-            </Link>
-          )}
-        </article>
       </div>
     </section>
   );
@@ -861,17 +724,6 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
 };
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
-const hasSpecificWaysToApproach = (
-  pathways: LabEntryPathway[],
-  postedOpportunities: LabPostedOpportunity[],
-): boolean =>
-  postedOpportunities.length > 0 ||
-  pathways.some(
-    (pathway) =>
-      pathway.pathwayType !== 'EXPLORATORY_CONTACT' &&
-      pathway.pathwayType !== 'REACH_OUT_PLAUSIBLE',
-  );
 
 const LabDetail = () => {
   const { isAuthenticated, user } = useContext(UserContext);
@@ -964,10 +816,7 @@ const LabDetail = () => {
       truncated: false,
       withheldCount: 0,
     },
-    contactRoutes = [],
-    entryPathways = [],
     accessSignals = [],
-    postedOpportunities = [],
     activeListings = [],
     entityRelationships = [],
     relatedResearchEntities = [],
@@ -975,25 +824,15 @@ const LabDetail = () => {
     undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
-  const hasActivePostedOpportunity = postedOpportunities.length > 0;
   const hasRelatedResearchEntities = relatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = affiliatedResearchEntities.length > 0;
-  const showWaysToApproach = hasSpecificWaysToApproach(entryPathways, postedOpportunities);
   const sources = buildResearchDetailSources({
     group,
-    pathways: entryPathways,
     accessSignals,
-    contactRoutes,
-    postedOpportunities,
     undergraduateLogistics,
   });
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
-  const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, contactRoutes, group);
-  const decisionOfficialRoute = resolveDecisionOfficialRoute(
-    decisionProfileUrl,
-    contactRoutes,
-    group,
-  );
+  const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
   const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const singlePrincipalInvestigator =
@@ -1078,8 +917,7 @@ const LabDetail = () => {
 
           <LabHeader
             group={group}
-            dedupeWebsiteUrls={[decisionProfileUrl, decisionOfficialRoute?.url]}
-            hasActivePostedOpportunity={hasActivePostedOpportunity}
+            dedupeWebsiteUrls={[decisionProfileUrl]}
             actions={
               <ResearchPlanSaveButton
                 isSaved={isResearchEntitySaved}
@@ -1093,11 +931,7 @@ const LabDetail = () => {
 
           <DecisionSummary
             group={group}
-            pathways={entryPathways}
-            contactRoutes={contactRoutes}
-            postedOpportunities={postedOpportunities}
-            fallbackSourceUrl={fallbackSourceUrl}
-            hasActivePostedOpportunity={hasActivePostedOpportunity}
+            profileUrl={decisionProfileUrl}
             principalInvestigator={singlePrincipalInvestigator}
           />
 
@@ -1128,14 +962,6 @@ const LabDetail = () => {
           )}
 
           <ResearchTeamSection members={members} roster={roster} />
-
-          {showWaysToApproach && (
-            <WaysToApproachSection
-              group={group}
-              pathways={entryPathways}
-              postedOpportunities={postedOpportunities}
-            />
-          )}
 
           {hasRelatedResearchEntities && (
             <RelatedResearchEntitiesSection

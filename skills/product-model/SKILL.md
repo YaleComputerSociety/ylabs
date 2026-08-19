@@ -7,7 +7,7 @@ description: Use when changing or evaluating Yale Research product behavior, stu
 
 Yale Research is a source-driven directory that makes research homes and undergraduate-access context legible.
 Its first responsibility is broad, accurate research-home coverage with the correct PI and official links.
-Access evidence, pathways, opportunities, and research-entity affiliations are optional enrichments.
+Access evidence signals and research-entity affiliations are optional enrichments.
 
 Do not model the product as a faculty-maintained job board or require faculty uploads for coverage.
 Yale research includes labs, centers, institutes, faculty projects, digital humanities initiatives, collections and archive projects, RA programs, fellowships, senior theses, and exploratory outreach.
@@ -19,7 +19,7 @@ Yale research includes labs, centers, institutes, faculty projects, digital huma
 
 Keep Ways In as an internal model embedded in Yale Research rather than spinning it into a separate product surface.
 Use warmer student-facing vocabulary such as "Planning Context", "Evidence", and "Best Next Step" where appropriate.
-Do not manufacture an `EntryPathway` for every lab or expose model complexity that does not improve a student decision.
+Do not manufacture a `Signal` for every lab or expose model complexity that does not improve a student decision.
 Iterate on canonical product surfaces such as `/research`, or use a non-URL feature flag.
 Do not create student-facing versioned routes like `/v1`, `/research-v2`, or similar for ordinary product iteration.
 
@@ -43,27 +43,22 @@ Entity pages should answer:
 | Concept                      | Collection                      | Purpose                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ResearchEntity`             | `research_entities`             | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc.                                                                                                                                                                                                                                             |
-| `EntryPathway`               | `entry_pathways`                | How a student might approach a plausible research home.                                                                                                                                                                                                                                                                                |
-| `PostedOpportunity`          | `posted_opportunities`          | A real active or time-bound posting.                                                                                                                                                                                                                                                                                                   |
 | `Signal`                     | `signals`                       | Source-attributed, typed fact about a research entity. Consolidates the former `AccessSignal` (each access type is its own `Signal.type`, keeping the confidence gradient that drives the browse trust-filter) and `UndergraduateLogisticsClaim` (student level, compensation or credit, weekly time, modality, current availability). |
-| `ContactRoute`               | `contact_routes`                | The best known way to act, such as official application, lab manager, or faculty PI.                                                                                                                                                                                                                                                   |
 | `ResearchEntityRelationship` | `research_entity_relationships` | A source-backed affiliation, hosting, membership, or umbrella relationship between research entities.                                                                                                                                                                                                                                  |
 
 ## Modeling rules
 
 - Course credit is a formalization outcome after a student finds a research home.
-  It is not an entry pathway by itself.
+  It is not access evidence by itself.
 - Fellowship funding usually behaves like formalization or funding, except when the fellowship is itself a structured discovery or mentor-matching program.
-- `EntryPathway` is durable.
-  `PostedOpportunity` is a specific active or time-bound posting and may be an instance of a recurring pathway.
-- Directory inclusion does not require an `AccessSignal`, `EntryPathway`, `ContactRoute`, or `PostedOpportunity`.
+- Directory inclusion does not require a `Signal` or other access evidence.
 - Scrapers emit append-only `Observation` rows.
   Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
   Use `AccessSignal` with evidence strength instead.
 - Keep undergraduate logistics claims independent and neutral when unknown.
   Do not infer one logistics claim from another or from generic undergraduate-access evidence.
-- Contact routes are fail-closed.
+- Contact is fail-closed and purely derived, never a stored `ContactRoute` or surfaced scraped email.
   Prefer official and public URLs.
   Redact scraped emails from public payloads.
 - The normal PI action is a link to the official Yale profile and does not imply permission to contact.
@@ -77,6 +72,6 @@ Entity pages should answer:
 - Prefer official-source scraping and source-submission hints over faculty-maintained duplicate profiles or listings.
 - Treat the visible directory listing as a REST projection of `ResearchEntity`, not a reason to preserve the legacy `Listing` model.
 - Migrate legacy models vertically and remove each old reader and writer before deleting its storage.
-- Prefer first-class collections over embedding pathways, signals, or routes inside `ResearchEntity`.
+- Prefer first-class collections over embedding signals or access evidence inside `ResearchEntity`.
 
 See `docs/research-model.md` for the current runtime model and `docs/research-model-refactor.md` for the accepted target and phased migration.

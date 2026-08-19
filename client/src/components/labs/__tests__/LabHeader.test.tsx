@@ -54,9 +54,7 @@ describe('LabHeader', () => {
   });
 
   it('hides the website link when websiteUrl is empty', () => {
-    const { container } = render(
-      <LabHeader group={{ ...baseGroup, websiteUrl: '' }} />,
-    );
+    const { container } = render(<LabHeader group={{ ...baseGroup, websiteUrl: '' }} />);
     expect(container.textContent).not.toContain('Visit lab website');
   });
 
@@ -142,7 +140,6 @@ describe('LabHeader trust-gradient pill', () => {
           pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
           currentUndergradCount: 3,
         }}
-        hasActivePostedOpportunity={false}
       />,
     );
     const pill = container.querySelector('[data-verdict]');
@@ -162,14 +159,5 @@ describe('LabHeader trust-gradient pill', () => {
     const pill = container.querySelector('[data-verdict]');
     expect(pill?.getAttribute('data-verdict')).toBe('not-accepting');
     expect(pill?.textContent).toBe('Not currently available');
-  });
-
-  it('honors hasActivePostedOpportunity prop as a strong signal', () => {
-    const { container } = render(
-      <LabHeader group={baseGroup} hasActivePostedOpportunity={true} />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    // 1 strong signal → likely-accepting
-    expect(pill?.getAttribute('data-verdict')).toBe('likely-accepting');
   });
 });

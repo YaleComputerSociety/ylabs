@@ -73,20 +73,8 @@ const REFERENCE_IMPACT_COLLECTIONS: Array<{
   match?: Record<string, unknown>;
 }> = [
   {
-    key: 'entryPathways',
-    collectionName: 'entry_pathways',
-    field: 'researchEntityId',
-    match: ACTIVE_FILTER,
-  },
-  {
     key: 'accessSignals',
     collectionName: 'signals',
-    field: 'researchEntityId',
-    match: ACTIVE_FILTER,
-  },
-  {
-    key: 'contactRoutes',
-    collectionName: 'contact_routes',
     field: 'researchEntityId',
     match: ACTIVE_FILTER,
   },
@@ -105,12 +93,6 @@ const REFERENCE_IMPACT_COLLECTIONS: Array<{
   {
     key: 'researchScholarlyAttributions',
     collectionName: 'research_scholarly_attributions',
-    field: 'researchEntityId',
-    match: ACTIVE_FILTER,
-  },
-  {
-    key: 'postedOpportunities',
-    collectionName: 'posted_opportunities',
     field: 'researchEntityId',
     match: ACTIVE_FILTER,
   },

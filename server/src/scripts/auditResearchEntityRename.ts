@@ -41,14 +41,7 @@ export interface LegacyResidueCount extends LegacyResidueCheck {
 }
 
 export const REFERENCE_CHECKS: ReferenceCheck[] = [
-  { collection: 'entry_pathways', field: 'researchEntityId', label: 'EntryPathway host entity' },
-  { collection: 'signals', field: 'researchEntityId', label: 'AccessSignal host entity' },
-  { collection: 'contact_routes', field: 'researchEntityId', label: 'ContactRoute host entity' },
-  {
-    collection: 'posted_opportunities',
-    field: 'researchEntityId',
-    label: 'PostedOpportunity host entity',
-  },
+  { collection: 'signals', field: 'researchEntityId', label: 'Signal host entity' },
   { collection: 'listings', field: 'researchEntityId', label: 'Listing host entity' },
   {
     collection: 'research_entity_members',
@@ -210,10 +203,7 @@ export function buildLegacyResidueSummary(rows: LegacyResidueCount[]) {
 
   return {
     totalChecks: rows.length,
-    totalDocumentsWithResidue: rows.reduce(
-      (sum, row) => sum + row.documentsWithResidue,
-      0,
-    ),
+    totalDocumentsWithResidue: rows.reduce((sum, row) => sum + row.documentsWithResidue, 0),
     migrationResidueDocuments: rows
       .filter((row) => row.classification === 'migration_residue')
       .reduce((sum, row) => sum + row.documentsWithResidue, 0),

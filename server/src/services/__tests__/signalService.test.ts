@@ -36,7 +36,6 @@ describe('signalService', () => {
     await upsertSignal(
       {
         researchEntityId: 'entity-1',
-        entryPathwayId: { toString: () => '64f111111111111111111111' } as any,
         sourceEvidenceId: { toString: () => '64f222222222222222222222' } as any,
         type: 'POSTED_OPENING',
         confidence: 'HIGH',
@@ -45,7 +44,6 @@ describe('signalService', () => {
       { model: model as any },
     );
 
-    expect(capturedUpdate.$set).not.toHaveProperty('entryPathwayId');
     expect(capturedUpdate.$set).not.toHaveProperty('source.evidenceIds');
     expect(capturedUpdate.$set).not.toHaveProperty('sourceEvidenceId');
     expect(capturedUpdate.$set).not.toHaveProperty('observationId');

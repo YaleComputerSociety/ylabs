@@ -109,19 +109,6 @@ export interface LabResearchActivityLink extends LabScholarlyLink {
   evidenceLabel: string;
 }
 
-export interface LabEntryPathway {
-  _id: string;
-  pathwayType: string;
-  status: string;
-  evidenceStrength?: string;
-  studentFacingLabel: string;
-  explanation?: string;
-  bestNextStep?: string;
-  compensation?: string;
-  sourceUrls?: string[];
-  confidence?: number;
-}
-
 export interface LabAccessSignal {
   signalType: string;
   confidence: string;
@@ -129,32 +116,6 @@ export interface LabAccessSignal {
   excerpt?: string;
   sourceUrl?: string;
   observedAt?: string;
-}
-
-export interface LabContactRoute {
-  _id?: string;
-  routeType: string;
-  label?: string;
-  name?: string;
-  role?: string;
-  email?: string;
-  url?: string;
-  priority?: number;
-  visibility?: string;
-  contactPolicy?: string;
-  rationale?: string;
-  sourceUrl?: string;
-  reviewStatus?: string;
-}
-
-export interface LabPostedOpportunity {
-  _id: string;
-  title: string;
-  term?: string;
-  deadline?: string;
-  applicationUrl?: string;
-  status: string;
-  sourceUrls?: string[];
 }
 
 export type UndergraduateLogisticsClaimType =
@@ -230,10 +191,7 @@ export interface LabDetailPayload {
   scholarlyLinks?: LabScholarlyLink[];
   memberScholarlyLinks?: LabScholarlyLink[];
   activeListings: Listing[];
-  entryPathways?: LabEntryPathway[];
   accessSignals?: LabAccessSignal[];
-  contactRoutes?: LabContactRoute[];
-  postedOpportunities?: LabPostedOpportunity[];
   undergraduateLogistics?: UndergraduateLogisticsPayload;
   entityRelationships?: LabEntityRelationship[];
   relatedResearchEntities?: LabRelatedResearchEntitySummary[];

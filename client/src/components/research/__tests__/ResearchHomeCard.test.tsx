@@ -147,9 +147,7 @@ describe('ResearchHomeCard', () => {
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
     expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
-    expect(text.indexOf('Research description')).toBeLessThan(
-      text.indexOf('Evidence limited'),
-    );
+    expect(text.indexOf('Research description')).toBeLessThan(text.indexOf('Evidence limited'));
   });
 
   it('surfaces duplicate review flags for admin quality review', () => {
@@ -276,89 +274,7 @@ describe('ResearchHomeCard', () => {
     );
 
     const link = screen.getByRole('link', { name: 'Fixture Scholar' });
-    expect(link.getAttribute('href')).toBe(
-      'https://medicine.yale.edu/profile/fixture-scholar/',
-    );
-  });
-
-  it('shows ways-in badges from pathway and access-summary data inline', () => {
-    const { container } = render(
-      <MemoryRouter>
-        <ResearchHomeCard
-          home={researchHome({
-            entityCount: 1,
-            pathwayCount: 1,
-            entities: [
-              {
-                ...researchHome().entities[0],
-                accessSummary: {
-                  status: 'posted-opening',
-                  confidence: 0.9,
-                  evidence: [
-                    {
-                      signalType: 'CURRENT_UNDERGRADS',
-                      confidence: 'HIGH',
-                      excerpt: 'Undergraduates are listed on the lab roster.',
-                    },
-                  ],
-                  signalTypes: ['CURRENT_UNDERGRADS'],
-                  entryPathwayTypes: ['EXPLORATORY_CONTACT'],
-                  hasActivePostedOpportunity: true,
-                  bestNextStep: 'Apply',
-                },
-              },
-            ],
-            pathways: [
-              {
-                _id: 'pathway-1',
-                pathwayType: 'POSTED_ROLE',
-                status: 'ACTIVE',
-                evidenceStrength: 'DIRECT',
-                studentFacingLabel: 'Posted opening',
-                bestNextStepCategory: 'apply',
-                compensation: 'STIPEND',
-                sourceUrls: ['https://program.example.test/opening'],
-                researchEntity: {
-                  _id: 'entity-1',
-                  slug: 'example-research-home',
-                  name: 'Example Research Home',
-                  departments: ['Neuroscience'],
-                  researchAreas: ['Systems neuroscience'],
-                },
-                activePostedOpportunity: {
-                  _id: 'opportunity-1',
-                  title: 'Summer RA role',
-                  status: 'OPEN',
-                  provenance: 'SCRAPER_DERIVED',
-                },
-                contactRoute: {
-                  routeType: 'OFFICIAL_APPLICATION',
-                  label: 'Apply through program page',
-                  url: 'https://program.example.test/opening',
-                },
-                evidence: [
-                  {
-                    signalType: 'POSTED_OPENING',
-                    confidence: 'HIGH',
-                    confidenceScore: 1,
-                    sourceUrl: 'https://program.example.test/opening',
-                  },
-                ],
-              },
-            ],
-          })}
-        />
-      </MemoryRouter>,
-    );
-
-    expect(container.textContent).toContain('Posted route');
-    expect(container.textContent).not.toContain('Open role');
-    expect(container.textContent).not.toContain('Paid/funded');
-    expect(container.textContent).toContain('Source route');
-    expect(container.textContent).toContain('Undergrad evidence');
-    expect(screen.getByRole('link', { name: 'View posted opportunity' }).getAttribute('href')).toBe(
-      '/opportunities/opportunity-1',
-    );
+    expect(link.getAttribute('href')).toBe('https://medicine.yale.edu/profile/fixture-scholar/');
   });
 
   it('uses compact browse cards to preserve more description before click-through', () => {
@@ -374,7 +290,9 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const description = screen.getByText(/Studies how synthetic signals move through fixture workflows/);
+    const description = screen.getByText(
+      /Studies how synthetic signals move through fixture workflows/,
+    );
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
     expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
@@ -388,7 +306,7 @@ describe('ResearchHomeCard', () => {
             entities: [
               ...(researchHome().entities || []),
               {
-                ...(researchHome().entities[0]),
+                ...researchHome().entities[0],
                 _id: 'entity-2',
                 slug: 'related-research-home',
                 name: 'Related Research Home',
@@ -431,9 +349,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Summary limited');
     expect(container.textContent).toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
-    expect(container.textContent).toContain(
-      'Review evidence and official source links',
-    );
+    expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
   });
 

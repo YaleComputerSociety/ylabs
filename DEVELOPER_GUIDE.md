@@ -4,7 +4,7 @@
 
 ## What Is This?
 
-Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, structured programs/fellowships, and real posted opportunities when they exist. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
+Yale Research is a **Yale research discovery platform**. Students discover Yale research homes, source-backed evidence, planning context, and structured programs/fellowships. The product is not a listings board; the legacy Listings surface and public Pathways page are retired.
 
 ---
 
@@ -39,9 +39,9 @@ Code flows **Local → Beta → Prod**. Beta is the staging gate.
 
 | Environment | Hosting            | MongoDB Database | Meilisearch                   | `MEILISEARCH_INDEX_PREFIX`                         |
 | ----------- | ------------------ | ---------------- | ----------------------------- | -------------------------------------------------- |
-| Local       | localhost          | `Development`    | Docker (`localhost:7700`)     | _(unset)_ → bare `researchentities` / `pathways`   |
-| Beta        | Render (free tier) | `Beta`           | Shared Render private service | `beta` → `beta_researchentities` / `beta_pathways` |
-| Prod        | Render (starter)   | `Production`     | Shared Render private service | `prod` → `prod_researchentities` / `prod_pathways` |
+| Local       | localhost          | `Development`    | Docker (`localhost:7700`)     | _(unset)_ → bare `researchentities`   |
+| Beta        | Render (free tier) | `Beta`           | Shared Render private service | `beta` → `beta_researchentities` |
+| Prod        | Render (starter)   | `Production`     | Shared Render private service | `prod` → `prod_researchentities` |
 
 - MongoDB: one Atlas cluster, three databases. `MONGODBURL` points to the right one per environment.
 - Meilisearch: beta and prod share one Render private service, isolated by index prefixes. Local uses its own Docker container.
@@ -116,7 +116,7 @@ Your local `.env` should point to:
 - `MONGODBURL` → the `Development` database on Atlas
 - `MEILISEARCH_HOST` → `http://localhost:7700`
 - `MEILISEARCH_API_KEY` → your local master key (e.g., `testkey`)
-- No `MEILISEARCH_INDEX_PREFIX` (local uses bare `researchentities` and `pathways` indexes)
+- No `MEILISEARCH_INDEX_PREFIX` (local uses the bare `researchentities` index)
 
 For the client:
 
@@ -153,7 +153,7 @@ On Windows, install Docker Desktop on Windows and enable WSL integration for you
 yarn meili:seed
 ```
 
-This rebuilds local Research and Pathways indexes from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
+This rebuilds the local Research index from MongoDB. Use `--strategy=swap` for beta/production rebuilds that serve live traffic. Semantic Research search is release-gated separately: Meilisearch must report embedded `researchentities` documents before `RESEARCH_SEARCH_SEMANTIC=true` should be used for Beta or production.
 Research relevance also depends on `researchentities` settings and documents: topic/name/tag fields are searched before description text, student-topic aliases are indexed in `studentSearchTerms`, and short aliases such as `ai`, `ml`, `nlp`, and `cv` disable typo expansion and search only topic-oriented fields.
 
 When a `/research` browse has no search query, results are ordered "best first" by a precomputed `browseRankScore` (completeness of the profile plus strength-weighted undergraduate access signals), falling back to recency. After importing or migrating data, populate the score with `yarn --cwd server research-homes:backfill-browse-rank --apply --confirm-browse-rank` (it runs in dry-run by default); ongoing scrape/materialize runs keep it fresh automatically.
@@ -300,7 +300,7 @@ MEILISEARCH_INDEX_PREFIX=dev npm --prefix data-migration run migrate:meilisearch
 ```
 
 `import:fellowships` validates the CSV transform before MongoDB writes and refuses replacement unless execute mode also supplies `--replace-existing`.
-`migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for current Research or Pathways indexes.
+`migrate:meilisearch` refreshes only the legacy `listings` Meilisearch index; do not use it for the current Research index.
 Any write must use `--execute --target local|test|dev|beta|prod`, and production writes additionally require `--allow-production --confirm-production`.
 Summary paths must be `.json` files under `data-migration/tmp` or the system temp directory.
 
@@ -342,13 +342,12 @@ yale-research/
 
 ## Search
 
-Search uses **Meilisearch** for Research, with internal pathway enrichment and Mongo fallback where rollout safety requires it.
+Search uses **Meilisearch** for Research, with Mongo fallback where rollout safety requires it.
 
 1. Research discovery uses the `researchentities` index and should only run true semantic search when Meilisearch reports embedded ResearchEntity documents.
    Student queries are normalized before search: low-value words such as `professor`, `lab`, and `research` are stripped when other terms remain, curated aliases expand `ai`, `ml`, `nlp`, `cv`, `neuro`, and `psych`, and short alias queries stay keyword-only so substring noise does not outrank true topic matches.
-2. `EntryPathway` data remains an internal action model for planning summaries, research detail, saved planning, admin review, and data-quality workflows. The public client should consume it through `/api/research/search`, not by calling a standalone Pathways endpoint.
-3. Pathway Meilisearch rebuilds remain useful for parity testing and future internal enrichment work; rollback remains `PATHWAY_SEARCH_BACKEND=mongo` where that service is used.
-4. Results carry evidence and next-step context rather than legacy listing claims.
+2. Browse and discovery run on the `researchentities` index, and `Signal` drives the access trust-filter. There is no separate pathways index or endpoint.
+3. Results carry evidence and next-step context rather than legacy listing claims.
 
 Listing CRUD is retired and must not be used as the search sync path.
 
@@ -394,7 +393,7 @@ User → Yale CAS SSO → passport.ts findOrCreateUser
 
 The find-or-create cascade runs at login time only. Per-request session restore (`deserializeUser`) is a plain user read plus the admin-grant check - no user creation and no Yalies/Directory calls - so a hiccup in those external sources can't fail already-authenticated requests. The CAS login callback (`/api/cas`) is exempt from the general API rate limiter so rate limiting cannot lock users out of login.
 
-The public browse surfaces (`/api/research`, `/api/opportunities`) are exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
+The public browse surface (`/api/research`) is exempt from both the general and the write limiter (`POST /api/research/search` is a pure read despite its method) and are governed solely by `publicDiscoveryLimiter` (300 req / 15 min), sized for anonymous signed-session buckets and conservative IP fallback - debounced search-as-you-type, filters, infinite scroll, and detail views.
 Anonymous bucket identifiers are initialized only for `/api` requests.
 For IP fallback, deployed runtimes require `TRUSTED_PROXY_CIDRS`; Express accepts forwarded visitor addresses only through peers in those explicitly validated address ranges.
 The `PUT .../addView` view-telemetry routes are likewise exempt from the write limiter so ordinary browsing can't 429 a user's real mutations.
@@ -420,7 +419,6 @@ All mount under `/api`.
 | ----------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | `/research`       | Yale Research search/detail, including profile evidence and planning-context enrichment   | Varies                                                 |
 | `/programs`       | Programs & Fellowships browse/search and saved-program support                            | Varies                                                 |
-| `/opportunities`  | Public detail for source-discovered posted opportunities                                | Public                                                 |
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
 | `/users`          | User CRUD                                                                                 | Yes                                                    |
@@ -496,7 +494,7 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 2. TypeScript interfaces in `client/src/types/`
 3. Migration script in `data-migration/` if existing data needs transformation.
    Prefer an existing package script with dry-run defaults, target validation, and a `--summary ./tmp/<name>.json` artifact for operator review.
-4. If the model affects Research or Pathways search, update the relevant Meilisearch rebuild/index config and release gate.
+4. If the model affects Research search, update the relevant Meilisearch rebuild/index config and release gate.
 
 ---
 
@@ -509,4 +507,4 @@ Client `tsc --noEmit` is still not part of CI; the client has known pre-existing
 | Meilisearch connection refused                 | Start Docker container or check `MEILISEARCH_HOST` in `.env`                                                                                                                                                                                                                                                                                                                                   |
 | CORS errors                                    | Add origin to `allowList` in `app.ts` or use dev mode                                                                                                                                                                                                                                                                                                                                          |
 | Retired practical-routes URL returns not found | Expected; public Pathways search is retired. Planning context appears inside Yale Research, research detail, and Dashboard planning.                                                                                                                                                                                                                                                           |
-| A client needs pathway data                    | Use `/api/research/search` or research detail. Saved planning uses entity-owned `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans`; legacy pathway-owned endpoints are compatibility support, not a new client contract. Fall back only when a canonical endpoint returns `404`, `405`, or `501`, and track saved-item and plan-detail endpoint modes independently. |
+| A client needs planning/access data            | Use `/api/research/search` or research detail. Saved planning uses entity-owned `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans`. The legacy pathway-owned save endpoints and pathway search are removed; do not reintroduce them. |

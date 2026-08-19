@@ -432,7 +432,7 @@ describe('app security runtime classification', () => {
       let sessionCookie: string | undefined;
 
       for (let attempt = 0; attempt < 51; attempt += 1) {
-        const response = await fetch(`http://127.0.0.1:${address.port}/api/users/favPathways`, {
+        const response = await fetch(`http://127.0.0.1:${address.port}/api/users/savedPrograms`, {
           method: 'PUT',
           headers: {
             origin: 'https://yalelabs.io',
@@ -440,7 +440,7 @@ describe('app security runtime classification', () => {
             'x-forwarded-proto': 'https',
             ...(sessionCookie ? { cookie: sessionCookie } : {}),
           },
-          body: JSON.stringify({ data: { favPathways: ['64a000000000000000000030'] } }),
+          body: JSON.stringify({ data: { savedPrograms: ['64a000000000000000000030'] } }),
         });
         if (!sessionCookie) {
           sessionCookie = response.headers

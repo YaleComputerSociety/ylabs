@@ -2,11 +2,7 @@ export interface CoverageAuditCounts {
   researchAreas: number;
   sourceUrls: number;
   members: number;
-  pathways: number;
-  publicContactRoutes: number;
-  totalContactRoutes: number;
   accessSignals: number;
-  postedOpportunities: number;
   activeListings: number;
 }
 
@@ -57,8 +53,7 @@ const ISSUE_SCORES: Record<string, number> = {
   NO_ACTIONABLE_ACCESS: 3,
   MISSING_DESCRIPTION: 2,
   NO_MEMBERS: 2,
-  NO_PATHWAYS: 2,
-  NO_PUBLIC_CONTACT_ROUTE: 2,
+  NO_ACCESS_SIGNALS: 2,
   SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED: 2,
   NO_RESEARCH_AREAS: 1,
   MISSING_WEBSITE_URL: 1,
@@ -83,21 +78,9 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   const descriptionChars = textLength(facts.description);
   const shortDescriptionChars = textLength(facts.shortDescription);
   const fullDescriptionChars = textLength(facts.fullDescription);
-  const {
-    researchAreas,
-    members,
-    pathways,
-    publicContactRoutes,
-    accessSignals,
-    postedOpportunities,
-    activeListings,
-  } = facts.counts;
+  const { researchAreas, members, accessSignals, activeListings } = facts.counts;
 
-  const noActionableAccess =
-    pathways === 0 &&
-    publicContactRoutes === 0 &&
-    postedOpportunities === 0 &&
-    activeListings === 0;
+  const noActionableAccess = accessSignals === 0 && activeListings === 0;
   const issues: string[] = [];
 
   if (descriptionChars === 0 && shortDescriptionChars === 0 && fullDescriptionChars === 0) {
@@ -109,11 +92,8 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   if (members === 0) {
     issues.push('NO_MEMBERS');
   }
-  if (pathways === 0) {
-    issues.push('NO_PATHWAYS');
-  }
-  if (publicContactRoutes === 0) {
-    issues.push('NO_PUBLIC_CONTACT_ROUTE');
+  if (accessSignals === 0) {
+    issues.push('NO_ACCESS_SIGNALS');
   }
   if (!facts.websiteUrl || facts.websiteUrl.trim().length === 0) {
     issues.push('MISSING_WEBSITE_URL');

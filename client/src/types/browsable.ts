@@ -13,10 +13,7 @@ import {
   verdictBadgeStyles,
   verdictLabel,
 } from '../utils/undergradAcceptance';
-import {
-  getFellowshipCycleStatus,
-  getFellowshipDeadlineSubtitle,
-} from '../utils/fellowshipCycle';
+import { getFellowshipCycleStatus, getFellowshipDeadlineSubtitle } from '../utils/fellowshipCycle';
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
@@ -91,41 +88,9 @@ export function getResearchGroupDisplayName(group: ResearchGroup): string {
   if (group.kind !== 'individual' && group.kind !== 'solo') {
     return group.name;
   }
-  return group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '');
-}
-
-const PATHWAY_TYPE_LABELS: Record<string, string> = {
-  POSTED_ROLE: 'Posted opening',
-  STUDENT_JOB: 'Student job',
-  RECURRING_PROGRAM: 'Recurring program',
-  COURSE_CREDIT: 'Course credit',
-  SENIOR_THESIS: 'Senior thesis',
-  FELLOWSHIP_FUNDED_PROJECT: 'Fellowship funded',
-  WORK_STUDY: 'Work-study',
-  VOLUNTEER_OUTREACH: 'Volunteer outreach',
-  CENTER_INTERNSHIP: 'Center internship',
-  FACULTY_SUPERVISION: 'Faculty supervision',
-  EXPLORATORY_CONTACT: 'Exploratory contact',
-};
-
-const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-]);
-
-export function getResearchEntityPathwaySummary(group: ResearchGroup): string | null {
-  const summary = group.accessSummary;
-  if (!summary) return null;
-  if (summary.hasActivePostedOpportunity) return 'Posted opening available';
-
-  const labels = Array.from(new Set(summary.entryPathwayTypes || []))
-    .filter((type) => !FORMALIZATION_ONLY_PATHWAY_TYPES.has(type))
-    .map((type) => PATHWAY_TYPE_LABELS[type] || type.replace(/_/g, ' ').toLowerCase())
-    .slice(0, 2);
-
-  if (labels.length === 0) return null;
-  return labels.join(' + ');
+  return (
+    group.displayName || group.name.replace(/\s+—\s+Research$/i, '').replace(/\s+Research$/i, '')
+  );
 }
 
 export function getResearchEntityBestNextStep(group: ResearchGroup): string | null {
@@ -139,10 +104,7 @@ export function isItemOpen(item: BrowsableItem): boolean {
     return item.data.hiringStatus >= 0;
   }
   if (item.type === 'researchGroup') {
-    const { verdict } = computeAcceptanceVerdict(
-      item.data,
-      item.data.accessSummary?.hasActivePostedOpportunity === true,
-    );
+    const { verdict } = computeAcceptanceVerdict(item.data);
     return verdict === 'verified-accepting' || verdict === 'likely-accepting';
   }
   return getFellowshipApplicationStatus(item.data).isApplicationWindowOpen;
@@ -254,10 +216,7 @@ export function getResearchGroupStatus(item: BrowsableItem): {
   className: string;
 } | null {
   if (item.type !== 'researchGroup') return null;
-  const { verdict } = computeAcceptanceVerdict(
-    item.data,
-    item.data.accessSummary?.hasActivePostedOpportunity === true,
-  );
+  const { verdict } = computeAcceptanceVerdict(item.data);
   return {
     label: verdictLabel(verdict),
     className: verdictBadgeStyles(verdict),

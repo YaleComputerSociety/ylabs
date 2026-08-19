@@ -261,6 +261,15 @@ describe('canonical public projections', () => {
           bestNextStepCategory: 'email-the-professor',
         },
         { now },
+      )?.bestNextStepCategory,
+    ).toBe('email-the-professor');
+    expect(
+      buildResearchEntityDiscoveryProjection(
+        {
+          ...base,
+          bestNextStepCategory: '   ',
+        },
+        { now },
       ),
     ).toBeUndefined();
     expect(

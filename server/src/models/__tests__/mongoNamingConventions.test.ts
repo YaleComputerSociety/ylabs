@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Account } from '../account';
 import { AdminGrant } from '../adminGrant';
 import { AnalyticsEvent } from '../analytics';
-import { ContactRoute } from '../contactRoute';
 import { Department } from '../department';
-import { EntryPathway } from '../entryPathway';
 import { EvidenceClaim } from '../evidenceClaim';
 import { FacultyMember } from '../facultyMember';
 import { Fellowship } from '../fellowship';
@@ -15,7 +13,6 @@ import { Observation } from '../observation';
 import { OrgUnit } from '../orgUnit';
 import { Paper } from '../paper';
 import { PaperAuthor } from '../paperAuthor';
-import { PostedOpportunity } from '../postedOpportunity';
 import { Researcher } from '../researcher';
 import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
@@ -40,9 +37,7 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Account, 'accounts'],
   [AdminGrant, 'admin_grants'],
   [AnalyticsEvent, 'analytics_events'],
-  [ContactRoute, 'contact_routes'],
   [Department, 'departments'],
-  [EntryPathway, 'entry_pathways'],
   [EvidenceClaim, 'evidence_claims'],
   [FacultyMember, 'faculty_members'],
   [Fellowship, 'fellowships'],
@@ -52,7 +47,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [OrgUnit, 'org_units'],
   [Paper, 'papers'],
   [PaperAuthor, 'paper_authors'],
-  [PostedOpportunity, 'posted_opportunities'],
   [Researcher, 'researchers'],
   [ResearchArea, 'research_areas'],
   [ResearchEntity, 'research_entities'],

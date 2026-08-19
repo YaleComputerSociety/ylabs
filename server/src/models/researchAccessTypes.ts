@@ -25,63 +25,7 @@ export const researchEntityTypes = [
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
-export const entryPathwayTypes = [
-  'POSTED_ROLE',
-  'RECURRING_PROGRAM',
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-  'WORK_STUDY',
-  'VOLUNTEER_OUTREACH',
-  'EXPLORATORY_CONTACT',
-  'CENTER_INTERNSHIP',
-  'FACULTY_SUPERVISION',
-  'STUDENT_JOB',
-  'UNKNOWN',
-] as const;
-
-export type EntryPathwayType = (typeof entryPathwayTypes)[number];
-
-export const entryPathwayStatuses = [
-  'ACTIVE',
-  'RECURRING',
-  'PLAUSIBLE',
-  'HISTORICAL',
-  'NOT_CURRENTLY_AVAILABLE',
-  'NO_EVIDENCE',
-] as const;
-
-export type EntryPathwayStatus = (typeof entryPathwayStatuses)[number];
-
-export const evidenceStrengths = [
-  'DIRECT',
-  'STRONG',
-  'MODERATE',
-  'WEAK',
-  'NONE',
-] as const;
-
-export type EvidenceStrength = (typeof evidenceStrengths)[number];
-
-export const compensationTypes = [
-  'PAID',
-  'COURSE_CREDIT',
-  'STIPEND',
-  'VOLUNTEER',
-  'WORK_STUDY',
-  'FELLOWSHIP',
-  'FELLOWSHIP_ELIGIBLE',
-  'UNKNOWN',
-] as const;
-
-export type CompensationType = (typeof compensationTypes)[number];
-
-export const postedOpportunityStatuses = [
-  'OPEN',
-  'CLOSED',
-  'ROLLING',
-  'ARCHIVED',
-] as const;
+export const postedOpportunityStatuses = ['OPEN', 'CLOSED', 'ROLLING', 'ARCHIVED'] as const;
 
 export type PostedOpportunityStatus = (typeof postedOpportunityStatuses)[number];
 
@@ -118,13 +62,9 @@ export const undergraduateLogisticsSignalTypes = [
   'CURRENT_AVAILABILITY',
 ] as const;
 
-export type UndergraduateLogisticsSignalType =
-  (typeof undergraduateLogisticsSignalTypes)[number];
+export type UndergraduateLogisticsSignalType = (typeof undergraduateLogisticsSignalTypes)[number];
 
-export const signalTypes = [
-  ...accessSignalTypes,
-  ...undergraduateLogisticsSignalTypes,
-] as const;
+export const signalTypes = [...accessSignalTypes, ...undergraduateLogisticsSignalTypes] as const;
 
 export type SignalType = (typeof signalTypes)[number];
 
@@ -132,44 +72,9 @@ export const signalConfidences = accessSignalConfidences;
 
 export type SignalConfidence = AccessSignalConfidence;
 
-export const signalStatuses = [
-  'KNOWN',
-  'STALE_UNDER_REVIEW',
-  'CONFLICTING_WITHHELD',
-] as const;
+export const signalStatuses = ['KNOWN', 'STALE_UNDER_REVIEW', 'CONFLICTING_WITHHELD'] as const;
 
 export type SignalStatus = (typeof signalStatuses)[number];
-
-export const contactRouteTypes = [
-  'OFFICIAL_APPLICATION',
-  'LAB_MANAGER',
-  'PROGRAM_MANAGER',
-  'FACULTY_PI',
-  'DEPARTMENT_CONTACT',
-  'FELLOWSHIP_OFFICE',
-  'COURSE_INSTRUCTOR',
-  'UNKNOWN',
-] as const;
-
-export type ContactRouteType = (typeof contactRouteTypes)[number];
-
-export const contactRouteVisibilities = [
-  'PUBLIC',
-  'AUTHENTICATED',
-  'ADMIN_ONLY',
-] as const;
-
-export type ContactRouteVisibility = (typeof contactRouteVisibilities)[number];
-
-export const contactPolicies = [
-  'OFFICIAL_ROUTE_PREFERRED',
-  'DIRECT_CONTACT_OK',
-  'APPLICATION_ONLY',
-  'NO_DIRECT_CONTACT',
-  'UNKNOWN',
-] as const;
-
-export type ContactPolicy = (typeof contactPolicies)[number];
 
 export const researchGroupKinds = [
   'lab',
@@ -184,10 +89,7 @@ export const researchGroupKinds = [
 
 export type ResearchGroupKind = (typeof researchGroupKinds)[number];
 
-export const ResearchGroupKindToEntityType: Record<
-  ResearchGroupKind,
-  ResearchEntityType
-> = {
+export const ResearchGroupKindToEntityType: Record<ResearchGroupKind, ResearchEntityType> = {
   lab: 'LAB',
   center: 'CENTER',
   institute: 'INSTITUTE',
@@ -198,9 +100,7 @@ export const ResearchGroupKindToEntityType: Record<
   solo: 'INDIVIDUAL_RESEARCH',
 };
 
-export const mapResearchGroupKindToEntityType = (
-  kind?: string,
-): ResearchEntityType => {
+export const mapResearchGroupKindToEntityType = (kind?: string): ResearchEntityType => {
   if (kind && researchGroupKinds.includes(kind as ResearchGroupKind)) {
     return ResearchGroupKindToEntityType[kind as ResearchGroupKind];
   }
@@ -208,14 +108,9 @@ export const mapResearchGroupKindToEntityType = (
   return 'LAB';
 };
 
-export const researchEntityTypeForResearchGroupKind =
-  mapResearchGroupKindToEntityType;
+export const researchEntityTypeForResearchGroupKind = mapResearchGroupKindToEntityType;
 
 export const ResearchEntityTypes = researchEntityTypes;
-export const EntryPathwayTypes = entryPathwayTypes;
-export const EntryPathwayStatuses = entryPathwayStatuses;
-export const EvidenceStrengths = evidenceStrengths;
-export const CompensationTypes = compensationTypes;
 export const PostedOpportunityStatuses = postedOpportunityStatuses;
 export const AccessSignalTypes = accessSignalTypes;
 export const AccessSignalConfidences = accessSignalConfidences;
@@ -223,6 +118,3 @@ export const SignalTypes = signalTypes;
 export const SignalConfidences = signalConfidences;
 export const SignalStatuses = signalStatuses;
 export const UndergraduateLogisticsSignalTypes = undergraduateLogisticsSignalTypes;
-export const ContactRouteTypes = contactRouteTypes;
-export const ContactRouteVisibilities = contactRouteVisibilities;
-export const ContactPolicies = contactPolicies;

@@ -3,7 +3,6 @@ import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
-import { EntryPathway } from '../models/entryPathway';
 import { User } from '../models/user';
 import mongoose from 'mongoose';
 import {
@@ -18,8 +17,6 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { upsertSignal, type UpsertSignalInput } from './signalService';
-import { upsertContactRoute, type UpsertContactRouteInput } from './contactRouteService';
-import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
@@ -115,18 +112,7 @@ interface RepairDeps {
     userId: string,
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
-  upsertEntryPathway?: (
-    input: UpsertEntryPathwayInput,
-  ) => Promise<{ pathwayId?: string; doc?: any }>;
-  findReusableExploratoryContactPathway?: (
-    researchEntityId: string,
-  ) => Promise<{ pathwayId?: string; derivationKey?: string; doc?: any } | null>;
-  upsertSignal?: (
-    input: UpsertSignalInput,
-  ) => Promise<{ signalId?: string; doc?: any }>;
-  upsertContactRoute?: (
-    input: UpsertContactRouteInput,
-  ) => Promise<{ contactRouteId?: string; doc?: any }>;
+  upsertSignal?: (input: UpsertSignalInput) => Promise<{ signalId?: string; doc?: any }>;
   findActionEvidenceObservationIds?: (input: {
     researchEntityId: string;
     userId: string;
@@ -1154,68 +1140,6 @@ function archivedResearchEntityRepairBlock(
   };
 }
 
-async function upsertOrReuseOfficialProfileActionPathway({
-  plan,
-  deps,
-  userId,
-  sourceUrl,
-  evidenceIds,
-  reusablePathway,
-}: {
-  plan: VisibilityRepairPlan;
-  deps: RepairDeps;
-  userId: string;
-  sourceUrl: string;
-  evidenceIds: string[];
-  reusablePathway?: { pathwayId?: string; derivationKey?: string; doc?: any } | null;
-}): Promise<{ pathwayId?: string; reused: boolean }> {
-  const reusable =
-    reusablePathway ||
-    (deps.findReusableExploratoryContactPathway
-      ? await deps.findReusableExploratoryContactPathway(plan.recordId)
-      : null);
-  const reusablePathwayId = idValue(reusable?.pathwayId) || idValue(reusable?.doc?._id);
-  const derivationKey =
-    textValue(reusable?.derivationKey) || textValue(reusable?.doc?.derivationKey);
-
-  if (reusablePathwayId && !derivationKey) {
-    return { pathwayId: reusablePathwayId, reused: true };
-  }
-
-  const pathway = await deps.upsertEntryPathway?.({
-    researchEntityId: plan.recordId,
-    pathwayType: 'EXPLORATORY_CONTACT',
-    status: 'PLAUSIBLE',
-    evidenceStrength: 'WEAK',
-    studentFacingLabel: 'Explore this research area through the official faculty profile',
-    explanation:
-      'Official Yale profile evidence identifies a lead faculty member for this research area. No active undergraduate posting is currently attached.',
-    bestNextStep:
-      'Review the official profile and prepare specific outreach that references the research area before contacting the faculty member.',
-    compensation: 'UNKNOWN',
-    sourceEvidenceIds: evidenceIds,
-    sourceUrls: [sourceUrl],
-    confidence: 0.52,
-    derivationKey: derivationKey || `visibility-repair:official-profile-outreach:${userId}`,
-    archived: false,
-    lastObservedAt: new Date(),
-  });
-
-  return {
-    pathwayId: pathway?.pathwayId || idValue(pathway?.doc?._id) || reusablePathwayId,
-    reused: Boolean(reusablePathwayId),
-  };
-}
-
-const sourceEvidenceIdsFromReusablePathway = (
-  reusable: { pathwayId?: string; derivationKey?: string; doc?: any } | null,
-): string[] =>
-  uniqueStrings(
-    Array.isArray(reusable?.doc?.sourceEvidenceIds)
-      ? reusable.doc.sourceEvidenceIds.map(idValue)
-      : [],
-  );
-
 async function createOfficialProfileActionEvidenceRepair({
   plan,
   mode,
@@ -1227,17 +1151,11 @@ async function createOfficialProfileActionEvidenceRepair({
   deps: RepairDeps;
   match: { userId: string; name: string; sourceUrl: string };
 }): Promise<{ repaired: boolean; summary: string[] }> {
-  if (
-    !deps.upsertEntryPathway ||
-    !deps.upsertContactRoute ||
-    !deps.upsertSignal ||
-    !deps.findActionEvidenceObservationIds
-  ) {
+  if (!deps.upsertSignal || !deps.findActionEvidenceObservationIds) {
     return { repaired: false, summary: [] };
   }
 
-  let reusablePathway: { pathwayId?: string; derivationKey?: string; doc?: any } | null = null;
-  let evidenceIds =
+  const evidenceIds =
     mode === 'apply'
       ? await deps.findActionEvidenceObservationIds({
           researchEntityId: plan.recordId,
@@ -1245,25 +1163,11 @@ async function createOfficialProfileActionEvidenceRepair({
           sourceUrl: match.sourceUrl,
         })
       : ['dry-run-official-profile-evidence'];
-  if (evidenceIds.length === 0 && deps.findReusableExploratoryContactPathway) {
-    reusablePathway = await deps.findReusableExploratoryContactPathway(plan.recordId);
-    evidenceIds = sourceEvidenceIdsFromReusablePathway(reusablePathway);
-  }
   if (evidenceIds.length === 0) return { repaired: false, summary: [] };
 
   if (mode === 'apply') {
-    const pathway = await upsertOrReuseOfficialProfileActionPathway({
-      plan,
-      deps,
-      userId: match.userId,
-      sourceUrl: match.sourceUrl,
-      evidenceIds,
-      reusablePathway,
-    });
-
     await deps.upsertSignal({
       researchEntityId: plan.recordId,
-      entryPathwayId: pathway.pathwayId,
       type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'LOW',
       confidenceScore: 0.52,
@@ -1276,34 +1180,11 @@ async function createOfficialProfileActionEvidenceRepair({
       derivationKey: `visibility-repair:official-profile-outreach:${match.userId}`,
       archived: false,
     });
-
-    await deps.upsertContactRoute({
-      researchEntityId: plan.recordId,
-      entryPathwayId: pathway.pathwayId,
-      routeType: 'FACULTY_PI',
-      priority: 70,
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      name: match.name || undefined,
-      role: 'Lead faculty profile',
-      url: match.sourceUrl,
-      rationale:
-        'Official Yale profile is the safest public next step when no active posting or application route is attached.',
-      sourceEvidenceIds: evidenceIds,
-      sourceName: 'visibility-repair-queue',
-      sourceUrl: match.sourceUrl,
-      observedAt: new Date(),
-      derivationKey: `visibility-repair:official-profile-contact:${match.userId}`,
-    });
   }
 
   return {
     repaired: true,
-    summary: [
-      'created low-confidence exploratory pathway from official PI profile',
-      'created reach-out-plausible access signal from official PI profile',
-      'created public faculty profile contact route',
-    ],
+    summary: ['created reach-out-plausible access signal from official PI profile'],
   };
 }
 
@@ -1348,12 +1229,7 @@ async function createEntitySourceActionEvidenceRepair({
   entity: Record<string, any>;
   sourceUrl: string;
 }): Promise<{ repaired: boolean; summary: string[]; repairSource: string }> {
-  if (
-    !deps.upsertEntryPathway ||
-    !deps.upsertContactRoute ||
-    !deps.upsertSignal ||
-    !deps.findEntityActionEvidenceObservationIds
-  ) {
+  if (!deps.upsertSignal || !deps.findEntityActionEvidenceObservationIds) {
     return { repaired: false, summary: [], repairSource: sourceUrl };
   }
 
@@ -1367,34 +1243,11 @@ async function createEntitySourceActionEvidenceRepair({
 
   const evidenceSourceUrl =
     observations.find((observation) => hasHttpUrl(observation.sourceUrl))?.sourceUrl || sourceUrl;
-  const sourceUrls = uniqueStrings([evidenceSourceUrl, sourceUrl]).filter(hasHttpUrl);
-  const contactUrl = entityActionEvidenceSourceUrl(entity) || evidenceSourceUrl;
   const derivationKey = `visibility-repair:entity-source-outreach:${plan.recordId}`;
 
   if (mode === 'apply') {
-    const pathway = await deps.upsertEntryPathway({
-      researchEntityId: plan.recordId,
-      pathwayType: 'EXPLORATORY_CONTACT',
-      status: 'PLAUSIBLE',
-      evidenceStrength: 'WEAK',
-      studentFacingLabel: 'Explore this research program through the official source page',
-      explanation:
-        'Source-backed Yale evidence indicates undergraduate or student relevance, but no active posting or specific contact person is currently attached.',
-      bestNextStep:
-        'Review the official source page and look for program contact, events, project guidance, or application instructions before reaching out.',
-      compensation: 'UNKNOWN',
-      sourceEvidenceIds: evidenceIds,
-      sourceUrls,
-      confidence: 0.45,
-      derivationKey,
-      archived: false,
-      lastObservedAt: new Date(),
-    });
-    const pathwayId = pathway?.pathwayId || idValue(pathway?.doc?._id);
-
     await deps.upsertSignal({
       researchEntityId: plan.recordId,
-      entryPathwayId: pathwayId,
       type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'LOW',
       confidenceScore: 0.45,
@@ -1411,33 +1264,11 @@ async function createEntitySourceActionEvidenceRepair({
       derivationKey,
       archived: false,
     });
-
-    await deps.upsertContactRoute({
-      researchEntityId: plan.recordId,
-      entryPathwayId: pathwayId,
-      routeType: 'UNKNOWN',
-      priority: 80,
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      role: 'Research entity source',
-      url: contactUrl,
-      rationale:
-        'The official research entity page is the safest public next step when no active posting, application route, or trusted person owner is attached.',
-      sourceEvidenceIds: evidenceIds,
-      sourceName: 'visibility-repair-queue',
-      sourceUrl: evidenceSourceUrl,
-      observedAt: new Date(),
-      derivationKey: `visibility-repair:entity-source-contact:${plan.recordId}`,
-    });
   }
 
   return {
     repaired: true,
-    summary: [
-      'created exploratory pathway from entity-level undergraduate evidence',
-      'created reach-out-plausible access signal from entity-level evidence',
-      'created public research entity source contact route',
-    ],
+    summary: ['created reach-out-plausible access signal from entity-level evidence'],
     repairSource: evidenceSourceUrl,
   };
 }
@@ -1478,8 +1309,7 @@ async function attemptResearchActionEvidenceRepair(
     !quality.repairFlags.includes('pi_identity_conflict') &&
     actionLead &&
     Boolean(actionEvidenceSourceUrl);
-  let reusablePathway: { pathwayId?: string; derivationKey?: string; doc?: any } | null = null;
-  let evidenceIds =
+  const evidenceIds =
     canRepair && deps.findActionEvidenceObservationIds
       ? await deps.findActionEvidenceObservationIds({
           researchEntityId: plan.recordId,
@@ -1487,28 +1317,8 @@ async function attemptResearchActionEvidenceRepair(
           sourceUrl: actionEvidenceSourceUrl || '',
         })
       : [];
-  if (canRepair && evidenceIds.length === 0 && deps.findReusableExploratoryContactPathway) {
-    reusablePathway = await deps.findReusableExploratoryContactPathway(plan.recordId);
-    evidenceIds = sourceEvidenceIdsFromReusablePathway(reusablePathway);
-  }
-  if (!canRepair && deps.findReusableExploratoryContactPathway) {
-    reusablePathway = await deps.findReusableExploratoryContactPathway(plan.recordId);
-    evidenceIds = sourceEvidenceIdsFromReusablePathway(reusablePathway);
-  }
-  const canRepairFromReusableActionEvidence =
-    !canRepair &&
-    quality.descriptionState === 'source_backed' &&
-    quality.cardState === 'complete' &&
-    quality.leadState === 'lead_attached' &&
-    !quality.repairFlags.includes('missing_source_url') &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
-    Boolean(actionEvidenceSourceUrl) &&
-    Boolean(reusablePathway) &&
-    evidenceIds.length > 0;
-  const usingReusablePathwayEvidence = Boolean(reusablePathway) && evidenceIds.length > 0;
   const canRepairFromEntitySourceEvidence =
     !canRepair &&
-    !canRepairFromReusableActionEvidence &&
     quality.descriptionState === 'source_backed' &&
     quality.cardState === 'complete' &&
     !quality.repairFlags.includes('missing_source_url') &&
@@ -1516,7 +1326,7 @@ async function attemptResearchActionEvidenceRepair(
     !quality.repairFlags.includes('pi_identity_conflict') &&
     Boolean(actionEvidenceSourceUrl);
 
-  if (!deps.upsertEntryPathway || !deps.upsertContactRoute || !deps.upsertSignal) {
+  if (!deps.upsertSignal) {
     return {
       plan,
       applied: false,
@@ -1530,7 +1340,7 @@ async function attemptResearchActionEvidenceRepair(
     };
   }
 
-  if ((!canRepair && !canRepairFromReusableActionEvidence) || evidenceIds.length === 0) {
+  if (!canRepair || evidenceIds.length === 0) {
     if (canRepairFromEntitySourceEvidence) {
       const entitySourceRepair = await createEntitySourceActionEvidenceRepair({
         plan,
@@ -1564,57 +1374,24 @@ async function attemptResearchActionEvidenceRepair(
     };
   }
 
-  const repairSourceUrl = actionEvidenceSourceUrl || actionLead?.sourceUrl || '';
+  const hasTrustedActionLead = Boolean(actionLead);
 
   if (mode === 'apply') {
-    const pathway = await upsertOrReuseOfficialProfileActionPathway({
-      plan,
-      deps,
-      userId: actionLead?.userId || plan.recordId,
-      sourceUrl: repairSourceUrl,
-      evidenceIds,
-      reusablePathway,
-    });
-    const hasTrustedActionLead = Boolean(actionLead);
-
-    if (!usingReusablePathwayEvidence) {
-      await deps.upsertSignal({
-        researchEntityId: plan.recordId,
-        entryPathwayId: pathway.pathwayId,
-        type: 'REACH_OUT_PLAUSIBLE',
-        confidence: 'LOW',
-        confidenceScore: 0.52,
-        observedAt: new Date(),
-        sourceEvidenceId: evidenceIds[0],
-        excerpt: hasTrustedActionLead
-          ? 'Official Yale profile identifies the lead faculty member for this research area.'
-          : 'Source-backed pathway evidence supports exploratory contact through the research entity source.',
-        sourceName: 'visibility-repair-queue',
-        sourceUrl: actionEvidenceSourceUrl,
-        originalConfidence: 0.52,
-        derivationKey: `visibility-repair:official-profile-outreach:${actionLead?.userId || plan.recordId}`,
-        archived: false,
-      });
-    }
-
-    await deps.upsertContactRoute({
+    await deps.upsertSignal({
       researchEntityId: plan.recordId,
-      entryPathwayId: pathway.pathwayId,
-      routeType: hasTrustedActionLead ? 'FACULTY_PI' : 'UNKNOWN',
-      priority: 70,
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      name: actionLead?.name || undefined,
-      role: hasTrustedActionLead ? 'Lead faculty profile' : 'Research entity source',
-      url: actionEvidenceSourceUrl,
-      rationale: hasTrustedActionLead
-        ? 'Official Yale profile is the safest public next step when no active posting or application route is attached.'
-        : 'The source-backed research entity page is the safest public next step when no active posting or application route is attached.',
-      sourceEvidenceIds: evidenceIds,
+      type: 'REACH_OUT_PLAUSIBLE',
+      confidence: 'LOW',
+      confidenceScore: 0.52,
+      observedAt: new Date(),
+      sourceEvidenceId: evidenceIds[0],
+      excerpt: hasTrustedActionLead
+        ? 'Official Yale profile identifies the lead faculty member for this research area.'
+        : 'Source-backed evidence supports exploratory contact through the research entity source.',
       sourceName: 'visibility-repair-queue',
       sourceUrl: actionEvidenceSourceUrl,
-      observedAt: new Date(),
-      derivationKey: `visibility-repair:official-profile-contact:${actionLead?.userId || plan.recordId}`,
+      originalConfidence: 0.52,
+      derivationKey: `visibility-repair:official-profile-outreach:${actionLead?.userId || plan.recordId}`,
+      archived: false,
     });
   }
 
@@ -1622,17 +1399,7 @@ async function attemptResearchActionEvidenceRepair(
     plan,
     applied: true,
     status: 'repaired',
-    patchSummary: usingReusablePathwayEvidence
-      ? [
-          'reused existing exploratory pathway evidence',
-          'kept existing reach-out-plausible access signal from reusable pathway evidence',
-          'created public research entity source contact route',
-        ]
-      : [
-          'created low-confidence exploratory pathway from official PI profile',
-          'created reach-out-plausible access signal from official PI profile',
-          'created public faculty profile contact route',
-        ],
+    patchSummary: ['created reach-out-plausible access signal from official PI profile'],
     remainingBlockers: [],
     repairSource: actionEvidenceSourceUrl || actionLead?.sourceUrl || '',
   };
@@ -2186,31 +1953,8 @@ const defaultRepairDeps: RepairDeps = {
     );
     await ResearchGroupMember.updateOne(filter, update, options);
   },
-  async upsertEntryPathway(input) {
-    return upsertEntryPathway(input);
-  },
-  async findReusableExploratoryContactPathway(researchEntityId) {
-    const storedResearchEntityId = toVisibilityRepairObjectId(researchEntityId);
-    if (!storedResearchEntityId) return null;
-    const pathway = await EntryPathway.findOne({
-      researchEntityId: storedResearchEntityId,
-      pathwayType: 'EXPLORATORY_CONTACT',
-      archived: { $ne: true },
-    })
-      .sort({ confidence: -1, updatedAt: -1 })
-      .lean();
-    if (!pathway?._id) return null;
-    return {
-      pathwayId: idValue(pathway._id),
-      derivationKey: textValue((pathway as Record<string, any>).derivationKey),
-      doc: pathway,
-    };
-  },
   async upsertSignal(input) {
     return upsertSignal(input);
-  },
-  async upsertContactRoute(input) {
-    return upsertContactRoute(input);
   },
   async findActionEvidenceObservationIds({ researchEntityId, userId, sourceUrl }) {
     const variants = urlVariants([sourceUrl]).filter(hasHttpUrl);

@@ -12,11 +12,17 @@ type PlanningSummary = {
   nextDeadlineDate?: string;
 };
 
-let savedPathwaySummary: PlanningSummary = {
-  count: 2,
-  nextDeadlineLabel: 'Archive assistant: Due May 20, 2026',
-};
+let savedResearchEntityIds: string[] = ['entity-1', 'entity-2'];
 let savedProgramSummary: PlanningSummary = { count: 1 };
+
+vi.mock('../../hooks/useFavorites', () => ({
+  default: () => ({
+    favIds: savedResearchEntityIds,
+    setFavorite: vi.fn(),
+    toggleFavorite: vi.fn(),
+    reloadFavorites: vi.fn(),
+  }),
+}));
 
 vi.mock('../../components/accounts/ProfileEditor', () => ({
   default: () => <section>Profile editor</section>,
@@ -43,25 +49,10 @@ vi.mock('../../components/accounts/FavoritesManager', () => {
   return { default: MockFavoritesManager };
 });
 
-vi.mock('../../components/accounts/SavedPathwaysSection', () => {
-  const MockSavedPathwaysSection = ({
-    onSummaryChange,
-  }: {
-    onSummaryChange?: (summary: { count: number; nextDeadlineLabel?: string }) => void;
-  }) => {
-    useEffect(() => {
-      onSummaryChange?.(savedPathwaySummary);
-    }, [onSummaryChange]);
-    return <section>Saved research plans</section>;
-  };
-
-  return { default: MockSavedPathwaysSection };
-});
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  savedPathwaySummary = { count: 2, nextDeadlineLabel: 'Archive assistant: Due May 20, 2026' };
+  savedResearchEntityIds = ['entity-1', 'entity-2'];
   savedProgramSummary = { count: 1 };
 });
 
@@ -91,14 +82,12 @@ describe('Account page', () => {
     expect(screen.getByText(/1 saved program/)).toBeTruthy();
     expect(screen.queryByText('Your plan')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan your next research move' })).toBeNull();
-    expect(screen.getByText('Archive assistant: Due May 20, 2026')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Find more research homes' })).toHaveLength(1);
     expect(screen.queryByRole('link', { name: 'Yale Labs' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Programs & Fellowships' })).toBeNull();
   });
 
-  it('uses the saved program deadline as the next planning cue when no saved research plan has one', () => {
-    savedPathwaySummary = { count: 0, nextDeadlineLabel: '' };
+  it('uses the saved program deadline as the next planning cue', () => {
     savedProgramSummary = {
       count: 1,
       nextDeadlineDate: '2099-06-30T00:00:00.000Z',
@@ -181,6 +170,6 @@ describe('Account page', () => {
     expect(screen.getByText('Favorites manager: professor')).toBeTruthy();
     expect(screen.queryByText('Faculty opportunity manager')).toBeNull();
     expect(screen.queryByText('Your plan')).toBeNull();
-    expect(screen.queryByText('Saved research plans')).toBeNull();
+    expect(screen.queryByText(/research plans/)).toBeNull();
   });
 });

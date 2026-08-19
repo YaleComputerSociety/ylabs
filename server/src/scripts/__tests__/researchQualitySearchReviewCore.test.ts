@@ -31,10 +31,7 @@ function baseFacts(): ResearchQualitySearchFacts {
     researchAreas: [],
     departments: [],
     duplicateCandidates: [{ slug: 'example-lab-2', name: 'Example Laboratory' }],
-    pathwayCount: 1,
-    publicContactRouteCount: 0,
     accessSignalCount: 0,
-    postedOpportunityCount: 0,
     topSearchReasons: [],
     matchedQueryNames: ['data science'],
   };
@@ -87,7 +84,6 @@ describe('buildResearchQualitySearchReviewRow', () => {
         'WEAK_SOURCE_DOMAIN',
         'DUPLICATE_OR_DISAMBIGUATION_RISK',
         'THIN_PATHWAY_EVIDENCE',
-        'THIN_CONTACT_EVIDENCE',
         'SEMANTIC_EXPLAINABILITY_GAP',
       ]),
     );
@@ -110,10 +106,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       researchAreas: ['Computational Biology'],
       departments: ['Molecular Biophysics and Biochemistry'],
       duplicateCandidates: [],
-      pathwayCount: 2,
-      publicContactRouteCount: 1,
       accessSignalCount: 2,
-      postedOpportunityCount: 1,
       topSearchReasons: ['description matched computational biology', 'pathway evidence matched'],
     });
 
@@ -138,10 +131,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       members: [],
       researchAreas: ['Cancer Immunology'],
       duplicateCandidates: [],
-      pathwayCount: 0,
-      publicContactRouteCount: 0,
       accessSignalCount: 0,
-      postedOpportunityCount: 0,
       topSearchReasons: ['description matched cancer research'],
     });
 
@@ -165,13 +155,8 @@ describe('buildResearchQualitySearchReviewRow', () => {
       members: [{ role: 'pi', name: 'Ada Example' }],
       researchAreas: ['Computational Biology'],
       duplicateCandidates: [],
-      pathwayCount: 0,
-      pathwayTypes: [],
-      publicContactRouteCount: 0,
-      publicContactRouteTypes: [],
       accessSignalCount: 0,
       accessSignalTypes: [],
-      postedOpportunityCount: 0,
       topSearchReasons: ['description matched computational biology'],
     });
 
@@ -192,8 +177,6 @@ describe('summarizeResearchQualitySearchRows', () => {
       sourceTitle: 'Sourced Center',
       members: [{ role: 'director', name: 'Grace Example' }],
       researchAreas: ['Digital Humanities'],
-      pathwayCount: 2,
-      publicContactRouteCount: 1,
       accessSignalCount: 1,
       topSearchReasons: ['name matched digital humanities'],
     });
@@ -253,10 +236,7 @@ describe('researchQualitySearchReview CLI helpers', () => {
       ]),
     ).toThrow(/--output must write under/);
     expect(() =>
-      parseResearchQualitySearchReviewArgs([
-        '--output',
-        '/tmp/research-quality-search-review.txt',
-      ]),
+      parseResearchQualitySearchReviewArgs(['--output', '/tmp/research-quality-search-review.txt']),
     ).toThrow(/--output must point to a \.json report file/);
   });
 

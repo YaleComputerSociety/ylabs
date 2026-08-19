@@ -129,7 +129,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
   it('blocks archived entities that still have a live dependent reference', async () => {
     const blockedId = await insertArchivedEntity('Blocked Home');
-    await mongoose.connection.db!.collection('posted_opportunities').insertOne({
+    await mongoose.connection.db!.collection('signals').insertOne({
       researchEntityId: blockedId,
       archived: false,
     });
@@ -139,7 +139,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     expect(dryRun.plan.blockedCount).toBe(1);
     expect(dryRun.plan.blocked[0]).toMatchObject({
       id: String(blockedId),
-      references: [{ collection: 'posted_opportunities', field: 'researchEntityId', count: 1 }],
+      references: [{ collection: 'signals', field: 'researchEntityId', count: 1 }],
     });
 
     await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
@@ -147,7 +147,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
   it('blocks archived entities referenced by a string-typed researchEntityId', async () => {
     const blockedId = await insertArchivedEntity('String Referenced Home');
-    await mongoose.connection.db!.collection('entry_pathways').insertOne({
+    await mongoose.connection.db!.collection('signals').insertOne({
       researchEntityId: String(blockedId),
       archived: false,
     });
@@ -157,7 +157,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     expect(dryRun.plan.blockedCount).toBe(1);
     expect(dryRun.plan.blocked[0]).toMatchObject({
       id: String(blockedId),
-      references: [{ collection: 'entry_pathways', field: 'researchEntityId', count: 1 }],
+      references: [{ collection: 'signals', field: 'researchEntityId', count: 1 }],
     });
 
     await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
@@ -181,9 +181,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     expect(dryRun.deletedResearchEntities).toBe(0);
     expect(deleted).toEqual([]);
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(1);
-    await expect(
-      mongoose.connection.db!.collection('signals').countDocuments({}),
-    ).resolves.toBe(1);
+    await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
   });
 
   it('applies deletions only to eligible archived entities and their dependents', async () => {
@@ -191,12 +189,8 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     const blockedId = await insertArchivedEntity('Blocked Home');
     await mongoose.connection.db!.collection('signals').insertMany([
       { researchEntityId: eligibleId, archived: true },
-      { researchEntityId: blockedId, archived: true },
+      { researchEntityId: blockedId, archived: false },
     ]);
-    await mongoose.connection.db!.collection('contact_routes').insertOne({
-      researchEntityId: blockedId,
-      archived: false,
-    });
 
     const deleted: string[][] = [];
     const applied = await cleanupArchivedResearchEntities({
@@ -212,8 +206,6 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(0);
     await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
-    await expect(
-      mongoose.connection.db!.collection('signals').countDocuments({}),
-    ).resolves.toBe(1);
+    await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
   });
 });

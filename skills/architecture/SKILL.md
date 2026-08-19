@@ -96,8 +96,6 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | ----------------- | ------------------- | --------------------------------------------------- |
 | `/research`       | `researchGroups.ts` | Varies, with public search and detail.              |
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
-| `/opportunities`  | `opportunities.ts`  | Public detail for source-discovered opportunities.  |
-| `/pathways`       | `pathways.ts`       | Auth required.                                      |
 | `/listings`       | `listings.ts`       | Legacy read and claim routes; authoring is retired. |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
 | `/users`          | `users.ts`          | Auth required.                                      |
@@ -114,9 +112,9 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `researchEntityDto.ts` / `researchEntityQuality.ts`                                                                                         | Public ResearchEntity DTO shaping and quality scoring.               |
 | `researchEntityBrowseRank.ts` / `researchEntityBrowseRankService.ts`                                                                        | Best-first browse ranking scorer and persist plus Meili resync.      |
-| `researchEntitySearchIndexService.ts` / `pathwaySearchIndexService.ts` / `pathwaySearchService.ts`                                          | Meilisearch index sync and query.                                    |
+| `researchEntitySearchIndexService.ts`                                                                                                       | Meilisearch index sync and query.                                    |
 | `meiliSyncService.ts`                                                                                                                       | Syncs collection upserts into Meilisearch indexes.                   |
-| `signalService.ts` / `accessSummaryService.ts` / `entryPathwayService.ts` / `contactRouteService.ts` / `postedOpportunityService.ts`        | Source-backed access and posted-opportunity read layer.              |
+| `signalService.ts` / `accessSummaryService.ts`                                                                                              | Source-backed access read layer.                                     |
 | `adminOperatorBoardService.ts` / `adminAccessReviewService.ts` / `adminGrantService.ts`                                                     | Operator board, access review, and admin grants.                     |
 | `sourceHealthService.ts` / `scholarlyActivityAuditService.ts` / `paperQualityService.ts`                                                    | Scraper/source health and paper-quality scoring.                     |
 | `studentVisibilityTier.ts` / `studentVisibilityGateService.ts` / `visibilityRepairQueueService.ts` / `studentDecisionExplanationService.ts` | Student visibility tiering, repair queue, and decision explanations. |

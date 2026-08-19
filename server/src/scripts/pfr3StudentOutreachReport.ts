@@ -6,7 +6,35 @@ import path from 'path';
 import { initializeConnections } from '../db/connections';
 import { StudentOutreach } from '../models/studentOutreach';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { buildStudentOutreachCountReport } from './pfr3RolloutCore';
+
+export interface OutreachCountRow {
+  deliveryMethod?: unknown;
+  outcome?: unknown;
+  outcomeReportedAt?: unknown;
+  count?: unknown;
+}
+
+export function buildStudentOutreachCountReport(rows: OutreachCountRow[]) {
+  const report = {
+    totalAttempts: 0,
+    officialRouteAttempts: 0,
+    confirmedOutcomes: 0,
+    selfReportedOutcomes: 0,
+    outcomes: {} as Record<string, number>,
+  };
+  for (const row of rows) {
+    const count = typeof row.count === 'number' && row.count > 0 ? Math.floor(row.count) : 0;
+    report.totalAttempts += count;
+    if (row.deliveryMethod === 'official-route') report.officialRouteAttempts += count;
+    if (row.outcomeReportedAt) {
+      report.confirmedOutcomes += count;
+      if (row.deliveryMethod === 'external-self-reported') report.selfReportedOutcomes += count;
+      const outcome = typeof row.outcome === 'string' ? row.outcome : 'unknown';
+      report.outcomes[outcome] = (report.outcomes[outcome] || 0) + count;
+    }
+  }
+  return report;
+}
 
 async function main() {
   await initializeConnections();

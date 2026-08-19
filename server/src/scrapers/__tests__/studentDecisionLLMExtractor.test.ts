@@ -46,16 +46,6 @@ const candidate: DecisionCandidate = {
       sourceUrl: 'https://example.yale.edu/lab',
     },
   ],
-  entryPathways: [
-    {
-      pathwayType: 'EXPLORATORY_CONTACT',
-      status: 'PLAUSIBLE',
-      studentFacingLabel: 'Plan careful outreach',
-      sourceUrls: ['https://example.yale.edu/lab'],
-    },
-  ],
-  contactRoutes: [],
-  postedOpportunities: [],
 };
 
 const explanation = {
@@ -123,7 +113,6 @@ describe('studentDecisionLLMExtractor', () => {
             _id: 'entity-2',
             slug: 'no-evidence',
             accessSignals: [],
-            entryPathways: [],
           },
           { ...candidate, _id: 'entity-3', slug: 'other-lab' },
           {
@@ -157,9 +146,6 @@ describe('studentDecisionLLMExtractor', () => {
           sourceUrls: [],
           websiteUrl: undefined,
           accessSignals: [],
-          entryPathways: [],
-          contactRoutes: [],
-          postedOpportunities: [],
         },
       ]),
     ).toEqual([]);
@@ -183,14 +169,6 @@ describe('studentDecisionLLMExtractor', () => {
               confidence: 'LOW',
               excerpt: 'Official Yale profile identifies the lead faculty member.',
               sourceUrl: 'https://medicine.yale.edu/profile/jamie-fixture/',
-            },
-          ],
-          entryPathways: [
-            {
-              pathwayType: 'EXPLORATORY_CONTACT',
-              status: 'PLAUSIBLE',
-              studentFacingLabel: 'Explore this research area through the official faculty profile',
-              sourceUrls: ['https://medicine.yale.edu/profile/jamie-fixture/'],
             },
           ],
         },

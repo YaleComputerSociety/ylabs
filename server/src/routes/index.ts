@@ -13,24 +13,24 @@ import AdminRoutes from './admin';
 import ProfileRoutes from './profiles';
 import SeedRoutes from './seed';
 import ResearchGroupsRoutes from './researchGroups';
-import OpportunitiesRoutes from './opportunities';
-import PathwaysRoutes from './pathways';
 import { isLocalDevelopmentRuntime } from '../utils/environment';
 
 const router = Router();
 
 router.use('/listings', ListingsRoutes);
 router.use('/programs', ProgramsRoutes);
-router.use('/fellowships', (req, res, next) => {
-  res.setHeader('Deprecation', 'true');
-  res.setHeader('Link', '</api/programs>; rel="successor-version"');
-  next();
-}, FellowshipsRoutes);
+router.use(
+  '/fellowships',
+  (req, res, next) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Link', '</api/programs>; rel="successor-version"');
+    next();
+  },
+  FellowshipsRoutes,
+);
 router.use('/users', UsersRoutes);
 router.use('/profiles', ProfileRoutes);
 router.use('/research', ResearchGroupsRoutes);
-router.use('/pathways', PathwaysRoutes);
-router.use('/opportunities', OpportunitiesRoutes);
 router.use('/analytics', AnalyticsRoutes);
 router.use('/research-areas', ResearchAreasRoutes);
 router.use('/config', ConfigRoutes);

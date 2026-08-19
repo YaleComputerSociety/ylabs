@@ -36,9 +36,9 @@ Iterate on canonical product surfaces instead of creating student-facing version
 1. **Mongoose schema** in `server/src/models/<model>.ts`.
 2. **TypeScript interfaces** in `client/src/types/`.
 3. **Migration script** in `data-migration/` if existing data needs transformation (run with `npx tsx --transpile-only <script>.ts`).
-4. If the model affects Research or Pathways search, update the relevant **Meilisearch** rebuild/index config and the release gate.
+4. If the model affects Research search, update the relevant **Meilisearch** rebuild/index config and the release gate.
 
 ## General implementation rules
 
 - When the user reports a problem, treat it as a signal to fix the upstream cause when feasible. Do not settle for a local symptom patch if a durable code, data, test, or workflow change would prevent the same class of issue from recurring.
-- Prefer first-class product-model collections (`ResearchEntity`, `EntryPathway`, `PostedOpportunity`, `Signal`, `ContactRoute`) over embedding pathways/signals/routes inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.
+- Prefer first-class product-model collections (`ResearchEntity`, `Signal`, `ResearchEntityRelationship`) over embedding signals or access evidence inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.

@@ -45,11 +45,7 @@ describe('observation retention', () => {
     expect(OBSERVATION_REFERENCE_SPECS).toEqual(
       expect.arrayContaining([
         { collection: 'observations', field: 'supersededBy' },
-        { collection: 'entry_pathways', field: 'sourceEvidenceIds' },
         { collection: 'signals', field: 'source.evidenceIds' },
-        { collection: 'contact_routes', field: 'sourceEvidenceId' },
-        { collection: 'contact_routes', field: 'sourceEvidenceIds' },
-        { collection: 'posted_opportunities', field: 'sourceEvidenceIds' },
         {
           collection: 'research_entities',
           field: 'fieldProvenance',
@@ -59,11 +55,11 @@ describe('observation retention', () => {
     );
     expect(
       buildObservationReferencePipeline({
-        collection: 'entry_pathways',
-        field: 'sourceEvidenceIds',
+        collection: 'signals',
+        field: 'source.evidenceIds',
       }),
     ).toEqual([
-      { $project: { observationId: '$sourceEvidenceIds' } },
+      { $project: { observationId: '$source.evidenceIds' } },
       { $unwind: '$observationId' },
       { $match: { observationId: { $type: 'objectId' } } },
       { $group: { _id: '$observationId' } },

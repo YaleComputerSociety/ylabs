@@ -191,10 +191,7 @@ export function normalizeResearchEntityDetailPayload(
     scholarlyLinks: payload.scholarlyLinks ?? [],
     memberScholarlyLinks: payload.memberScholarlyLinks ?? [],
     activeListings: payload.activeListings ?? [],
-    entryPathways: payload.entryPathways ?? [],
     accessSignals: payload.accessSignals ?? [],
-    contactRoutes: payload.contactRoutes ?? [],
-    postedOpportunities: payload.postedOpportunities ?? [],
     undergraduateLogistics: payload.undergraduateLogistics ?? {
       status: 'unavailable',
       claims: [],

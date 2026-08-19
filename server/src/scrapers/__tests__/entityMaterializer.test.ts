@@ -10,7 +10,6 @@ import {
   buildResearchGroupMemberUpsert,
   canonicalRosterProvenanceFromSet,
   buildOfficialRosterArchiveFilter,
-  countListingBackedPostedOpportunitiesForRun,
   emptyPostMaterializationMetrics,
   mergeUniqueArrayValues,
   normalizeDoiForMaterialization,
@@ -619,44 +618,6 @@ describe('entityMaterializer post-materialization metrics', () => {
       conflicts: 1,
       errors: 1,
     });
-  });
-
-  it('counts posted opportunities linked to listing observations in a scrape run', async () => {
-    const listingId = '64f000000000000000000099';
-    const observationModel = {
-      aggregate: async () => [{ _id: listingId }, { _id: undefined }],
-    };
-    const postedOpportunityModel = {
-      countDocuments: async (filter: any) => {
-        expect(filter.listingId.$in.map(String)).toEqual([listingId]);
-        return 1;
-      },
-    };
-
-    await expect(
-      countListingBackedPostedOpportunitiesForRun('64f000000000000000000001', {
-        observationModel: observationModel as any,
-        postedOpportunityModel: postedOpportunityModel as any,
-      }),
-    ).resolves.toBe(1);
-  });
-
-  it('returns zero listing-backed posted opportunities when listing ids are missing', async () => {
-    const observationModel = {
-      aggregate: async () => [{ _id: undefined }, { _id: 'not-an-object-id' }],
-    };
-    const postedOpportunityModel = {
-      countDocuments: async () => {
-        throw new Error('should not count without valid listing ids');
-      },
-    };
-
-    await expect(
-      countListingBackedPostedOpportunitiesForRun('64f000000000000000000001', {
-        observationModel: observationModel as any,
-        postedOpportunityModel: postedOpportunityModel as any,
-      }),
-    ).resolves.toBe(0);
   });
 
   it('ignores discovery-only acceptingUndergrads observations for research groups', () => {

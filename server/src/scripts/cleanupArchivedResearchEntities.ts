@@ -36,14 +36,7 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
     field: 'researchEntityId',
     filter: { isCurrentMember: { $ne: false } },
   },
-  { collection: 'entry_pathways', field: 'researchEntityId', filter: { archived: { $ne: true } } },
   { collection: 'signals', field: 'researchEntityId', filter: { archived: { $ne: true } } },
-  { collection: 'contact_routes', field: 'researchEntityId', filter: { archived: { $ne: true } } },
-  {
-    collection: 'posted_opportunities',
-    field: 'researchEntityId',
-    filter: { archived: { $ne: true } },
-  },
   {
     collection: 'research_scholarly_links',
     field: 'researchEntityId',
@@ -59,7 +52,11 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
     field: 'targetResearchEntityId',
     filter: { archived: { $ne: true } },
   },
-  { collection: 'research_entities', field: 'canonicalGroupId', filter: { archived: { $ne: true } } },
+  {
+    collection: 'research_entities',
+    field: 'canonicalGroupId',
+    filter: { archived: { $ne: true } },
+  },
   {
     collection: 'observations',
     field: 'entityId',
@@ -69,10 +66,7 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
 
 const DEPENDENT_DELETE_COLLECTIONS = [
   'research_entity_members',
-  'entry_pathways',
   'signals',
-  'contact_routes',
-  'posted_opportunities',
   'research_scholarly_links',
 ];
 
@@ -193,7 +187,9 @@ export function assertCleanupArchivedResearchEntitiesApplyAllowed({
     );
   }
   if (plannedDeletes > maxApply) {
-    throw new Error(`Apply would delete ${plannedDeletes} archived research entities, above --max-apply.`);
+    throw new Error(
+      `Apply would delete ${plannedDeletes} archived research entities, above --max-apply.`,
+    );
   }
 }
 
@@ -301,9 +297,7 @@ async function loadArchivedResearchEntityCandidates(
   }));
 }
 
-async function deleteDependentArtifacts(
-  eligibleIds: string[],
-): Promise<Record<string, number>> {
+async function deleteDependentArtifacts(eligibleIds: string[]): Promise<Record<string, number>> {
   const db = mongoose.connection.db;
   const deleted: Record<string, number> = {};
   if (!db || eligibleIds.length === 0) return deleted;
@@ -367,7 +361,10 @@ export async function cleanupArchivedResearchEntities(options: {
     const deletion = await ResearchEntity.deleteMany({ _id: { $in: eligibleObjectIds } });
     deletedResearchEntities = deletion.deletedCount || 0;
     search = {
-      ...(await deleteResearchEntitySearchDocuments(plan.eligible, options.getIndex || getMeiliIndex)),
+      ...(await deleteResearchEntitySearchDocuments(
+        plan.eligible,
+        options.getIndex || getMeiliIndex,
+      )),
       rebuildGuidance:
         'If search documents were not deleted, rebuild with meili:rebuild-research-entities --clear --confirm-meili-rebuild.',
     };

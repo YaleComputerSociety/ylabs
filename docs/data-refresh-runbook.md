@@ -107,11 +107,11 @@ Phase 1 below documents that optional full Development sweep, and Phase 2 docume
 
 ## Fixed Environment Responsibilities
 
-| Environment | MongoDB                      | Meilisearch                               | Responsibility                                             |
-| ----------- | ---------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| Environment | MongoDB                      | Meilisearch                               | Responsibility                                                                         |
+| ----------- | ---------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
 | Development | Atlas `Development` database | Local Docker                              | Representative-sample script and scraper testing, dry runs, and disposable experiments |
-| Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Clean staging candidate and human audit                    |
-| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                    |
+| Beta        | Atlas `Beta` database        | Render private service with `beta` prefix | Clean staging candidate and human audit                                                |
+| Production  | Atlas `Production` database  | Render private service with `prod` prefix | Accepted live data only                                                                |
 
 Development data may be promoted into Beta only through the guarded research-data mirror described below.
 The mirror replaces approved research and evidence collections while preserving Beta operational collections and sanitizing copied account state.
@@ -121,13 +121,13 @@ The Beta Render service materializes those observations by run ID and updates it
 
 ## Where Each Step Runs
 
-| Step                                     | Execution location              | MongoDB target                     | Meilisearch target                          |
-| ---------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------------------- |
-| Development scrape and test              | Local machine on Yale VPN       | Atlas `Development`                | Local Docker `researchentities`             |
-| Beta fetch                               | Local machine on Yale VPN       | Atlas `Beta`                       | None                                        |
-| Beta materialization and search rebuild  | Beta Render shell               | Atlas `Beta`                       | `beta_researchentities` and `beta_pathways` |
-| Beta-to-Production promotion             | Local approved operator machine | Atlas `Beta` to Atlas `Production` | None                                        |
-| Production search rebuild and smoke test | Production Render shell         | Atlas `Production`                 | `prod_researchentities` and `prod_pathways` |
+| Step                                     | Execution location              | MongoDB target                     | Meilisearch target              |
+| ---------------------------------------- | ------------------------------- | ---------------------------------- | ------------------------------- |
+| Development scrape and test              | Local machine on Yale VPN       | Atlas `Development`                | Local Docker `researchentities` |
+| Beta fetch                               | Local machine on Yale VPN       | Atlas `Beta`                       | None                            |
+| Beta materialization and search rebuild  | Beta Render shell               | Atlas `Beta`                       | `beta_researchentities`         |
+| Beta-to-Production promotion             | Local approved operator machine | Atlas `Beta` to Atlas `Production` | None                            |
+| Production search rebuild and smoke test | Production Render shell         | Atlas `Production`                 | `prod_researchentities`         |
 
 Complete the Development and Beta steps for each source.
 Promote to Production only once, after every accepted source has been materialized and audited in Beta.
@@ -203,7 +203,6 @@ An unclassified Beta collection blocks apply until its mirror or exclusion polic
 Apply stages and validates every mirrored collection before cutover.
 It retains the prior mirrored and non-mirror collections as temporary backups until the complete cutover passes post-sync verification, then restores the entire prior Development dataset if cutover or verification fails.
 The local Development ResearchEntity Meilisearch index is rebuilt after the MongoDB sync.
-Development Pathways continue to use their supported MongoDB path because the Pathways Meilisearch rollout is restricted to Beta and Production.
 
 Yale VPN is not required for this Atlas Beta-to-Atlas Development copy.
 Yale VPN is still mandatory when Development performs a Yale-only source fetch after the copy.
@@ -497,17 +496,11 @@ SCRAPER_ENV=beta \
 
 Create and verify the required Beta Meilisearch restore point or export.
 Store its reference in the Beta Render environment as `PFR3_MEILI_RESTORE_POINT`.
-Then fully rebuild both Beta indexes so deleted or archived MongoDB records cannot remain as stale search documents:
+Then fully rebuild the Beta ResearchEntity index so deleted or archived MongoDB records cannot remain as stale search documents:
 
 ```bash
 test "$MEILISEARCH_INDEX_PREFIX" = 'beta'
 test -n "$PFR3_MEILI_RESTORE_POINT"
-
-SCRAPER_ENV=beta \
-  yarn --cwd server meili:rebuild-pathways \
-  --clear \
-  --confirm-meili-rebuild \
-  --output /tmp/ylabs-beta-pathways-rebuild.json
 
 SCRAPER_ENV=beta \
   yarn --cwd server meili:rebuild-research-entities \
@@ -516,21 +509,19 @@ SCRAPER_ENV=beta \
   --output /tmp/ylabs-beta-researchentities-rebuild.json
 ```
 
-Confirm that both rebuild artifacts report the expected indexed counts.
-Then run the strict Beta readiness gate against Meilisearch:
+Confirm that the rebuild artifact reports the expected indexed count.
+Then run the strict Beta readiness gate:
 
 ```bash
 SCRAPER_ENV=beta \
-PATHWAY_SEARCH_BACKEND=meili \
   yarn --cwd server beta:readiness \
   --confirm-beta-backup \
-  --accept-pathway-meili \
   --strict \
   --output /tmp/ylabs-beta-readiness-final.json
 ```
 
 Audit the Beta website after the gates pass.
-Test broad search, known entity detail pages, pathways, source links, and representative edge cases.
+Test broad search, known entity detail pages, access evidence, source links, and representative edge cases.
 
 Stop before Production if any strict gate fails or the Beta UI does not match the accepted data.
 
@@ -641,36 +632,25 @@ Stop if the reference is missing:
 test -n "$PFR3_MEILI_RESTORE_POINT"
 ```
 
-Rebuild both Production indexes from the newly promoted Production MongoDB:
+Rebuild the Production ResearchEntity index from the newly promoted Production MongoDB:
 
 ```bash
-SCRAPER_ENV=production \
-CONFIRM_PROD_SCRAPE=true \
-  yarn --cwd server meili:rebuild-pathways \
-  --clear \
-  --confirm-meili-rebuild \
-  --output /tmp/ylabs-production-pathways-rebuild.json
-
 SCRAPER_ENV=production \
 CONFIRM_PROD_SCRAPE=true \
   yarn --cwd server meili:rebuild-research-entities \
   --clear \
   --confirm-meili-rebuild \
   --output /tmp/ylabs-production-researchentities-rebuild.json
-
-SCRAPER_ENV=production \
-  yarn --cwd server pathway:relevance-review \
-  --output /tmp/ylabs-production-pathway-relevance.json
 ```
 
-Confirm that both rebuild artifacts report the expected indexed counts.
+Confirm that the rebuild artifact reports the expected indexed count.
 Run the Production smoke from the same Render shell:
 
 ```bash
 yarn security:smoke:production
 ```
 
-Do not declare the refresh complete until MongoDB promotion, both Meilisearch rebuilds, relevance review, and Production smoke all pass.
+Do not declare the refresh complete until MongoDB promotion, the Meilisearch rebuild, and Production smoke all pass.
 
 ## Completion Record
 
@@ -682,8 +662,8 @@ Save the following references in the shared semester refresh record:
 - The Beta data-quality, integrity, trust-contract, Meilisearch, and readiness artifacts.
 - The Production Atlas restore point.
 - The Production promotion dataset version and plan.
-- The Production Meilisearch restore point and both rebuild artifacts.
-- The Production relevance and smoke results.
+- The Production Meilisearch restore point and ResearchEntity rebuild artifact.
+- The Production smoke results.
 - The operator name, reviewer name, date, and any accepted exceptions.
 
 The refresh is incomplete if any required artifact, restore point, or independent reviewer is missing.
