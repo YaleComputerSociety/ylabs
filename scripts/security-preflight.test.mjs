@@ -487,7 +487,7 @@ test('service-layer search and materialization sync logs sanitize caught errors'
   const files = [
     '../server/src/services/listingService.ts',
     '../server/src/services/entryPathwayService.ts',
-    '../server/src/services/accessSignalService.ts',
+    '../server/src/services/signalService.ts',
     '../server/src/services/postedOpportunityService.ts',
     '../server/src/services/meiliSyncService.ts',
     '../server/src/services/contactRouteService.ts',
@@ -1603,7 +1603,7 @@ test('research discovery write services reject object-shaped ids before Mongo up
     ],
     [
       'access signal',
-      '../server/src/services/accessSignalService.ts',
+      '../server/src/services/signalService.ts',
       /if \(!researchEntityId\) return \{\}/,
     ],
     [
@@ -1658,7 +1658,7 @@ test('research discovery write service return ids use safe serialization', () =>
     ['entry pathway', '../server/src/services/entryPathwayService.ts', /pathwayId,\n\s*doc,/],
     [
       'access signal',
-      '../server/src/services/accessSignalService.ts',
+      '../server/src/services/signalService.ts',
       /signalId: serializedDocumentId\(doc\?\._id\)/,
     ],
     [
@@ -5527,9 +5527,9 @@ test('public access summaries bound evidence text and avoid arbitrary object coe
   assert.match(source, /accessSummaryEntityId\(signal\.researchEntityId\)/);
   assert.match(source, /accessSummaryEntityId\(pathway\.researchEntityId\)/);
   assert.match(source, /accessSummaryEntityId\(opportunity\.researchEntityId\)/);
-  assert.match(source, /boundedString\(signal\.signalType, MAX_ACCESS_SUMMARY_TYPE_LENGTH\)/);
-  assert.match(source, /publicText\(signal\.excerpt\)/);
-  assert.match(source, /publicHttpUrl\(signal\.sourceUrl\)/);
+  assert.match(source, /boundedString\(signal\.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH\)/);
+  assert.match(source, /publicText\(signal\.source\?\.excerpt\)/);
+  assert.match(source, /publicHttpUrl\(signal\.source\?\.url\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /String\(signal\.researchEntityId\)/);
   assert.doesNotMatch(source, /String\(pathway\.researchEntityId\)/);
