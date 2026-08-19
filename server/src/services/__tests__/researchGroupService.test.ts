@@ -300,7 +300,7 @@ describe('searchResearchGroupsViaMeili', () => {
       1,
       'reilly',
       expect.objectContaining({
-        hybrid: { semanticRatio: 0.5, embedder: 'default' },
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
       }),
     );
     expect(mocks.search).toHaveBeenNthCalledWith(
@@ -386,7 +386,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).toHaveBeenCalledWith(
       'zhong',
       expect.objectContaining({
-        hybrid: { semanticRatio: 0.5, embedder: 'default' },
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
       }),
     );
   });

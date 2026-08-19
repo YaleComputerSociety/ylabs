@@ -668,7 +668,7 @@ export async function searchResearchGroupsViaMeili(
   }
   if (trimmedQuery !== '') {
     searchParams.hybrid = {
-      semanticRatio: 0.5,
+      semanticRatio: 0.8,
       embedder: 'default',
     };
     if (normalizedQuery.isShortAliasQuery) {
