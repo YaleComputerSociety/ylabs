@@ -126,7 +126,9 @@ This is an additive dual-write: the legacy `ResearchGroupMember` writes are inte
 The student-facing research-detail page (`getResearchGroupDetail`) also reads the canonical roster now (S4a, #360): it derives members from `getResearchEntityRoster` (`RoleAssignment` plus `Researcher` and `Account`) instead of legacy `ResearchGroupMember`/`FacultyMember`/`User`.
 Because canonical `RoleAssignment.evidenceClaimIds` is empty (full `EvidenceClaim` canonicalization needs the frozen `SourceDocument` plus predicate-registry machinery), the roster-freshness disclosure is fed by a bounded `rosterProvenance` subdoc on `RoleAssignment` (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) populated at each materializer membership write-site.
 This subdoc is a deliberate, pragmatic deviation from the ratified `EvidenceClaim` provenance model, scoped to keep the existing freshness logic working until the heavy claim-graph is built.
-The residual internal roster readers (S4b) and retiring the legacy `ResearchGroupMember` write path (S5, #361) are the remaining follow-ups.
+Most residual internal roster readers now read the canonical roster too (S4b, #360): `researchEntityEvidenceCoverage`, `researchEntityPublicDescriptionAuditService`, `studentVisibilityGateService`, `launchAcquisitionReportService`, and `accessMaterializer` derive lead and member display name and role from the canonical `Researcher` via `getResearchEntityRoster`/`getResearchEntityRosterByEntityId`, treat any non-`HISTORICAL` state as current, and key downstream on `personId` instead of legacy `userId`/`facultyMemberId`.
+`visibilityRepairQueueService` is intentionally kept on legacy `ResearchGroupMember` reads to preserve its lead bio and interest repair candidates, and `listingService` author-authority plus the `canonicalResearchHomeResolver` reverse lookup remain a focused follow-up because both need legacy-user-to-`Researcher` resolution.
+Retiring the legacy `ResearchGroupMember` write path (S5, #361) is the remaining follow-up.
 
 Tracked issues:
 

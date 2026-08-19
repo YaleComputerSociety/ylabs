@@ -132,12 +132,12 @@ const hasUsefulLead = (members: Array<Record<string, any>>): boolean =>
   members.some((member) =>
     Boolean(
       textValue(member.name) ||
-      textValue(member.netid) ||
-      member.personId ||
-      member.userId ||
-      member.facultyMemberId ||
-      member.user?._id ||
-      textValue(member.user?.netid),
+        textValue(member.netid) ||
+        member.personId ||
+        member.userId ||
+        member.facultyMemberId ||
+        member.user?._id ||
+        textValue(member.user?.netid),
     ),
   );
 
