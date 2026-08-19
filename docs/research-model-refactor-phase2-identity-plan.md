@@ -18,7 +18,7 @@ All four collection scans use that same snapshot session, are sorted by `_id`, a
 The `research_entities` snapshot exists only to validate membership target IDs and includes archived entities so valid historical memberships can retain their original target.
 Archived identity rows remain in the scan so an archived, explicitly historical membership can resolve its original person safely.
 Unrelated archived identities remain outside person planning, and an archived membership without historical evidence enters quarantine.
-The command never reads from or writes to `accounts`, `people`, or `role_assignments`.
+The command never reads from or writes to `accounts`, `researchers`, or `role_assignments`.
 
 ## Planning Rules
 
