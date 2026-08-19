@@ -51,7 +51,6 @@ export function normalizeListingObjectId(value: unknown): string | undefined {
 
 const placeholderYaleEmail = (netid: string): string => `${netid.trim().toLowerCase()}@yale.edu`;
 
-
 async function syncResearchEntityProfileFromListing(listing: any): Promise<void> {
   const researchEntityId = listing?.researchEntityId || listing?.researchGroupId;
   const safeResearchEntityId = normalizeListingObjectId(researchEntityId);

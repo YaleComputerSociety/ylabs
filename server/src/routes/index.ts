@@ -19,11 +19,15 @@ const router = Router();
 
 router.use('/listings', ListingsRoutes);
 router.use('/programs', ProgramsRoutes);
-router.use('/fellowships', (req, res, next) => {
-  res.setHeader('Deprecation', 'true');
-  res.setHeader('Link', '</api/programs>; rel="successor-version"');
-  next();
-}, FellowshipsRoutes);
+router.use(
+  '/fellowships',
+  (req, res, next) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Link', '</api/programs>; rel="successor-version"');
+    next();
+  },
+  FellowshipsRoutes,
+);
 router.use('/users', UsersRoutes);
 router.use('/profiles', ProfileRoutes);
 router.use('/research', ResearchGroupsRoutes);

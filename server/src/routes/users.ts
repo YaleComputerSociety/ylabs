@@ -326,6 +326,12 @@ router.delete(
   userController.deleteSavedResearchEntityPlan,
 );
 router.get('/listings', isAuthenticated, userController.getUserListings);
-router.put('/', writeLimit, isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);
+router.put(
+  '/',
+  writeLimit,
+  isAuthenticated,
+  logProfileUpdateEvent,
+  userController.updateCurrentUser,
+);
 
 export default router;

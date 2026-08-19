@@ -98,11 +98,7 @@ export interface LabScholarlyLink {
 }
 
 export type LabResearchActivityRelationshipBasis =
-  | 'explicit_entity_link'
-  | 'entity_source'
-  | 'member_authorship'
-  | 'identity_authorship'
-  | 'manual';
+  'explicit_entity_link' | 'entity_source' | 'member_authorship' | 'identity_authorship' | 'manual';
 
 export interface LabResearchActivityLink extends LabScholarlyLink {
   relationshipBasis: LabResearchActivityRelationshipBasis;
@@ -119,17 +115,10 @@ export interface LabAccessSignal {
 }
 
 export type UndergraduateLogisticsClaimType =
-  | 'STUDENT_LEVEL'
-  | 'COMPENSATION'
-  | 'TIME_COMMITMENT'
-  | 'MODALITY'
-  | 'CURRENT_AVAILABILITY';
+  'STUDENT_LEVEL' | 'COMPENSATION' | 'TIME_COMMITMENT' | 'MODALITY' | 'CURRENT_AVAILABILITY';
 
 export type UndergraduateLogisticsClaimState =
-  | 'known'
-  | 'unknown'
-  | 'stale_under_review'
-  | 'conflicting_withheld';
+  'known' | 'unknown' | 'stale_under_review' | 'conflicting_withheld';
 
 export interface UndergraduateLogisticsClaim {
   claimType: UndergraduateLogisticsClaimType;

@@ -158,8 +158,7 @@ export async function listAccessSummariesForResearchEntities(
         sourceUrl: publicHttpUrl(signal.source?.url),
       })),
       signalTypes: Array.from(signalTypes),
-      bestNextStep:
-        publicText(bestNextStepFor(status, signalTypes)) || EMPTY_SUMMARY.bestNextStep,
+      bestNextStep: publicText(bestNextStepFor(status, signalTypes)) || EMPTY_SUMMARY.bestNextStep,
     });
   }
 

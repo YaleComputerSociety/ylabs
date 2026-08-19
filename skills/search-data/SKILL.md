@@ -1,6 +1,6 @@
 ---
 name: search-data
-description: Use when working on MongoDB data behavior, Meilisearch indexing, ResearchEntity search, pathway search, browse ranking, search rebuild scripts, data migrations, search-related environment variables, or default /research ordering.
+description: Use when working on MongoDB data behavior, Meilisearch indexing, ResearchEntity search, browse ranking, search rebuild scripts, data migrations, search-related environment variables, or default /research ordering.
 ---
 
 # Search and Data
@@ -19,8 +19,7 @@ It strips low-value words such as `professor`, `lab`, and `research` when meanin
 
 | Index              | Service                               | Purpose                                                                           |
 | ------------------ | ------------------------------------- | --------------------------------------------------------------------------------- |
-| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search on `/research`.                                       |
-| `pathways`         | `pathwaySearchIndexService.ts`        | Internal ways-in enrichment, saved planning, parity testing, and admin workflows. |
+| `researchentities` | `researchEntitySearchIndexService.ts` | Yale Labs / Research search on `/research`; drives browse and discovery.           |
 
 The Meilisearch client lives in `server/src/utils/meiliClient.ts`.
 It lazy-loads and caches the connection.
@@ -45,7 +44,6 @@ Its settings also include curated synonyms and typo guards for short aliases suc
 | Command                                                 | Effect                                                               |
 | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | `yarn --cwd server meili:rebuild-research-entities`     | Rebuild the ResearchEntity index.                                    |
-| `yarn --cwd server meili:rebuild-pathways`              | Rebuild the Pathway index.                                           |
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
@@ -68,8 +66,8 @@ Admin "weakest profiles first" with `browseQuality: 'low-first'` is a separate M
 
 ## Data shape rules
 
-- Prefer first-class collections for pathways, opportunities, access signals, and contact routes.
-- If a schema change affects Research or Pathways search, update the relevant index config and rebuild path.
+- Prefer first-class collections for access signals and other product-model records.
+- If a schema change affects Research search, update the relevant index config and rebuild path.
 - Add a migration script in `data-migration/` when existing data needs transformation.
 - Migration scripts run with `npx tsx --transpile-only <script>.ts`.
 - Verify index settings and sortable/filterable attributes when adding fields used for search, filtering, or ordering.

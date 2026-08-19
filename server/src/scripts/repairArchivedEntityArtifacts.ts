@@ -155,7 +155,9 @@ export function assertArchivedEntityArtifactRepairApplyAllowed({
 }): void {
   if (!apply) return;
   if (limitProvided === false) {
-    throw new Error('--limit is required when --apply is set for research-entity:repair-archived-artifacts');
+    throw new Error(
+      '--limit is required when --apply is set for research-entity:repair-archived-artifacts',
+    );
   }
   if (!confirmArchivedArtifactRepair) {
     throw new Error(
@@ -218,7 +220,10 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
     .select('_id canonicalGroupId')
     .lean();
   const canonicalByArchivedId = new Map(
-    archivedEntities.map((entity: any) => [stringId(entity._id), stringId(entity.canonicalGroupId)]),
+    archivedEntities.map((entity: any) => [
+      stringId(entity._id),
+      stringId(entity.canonicalGroupId),
+    ]),
   );
   const archivedIds = [...canonicalByArchivedId.keys()]
     .map(objectId)
@@ -346,7 +351,9 @@ async function archiveArtifact(
   if (canonicalObjectId) {
     set.researchEntityId = canonicalObjectId;
   }
-  const result = await db.collection(collectionName).updateOne({ _id: artifactObjectId }, { $set: set });
+  const result = await db
+    .collection(collectionName)
+    .updateOne({ _id: artifactObjectId }, { $set: set });
   return result.modifiedCount || 0;
 }
 

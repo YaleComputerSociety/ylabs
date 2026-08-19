@@ -1767,10 +1767,6 @@ export function addPostMaterializationMetrics(
   aggregate.errors += next.errors || 0;
 }
 
-function scrapeRunIdForQuery(scrapeRunId: string): string | mongoose.Types.ObjectId {
-  return toMaterializerObjectId(scrapeRunId) || scrapeRunId;
-}
-
 function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | null {
   switch (entityType) {
     case 'paper':

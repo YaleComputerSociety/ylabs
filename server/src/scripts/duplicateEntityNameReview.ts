@@ -155,8 +155,7 @@ export interface DuplicateEntityNameReviewPlan {
 }
 
 export type DuplicateEntityNameReviewPreflightStatus =
-  | 'merge_preflight_ready_for_review'
-  | 'manual_disambiguation_required';
+  'merge_preflight_ready_for_review' | 'manual_disambiguation_required';
 
 export interface DuplicateEntityNameReviewPreflight {
   status: DuplicateEntityNameReviewPreflightStatus;

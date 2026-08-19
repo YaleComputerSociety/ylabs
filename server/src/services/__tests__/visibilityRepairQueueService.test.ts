@@ -2017,9 +2017,6 @@ describe('visibilityRepairQueueService', () => {
     );
   });
 
-
-
-
   it('derives card descriptions from existing full descriptions when a trusted source URL follows metadata URLs', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([

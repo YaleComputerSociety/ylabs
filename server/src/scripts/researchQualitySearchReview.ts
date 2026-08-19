@@ -200,7 +200,9 @@ function buildLexicalReasons(hit: Record<string, unknown>, query: string): strin
     .map(([field]) => `${field} matched "${query}"`);
 }
 
-function selectedQueries(options: ResearchQualitySearchReviewCliOptions): ResearchQualityGoldenQuery[] {
+function selectedQueries(
+  options: ResearchQualitySearchReviewCliOptions,
+): ResearchQualityGoldenQuery[] {
   if (options.queryNames.length === 0) return DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES;
   const requested = new Set(options.queryNames.map((name) => name.toLowerCase()));
   return DEFAULT_RESEARCH_QUALITY_GOLDEN_QUERIES.filter(
@@ -258,19 +260,9 @@ export function normalizeResearchQualitySearchReviewObjectId(
 }
 
 function uniqueStrings(values: unknown[]): string[] {
-  return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean))).sort();
-}
-
-async function aggregateCountMap(
-  model: mongoose.Model<any>,
-  entityIds: mongoose.Types.ObjectId[],
-  extraMatch: Record<string, unknown> = {},
-): Promise<Map<string, number>> {
-  const rows = await model.aggregate<{ _id: unknown; count: number }>([
-    { $match: { researchEntityId: { $in: entityIds }, ...extraMatch } },
-    { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-  ]);
-  return countMap(rows);
+  return Array.from(
+    new Set(values.map((value) => String(value || '').trim()).filter(Boolean)),
+  ).sort();
 }
 
 async function aggregateCountAndTypes(
@@ -295,7 +287,9 @@ async function aggregateCountAndTypes(
   };
 }
 
-function duplicateCandidatesFor(entities: EntityRecord[]): Map<string, ResearchQualityDuplicateCandidate[]> {
+function duplicateCandidatesFor(
+  entities: EntityRecord[],
+): Map<string, ResearchQualityDuplicateCandidate[]> {
   const byNormalizedName = new Map<string, EntityRecord[]>();
   for (const entity of entities) {
     const key = normalizeName(entity.displayName || entity.name);

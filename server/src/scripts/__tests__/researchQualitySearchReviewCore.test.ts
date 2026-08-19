@@ -237,10 +237,7 @@ describe('researchQualitySearchReview CLI helpers', () => {
       ]),
     ).toThrow(/--output must write under/);
     expect(() =>
-      parseResearchQualitySearchReviewArgs([
-        '--output',
-        '/tmp/research-quality-search-review.txt',
-      ]),
+      parseResearchQualitySearchReviewArgs(['--output', '/tmp/research-quality-search-review.txt']),
     ).toThrow(/--output must point to a \.json report file/);
   });
 

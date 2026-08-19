@@ -203,10 +203,7 @@ export function buildLegacyResidueSummary(rows: LegacyResidueCount[]) {
 
   return {
     totalChecks: rows.length,
-    totalDocumentsWithResidue: rows.reduce(
-      (sum, row) => sum + row.documentsWithResidue,
-      0,
-    ),
+    totalDocumentsWithResidue: rows.reduce((sum, row) => sum + row.documentsWithResidue, 0),
     migrationResidueDocuments: rows
       .filter((row) => row.classification === 'migration_residue')
       .reduce((sum, row) => sum + row.documentsWithResidue, 0),

@@ -25,12 +25,7 @@ export const researchEntityTypes = [
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];
 
-export const postedOpportunityStatuses = [
-  'OPEN',
-  'CLOSED',
-  'ROLLING',
-  'ARCHIVED',
-] as const;
+export const postedOpportunityStatuses = ['OPEN', 'CLOSED', 'ROLLING', 'ARCHIVED'] as const;
 
 export type PostedOpportunityStatus = (typeof postedOpportunityStatuses)[number];
 
@@ -67,13 +62,9 @@ export const undergraduateLogisticsSignalTypes = [
   'CURRENT_AVAILABILITY',
 ] as const;
 
-export type UndergraduateLogisticsSignalType =
-  (typeof undergraduateLogisticsSignalTypes)[number];
+export type UndergraduateLogisticsSignalType = (typeof undergraduateLogisticsSignalTypes)[number];
 
-export const signalTypes = [
-  ...accessSignalTypes,
-  ...undergraduateLogisticsSignalTypes,
-] as const;
+export const signalTypes = [...accessSignalTypes, ...undergraduateLogisticsSignalTypes] as const;
 
 export type SignalType = (typeof signalTypes)[number];
 
@@ -81,11 +72,7 @@ export const signalConfidences = accessSignalConfidences;
 
 export type SignalConfidence = AccessSignalConfidence;
 
-export const signalStatuses = [
-  'KNOWN',
-  'STALE_UNDER_REVIEW',
-  'CONFLICTING_WITHHELD',
-] as const;
+export const signalStatuses = ['KNOWN', 'STALE_UNDER_REVIEW', 'CONFLICTING_WITHHELD'] as const;
 
 export type SignalStatus = (typeof signalStatuses)[number];
 
@@ -102,10 +89,7 @@ export const researchGroupKinds = [
 
 export type ResearchGroupKind = (typeof researchGroupKinds)[number];
 
-export const ResearchGroupKindToEntityType: Record<
-  ResearchGroupKind,
-  ResearchEntityType
-> = {
+export const ResearchGroupKindToEntityType: Record<ResearchGroupKind, ResearchEntityType> = {
   lab: 'LAB',
   center: 'CENTER',
   institute: 'INSTITUTE',
@@ -116,9 +100,7 @@ export const ResearchGroupKindToEntityType: Record<
   solo: 'INDIVIDUAL_RESEARCH',
 };
 
-export const mapResearchGroupKindToEntityType = (
-  kind?: string,
-): ResearchEntityType => {
+export const mapResearchGroupKindToEntityType = (kind?: string): ResearchEntityType => {
   if (kind && researchGroupKinds.includes(kind as ResearchGroupKind)) {
     return ResearchGroupKindToEntityType[kind as ResearchGroupKind];
   }
@@ -126,8 +108,7 @@ export const mapResearchGroupKindToEntityType = (
   return 'LAB';
 };
 
-export const researchEntityTypeForResearchGroupKind =
-  mapResearchGroupKindToEntityType;
+export const researchEntityTypeForResearchGroupKind = mapResearchGroupKindToEntityType;
 
 export const ResearchEntityTypes = researchEntityTypes;
 export const PostedOpportunityStatuses = postedOpportunityStatuses;

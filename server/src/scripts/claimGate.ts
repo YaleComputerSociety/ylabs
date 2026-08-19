@@ -31,7 +31,11 @@ function valueAfterEquals(arg: string, flag: string): string | undefined {
   return arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
 }
 
-function consumeValue(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function consumeValue(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = valueAfterEquals(arg, flag);
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -112,8 +116,13 @@ function stringId(value: unknown): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
-export async function loadResearchAccessArtifacts(limit: number): Promise<AccessArtifactCandidate[]> {
-  const signals = await Signal.find({ type: { $in: [...accessSignalTypes] }, archived: { $ne: true } })
+export async function loadResearchAccessArtifacts(
+  limit: number,
+): Promise<AccessArtifactCandidate[]> {
+  const signals = await Signal.find({
+    type: { $in: [...accessSignalTypes] },
+    archived: { $ne: true },
+  })
     .limit(limit)
     .lean();
 

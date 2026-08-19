@@ -52,7 +52,11 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
     field: 'targetResearchEntityId',
     filter: { archived: { $ne: true } },
   },
-  { collection: 'research_entities', field: 'canonicalGroupId', filter: { archived: { $ne: true } } },
+  {
+    collection: 'research_entities',
+    field: 'canonicalGroupId',
+    filter: { archived: { $ne: true } },
+  },
   {
     collection: 'observations',
     field: 'entityId',
@@ -183,7 +187,9 @@ export function assertCleanupArchivedResearchEntitiesApplyAllowed({
     );
   }
   if (plannedDeletes > maxApply) {
-    throw new Error(`Apply would delete ${plannedDeletes} archived research entities, above --max-apply.`);
+    throw new Error(
+      `Apply would delete ${plannedDeletes} archived research entities, above --max-apply.`,
+    );
   }
 }
 
@@ -291,9 +297,7 @@ async function loadArchivedResearchEntityCandidates(
   }));
 }
 
-async function deleteDependentArtifacts(
-  eligibleIds: string[],
-): Promise<Record<string, number>> {
+async function deleteDependentArtifacts(eligibleIds: string[]): Promise<Record<string, number>> {
   const db = mongoose.connection.db;
   const deleted: Record<string, number> = {};
   if (!db || eligibleIds.length === 0) return deleted;
@@ -357,7 +361,10 @@ export async function cleanupArchivedResearchEntities(options: {
     const deletion = await ResearchEntity.deleteMany({ _id: { $in: eligibleObjectIds } });
     deletedResearchEntities = deletion.deletedCount || 0;
     search = {
-      ...(await deleteResearchEntitySearchDocuments(plan.eligible, options.getIndex || getMeiliIndex)),
+      ...(await deleteResearchEntitySearchDocuments(
+        plan.eligible,
+        options.getIndex || getMeiliIndex,
+      )),
       rebuildGuidance:
         'If search documents were not deleted, rebuild with meili:rebuild-research-entities --clear --confirm-meili-rebuild.',
     };

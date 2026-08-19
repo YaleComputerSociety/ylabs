@@ -7,14 +7,7 @@
  */
 
 export type ResearchGroupKind =
-  | 'lab'
-  | 'center'
-  | 'institute'
-  | 'program'
-  | 'initiative'
-  | 'group'
-  | 'individual'
-  | 'solo';
+  'lab' | 'center' | 'institute' | 'program' | 'initiative' | 'group' | 'individual' | 'solo';
 
 export type ResearchEntityType =
   | 'LAB'

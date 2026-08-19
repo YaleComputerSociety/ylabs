@@ -620,7 +620,6 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
   });
 
-
   it('ignores discovery-only acceptingUndergrads observations for research groups', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('researchEntity', {

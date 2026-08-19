@@ -147,10 +147,7 @@ function candidateMatchesOnly(candidate: DecisionCandidate, only: Set<string>): 
 }
 
 function hasActionEvidence(candidate: DecisionCandidate): boolean {
-  return Boolean(
-    candidate.accessSummary?.bestNextStep ||
-    candidate.accessSignals?.length,
-  );
+  return Boolean(candidate.accessSummary?.bestNextStep || candidate.accessSignals?.length);
 }
 
 function hasSourceBackedEvidence(candidate: DecisionCandidate): boolean {

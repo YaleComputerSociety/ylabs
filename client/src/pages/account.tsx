@@ -28,12 +28,8 @@ const parsePlanningDate = (value?: string): number => {
   return Number.isNaN(time) ? Infinity : time;
 };
 
-const nextPlanningCue = (
-  savedFellowshipSummary: PlanningSummary,
-): string | undefined => {
-  const candidates = [savedFellowshipSummary].filter(
-    (summary) => summary.nextDeadlineLabel,
-  );
+const nextPlanningCue = (savedFellowshipSummary: PlanningSummary): string | undefined => {
+  const candidates = [savedFellowshipSummary].filter((summary) => summary.nextDeadlineLabel);
   if (candidates.length === 0) return undefined;
   return candidates.sort(
     (a, b) => parsePlanningDate(a.nextDeadlineDate) - parsePlanningDate(b.nextDeadlineDate),

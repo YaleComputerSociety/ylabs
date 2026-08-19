@@ -10,10 +10,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import type {
-  AccessSignalConfidence,
-  AccessSignalType,
-} from '../models/researchAccessTypes';
+import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
 import {
   validateAccessArtifactBundle,
@@ -204,18 +201,16 @@ function uniqueByDerivationKey<T extends { derivationKey: string }>(items: T[]):
 function accessArtifactCandidatesFromDerived(
   artifacts: DerivedAccessArtifacts,
 ): AccessArtifactCandidate[] {
-  return artifacts.accessSignals.map(
-    (signal): AccessArtifactCandidate => ({
-      artifactType: 'AccessSignal',
-      researchEntityId: signal.researchEntityId,
-      derivationKey: signal.derivationKey,
-      signalType: signal.type,
-      sourceEvidenceIds: [signal.sourceEvidenceId].filter((id): id is string => Boolean(id)),
-      sourceUrls: [signal.sourceUrl].filter((url): url is string => Boolean(url)),
-      sourceName: signal.sourceName,
-      sourceUrl: signal.sourceUrl,
-    }),
-  );
+  return artifacts.accessSignals.map((signal): AccessArtifactCandidate => ({
+    artifactType: 'AccessSignal',
+    researchEntityId: signal.researchEntityId,
+    derivationKey: signal.derivationKey,
+    signalType: signal.type,
+    sourceEvidenceIds: [signal.sourceEvidenceId].filter((id): id is string => Boolean(id)),
+    sourceUrls: [signal.sourceUrl].filter((url): url is string => Boolean(url)),
+    sourceName: signal.sourceName,
+    sourceUrl: signal.sourceUrl,
+  }));
 }
 
 function filterArtifactsByValidatedClaims(

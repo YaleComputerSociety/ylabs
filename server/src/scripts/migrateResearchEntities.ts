@@ -245,12 +245,7 @@ async function duplicateSlugRows(db: MongoDb, collection: string) {
 async function malformedSourceRows(db: MongoDb): Promise<number> {
   if (!(await collectionExists(db, SOURCE_COLLECTION))) return 0;
   return db.collection(SOURCE_COLLECTION).countDocuments({
-    $or: [
-      { slug: { $exists: false } },
-      { slug: '' },
-      { name: { $exists: false } },
-      { name: '' },
-    ],
+    $or: [{ slug: { $exists: false } }, { slug: '' }, { name: { $exists: false } }, { name: '' }],
   });
 }
 
@@ -321,11 +316,7 @@ async function copyResearchEntities(db: MongoDb, apply: boolean, limit?: number)
     scanned++;
     const doc = normalizeResearchEntityDoc(raw);
     if (apply) {
-      const result = await target.updateOne(
-        { _id: doc._id },
-        { $set: doc },
-        { upsert: true },
-      );
+      const result = await target.updateOne({ _id: doc._id }, { $set: doc }, { upsert: true });
       if (result.upsertedCount || result.modifiedCount || result.matchedCount) upserts++;
     }
   }
@@ -373,10 +364,9 @@ async function backfillReferences(db: MongoDb, apply: boolean) {
     entityType: 'researchGroup',
   });
   if (apply && researchGroupObservations > 0) {
-    await db.collection('observations').updateMany(
-      { entityType: 'researchGroup' },
-      { $set: { entityType: 'researchEntity' } },
-    );
+    await db
+      .collection('observations')
+      .updateMany({ entityType: 'researchGroup' }, { $set: { entityType: 'researchEntity' } });
   }
 
   return {
@@ -448,9 +438,7 @@ async function verify(db: MongoDb) {
     duplicateSlugRows(db, TARGET_COLLECTION),
     malformedTargetRows(db),
     Promise.all(
-      RESEARCH_ENTITY_MIGRATION_REFERENCE_CHECKS.map((check) =>
-        countDanglingReferences(db, check),
-      ),
+      RESEARCH_ENTITY_MIGRATION_REFERENCE_CHECKS.map((check) => countDanglingReferences(db, check)),
     ),
   ]);
 
@@ -494,7 +482,11 @@ function rollbackPlan() {
 
 async function main() {
   const args = parseResearchEntityMigrationArgs(process.argv.slice(2));
-  const guard = assertResearchEntityMigrationWriteAllowed(args, process.env, process.env.MONGODBURL);
+  const guard = assertResearchEntityMigrationWriteAllowed(
+    args,
+    process.env,
+    process.env.MONGODBURL,
+  );
   const mode = args.mode;
   if (mode === 'rollback-plan') {
     const output = buildResearchEntityMigrationOutput(
@@ -523,7 +515,9 @@ async function main() {
   const verification = await verify(db);
 
   if (mode === 'apply' && !verification.ok) {
-    throw new Error(`ResearchEntity migration verification failed: ${JSON.stringify(verification)}`);
+    throw new Error(
+      `ResearchEntity migration verification failed: ${JSON.stringify(verification)}`,
+    );
   }
 
   const output = buildResearchEntityMigrationOutput(

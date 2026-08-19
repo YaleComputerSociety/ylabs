@@ -44,9 +44,7 @@ export interface ResearchEntityDedupeMergeGroup {
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
-  | 'merge_into_canonical'
-  | 'mark_distinct_homes'
-  | 'defer_review';
+  'merge_into_canonical' | 'mark_distinct_homes' | 'defer_review';
 
 export interface ResearchEntityPiDedupeArgs {
   apply: boolean;
@@ -289,8 +287,7 @@ export function assertResearchEntityPiDedupeApplyAllowed(args: {
 }): void {
   if (!args.apply) return;
   const plannedRepairs =
-    Math.max(0, args.plannedDuplicateEntities) +
-    Math.max(0, args.plannedDuplicateCurrentMembers);
+    Math.max(0, args.plannedDuplicateEntities) + Math.max(0, args.plannedDuplicateCurrentMembers);
   if (plannedRepairs > args.maxApply) {
     throw new Error(`Apply would modify ${plannedRepairs} rows, above --max-apply.`);
   }
@@ -412,7 +409,9 @@ export function readResearchEntityPiDedupeDecisions(
       'Accepted decisions artifact must be a JSON array or an object with a decisions array.',
     );
   }
-  return decisions.map((decision, index) => normalizeResearchEntityPiDedupeDecision(decision, index));
+  return decisions.map((decision, index) =>
+    normalizeResearchEntityPiDedupeDecision(decision, index),
+  );
 }
 
 function normalizeResearchEntityPiDedupeDecision(
@@ -482,8 +481,9 @@ export function validateResearchEntityPiDedupeDecisions(
       (sum, count) => sum + Math.max(0, count - 1),
       0,
     ),
-    unreviewedPlanCount: plans.filter((plan) => !validPlanIds.has(researchEntityPiDedupePlanId(plan)))
-      .length,
+    unreviewedPlanCount: plans.filter(
+      (plan) => !validPlanIds.has(researchEntityPiDedupePlanId(plan)),
+    ).length,
     decisionsByType: Array.from(decisionsByType.entries()).map(([decision, count]) => ({
       decision,
       count,
@@ -501,7 +501,9 @@ export function selectResearchEntityPiDedupePlansForAcceptedMergeApply(
   }
   const planById = new Map(plans.map((plan) => [researchEntityPiDedupePlanId(plan), plan]));
   return validation.decisions
-    .filter((decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical')
+    .filter(
+      (decision) => decision.status === 'valid' && decision.decision === 'merge_into_canonical',
+    )
     .map((decision) => planById.get(decision.planId))
     .filter((plan): plan is ResearchEntityPiDedupePlanGroup => Boolean(plan));
 }
@@ -521,7 +523,9 @@ function validateResearchEntityPiDedupeDecision(
   if ((planIdCounts.get(decision.planId) || 0) > 1) {
     errors.push('Only one accepted decision is allowed per planId.');
   }
-  if (!['merge_into_canonical', 'mark_distinct_homes', 'defer_review'].includes(decision.decision)) {
+  if (
+    !['merge_into_canonical', 'mark_distinct_homes', 'defer_review'].includes(decision.decision)
+  ) {
     errors.push(
       'decision must be one of merge_into_canonical, mark_distinct_homes, or defer_review.',
     );
@@ -615,7 +619,9 @@ export function buildResearchEntityDedupeReferenceFilter(args: {
   };
 }
 
-function isReviewedProfileAreaGroup(group: ReturnType<typeof buildResearchEntityPiDedupePlan>[number]) {
+function isReviewedProfileAreaGroup(
+  group: ReturnType<typeof buildResearchEntityPiDedupePlan>[number],
+) {
   if (group.dedupeCategory === 'profile_area_shell_with_concrete_home') return true;
   const canonicalSlug = String(group.canonicalSlug || '');
   return (
@@ -648,8 +654,9 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
       fundingSlugPattern.test(String(slug || '')),
     ),
   ).length;
-  const crossDepartmentGroups = groups.filter((group) => uniqueCount(group.mergedDepartments) > 1)
-    .length;
+  const crossDepartmentGroups = groups.filter(
+    (group) => uniqueCount(group.mergedDepartments) > 1,
+  ).length;
   const groupsWithMergedResearchAreas = groups.filter(
     (group) => uniqueCount(group.mergedResearchAreas) > 0,
   ).length;
@@ -685,9 +692,7 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
 const ARTIFACT_SPECS: Array<{
   artifactType: ArchivedEntityArtifactType;
   collection: string;
-}> = [
-  { artifactType: 'AccessSignal', collection: 'signals' },
-];
+}> = [{ artifactType: 'AccessSignal', collection: 'signals' }];
 
 const SCALAR_REFERENCE_SPECS: Array<{
   collection: string;
@@ -1324,8 +1329,7 @@ async function relinkScalarReferences(args: {
           { $set: { [spec.field]: args.canonicalId } },
         );
         counts[`${spec.collection}.${spec.field}.relinked`] =
-          (counts[`${spec.collection}.${spec.field}.relinked`] || 0) +
-          (result.modifiedCount || 0);
+          (counts[`${spec.collection}.${spec.field}.relinked`] || 0) + (result.modifiedCount || 0);
       } catch (error: any) {
         if (error?.code !== 11000) throw error;
         const action = chooseResearchEntityPiDedupeConflictAction({
@@ -1349,9 +1353,9 @@ async function relinkScalarReferences(args: {
                 relinkValue: args.canonicalId,
                 allowDeleteOnConflict: false,
               })
-            : await collection.deleteOne({ _id: row._id }).then((result) =>
-                result.deletedCount > 0 ? 'deleted' : 'skipped',
-              );
+            : await collection
+                .deleteOne({ _id: row._id })
+                .then((result) => (result.deletedCount > 0 ? 'deleted' : 'skipped'));
         counts[`${spec.collection}.${spec.field}.conflict.${outcome}`] =
           (counts[`${spec.collection}.${spec.field}.conflict.${outcome}`] || 0) + 1;
       }
@@ -1371,9 +1375,9 @@ async function relinkArrayReferences(args: {
 
   for (const spec of ARRAY_REFERENCE_SPECS) {
     if (!(await collectionExists(spec.collection))) continue;
-    const result = await db.collection(spec.collection).updateMany(
-      { [spec.field]: { $in: args.duplicateIds } },
-      [
+    const result = await db
+      .collection(spec.collection)
+      .updateMany({ [spec.field]: { $in: args.duplicateIds } }, [
         {
           $set: {
             [spec.field]: {
@@ -1392,8 +1396,7 @@ async function relinkArrayReferences(args: {
             },
           },
         },
-      ],
-    );
+      ]);
     counts[`${spec.collection}.${spec.field}.relinked`] = result.modifiedCount || 0;
   }
 
@@ -1452,7 +1455,11 @@ export async function applyResearchEntityDedupeMergeGroup(
   const duplicateIds = group.duplicateEntityIds
     .map((id) => objectId(id))
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  if (!canonicalId || duplicateIds.length !== group.duplicateEntityIds.length || duplicateIds.length === 0) {
+  if (
+    !canonicalId ||
+    duplicateIds.length !== group.duplicateEntityIds.length ||
+    duplicateIds.length === 0
+  ) {
     return {
       canonicalEntityId: group.canonicalEntityId,
       duplicateEntityIds: group.duplicateEntityIds,
@@ -1690,7 +1697,10 @@ async function main() {
     : undefined;
   const plan =
     apply && reviewDecisionValidation
-      ? selectResearchEntityPiDedupePlansForAcceptedMergeApply(candidatePlan, reviewDecisionValidation)
+      ? selectResearchEntityPiDedupePlansForAcceptedMergeApply(
+          candidatePlan,
+          reviewDecisionValidation,
+        )
       : candidatePlan;
   const duplicateCurrentMembers =
     acceptedDecisions || !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })

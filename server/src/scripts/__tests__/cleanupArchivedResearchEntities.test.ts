@@ -181,9 +181,7 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
     expect(dryRun.deletedResearchEntities).toBe(0);
     expect(deleted).toEqual([]);
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(1);
-    await expect(
-      mongoose.connection.db!.collection('signals').countDocuments({}),
-    ).resolves.toBe(1);
+    await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
   });
 
   it('applies deletions only to eligible archived entities and their dependents', async () => {
@@ -208,8 +206,6 @@ describe('cleanupArchivedResearchEntities with MongoDB', () => {
 
     await expect(ResearchEntity.countDocuments({ _id: eligibleId })).resolves.toBe(0);
     await expect(ResearchEntity.countDocuments({ _id: blockedId })).resolves.toBe(1);
-    await expect(
-      mongoose.connection.db!.collection('signals').countDocuments({}),
-    ).resolves.toBe(1);
+    await expect(mongoose.connection.db!.collection('signals').countDocuments({})).resolves.toBe(1);
   });
 });

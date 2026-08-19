@@ -14,11 +14,7 @@
  */
 import { ResearchGroup } from '../types/researchGroup';
 
-export type TrustVerdict =
-  | 'verified-accepting'
-  | 'likely-accepting'
-  | 'unknown'
-  | 'not-accepting';
+export type TrustVerdict = 'verified-accepting' | 'likely-accepting' | 'unknown' | 'not-accepting';
 
 export type EvidenceKind =
   | 'pi-claim'
@@ -76,9 +72,10 @@ const ACCESS_SIGNAL_LABELS: Record<string, string> = {
  * if any are populated. Robust to entirely-empty entries (just renders the
  * total count).
  */
-function summarizePastAdvisees(
-  past: ResearchGroup['pastUndergradAdvisees'],
-): { label: string; detail?: string } {
+function summarizePastAdvisees(past: ResearchGroup['pastUndergradAdvisees']): {
+  label: string;
+  detail?: string;
+} {
   const total = (past || []).reduce((sum, p) => sum + (p?.count ?? 1), 0);
   const years = (past || [])
     .map((p) => p?.year)
@@ -131,13 +128,17 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
     };
   }
 
-  const uniqueEvidence = [...summary.evidence.reduce((bySignalType, item) => {
-    const existing = bySignalType.get(item.signalType);
-    if (!existing || (existing.confidence !== 'HIGH' && item.confidence === 'HIGH')) {
-      bySignalType.set(item.signalType, item);
-    }
-    return bySignalType;
-  }, new Map<string, (typeof summary.evidence)[number]>()).values()];
+  const uniqueEvidence = [
+    ...summary.evidence
+      .reduce((bySignalType, item) => {
+        const existing = bySignalType.get(item.signalType);
+        if (!existing || (existing.confidence !== 'HIGH' && item.confidence === 'HIGH')) {
+          bySignalType.set(item.signalType, item);
+        }
+        return bySignalType;
+      }, new Map<string, (typeof summary.evidence)[number]>())
+      .values(),
+  ];
 
   const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => ({
     kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
@@ -164,9 +165,7 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
 /**
  * Pure verdict computation. See module-level docstring for the rules.
  */
-export function computeAcceptanceVerdict(
-  group: ResearchGroup,
-): AcceptanceVerdictResult {
+export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdictResult {
   const evidence: EvidenceItem[] = [];
   const lockedFields = group.manuallyLockedFields || [];
   const isManuallyLocked = lockedFields.includes(MANUAL_LOCK_FIELD);

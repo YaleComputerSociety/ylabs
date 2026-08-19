@@ -46,10 +46,7 @@ import {
   buildResearchEntityQualitySummary,
   type ResearchEntityQualitySummary,
 } from './researchEntityQuality';
-import {
-  accessSignalTypes,
-  mapResearchGroupKindToEntityType,
-} from '../models/researchAccessTypes';
+import { accessSignalTypes, mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,

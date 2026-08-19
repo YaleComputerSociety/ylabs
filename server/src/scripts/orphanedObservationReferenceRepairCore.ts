@@ -12,11 +12,7 @@ export type OrphanReferenceRecovery =
   | 'record_archived_loss';
 
 export type OrphanReferenceDecision =
-  | 'relink'
-  | 'rematerialize'
-  | 'archive_owner'
-  | 'record_loss'
-  | 'defer_review';
+  'relink' | 'rematerialize' | 'archive_owner' | 'record_loss' | 'defer_review';
 
 export interface OrphanReferenceOccurrence {
   ownerCollection: string;

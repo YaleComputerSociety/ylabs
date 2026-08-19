@@ -280,12 +280,7 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
   const slugByEntityId = new Map(entities.map((entity) => [stringId(entity._id), entity.slug]));
   const validSlugSet = new Set(slugs);
 
-  const [
-    memberCounts,
-    signalCounts,
-    listingCounts,
-    observationHints,
-  ] = await Promise.all([
+  const [memberCounts, signalCounts, listingCounts, observationHints] = await Promise.all([
     aggregateCountMap(ResearchGroupMember, { researchEntityId: { $in: entityIds } }),
     aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
@@ -426,31 +421,30 @@ async function buildSlugAudit(slug: string) {
   }
 
   const entityId = stringId(entity._id);
-  const [members, signals, listings, observations] =
-    await Promise.all([
-      ResearchGroupMember.find({ researchEntityId: entity._id })
-        .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
-        .lean(),
-      Signal.find({
-        researchEntityId: entity._id,
-        type: { $in: [...accessSignalTypes] },
-        archived: { $ne: true },
-      })
-        .select('type confidence confidenceScore source observedAt derivationKey')
-        .sort({ observedAt: -1 })
-        .lean(),
-      Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
-        .select('title deadline website')
-        .lean(),
-      Observation.find({
-        entityType: { $in: ['researchEntity', 'researchGroup'] },
-        superseded: false,
-        $or: [{ entityId: entity._id }, { entityKey: slug }],
-      })
-        .select('field value sourceName sourceUrl confidence observedAt entityKey')
-        .sort({ observedAt: -1 })
-        .lean(),
-    ]);
+  const [members, signals, listings, observations] = await Promise.all([
+    ResearchGroupMember.find({ researchEntityId: entity._id })
+      .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
+      .lean(),
+    Signal.find({
+      researchEntityId: entity._id,
+      type: { $in: [...accessSignalTypes] },
+      archived: { $ne: true },
+    })
+      .select('type confidence confidenceScore source observedAt derivationKey')
+      .sort({ observedAt: -1 })
+      .lean(),
+    Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
+      .select('title deadline website')
+      .lean(),
+    Observation.find({
+      entityType: { $in: ['researchEntity', 'researchGroup'] },
+      superseded: false,
+      $or: [{ entityId: entity._id }, { entityKey: slug }],
+    })
+      .select('field value sourceName sourceUrl confidence observedAt entityKey')
+      .sort({ observedAt: -1 })
+      .lean(),
+  ]);
 
   const observationHints = observations as ObservationHint[];
   const coverageFacts: CoverageAuditFacts = {

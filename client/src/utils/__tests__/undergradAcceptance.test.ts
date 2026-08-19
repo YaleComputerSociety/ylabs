@@ -45,7 +45,8 @@ describe('computeAcceptanceVerdict — manual lock takes priority', () => {
         // Even with extra signals, the PI claim is the only chip when locked.
         pastUndergradAdvisees: [{ year: 2024, count: 3 }],
         currentUndergradCount: 5,
-      }));
+      }),
+    );
     expect(result.verdict).toBe('verified-accepting');
     expect(result.confidence).toBe(1.0);
     expect(result.evidence).toHaveLength(1);
@@ -57,7 +58,8 @@ describe('computeAcceptanceVerdict — manual lock takes priority', () => {
       baseGroup({
         manuallyLockedFields: ['acceptingUndergrads'],
         acceptingUndergrads: false,
-      }));
+      }),
+    );
     expect(result.verdict).toBe('not-accepting');
     expect(result.confidence).toBe(1.0);
     expect(result.evidence).toHaveLength(1);
@@ -72,7 +74,8 @@ describe('computeAcceptanceVerdict — closed by non-locked source', () => {
         acceptingUndergrads: false,
         undergradEvidenceQuote: 'Lab is at capacity for the spring.',
         confidenceByField: { acceptingUndergrads: 0.6 },
-      }));
+      }),
+    );
     expect(result.verdict).toBe('not-accepting');
     expect(result.evidence[0].kind).toBe('closed-evidence');
     expect(result.evidence[0].detail).toBe('Lab is at capacity for the spring.');
@@ -100,7 +103,8 @@ describe('computeAcceptanceVerdict — access summary compatibility', () => {
           signalTypes: ['POSTED_OPENING'],
           bestNextStep: 'Apply',
         },
-      }));
+      }),
+    );
 
     expect(result.verdict).toBe('verified-accepting');
     expect(result.confidence).toBe(0.88);
@@ -134,7 +138,8 @@ describe('computeAcceptanceVerdict — access summary compatibility', () => {
           signalTypes: ['REACH_OUT_PLAUSIBLE'],
           bestNextStep: 'Review the official profile.',
         },
-      }));
+      }),
+    );
 
     expect(result.evidence).toEqual([
       {
@@ -162,7 +167,8 @@ describe('computeAcceptanceVerdict — access summary compatibility', () => {
           signalTypes: ['NOT_CURRENTLY_AVAILABLE'],
           bestNextStep: 'Check back later',
         },
-      }));
+      }),
+    );
 
     expect(result.verdict).toBe('not-accepting');
     expect(result.confidence).toBe(0.72);
@@ -178,7 +184,8 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
       baseGroup({
         pastUndergradAdvisees: [{ year: 2023, programName: 'Fixture Scholars', count: 2 }],
         currentUndergradCount: 4,
-      }));
+      }),
+    );
     expect(result.verdict).toBe('verified-accepting');
     expect(result.evidence.length).toBe(2);
     expect(result.evidence.every((e) => e.strength === 'strong')).toBe(true);
@@ -186,7 +193,8 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
 
   it('one strong signal → likely-accepting', () => {
     const result = computeAcceptanceVerdict(
-      baseGroup({ pastUndergradAdvisees: [{ year: 2022, count: 1 }] }));
+      baseGroup({ pastUndergradAdvisees: [{ year: 2022, count: 1 }] }),
+    );
     expect(result.verdict).toBe('likely-accepting');
     expect(result.confidence).toBe(0.7);
   });
@@ -196,7 +204,8 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
       baseGroup({
         offersIndependentStudy: true,
         independentStudyCourses: [{ code: 'TEST 101', title: 'Independent Research Fixture' }],
-      }));
+      }),
+    );
     expect(result.verdict).toBe('likely-accepting');
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0].kind).toBe('offers-indep-study');
@@ -209,7 +218,8 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
         acceptingUndergrads: true,
         undergradEvidenceQuote: 'We welcome motivated undergraduate researchers.',
         confidenceByField: { acceptingUndergrads: 0.65 },
-      }));
+      }),
+    );
     expect(result.verdict).toBe('likely-accepting');
     expect(result.evidence[0].kind).toBe('llm-evidence');
     expect(result.evidence[0].detail).toBe('We welcome motivated undergraduate researchers.');
@@ -224,7 +234,8 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
       baseGroup({
         acceptingUndergrads: true,
         confidenceByField: { acceptingUndergrads: 1.0 },
-      }));
+      }),
+    );
     expect(result.evidence.find((e) => e.kind === 'llm-evidence')).toBeUndefined();
     expect(result.verdict).toBe('unknown');
   });
@@ -235,7 +246,6 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
     expect(result.confidence).toBe(0.0);
     expect(result.evidence).toHaveLength(0);
   });
-
 });
 
 describe('computeAcceptanceVerdict — chip details and ordering', () => {
@@ -247,18 +257,17 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
           { year: 2023, programName: 'Fixture Scholars', count: 1 },
           { year: 2024, programName: 'Fixture Summer Research', count: 1 },
         ],
-      }));
+      }),
+    );
     expect(result.evidence[0].label).toBe('3 Fixture Scholars advisees');
     expect(result.evidence[0].detail).toBe('(2022–2024)');
   });
 
   it('lab-lists-undergrads singular vs plural', () => {
-    const single = computeAcceptanceVerdict(
-      baseGroup({ currentUndergradCount: 1 }));
+    const single = computeAcceptanceVerdict(baseGroup({ currentUndergradCount: 1 }));
     expect(single.evidence[0].label).toBe('Lists 1 undergrad');
 
-    const plural = computeAcceptanceVerdict(
-      baseGroup({ currentUndergradCount: 5 }));
+    const plural = computeAcceptanceVerdict(baseGroup({ currentUndergradCount: 5 }));
     expect(plural.evidence[0].label).toBe('Lists 5 undergrads');
   });
 
@@ -268,7 +277,8 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
         offersIndependentStudy: true,
         currentUndergradCount: 2,
         pastUndergradAdvisees: [{ year: 2024, count: 1 }],
-      }));
+      }),
+    );
     const kinds = result.evidence.map((e) => e.kind);
     // strong: past-advisees, lab-lists-undergrads
     // moderate: offers-indep-study
@@ -280,13 +290,15 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
       baseGroup({
         acceptingUndergrads: true,
         confidenceByField: { acceptingUndergrads: 0.3 },
-      }));
+      }),
+    );
     expect(result.evidence.find((e) => e.kind === 'llm-evidence')).toBeUndefined();
   });
 
   it('past advisee count of 0 entries is handled (label uses fallback)', () => {
     const result = computeAcceptanceVerdict(
-      baseGroup({ pastUndergradAdvisees: [{ year: 2020, count: 1 }] }));
+      baseGroup({ pastUndergradAdvisees: [{ year: 2020, count: 1 }] }),
+    );
     expect(result.evidence[0].label).toBe('1 past advisee');
     expect(result.evidence[0].detail).toBe('(2020)');
   });

@@ -44,10 +44,7 @@ const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
 const USER_UPDATE_OPERATORS = new Set(['$set', '$unset', '$addToSet']);
 const USER_UPDATE_PATH_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
 type FavoriteObjectIdArrayField =
-  | 'favListings'
-  | 'favFellowships'
-  | 'favPathways'
-  | 'savedResearchEntities';
+  'favListings' | 'favFellowships' | 'favPathways' | 'savedResearchEntities';
 
 export interface SavedProgramTrackingInput {
   note?: unknown;

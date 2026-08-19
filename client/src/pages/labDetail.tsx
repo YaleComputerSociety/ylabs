@@ -611,9 +611,7 @@ const DecisionSummary = ({
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Planning status
               </dt>
-              <dd className="mt-1 font-semibold text-gray-900">
-                {reachOutStatus({ group })}
-              </dd>
+              <dd className="mt-1 font-semibold text-gray-900">{reachOutStatus({ group })}</dd>
             </div>
           </dl>
           {hasEvidenceDetail && (

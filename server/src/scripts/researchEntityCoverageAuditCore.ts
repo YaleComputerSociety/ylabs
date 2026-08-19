@@ -78,12 +78,7 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   const descriptionChars = textLength(facts.description);
   const shortDescriptionChars = textLength(facts.shortDescription);
   const fullDescriptionChars = textLength(facts.fullDescription);
-  const {
-    researchAreas,
-    members,
-    accessSignals,
-    activeListings,
-  } = facts.counts;
+  const { researchAreas, members, accessSignals, activeListings } = facts.counts;
 
   const noActionableAccess = accessSignals === 0 && activeListings === 0;
   const issues: string[] = [];

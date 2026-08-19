@@ -54,9 +54,7 @@ describe('LabHeader', () => {
   });
 
   it('hides the website link when websiteUrl is empty', () => {
-    const { container } = render(
-      <LabHeader group={{ ...baseGroup, websiteUrl: '' }} />,
-    );
+    const { container } = render(<LabHeader group={{ ...baseGroup, websiteUrl: '' }} />);
     expect(container.textContent).not.toContain('Visit lab website');
   });
 
@@ -162,5 +160,4 @@ describe('LabHeader trust-gradient pill', () => {
     expect(pill?.getAttribute('data-verdict')).toBe('not-accepting');
     expect(pill?.textContent).toBe('Not currently available');
   });
-
 });

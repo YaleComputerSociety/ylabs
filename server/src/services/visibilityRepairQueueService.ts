@@ -112,9 +112,7 @@ interface RepairDeps {
     userId: string,
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
-  upsertSignal?: (
-    input: UpsertSignalInput,
-  ) => Promise<{ signalId?: string; doc?: any }>;
+  upsertSignal?: (input: UpsertSignalInput) => Promise<{ signalId?: string; doc?: any }>;
   findActionEvidenceObservationIds?: (input: {
     researchEntityId: string;
     userId: string;

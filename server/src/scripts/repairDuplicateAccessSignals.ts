@@ -88,7 +88,11 @@ function parsePositiveInteger(value: string, optionName: string): number {
   return parsed;
 }
 
-function valueForFlag(argv: string[], index: number, flag: string): { value: string; nextIndex: number } {
+function valueForFlag(
+  argv: string[],
+  index: number,
+  flag: string,
+): { value: string; nextIndex: number } {
   const arg = argv[index];
   const inline = arg.startsWith(`${flag}=`) ? arg.slice(flag.length + 1) : undefined;
   const value = inline !== undefined ? inline : arg === flag ? argv[index + 1] : undefined;
@@ -270,7 +274,9 @@ export function buildDuplicateAccessSignalRepairPlans(
   };
 
   for (const group of grouped.values()) {
-    const groupSignals = group.signalIds.map((id) => signalById.get(id)).filter(Boolean) as DuplicateAccessSignalRecord[];
+    const groupSignals = group.signalIds
+      .map((id) => signalById.get(id))
+      .filter(Boolean) as DuplicateAccessSignalRecord[];
     if (groupSignals.length !== group.signalIds.length) {
       result.blocked.push({
         signalIds: group.signalIds,
@@ -282,7 +288,9 @@ export function buildDuplicateAccessSignalRepairPlans(
     const activeSignals = groupSignals.filter((signal) => signal.archived !== true);
     if (activeSignals.length < 2) continue;
 
-    const researchEntityIds = new Set(activeSignals.map((signal) => stringId(signal.researchEntityId)));
+    const researchEntityIds = new Set(
+      activeSignals.map((signal) => stringId(signal.researchEntityId)),
+    );
     const signalTypes = new Set(activeSignals.map((signal) => stringId(signal.signalType)));
     if (researchEntityIds.size !== 1 || signalTypes.size !== 1) {
       result.blocked.push({
@@ -326,7 +334,9 @@ export function writeDuplicateAccessSignalRepairOutput(
   fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
-async function loadDuplicateAccessSignalGroups(limit: number): Promise<DuplicateAccessSignalGroup[]> {
+async function loadDuplicateAccessSignalGroups(
+  limit: number,
+): Promise<DuplicateAccessSignalGroup[]> {
   const fields: DuplicateAccessSignalGroup['identityField'][] = [
     'derivationKey',
     'sourceEvidenceId',
@@ -394,17 +404,20 @@ async function loadDuplicateAccessSignalGroups(limit: number): Promise<Duplicate
   return groups;
 }
 
-async function loadSignalRecords(groups: DuplicateAccessSignalGroup[]): Promise<DuplicateAccessSignalRecord[]> {
-  const signalIds = [
-    ...new Set(groups.flatMap((group) => group.signalIds || [])),
-  ]
+async function loadSignalRecords(
+  groups: DuplicateAccessSignalGroup[],
+): Promise<DuplicateAccessSignalRecord[]> {
+  const signalIds = [...new Set(groups.flatMap((group) => group.signalIds || []))]
     .map((id) => normalizeDuplicateAccessSignalObjectId(id))
     .filter((id): id is string => Boolean(id));
   if (signalIds.length === 0) return [];
   const rows = await Signal.find({
     _id: { $in: signalIds.map((id) => new mongoose.Types.ObjectId(id)) },
   }).lean();
-  return rows.map((row: any) => ({ ...row, signalType: row.type })) as DuplicateAccessSignalRecord[];
+  return rows.map((row: any) => ({
+    ...row,
+    signalType: row.type,
+  })) as DuplicateAccessSignalRecord[];
 }
 
 function plannedWriteCount(plans: DuplicateAccessSignalRepairPlan[]): number {

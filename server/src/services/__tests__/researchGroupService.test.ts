@@ -1168,7 +1168,6 @@ describe('getResearchGroupDetail', () => {
 
     const detail = await getResearchGroupDetail('privacy-lab');
 
-
     expect(detail?.undergraduateLogistics).toEqual({ status: 'ready', claims: [] });
     expect(detail?.activeListings).toEqual([
       expect.objectContaining({
@@ -1195,7 +1194,6 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.activeListings[0]).not.toHaveProperty('audited');
     expect(detail?.activeListings[0]).not.toHaveProperty('archivedAt');
     expect(detail?.activeListings[0]).not.toHaveProperty('embedding');
-
 
     expect(detail?.accessSignals[0]).toEqual(
       expect.objectContaining({

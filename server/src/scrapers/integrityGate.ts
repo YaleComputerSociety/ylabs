@@ -15,9 +15,7 @@ import {
 
 export type PostMaterializationIntegrityStatus = 'pass' | 'failure';
 export type IntegrityWarningClassification =
-  | 'must_fix_before_promotion'
-  | 'accepted_release_warning'
-  | 'post_promotion_backlog';
+  'must_fix_before_promotion' | 'accepted_release_warning' | 'post_promotion_backlog';
 
 export type PostMaterializationIntegrityFailureName =
   | 'samePiSameNameResearchEntities'
@@ -149,15 +147,11 @@ const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'activeArtifactsOnArchivedEntities',
 ];
 
-const SAME_PI_DEDUPE_REVIEW_COMMAND =
-  betaCommand(
-    'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
-  );
+const SAME_PI_DEDUPE_REVIEW_COMMAND = betaCommand(
+  'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json --allow-empty-decisions --decision-template-output /tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json --output /tmp/ylabs-research-entity-dedupe.json',
+);
 
-const RECOMMENDED_COMMANDS_BY_FAILURE: Record<
-  PostMaterializationIntegrityFailureName,
-  string[]
-> = {
+const RECOMMENDED_COMMANDS_BY_FAILURE: Record<PostMaterializationIntegrityFailureName, string[]> = {
   samePiSameNameResearchEntities: [SAME_PI_DEDUPE_REVIEW_COMMAND],
   officialLabUrlResearchEntities: [
     betaCommand(
@@ -246,10 +240,7 @@ export function buildPostMaterializationIntegritySummary(
       activeArtifactsOnArchivedEntities: sample(input.activeArtifactsOnArchivedEntities, limit),
     },
     warnings,
-    recommendedCommands: [
-      ...recommendedCommandsForFailures(failureNames),
-      ...warningCommands,
-    ],
+    recommendedCommands: [...recommendedCommandsForFailures(failureNames), ...warningCommands],
   };
 }
 
@@ -257,9 +248,7 @@ function recommendedCommandsForFailures(
   failureNames: PostMaterializationIntegrityFailureName[],
 ): string[] {
   return [
-    ...new Set(
-      failureNames.flatMap((failureName) => RECOMMENDED_COMMANDS_BY_FAILURE[failureName]),
-    ),
+    ...new Set(failureNames.flatMap((failureName) => RECOMMENDED_COMMANDS_BY_FAILURE[failureName])),
   ];
 }
 

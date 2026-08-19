@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  getResearchEntityBestNextStep,
-  isItemOpen,
-  BrowsableItem,
-} from '../browsable';
+import { getResearchEntityBestNextStep, isItemOpen, BrowsableItem } from '../browsable';
 import { ResearchEntity } from '../researchEntity';
 
 const researchEntity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({

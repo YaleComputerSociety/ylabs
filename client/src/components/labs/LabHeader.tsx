@@ -47,11 +47,7 @@ const normalizeActionUrl = (url?: string | null): string => {
   }
 };
 
-const LabHeader = ({
-  group,
-  dedupeWebsiteUrls = [],
-  actions,
-}: LabHeaderProps) => {
+const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) => {
   const { departments } = useConfig();
   const { verdict } = computeAcceptanceVerdict(group);
   const verdictClasses = verdictBadgeStyles(verdict);
@@ -80,20 +76,11 @@ const LabHeader = ({
   return (
     <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="yr-pill yr-pill-blue">
-          {kindLabel}
-        </span>
-        <span
-          className={`yr-pill ${verdictClasses}`}
-          data-verdict={verdict}
-        >
+        <span className="yr-pill yr-pill-blue">{kindLabel}</span>
+        <span className={`yr-pill ${verdictClasses}`} data-verdict={verdict}>
           {verdictText}
         </span>
-        {group.school && (
-          <span className="yr-pill">
-            {group.school}
-          </span>
-        )}
+        {group.school && <span className="yr-pill">{group.school}</span>}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -120,11 +107,7 @@ const LabHeader = ({
             </p>
           )}
         </div>
-        {actions && (
-          <div className="w-full shrink-0 sm:w-auto">
-            {actions}
-          </div>
-        )}
+        {actions && <div className="w-full shrink-0 sm:w-auto">{actions}</div>}
       </div>
 
       {departmentLabels.length > 0 && (
@@ -149,10 +132,7 @@ const LabHeader = ({
           </p>
           <div className="flex flex-wrap gap-1.5">
             {visibleProfileResearchAreas.map((area) => (
-              <span
-                key={area}
-            className="yr-pill rounded-md"
-              >
+              <span key={area} className="yr-pill rounded-md">
                 {formatTitleCaseLabel(area)}
               </span>
             ))}

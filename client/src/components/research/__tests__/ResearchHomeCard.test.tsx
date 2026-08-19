@@ -147,9 +147,7 @@ describe('ResearchHomeCard', () => {
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
     expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
-    expect(text.indexOf('Research description')).toBeLessThan(
-      text.indexOf('Evidence limited'),
-    );
+    expect(text.indexOf('Research description')).toBeLessThan(text.indexOf('Evidence limited'));
   });
 
   it('surfaces duplicate review flags for admin quality review', () => {
@@ -276,9 +274,7 @@ describe('ResearchHomeCard', () => {
     );
 
     const link = screen.getByRole('link', { name: 'Fixture Scholar' });
-    expect(link.getAttribute('href')).toBe(
-      'https://medicine.yale.edu/profile/fixture-scholar/',
-    );
+    expect(link.getAttribute('href')).toBe('https://medicine.yale.edu/profile/fixture-scholar/');
   });
 
   it('uses compact browse cards to preserve more description before click-through', () => {
@@ -294,7 +290,9 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const description = screen.getByText(/Studies how synthetic signals move through fixture workflows/);
+    const description = screen.getByText(
+      /Studies how synthetic signals move through fixture workflows/,
+    );
     expect(description.className).toContain('line-clamp-4');
     expect(description.className).not.toContain('line-clamp-2');
     expect(screen.getByRole('link', { name: 'View profile →' })).toBeTruthy();
@@ -308,7 +306,7 @@ describe('ResearchHomeCard', () => {
             entities: [
               ...(researchHome().entities || []),
               {
-                ...(researchHome().entities[0]),
+                ...researchHome().entities[0],
                 _id: 'entity-2',
                 slug: 'related-research-home',
                 name: 'Related Research Home',
@@ -351,9 +349,7 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).toContain('Summary limited');
     expect(container.textContent).toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
-    expect(container.textContent).toContain(
-      'Review evidence and official source links',
-    );
+    expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
   });
 

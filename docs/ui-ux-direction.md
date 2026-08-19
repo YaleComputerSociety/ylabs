@@ -43,7 +43,7 @@ It should feel like a focused student research tool, not a marketing site.
 
 Current implementation anchors:
 
-- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` to `/research`, exposes `/research`, `/research/:slug`, `/opportunities/:id`, and `/programs`, and redirects retired `/listings` and `/fellowships` URLs.
+- [`client/src/App.tsx`](../client/src/App.tsx): routes `/` to `/research`, exposes `/research`, `/research/:slug`, and `/programs`, and redirects retired `/listings` and `/fellowships` URLs.
 - [`client/src/components/Navbar.tsx`](../client/src/components/Navbar.tsx): primary navigation, including Research, Programs & Fellowships, and Dashboard.
 - [`client/src/pages/research.tsx`](../client/src/pages/research.tsx): `/research` browse page for labs, centers, programs, faculty research, and related groups.
 - [`client/src/components/research/ResearchFilterDisclosure.tsx`](../client/src/components/research/ResearchFilterDisclosure.tsx): adaptive school and department filters for Research search.
