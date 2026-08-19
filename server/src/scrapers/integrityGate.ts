@@ -796,10 +796,14 @@ async function loadActiveArtifactsOnArchivedEntities(
   limit: number,
 ): Promise<ActiveArtifactOnArchivedEntity[]> {
   const artifactSpecs = [
-    { artifactType: 'EntryPathway' as const, model: EntryPathway },
-    { artifactType: 'AccessSignal' as const, model: Signal },
-    { artifactType: 'ContactRoute' as const, model: ContactRoute },
-    { artifactType: 'PostedOpportunity' as const, model: PostedOpportunity },
+    { artifactType: 'EntryPathway' as const, model: EntryPathway, match: {} as Record<string, unknown> },
+    {
+      artifactType: 'AccessSignal' as const,
+      model: Signal,
+      match: { type: { $in: [...accessSignalTypes] } } as Record<string, unknown>,
+    },
+    { artifactType: 'ContactRoute' as const, model: ContactRoute, match: {} as Record<string, unknown> },
+    { artifactType: 'PostedOpportunity' as const, model: PostedOpportunity, match: {} as Record<string, unknown> },
   ];
   const results: ActiveArtifactOnArchivedEntity[] = [];
 
@@ -809,6 +813,7 @@ async function loadActiveArtifactsOnArchivedEntities(
         $match: {
           archived: { $ne: true },
           researchEntityId: { $exists: true, $ne: null },
+          ...spec.match,
         },
       },
       {
