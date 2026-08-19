@@ -1,13 +1,11 @@
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { EntryPathway } from '../models/entryPathway';
-import { FacultyMember } from '../models/facultyMember';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import mongoose from 'mongoose';
 import {
   publicStudentVisibilityTiers,
@@ -40,6 +38,7 @@ export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection |
 const MAX_RELEASE_QUEUE_PAGE = 1000;
 const MAX_RELEASE_QUEUE_FILTER_LENGTH = 120;
 const STUDENT_VISIBILITY_GATE_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
+const STUDENT_VISIBILITY_GATE_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 const studentVisibilityGateDocumentId = (value: unknown): string =>
   serializedDocumentId(value) || '';
 const studentVisibilityGateEntityIdKey = (entity: any): string =>
@@ -889,15 +888,8 @@ async function planResearchEntityGateUpdates(
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId userId facultyMemberId name role')
-      .lean(),
+  const [rosterByEntityId, accessRows, pathwayRows, postedRows] = await Promise.all([
+    getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
         $match: {
@@ -938,41 +930,43 @@ async function planResearchEntityGateUpdates(
     ]),
   ]);
 
-  const leadUserIds = uniqueStrings(
-    (leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.userId)),
-  );
-  const leadFacultyMemberIds = uniqueStrings(
-    (leadRows as any[]).map((row) => studentVisibilityGateDocumentId(row.facultyMemberId)),
-  );
-  const [leadUsers, leadFacultyMembers] = await Promise.all([
-    leadUserIds.length
-      ? User.find({ _id: { $in: leadUserIds } })
-          .select('facultyMemberId displayName name fname lname title')
-          .lean()
-      : [],
-    leadFacultyMemberIds.length
-      ? FacultyMember.find({ _id: { $in: leadFacultyMemberIds } })
-          .select('name firstName lastName')
-          .lean()
-      : [],
-  ]);
-  const leadUsersById = new Map(
-    (leadUsers as any[]).map((user) => [studentVisibilityGateDocumentId(user._id), user]),
-  );
-  const leadFacultyMembersById = new Map(
-    (leadFacultyMembers as any[]).map((facultyMember) => [
-      studentVisibilityGateDocumentId(facultyMember._id),
-      facultyMember,
-    ]),
-  );
+  const leadRows = Array.from(rosterByEntityId.values())
+    .flat()
+    .filter(
+      (entry) => entry.state !== 'HISTORICAL' && STUDENT_VISIBILITY_GATE_LEAD_ROLES.has(entry.role),
+    )
+    .map((entry) => {
+      const [fname = '', ...rest] = String(entry.name || '')
+        .trim()
+        .split(/\s+/);
+      const lname = rest.join(' ');
+      return {
+        researchEntityId: entry.researchEntityId,
+        role: entry.role,
+        userId: entry.personId,
+        name: entry.name,
+        ...(entry.title ? { title: entry.title } : {}),
+        user: {
+          _id: entry.personId,
+          netid: entry.netid,
+          displayName: entry.name,
+          fname,
+          lname,
+          ...(entry.title ? { title: entry.title } : {}),
+        },
+      };
+    });
+
   const profileAreaNamesByUserId = new Map<string, string[]>();
-  const profileAreaNames = uniqueStrings(
-    (leadUsers as any[]).flatMap((user) => {
-      const names = profileAreaNamesForVisibilityPi(user.fname, user.lname);
-      profileAreaNamesByUserId.set(studentVisibilityGateDocumentId(user._id), names);
-      return names;
-    }),
-  );
+  for (const row of leadRows) {
+    const userId = studentVisibilityGateDocumentId(row.userId);
+    if (!userId || profileAreaNamesByUserId.has(userId)) continue;
+    profileAreaNamesByUserId.set(
+      userId,
+      profileAreaNamesForVisibilityPi(row.user.fname, row.user.lname),
+    );
+  }
+  const profileAreaNames = uniqueStrings(Array.from(profileAreaNamesByUserId.values()).flat());
   const profileAreaEntities = profileAreaNames.length
     ? await ResearchEntity.find({ archived: { $ne: true }, name: { $in: profileAreaNames } })
         .select('_id slug name kind entityType websiteUrl sourceUrls departments researchAreas')
@@ -986,15 +980,7 @@ async function planResearchEntityGateUpdates(
   }
 
   const leadsByEntityId = new Map<string, any[]>();
-  for (const row of leadRows as any[]) {
-    const user = row.userId
-      ? leadUsersById.get(studentVisibilityGateDocumentId(row.userId))
-      : undefined;
-    if (user) row.user = user;
-    const facultyMember = row.facultyMemberId
-      ? leadFacultyMembersById.get(studentVisibilityGateDocumentId(row.facultyMemberId))
-      : undefined;
-    if (facultyMember) row.facultyMember = facultyMember;
+  for (const row of leadRows) {
     const key = studentVisibilityGateDocumentId(row.researchEntityId);
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }

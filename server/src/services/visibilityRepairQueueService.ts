@@ -21,8 +21,11 @@ import { upsertSignal, type UpsertSignalInput } from './signalService';
 import { upsertContactRoute, type UpsertContactRouteInput } from './contactRouteService';
 import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
+import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
+
+const VISIBILITY_REPAIR_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 export type VisibilityRepairMode = 'dry-run' | 'apply';
 
@@ -121,9 +124,7 @@ interface RepairDeps {
   findReusableExploratoryContactPathway?: (
     researchEntityId: string,
   ) => Promise<{ pathwayId?: string; derivationKey?: string; doc?: any } | null>;
-  upsertSignal?: (
-    input: UpsertSignalInput,
-  ) => Promise<{ signalId?: string; doc?: any }>;
+  upsertSignal?: (input: UpsertSignalInput) => Promise<{ signalId?: string; doc?: any }>;
   upsertContactRoute?: (
     input: UpsertContactRouteInput,
   ) => Promise<{ contactRouteId?: string; doc?: any }>;
@@ -2329,21 +2330,36 @@ const defaultRepairDeps: RepairDeps = {
   async findResearchEntityMembers(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return [];
-    return ResearchGroupMember.find({
-      researchEntityId: safeId,
-      archived: { $ne: true },
-      role: { $in: ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'] },
-    })
-      .populate('userId')
-      .populate('facultyMemberId')
-      .lean()
-      .then((rows: any[]) =>
-        rows.map((row) => ({
-          ...row,
-          user: row.userId,
-          facultyMember: row.facultyMemberId,
-        })),
-      );
+    const roster = await getResearchEntityRoster(safeId);
+    return roster
+      .filter(
+        (entry) => entry.state !== 'HISTORICAL' && VISIBILITY_REPAIR_LEAD_ROLES.has(entry.role),
+      )
+      .map((entry) => {
+        const profileUrls = Object.fromEntries(
+          (entry.profileLinks || [])
+            .filter((link) => link?.url)
+            .map((link) => [link.kind, link.url]),
+        );
+        return {
+          researchEntityId: entry.researchEntityId,
+          role: entry.role,
+          userId: entry.personId,
+          name: entry.name,
+          email: entry.email,
+          sourceUrl: entry.rosterProvenance?.sourceUrl,
+          user: {
+            _id: entry.personId,
+            displayName: entry.name,
+            netid: entry.netid,
+            email: entry.email,
+            ...(entry.title ? { title: entry.title } : {}),
+            website: entry.websiteUrl,
+            websiteUrl: entry.websiteUrl,
+            profileUrls,
+          },
+        };
+      });
   },
   async updateResearchEntity(id, patch) {
     const safeId = normalizeVisibilityRepairObjectId(id);

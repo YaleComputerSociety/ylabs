@@ -6,7 +6,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type {
@@ -918,46 +918,29 @@ async function deriveIdentifiedLeadWaysInForEntity(
   }).lean();
   if (!entity) return empty;
 
-  const lead: any = await ResearchGroupMember.findOne({
-    researchEntityId: researchEntityObjectId,
-    role: { $in: Array.from(IDENTIFIED_LEAD_ROLES) },
-    isCurrentMember: { $ne: false },
-    $or: [
-      { userId: { $exists: true, $ne: null } },
-      { facultyMemberId: { $exists: true, $ne: null } },
-    ],
-  })
-    .select('userId facultyMemberId name role')
-    .lean();
+  const roster = await getResearchEntityRoster(researchEntityObjectId);
+  const lead = roster.find(
+    (entry) =>
+      entry.state !== 'HISTORICAL' &&
+      IDENTIFIED_LEAD_ROLES.has(entry.role) &&
+      firstString(entry.name).length > 0,
+  );
   const entityTypeUpper = firstString(entity.entityType).toUpperCase();
   const isOrganizational = ORGANIZATIONAL_WAYS_IN_ENTITY_TYPES.has(entityTypeUpper);
   // A named lead is required for faculty/lab homes; organizational homes
   // (centers/institutes/initiatives) get a center-level ways-in without one.
   if (!lead && !isOrganizational) return empty;
 
-  let leadName = firstString(lead?.name);
-  let leadProfileUrl = '';
-  if (lead?.userId) {
-    const user: any = await mongoose.connection
-      .collection('users')
-      .findOne({ _id: lead.userId }, { projection: { fname: 1, lname: 1, profileUrls: 1 } });
-    if (user) {
-      if (!leadName) leadName = [user.fname, user.lname].map(firstString).filter(Boolean).join(' ');
-      // profileUrls is stored as a source-keyed object; pick a non-grant Yale URL.
-      const candidateUrls = user.profileUrls
-        ? Array.isArray(user.profileUrls)
-          ? user.profileUrls
-          : Object.values(user.profileUrls)
-        : [];
-      leadProfileUrl =
-        candidateUrls
-          .map(firstString)
-          .find(
-            (u: string) =>
-              /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
-          ) || '';
-    }
-  }
+  const leadName = firstString(lead?.name);
+  const candidateLeadUrls = lead
+    ? [lead.websiteUrl, ...(lead.profileLinks || []).map((link) => link.url)]
+    : [];
+  const leadProfileUrl =
+    candidateLeadUrls
+      .map(firstString)
+      .find(
+        (u: string) => /^https?:\/\//i.test(u) && /yale\.edu/i.test(u) && !isGrantOrOrcidOnlyUrl(u),
+      ) || '';
 
   // Prefer the entity's own official page; otherwise (e.g. grant-shell-named
   // faculty labs whose only entity URL is an NIH/NSF link) point the faculty

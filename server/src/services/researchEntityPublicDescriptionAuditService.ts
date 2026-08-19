@@ -1,9 +1,9 @@
-import { FacultyMember } from '../models/facultyMember';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+
+const LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
 
 export const PUBLIC_DESCRIPTION_AUDIT_VERSION = 'public-description-v1';
 
@@ -101,47 +101,19 @@ export async function auditStudentReadyPublicDescriptions({
     .sort({ name: 1 })
     .lean();
   const entityIds = (entities as any[]).map((entity) => entity._id);
-  const leadRows = entityIds.length
-    ? await ResearchGroupMember.find({
-        researchEntityId: { $in: entityIds },
-        archived: { $ne: true },
-        isCurrentMember: { $ne: false },
-        role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-      })
-        .select('researchEntityId userId facultyMemberId name role')
-        .lean()
-    : [];
-  const userIds = Array.from(
-    new Set((leadRows as any[]).map((row) => id(row.userId)).filter(Boolean)),
-  );
-  const facultyMemberIds = Array.from(
-    new Set((leadRows as any[]).map((row) => id(row.facultyMemberId)).filter(Boolean)),
-  );
-  const [users, facultyMembers] = await Promise.all([
-    userIds.length
-      ? User.find({ _id: { $in: userIds } })
-          .select('displayName name fname lname')
-          .lean()
-      : [],
-    facultyMemberIds.length
-      ? FacultyMember.find({ _id: { $in: facultyMemberIds } })
-          .select('name firstName lastName')
-          .lean()
-      : [],
-  ]);
-  const usersById = new Map((users as any[]).map((user) => [id(user._id), user]));
-  const facultyMembersById = new Map(
-    (facultyMembers as any[]).map((facultyMember) => [id(facultyMember._id), facultyMember]),
-  );
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
   const leadMembersByEntityId = new Map<string, Array<Record<string, any>>>();
-  for (const row of leadRows as any[]) {
-    const entityId = id(row.researchEntityId);
-    const member = {
-      ...row,
-      user: usersById.get(id(row.userId)),
-      facultyMember: facultyMembersById.get(id(row.facultyMemberId)),
-    };
-    leadMembersByEntityId.set(entityId, [...(leadMembersByEntityId.get(entityId) || []), member]);
+  for (const [entityId, entries] of rosterByEntityId.entries()) {
+    const leadMembers = entries
+      .filter((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLES.has(entry.role))
+      .map((entry) => ({
+        researchEntityId: entry.researchEntityId,
+        personId: entry.personId,
+        role: entry.role,
+        name: entry.name,
+        netid: entry.netid,
+      }));
+    if (leadMembers.length > 0) leadMembersByEntityId.set(entityId, leadMembers);
   }
 
   return buildPublicDescriptionAuditReport({
