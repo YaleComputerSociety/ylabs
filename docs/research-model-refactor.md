@@ -43,8 +43,8 @@ Does not carry an embedded `discovery` projection blob, embedded access booleans
 One extensible, source-attributed, typed fact about a research entity.
 Generalized from the logistics-claim shape and absorbs the old `AccessSignal` and `UndergraduateLogisticsClaim`.
 Fields: `researchEntityId`, `type`, `value?`, `confidence?`/`status`, `expiresAt?`, `source` (`name`, `url`, `evidenceIds[]`, `excerpt`), `observedAt`, `review`, `archived`.
-Access is `type: 'undergrad_access'` (its verified/likely confidence-gradient is preserved because it drives the browse trust-filter).
-Logistics are `type: 'weekly_hours' | 'compensation' | ...`.
+Access evidence keeps per-signal granularity: each former `AccessSignal` type (`POSTED_OPENING`, `CURRENT_UNDERGRADS`, `NOT_CURRENTLY_AVAILABLE`, and so on) is its own `Signal.type`, so the verified/likely confidence-gradient that drives the browse trust-filter is preserved per type rather than collapsed into one `undergrad_access` value.
+Logistics are the former claim types (`STUDENT_LEVEL`, `COMPENSATION`, `TIME_COMMITMENT`, `MODALITY`, `CURRENT_AVAILABILITY`) carried as `Signal.type` with a `status` and a structured `value`.
 Future metrics (wet or dry lab, safety level, and similar) are new `type` values, never new collections.
 Signals stay independent and neutral when unknown; do not cross-infer one type from another (materializer logic).
 
