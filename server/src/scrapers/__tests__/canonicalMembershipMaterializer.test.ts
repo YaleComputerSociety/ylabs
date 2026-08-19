@@ -187,6 +187,49 @@ describe('canonical membership materialization (integration)', () => {
     expect(roster[0].netid).toBe('gh456');
   });
 
+  it('persists ISO-string roster provenance dates as Date instances surfaced by the accessor', async () => {
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'staff',
+        displayName: 'Provenance Member',
+        evidenceStatus: 'verified',
+        isCurrentMember: true,
+        confidence: 0.95,
+        rosterProvenance: {
+          sourceName: 'official-research-home-roster',
+          sourceUrl: 'https://medicine.yale.edu/lab/fixture/members/',
+          membershipKey: 'official-profile:provenance-member|staff',
+          evidenceStatus: 'verified',
+          observedAt: '2026-08-14T00:00:00.000Z',
+          freshnessExpiresAt: '2999-01-01T00:00:00.000Z',
+        } as unknown as RoleAssignmentRecord['rosterProvenance'],
+      },
+      {
+        netid: 'pm789',
+        email: 'pm789@example.test',
+        displayName: 'Provenance Member',
+        hasCanonicalSourceReference: true,
+      },
+    );
+    const assignment = await RoleAssignment.findOne({
+      'target.id': new mongoose.Types.ObjectId(id),
+    }).lean<WithObjectId<RoleAssignmentRecord>>();
+    expect(assignment?.rosterProvenance?.freshnessExpiresAt).toBeInstanceOf(Date);
+    expect(assignment?.rosterProvenance?.observedAt).toBeInstanceOf(Date);
+    expect(assignment?.rosterProvenance?.freshnessExpiresAt?.toISOString()).toBe(
+      '2999-01-01T00:00:00.000Z',
+    );
+
+    const roster = await getResearchEntityRoster(new mongoose.Types.ObjectId(id));
+    expect(roster).toHaveLength(1);
+    expect(roster[0].rosterProvenance?.freshnessExpiresAt).toBeInstanceOf(Date);
+    expect((roster[0].rosterProvenance?.freshnessExpiresAt as Date).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+  });
+
   it('is idempotent: re-running produces exactly one Researcher and one RoleAssignment', async () => {
     const id = entityId();
     const facts = {

@@ -63,6 +63,15 @@ export interface CanonicalMemberFacts {
   rosterProvenance?: RoleAssignmentRosterProvenance;
 }
 
+const coerceProvenanceDate = (value: unknown): Date | undefined => {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : undefined;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+  }
+  return undefined;
+};
+
 const cleanRosterProvenance = (
   provenance: RoleAssignmentRosterProvenance | undefined,
 ): RoleAssignmentRosterProvenance | undefined => {
@@ -75,10 +84,10 @@ const cleanRosterProvenance = (
   if (trimmed(provenance.evidenceStatus))
     cleaned.evidenceStatus = trimmed(provenance.evidenceStatus);
   if (trimmed(provenance.membershipKey)) cleaned.membershipKey = trimmed(provenance.membershipKey);
-  if (provenance.observedAt instanceof Date) cleaned.observedAt = provenance.observedAt;
-  if (provenance.freshnessExpiresAt instanceof Date) {
-    cleaned.freshnessExpiresAt = provenance.freshnessExpiresAt;
-  }
+  const observedAt = coerceProvenanceDate(provenance.observedAt);
+  if (observedAt) cleaned.observedAt = observedAt;
+  const freshnessExpiresAt = coerceProvenanceDate(provenance.freshnessExpiresAt);
+  if (freshnessExpiresAt) cleaned.freshnessExpiresAt = freshnessExpiresAt;
   return Object.keys(cleaned).length > 0 ? cleaned : undefined;
 };
 

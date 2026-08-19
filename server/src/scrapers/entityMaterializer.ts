@@ -880,7 +880,16 @@ async function materializeInferredPiMembership(
   }
 }
 
-function canonicalRosterProvenanceFromSet(
+function coerceRosterProvenanceDate(value: unknown): Date | undefined {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : undefined;
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+export function canonicalRosterProvenanceFromSet(
   patchSet: Record<string, unknown>,
   fallbackEvidenceStatus?: string,
 ): RoleAssignmentRosterProvenance {
@@ -891,9 +900,8 @@ function canonicalRosterProvenanceFromSet(
     sectionLabel: textValue(patchSet.sectionLabel) || undefined,
     evidenceStatus: textValue(patchSet.evidenceStatus) || fallbackEvidenceStatus || undefined,
     membershipKey: textValue(patchSet.membershipKey) || undefined,
-    observedAt: patchSet.lastObservedAt instanceof Date ? patchSet.lastObservedAt : undefined,
-    freshnessExpiresAt:
-      patchSet.freshnessExpiresAt instanceof Date ? patchSet.freshnessExpiresAt : undefined,
+    observedAt: coerceRosterProvenanceDate(patchSet.lastObservedAt),
+    freshnessExpiresAt: coerceRosterProvenanceDate(patchSet.freshnessExpiresAt),
   };
 }
 
