@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Account } from '../../models/account';
-import { Researcher } from '../../models/researcher';
-import { RoleAssignment } from '../../models/roleAssignment';
+import { Account, AccountRecord } from '../../models/account';
+import { Researcher, ResearcherRecord } from '../../models/researcher';
+import { RoleAssignment, RoleAssignmentRecord } from '../../models/roleAssignment';
 import {
   canonicalRoleForLegacy,
   reviewStatusForLegacyMembership,
@@ -17,6 +17,8 @@ import {
   resolveCanonicalResearcherId,
 } from '../canonicalMembershipMaterializer';
 import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
+
+type WithObjectId<T> = T & { _id: mongoose.Types.ObjectId };
 
 describe('canonical membership mapping (pure)', () => {
   it('maps legacy roles to canonical roles and returns undefined for unmapped', () => {
@@ -144,9 +146,11 @@ describe('canonical membership materialization (integration)', () => {
         hasCanonicalSourceReference: true,
       },
     );
-    const account = await Account.findOne({ netid: 'ab123' }).lean();
+    const account = await Account.findOne({ netid: 'ab123' }).lean<WithObjectId<AccountRecord>>();
     expect(account).toBeTruthy();
-    const researcher = await Researcher.findOne({ accountId: account?._id }).lean();
+    const researcher = await Researcher.findOne({ accountId: account?._id }).lean<
+      WithObjectId<ResearcherRecord>
+    >();
     expect(researcher?.displayName).toBe('Alpha One');
     const assignments = await RoleAssignment.find({
       'target.id': new mongoose.Types.ObjectId(id),
@@ -294,7 +298,9 @@ describe('canonical membership materialization (integration)', () => {
     expect(personId).toBeTruthy();
     const endedAt = new Date('2021-06-01T00:00:00.000Z');
     await archiveCanonicalRoleAssignmentsForPersons(id, [personId!], endedAt);
-    const assignment = await RoleAssignment.findOne({ personId }).lean();
+    const assignment = await RoleAssignment.findOne({ personId }).lean<
+      WithObjectId<RoleAssignmentRecord>
+    >();
     expect(assignment?.state).toBe('HISTORICAL');
     expect(assignment?.endedAt?.toISOString()).toBe(endedAt.toISOString());
     expect(assignment?.archived).toBe(false);
@@ -318,7 +324,9 @@ describe('canonical membership materialization (integration)', () => {
     await RoleAssignment.create({ ...base, role: 'DIRECTOR' });
     await archiveSupersededCanonicalRoleAssignments(id, personId);
     expect(await RoleAssignment.countDocuments({ personId, archived: true })).toBe(2);
-    const director = await RoleAssignment.findOne({ personId, role: 'DIRECTOR' }).lean();
+    const director = await RoleAssignment.findOne({ personId, role: 'DIRECTOR' }).lean<
+      WithObjectId<RoleAssignmentRecord>
+    >();
     expect(director?.archived).toBe(false);
   });
 });
