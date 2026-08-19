@@ -16,11 +16,15 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { ResearchGroupMember } from '../models/researchGroupMember';
-import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  getResearchEntityRoster,
+  getResearchEntityRosterByEntityId,
+  type ResearchEntityRosterEntry,
+} from './researchEntityMembershipAccessor';
+import type { ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
-import { FacultyMember } from '../models/facultyMember';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -967,9 +971,6 @@ const searchResearchGroupsViaMongoFallback = async (
   ) as ResearchGroupSearchResult;
 };
 
-const PUBLIC_USER_FIELDS =
-  'netid email fname lname imageUrl primaryDepartment title secondaryDepartments facultyMemberId profileUrls website websiteUrl';
-
 const PUBLIC_PROFILE_ROUTE_ID_RE = /^[a-z0-9][a-z0-9._-]{1,63}$/i;
 const MAX_PUBLIC_MEMBER_PROFILE_URLS = 20;
 const PUBLIC_MEMBER_PROFILE_URL_KEY_RE = /^[a-z0-9_-]{1,64}$/i;
@@ -1197,6 +1198,91 @@ function publicMemberUserForResearchDetail(user: any): any {
   return publicUser;
 }
 
+const CANONICAL_PROFILE_LINK_OFFICIAL_KINDS = new Set<ResearcherProfileLink['kind']>([
+  'YALE_OFFICIAL',
+]);
+const CANONICAL_PROFILE_LINK_WEBSITE_KINDS = new Set<ResearcherProfileLink['kind']>([
+  'LAB_ABOUT',
+  'PERSONAL_ACADEMIC',
+]);
+
+const canonicalProfileLinkUrl = (
+  links: readonly ResearcherProfileLink[] | undefined,
+  kinds: Set<ResearcherProfileLink['kind']>,
+): string | undefined => {
+  if (!Array.isArray(links)) return undefined;
+  for (const link of links) {
+    if (link && kinds.has(link.kind) && typeof link.url === 'string' && link.url.trim()) {
+      return link.url.trim();
+    }
+  }
+  return undefined;
+};
+
+function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry): any {
+  const [fallbackFirstName = '', ...rest] = String(entry.name || '')
+    .trim()
+    .split(/\s+/);
+  const publicUser: Record<string, any> = {};
+  const imageUrl = entry.imageUrl || '';
+  const primaryDepartment = entry.primaryDepartment || '';
+
+  addPublicMemberField(publicUser, 'fname', fallbackFirstName || undefined);
+  addPublicMemberField(publicUser, 'lname', rest.join(' ') || undefined);
+  addPublicMemberField(publicUser, 'displayName', entry.name || undefined);
+  addPublicMemberField(publicUser, 'title', entry.title);
+  publicUser.imageUrl = imageUrl;
+  publicUser.image_url = imageUrl;
+  addPublicMemberField(publicUser, 'primaryDepartment', primaryDepartment || undefined);
+  addPublicMemberField(publicUser, 'primary_department', primaryDepartment || undefined);
+
+  const officialProfileUrl = canonicalProfileLinkUrl(
+    entry.profileLinks,
+    CANONICAL_PROFILE_LINK_OFFICIAL_KINDS,
+  );
+  if (officialProfileUrl) {
+    addPublicMemberProfileUrls(publicUser, { official: officialProfileUrl });
+  }
+  if (!hasPublicMemberProfileUrls(publicUser)) {
+    const internalProfilePath = publicInternalProfilePath(entry.netid);
+    if (internalProfilePath) {
+      publicUser.internalProfilePath = internalProfilePath;
+      publicUser.internal_profile_path = internalProfilePath;
+    } else {
+      const website =
+        publicHttpUrl(
+          canonicalProfileLinkUrl(entry.profileLinks, CANONICAL_PROFILE_LINK_WEBSITE_KINDS),
+        ) || publicHttpUrl(entry.websiteUrl);
+      if (website) {
+        publicUser.website = website;
+        publicUser.websiteUrl = website;
+      }
+    }
+  }
+
+  return publicUser;
+}
+
+const canonicalRosterMemberRow = (entry: ResearchEntityRosterEntry): Record<string, any> => ({
+  identityKey: researchGroupDocumentId(entry.personId),
+  confidence: entry.confidence,
+  reviewStatus: entry.reviewStatus,
+  ...(entry.startedAt ? { startedAt: entry.startedAt } : {}),
+  ...(entry.endedAt ? { endedAt: entry.endedAt } : {}),
+  ...(entry.rosterProvenance?.sourceName ? { sourceName: entry.rosterProvenance.sourceName } : {}),
+  ...(entry.rosterProvenance?.sourceUrl ? { sourceUrl: entry.rosterProvenance.sourceUrl } : {}),
+  ...(entry.rosterProvenance?.profileUrl ? { profileUrl: entry.rosterProvenance.profileUrl } : {}),
+  ...(entry.rosterProvenance?.sectionLabel
+    ? { sectionLabel: entry.rosterProvenance.sectionLabel }
+    : {}),
+  ...(entry.rosterProvenance?.observedAt
+    ? { lastObservedAt: entry.rosterProvenance.observedAt }
+    : {}),
+  ...(entry.rosterProvenance?.freshnessExpiresAt
+    ? { freshnessExpiresAt: entry.rosterProvenance.freshnessExpiresAt }
+    : {}),
+});
+
 const publicMemberProfileImageUrl = (user: any): string => {
   const imageUrl = user?.imageUrl || user?.image_url || '';
   return isLikelyPublicProfileImageUrl(imageUrl) ? imageUrl : '';
@@ -1387,12 +1473,6 @@ export function publicRosterDisclosure(
 }
 
 const PUBLIC_LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
-
-const idEquals = (left: unknown, right: unknown): boolean => {
-  const leftId = normalizeResearchGroupObjectId(left);
-  const rightId = normalizeResearchGroupObjectId(right);
-  return Boolean(leftId && rightId && leftId === rightId);
-};
 
 export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => ({
   researchEntityId,
@@ -1657,6 +1737,9 @@ export function researchDetailLeadIdentity(
   rawLeadMembers?: Array<Record<string, any>>,
 ): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
   const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
+  if (leadMembers.some((member) => member.row?.reviewStatus === 'DISPUTED')) {
+    return { leadIdentityStatus: 'under_review' };
+  }
   const qualitySummary = buildResearchEntityQualitySummary({
     entity: group,
     leadMembers:
@@ -2287,51 +2370,19 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   }).lean();
   if (!group) return null;
 
-  const memberRowsRaw: any[] = await ResearchGroupMember.find(
-    currentResearchEntityMemberFilter((group as any)._id),
-  )
-    .sort({ role: 1, updatedAt: -1 })
-    .limit(MAX_PUBLIC_DETAIL_MEMBERS)
-    .lean();
-  const memberRows = memberRowsRaw.filter(
-    (row) =>
-      idEquals(row.researchEntityId, (group as any)._id) &&
-      (row.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
-        isFreshVerifiedOfficialRosterRow(row, new Date(), (group as any).rosterEnrichment)),
-  );
-
-  const memberUserIds = memberRows
-    .map((row) => row.userId)
-    .filter((id): id is mongoose.Types.ObjectId => !!id);
-  const memberFacultyIds = memberRows
-    .map((row) => row.facultyMemberId)
-    .filter((id): id is mongoose.Types.ObjectId => !!id);
-
-  const [users, facultyMembers]: any[][] = await Promise.all([
-    memberUserIds.length
-      ? User.find({ _id: { $in: memberUserIds } }, PUBLIC_USER_FIELDS).lean()
-      : Promise.resolve([]),
-    memberFacultyIds.length
-      ? FacultyMember.find({ _id: { $in: memberFacultyIds }, archived: { $ne: true } })
-          .select(
-            'netid userId name firstName lastName photoUrl primarySchool title bio email websiteUrl profileUrls',
-          )
-          .lean()
-      : Promise.resolve([]),
-  ]);
-
-  const usersById = new Map<string, any>(
-    users.flatMap((u) => {
-      const id = researchGroupDocumentId(u._id);
-      return id ? [[id, u] as const] : [];
-    }),
-  );
-  const facultyMembersById = new Map<string, any>(
-    facultyMembers.flatMap((faculty) => {
-      const id = researchGroupDocumentId(faculty._id);
-      return id ? [[id, faculty] as const] : [];
-    }),
-  );
+  const rosterEntries = await getResearchEntityRoster((group as any)._id);
+  const currentRosterEntries = rosterEntries
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .filter(
+      (entry) =>
+        entry.rosterProvenance?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
+        isFreshVerifiedOfficialRosterRow(
+          canonicalRosterMemberRow(entry),
+          new Date(),
+          (group as any).rosterEnrichment,
+        ),
+    )
+    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS);
 
   const ROLE_PRIORITY: Record<string, number> = {
     pi: 0,
@@ -2343,70 +2394,33 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     alumni: 6,
   };
 
-  const membersWithRows = memberRows
-    .map((row) => ({
-      user: publicMemberUserForRow(row, usersById, facultyMembersById),
-      role: row.role,
-      row,
+  const canonicalMembers = currentRosterEntries
+    .map((entry) => ({
+      user: canonicalMemberUserForResearchDetail(entry),
+      role: entry.role,
+      row: canonicalRosterMemberRow(entry),
     }))
-    .filter((m) => m.user !== null)
-    .map((m) => ({
-      ...m,
-      user: {
-        ...m.user,
-        image_url: m.user.imageUrl || m.user.image_url,
-        primary_department: m.user.primaryDepartment || m.user.primary_department,
-      },
-    }))
+    .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
     .filter((member, index, rows) => {
-      const userKey =
-        member.row?.identityKey ||
-        member.user.netid ||
-        researchGroupDocumentId(member.user._id) ||
-        [member.user.fname, member.user.lname].filter(Boolean).join(' ');
-      const key = `${(publicString(userKey) || '').toLowerCase()}:${member.role}`;
+      const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
       return (
         index ===
-        rows.findIndex((candidate) => {
-          const candidateUserKey =
-            candidate.row?.identityKey ||
-            candidate.user.netid ||
-            researchGroupDocumentId(candidate.user._id) ||
-            [candidate.user.fname, candidate.user.lname].filter(Boolean).join(' ');
-          return (
-            `${(publicString(candidateUserKey) || '').toLowerCase()}:${candidate.role}` === key
-          );
-        })
+        rows.findIndex(
+          (candidate) =>
+            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
+        )
       );
     })
     .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
-  const imageGuardedMembersWithRows = await withPublicMemberImageGuards(membersWithRows);
+  const imageGuardedMembersWithRows = await withPublicMemberImageGuards(canonicalMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
-  const rawLeadMembers = memberRows
-    .filter((row) => PUBLIC_LEAD_ROLES.has(row.role))
-    .map((row) => {
-      const user = row.userId ? usersById.get(researchGroupDocumentId(row.userId)) : undefined;
-      const facultyMember = row.facultyMemberId
-        ? facultyMembersById.get(researchGroupDocumentId(row.facultyMemberId))
-        : undefined;
-      return {
-        ...row,
-        userId: normalizeResearchGroupObjectId(row.userId),
-        facultyMemberId: normalizeResearchGroupObjectId(row.facultyMemberId),
-        user: user
-          ? {
-              ...user,
-              facultyMemberId: normalizeResearchGroupObjectId(user.facultyMemberId),
-            }
-          : undefined,
-        facultyMember: facultyMember
-          ? {
-              ...facultyMember,
-              userId: normalizeResearchGroupObjectId(facultyMember.userId),
-            }
-          : undefined,
-      };
-    });
+  const rawLeadMembers = dedupedMembersWithRows
+    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
+    .map((member) => ({
+      name: memberDisplayName(member),
+      role: member.role,
+      user: member.user,
+    }));
   const leadIdentity = researchDetailLeadIdentity(
     group as Record<string, any>,
     dedupedMembersWithRows,

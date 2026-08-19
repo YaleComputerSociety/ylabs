@@ -34,6 +34,15 @@ export interface RoleAssignmentTarget {
   id: mongoose.Types.ObjectId;
 }
 
+export interface RoleAssignmentRosterProvenance {
+  sourceName?: string;
+  sourceUrl?: string;
+  profileUrl?: string;
+  sectionLabel?: string;
+  observedAt?: Date;
+  freshnessExpiresAt?: Date;
+}
+
 export interface RoleAssignmentRecord {
   schemaVersion: number;
   personId: mongoose.Types.ObjectId;
@@ -45,6 +54,7 @@ export interface RoleAssignmentRecord {
   evidenceClaimIds: mongoose.Types.ObjectId[];
   confidence: number;
   reviewStatus: RoleAssignmentReviewStatus;
+  rosterProvenance?: RoleAssignmentRosterProvenance;
   archived: boolean;
 }
 
@@ -137,6 +147,20 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: String,
       enum: [...roleAssignmentReviewStatuses],
       default: 'UNREVIEWED',
+    },
+    rosterProvenance: {
+      type: new mongoose.Schema<RoleAssignmentRosterProvenance>(
+        {
+          sourceName: { type: String, trim: true, maxlength: 240 },
+          sourceUrl: { type: String, trim: true, maxlength: 2048 },
+          profileUrl: { type: String, trim: true, maxlength: 2048 },
+          sectionLabel: { type: String, trim: true, maxlength: 240 },
+          observedAt: { type: Date },
+          freshnessExpiresAt: { type: Date },
+        },
+        { _id: false },
+      ),
+      required: false,
     },
     archived: {
       type: Boolean,

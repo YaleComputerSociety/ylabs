@@ -45,6 +45,7 @@ import {
   resolveCanonicalResearcherId,
   type CanonicalMemberIdentity,
 } from './canonicalMembershipMaterializer';
+import type { RoleAssignmentRosterProvenance } from '../models/roleAssignment';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -797,6 +798,7 @@ async function materializeResearchGroupMember(
       isCurrentMember: true,
       confidence: patchSet.confidence,
       startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
+      rosterProvenance: canonicalRosterProvenanceFromSet(patchSet),
     },
     {
       netid: user?.netid,
@@ -875,6 +877,20 @@ async function materializeInferredPiMembership(
   }
 }
 
+function canonicalRosterProvenanceFromSet(
+  patchSet: Record<string, unknown>,
+): RoleAssignmentRosterProvenance {
+  return {
+    sourceName: textValue(patchSet.sourceName) || undefined,
+    sourceUrl: textValue(patchSet.sourceUrl) || undefined,
+    profileUrl: textValue(patchSet.profileUrl) || undefined,
+    sectionLabel: textValue(patchSet.sectionLabel) || undefined,
+    observedAt: patchSet.lastObservedAt instanceof Date ? patchSet.lastObservedAt : undefined,
+    freshnessExpiresAt:
+      patchSet.freshnessExpiresAt instanceof Date ? patchSet.freshnessExpiresAt : undefined,
+  };
+}
+
 async function materializeCanonicalPiMembership(
   researchEntityId: string,
   patch: { filter: Record<string, any>; update: any },
@@ -893,6 +909,7 @@ async function materializeCanonicalPiMembership(
       isCurrentMember: true,
       confidence: patchSet.confidence,
       startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
+      rosterProvenance: canonicalRosterProvenanceFromSet(patchSet),
     },
     {
       netid: (canonicalUser as any)?.netid,
@@ -1023,6 +1040,12 @@ export async function materializeInferredDirectorMembership(
       isCurrentMember: true,
       confidence,
       startedAt: observedAt,
+      rosterProvenance: {
+        sourceName: sourceName || undefined,
+        sourceUrl: profileUrl || sourceUrl || undefined,
+        profileUrl: profileUrl || undefined,
+        observedAt,
+      },
     },
     directorIdentity,
   );

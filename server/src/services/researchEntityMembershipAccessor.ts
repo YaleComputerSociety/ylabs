@@ -1,7 +1,15 @@
 import mongoose from 'mongoose';
 import { Account } from '../models/account';
-import { Researcher, type ResearcherDisplayProfile } from '../models/researcher';
-import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import {
+  Researcher,
+  type ResearcherDisplayProfile,
+  type ResearcherProfileLink,
+} from '../models/researcher';
+import {
+  RoleAssignment,
+  type RoleAssignmentRole,
+  type RoleAssignmentRosterProvenance,
+} from '../models/roleAssignment';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -26,6 +34,8 @@ export interface ResearchEntityRosterEntry {
   endedAt?: Date;
   confidence: number;
   reviewStatus: string;
+  profileLinks: ResearcherProfileLink[];
+  rosterProvenance?: RoleAssignmentRosterProvenance;
 }
 
 const uniqueObjectIds = (values: unknown[]): mongoose.Types.ObjectId[] => {
@@ -54,6 +64,7 @@ interface RosterEntryBuildContext {
       displayName?: string;
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
+      profileLinks?: ResearcherProfileLink[];
     }
   >;
   accountsById: Map<string, { netid?: string; email?: string }>;
@@ -101,6 +112,10 @@ const buildRosterEntry = (
     ...(assignment.endedAt ? { endedAt: assignment.endedAt } : {}),
     confidence: typeof assignment.confidence === 'number' ? assignment.confidence : 0,
     reviewStatus: assignment.reviewStatus,
+    profileLinks: Array.isArray(person.profileLinks) ? person.profileLinks : [],
+    ...(assignment.rosterProvenance
+      ? { rosterProvenance: assignment.rosterProvenance as RoleAssignmentRosterProvenance }
+      : {}),
   };
 };
 
@@ -121,7 +136,7 @@ export async function getResearchEntityRosterByEntityId(
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
     ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
-        .select('_id displayName accountId profile')
+        .select('_id displayName accountId profile profileLinks')
         .lean()
     : [];
 
@@ -131,6 +146,7 @@ export async function getResearchEntityRosterByEntityId(
       displayName?: string;
       accountId?: mongoose.Types.ObjectId;
       profile?: ResearcherDisplayProfile;
+      profileLinks?: ResearcherProfileLink[];
     }
   >(people.map((person: any) => [person._id.toString(), person]));
 

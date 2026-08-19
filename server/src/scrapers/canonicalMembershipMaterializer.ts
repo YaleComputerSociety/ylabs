@@ -4,6 +4,7 @@ import { Researcher, isValidOrcid } from '../models/researcher';
 import {
   RoleAssignment,
   type RoleAssignmentReviewStatus,
+  type RoleAssignmentRosterProvenance,
   type RoleAssignmentState,
 } from '../models/roleAssignment';
 import {
@@ -59,7 +60,24 @@ export interface CanonicalMemberFacts {
   confidence?: unknown;
   startedAt?: Date;
   endedAt?: Date | null;
+  rosterProvenance?: RoleAssignmentRosterProvenance;
 }
+
+const cleanRosterProvenance = (
+  provenance: RoleAssignmentRosterProvenance | undefined,
+): RoleAssignmentRosterProvenance | undefined => {
+  if (!provenance) return undefined;
+  const cleaned: RoleAssignmentRosterProvenance = {};
+  if (trimmed(provenance.sourceName)) cleaned.sourceName = trimmed(provenance.sourceName);
+  if (trimmed(provenance.sourceUrl)) cleaned.sourceUrl = trimmed(provenance.sourceUrl);
+  if (trimmed(provenance.profileUrl)) cleaned.profileUrl = trimmed(provenance.profileUrl);
+  if (trimmed(provenance.sectionLabel)) cleaned.sectionLabel = trimmed(provenance.sectionLabel);
+  if (provenance.observedAt instanceof Date) cleaned.observedAt = provenance.observedAt;
+  if (provenance.freshnessExpiresAt instanceof Date) {
+    cleaned.freshnessExpiresAt = provenance.freshnessExpiresAt;
+  }
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+};
 
 export interface CanonicalRoleAssignmentUpsert {
   filter: Record<string, unknown>;
@@ -76,6 +94,7 @@ export function buildCanonicalRoleAssignmentUpsert(
     reviewStatus: RoleAssignmentReviewStatus;
     startedAt?: Date;
     endedAt?: Date | null;
+    rosterProvenance?: RoleAssignmentRosterProvenance;
   },
 ): CanonicalRoleAssignmentUpsert | null {
   const role = canonicalRoleForLegacy(legacyRole);
@@ -96,6 +115,8 @@ export function buildCanonicalRoleAssignmentUpsert(
     reviewStatus: options.reviewStatus,
     archived: false,
   };
+  const rosterProvenance = cleanRosterProvenance(options.rosterProvenance);
+  if (rosterProvenance) set.rosterProvenance = rosterProvenance;
   const update: Record<string, unknown> = {
     $set: set,
     $setOnInsert: {
@@ -277,6 +298,7 @@ export async function materializeCanonicalMembership(
       reviewStatus,
       startedAt: facts.startedAt,
       endedAt: state === 'HISTORICAL' ? (facts.endedAt ?? undefined) : undefined,
+      rosterProvenance: facts.rosterProvenance,
     });
     if (!upsert) return;
     await RoleAssignment.updateOne(upsert.filter, upsert.update, { upsert: true });
