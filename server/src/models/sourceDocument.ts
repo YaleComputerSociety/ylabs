@@ -1,3 +1,8 @@
+// FROZEN: unwired evidence claim-graph contract - exists, do not build on it.
+// No live readers, writers, materializers, or Meilisearch projections. The heavy
+// governed evidence claim-graph is deferred; the live Observation -> Signal
+// pipeline covers the product. Wiring this re-opens the deferred claim-graph, so
+// coordinate first. See docs/research-model-refactor.md (Removed, frozen, retired).
 import mongoose from 'mongoose';
 import {
   canonicalSchemaVersionField,
