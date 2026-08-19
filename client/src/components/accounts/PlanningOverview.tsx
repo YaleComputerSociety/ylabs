@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 
 interface PlanningOverviewProps {
-  savedPathwayCount: number;
+  savedResearchCount: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
 }
@@ -10,7 +10,7 @@ const pluralize = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
 
 const PlanningOverview = ({
-  savedPathwayCount,
+  savedResearchCount,
   savedFellowshipCount,
   nextDeadlineLabel,
 }: PlanningOverviewProps) => (
@@ -22,7 +22,7 @@ const PlanningOverview = ({
         </p>
         <h1 className="mt-1 text-2xl font-semibold text-gray-950">Dashboard</h1>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">
-          {pluralize(savedPathwayCount, 'research plan', 'research plans')} ·{' '}
+          {pluralize(savedResearchCount, 'research plan', 'research plans')} ·{' '}
           {pluralize(savedFellowshipCount, 'saved program', 'saved programs')}
         </p>
       </div>

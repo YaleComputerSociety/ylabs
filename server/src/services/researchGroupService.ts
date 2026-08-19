@@ -62,10 +62,7 @@ import {
   isLikelyPublicProfileImageUrl,
   isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
-import {
-  sanitizeResearchEntityPublicDescriptionFields,
-  sanitizeFacultyResearchEntityText,
-} from '../utils/researchEntityDescriptionText';
+import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -1480,10 +1477,7 @@ export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => 
 
 const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_LISTINGS = 50;
-const MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS = 50;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
-const MAX_PUBLIC_DETAIL_CONTACT_ROUTES = 50;
-const MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 const PUBLIC_RELATED_ENTITY_PROJECTION =
@@ -2081,16 +2075,6 @@ const publicListingForResearchDetail = (listing: any) => ({
   keywords: publicStringArray(listing.keywords),
   expiresAt: listing.expiresAt,
 });
-
-const publicSourceUrls = (value: unknown): string[] => publicHttpUrls(value);
-
-const publicPathwayText = (
-  value: unknown,
-  researchEntity: PublicResearchEntityDto,
-): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  return redactDirectContactInfo(sanitizeFacultyResearchEntityText(value, researchEntity));
-};
 
 const publicAccessSignalForResearchDetail = (signal: any) => ({
   signalType: signal.type,

@@ -19,7 +19,6 @@ import {
 } from './fellowshipService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
-import { isPublicHttpUrl } from '../utils/urlSafety';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
@@ -129,34 +128,6 @@ export interface SavedPathwayChecklistHistoryInput {
 export interface SavedPathwayPlansExportOptions {
   includePrivateNotes?: boolean;
   exportedAt?: Date;
-}
-
-export interface SavedPathwayPlansExportItem {
-  pathwayId: string;
-  title: string;
-  researchEntity: {
-    id: string;
-    slug: string;
-    name: string;
-  };
-  intent: string;
-  stage: string;
-  checklist: Record<string, boolean>;
-  sourceLinks: string[];
-  bestNextStepCategory: string;
-  privateNote?: string;
-}
-
-export interface SavedPathwayPlansExport {
-  schemaVersion: 1;
-  exportedAt: string;
-  itemCount: number;
-  privacy: {
-    includesPrivateNotes: boolean;
-    includesContactRoutes: false;
-    includesNonPublicContactEmails: false;
-  };
-  items: SavedPathwayPlansExportItem[];
 }
 
 const sanitizeSavedPathwayChecklistKey = (key: unknown): string | undefined => {
@@ -271,10 +242,6 @@ export function sanitizeSavedPathwayPlansForResponse(
   }
   return sanitized;
 }
-
-const isHttpUrl = (value: unknown): value is string => {
-  return isPublicHttpUrl(value);
-};
 
 const exportTextWithoutDirectContact = (value: unknown): string =>
   safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));

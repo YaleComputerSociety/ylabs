@@ -13,6 +13,7 @@ import ProfileEditor from '../components/accounts/ProfileEditor';
 import FavoritesManager from '../components/accounts/FavoritesManager';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import useFavorites from '../hooks/useFavorites';
 import { safeRouteSegment } from '../utils/url';
 
 type PlanningSummary = {
@@ -46,6 +47,7 @@ const Account = () => {
   const [savedFellowshipSummary, setSavedFellowshipSummary] = useState<PlanningSummary>({
     count: 0,
   });
+  const { favIds: savedResearchEntityIds } = useFavorites('researchPlans');
 
   const isAdmin = user?.userType === 'admin';
   const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
@@ -148,7 +150,7 @@ const Account = () => {
 
         {!showProfView && (
           <PlanningOverview
-            savedPathwayCount={0}
+            savedResearchCount={savedResearchEntityIds.length}
             savedFellowshipCount={savedFellowshipSummary.count}
             nextDeadlineLabel={nextPlanningCue(savedFellowshipSummary)}
           />
