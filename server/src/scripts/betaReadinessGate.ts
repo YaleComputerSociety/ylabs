@@ -55,7 +55,6 @@ export interface BetaReadinessGateCliOptions {
   root: string;
   strict: boolean;
   confirmBetaBackup: boolean;
-  acceptPathwayMeili: boolean;
   output?: string;
 }
 
@@ -71,7 +70,6 @@ export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCli
     root: DEFAULT_ACCEPTED_INPUT_ROOT,
     strict: false,
     confirmBetaBackup: false,
-    acceptPathwayMeili: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -83,10 +81,6 @@ export function parseBetaReadinessGateArgs(argv: string[]): BetaReadinessGateCli
     }
     if (arg === '--confirm-beta-backup') {
       options.confirmBetaBackup = true;
-      continue;
-    }
-    if (arg === '--accept-pathway-meili') {
-      options.acceptPathwayMeili = true;
       continue;
     }
     if (arg === '--output') {
@@ -155,12 +149,8 @@ export function buildBetaReadinessCommands() {
       'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape:seed-sources --dry-run --output /tmp/ylabs-seed-sources-dry-run.json',
     sourceRun:
       'SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true yarn scrape run --source <source> --auto-materialize',
-    pathwayRelevance:
-      'SCRAPER_ENV=beta PATHWAY_SEARCH_BACKEND=mongo yarn --cwd server pathway:relevance-review',
     meiliRebuild:
-      'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-pathways --clear --confirm-meili-rebuild && SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
-    acceptedMeiliReadiness:
-      'SCRAPER_ENV=beta PATHWAY_SEARCH_BACKEND=meili yarn --cwd server beta:readiness --confirm-beta-backup --accept-pathway-meili --strict',
+      'SCRAPER_ENV=beta yarn --cwd server meili:rebuild-research-entities --clear --confirm-meili-rebuild',
   };
 }
 
@@ -259,10 +249,6 @@ async function main(): Promise<void> {
     (sum, count) => sum + count,
     0,
   );
-  const runtimeBackend = process.env.PATHWAY_SEARCH_BACKEND || 'mongo';
-  const pathwayRuntimeReady =
-    runtimeBackend === 'mongo' || (runtimeBackend === 'meili' && options.acceptPathwayMeili);
-
   const gates = {
     betaBackup: {
       status: options.confirmBetaBackup ? 'ready' : 'blocked',
@@ -285,16 +271,6 @@ async function main(): Promise<void> {
           ? 'Expected scraper source metadata exists.'
           : 'Seed source metadata before Beta writes.',
       missingSources,
-    },
-    pathwayRuntime: {
-      status: pathwayRuntimeReady ? 'ready' : 'blocked',
-      message:
-        runtimeBackend === 'mongo'
-          ? 'Pathway runtime remains on Mongo for Beta relevance review.'
-          : options.acceptPathwayMeili
-            ? 'Pathway runtime is explicitly accepted on Meili after relevance review.'
-            : 'Set PATHWAY_SEARCH_BACKEND=mongo before Beta relevance review completes, or pass --accept-pathway-meili after product review.',
-      backend: runtimeBackend,
     },
     fellowshipInput: summarizeFellowshipGate(acceptedInputs),
     scholarInput: summarizeReviewedProfileLinkInput(

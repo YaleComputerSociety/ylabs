@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Types } from 'mongoose';
 import { actionablePlanningUrl } from '../planningContextService';
-
-const approved = { status: 'approved' };
-const entityId = new Types.ObjectId();
-const pathwayId = new Types.ObjectId();
 
 describe('planningContextService qualification policy', () => {
   it.each([

@@ -12,7 +12,6 @@ import {
   normalizeUserLookupObjectId,
   sanitizeSavedPathwayPlanForStorage,
   sanitizeSavedProgramTrackingForResponse,
-  type SavedPathwayPlanInput,
 } from '../userService';
 describe('buildCaseInsensitiveNetidFilter', () => {
   it('rejects malformed netids before building regex filters', () => {

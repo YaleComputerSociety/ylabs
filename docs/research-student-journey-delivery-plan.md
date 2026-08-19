@@ -180,7 +180,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Complete.
 - **Depends on:** CAS-authenticated user routes and canonical ResearchEntity IDs.
 - **Acceptance criteria:** a student can save and remove a research plan; reads and writes are owner-scoped; saved-plan details hydrate from the server; malformed or oversized values are bounded; optimistic UI failures remain recoverable.
-- **Validation evidence:** authenticated `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans` routes, `SavedPathwaysSection`, user-service sanitization and migration guards, and focused route/service/client tests.
+- **Validation evidence:** authenticated `/api/users/savedResearchEntities` and `/api/users/savedResearchEntityPlans` routes, `the account saved-research surface (`account.tsx` plus the `labDetail.tsx` save action over the `savedResearchEntities` routes)`, user-service sanitization and migration guards, and focused route/service/client tests.
   Saved-item removal follows the successfully loaded saved-item API mode independently of plan-detail hydration, and legacy fallback is limited to canonical `404`, `405`, or `501` responses.
 - **PRs:** capability predates the reconciled `#156`-`#171` tranche; [#164](https://github.com/YaleComputerSociety/ylabs/pull/164) extended its persisted planning contract, [#191](https://github.com/YaleComputerSociety/ylabs/pull/191) moved ownership to ResearchEntity, and [#194](https://github.com/YaleComputerSociety/ylabs/pull/194) preserves removal and transient-failure safety during compatibility fallback.
 
@@ -189,7 +189,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Complete.
 - **Depends on:** CP-01 and owner-scoped revision-safe persistence.
 - **Acceptance criteria:** research-plan details persist bounded notes and stage; optional target deadlines, acted-on dates, and follow-up intervals use sanitized date-only values; save status and failures are honest; due cues derive deterministically; removal clears associated detail.
-- **Validation evidence:** `server/src/services/userService.ts`, `/api/users/savedResearchEntityPlans/:entityId`, `SavedPathwaysSection`, and deadline/follow-up tests.
+- **Validation evidence:** `server/src/services/userService.ts`, `/api/users/savedResearchEntityPlans/:entityId`, `the account saved-research surface (`account.tsx` plus the `labDetail.tsx` save action over the `savedResearchEntities` routes)`, and deadline/follow-up tests.
 - **PRs:** [#164](https://github.com/YaleComputerSociety/ylabs/pull/164), [#191](https://github.com/YaleComputerSociety/ylabs/pull/191).
 
 #### CP-03 - Private-By-Default Comparison And Advising Export
@@ -197,7 +197,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Complete.
 - **Depends on:** CP-01 and explicit student selection.
 - **Acceptance criteria:** exports require selected finalists; a preview shows exactly what will be shared; private notes are excluded by default and require per-item opt-in; print/PDF and Markdown contain source-backed planning context without inventing advisor identity.
-- **Validation evidence:** advising-export tests in `SavedPathwaysSection` cover selection, preview, note exclusion, and Markdown output.
+- **Validation evidence:** advising-export tests in `the account saved-research surface (`account.tsx` plus the `labDetail.tsx` save action over the `savedResearchEntities` routes)` cover selection, preview, note exclusion, and Markdown output.
 - **PRs:** [#163](https://github.com/YaleComputerSociety/ylabs/pull/163).
 
 #### CP-04 - Program And Fellowship Planning Context
@@ -231,7 +231,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Complete.
 - **Depends on:** CP-05 / FR-45.
 - **Acceptance criteria:** dashboard cards lead with canonical research-home names; section and selected counts reflect hydrated server state; stale pathway aliases do not masquerade as entity names; loading, empty, and failure counts are honest; entity saves without pathways remain visible.
-- **Validation evidence:** `SavedPathwaysSection` hydrates bounded ResearchEntity summaries, keys planning state and counts by entity id, and uses legacy pathways only as optional migration and fellowship context.
+- **Validation evidence:** `the account saved-research surface (`account.tsx` plus the `labDetail.tsx` save action over the `savedResearchEntities` routes)` hydrates bounded ResearchEntity summaries, keys planning state and counts by entity id, and uses legacy pathways only as optional migration and fellowship context.
 - **PRs:** [#165](https://github.com/YaleComputerSociety/ylabs/pull/165), [#191](https://github.com/YaleComputerSociety/ylabs/pull/191).
 
 #### CP-08 - Shared Mobile Filter-Sheet Pattern - FR-37

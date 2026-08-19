@@ -25,7 +25,6 @@ describe('betaSeedEnvironment CLI helpers', () => {
       confirmBetaSeed: false,
       seedSources: true,
       runReadiness: true,
-      runPathwayRelevance: true,
       rebuildMeili: true,
       sources: ['ysm-atoz-index', 'centers-institutes-index', 'dept-faculty-roster'],
       artifactDir: '/tmp/ylabs-beta-seed',
@@ -40,7 +39,6 @@ describe('betaSeedEnvironment CLI helpers', () => {
         '--confirm-beta-seed',
         '--skip-source-metadata',
         '--skip-readiness',
-        '--skip-pathway-relevance',
         '--skip-meili',
       ]),
     ).toMatchObject({
@@ -48,7 +46,6 @@ describe('betaSeedEnvironment CLI helpers', () => {
       confirmBetaSeed: true,
       seedSources: false,
       runReadiness: false,
-      runPathwayRelevance: false,
       rebuildMeili: false,
       sources: [],
     });
@@ -116,10 +113,8 @@ describe('betaSeedEnvironment CLI helpers', () => {
       'seed-source-metadata-dry-run',
       'seed-source-metadata-apply',
       'run-source-ysm-atoz-index',
-      'rebuild-pathway-meili-index',
       'rebuild-research-entity-meili-index',
-      'pathway-relevance-review',
-      'beta-readiness-meili-acceptance',
+      'beta-readiness-acceptance',
     ]);
     expect(plan.steps.find((step) => step.name === 'seed-source-metadata-apply')).toMatchObject({
       env: {
