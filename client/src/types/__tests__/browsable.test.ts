@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getResearchEntityBestNextStep,
-  getResearchEntityPathwaySummary,
   isItemOpen,
   BrowsableItem,
 } from '../browsable';
@@ -51,8 +50,6 @@ describe('isItemOpen for research entities', () => {
           confidence: 0.9,
           evidence: [],
           signalTypes: ['POSTED_OPENING'],
-          entryPathwayTypes: ['POSTED_ROLE'],
-          hasActivePostedOpportunity: true,
           bestNextStep: 'Apply through the official posting.',
         },
       }),
@@ -62,48 +59,7 @@ describe('isItemOpen for research entities', () => {
   });
 });
 
-describe('research entity pathway card summaries', () => {
-  it('summarizes active posted opportunities first', () => {
-    expect(
-      getResearchEntityPathwaySummary(
-        researchEntity({
-          accessSummary: {
-            status: 'posted-opening',
-            confidence: 0.9,
-            evidence: [],
-            signalTypes: ['POSTED_OPENING'],
-            entryPathwayTypes: ['COURSE_CREDIT'],
-            hasActivePostedOpportunity: true,
-            bestNextStep: 'Apply',
-          },
-        }),
-      ),
-    ).toBe('Posted opening available');
-  });
-
-  it('summarizes non-posted pathway types without formalization-only evidence', () => {
-    expect(
-      getResearchEntityPathwaySummary(
-        researchEntity({
-          accessSummary: {
-            status: 'evidence-backed',
-            confidence: 0.7,
-            evidence: [],
-            signalTypes: [],
-            entryPathwayTypes: [
-              'COURSE_CREDIT',
-              'SENIOR_THESIS',
-              'EXPLORATORY_CONTACT',
-              'FELLOWSHIP_FUNDED_PROJECT',
-            ],
-            hasActivePostedOpportunity: false,
-            bestNextStep: 'Plan exploratory outreach.',
-          },
-        }),
-      ),
-    ).toBe('Exploratory contact');
-  });
-
+describe('research entity best next step', () => {
   it('hides placeholder next steps from cards', () => {
     expect(
       getResearchEntityBestNextStep(
@@ -113,8 +69,6 @@ describe('research entity pathway card summaries', () => {
             confidence: 0,
             evidence: [],
             signalTypes: [],
-            entryPathwayTypes: [],
-            hasActivePostedOpportunity: false,
             bestNextStep: 'Check back later',
           },
         }),

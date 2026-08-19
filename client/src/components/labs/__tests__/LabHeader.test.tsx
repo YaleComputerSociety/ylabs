@@ -142,7 +142,6 @@ describe('LabHeader trust-gradient pill', () => {
           pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
           currentUndergradCount: 3,
         }}
-        hasActivePostedOpportunity={false}
       />,
     );
     const pill = container.querySelector('[data-verdict]');
@@ -164,12 +163,4 @@ describe('LabHeader trust-gradient pill', () => {
     expect(pill?.textContent).toBe('Not currently available');
   });
 
-  it('honors hasActivePostedOpportunity prop as a strong signal', () => {
-    const { container } = render(
-      <LabHeader group={baseGroup} hasActivePostedOpportunity={true} />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    // 1 strong signal → likely-accepting
-    expect(pill?.getAttribute('data-verdict')).toBe('likely-accepting');
-  });
 });

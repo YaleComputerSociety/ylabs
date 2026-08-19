@@ -3,51 +3,30 @@ import { describe, expect, it } from 'vitest';
 import { buildResearchDetailSources } from '../researchDetailSources';
 
 describe('buildResearchDetailSources', () => {
-  it('deduplicates repeated evidence, pathway, and route URLs into one source row', () => {
+  it('deduplicates repeated evidence URLs into one source row', () => {
     const profileUrl = 'https://research-home.example.test/faculty';
-    const pathwayUrl = 'https://program.example.test/initiatives/undergraduate';
+    const evidenceUrl = 'https://program.example.test/initiatives/undergraduate';
 
     const sources = buildResearchDetailSources({
       group: {
         name: 'Example Institute',
         websiteUrl: profileUrl,
-        sourceUrls: [pathwayUrl],
+        sourceUrls: [evidenceUrl],
       },
-      pathways: [
-        {
-          _id: 'pathway-1',
-          sourceUrls: [pathwayUrl, `${pathwayUrl}/`],
-        },
-      ],
       accessSignals: [
         {
           _id: 'signal-1',
           signalType: 'REACH_OUT_PLAUSIBLE',
-          sourceUrl: pathwayUrl,
+          sourceUrl: evidenceUrl,
         },
       ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'OFFICIAL_APPLICATION',
-          label: 'Official Application',
-          url: pathwayUrl,
-          sourceUrl: pathwayUrl,
-        },
-      ],
-      postedOpportunities: [],
     });
 
-    expect(sources.map((source) => source.url)).toEqual([profileUrl, pathwayUrl]);
+    expect(sources.map((source) => source.url)).toEqual([profileUrl, evidenceUrl]);
     expect(sources[1].label).toBe('program.example.test source');
-    expect(sources[1].contexts).toHaveLength(4);
+    expect(sources[1].contexts).toHaveLength(2);
     expect(sources[1].contexts).toEqual(
-      expect.arrayContaining([
-        'Profile source',
-        'Pathway source',
-        'Reach Out Plausible evidence',
-        'Official Application route',
-      ]),
+      expect.arrayContaining(['Profile source', 'Reach Out Plausible evidence']),
     );
   });
 
@@ -64,33 +43,19 @@ describe('buildResearchDetailSources', () => {
           `${researchWebsite}/`,
         ],
       },
-      pathways: [
-        {
-          sourceUrls: [facultyProfileUrl, `${researchWebsite}/`],
-        },
-      ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
           sourceUrl: facultyProfileUrl,
         },
       ],
-      contactRoutes: [
-        {
-          routeType: 'FACULTY_PI',
-          label: 'Faculty contact',
-          url: facultyProfileUrl,
-          sourceUrl: facultyProfileUrl,
-        },
-      ],
-      postedOpportunities: [],
     });
 
     expect(sources.map((source) => source.url)).toEqual([researchWebsite]);
     expect(sources[0].label).toBe('Research website');
-    expect(sources[0].contexts).toHaveLength(3);
+    expect(sources[0].contexts).toHaveLength(2);
     expect(sources[0].contexts).toEqual(
-      expect.arrayContaining(['Profile website', 'Profile source', 'Pathway source']),
+      expect.arrayContaining(['Profile website', 'Profile source']),
     );
   });
 
@@ -104,10 +69,7 @@ describe('buildResearchDetailSources', () => {
           'https://lab.example.test/',
         ],
       },
-      pathways: [],
       accessSignals: [],
-      contactRoutes: [],
-      postedOpportunities: [],
     });
 
     expect(sources.map((source) => source.url)).toEqual([
@@ -148,11 +110,6 @@ describe('buildResearchDetailSources', () => {
         websiteUrl: 'javascript:alert(1)',
         sourceUrls: ['data:text/html,<script>alert(1)</script>', 'https://safe.example.edu/source'],
       },
-      pathways: [
-        {
-          sourceUrls: ['mailto:advisor@yale.edu'],
-        },
-      ],
     });
 
     expect(sources.map((source) => source.url)).toEqual(['https://safe.example.edu/source']);
@@ -181,22 +138,9 @@ describe('buildResearchDetailSources', () => {
         websiteUrl: 'https://research-home.example.test/',
         sourceUrls: [forbiddenProfileUrl, 'https://research-home.example.test/'],
       },
-      pathways: [
-        {
-          sourceUrls: [forbiddenProfileUrl],
-        },
-      ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
-          sourceUrl: forbiddenProfileUrl,
-        },
-      ],
-      contactRoutes: [
-        {
-          routeType: 'FACULTY_PI',
-          label: 'Faculty contact',
-          url: forbiddenProfileUrl,
           sourceUrl: forbiddenProfileUrl,
         },
       ],

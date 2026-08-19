@@ -11,12 +11,6 @@ const mocks = vi.hoisted(() => ({
   deleteFavListings: vi.fn(),
   addFavFellowships: vi.fn(),
   deleteFavFellowships: vi.fn(),
-  addFavPathways: vi.fn(),
-  deleteFavPathways: vi.fn(),
-  matchFellowshipsForPathways: vi.fn(),
-  getPathwaysByIds: vi.fn(),
-  getSavedPathwayPlans: vi.fn(),
-  exportSavedPathwayPlans: vi.fn(),
   normalizeObjectIdsForUserMutation: vi.fn((values: unknown[], fieldName: string) => {
     if (values.length > 100) {
       const error: any = new Error(`Too many ${fieldName} ids`);
@@ -34,8 +28,6 @@ const mocks = vi.hoisted(() => ({
       return { toString: () => id };
     });
   }),
-  updateSavedPathwayPlan: vi.fn(),
-  deleteSavedPathwayPlan: vi.fn(),
   getSavedResearchEntities: vi.fn(),
   getSavedResearchEntityPlans: vi.fn(),
   addSavedResearchEntities: vi.fn(),
@@ -58,14 +50,6 @@ vi.mock('../../services/programService', () => ({
   readPrograms: mocks.readPrograms,
 }));
 
-vi.mock('../../services/fellowshipMatchingService', () => ({
-  matchFellowshipsForPathways: mocks.matchFellowshipsForPathways,
-}));
-
-vi.mock('../../services/pathwaySearchService', () => ({
-  getPathwaysByIds: mocks.getPathwaysByIds,
-}));
-
 vi.mock('../../services/userService', () => ({
   readUser: mocks.readUser,
   updateUser: mocks.updateUser,
@@ -73,14 +57,7 @@ vi.mock('../../services/userService', () => ({
   deleteFavListings: mocks.deleteFavListings,
   addFavFellowships: mocks.addFavFellowships,
   deleteFavFellowships: mocks.deleteFavFellowships,
-  addFavPathways: mocks.addFavPathways,
-  deleteFavPathways: mocks.deleteFavPathways,
-  getSavedPathwayPlans: mocks.getSavedPathwayPlans,
-  exportSavedPathwayPlans: mocks.exportSavedPathwayPlans,
   normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
-  pruneSavedPathwayPlansForExistingPathways: vi.fn((plans) => plans),
-  updateSavedPathwayPlan: mocks.updateSavedPathwayPlan,
-  deleteSavedPathwayPlan: mocks.deleteSavedPathwayPlan,
   getSavedResearchEntities: mocks.getSavedResearchEntities,
   getSavedResearchEntityPlans: mocks.getSavedResearchEntityPlans,
   addSavedResearchEntities: mocks.addSavedResearchEntities,
@@ -93,37 +70,24 @@ vi.mock('../../services/userService', () => ({
 import {
   addFavFellowships,
   addFavListings,
-  addFavPathways,
   addSavedPrograms,
   addSavedResearchEntities,
-  addSavedResearchPlans,
   deleteSavedResearchEntityPlan,
-  deleteSavedResearchPlanDetail,
   exportSavedResearchEntities,
-  exportSavedResearchPlanDetails,
   getFavFellowshipIds,
   getFavFellowships,
   getFavListingsIds,
-  getFavPathwayIds,
-  getFavPathwayFundingMatches,
-  getFavPathways,
   getSavedProgramIds,
   getSavedResearchEntities,
   getSavedResearchEntityPlans,
-  getSavedResearchPlanDetails,
-  getSavedResearchPlanIds,
-  getSavedResearchPlans,
   getSavedPrograms,
   getUserListings,
   removeFavFellowships,
   removeFavListings,
-  removeFavPathways,
   removeSavedPrograms,
   removeSavedResearchEntities,
-  removeSavedResearchPlans,
   updateCurrentUser,
   updateSavedResearchEntityPlan,
-  updateSavedResearchPlanDetail,
 } from '../userController';
 
 const privateProgram = {
@@ -708,160 +672,6 @@ describe('userController', () => {
     expect(res.body).toEqual({ error: 'Failed to update favorite programs' });
   });
 
-  it('does not echo private planning notes when saving research plans', async () => {
-    mocks.addFavPathways.mockResolvedValue({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-      favPathways: ['64a000000000000000000030'],
-      savedPathwayPlans: {
-        '64a000000000000000000030': {
-          note: 'private advising note',
-          checklist: { emailed: true },
-        },
-      },
-      email: 'student123@yale.edu',
-      lastActive: new Date('2026-01-01T00:00:00.000Z'),
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { savedResearchPlans: ['64a000000000000000000030'] } },
-    } as any;
-    const res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await addSavedResearchPlans(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    const body = res.json.mock.calls[0][0];
-    expect(body.user).toMatchObject({
-      _id: '64a000000000000000000020',
-      netid: 'student123',
-      userType: 'undergraduate',
-      userConfirmed: true,
-    });
-    expect(body.user).not.toHaveProperty('ownListings');
-    expect(body.user).not.toHaveProperty('favListings');
-    expect(body.user).not.toHaveProperty('favFellowships');
-    expect(body.user).not.toHaveProperty('favPathways');
-    expect(body.user).not.toHaveProperty('savedPathwayPlans');
-    expect(body.user).not.toHaveProperty('email');
-    expect(body.user).not.toHaveProperty('lastActive');
-  });
-
-  it('does not leak internal service errors when saving research plans fails', async () => {
-    mocks.addFavPathways.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { savedResearchPlans: ['64a000000000000000000030'] } },
-    } as any;
-    const res = {
-      statusCode: 200,
-      body: undefined as unknown,
-      status: vi.fn(function (this: any, code: number) {
-        this.statusCode = code;
-        return this;
-      }),
-      json: vi.fn(function (this: any, body: unknown) {
-        this.body = body;
-        return this;
-      }),
-    } as any;
-
-    await addSavedResearchPlans(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to save research plans' });
-  });
-
-  it('does not leak internal service errors when adding favorite pathways fails', async () => {
-    mocks.addFavPathways.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { data: { favPathways: ['64a000000000000000000030'] } },
-    } as any;
-    const res = privateResponseDouble();
-
-    await addFavPathways(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update favorite pathways' });
-  });
-
-  it('returns a sanitized client error for oversized favorite pathway batches', async () => {
-    mocks.addFavPathways.mockRejectedValue(
-      Object.assign(new Error('Too many favPathways ids'), { status: 400 }),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: {
-        data: {
-          favPathways: Array.from({ length: 101 }, (_, index) =>
-            index.toString(16).padStart(24, '0'),
-          ),
-        },
-      },
-    } as any;
-    const res = privateResponseDouble();
-
-    await addFavPathways(req, res);
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Bad request' });
-  });
-
-  it('does not leak internal service errors when removing saved research plans fails', async () => {
-    mocks.deleteFavPathways.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { savedResearchPlans: ['64a000000000000000000030'] },
-    } as any;
-    const res = {
-      statusCode: 200,
-      body: undefined as unknown,
-      status: vi.fn(function (this: any, code: number) {
-        this.statusCode = code;
-        return this;
-      }),
-      json: vi.fn(function (this: any, body: unknown) {
-        this.body = body;
-        return this;
-      }),
-    } as any;
-
-    await removeSavedResearchPlans(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to remove saved research plans' });
-  });
-
-  it('does not leak internal service errors when removing favorite pathways fails', async () => {
-    mocks.deleteFavPathways.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      body: { favPathways: ['64a000000000000000000030'] },
-    } as any;
-    const res = privateResponseDouble();
-
-    await removeFavPathways(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update favorite pathways' });
-  });
-
   it('does not leak internal service errors when updating the current user fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.updateUser.mockRejectedValue(
@@ -1130,162 +940,10 @@ describe('userController', () => {
     });
   });
 
-  it('marks private saved research-plan detail responses as no-store', async () => {
-    mocks.getSavedPathwayPlans.mockResolvedValue({
-      '64a000000000000000000030': {
-        note: 'private advising note',
-        checklist: { emailed: true },
-      },
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = {
-      setHeader: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await getSavedResearchPlanDetails(req, res);
-
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
-    expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json.mock.calls[0][0]).toEqual({
-      savedResearchPlanDetails: {
-        '64a000000000000000000030': {
-          note: 'private advising note',
-          checklist: { emailed: true },
-        },
-      },
-    });
-  });
-
-  it('does not leak internal service errors from saved research-plan detail failures', async () => {
-    mocks.getSavedPathwayPlans.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getSavedResearchPlanDetails(req, res);
-
-    expectPrivateNoStore(res);
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch saved research-plan details' });
-  });
-
-  it('marks saved research-plan exports that include private notes as no-store', async () => {
-    mocks.exportSavedPathwayPlans.mockResolvedValue({
-      privacy: { includesPrivateNotes: true },
-      items: [{ note: 'private advising note' }],
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      query: { includePrivateNotes: 'true' },
-    } as any;
-    const res = {
-      setHeader: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn(),
-    } as any;
-
-    await exportSavedResearchPlanDetails(req, res);
-
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store, private, max-age=0');
-    expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Content-Disposition',
-      'attachment; filename="saved-pathway-plans.json"',
-    );
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('does not leak internal service errors from saved research-plan export failures', async () => {
-    mocks.exportSavedPathwayPlans.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      query: { includePrivateNotes: 'true' },
-    } as any;
-    const res = privateResponseDouble();
-
-    await exportSavedResearchPlanDetails(req, res);
-
-    expectPrivateNoStore(res);
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to export saved research-plan details' });
-  });
-
-  it('does not leak internal service errors from saved research-plan detail update failures', async () => {
-    mocks.updateSavedPathwayPlan.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      params: { pathwayId: '64a000000000000000000030' },
-      body: { data: { plan: { note: 'private note' } } },
-    } as any;
-    const res = privateResponseDouble();
-
-    await updateSavedResearchPlanDetail(req, res);
-
-    expectPrivateNoStore(res);
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update saved research-plan detail' });
-  });
-
-  it('maps malformed saved research-plan ids to a private bad request response', async () => {
-    mocks.updateSavedPathwayPlan.mockRejectedValue(
-      Object.assign(new Error('Invalid pathway id: not-an-object-id'), { status: 400 }),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      params: { pathwayId: 'not-an-object-id' },
-      body: { data: { plan: { note: 'private note' } } },
-    } as any;
-    const res = privateResponseDouble();
-
-    await updateSavedResearchPlanDetail(req, res);
-
-    expectPrivateNoStore(res);
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Bad request' });
-  });
-
-  it('does not leak internal service errors from saved research-plan detail delete failures', async () => {
-    mocks.deleteSavedPathwayPlan.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-      params: { pathwayId: '64a000000000000000000030' },
-    } as any;
-    const res = privateResponseDouble();
-
-    await deleteSavedResearchPlanDetail(req, res);
-
-    expectPrivateNoStore(res);
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to delete saved research-plan detail' });
-  });
-
   it.each([
     [getFavListingsIds, 'Failed to fetch favorite listing ids'],
     [getFavFellowshipIds, 'Failed to fetch favorite program ids'],
     [getSavedProgramIds, 'Failed to fetch saved program ids'],
-    [getFavPathwayIds, 'Failed to fetch favorite pathway ids'],
-    [getSavedResearchPlanIds, 'Failed to fetch saved research plan ids'],
   ])('does not leak internal read errors from account id readers', async (handler, message) => {
     mocks.readUser.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
 
@@ -1303,8 +961,6 @@ describe('userController', () => {
   it.each([
     [getFavFellowships, 'Failed to fetch favorite programs'],
     [getSavedPrograms, 'Failed to fetch saved programs'],
-    [getFavPathways, 'Failed to fetch favorite pathways'],
-    [getSavedResearchPlans, 'Failed to fetch saved research plans'],
   ])(
     'does not leak internal read errors from hydrated account readers',
     async (handler, message) => {
@@ -1340,94 +996,6 @@ describe('userController', () => {
     expect(res.body).toEqual({ error: 'Bad request' });
     expect(mocks.readFellowships).not.toHaveBeenCalled();
     expect(mocks.updateUser).not.toHaveBeenCalled();
-  });
-
-  it('does not leak internal service errors from pathway funding-match readers', async () => {
-    mocks.readUser.mockResolvedValue({
-      favPathways: ['64a000000000000000000030'],
-    });
-    mocks.matchFellowshipsForPathways.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getFavPathwayFundingMatches(req, res);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to fetch pathway funding matches' });
-  });
-
-  it('passes profile year and saved plan intent into funding matching', async () => {
-    mocks.normalizeObjectIdsForUserMutation
-      .mockReturnValueOnce([{ toHexString: () => '64a000000000000000000030' } as any])
-      .mockReturnValueOnce([{ toHexString: () => '64a000000000000000000030' } as any]);
-    mocks.readUser.mockResolvedValue({
-      userType: 'undergraduate',
-      year: 2027,
-      favPathways: ['64a000000000000000000030'],
-      savedPathwayPlans: {
-        '64a000000000000000000030': { intent: 'thesis' },
-      },
-    });
-    mocks.getPathwaysByIds.mockResolvedValue([{ _id: '64a000000000000000000030' }]);
-    mocks.matchFellowshipsForPathways.mockResolvedValue({});
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-    await getFavPathwayFundingMatches(req, res);
-
-    expect(mocks.matchFellowshipsForPathways).toHaveBeenCalledWith(
-      ['64a000000000000000000030'],
-      {},
-      {
-        userType: 'undergraduate',
-        classYear: 2027,
-        plansByPathwayId: {
-          '64a000000000000000000030': expect.objectContaining({ intent: 'thesis' }),
-        },
-      },
-    );
-  });
-
-  it('bounds stored favorite pathway ids before funding-match fan-out', async () => {
-    mocks.readUser.mockResolvedValue({
-      favPathways: Array.from({ length: 101 }, (_, index) => index.toString(16).padStart(24, '0')),
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getFavPathwayFundingMatches(req, res);
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Bad request' });
-    expect(mocks.matchFellowshipsForPathways).not.toHaveBeenCalled();
-  });
-
-  it('validates stored favorite pathway ids before pathway search fan-out', async () => {
-    mocks.readUser.mockResolvedValue({
-      favPathways: ['not-an-object-id'],
-      savedPathwayPlans: {},
-    });
-
-    const req = {
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    } as any;
-    const res = privateResponseDouble();
-
-    await getSavedResearchPlans(req, res);
-
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: 'Bad request' });
-    expect(mocks.getPathwaysByIds).not.toHaveBeenCalled();
   });
 
   it('scopes saved-entity reads and private exports to the authenticated owner', async () => {

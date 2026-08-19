@@ -76,10 +76,7 @@ const basePayload: LabDetailPayload = {
   },
   members: [],
   activeListings: [],
-  entryPathways: [],
   accessSignals: [],
-  contactRoutes: [],
-  postedOpportunities: [],
 };
 
 function renderLabDetail(
@@ -244,18 +241,6 @@ describe('LabDetail page', () => {
 
     renderLabDetail({
       ...basePayload,
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Plan careful outreach',
-          explanation: 'An official Yale faculty profile is available.',
-          bestNextStep: 'Review the profile before outreach.',
-          sourceUrls: [OFFICIAL_PROFILE_URL],
-        },
-      ],
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
@@ -276,18 +261,6 @@ describe('LabDetail page', () => {
 
     renderLabDetail({
       ...basePayload,
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Plan careful outreach',
-          explanation: 'An official Yale faculty profile is available.',
-          bestNextStep: 'Review the profile before outreach.',
-          sourceUrls: [OFFICIAL_PROFILE_URL],
-        },
-      ],
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
@@ -304,18 +277,6 @@ describe('LabDetail page', () => {
   it('shows the research-plan save action with the research summary', async () => {
     renderLabDetail({
       ...basePayload,
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Plan careful outreach',
-          explanation: 'An official Yale faculty profile is available.',
-          bestNextStep: 'Review the profile before outreach.',
-          sourceUrls: [OFFICIAL_PROFILE_URL],
-        },
-      ],
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
@@ -363,36 +324,6 @@ describe('LabDetail page', () => {
     expect(localStorage.getItem('yale-research.firstResearchPlanSave.v1')).toBeNull();
   });
 
-  it('renders specific ways-to-approach guidance without crashing', async () => {
-    renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        name: 'Specific Route Lab',
-        kind: 'lab',
-        entityType: 'LAB',
-      },
-      entryPathways: [
-        {
-          _id: 'pathway-application',
-          pathwayType: 'POSTED_ROLE',
-          status: 'ACTIVE',
-          evidenceStrength: 'SOURCE_BACKED',
-          studentFacingLabel: 'Apply to a posted role',
-          explanation: 'The lab has an official posted role route.',
-          bestNextStep: 'Use the official application route.',
-          sourceUrls: [JOIN_PAGE_URL],
-        },
-      ],
-    });
-
-    await screen.findByText('Specific Route Lab');
-
-    expect(screen.getByText('Ways to approach this lab')).toBeTruthy();
-    expect(screen.getByText('Explore first')).toBeTruthy();
-    expect(screen.getByText('Review source instructions')).toBeTruthy();
-  });
-
   it('renders program page wording instead of lab wording', async () => {
     renderLabDetail({
       ...basePayload,
@@ -406,18 +337,6 @@ describe('LabDetail page', () => {
         shortDescription:
           'Supports undergraduate research in molecular biophysics and biochemistry through department guidance.',
       },
-      entryPathways: [
-        {
-          _id: 'pathway-program',
-          pathwayType: 'POSTED_ROLE',
-          status: 'ACTIVE',
-          evidenceStrength: 'SOURCE_BACKED',
-          studentFacingLabel: 'Apply to a departmental opportunity',
-          explanation: 'The department has a posted research opportunity route.',
-          bestNextStep: 'Use the official program route.',
-          sourceUrls: ['https://mbb.yale.edu/introduction-undergraduate-program'],
-        },
-      ],
     });
 
     await screen.findByText('Molecular Biophysics and Biochemistry Undergraduate Research');
@@ -426,8 +345,6 @@ describe('LabDetail page', () => {
       'https://mbb.yale.edu/introduction-undergraduate-program',
     );
     expect(screen.getByText('What this program focuses on')).toBeTruthy();
-    expect(screen.getByText('Ways to approach this program')).toBeTruthy();
-    expect(screen.getByText('Explore first')).toBeTruthy();
   });
 
   it('renders a precomputed student decision explanation when one is present', async () => {
@@ -729,19 +646,6 @@ describe('LabDetail page', () => {
   it('does not offer in-product outreach drafting when a PI contact route has an email', async () => {
     renderLabDetail({
       ...basePayload,
-      contactRoutes: [
-        {
-          _id: 'derived-pi-outreach-user-1',
-          routeType: 'FACULTY_PI',
-          label: 'Jordan Researcher',
-          name: 'Jordan Researcher',
-          role: 'Principal Investigator',
-          email: 'jordan.researcher@yale.edu',
-          priority: 80,
-          visibility: 'PUBLIC',
-          contactPolicy: 'DIRECT_CONTACT_OK',
-        },
-      ],
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
@@ -773,48 +677,6 @@ describe('LabDetail page', () => {
     );
   });
 
-  it('keeps richer next-step behavior when pathways and contact routes exist', async () => {
-    renderLabDetail({
-      ...basePayload,
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'ACTIVE',
-          evidenceStrength: 'SOURCE_BACKED',
-          studentFacingLabel: 'Plan careful outreach',
-          explanation: 'Review the profile before outreach.',
-          bestNextStep: 'Contact the program manager through the listed route.',
-          sourceUrls: [OFFICIAL_PROFILE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'PROGRAM_MANAGER',
-          label: 'Program manager',
-          rationale: 'This route is listed by the program.',
-          url: OFFICIAL_ROUTE_URL,
-          sourceUrl: OFFICIAL_PROFILE_URL,
-        },
-      ],
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(
-      screen.getAllByText(
-        'Review the listed route and verify whether it has current instructions.',
-      ),
-    ).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Open official route' }).getAttribute('href')).toBe(
-      OFFICIAL_ROUTE_URL,
-    );
-    expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
-      OFFICIAL_PROFILE_URL,
-    );
-  });
-
   it('uses the research website as the first public next step for exploratory profile routes', async () => {
     renderLabDetail({
       ...basePayload,
@@ -825,28 +687,6 @@ describe('LabDetail page', () => {
         websiteUrl: RESEARCH_WEBSITE_URL,
         sourceUrls: [FACULTY_ROSTER_URL, FACULTY_AFFILIATED_PROFILE_URL, RESEARCH_WEBSITE_URL],
       },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Explore the PI profile',
-          explanation: 'An official Yale faculty profile is available.',
-          bestNextStep: 'Review the PI profile and lab site first.',
-          sourceUrls: [FACULTY_AFFILIATED_PROFILE_URL, RESEARCH_WEBSITE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          rationale: 'Official Yale faculty profile for the PI; review it before outreach.',
-          url: FACULTY_AFFILIATED_PROFILE_URL,
-          sourceUrl: FACULTY_AFFILIATED_PROFILE_URL,
-        },
-      ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
@@ -878,16 +718,6 @@ describe('LabDetail page', () => {
         websiteUrl: RESEARCH_WEBSITE_URL,
         sourceUrls: [FACULTY_ROSTER_URL, FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
       },
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          rationale: 'Official Yale faculty profile for the PI; review it before outreach.',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-        },
-      ],
     });
 
     const { container } = await waitFor(() => {
@@ -929,28 +759,6 @@ describe('LabDetail page', () => {
         school: 'Fixture Faculty of Arts and Sciences',
         sourceUrls: [FACULTY_PROFILE_URL],
       },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Explore the PI profile',
-          explanation: 'An official Yale faculty profile is available.',
-          bestNextStep: 'Review the PI profile and lab site first.',
-          sourceUrls: [FACULTY_PROFILE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          rationale: 'Official Yale faculty profile for the PI; review it before outreach.',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-        },
-      ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
@@ -1002,30 +810,6 @@ describe('LabDetail page', () => {
         departments: ['Statistics & Data Science'],
         researchAreas: ['Mathematical Statistics', 'Machine Learning'],
       },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Explore the PI profile',
-          explanation: 'An official Yale faculty profile is available.',
-          bestNextStep:
-            'Review the PI profile and lab site first, then decide whether targeted exploratory outreach is appropriate.',
-          sourceUrls: [FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          rationale: 'Official Yale faculty profile for the PI; review it before outreach.',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
@@ -1064,24 +848,6 @@ describe('LabDetail page', () => {
         departments: ['Psychology'],
         researchAreas: ['Decision neuroscience'],
       },
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-          visibility: 'PUBLIC',
-        },
-        {
-          _id: 'route-2',
-          routeType: 'PROGRAM_MANAGER',
-          label: 'Lab website',
-          url: RESEARCH_WEBSITE_URL.replace(/\/$/, ''),
-          sourceUrl: RESEARCH_WEBSITE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
     } as LabDetailPayload);
 
     await screen.findByText('Example Homepage Route Lab');
@@ -1095,7 +861,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
   });
 
-  it('does not treat a lab homepage FACULTY_PI route as an official person profile', async () => {
+  it('does not treat a lab homepage URL as an official person profile', async () => {
     renderLabDetail({
       ...basePayload,
       group: {
@@ -1105,20 +871,10 @@ describe('LabDetail page', () => {
         kind: 'lab',
         entityType: 'LAB',
         websiteUrl: RESEARCH_WEBSITE_URL,
-        sourceUrls: [FACULTY_PROFILE_URL, RESEARCH_WEBSITE_URL],
+        sourceUrls: [RESEARCH_WEBSITE_URL],
         departments: ['Biomedical Engineering'],
         researchAreas: ['Optical Microscopy'],
       },
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Lead faculty profile',
-          url: RESEARCH_WEBSITE_URL.replace(/\/$/, ''),
-          sourceUrl: RESEARCH_WEBSITE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
     } as LabDetailPayload);
 
     await screen.findByText('Example Lab Homepage PI Route');
@@ -1129,60 +885,6 @@ describe('LabDetail page', () => {
     );
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
     expect(screen.getByText('Research website')).toBeTruthy();
-  });
-
-  it('keeps a lab homepage separate from a join page official route', async () => {
-    renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        slug: 'example-join-route-lab',
-        name: 'Example Join Route Lab',
-        kind: 'lab',
-        entityType: 'LAB',
-        websiteUrl: JOIN_LAB_WEBSITE_URL,
-        sourceUrls: [FACULTY_PROFILE_URL, JOIN_LAB_WEBSITE_URL],
-        departments: ['Psychology'],
-        researchAreas: ['Social cognition'],
-      },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Exploratory outreach',
-          bestNextStep: 'Plan a specific outreach note that references the group’s work.',
-          sourceUrls: [JOIN_PAGE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'OFFICIAL_APPLICATION',
-          label: 'Join us',
-          url: JOIN_PAGE_URL,
-          sourceUrl: JOIN_PAGE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
-    } as LabDetailPayload);
-
-    await screen.findByText('Example Join Route Lab');
-
-    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
-      JOIN_LAB_WEBSITE_URL,
-    );
-    // The join page shows once (decision summary). The contact card no longer
-    // repeats the same destination as a duplicate CTA — it defers to the link
-    // already shown in the research summary.
-    const officialRouteLinks = screen.getAllByRole('link', { name: 'Open official route' });
-    expect(officialRouteLinks).toHaveLength(1);
-    expect(officialRouteLinks.every((link) => link.getAttribute('href') === JOIN_PAGE_URL)).toBe(
-      true,
-    );
-    expect(screen.queryByRole('link', { name: 'Open contact route' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
 
   it('renders related labs and groups for umbrella research entities', async () => {
@@ -1559,27 +1261,6 @@ describe('LabDetail page', () => {
         profileResearchAreas: ['Fixture Care Pathway Design', 'Synthetic Adherence Workflow'],
         researchAreaSource: 'PI_PROFILE_FALLBACK',
       },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Explore the PI profile',
-          bestNextStep: 'Review the PI profile and lab site first.',
-          sourceUrls: [FACULTY_PROFILE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
     } as LabDetailPayload);
 
     const { container } = await waitFor(() => {
@@ -1618,27 +1299,6 @@ describe('LabDetail page', () => {
           'It appears to center on High-Dimensional Statistics and Probability Theory.',
         descriptionSource: 'PI_PROFILE_SYNTHESIS',
       },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Explore the PI profile',
-          bestNextStep: 'Review the PI profile and lab site first.',
-          sourceUrls: [FACULTY_PROFILE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
     } as LabDetailPayload);
 
     const { container } = await waitFor(() => {
@@ -1790,28 +1450,6 @@ describe('LabDetail page', () => {
         departments: ['Public Policy'],
         researchAreas: [],
       },
-      entryPathways: [
-        {
-          _id: 'pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Explore the PI profile',
-          bestNextStep:
-            'Review the PI profile and lab site first, then decide whether targeted exploratory outreach is appropriate.',
-          sourceUrls: [FACULTY_PROFILE_URL],
-        },
-      ],
-      contactRoutes: [
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Example Faculty',
-          url: FACULTY_PROFILE_URL,
-          sourceUrl: FACULTY_PROFILE_URL,
-          visibility: 'PUBLIC',
-        },
-      ],
     } as LabDetailPayload);
 
     await screen.findByText('Example Sparse Profile Lab');

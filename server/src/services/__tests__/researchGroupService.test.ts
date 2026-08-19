@@ -100,27 +100,9 @@ vi.mock('../../models/researchScholarlyLink', () => ({
   },
 }));
 
-vi.mock('../../models/entryPathway', () => ({
-  EntryPathway: {
-    find: mocks.entryPathwayFind,
-  },
-}));
-
 vi.mock('../../models/signal', () => ({
   Signal: {
     find: mocks.accessSignalFind,
-  },
-}));
-
-vi.mock('../../models/contactRoute', () => ({
-  ContactRoute: {
-    find: mocks.contactRouteFind,
-  },
-}));
-
-vi.mock('../../models/postedOpportunity', () => ({
-  PostedOpportunity: {
-    find: mocks.postedOpportunityFind,
   },
 }));
 
@@ -139,7 +121,6 @@ vi.mock('../undergraduateLogisticsService', () => ({
 }));
 
 import {
-  buildLeadPiOutreachContactRoute,
   buildResearchActivityLinkPayload,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
@@ -1160,34 +1141,6 @@ describe('getResearchGroupDetail', () => {
         },
       ]),
     );
-    mocks.entryPathwayFind.mockReturnValue(
-      leanResult([
-        {
-          _id: '67d8928150621bcef434a1d8',
-          researchEntityId: entityId,
-          pathwayType: 'EXPLORATORY_CONTACT',
-          status: 'PLAUSIBLE',
-          evidenceStrength: 'MODERATE',
-          studentFacingLabel: 'Ask about undergraduate research routes',
-          explanation: 'Official page says students can ask about joining.',
-          bestNextStep: 'Email private-pathway@yale.edu after reading the source.',
-          compensation: 'UNKNOWN',
-          sourceEvidenceIds: ['67d8928150621bcef434a1d9'],
-          sourceUrls: [
-            'https://privacy-lab.example.test/undergrads',
-            'javascript:alert(document.cookie)',
-            'mailto:pathway@yale.edu',
-            'not-a-url',
-          ],
-          confidence: 0.72,
-          derivationKey: 'private-pathway-key',
-          archived: false,
-          lastObservedAt: new Date('2026-01-02T00:00:00.000Z'),
-          lastMaterializedAt: new Date('2026-01-03T00:00:00.000Z'),
-          review: { status: 'unreviewed' },
-        },
-      ]),
-    );
     mocks.accessSignalFind.mockReturnValue(
       sortLeanResult([
         {
@@ -1212,43 +1165,9 @@ describe('getResearchGroupDetail', () => {
         },
       ]),
     );
-    mocks.postedOpportunityFind.mockReturnValue(
-      sortLeanResult([
-        {
-          _id: '67d8928150621bcef434a1dc',
-          entryPathwayId: '67d8928150621bcef434a1d8',
-          researchEntityId: entityId,
-          listingId: '67d8928150621bcef434a1d6',
-          title: 'Undergraduate RA role',
-          term: 'Spring 2026',
-          deadline: new Date('2026-02-01T00:00:00.000Z'),
-          applicationUrl: 'javascript:alert(document.cookie)',
-          status: 'OPEN',
-          sourceEvidenceIds: ['67d8928150621bcef434a1d9'],
-          sourceUrls: [
-            'https://privacy-lab.example.test/apply',
-            'data:text/html,<script>alert(1)</script>',
-            'mailto:opportunity@yale.edu',
-            'not-a-url',
-          ],
-          derivationKey: 'private-opportunity-key',
-          archived: false,
-          review: { status: 'unreviewed' },
-        },
-      ]),
-    );
 
     const detail = await getResearchGroupDetail('privacy-lab');
 
-    expect(mocks.entryPathwayFind.mock.calls[0][0]).toMatchObject({
-      archived: false,
-      derivationKey: { $not: /^faculty-opportunity:/ },
-    });
-    expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
-    expect(mocks.postedOpportunityFind.mock.calls[0][0]).toMatchObject({
-      origin: { $ne: 'FACULTY_SUBMITTED' },
-      archived: false,
-    });
 
     expect(detail?.undergraduateLogistics).toEqual({ status: 'ready', claims: [] });
     expect(detail?.activeListings).toEqual([
@@ -1277,18 +1196,6 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.activeListings[0]).not.toHaveProperty('archivedAt');
     expect(detail?.activeListings[0]).not.toHaveProperty('embedding');
 
-    expect(detail?.entryPathways[0]).toEqual(
-      expect.objectContaining({
-        pathwayType: 'EXPLORATORY_CONTACT',
-        bestNextStep: 'Email [email redacted] after reading the source.',
-        sourceUrls: ['https://privacy-lab.example.test/undergrads'],
-      }),
-    );
-    expect(detail?.entryPathways[0]).not.toHaveProperty('sourceEvidenceIds');
-    expect(detail?.entryPathways[0]).not.toHaveProperty('derivationKey');
-    expect(detail?.entryPathways[0]).not.toHaveProperty('archived');
-    expect(detail?.entryPathways[0]).not.toHaveProperty('lastMaterializedAt');
-    expect(detail?.entryPathways[0]).not.toHaveProperty('review');
 
     expect(detail?.accessSignals[0]).toEqual(
       expect.objectContaining({
@@ -1305,17 +1212,6 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.accessSignals[0]).not.toHaveProperty('lastMaterializedAt');
     expect(detail?.accessSignals[0]).not.toHaveProperty('review');
 
-    expect(detail?.postedOpportunities[0]).toEqual(
-      expect.objectContaining({
-        title: 'Undergraduate RA role',
-        sourceUrls: ['https://privacy-lab.example.test/apply'],
-      }),
-    );
-    expect(detail?.postedOpportunities[0].applicationUrl).toBeUndefined();
-    expect(detail?.postedOpportunities[0]).not.toHaveProperty('sourceEvidenceIds');
-    expect(detail?.postedOpportunities[0]).not.toHaveProperty('derivationKey');
-    expect(detail?.postedOpportunities[0]).not.toHaveProperty('archived');
-    expect(detail?.postedOpportunities[0]).not.toHaveProperty('review');
     expect(detail?.researchEntity).not.toHaveProperty('rosterEnrichment');
   });
 
@@ -1535,87 +1431,6 @@ describe('getResearchGroupDetail', () => {
     });
     expect(detail?.members[0].user).not.toHaveProperty('facultyMemberId');
     expect(detail?.members[0].user).not.toHaveProperty('userId');
-  });
-
-  it('dedupes repeated stored public contact routes before returning detail payloads', async () => {
-    const entityId = '67d8928150621bcef434a1d5';
-    mocks.researchEntityFindOne.mockReturnValue(
-      leanResult({
-        _id: entityId,
-        slug: 'duplicate-route-lab',
-        name: 'Duplicate Route Lab',
-        ...validPublicDescriptions,
-        departments: [],
-        researchAreas: [],
-        sourceUrls: [],
-        studentVisibilityTier: 'student_ready',
-      }),
-    );
-    mocks.contactRouteFind.mockReturnValue(
-      sortLeanResult([
-        {
-          _id: 'route-1',
-          routeType: 'FACULTY_PI',
-          label: 'Meg Urry',
-          url: 'https://astronomy.yale.edu/people/meg-urry',
-          sourceUrl: 'https://astronomy.yale.edu/people/meg-urry',
-          priority: 60,
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-          rationale: 'Official Yale faculty profile for the PI; review it before outreach.',
-        },
-        {
-          _id: 'route-2',
-          routeType: 'FACULTY_PI',
-          label: 'Meg Urry',
-          url: 'https://astronomy.yale.edu/people/meg-urry/',
-          sourceUrl: 'https://astronomy.yale.edu/people/meg-urry',
-          priority: 60,
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-          rationale: 'Official Yale faculty profile for the PI; review it before outreach.',
-        },
-        {
-          _id: 'route-3',
-          routeType: 'DEPARTMENT_CONTACT',
-          label: 'Astronomy department',
-          url: 'https://astronomy.yale.edu/contact',
-          sourceUrl: 'https://astronomy.yale.edu/contact',
-          priority: 40,
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        },
-        {
-          _id: 'route-unsafe',
-          routeType: 'PROGRAM_CONTACT',
-          label: 'Unsafe application route',
-          url: 'javascript:alert(document.cookie)',
-          sourceUrl: 'mailto:hidden@yale.edu',
-          priority: 10,
-          visibility: 'PUBLIC',
-          contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        },
-      ]),
-    );
-
-    const detail = await getResearchGroupDetail('duplicate-route-lab');
-
-    expect(detail?.contactRoutes).toEqual([
-      expect.objectContaining({
-        routeType: 'PROGRAM_CONTACT',
-      }),
-      expect.objectContaining({
-        routeType: 'DEPARTMENT_CONTACT',
-        url: 'https://astronomy.yale.edu/contact',
-      }),
-      expect.objectContaining({
-        routeType: 'FACULTY_PI',
-        url: 'https://astronomy.yale.edu/people/meg-urry',
-      }),
-    ]);
-    const unsafeRoute = detail?.contactRoutes.find((route) => route._id === 'route-unsafe');
-    expect(unsafeRoute?.url).toBeUndefined();
-    expect(unsafeRoute?.sourceUrl).toBeUndefined();
   });
 
   it('corrects non-PI leading possessive names in public descriptions', async () => {
@@ -2273,247 +2088,6 @@ describe('researchDetailLeadIdentity', () => {
         },
       ]),
     ).toEqual({ leadIdentityStatus: 'under_review' });
-  });
-});
-
-describe('buildLeadPiOutreachContactRoute', () => {
-  it('derives a single PI outreach route from the attached lead member email', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            email: 'jordan.researcher@yale.edu',
-          },
-          row: { sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher' },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toMatchObject({
-      routeType: 'FACULTY_PI',
-      label: 'Jordan Person',
-      name: 'Jordan Person',
-      visibility: 'PUBLIC',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-      sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher',
-    });
-    expect(route).not.toHaveProperty('email');
-  });
-
-  it('does not derive a public PI outreach route from an unsafe attached email', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            email: 'jordan.researcher@yale.edu?bcc=attacker@example.test',
-          },
-          row: { sourceUrl: 'https://physics.yale.edu/people/faculty' },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toBeNull();
-  });
-
-  it('uses the attached PI official profile URL as the public route URL', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            email: 'jordan.researcher@yale.edu',
-            profileUrls: {
-              official: 'https://medicine.yale.edu/profile/jordan-researcher/',
-            },
-          },
-          row: { sourceUrl: 'https://profile.example.test/jordan-researcher' },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toMatchObject({
-      routeType: 'FACULTY_PI',
-      url: 'https://medicine.yale.edu/profile/jordan-researcher/',
-      sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher/',
-    });
-  });
-
-  it('does not use credential-bearing official profile URLs in public PI routes', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            profileUrls: {
-              official: 'https://operator:secret@medicine.yale.edu/profile/jordan-researcher/',
-            },
-          },
-          row: {
-            sourceUrl: 'https://operator:secret@medicine.yale.edu/profile/jordan-researcher/',
-          },
-        },
-      ],
-      { websiteUrl: 'https://operator:secret@lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toBeNull();
-  });
-
-  it('uses an attached PI official profile URL even when the email is unavailable', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            profileUrls: {
-              official: 'https://medicine.yale.edu/profile/jordan-researcher/',
-            },
-          },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toMatchObject({
-      routeType: 'FACULTY_PI',
-      label: 'Jordan Person',
-      url: 'https://medicine.yale.edu/profile/jordan-researcher/',
-      sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher/',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-    });
-    expect(route).not.toHaveProperty('email');
-  });
-
-  it('keeps the attached PI official profile URL when an explicit lab contact email exists', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            email: 'jordan.researcher@yale.edu',
-            profileUrls: {
-              official: 'https://medicine.yale.edu/profile/jordan-researcher/',
-            },
-          },
-        },
-      ],
-      { contactEmail: 'lab-manager@yale.edu' },
-    );
-
-    expect(route).toMatchObject({
-      routeType: 'FACULTY_PI',
-      url: 'https://medicine.yale.edu/profile/jordan-researcher/',
-      sourceUrl: 'https://medicine.yale.edu/profile/jordan-researcher/',
-      contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-    });
-  });
-
-  it('does not promote a generic Yale faculty roster URL as the official profile action', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            email: 'jordan.researcher@yale.edu',
-          },
-          row: { sourceUrl: 'https://physics.yale.edu/people/faculty' },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toBeNull();
-  });
-
-  it('does not promote a generic Yale faculty category URL as the official profile action', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-          },
-          row: { sourceUrl: 'https://example.yale.edu/people/faculty/primary' },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toBeNull();
-  });
-
-  it('uses person-scoped Yale Engineering faculty-directory pages as official profile actions', () => {
-    const route = buildLeadPiOutreachContactRoute(
-      [
-        {
-          role: 'pi',
-          user: {
-            _id: 'user-1',
-            fname: 'Jordan',
-            lname: 'Person',
-            email: 'jordan.researcher@yale.edu',
-            profileUrls: {
-              departmental:
-                'https://engineering.yale.edu/research-and-faculty/faculty-directory/jordan-researcher',
-            },
-          },
-        },
-      ],
-      { websiteUrl: 'https://lab.example.test', contactEmail: '' },
-    );
-
-    expect(route).toMatchObject({
-      routeType: 'FACULTY_PI',
-      url: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/jordan-researcher',
-      sourceUrl:
-        'https://engineering.yale.edu/research-and-faculty/faculty-directory/jordan-researcher',
-    });
-  });
-
-  it('does not derive a PI email route when an explicit group contact email exists and no official profile URL is known', () => {
-    expect(
-      buildLeadPiOutreachContactRoute(
-        [
-          {
-            role: 'pi',
-            user: {
-              fname: 'Jordan',
-              lname: 'Person',
-              email: 'jordan.researcher@yale.edu',
-            },
-          },
-        ],
-        { contactEmail: 'lab-manager@yale.edu' },
-      ),
-    ).toBeNull();
   });
 });
 

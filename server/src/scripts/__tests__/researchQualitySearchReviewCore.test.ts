@@ -31,9 +31,7 @@ function baseFacts(): ResearchQualitySearchFacts {
     researchAreas: [],
     departments: [],
     duplicateCandidates: [{ slug: 'example-lab-2', name: 'Example Laboratory' }],
-    publicContactRouteCount: 0,
     accessSignalCount: 0,
-    postedOpportunityCount: 0,
     topSearchReasons: [],
     matchedQueryNames: ['data science'],
   };
@@ -109,9 +107,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       researchAreas: ['Computational Biology'],
       departments: ['Molecular Biophysics and Biochemistry'],
       duplicateCandidates: [],
-      publicContactRouteCount: 1,
       accessSignalCount: 2,
-      postedOpportunityCount: 1,
       topSearchReasons: ['description matched computational biology', 'pathway evidence matched'],
     });
 
@@ -136,9 +132,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       members: [],
       researchAreas: ['Cancer Immunology'],
       duplicateCandidates: [],
-      publicContactRouteCount: 0,
       accessSignalCount: 0,
-      postedOpportunityCount: 0,
       topSearchReasons: ['description matched cancer research'],
     });
 
@@ -162,12 +156,8 @@ describe('buildResearchQualitySearchReviewRow', () => {
       members: [{ role: 'pi', name: 'Ada Example' }],
       researchAreas: ['Computational Biology'],
       duplicateCandidates: [],
-      pathwayTypes: [],
-      publicContactRouteCount: 0,
-      publicContactRouteTypes: [],
       accessSignalCount: 0,
       accessSignalTypes: [],
-      postedOpportunityCount: 0,
       topSearchReasons: ['description matched computational biology'],
     });
 
@@ -188,7 +178,6 @@ describe('summarizeResearchQualitySearchRows', () => {
       sourceTitle: 'Sourced Center',
       members: [{ role: 'director', name: 'Grace Example' }],
       researchAreas: ['Digital Humanities'],
-      publicContactRouteCount: 1,
       accessSignalCount: 1,
       topSearchReasons: ['name matched digital humanities'],
     });

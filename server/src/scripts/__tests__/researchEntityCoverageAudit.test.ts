@@ -32,10 +32,7 @@ function baseFacts(): CoverageAuditFacts {
       researchAreas: 0,
       sourceUrls: 2,
       members: 0,
-      publicContactRoutes: 0,
-      totalContactRoutes: 0,
       accessSignals: 1,
-      postedOpportunities: 0,
       activeListings: 0,
     },
     observationFlags: {
@@ -110,8 +107,6 @@ describe('summarizeIssueCounts', () => {
         ...baseFacts().counts,
         researchAreas: 3,
         members: 5,
-        publicContactRoutes: 1,
-        totalContactRoutes: 1,
         accessSignals: 3,
       },
       observationFlags: {
@@ -141,8 +136,6 @@ describe('selectCoverageAuditRows', () => {
       ...baseFacts().counts,
       researchAreas: 2,
       members: 2,
-      publicContactRoutes: 1,
-      totalContactRoutes: 1,
       accessSignals: 2,
     },
     observationFlags: {
@@ -161,8 +154,6 @@ describe('selectCoverageAuditRows', () => {
       ...baseFacts().counts,
       researchAreas: 2,
       members: 2,
-      publicContactRoutes: 1,
-      totalContactRoutes: 1,
       accessSignals: 2,
     },
     observationFlags: {
