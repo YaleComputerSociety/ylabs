@@ -4,7 +4,8 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -405,19 +406,19 @@ async function loadDuplicateAccessSignalGroups(limit: number): Promise<Duplicate
   const groups: DuplicateAccessSignalGroup[] = [];
 
   for (const field of fields) {
-    const rows = await AccessSignal.aggregate([
+    const rows = await Signal.aggregate([
       {
         $match: {
           archived: { $ne: true },
           researchEntityId: { $exists: true, $ne: null },
-          signalType: { $exists: true, $ne: '' },
+          type: { $in: [...accessSignalTypes] },
           [field]: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
           researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$signalType',
+          signalType: '$type',
           identityValue: { $toString: `$${field}` },
           signalId: { $toString: '$_id' },
         },
@@ -461,9 +462,10 @@ async function loadSignalRecords(groups: DuplicateAccessSignalGroup[]): Promise<
     .map((id) => normalizeDuplicateAccessSignalObjectId(id))
     .filter((id): id is string => Boolean(id));
   if (signalIds.length === 0) return [];
-  return AccessSignal.find({ _id: { $in: signalIds.map((id) => new mongoose.Types.ObjectId(id)) } }).lean() as Promise<
-    DuplicateAccessSignalRecord[]
-  >;
+  const rows = await Signal.find({
+    _id: { $in: signalIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  }).lean();
+  return rows.map((row: any) => ({ ...row, signalType: row.type })) as DuplicateAccessSignalRecord[];
 }
 
 async function loadPathwayContexts(
@@ -485,7 +487,7 @@ async function loadPathwayContexts(
   for (const entryPathwayId of entryPathwayIds) {
     const object = objectId(entryPathwayId);
     const [activeAccessSignals, activeContactRoutes, activePostedOpportunities] = await Promise.all([
-      AccessSignal.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
+      Signal.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
       ContactRoute.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
       PostedOpportunity.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
     ]);
@@ -523,7 +525,7 @@ async function applyPlans(plans: DuplicateAccessSignalRepairPlan[]) {
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   const [signals, pathways] = await Promise.all([
     signalIds.length
-      ? AccessSignal.updateMany(
+      ? Signal.updateMany(
           { _id: { $in: signalIds }, archived: { $ne: true } },
           { $set: { archived: true, lastMaterializedAt: now } },
         )

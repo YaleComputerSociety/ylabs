@@ -1,4 +1,5 @@
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { Observation } from '../models/observation';
@@ -691,7 +692,11 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     const safeId = normalizeLaunchAcquisitionObjectId(id);
     if (!safeId) return { accessSignals: 0, entryPathways: 0, contactRoutes: 0 };
     const [accessSignals, entryPathways, contactRoutes] = await Promise.all([
-      AccessSignal.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
+      Signal.countDocuments({
+        researchEntityId: safeId,
+        type: { $in: accessSignalTypes },
+        archived: { $ne: true },
+      }),
       EntryPathway.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
       ContactRoute.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
     ]);

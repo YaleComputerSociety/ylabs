@@ -41,7 +41,7 @@ const ARTIFACT_SPECS: ArtifactSpec[] = [
     activeMatch: { isCurrentMember: { $ne: false } },
   },
   { artifactType: 'EntryPathway', collection: 'entry_pathways' },
-  { artifactType: 'AccessSignal', collection: 'access_signals' },
+  { artifactType: 'AccessSignal', collection: 'signals' },
   { artifactType: 'ContactRoute', collection: 'contact_routes' },
   { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
 ];
@@ -289,7 +289,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
         researchEntityId,
         canonicalResearchEntityId: canonicalByArchivedId.get(researchEntityId) || '',
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
         userId: stringId(row.userId),
         role: stringId(row.role),
@@ -304,7 +304,7 @@ async function loadArchivedEntityArtifactPlan(limit: number): Promise<{
         researchEntityId,
         canonicalResearchEntityId: researchEntityId,
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
         userId: stringId(row.userId),
         role: stringId(row.role),
@@ -419,7 +419,7 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
 
     if (item.artifactType === 'EntryPathway') {
       const childSpecs = [
-        { collection: 'access_signals', field: 'entryPathwayId' },
+        { collection: 'signals', field: 'entryPathwayId' },
         { collection: 'contact_routes', field: 'entryPathwayId' },
         { collection: 'posted_opportunities', field: 'entryPathwayId' },
       ];

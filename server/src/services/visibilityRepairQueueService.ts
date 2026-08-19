@@ -17,7 +17,7 @@ import {
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
-import { upsertAccessSignal, type UpsertAccessSignalInput } from './accessSignalService';
+import { upsertSignal, type UpsertSignalInput } from './signalService';
 import { upsertContactRoute, type UpsertContactRouteInput } from './contactRouteService';
 import { upsertEntryPathway, type UpsertEntryPathwayInput } from './entryPathwayService';
 import { runStudentVisibilityGate } from './studentVisibilityGateService';
@@ -121,8 +121,8 @@ interface RepairDeps {
   findReusableExploratoryContactPathway?: (
     researchEntityId: string,
   ) => Promise<{ pathwayId?: string; derivationKey?: string; doc?: any } | null>;
-  upsertAccessSignal?: (
-    input: UpsertAccessSignalInput,
+  upsertSignal?: (
+    input: UpsertSignalInput,
   ) => Promise<{ signalId?: string; doc?: any }>;
   upsertContactRoute?: (
     input: UpsertContactRouteInput,
@@ -1230,7 +1230,7 @@ async function createOfficialProfileActionEvidenceRepair({
   if (
     !deps.upsertEntryPathway ||
     !deps.upsertContactRoute ||
-    !deps.upsertAccessSignal ||
+    !deps.upsertSignal ||
     !deps.findActionEvidenceObservationIds
   ) {
     return { repaired: false, summary: [] };
@@ -1261,10 +1261,10 @@ async function createOfficialProfileActionEvidenceRepair({
       reusablePathway,
     });
 
-    await deps.upsertAccessSignal({
+    await deps.upsertSignal({
       researchEntityId: plan.recordId,
       entryPathwayId: pathway.pathwayId,
-      signalType: 'REACH_OUT_PLAUSIBLE',
+      type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'LOW',
       confidenceScore: 0.52,
       observedAt: new Date(),
@@ -1351,7 +1351,7 @@ async function createEntitySourceActionEvidenceRepair({
   if (
     !deps.upsertEntryPathway ||
     !deps.upsertContactRoute ||
-    !deps.upsertAccessSignal ||
+    !deps.upsertSignal ||
     !deps.findEntityActionEvidenceObservationIds
   ) {
     return { repaired: false, summary: [], repairSource: sourceUrl };
@@ -1392,10 +1392,10 @@ async function createEntitySourceActionEvidenceRepair({
     });
     const pathwayId = pathway?.pathwayId || idValue(pathway?.doc?._id);
 
-    await deps.upsertAccessSignal({
+    await deps.upsertSignal({
       researchEntityId: plan.recordId,
       entryPathwayId: pathwayId,
-      signalType: 'REACH_OUT_PLAUSIBLE',
+      type: 'REACH_OUT_PLAUSIBLE',
       confidence: 'LOW',
       confidenceScore: 0.45,
       observedAt: new Date(),
@@ -1516,7 +1516,7 @@ async function attemptResearchActionEvidenceRepair(
     !quality.repairFlags.includes('pi_identity_conflict') &&
     Boolean(actionEvidenceSourceUrl);
 
-  if (!deps.upsertEntryPathway || !deps.upsertContactRoute || !deps.upsertAccessSignal) {
+  if (!deps.upsertEntryPathway || !deps.upsertContactRoute || !deps.upsertSignal) {
     return {
       plan,
       applied: false,
@@ -1578,10 +1578,10 @@ async function attemptResearchActionEvidenceRepair(
     const hasTrustedActionLead = Boolean(actionLead);
 
     if (!usingReusablePathwayEvidence) {
-      await deps.upsertAccessSignal({
+      await deps.upsertSignal({
         researchEntityId: plan.recordId,
         entryPathwayId: pathway.pathwayId,
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         confidenceScore: 0.52,
         observedAt: new Date(),
@@ -2206,8 +2206,8 @@ const defaultRepairDeps: RepairDeps = {
       doc: pathway,
     };
   },
-  async upsertAccessSignal(input) {
-    return upsertAccessSignal(input);
+  async upsertSignal(input) {
+    return upsertSignal(input);
   },
   async upsertContactRoute(input) {
     return upsertContactRoute(input);

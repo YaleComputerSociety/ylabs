@@ -3,7 +3,8 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import crypto from 'crypto';
-import { AccessSignal } from '../../models/accessSignal';
+import { Signal } from '../../models/signal';
+import { accessSignalTypes } from '../../models/researchAccessTypes';
 import { ContactRoute } from '../../models/contactRoute';
 import { EntryPathway } from '../../models/entryPathway';
 import { PostedOpportunity } from '../../models/postedOpportunity';
@@ -374,7 +375,7 @@ export function decisionExtractionToObservation(
 async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
   const active = { archived: { $ne: true } };
   const [signalIds, pathwayIds, opportunityIds, routeIds] = await Promise.all([
-    AccessSignal.distinct('researchEntityId', active),
+    Signal.distinct('researchEntityId', { ...active, type: { $in: accessSignalTypes } }),
     EntryPathway.distinct('researchEntityId', active),
     PostedOpportunity.distinct('researchEntityId', active),
     ContactRoute.distinct('researchEntityId', { ...active, visibility: 'PUBLIC' }),
@@ -401,9 +402,18 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
 
   const entityIds = (rows as any[]).map((row) => row._id);
   const [signals, pathways, routes, opportunities] = await Promise.all([
-    AccessSignal.find({ ...active, researchEntityId: { $in: entityIds } })
-      .select('researchEntityId signalType confidence excerpt sourceUrl')
-      .lean(),
+    Signal.find({ ...active, type: { $in: accessSignalTypes }, researchEntityId: { $in: entityIds } })
+      .select('researchEntityId type confidence source')
+      .lean()
+      .then((docs) =>
+        (docs as any[]).map((doc) => ({
+          researchEntityId: doc.researchEntityId,
+          signalType: doc.type,
+          confidence: doc.confidence,
+          excerpt: doc.source?.excerpt,
+          sourceUrl: doc.source?.url,
+        })),
+      ),
     EntryPathway.find({ ...active, researchEntityId: { $in: entityIds } })
       .select('researchEntityId pathwayType status studentFacingLabel sourceUrls')
       .lean(),

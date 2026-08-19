@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { initializeConnections } from '../db/connections';
@@ -184,7 +184,7 @@ async function buildPlans(limit: number): Promise<PathwayPlan[]> {
       pathways.map(async (pathway: any) => {
         const pathwayId = idString(pathway._id);
         const [accessSignals, contactRoutes] = await Promise.all([
-          AccessSignal.countDocuments({ entryPathwayId: pathwayId, archived: { $ne: true } }),
+          Signal.countDocuments({ entryPathwayId: pathwayId, archived: { $ne: true } }),
           ContactRoute.countDocuments({ entryPathwayId: pathwayId, archived: { $ne: true } }),
         ]);
         const sourceEvidenceCount = Array.isArray(pathway.sourceEvidenceIds)
@@ -240,7 +240,7 @@ async function applyPlans(plans: PathwayPlan[]) {
     const duplicateIds = duplicatePathwayIds.map((id) => new mongoose.Types.ObjectId(id));
     const canonicalId = new mongoose.Types.ObjectId(canonicalPathwayId);
     const [accessSignals, contactRoutes, pathways] = await Promise.all([
-      AccessSignal.updateMany(
+      Signal.updateMany(
         { entryPathwayId: { $in: duplicateIds }, archived: { $ne: true } },
         { $set: { entryPathwayId: canonicalId } },
       ),

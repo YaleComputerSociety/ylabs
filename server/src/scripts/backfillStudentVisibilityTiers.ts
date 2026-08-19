@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { EntryPathway } from '../models/entryPathway';
 import { Fellowship } from '../models/fellowship';
 import { PostedOpportunity } from '../models/postedOpportunity';
@@ -303,8 +304,14 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     })
       .select('researchEntityId userId name role')
       .lean(),
-    AccessSignal.aggregate([
-      { $match: { researchEntityId: { $in: entityIds }, archived: false } },
+    Signal.aggregate([
+      {
+        $match: {
+          researchEntityId: { $in: entityIds },
+          type: { $in: [...accessSignalTypes] },
+          archived: false,
+        },
+      },
       { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
     ]),
     EntryPathway.aggregate([

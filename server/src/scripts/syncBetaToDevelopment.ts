@@ -53,7 +53,7 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entity_relationships', category: 'research-discovery' },
   { name: 'faculty_members', category: 'research-discovery' },
   { name: 'entry_pathways', category: 'research-discovery' },
-  { name: 'access_signals', category: 'research-discovery' },
+  { name: 'signals', category: 'research-discovery' },
   { name: 'contact_routes', category: 'research-discovery' },
   { name: 'posted_opportunities', category: 'research-discovery' },
   { name: 'research_entity_stats', category: 'research-discovery' },

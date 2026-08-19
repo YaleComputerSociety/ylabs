@@ -80,7 +80,7 @@ const REFERENCE_IMPACT_COLLECTIONS: Array<{
   },
   {
     key: 'accessSignals',
-    collectionName: 'access_signals',
+    collectionName: 'signals',
     field: 'researchEntityId',
     match: ACTIVE_FILTER,
   },

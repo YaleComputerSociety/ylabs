@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { Listing } from '../models/listing';
@@ -146,8 +147,9 @@ async function buildEntityContexts(entityIds: unknown[]): Promise<PathwayQuality
       role: { $in: ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'] },
       isCurrentMember: { $ne: false },
     }),
-    aggregateCountMap(AccessSignal, {
+    aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
+      type: { $in: [...accessSignalTypes] },
       archived: { $ne: true },
     }),
     aggregateCountMap(ContactRoute, {

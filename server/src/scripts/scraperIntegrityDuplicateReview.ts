@@ -4,7 +4,8 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { mkdirSync, writeFileSync } from 'fs';
 import { initializeConnections } from '../db/connections';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Paper } from '../models/paper';
 import {
   buildDuplicateAccessSignalGroupsFromRows,
@@ -237,19 +238,19 @@ async function loadDuplicateAccessSignalReviewGroups(
   const groups: DuplicateAccessSignalGroup[] = [];
 
   for (const field of fields) {
-    const rows = await AccessSignal.aggregate([
+    const rows = await Signal.aggregate([
       {
         $match: {
           archived: { $ne: true },
           researchEntityId: { $exists: true, $ne: null },
-          signalType: { $exists: true, $ne: '' },
+          type: { $in: [...accessSignalTypes] },
           [field]: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
           researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$signalType',
+          signalType: '$type',
           identityValue: { $toString: `$${field}` },
           signalId: { $toString: '$_id' },
         },

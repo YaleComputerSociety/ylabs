@@ -1,5 +1,6 @@
 import { Types, type PipelineStage } from 'mongoose';
 import { EntryPathway } from '../models/entryPathway';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import type {
   CompensationType,
   EntryPathwayStatus,
@@ -549,7 +550,7 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
   pipeline.push(
     {
       $lookup: {
-        from: 'access_signals',
+        from: 'signals',
         let: { pathwayId: '$_id', entityId: '$researchEntityId' },
         pipeline: [
           {
@@ -557,6 +558,7 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
               $expr: {
                 $and: [
                   { $ne: ['$archived', true] },
+                  { $in: ['$type', [...accessSignalTypes]] },
                   {
                     $or: [
                       { $eq: ['$entryPathwayId', '$$pathwayId'] },
@@ -577,11 +579,11 @@ export async function searchPathways(input: PathwaySearchInput): Promise<Pathway
           {
             $project: {
               _id: 0,
-              signalType: 1,
+              signalType: '$type',
               confidence: 1,
               confidenceScore: 1,
-              excerpt: 1,
-              sourceUrl: 1,
+              excerpt: '$source.excerpt',
+              sourceUrl: '$source.url',
               observedAt: 1,
             },
           },

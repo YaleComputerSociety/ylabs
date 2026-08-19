@@ -687,7 +687,7 @@ const ARTIFACT_SPECS: Array<{
   collection: string;
 }> = [
   { artifactType: 'EntryPathway', collection: 'entry_pathways' },
-  { artifactType: 'AccessSignal', collection: 'access_signals' },
+  { artifactType: 'AccessSignal', collection: 'signals' },
   { artifactType: 'ContactRoute', collection: 'contact_routes' },
   { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
 ];
@@ -701,7 +701,7 @@ const SCALAR_REFERENCE_SPECS: Array<{
   { collection: 'research_entities', field: 'canonicalGroupId' },
   { collection: 'research_scholarly_links', field: 'researchEntityId', archiveOnConflict: true },
   { collection: 'entry_pathways', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'access_signals', field: 'researchEntityId', archiveOnConflict: true },
+  { collection: 'signals', field: 'researchEntityId', archiveOnConflict: true },
   { collection: 'contact_routes', field: 'researchEntityId', archiveOnConflict: true },
   { collection: 'posted_opportunities', field: 'researchEntityId', archiveOnConflict: true },
   {
@@ -1129,7 +1129,7 @@ async function loadArtifactsForDeleteMode(args: {
         researchEntityId: stringId(row.researchEntityId),
         canonicalResearchEntityId: stringId(args.canonicalId),
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
       });
     }
@@ -1140,7 +1140,7 @@ async function loadArtifactsForDeleteMode(args: {
         researchEntityId: stringId(row.researchEntityId),
         canonicalResearchEntityId: stringId(row.researchEntityId),
         derivationKey: stringId(row.derivationKey),
-        signalType: stringId(row.signalType),
+        signalType: stringId(row.type),
         entryPathwayId: stringId(row.entryPathwayId),
       });
     }
@@ -1291,7 +1291,7 @@ async function applyDeleteModeArtifactPlan(args: {
     if (item.artifactType === 'EntryPathway') {
       const [signals, routes, opportunities] = await Promise.all(
         [
-          { collection: 'access_signals', field: 'entryPathwayId' },
+          { collection: 'signals', field: 'entryPathwayId' },
           { collection: 'contact_routes', field: 'entryPathwayId' },
           { collection: 'posted_opportunities', field: 'entryPathwayId' },
         ].map(async (child) => {

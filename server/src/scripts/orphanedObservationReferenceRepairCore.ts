@@ -96,16 +96,15 @@ export interface ValidatedOrphanReferenceDecision extends OrphanReferenceReviewD
 
 export const ACCESS_REFERENCE_COLLECTIONS = new Set([
   'entry_pathways',
-  'access_signals',
+  'signals',
   'contact_routes',
 ]);
 
 export const ARCHIVABLE_REFERENCE_COLLECTIONS = new Set([
   'entry_pathways',
-  'access_signals',
+  'signals',
   'contact_routes',
   'posted_opportunities',
-  'undergraduate_logistics_claims',
 ]);
 
 const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
@@ -456,6 +455,17 @@ export function classifyOrphanReference(input: {
   const materializedEvidenceIds = (input.currentMaterializationEvidenceIds || [])
     .map(normalizeObservationRepairObjectId)
     .filter((id): id is string => Boolean(id));
+  if (occurrence.ownerClaimType && materializedEvidenceIds.length > 0) {
+    return {
+      ...occurrence,
+      handle,
+      recovery: 'rematerialize_logistics',
+      reason:
+        'The current logistics materializer derives the same claim from surviving source evidence.',
+      candidateCount: materializedEvidenceIds.length,
+      recommendedDecision: 'rematerialize',
+    };
+  }
   if (
     ACCESS_REFERENCE_COLLECTIONS.has(occurrence.ownerCollection) &&
     materializedEvidenceIds.length > 0
@@ -470,20 +480,6 @@ export function classifyOrphanReference(input: {
       rematerializationMode: input.materializationReplacesOwner
         ? 'replace_legacy_owner'
         : 'refresh_owner',
-      candidateCount: materializedEvidenceIds.length,
-      recommendedDecision: 'rematerialize',
-    };
-  }
-  if (
-    occurrence.ownerCollection === 'undergraduate_logistics_claims' &&
-    materializedEvidenceIds.length > 0
-  ) {
-    return {
-      ...occurrence,
-      handle,
-      recovery: 'rematerialize_logistics',
-      reason:
-        'The current logistics materializer derives the same claim from surviving source evidence.',
       candidateCount: materializedEvidenceIds.length,
       recommendedDecision: 'rematerialize',
     };

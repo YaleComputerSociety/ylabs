@@ -1,7 +1,7 @@
 import type mongoose from 'mongoose';
 import type { ContactRouteType, EntryPathwayType } from '../models/researchAccessTypes';
 import type { materializeAccessForResearchGroup } from '../scrapers/accessMaterializer';
-import type { upsertAccessSignal } from '../services/accessSignalService';
+import type { upsertSignal } from '../services/signalService';
 import type { upsertEntryPathway } from '../services/entryPathwayService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -33,7 +33,7 @@ export interface ApplicationRoutePathwayBackfillDeps {
   researchEntityModel: mongoose.Model<any> | any;
   materializeAccessForResearchGroup: typeof materializeAccessForResearchGroup;
   upsertEntryPathway: typeof upsertEntryPathway;
-  upsertAccessSignal: typeof upsertAccessSignal;
+  upsertSignal: typeof upsertSignal;
 }
 
 export interface ApplicationRoutePathwayBackfillResult {
@@ -249,10 +249,10 @@ async function routeBackfill(
   });
   if (!pathway.pathwayId) return false;
 
-  await deps.upsertAccessSignal({
+  await deps.upsertSignal({
     researchEntityId: stringId(route.researchEntityId),
     entryPathwayId: pathway.pathwayId,
-    signalType: 'APPLICATION_FORM_EXISTS',
+    type: 'APPLICATION_FORM_EXISTS',
     confidence: classification.evidenceStrength === 'STRONG' ? 'HIGH' : 'MEDIUM',
     observedAt: route.observedAt || new Date(),
     excerpt: 'An official application, join, or opportunities route was found.',

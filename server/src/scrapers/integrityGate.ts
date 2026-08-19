@@ -1,8 +1,9 @@
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
 import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { Paper } from '../models/paper';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
@@ -700,23 +701,33 @@ async function loadDuplicateAccessSignalGroups(
     'sourceEvidenceId',
     'observationId',
   ];
+  const identityFieldPath: Record<DuplicateAccessSignalGroup['identityField'], string> = {
+    derivationKey: 'derivationKey',
+    sourceEvidenceId: 'source.evidenceIds',
+    observationId: 'source.evidenceIds',
+  };
   const groups: DuplicateAccessSignalGroup[] = [];
 
   for (const field of fields) {
-    const rows = await AccessSignal.aggregate([
+    const path = identityFieldPath[field];
+    const identityExpr =
+      field === 'derivationKey'
+        ? { $toString: `$${path}` }
+        : { $toString: { $arrayElemAt: [`$${path}`, 0] } };
+    const rows = await Signal.aggregate([
       {
         $match: {
           archived: { $ne: true },
+          type: { $in: [...accessSignalTypes] },
           researchEntityId: { $exists: true, $ne: null },
-          signalType: { $exists: true, $ne: '' },
-          [field]: { $exists: true, $ne: null },
+          [path]: { $exists: true, $ne: null },
         },
       },
       {
         $project: {
           researchEntityId: { $toString: '$researchEntityId' },
-          signalType: '$signalType',
-          identityValue: { $toString: `$${field}` },
+          signalType: '$type',
+          identityValue: identityExpr,
           signalId: { $toString: '$_id' },
         },
       },
@@ -786,7 +797,7 @@ async function loadActiveArtifactsOnArchivedEntities(
 ): Promise<ActiveArtifactOnArchivedEntity[]> {
   const artifactSpecs = [
     { artifactType: 'EntryPathway' as const, model: EntryPathway },
-    { artifactType: 'AccessSignal' as const, model: AccessSignal },
+    { artifactType: 'AccessSignal' as const, model: Signal },
     { artifactType: 'ContactRoute' as const, model: ContactRoute },
     { artifactType: 'PostedOpportunity' as const, model: PostedOpportunity },
   ];

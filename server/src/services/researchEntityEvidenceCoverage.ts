@@ -1,5 +1,6 @@
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ContactRoute } from '../models/contactRoute';
 import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
@@ -385,7 +386,11 @@ async function loadResearchEntityContext({
   const [listings, members, accessSignals, contactRoutes, observations] = await Promise.all([
     Listing.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
     ResearchGroupMember.find({ researchEntityId: id, isCurrentMember: { $ne: false } }).lean(),
-    AccessSignal.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
+    Signal.find({
+      researchEntityId: id,
+      type: { $in: accessSignalTypes },
+      archived: { $ne: true },
+    }).lean(),
     ContactRoute.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
     Observation.find({
       entityType: 'researchEntity',

@@ -1,4 +1,5 @@
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { EntryPathway } from '../models/entryPathway';
 import { FacultyMember } from '../models/facultyMember';
 import { Fellowship } from '../models/fellowship';
@@ -835,8 +836,9 @@ async function planResearchEntityGateUpdates(
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
   if (options.sourceName) {
     const [accessEntityIds, observationEntityIds, observationEntityKeys] = await Promise.all([
-      AccessSignal.distinct('researchEntityId', {
-        sourceName: options.sourceName,
+      Signal.distinct('researchEntityId', {
+        type: { $in: accessSignalTypes },
+        'source.name': options.sourceName,
         archived: false,
       }),
       Observation.distinct('entityId', {
@@ -896,19 +898,20 @@ async function planResearchEntityGateUpdates(
     })
       .select('researchEntityId userId facultyMemberId name role')
       .lean(),
-    AccessSignal.aggregate([
+    Signal.aggregate([
       {
         $match: {
           researchEntityId: { $in: entityIds },
+          type: { $in: [...accessSignalTypes] },
           archived: false,
-          sourceUrl: { $regex: '^https?://', $options: 'i' },
+          'source.url': { $regex: '^https?://', $options: 'i' },
         },
       },
       {
         $group: {
           _id: '$researchEntityId',
           count: { $sum: 1 },
-          sourceNames: { $addToSet: '$sourceName' },
+          sourceNames: { $addToSet: '$source.name' },
         },
       },
     ]),

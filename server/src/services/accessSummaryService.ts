@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
 import { EntryPathway } from '../models/entryPathway';
 import { PostedOpportunity } from '../models/postedOpportunity';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { publicPostedOpportunityMongoMatch } from './studentAccessPublicationPolicy';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -147,7 +148,11 @@ export async function listAccessSummariesForResearchEntities(
 
   const objectIds = validIds.map((id) => new mongoose.Types.ObjectId(id));
   const [signals, pathways, opportunities] = await Promise.all([
-    AccessSignal.find({ researchEntityId: { $in: objectIds }, archived: false })
+    Signal.find({
+      researchEntityId: { $in: objectIds },
+      type: { $in: accessSignalTypes },
+      archived: false,
+    })
       .sort({ observedAt: -1 })
       .lean(),
     EntryPathway.find({
@@ -194,7 +199,7 @@ export async function listAccessSummariesForResearchEntities(
     });
     const signalTypes = new Set(
       entitySignals.flatMap((signal) => {
-        const signalType = boundedString(signal.signalType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
+        const signalType = boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
         return signalType ? [signalType] : [];
       }),
     );
@@ -213,10 +218,10 @@ export async function listAccessSummariesForResearchEntities(
       status,
       confidence,
       evidence: entitySignals.slice(0, 5).map((signal) => ({
-        signalType: boundedString(signal.signalType, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
+        signalType: boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         confidence: boundedString(signal.confidence, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
-        excerpt: publicText(signal.excerpt),
-        sourceUrl: publicHttpUrl(signal.sourceUrl),
+        excerpt: publicText(signal.source?.excerpt),
+        sourceUrl: publicHttpUrl(signal.source?.url),
       })),
       signalTypes: Array.from(signalTypes),
       entryPathwayTypes: Array.from(entryPathwayTypes),

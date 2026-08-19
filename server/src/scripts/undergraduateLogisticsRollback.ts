@@ -6,7 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { UndergraduateLogisticsClaim } from '../models/undergraduateLogisticsClaim';
+import { Signal } from '../models/signal';
+import { undergraduateLogisticsSignalTypes } from '../models/researchAccessTypes';
 import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
@@ -173,8 +174,9 @@ async function run(): Promise<void> {
   const entityIds = Array.from(
     new Set([...plan.entityIds, ...keyedEntities.map((entity) => String(entity._id))]),
   );
-  const affectedClaims = await UndergraduateLogisticsClaim.countDocuments({
-    sourceScrapeRunIds: args.runId,
+  const affectedClaims = await Signal.countDocuments({
+    type: { $in: [...undergraduateLogisticsSignalTypes] },
+    'source.scrapeRunIds': args.runId,
     archived: { $ne: true },
   });
   const result: Record<string, unknown> = {

@@ -42,7 +42,7 @@ export interface LegacyResidueCount extends LegacyResidueCheck {
 
 export const REFERENCE_CHECKS: ReferenceCheck[] = [
   { collection: 'entry_pathways', field: 'researchEntityId', label: 'EntryPathway host entity' },
-  { collection: 'access_signals', field: 'researchEntityId', label: 'AccessSignal host entity' },
+  { collection: 'signals', field: 'researchEntityId', label: 'AccessSignal host entity' },
   { collection: 'contact_routes', field: 'researchEntityId', label: 'ContactRoute host entity' },
   {
     collection: 'posted_opportunities',

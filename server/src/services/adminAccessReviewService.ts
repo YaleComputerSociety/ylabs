@@ -2,10 +2,11 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { AdminAccessReviewProjection } from '../models/adminAccessReviewProjection';
 import { EntryPathway } from '../models/entryPathway';
-import { AccessSignal } from '../models/accessSignal';
+import { Signal } from '../models/signal';
 import { ContactRoute } from '../models/contactRoute';
 import { PostedOpportunity } from '../models/postedOpportunity';
 import { Observation } from '../models/observation';
+import { accessSignalTypes } from '../models/researchAccessTypes';
 import { recordReviewStatuses } from '../models/modelPrimitives';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -138,8 +139,10 @@ function hasEvidence(record: any): boolean {
     (Array.isArray(record.sourceEvidenceIds) && record.sourceEvidenceIds.length > 0) ||
     !!record.sourceEvidenceId ||
     !!record.observationId ||
+    (Array.isArray(record.source?.evidenceIds) && record.source.evidenceIds.length > 0) ||
     (Array.isArray(record.sourceUrls) && record.sourceUrls.length > 0) ||
-    !!record.sourceUrl
+    !!record.sourceUrl ||
+    !!record.source?.url
   );
 }
 
@@ -147,7 +150,7 @@ function sourceNames(records: any[]): string[] {
   return Array.from(
     new Set(
       records
-        .map((record) => record.sourceName)
+        .map((record) => record.sourceName ?? record.source?.name)
         .filter(
           (sourceName): sourceName is string =>
             typeof sourceName === 'string' && sourceName.length > 0,
@@ -159,6 +162,7 @@ function sourceNames(records: any[]): string[] {
 function evidenceIdsForRecord(record: any): mongoose.Types.ObjectId[] {
   const rawIds = [
     ...(Array.isArray(record.sourceEvidenceIds) ? record.sourceEvidenceIds : []),
+    ...(Array.isArray(record.source?.evidenceIds) ? record.source.evidenceIds : []),
     ...(Array.isArray(record.sourceEvidenceId)
       ? record.sourceEvidenceId
       : [record.sourceEvidenceId]),
@@ -334,7 +338,7 @@ async function listAccessReviewEntitiesSnapshot(
   const groups = await projectionQuery;
   const total = await AdminAccessReviewProjection.countDocuments(filter, { session });
   const progressCounts: Array<{ remaining: number; reviewedToday: number }> = [];
-  for (const model of [EntryPathway, AccessSignal, ContactRoute, PostedOpportunity]) {
+  for (const model of [EntryPathway, Signal, ContactRoute, PostedOpportunity]) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const visibleQueueFilter =
@@ -342,7 +346,9 @@ async function listAccessReviewEntitiesSnapshot(
         ? { derivationKey: { $not: /^faculty-opportunity:/ } }
         : model === PostedOpportunity
           ? { submissionStatus: { $ne: 'DRAFT' } }
-          : {};
+          : model === Signal
+            ? { type: { $in: [...accessSignalTypes] } }
+            : {};
     const remaining = await model.countDocuments(
       {
         ...visibleQueueFilter,
@@ -436,7 +442,9 @@ export async function getAccessReviewEntity(researchEntityId: string): Promise<a
       })
         .sort({ archived: 1, updatedAt: -1 })
         .lean(),
-      AccessSignal.find({ researchEntityId: id }).sort({ archived: 1, observedAt: -1 }).lean(),
+      Signal.find({ researchEntityId: id, type: { $in: [...accessSignalTypes] } })
+        .sort({ archived: 1, observedAt: -1 })
+        .lean(),
       ContactRoute.find({ researchEntityId: id }).sort({ archived: 1, priority: 1 }).lean(),
       PostedOpportunity.find({
         researchEntityId: id,
@@ -488,7 +496,7 @@ function reviewModelForRecordType(type: AccessReviewRecordType): mongoose.Model<
     case 'entryPathway':
       return EntryPathway;
     case 'accessSignal':
-      return AccessSignal;
+      return Signal;
     case 'contactRoute':
       return ContactRoute;
     case 'postedOpportunity':

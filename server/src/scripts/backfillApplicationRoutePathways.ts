@@ -7,7 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ContactRoute } from '../models/contactRoute';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializeAccessForResearchGroup } from '../scrapers/accessMaterializer';
-import { upsertAccessSignal } from '../services/accessSignalService';
+import { upsertSignal } from '../services/signalService';
 import { upsertEntryPathway } from '../services/entryPathwayService';
 import { backfillApplicationRoutePathways } from './applicationRoutePathwayBackfillCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -153,7 +153,7 @@ async function main(): Promise<void> {
       researchEntityModel: ResearchEntity,
       materializeAccessForResearchGroup,
       upsertEntryPathway,
-      upsertAccessSignal,
+      upsertSignal,
     },
   );
   const output = buildApplicationRoutePathwayBackfillOutput(result, {

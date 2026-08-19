@@ -20,7 +20,7 @@ import type {
   EntryPathwayType,
   EvidenceStrength,
 } from '../models/researchAccessTypes';
-import { upsertAccessSignal, type UpsertAccessSignalInput } from '../services/accessSignalService';
+import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
 import { upsertContactRoute, type UpsertContactRouteInput } from '../services/contactRouteService';
 import { upsertEntryPathway, type UpsertEntryPathwayInput } from '../services/entryPathwayService';
 import {
@@ -63,7 +63,7 @@ export interface DerivedEntryPathway extends UpsertEntryPathwayInput {
   derivationKey: string;
 }
 
-export interface DerivedAccessSignal extends UpsertAccessSignalInput {
+export interface DerivedAccessSignal extends UpsertSignalInput {
   derivationKey: string;
 }
 
@@ -244,7 +244,7 @@ function makePathway(input: {
 function makeSignal(input: {
   researchEntityId: string;
   derivationKey: string;
-  signalType: AccessSignalType;
+  type: AccessSignalType;
   score: number;
   observations: AccessObservation[];
   entryPathwayId?: string;
@@ -255,7 +255,7 @@ function makeSignal(input: {
   return {
     researchEntityId: input.researchEntityId,
     derivationKey: input.derivationKey,
-    signalType: input.signalType,
+    type: input.type,
     confidence: confidenceLabel(input.score),
     confidenceScore: input.score,
     sourceEvidenceId: sourceEvidenceId || '',
@@ -333,7 +333,7 @@ function accessArtifactCandidatesFromDerived(
         researchEntityId: signal.researchEntityId,
         entryPathwayId: signal.entryPathwayId,
         derivationKey: signal.derivationKey,
-        signalType: signal.signalType,
+        signalType: signal.type,
         sourceEvidenceIds: [signal.sourceEvidenceId].filter((id): id is string => Boolean(id)),
         sourceUrls: [signal.sourceUrl].filter((url): url is string => Boolean(url)),
         sourceName: signal.sourceName,
@@ -414,7 +414,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CREDIT_FORMALIZATION_POSSIBLE',
-        signalType: 'CREDIT_FORMALIZATION_POSSIBLE',
+        type: 'CREDIT_FORMALIZATION_POSSIBLE',
         score,
         observations: independentStudyObservations,
         excerpt: courses
@@ -428,7 +428,7 @@ export function deriveAccessArtifactsFromObservations(
         makeSignal({
           researchEntityId,
           derivationKey: 'signal:FACULTY_SUPERVISES_STUDENT_PROJECTS:SENIOR_THESIS',
-          signalType: 'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+          type: 'FACULTY_SUPERVISES_STUDENT_PROJECTS',
           score,
           observations: independentStudyObservations,
           excerpt: seniorProjectCourses
@@ -462,7 +462,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CURRENT_UNDERGRADS',
-        signalType: 'CURRENT_UNDERGRADS',
+        type: 'CURRENT_UNDERGRADS',
         score,
         observations: currentUndergradObservations,
         excerpt: `${undergradCount(bestObservation(currentUndergradObservations)?.value)} current undergraduate(s) listed`,
@@ -511,7 +511,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
-        signalType: 'REACH_OUT_PLAUSIBLE',
+        type: 'REACH_OUT_PLAUSIBLE',
         score,
         observations: positiveAccepting,
         excerpt: quote || undefined,
@@ -532,7 +532,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:NOT_CURRENTLY_AVAILABLE',
-        signalType: 'NOT_CURRENTLY_AVAILABLE',
+        type: 'NOT_CURRENTLY_AVAILABLE',
         score,
         observations: negativeAccepting,
         excerpt: quote || undefined,
@@ -569,7 +569,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:APPLICATION_FORM_EXISTS:JOIN_PAGE',
-        signalType: 'APPLICATION_FORM_EXISTS',
+        type: 'APPLICATION_FORM_EXISTS',
         score,
         observations: joinPageObservations,
         excerpt: 'A join, opportunities, or application page was found.',
@@ -599,7 +599,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:MICROSITE',
-        signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+        type: 'CONTACT_INSTRUCTIONS_EXIST',
         score,
         observations: contactInstructionObservations,
         excerpt: publicExcerpt(bestObservation(contactInstructionObservations)?.value),
@@ -631,14 +631,14 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:PAST_UNDERGRADS',
-        signalType: 'PAST_UNDERGRADS',
+        type: 'PAST_UNDERGRADS',
         score,
         observations: pastAdviseeObservations,
       }),
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:FELLOWSHIP_COMPATIBLE',
-        signalType: 'FELLOWSHIP_COMPATIBLE',
+        type: 'FELLOWSHIP_COMPATIBLE',
         score,
         observations: pastAdviseeObservations,
       }),
@@ -678,7 +678,7 @@ export function deriveAccessArtifactsFromObservations(
       makeSignal({
         researchEntityId,
         derivationKey: 'signal:CONTACT_INSTRUCTIONS_EXIST:CONTACT_FIELDS',
-        signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+        type: 'CONTACT_INSTRUCTIONS_EXIST',
         score,
         observations: contactObservations,
         excerpt: contactSignalExcerpt({ contactName, contactRole, contactEmail }),
@@ -848,7 +848,7 @@ export function deriveIdentifiedLeadWaysIn(
       derivationKey: organizational
         ? 'signal:REACH_OUT_PLAUSIBLE:ORGANIZATIONAL_HOME'
         : 'signal:REACH_OUT_PLAUSIBLE:IDENTIFIED_FACULTY_LEAD',
-      signalType: 'REACH_OUT_PLAUSIBLE',
+      type: 'REACH_OUT_PLAUSIBLE',
       score,
       observations: evidenceObs,
       excerpt: organizational
@@ -1017,7 +1017,7 @@ async function resolveResearchEntityId(identifier: {
 }
 
 function pathwayDerivationKeyForSignal(signal: DerivedAccessSignal): string | undefined {
-  switch (signal.signalType) {
+  switch (signal.type) {
     case 'APPLICATION_FORM_EXISTS':
       return 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE';
     case 'CURRENT_UNDERGRADS':
@@ -1133,7 +1133,7 @@ export async function materializeAccessForResearchGroup(
 
   for (const signal of artifacts.accessSignals) {
     const linkedPathwayKey = pathwayDerivationKeyForSignal(signal);
-    await upsertAccessSignal({
+    await upsertSignal({
       ...signal,
       entryPathwayId:
         signal.entryPathwayId ||
