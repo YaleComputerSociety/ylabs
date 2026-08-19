@@ -41,4 +41,4 @@ Iterate on canonical product surfaces instead of creating student-facing version
 ## General implementation rules
 
 - When the user reports a problem, treat it as a signal to fix the upstream cause when feasible. Do not settle for a local symptom patch if a durable code, data, test, or workflow change would prevent the same class of issue from recurring.
-- Prefer first-class product-model collections (`ResearchEntity`, `EntryPathway`, `PostedOpportunity`, `AccessSignal`, `ContactRoute`) over embedding pathways/signals/routes inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.
+- Prefer first-class product-model collections (`ResearchEntity`, `EntryPathway`, `PostedOpportunity`, `Signal`, `ContactRoute`) over embedding pathways/signals/routes inside `ResearchEntity`. Treat remaining `ResearchGroup`/`lab`/`researchGroupId` naming as migration residue unless the file is explicitly part of rollback/migration support.

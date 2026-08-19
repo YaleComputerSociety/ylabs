@@ -12,7 +12,7 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 
 - [`server/src/models/researchGroup.ts`](../server/src/models/researchGroup.ts)
 - [`server/src/models/entryPathway.ts`](../server/src/models/entryPathway.ts)
-- [`server/src/models/accessSignal.ts`](../server/src/models/accessSignal.ts)
+- [`server/src/models/signal.ts`](../server/src/models/signal.ts)
 - [`server/src/models/contactRoute.ts`](../server/src/models/contactRoute.ts)
 - [`server/src/models/postedOpportunity.ts`](../server/src/models/postedOpportunity.ts)
 - [`server/src/models/adminGrant.ts`](../server/src/models/adminGrant.ts)
