@@ -120,8 +120,13 @@ The programs, fellowships, grants, and funding page (separate adjacent domain).
 
 ## Migration status and open work
 
-The read path for lab membership and lead identity is canonical, and the scraper materializer now writes canonical identity and role rows continuously alongside the legacy `ResearchGroupMember` writes (S3, #353), so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
+Search and browse ranking read the canonical roster (#331), and the scraper materializer now writes canonical identity and role rows continuously alongside the legacy `ResearchGroupMember` writes (S3, #353), so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
 This is an additive dual-write: the legacy `ResearchGroupMember` writes are intentionally left in place until they are retired in S5 (#361), and the continuous writes mirror the gated batch output exactly so a batch rebuild stays a no-op superset.
+
+The student-facing research-detail page (`getResearchGroupDetail`) also reads the canonical roster now (S4a, #360): it derives members from `getResearchEntityRoster` (`RoleAssignment` plus `Researcher` and `Account`) instead of legacy `ResearchGroupMember`/`FacultyMember`/`User`.
+Because canonical `RoleAssignment.evidenceClaimIds` is empty (full `EvidenceClaim` canonicalization needs the frozen `SourceDocument` plus predicate-registry machinery), the roster-freshness disclosure is fed by a bounded `rosterProvenance` subdoc on `RoleAssignment` (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) populated at each materializer membership write-site.
+This subdoc is a deliberate, pragmatic deviation from the ratified `EvidenceClaim` provenance model, scoped to keep the existing freshness logic working until the heavy claim-graph is built.
+The residual internal roster readers (S4b) and retiring the legacy `ResearchGroupMember` write path (S5, #361) are the remaining follow-ups.
 
 Tracked issues:
 
