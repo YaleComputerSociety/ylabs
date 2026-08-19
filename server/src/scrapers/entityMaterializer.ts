@@ -798,7 +798,10 @@ async function materializeResearchGroupMember(
       isCurrentMember: true,
       confidence: patchSet.confidence,
       startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
-      rosterProvenance: canonicalRosterProvenanceFromSet(patchSet),
+      rosterProvenance: canonicalRosterProvenanceFromSet(
+        patchSet,
+        textValue(resolved.evidenceStatus?.value),
+      ),
     },
     {
       netid: user?.netid,
@@ -879,12 +882,15 @@ async function materializeInferredPiMembership(
 
 function canonicalRosterProvenanceFromSet(
   patchSet: Record<string, unknown>,
+  fallbackEvidenceStatus?: string,
 ): RoleAssignmentRosterProvenance {
   return {
     sourceName: textValue(patchSet.sourceName) || undefined,
     sourceUrl: textValue(patchSet.sourceUrl) || undefined,
     profileUrl: textValue(patchSet.profileUrl) || undefined,
     sectionLabel: textValue(patchSet.sectionLabel) || undefined,
+    evidenceStatus: textValue(patchSet.evidenceStatus) || fallbackEvidenceStatus || undefined,
+    membershipKey: textValue(patchSet.membershipKey) || undefined,
     observedAt: patchSet.lastObservedAt instanceof Date ? patchSet.lastObservedAt : undefined,
     freshnessExpiresAt:
       patchSet.freshnessExpiresAt instanceof Date ? patchSet.freshnessExpiresAt : undefined,

@@ -72,6 +72,9 @@ const cleanRosterProvenance = (
   if (trimmed(provenance.sourceUrl)) cleaned.sourceUrl = trimmed(provenance.sourceUrl);
   if (trimmed(provenance.profileUrl)) cleaned.profileUrl = trimmed(provenance.profileUrl);
   if (trimmed(provenance.sectionLabel)) cleaned.sectionLabel = trimmed(provenance.sectionLabel);
+  if (trimmed(provenance.evidenceStatus))
+    cleaned.evidenceStatus = trimmed(provenance.evidenceStatus);
+  if (trimmed(provenance.membershipKey)) cleaned.membershipKey = trimmed(provenance.membershipKey);
   if (provenance.observedAt instanceof Date) cleaned.observedAt = provenance.observedAt;
   if (provenance.freshnessExpiresAt instanceof Date) {
     cleaned.freshnessExpiresAt = provenance.freshnessExpiresAt;

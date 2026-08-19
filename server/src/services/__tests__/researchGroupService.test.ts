@@ -999,6 +999,113 @@ describe('getResearchGroupDetail', () => {
     }
   });
 
+  it('retains fresh official-roster canonical members with roster evidence and drops stale ones', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const freshPersonId = new mongoose.Types.ObjectId();
+    const stalePersonId = new mongoose.Types.ObjectId();
+    const freshAccountId = new mongoose.Types.ObjectId();
+    const staleAccountId = new mongoose.Types.ObjectId();
+    const sourceUrl = 'https://medicine.yale.edu/lab/fixture/members/';
+    const freshMembershipKey = 'official-profile:fresh|affiliated';
+    const staleMembershipKey = 'official-profile:stale|affiliated';
+    const observedAt = new Date('2026-08-14T00:00:00Z');
+    const rosterProvenanceBase = {
+      sourceName: 'official-research-home-roster',
+      sourceUrl,
+      profileUrl: 'https://medicine.yale.edu/profile/fixture/',
+      evidenceStatus: 'verified',
+      observedAt,
+    };
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'official-roster-lab',
+        name: 'Official Roster Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+        rosterEnrichment: {
+          state: 'current',
+          memberKeys: [freshMembershipKey],
+          sourceUrl,
+          observedAt: '2026-08-14T00:00:00Z',
+        },
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: freshPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+          archived: false,
+          rosterProvenance: {
+            ...rosterProvenanceBase,
+            membershipKey: freshMembershipKey,
+            freshnessExpiresAt: new Date('2999-01-01T00:00:00Z'),
+          },
+        },
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: stalePersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'AFFILIATED',
+          state: 'CURRENT',
+          confidence: 0.9,
+          reviewStatus: 'APPROVED',
+          archived: false,
+          rosterProvenance: {
+            ...rosterProvenanceBase,
+            membershipKey: staleMembershipKey,
+            freshnessExpiresAt: new Date('2000-01-01T00:00:00Z'),
+          },
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: freshPersonId,
+          displayName: 'Fresh Scholar',
+          accountId: freshAccountId,
+          profile: { title: 'Research Scientist' },
+          profileLinks: [],
+        },
+        {
+          _id: stalePersonId,
+          displayName: 'Stale Scholar',
+          accountId: staleAccountId,
+          profile: { title: 'Research Scientist' },
+          profileLinks: [],
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([
+        { _id: freshAccountId, netid: 'fresh1', email: 'fresh.scholar@example.edu' },
+        { _id: staleAccountId, netid: 'stale1', email: 'stale.scholar@example.edu' },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('official-roster-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user).toMatchObject({ fname: 'Fresh', lname: 'Scholar' });
+    expect(detail?.members[0]).toHaveProperty('rosterEvidence');
+    expect(
+      (detail?.members[0] as { rosterEvidence?: { sourceUrl?: string } }).rosterEvidence,
+    ).toMatchObject({
+      sourceUrl,
+    });
+  });
+
   it('removes private listing ownership and contact fields from public detail payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.researchEntityFindOne.mockReturnValue(

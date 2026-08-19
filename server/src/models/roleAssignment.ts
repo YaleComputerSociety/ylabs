@@ -39,6 +39,8 @@ export interface RoleAssignmentRosterProvenance {
   sourceUrl?: string;
   profileUrl?: string;
   sectionLabel?: string;
+  evidenceStatus?: string;
+  membershipKey?: string;
   observedAt?: Date;
   freshnessExpiresAt?: Date;
 }
@@ -155,6 +157,8 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
           sourceUrl: { type: String, trim: true, maxlength: 2048 },
           profileUrl: { type: String, trim: true, maxlength: 2048 },
           sectionLabel: { type: String, trim: true, maxlength: 240 },
+          evidenceStatus: { type: String, trim: true, maxlength: 240 },
+          membershipKey: { type: String, trim: true, maxlength: 512 },
           observedAt: { type: Date },
           freshnessExpiresAt: { type: Date },
         },

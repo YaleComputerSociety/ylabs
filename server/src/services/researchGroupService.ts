@@ -1267,6 +1267,13 @@ const canonicalRosterMemberRow = (entry: ResearchEntityRosterEntry): Record<stri
   identityKey: researchGroupDocumentId(entry.personId),
   confidence: entry.confidence,
   reviewStatus: entry.reviewStatus,
+  ...(entry.name ? { name: entry.name } : {}),
+  ...(entry.rosterProvenance?.evidenceStatus
+    ? { evidenceStatus: entry.rosterProvenance.evidenceStatus }
+    : {}),
+  ...(entry.rosterProvenance?.membershipKey
+    ? { membershipKey: entry.rosterProvenance.membershipKey }
+    : {}),
   ...(entry.startedAt ? { startedAt: entry.startedAt } : {}),
   ...(entry.endedAt ? { endedAt: entry.endedAt } : {}),
   ...(entry.rosterProvenance?.sourceName ? { sourceName: entry.rosterProvenance.sourceName } : {}),
@@ -1401,11 +1408,7 @@ function isVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
 }
 
 export type PublicRosterDisclosureStatus =
-  | 'current'
-  | 'partial'
-  | 'no-verified-data'
-  | 'withheld'
-  | 'optional-source-failure';
+  'current' | 'partial' | 'no-verified-data' | 'withheld' | 'optional-source-failure';
 
 export interface PublicRosterDisclosure {
   status: PublicRosterDisclosureStatus;
@@ -2370,6 +2373,16 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   }).lean();
   if (!group) return null;
 
+  const ROLE_PRIORITY: Record<string, number> = {
+    pi: 0,
+    'co-pi': 1,
+    director: 2,
+    'co-director': 3,
+    'core-faculty': 4,
+    affiliated: 5,
+    alumni: 6,
+  };
+
   const rosterEntries = await getResearchEntityRoster((group as any)._id);
   const currentRosterEntries = rosterEntries
     .filter((entry) => entry.state !== 'HISTORICAL')
@@ -2382,17 +2395,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
           (group as any).rosterEnrichment,
         ),
     )
+    .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99))
     .slice(0, MAX_PUBLIC_DETAIL_MEMBERS);
-
-  const ROLE_PRIORITY: Record<string, number> = {
-    pi: 0,
-    'co-pi': 1,
-    director: 2,
-    'co-director': 3,
-    'core-faculty': 4,
-    affiliated: 5,
-    alumni: 6,
-  };
 
   const canonicalMembers = currentRosterEntries
     .map((entry) => ({
