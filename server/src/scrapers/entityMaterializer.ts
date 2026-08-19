@@ -37,6 +37,7 @@ import {
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
 } from './undergraduateLogisticsMaterializer';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
+import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -2332,6 +2333,9 @@ export async function materializeEntity(
       if (provenance) set['fieldProvenance.shortDescription'] = provenance;
       fieldsWritten++;
     }
+  }
+  if (isResearchEntityObservationType(entityType)) {
+    await applyResearchEntityOrgUnitCanonicalization(set);
   }
   if (entityType === 'paper') {
     const paperObs = materializationObs.map((o: any) => ({
