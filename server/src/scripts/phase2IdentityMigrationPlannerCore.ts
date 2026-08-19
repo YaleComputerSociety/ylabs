@@ -8,6 +8,12 @@ import type {
   RoleAssignmentRole,
   RoleAssignmentState,
 } from '../models/roleAssignment';
+import {
+  CANONICAL_ROLE_BY_LEGACY,
+  clampConfidence,
+  reviewStatusForLegacyMembership,
+  roleStateForLegacyMembership as roleState,
+} from '../models/canonicalRoleMapping';
 
 export interface LegacyIdentityUser {
   id: string;
@@ -227,20 +233,6 @@ export const MAX_PHASE2_PROFILE_URL_DEPTH = 4;
 const MAX_PHASE2_PROFILE_URL_CHILDREN_PER_NODE = 100;
 
 const PLACEHOLDER_TEXT = new Set(['', 'na', 'n/a', 'none', 'null', 'unknown', 'undefined']);
-const CANONICAL_ROLE_BY_LEGACY: Readonly<Record<string, RoleAssignmentRole>> = Object.freeze({
-  pi: 'PI',
-  'co-pi': 'CO_PI',
-  director: 'DIRECTOR',
-  'co-director': 'CO_DIRECTOR',
-  'core-faculty': 'CORE_FACULTY',
-  affiliated: 'AFFILIATED',
-  affiliate: 'AFFILIATED',
-  alumni: 'AFFILIATED',
-  staff: 'STAFF',
-  postdoc: 'POSTDOC',
-  'grad-student': 'GRADUATE_STUDENT',
-  undergrad: 'UNDERGRADUATE',
-});
 
 function compareCodePoints(left: string, right: string): number {
   return left === right ? 0 : left < right ? -1 : 1;
@@ -892,22 +884,6 @@ function normalizedIsoDate(value: Date | string | null | undefined): string | un
   return Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
 }
 
-function roleState(membership: LegacyIdentityMembership): RoleAssignmentState {
-  if (
-    (membership.evidenceStatus || '').trim().toLowerCase() === 'historical' ||
-    membership.isCurrentMember === false ||
-    (membership.role || '').trim().toLowerCase() === 'alumni' ||
-    membership.endedAt ||
-    membership.leftAt
-  ) {
-    return 'HISTORICAL';
-  }
-  if (membership.evidenceStatus === 'verified' && membership.isCurrentMember === true) {
-    return 'CURRENT';
-  }
-  return 'UNKNOWN';
-}
-
 function plannedRoles(args: {
   memberships: LegacyIdentityMembership[];
   knownResearchEntityIds: Set<string>;
@@ -1013,14 +989,8 @@ function plannedRoles(args: {
       state,
       ...(startedAt ? { startedAt } : {}),
       ...(state === 'HISTORICAL' && endedAt ? { endedAt } : {}),
-      confidence: Math.min(1, Math.max(0, Number(membership.confidence) || 0)),
-      reviewStatus:
-        membership.archived !== true &&
-        state === 'CURRENT' &&
-        resolution === 'CANONICAL_SOURCE_REFERENCE' &&
-        membership.evidenceStatus === 'verified'
-          ? 'APPROVED'
-          : 'UNREVIEWED',
+      confidence: clampConfidence(membership.confidence),
+      reviewStatus: reviewStatusForLegacyMembership(membership, state, resolution),
       resolution,
     });
   }

@@ -38,6 +38,13 @@ import {
 } from './undergraduateLogisticsMaterializer';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
+import {
+  archiveCanonicalRoleAssignmentsForPersons,
+  archiveSupersededCanonicalRoleAssignments,
+  materializeCanonicalMembership,
+  resolveCanonicalResearcherId,
+  type CanonicalMemberIdentity,
+} from './canonicalMembershipMaterializer';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -538,7 +545,7 @@ async function findUniqueUserForResearchGroupMember(
       { website: profileUrl },
     ],
   })
-    .select('_id facultyMemberId')
+    .select('_id facultyMemberId netid email orcid')
     .limit(2)
     .lean();
   return users.length === 1 ? users[0] : null;
@@ -780,6 +787,25 @@ async function materializeResearchGroupMember(
 
   const existing = await ResearchGroupMember.findOne(patch.filter).select('_id').lean();
   await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+  const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
+  await materializeCanonicalMembership(
+    researchEntityId,
+    {
+      legacyRole: String(patch.filter.role || ''),
+      displayName: textValue(patchSet.name),
+      evidenceStatus: textValue(resolved.evidenceStatus?.value),
+      isCurrentMember: true,
+      confidence: patchSet.confidence,
+      startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
+    },
+    {
+      netid: user?.netid,
+      email: user?.email,
+      orcid: user?.orcid,
+      displayName: textValue(patchSet.name),
+      hasCanonicalSourceReference: Boolean(patch.filter.userId || patch.filter.facultyMemberId),
+    },
+  );
   return {
     entityType: 'researchGroupMember',
     entityId: materializerDocumentId(entity._id),
@@ -820,6 +846,7 @@ async function materializeInferredPiMembership(
     const patch = buildInferredPiMemberUpsert(researchEntityId, observation);
     if (!patch) continue;
     await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+    await materializeCanonicalPiMembership(researchEntityId, patch, idValue(observation.value));
   }
 
   const piKeyObservations = observations.filter((obs) => obs.field === 'inferredPiUserKey');
@@ -840,7 +867,41 @@ async function materializeInferredPiMembership(
     });
     if (!patch) continue;
     await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+    await materializeCanonicalPiMembership(
+      researchEntityId,
+      patch,
+      materializerDocumentId(user._id),
+    );
   }
+}
+
+async function materializeCanonicalPiMembership(
+  researchEntityId: string,
+  patch: { filter: Record<string, any>; update: any },
+  userId: string,
+): Promise<void> {
+  const canonicalUser = userId
+    ? await User.findById(userId).select('_id facultyMemberId netid email orcid').lean()
+    : null;
+  const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
+  const displayName = textValue(patchSet.name);
+  await materializeCanonicalMembership(
+    researchEntityId,
+    {
+      legacyRole: String(patch.filter.role || ''),
+      displayName,
+      isCurrentMember: true,
+      confidence: patchSet.confidence,
+      startedAt: (patch.update as { $setOnInsert?: { startedAt?: Date } }).$setOnInsert?.startedAt,
+    },
+    {
+      netid: (canonicalUser as any)?.netid,
+      email: (canonicalUser as any)?.email,
+      orcid: (canonicalUser as any)?.orcid,
+      displayName,
+      hasCanonicalSourceReference: Boolean(patch.filter.userId || patch.filter.facultyMemberId),
+    },
+  );
 }
 
 export interface InferredDirectorMaterializationResult {
@@ -947,11 +1008,34 @@ export async function materializeInferredDirectorMembership(
     { upsert: true },
   );
 
+  const directorIdentity: CanonicalMemberIdentity = {
+    netid: user.netid,
+    email: user.email,
+    orcid: user.orcid,
+    displayName: name,
+    hasCanonicalSourceReference: true,
+  };
+  await materializeCanonicalMembership(
+    researchEntityId,
+    {
+      legacyRole: role,
+      displayName: name,
+      isCurrentMember: true,
+      confidence,
+      startedAt: observedAt,
+    },
+    directorIdentity,
+  );
+
   const removal = await ResearchGroupMember.deleteMany({
     researchEntityId,
     userId,
     role: { $in: SUPERSEDED_BY_DIRECTOR_ROLES },
   });
+  const supersededPersonId = await resolveCanonicalResearcherId(directorIdentity);
+  if (supersededPersonId) {
+    await archiveSupersededCanonicalRoleAssignments(researchEntityId, supersededPersonId);
+  }
 
   return {
     written: true,
@@ -2690,6 +2774,9 @@ async function reconcileOfficialRosterSnapshotsFromRun(
     const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
     if (!filter) continue;
     const endedAt = snapshotObservation.observedAt || new Date();
+    const departingMembers = await ResearchGroupMember.find(filter)
+      .select('userId facultyMemberId name')
+      .lean();
     const result = await ResearchGroupMember.updateMany(filter, {
       $set: {
         archived: true,
@@ -2705,6 +2792,26 @@ async function reconcileOfficialRosterSnapshotsFromRun(
       },
     });
     archived += result.modifiedCount || 0;
+    const departingPersonIds = (
+      await Promise.all(
+        (departingMembers as any[]).map(async (member) => {
+          const canonicalUser = member.userId
+            ? await User.findById(member.userId).select('netid email orcid').lean()
+            : null;
+          return resolveCanonicalResearcherId({
+            netid: (canonicalUser as any)?.netid,
+            email: (canonicalUser as any)?.email,
+            orcid: (canonicalUser as any)?.orcid,
+            displayName: member.name,
+          });
+        }),
+      )
+    ).filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+    await archiveCanonicalRoleAssignmentsForPersons(
+      materializerDocumentId(entity._id),
+      departingPersonIds,
+      endedAt,
+    );
   }
   return archived;
 }

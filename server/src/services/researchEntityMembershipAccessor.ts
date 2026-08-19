@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Account } from '../models/account';
 import { Researcher, type ResearcherDisplayProfile } from '../models/researcher';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 
 export interface ResearchEntityRosterEntry {
@@ -26,19 +27,6 @@ export interface ResearchEntityRosterEntry {
   confidence: number;
   reviewStatus: string;
 }
-
-const LEGACY_ROLE_BY_CANONICAL: Record<RoleAssignmentRole, string> = {
-  PI: 'pi',
-  CO_PI: 'co-pi',
-  DIRECTOR: 'director',
-  CO_DIRECTOR: 'co-director',
-  CORE_FACULTY: 'core-faculty',
-  AFFILIATED: 'affiliated',
-  STAFF: 'staff',
-  POSTDOC: 'postdoc',
-  GRADUATE_STUDENT: 'grad-student',
-  UNDERGRADUATE: 'undergrad',
-};
 
 const uniqueObjectIds = (values: unknown[]): mongoose.Types.ObjectId[] => {
   const seen = new Set<string>();
