@@ -120,13 +120,14 @@ The programs, fellowships, grants, and funding page (separate adjacent domain).
 
 ## Migration status and open work
 
-The read path for lab membership and lead identity is canonical; the write path is not, which is a live staleness bug until the materializer writes canonical.
+The read path for lab membership and lead identity is canonical, and the scraper materializer now writes canonical identity and role rows continuously alongside the legacy `ResearchGroupMember` writes (S3, #353), so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
+This is an additive dual-write: the legacy `ResearchGroupMember` writes are intentionally left in place until they are retired in S5 (#361), and the continuous writes mirror the gated batch output exactly so a batch rebuild stays a no-op superset.
 
 Tracked issues:
 
 - Discoverability now: search relevance #345, hybrid or embedder #346, browse filters #347, matched professor #341 area.
 - Data quality now: website coverage #348, research-area coverage #349, dedupe duplicate labs #350, department canonicalization and `OrgUnit` seed #354.
-- Model refactor: identity split #206, clean `ResearchEntity` schema #208, dangling `ResearchGroup` ref #352, remove legacy `description` #351, write path to canonical #353.
+- Model refactor: identity split #206, clean `ResearchEntity` schema #208, dangling `ResearchGroup` ref #352, remove legacy `description` #351, retire legacy `ResearchGroupMember` writes #361 (S5).
 - Superseded: PR #344 read canonical `RoleAssignment`, which is now removed in favor of embedded `members`; close it.
 
 Verification gates for any cutover: source and target counts with explained differences, no orphan references, no dual identities in public DTOs, no public contact leakage, source attribution for material claims, deterministic conflict handling, official-link validity with graceful failure, search relevance parity, correct visibility filtering, bounded detail payloads, private-plan isolation, no paper dependency, and rollback readiness before any collection drop.
