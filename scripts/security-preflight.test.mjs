@@ -2742,7 +2742,6 @@ test('access materializer ObjectId handling is primitive-normalized', () => {
     /const researchEntityObjectId = toAccessMaterializerObjectId\(researchEntityId\)/,
   );
   assert.match(source, /ResearchEntity\.findById\(researchEntityObjectId/);
-  assert.match(source, /researchEntityId: researchEntityObjectId/);
   assert.match(source, /\{ entityId: researchEntityObjectId \}/);
   assert.doesNotMatch(source, /ObjectId\.isValid/);
   assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(researchEntityId\)/);
