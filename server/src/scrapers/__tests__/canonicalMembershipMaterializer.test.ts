@@ -241,6 +241,34 @@ describe('canonical membership materialization (integration)', () => {
     expect(await RoleAssignment.countDocuments({})).toBe(1);
   });
 
+  it('does not create a new researcher on each run when a name-only member collides with an identified one', async () => {
+    const id = entityId();
+    await Researcher.create({
+      displayName: 'Zeta Six',
+      accountId: new mongoose.Types.ObjectId(),
+      profileLinks: [],
+      archived: false,
+    });
+    const facts = {
+      legacyRole: 'staff',
+      displayName: 'Zeta Six',
+      isCurrentMember: true,
+      confidence: 0.5,
+    };
+    const identity = { displayName: 'Zeta Six' };
+    await materializeCanonicalMembership(id, facts, identity);
+    await materializeCanonicalMembership(id, facts, identity);
+    await materializeCanonicalMembership(id, facts, identity);
+    expect(await Researcher.countDocuments({ displayName: 'Zeta Six' })).toBe(2);
+    expect(
+      await Researcher.countDocuments({
+        displayName: 'Zeta Six',
+        accountId: { $exists: false },
+      }),
+    ).toBe(1);
+    expect(await RoleAssignment.countDocuments({})).toBe(1);
+  });
+
   it('archives departing members to HISTORICAL while keeping them visible (archived:false)', async () => {
     const id = entityId();
     await materializeCanonicalMembership(

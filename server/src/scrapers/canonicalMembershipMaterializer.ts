@@ -199,22 +199,24 @@ async function resolveOrCreateResearcherId(
   }
 
   if (!displayName) return undefined;
-  const nameMatches = await Researcher.find({ displayName, archived: { $ne: true } })
-    .select('_id accountId identifiers')
-    .limit(2)
-    .lean();
-  if (nameMatches.length === 1) {
-    const match = nameMatches[0] as {
-      _id?: unknown;
-      accountId?: unknown;
-      identifiers?: { orcid?: unknown };
-    };
-    if (!toObjectId(match.accountId) && !match.identifiers?.orcid) {
-      return toObjectId(match._id);
+  const nameOnlyFilter = {
+    displayName,
+    archived: { $ne: true },
+    accountId: { $exists: false },
+    'identifiers.orcid': { $exists: false },
+  };
+  const existingNameOnly = await Researcher.findOne(nameOnlyFilter).select('_id').lean();
+  if (existingNameOnly) return toObjectId((existingNameOnly as { _id?: unknown })._id);
+  try {
+    const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
+    return toObjectId(created._id);
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      const fallback = await Researcher.findOne(nameOnlyFilter).select('_id').lean();
+      return toObjectId((fallback as { _id?: unknown } | null)?._id);
     }
+    throw error;
   }
-  const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
-  return toObjectId(created._id);
 }
 
 export async function resolveCanonicalResearcherId(
