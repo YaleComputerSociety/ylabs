@@ -268,11 +268,11 @@ describe('orphaned Observation reference repair core', () => {
   it('distinguishes a canonical semantic replacement from an in-place refresh', () => {
     const classified = classifyOrphanReference({
       occurrence: occurrence({
-        ownerCollection: 'contact_routes',
+        ownerCollection: 'signals',
         field: 'sourceEvidenceId',
         referenceKey: undefined,
         researchEntityId: '555555555555555555555555',
-        ownerDerivationKey: 'route:FACULTY_PI:OFFICIAL_PROFILE:synthetic',
+        ownerDerivationKey: 'signal:REACH_OUT_PLAUSIBLE:synthetic',
       }),
       owner: {},
       candidates: [],

@@ -84,7 +84,6 @@ describe('buildResearchQualitySearchReviewRow', () => {
         'WEAK_SOURCE_DOMAIN',
         'DUPLICATE_OR_DISAMBIGUATION_RISK',
         'THIN_PATHWAY_EVIDENCE',
-        'THIN_CONTACT_EVIDENCE',
         'SEMANTIC_EXPLAINABILITY_GAP',
       ]),
     );

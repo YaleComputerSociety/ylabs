@@ -5,10 +5,7 @@ export const ADMIN_ACCESS_REVIEW_PROJECTION_STATE_ID = 'admin-access-review';
 
 const accessReviewCountSchema = new mongoose.Schema(
   {
-    entryPathways: { type: Number, required: true, min: 0, default: 0 },
     accessSignals: { type: Number, required: true, min: 0, default: 0 },
-    contactRoutes: { type: Number, required: true, min: 0, default: 0 },
-    postedOpportunities: { type: Number, required: true, min: 0, default: 0 },
   },
   { _id: false },
 );
