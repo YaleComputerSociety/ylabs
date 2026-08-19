@@ -82,6 +82,40 @@ describe('assessResearchEntityEvidenceCoverage', () => {
     ]);
   });
 
+  it('recognizes a canonical roster lead identified only by personId and netid', () => {
+    const assessment = assessResearchEntityEvidenceCoverage({
+      entity: {
+        name: 'Ho Lab',
+        sourceUrls: ['https://medicine.yale.edu/lab/ho/'],
+      },
+      listings: [],
+      members: [{ role: 'pi', personId: 'person-abc', netid: 'ab123' }],
+      accessSignals: [],
+      contactRoutes: [],
+      observations: [],
+    });
+
+    expect(assessment.claimStates.lead).toBe('supported');
+    expect(assessment.blockers).not.toContain('missing_verified_lead');
+  });
+
+  it('still treats an empty roster as a missing verified lead', () => {
+    const assessment = assessResearchEntityEvidenceCoverage({
+      entity: {
+        name: 'Ho Lab',
+        sourceUrls: ['https://medicine.yale.edu/lab/ho/'],
+      },
+      listings: [],
+      members: [],
+      accessSignals: [],
+      contactRoutes: [],
+      observations: [],
+    });
+
+    expect(assessment.claimStates.lead).toBe('missing');
+    expect(assessment.blockers).toContain('missing_verified_lead');
+  });
+
   it('classifies independently sourced official lab records as ready candidates', () => {
     const assessment = assessResearchEntityEvidenceCoverage({
       entity: {
@@ -92,7 +126,9 @@ describe('assessResearchEntityEvidenceCoverage', () => {
         websiteUrl: 'https://medicine.yale.edu/lab/ho/',
       },
       listings: [],
-      members: [{ role: 'pi', userId: 'fixture-user', sourceUrl: 'https://medicine.yale.edu/lab/ho/' }],
+      members: [
+        { role: 'pi', userId: 'fixture-user', sourceUrl: 'https://medicine.yale.edu/lab/ho/' },
+      ],
       accessSignals: [{ signalType: 'UNDERGRAD_PARTICIPATION', confidence: 'HIGH' }],
       contactRoutes: [{ routeType: 'OFFICIAL_PAGE', url: 'https://medicine.yale.edu/lab/ho/' }],
       observations: [

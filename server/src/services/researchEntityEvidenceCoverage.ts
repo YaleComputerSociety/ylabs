@@ -5,8 +5,8 @@ import { ContactRoute } from '../models/contactRoute';
 import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
 
 export type EvidenceCoverageTier = 'thin' | 'partial' | 'ready_candidate';
 export type EvidenceClaimState = 'missing' | 'weak' | 'supported';
@@ -83,9 +83,10 @@ export interface EvidenceCoverageImpactReport {
 }
 
 export interface EvidenceCoverageImpactDeps {
-  loadResearchEntityContext: (
-    identifier: { entityId?: string; entityKey?: string },
-  ) => Promise<EvidenceCoverageInput | null>;
+  loadResearchEntityContext: (identifier: {
+    entityId?: string;
+    entityKey?: string;
+  }) => Promise<EvidenceCoverageInput | null>;
 }
 
 const LISTING_SOURCE_NAMES = new Set(['ylabs-listing', 'listing', 'legacy-listing']);
@@ -106,14 +107,20 @@ const unique = <T extends string>(values: T[]): T[] => Array.from(new Set(values
 const hasHttpUrl = (value: unknown): boolean => /^https?:\/\//i.test(textValue(value));
 
 const rowHasHttpUrl = (row: Record<string, any>): boolean =>
-  [row.url, row.websiteUrl, row.website, row.sourceUrl, ...(Array.isArray(row.websites) ? row.websites : [])].some(
-    hasHttpUrl,
-  );
+  [
+    row.url,
+    row.websiteUrl,
+    row.website,
+    row.sourceUrl,
+    ...(Array.isArray(row.websites) ? row.websites : []),
+  ].some(hasHttpUrl);
 
 const hasEntitySourceUrl = (entity: Record<string, any>): boolean =>
-  [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])].some(
-    hasHttpUrl,
-  );
+  [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].some(hasHttpUrl);
 
 const isListingObservation = (observation: Record<string, any>): boolean =>
   LISTING_SOURCE_NAMES.has(textValue(observation.sourceName));
@@ -124,10 +131,12 @@ const nonListingObservations = (observations: Array<Record<string, any>>) =>
 const hasUsefulLead = (members: Array<Record<string, any>>): boolean =>
   members.some((member) =>
     Boolean(
-      member.userId ||
+      textValue(member.name) ||
+        textValue(member.netid) ||
+        member.personId ||
+        member.userId ||
         member.facultyMemberId ||
         member.user?._id ||
-        textValue(member.name) ||
         textValue(member.user?.netid),
     ),
   );
@@ -174,10 +183,15 @@ function descriptionState(
     website: entity.website,
     websiteUrl: entity.websiteUrl,
   });
-  const usefulDescription = quality.full.isUseful || quality.short.isUseful || textValue(entity.description).length >= 80;
+  const usefulDescription =
+    quality.full.isUseful || quality.short.isUseful || textValue(entity.description).length >= 80;
   const sources = descriptionObservationSources(observations);
-  const hasNonListingDescriptionObservation = sources.some((observation) => !isListingObservation(observation));
-  const sourceBacked = usefulDescription && (hasNonListingDescriptionObservation || (sources.length === 0 && hasEntitySourceUrl(entity)));
+  const hasNonListingDescriptionObservation = sources.some(
+    (observation) => !isListingObservation(observation),
+  );
+  const sourceBacked =
+    usefulDescription &&
+    (hasNonListingDescriptionObservation || (sources.length === 0 && hasEntitySourceUrl(entity)));
 
   if (sourceBacked) return { state: 'supported', rejectedFields, sourceBacked: true };
   if (usefulDescription) return { state: 'weak', rejectedFields, sourceBacked: false };
@@ -193,13 +207,18 @@ export function assessResearchEntityEvidenceCoverage(
   const accessSignals = input.accessSignals || [];
   const contactRoutes = input.contactRoutes || [];
   const observations = input.observations || [];
-  const nonListingSourceCount = new Set(nonListingObservations(observations).map((row) => textValue(row.sourceName))).size;
+  const nonListingSourceCount = new Set(
+    nonListingObservations(observations).map((row) => textValue(row.sourceName)),
+  ).size;
   const listingOnlyProfile = listings.length > 0 && nonListingSourceCount === 0;
   const description = descriptionState(entity, observations);
   const hasLead = hasUsefulLead(members);
   const hasContactRoute = contactRoutes.some(rowHasHttpUrl);
   const hasAccess = accessSignals.length > 0;
-  const hasAction = hasContactRoute || listings.some(rowHasHttpUrl) || accessSignals.some((signal) => textValue(signal.bestNextStep));
+  const hasAction =
+    hasContactRoute ||
+    listings.some(rowHasHttpUrl) ||
+    accessSignals.some((signal) => textValue(signal.bestNextStep));
   const blockers: EvidenceCoverageBlocker[] = [];
   const suggestedSourceTypes: SuggestedSourceType[] = [];
 
@@ -298,7 +317,11 @@ function overlayObservation(
   const accessSignals = [...(next.accessSignals || [])];
   const contactRoutes = [...(next.contactRoutes || [])];
 
-  if (['description', 'shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(field)) {
+  if (
+    ['description', 'shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
+      field,
+    )
+  ) {
     entity[field] = value;
   }
   if (field === 'sourceUrls') {
@@ -383,9 +406,9 @@ async function loadResearchEntityContext({
   if (!entity) return null;
   const id = evidenceCoverageDocumentId((entity as any)._id);
   if (!id) return null;
-  const [listings, members, accessSignals, contactRoutes, observations] = await Promise.all([
+  const [listings, roster, accessSignals, contactRoutes, observations] = await Promise.all([
     Listing.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
-    ResearchGroupMember.find({ researchEntityId: id, isCurrentMember: { $ne: false } }).lean(),
+    getResearchEntityRoster(id),
     Signal.find({
       researchEntityId: id,
       type: { $in: accessSignalTypes },
@@ -402,6 +425,15 @@ async function loadResearchEntityContext({
       .limit(80)
       .lean(),
   ]);
+
+  const members = roster
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .map((entry) => ({
+      name: entry.name,
+      role: entry.role,
+      netid: entry.netid,
+      personId: entry.personId,
+    }));
 
   return { entity, listings, members, accessSignals, contactRoutes, observations };
 }

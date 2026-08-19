@@ -4,8 +4,8 @@ import { ContactRoute } from '../models/contactRoute';
 import { EntryPathway } from '../models/entryPathway';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
 import { User } from '../models/user';
+import { getResearchEntityRoster } from './researchEntityMembershipAccessor';
 import {
   VisibilityReleaseQueueItem,
   type VisibilityRepairStage,
@@ -48,7 +48,9 @@ interface AccessRecordCounts {
 }
 
 interface LaunchAcquisitionReportDeps {
-  findQueueItems: (options: { stages: LaunchAcquisitionStage[] }) => Promise<LaunchAcquisitionReportQueueItem[]>;
+  findQueueItems: (options: {
+    stages: LaunchAcquisitionStage[];
+  }) => Promise<LaunchAcquisitionReportQueueItem[]>;
   findResearchEntity: (id: string) => Promise<Record<string, any> | null>;
   findResearchEntityMembers: (id: string) => Promise<Array<Record<string, any>>>;
   countSourceObservations: (entity: Record<string, any>) => Promise<number>;
@@ -119,7 +121,10 @@ export interface LaunchAcquisitionReport {
   generatedAt: string;
   stages: LaunchAcquisitionStage[];
   scanned: number;
-  bySource: Record<string, { piIdentity: number; actionEvidence: number; sourceDescription: number }>;
+  bySource: Record<
+    string,
+    { piIdentity: number; actionEvidence: number; sourceDescription: number }
+  >;
   manifest: LaunchAcquisitionManifestRow[];
   piIdentity?: {
     total: number;
@@ -181,7 +186,8 @@ const idValue = (value: unknown): string => {
   if (!value) return '';
   const serialized = serializedDocumentId(value);
   if (serialized) return serialized.trim();
-  if (typeof value === 'object' && '_id' in value) return idValue((value as Record<string, unknown>)._id);
+  if (typeof value === 'object' && '_id' in value)
+    return idValue((value as Record<string, unknown>)._id);
   return '';
 };
 
@@ -236,14 +242,18 @@ const userDisplayName = (user: Record<string, any>): string =>
 const userNameMatchesEntity = (user: Record<string, any>, entity: Record<string, any>): boolean => {
   const userTokens = nameTokens(userDisplayName(user));
   if (userTokens.length < 2) return false;
-  const entityTokens = new Set(nameTokens([entity.name, entity.displayName, entity.slug].join(' ')));
+  const entityTokens = new Set(
+    nameTokens([entity.name, entity.displayName, entity.slug].join(' ')),
+  );
   return entityTokens.has(userTokens[0]) && entityTokens.has(userTokens[userTokens.length - 1]);
 };
 
 const leadRequiredForEntity = (entity: Record<string, any>): boolean => {
   const type = textValue(entity.type || entity.entityType || entity.category).toLowerCase();
   const label = textValue(`${entity.name || ''} ${entity.displayName || ''}`).toLowerCase();
-  if (/(collection|archive|library|museum|course|resource|database|funding|fellowship)/.test(type)) {
+  if (
+    /(collection|archive|library|museum|course|resource|database|funding|fellowship)/.test(type)
+  ) {
     return false;
   }
   if (/\b(collection|archive|archives|library|museum)\b/.test(label)) return false;
@@ -303,7 +313,8 @@ const isOfficialCandidateUrl = (value: unknown): boolean =>
 
 const usefulDescriptionText = (value: unknown): boolean => textValue(value).length >= 80;
 
-const currentSourceUrlForEntity = (entity: Record<string, any>): string => sourceUrlsForEntity(entity)[0] || '';
+const currentSourceUrlForEntity = (entity: Record<string, any>): string =>
+  sourceUrlsForEntity(entity)[0] || '';
 
 const candidateOfficialSourceUrlsForEntity = (entity: Record<string, any>): string[] =>
   sourceUrlsForEntity(entity).filter(isOfficialCandidateUrl);
@@ -311,7 +322,10 @@ const candidateOfficialSourceUrlsForEntity = (entity: Record<string, any>): stri
 const hasGrantSourceUrl = (entity: Record<string, any>): boolean =>
   sourceUrlsForEntity(entity).some((url) => /reporter\.nih\.gov|nsf\.gov|api\.nsf\.gov/i.test(url));
 
-const hasApplicationOnlySource = (entity: Record<string, any>, item: LaunchAcquisitionReportQueueItem): boolean =>
+const hasApplicationOnlySource = (
+  entity: Record<string, any>,
+  item: LaunchAcquisitionReportQueueItem,
+): boolean =>
   cleanStrings(item.blockerReasons).includes('application_source_only') ||
   sourceUrlsForEntity(entity).some((url) => /communityforce\.com/i.test(url));
 
@@ -390,7 +404,8 @@ async function classifyPiItem(
 
   if (observationCount > 0) addGroup(groups.sourceObservationsPresent, item, label, sampleLimit);
   if (members.length > 0) addGroup(groups.currentMembersPresent, item, label, sampleLimit);
-  if (!leadRequiredForEntity(entity)) addGroup(groups.leadNotRequiredByEntityType, item, label, sampleLimit);
+  if (!leadRequiredForEntity(entity))
+    addGroup(groups.leadNotRequiredByEntityType, item, label, sampleLimit);
 
   const matchingUsers = users.filter((user) => userNameMatchesEntity(user, entity));
   if (matchingUsers.length === 1 && users.length === 1) {
@@ -419,7 +434,8 @@ async function buildPiManifestRow(
     rootCauseCategory: hasExactSingleUser ? 'manual_review_required' : 'missing_or_ambiguous_lead',
     currentSourceUrl,
     candidateSourceUrls: urls,
-    requiredFact: 'Official PI/director identity with a unique Yale user, profile URL, or person-specific Yale email.',
+    requiredFact:
+      'Official PI/director identity with a unique Yale user, profile URL, or person-specific Yale email.',
     safeNextCommand: piIdentityCommand,
     blockedBecause: hasExactSingleUser
       ? 'A candidate user exists, but PI attachment still requires the guarded repair path or reviewed source evidence.'
@@ -482,7 +498,8 @@ async function buildActionManifestRow(
     rootCauseCategory: grantOnly ? 'grant_not_action_evidence' : 'manual_review_required',
     currentSourceUrl,
     candidateSourceUrls: candidateOfficialSourceUrlsForEntity(entity),
-    requiredFact: 'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
+    requiredFact:
+      'Official Yale page with undergraduate access, application, contact, or outreach instructions.',
     safeNextCommand: actionEvidenceCommand,
     blockedBecause: grantOnly
       ? 'Current evidence describes funded research but does not prove a student action route.'
@@ -541,9 +558,11 @@ async function buildSourceDescriptionManifestRow(
   const candidateSourceUrls = candidateOfficialSourceUrlsForEntity(entity);
   const currentSourceUrl = currentSourceUrlForEntity(entity);
   let rootCauseCategory: LaunchAcquisitionRootCauseCategory = 'manual_review_required';
-  let requiredFact = 'Source-backed research description or card description that passes launch quality checks.';
+  let requiredFact =
+    'Source-backed research description or card description that passes launch quality checks.';
   let safeNextCommand = groundedDescriptionCommand;
-  let blockedBecause = 'Current source text did not produce an accepted source-backed description repair.';
+  let blockedBecause =
+    'Current source text did not produce an accepted source-backed description repair.';
 
   if (urls.length === 0 || reasons.includes('missing_source_url')) {
     rootCauseCategory = 'missing_official_url';
@@ -552,17 +571,24 @@ async function buildSourceDescriptionManifestRow(
     blockedBecause = 'No trusted current source URL is attached to this held research home.';
   } else if (hasApplicationOnlySource(entity, item)) {
     rootCauseCategory = 'application_or_formalization_only';
-    requiredFact = 'Official source proving a hosted research entry route rather than only a funding or application portal.';
+    requiredFact =
+      'Official source proving a hosted research entry route rather than only a funding or application portal.';
     safeNextCommand = reviewExceptionCommand;
-    blockedBecause = 'Current source is an application/funding portal and is not enough to prove research-home description quality.';
+    blockedBecause =
+      'Current source is an application/funding portal and is not enough to prove research-home description quality.';
   } else if (reasons.includes('profile_fallback_only') || urls.some(isYaleProfileUrl)) {
     rootCauseCategory = 'profile_not_research_prose';
-    requiredFact = 'Research-focused official prose from a lab, project, research statement, or profile research section.';
+    requiredFact =
+      'Research-focused official prose from a lab, project, research statement, or profile research section.';
     safeNextCommand = groundedDescriptionCommand;
-    blockedBecause = 'The current official profile source is biography, title, or otherwise too thin for a research description.';
+    blockedBecause =
+      'The current official profile source is biography, title, or otherwise too thin for a research description.';
   } else if (urls.some(isRejectedDescriptionSourceUrl)) {
-    rootCauseCategory = hasGrantSourceUrl(entity) ? 'grant_not_action_evidence' : 'manual_review_required';
-    requiredFact = 'Official research-home page, not ORCID, grant, publication, directory, or generic metadata.';
+    rootCauseCategory = hasGrantSourceUrl(entity)
+      ? 'grant_not_action_evidence'
+      : 'manual_review_required';
+    requiredFact =
+      'Official research-home page, not ORCID, grant, publication, directory, or generic metadata.';
     safeNextCommand = sourceDescriptionCommand;
     blockedBecause = 'Current source host is rejected for launch description evidence.';
   }
@@ -605,19 +631,25 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
     const safeId = normalizeLaunchAcquisitionObjectId(id);
     if (!safeId) return null;
     return ResearchEntity.findById(safeId)
-      .select('name displayName slug type category entityType website websiteUrl sourceUrls description fullDescription shortDescription')
+      .select(
+        'name displayName slug type category entityType website websiteUrl sourceUrls description fullDescription shortDescription',
+      )
       .lean();
   },
   async findResearchEntityMembers(id) {
     const safeId = normalizeLaunchAcquisitionObjectId(id);
     if (!safeId) return [];
-    return ResearchGroupMember.find({
-      researchEntityId: safeId,
-      isCurrentMember: { $ne: false },
-      archived: { $ne: true },
-    })
-      .select('researchEntityId userId facultyMemberId name role sourceUrl')
-      .lean();
+    const roster = await getResearchEntityRoster(safeId);
+    return roster
+      .filter((entry) => entry.state !== 'HISTORICAL')
+      .map((entry) => ({
+        researchEntityId: entry.researchEntityId,
+        personId: entry.personId,
+        name: entry.name,
+        role: entry.role,
+        netid: entry.netid,
+        sourceUrl: entry.rosterProvenance?.sourceUrl,
+      }));
   },
   async countSourceObservations(entity) {
     const id = idValue(entity._id);
@@ -745,7 +777,8 @@ export async function buildLaunchAcquisitionReport(
       item.repairStage !== 'pi_identity' &&
       item.repairStage !== 'action_evidence' &&
       item.repairStage !== 'source_description'
-    ) continue;
+    )
+      continue;
     const entity = await deps.findResearchEntity(item.recordId);
     if (!entity) continue;
 
