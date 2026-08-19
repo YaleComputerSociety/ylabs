@@ -67,12 +67,12 @@ They do not claim configured private environments, delivered telemetry, outage e
 
 ## Operating Baseline
 
-- Canonical product concepts are `ResearchEntity`, `EntryPathway`, `PostedOpportunity`, `AccessSignal`, and `ContactRoute`.
+- Canonical product concepts are `ResearchEntity`, `Signal`, and `ResearchEntityRelationship`.
 - Treat `ResearchGroup`, `lab`, and `researchGroupId` names as migration residue unless the file is explicitly legacy or rollback support.
 - Beta is the staging gate.
 - Production promotion requires a human-reviewed Atlas restore point, guarded copy dry-run, rollback posture, and production smoke result.
 - Scraper and repair writes must be evidence-first, dry-run-first, and fail closed on contact data.
-- Research homes and opportunities are source-discovered.
+- Research homes are source-discovered.
   Yale Research does not host faculty-authored submissions, while verified official application URLs remain outbound student actions.
 - Bibliographic ingestion and publication-derived ranking are retired.
   Official Yale, Google Scholar, and ORCID profiles are outbound links under the accepted research-model boundary, and later cleanup remains gated by the migration execution status.

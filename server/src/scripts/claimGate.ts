@@ -126,17 +126,19 @@ export async function loadResearchAccessArtifacts(
     .limit(limit)
     .lean();
 
-  return signals.map((signal: any): AccessArtifactCandidate => ({
-    artifactType: 'AccessSignal',
-    id: stringId(signal._id),
-    researchEntityId: stringId(signal.researchEntityId),
-    derivationKey: signal.derivationKey,
-    signalType: signal.type,
-    sourceEvidenceIds: strings((signal.source?.evidenceIds || []).map(stringId)),
-    sourceUrls: strings([signal.source?.url]),
-    sourceName: signal.source?.name,
-    sourceUrl: signal.source?.url,
-  }));
+  return signals.map(
+    (signal: any): AccessArtifactCandidate => ({
+      artifactType: 'AccessSignal',
+      id: stringId(signal._id),
+      researchEntityId: stringId(signal.researchEntityId),
+      derivationKey: signal.derivationKey,
+      signalType: signal.type,
+      sourceEvidenceIds: strings((signal.source?.evidenceIds || []).map(stringId)),
+      sourceUrls: strings([signal.source?.url]),
+      sourceName: signal.source?.name,
+      sourceUrl: signal.source?.url,
+    }),
+  );
 }
 
 export function shouldClaimGateFailStrict(report: Pick<ClaimGateReport, 'summary'>): boolean {

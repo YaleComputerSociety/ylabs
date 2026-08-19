@@ -1397,7 +1397,11 @@ function isVerifiedOfficialRosterRow(row: any, now = new Date()): boolean {
 }
 
 export type PublicRosterDisclosureStatus =
-  'current' | 'partial' | 'no-verified-data' | 'withheld' | 'optional-source-failure';
+  | 'current'
+  | 'partial'
+  | 'no-verified-data'
+  | 'withheld'
+  | 'optional-source-failure';
 
 export interface PublicRosterDisclosure {
   status: PublicRosterDisclosureStatus;

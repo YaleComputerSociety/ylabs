@@ -44,7 +44,9 @@ export interface ResearchEntityDedupeMergeGroup {
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
-  'merge_into_canonical' | 'mark_distinct_homes' | 'defer_review';
+  | 'merge_into_canonical'
+  | 'mark_distinct_homes'
+  | 'defer_review';
 
 export interface ResearchEntityPiDedupeArgs {
   apply: boolean;

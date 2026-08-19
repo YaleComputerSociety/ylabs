@@ -15,7 +15,9 @@ import {
 
 export type PostMaterializationIntegrityStatus = 'pass' | 'failure';
 export type IntegrityWarningClassification =
-  'must_fix_before_promotion' | 'accepted_release_warning' | 'post_promotion_backlog';
+  | 'must_fix_before_promotion'
+  | 'accepted_release_warning'
+  | 'post_promotion_backlog';
 
 export type PostMaterializationIntegrityFailureName =
   | 'samePiSameNameResearchEntities'
