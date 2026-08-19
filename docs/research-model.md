@@ -2,6 +2,8 @@
 
 The current runtime model is documented here.
 The accepted target model, phased migration boundaries, and Phase 0 inventory runbook are documented in [`research-model-refactor.md`](./research-model-refactor.md) and [`research-model-refactor-phase0.md`](./research-model-refactor-phase0.md).
+[`research-model-refactor.md`](./research-model-refactor.md), ratified 2026-08-18, is the single source of truth for the target model and supersedes the older phased framing.
+This document describes current runtime shapes such as `Person`, `RoleAssignment`, `EntryPathway`, `ContactRoute`, `PostedOpportunity`, `TaxonomyTerm`, and the evidence claim-graph that the ratified model renames, removes, folds into `Signal`, or freezes, so where this document and the refactor document disagree about the target, the refactor document wins.
 
 ## Current Implementation Context
 
@@ -589,14 +591,13 @@ A later decision may point backward to one decision it supersedes, while the ori
 
 These collections may coexist empty with the current runtime.
 No current scraper or public read path should write or consume them until a later cutover phase adds reconciliation and explicit operational gates.
+Per the ratified model in [`research-model-refactor.md`](./research-model-refactor.md), the heavy evidence claim-graph (`EvidenceClaim`, `SourceDocument`, `ReviewDecision`) is frozen as unwired do-not-build-on contracts, and the live evidence path is `Observation` to `Signal`, not `Observation` to `EvidenceClaim`.
 
 ### Phase 5 materialized provenance foundation
 
-[`materializedProvenanceSchema`](../server/src/models/materializedProvenance.ts) is an embedded contract for future canonical materializers.
-The exported schema and `MaterializedProvenance` type require 1 to 100 unique `EvidenceClaim` ObjectIds, a normalized stable materializer identifier of at most 120 characters, a positive safe-integer materializer version, and an explicit valid `computedAt` timestamp.
-The embedded schema uses strict mode and disables `_id`.
-The schema is reusable but remains unattached to target models.
-Attaching it, emitting claims, or writing provenance remains blocked until the earlier migration phases and their private operational evidence are accepted.
+The `MaterializedProvenance` embedded schema was removed as dead code, because it was unattached and referenced only by its own test.
+Per the ratified model in [`research-model-refactor.md`](./research-model-refactor.md), the heavy governed evidence claim-graph is deferred, and the lightweight `Observation` to `Signal` pipeline covers the product, so there is no live materializer that needs a provenance sidecar.
+The frozen `EvidenceClaim`, `SourceDocument`, and `ReviewDecision` contracts remain in the repository as unwired do-not-build-on foundations; see the note in the Phase 1 evidence and planning schema foundation section above.
 
 ### Phase 1 bounded canonical read contracts
 

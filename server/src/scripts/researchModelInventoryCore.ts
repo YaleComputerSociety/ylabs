@@ -1,12 +1,23 @@
 /**
- * Pure logic for the research-model refactor Phase 0 inventory.
+ * Pure logic for the research-model refactor inventory.
  *
  * The runner (`researchModelInventory.ts`) gathers raw facts from MongoDB and
  * hands them to `buildResearchModelInventoryReport`, which classifies every
- * collection against the target model in `docs/research-model-refactor.md`,
- * flags legacy residue and retirement-field prevalence, and summarizes
- * reference-integrity orphans. Keeping the shaping here means it can be unit
- * tested without a database, matching the other audit scripts in this folder.
+ * collection against the ratified target model in `docs/research-model-refactor.md`
+ * (the single source of truth as of 2026-08-18: 7 live collections - Researcher,
+ * Account, ResearchEntity, Signal, ResearchEntityRelationship, Observation, and
+ * ResearchPlan). It flags legacy residue and retirement-field prevalence, and
+ * summarizes reference-integrity orphans. Keeping the shaping here means it can be
+ * unit tested without a database, matching the other audit scripts in this folder.
+ *
+ * The ratified model removed RoleAssignment, EntryPathway, ContactRoute,
+ * PostedOpportunity, and TaxonomyTerm, folded AccessSignal and
+ * UndergraduateLogisticsClaim into a type-based Signal, and froze the heavy
+ * evidence claim-graph (EvidenceClaim, SourceDocument, ReviewDecision) as
+ * unwired do-not-build-on contracts. The live evidence path is Observation ->
+ * Signal. The `target` column below records where each current collection is
+ * headed under that ratified model; the `phase` column is retained historical
+ * sequencing from the earlier phased contract.
  */
 import {
   assertOperatorEnvironmentMatchesDatabase,
@@ -92,21 +103,22 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'RoleAssignment',
     group: 'canonical-domain',
     phase: 1,
-    target: 'RoleAssignment',
+    target: 'Removed - roster embedded on ResearchEntity.members',
   },
   {
     collection: 'org_units',
     model: 'OrgUnit',
     group: 'canonical-domain',
     phase: 1,
-    target: 'OrgUnit',
+    target:
+      'OrgUnit (ingest-time canonical lookup/seed only; ResearchEntity stores canonicalized school/departments[] strings)',
   },
   {
     collection: 'taxonomy_terms',
     model: 'TaxonomyTerm',
     group: 'canonical-domain',
     phase: 1,
-    target: 'TaxonomyTerm',
+    target: 'Removed - canonicalized researchAreas[] strings + semantic search (no TaxonomyTerm)',
   },
   {
     collection: 'users',
@@ -134,7 +146,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ResearchEntity',
     group: 'canonical-domain',
     phase: 4,
-    target: 'Clean ResearchEntity schema + bounded discovery projection',
+    target:
+      'Clean ResearchEntity schema (embedded members roster, canonicalized school/departments[]/researchAreas[] strings, no embedded discovery projection)',
   },
   {
     collection: 'research_entity_relationships',
@@ -148,35 +161,35 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'EntryPathway',
     group: 'canonical-domain',
     phase: 4,
-    target: 'EntryPathway (retained)',
+    target: 'Removed (do not model) - entry pathways are not in the ratified model',
   },
   {
     collection: 'posted_opportunities',
     model: 'PostedOpportunity',
     group: 'canonical-domain',
     phase: 4,
-    target: 'PostedOpportunity (retained)',
+    target: 'Removed (do not model) - posted opportunities are not in the ratified model',
   },
   {
     collection: 'access_signals',
     model: 'AccessSignal',
     group: 'canonical-domain',
     phase: 4,
-    target: 'AccessSignal (retained)',
+    target: "Signal (folded into the type-based signals collection as type 'undergrad_access')",
   },
   {
     collection: 'contact_routes',
     model: 'ContactRoute',
     group: 'canonical-domain',
     phase: 4,
-    target: 'ContactRoute (retained)',
+    target: 'Removed (do not model) - PI action derived from the official profile link-out',
   },
   {
     collection: 'undergraduate_logistics_claims',
     model: 'UndergraduateLogisticsClaim',
     group: 'canonical-domain',
     phase: 4,
-    target: 'UndergraduateLogisticsClaim (retained)',
+    target: 'Signal (folded into the type-based signals collection as logistics types)',
   },
   {
     collection: 'admin_grants',
@@ -204,14 +217,15 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'Department',
     group: 'reference-data',
     phase: 4,
-    target: 'OrgUnit',
+    target:
+      'OrgUnit ingest-time canonical lookup/seed (ResearchEntity stores canonicalized school/departments[] strings)',
   },
   {
     collection: 'research_areas',
     model: 'ResearchArea',
     group: 'reference-data',
     phase: 4,
-    target: 'TaxonomyTerm',
+    target: 'Removed - canonicalized researchAreas[] strings + semantic search (no TaxonomyTerm)',
   },
   {
     collection: 'grants',
@@ -253,35 +267,35 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'Observation',
     group: 'evidence',
     phase: 5,
-    target: 'EvidenceClaim (+ SourceDocument)',
+    target: 'Observation (retained; the live Observation -> Signal pipeline covers the product)',
   },
   {
     collection: 'evidence_claims',
     model: 'EvidenceClaim',
     group: 'evidence',
     phase: 5,
-    target: 'EvidenceClaim (canonical predicate-based evidence)',
+    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
   },
   {
     collection: 'sources',
     model: 'Source',
     group: 'evidence',
     phase: 5,
-    target: 'Source + SourceDocument',
+    target: 'Source (retained source registry); the SourceDocument claim-graph is frozen',
   },
   {
     collection: 'source_documents',
     model: 'SourceDocument',
     group: 'evidence',
     phase: 5,
-    target: 'SourceDocument (canonical fetched-resource identity and retention boundary)',
+    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
   },
   {
     collection: 'review_decisions',
     model: 'ReviewDecision',
     group: 'evidence',
     phase: 5,
-    target: 'ReviewDecision (canonical append-only manual-resolution audit)',
+    target: 'FROZEN evidence claim-graph (exists, unwired, do-not-build-on); deferred',
   },
   {
     collection: 'student_profiles',
@@ -352,7 +366,7 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ScrapeRun',
     group: 'evidence',
     phase: 5,
-    target: 'Retained source-run audit metadata for the EvidenceClaim cutover',
+    target: 'Retained source-run audit metadata (the evidence claim-graph is deferred/frozen)',
   },
   {
     collection: 'scrape_snapshots',
@@ -360,7 +374,7 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'evidence',
     phase: 5,
     target:
-      'Regenerable fetch cache; retained evidence moves behind SourceDocument retention policy',
+      'Regenerable fetch cache; retained evidence stays behind source-policy retention (evidence claim-graph deferred/frozen)',
   },
   {
     collection: 'visibility_release_queue_items',

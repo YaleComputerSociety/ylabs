@@ -79,14 +79,21 @@ describe('INVENTORY_COLLECTIONS', () => {
         collection: 'role_assignments',
         model: 'RoleAssignment',
         group: 'canonical-domain',
-        target: 'RoleAssignment',
+        target: 'Removed - roster embedded on ResearchEntity.members',
       },
-      { collection: 'org_units', model: 'OrgUnit', group: 'canonical-domain', target: 'OrgUnit' },
+      {
+        collection: 'org_units',
+        model: 'OrgUnit',
+        group: 'canonical-domain',
+        target:
+          'OrgUnit (ingest-time canonical lookup/seed only; ResearchEntity stores canonicalized school/departments[] strings)',
+      },
       {
         collection: 'taxonomy_terms',
         model: 'TaxonomyTerm',
         group: 'canonical-domain',
-        target: 'TaxonomyTerm',
+        target:
+          'Removed - canonicalized researchAreas[] strings + semantic search (no TaxonomyTerm)',
       },
     ]);
   });
