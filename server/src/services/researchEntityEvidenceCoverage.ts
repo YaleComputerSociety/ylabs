@@ -1,7 +1,6 @@
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { ContactRoute } from '../models/contactRoute';
 import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -406,7 +405,7 @@ async function loadResearchEntityContext({
   if (!entity) return null;
   const id = evidenceCoverageDocumentId((entity as any)._id);
   if (!id) return null;
-  const [listings, roster, accessSignals, contactRoutes, observations] = await Promise.all([
+  const [listings, roster, accessSignals, observations] = await Promise.all([
     Listing.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
     getResearchEntityRoster(id),
     Signal.find({
@@ -414,7 +413,6 @@ async function loadResearchEntityContext({
       type: { $in: accessSignalTypes },
       archived: { $ne: true },
     }).lean(),
-    ContactRoute.find({ researchEntityId: id, archived: { $ne: true } }).lean(),
     Observation.find({
       entityType: 'researchEntity',
       superseded: { $ne: true },
@@ -435,7 +433,7 @@ async function loadResearchEntityContext({
       personId: entry.personId,
     }));
 
-  return { entity, listings, members, accessSignals, contactRoutes, observations };
+  return { entity, listings, members, accessSignals, contactRoutes: [], observations };
 }
 
 export async function buildEvidenceCoverageImpactReportForObservations(

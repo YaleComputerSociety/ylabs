@@ -1,8 +1,5 @@
 import { Signal } from '../models/signal';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
 import { Paper } from '../models/paper';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
@@ -29,7 +26,6 @@ export type PostMaterializationIntegrityFailureName =
   | 'duplicateResearchPapers'
   | 'duplicateCurrentMembers'
   | 'currentMembersOnArchivedEntities'
-  | 'duplicateExploratoryContactPathways'
   | 'duplicateAccessSignals'
   | 'activeArtifactsOnArchivedEntities';
 
@@ -79,14 +75,8 @@ export interface CurrentMemberOnArchivedEntity {
   canonicalGroupId?: string | null;
 }
 
-export interface DuplicateExploratoryContactPathwayGroup {
-  researchEntityId: string;
-  pathwayIds: string[];
-  derivationKeys: string[];
-}
-
 export interface ActiveArtifactOnArchivedEntity {
-  artifactType: 'EntryPathway' | 'AccessSignal' | 'ContactRoute' | 'PostedOpportunity';
+  artifactType: 'AccessSignal';
   artifactId: string;
   researchEntityId: string;
   canonicalGroupId?: string | null;
@@ -108,7 +98,6 @@ export interface BuildPostMaterializationIntegrityInput {
   duplicateResearchPaperGroups?: DuplicateResearchPaperGroup[];
   duplicateCurrentMemberGroups?: DuplicateCurrentMemberGroup[];
   currentMembersOnArchivedEntities?: CurrentMemberOnArchivedEntity[];
-  duplicateExploratoryContactPathwayGroups?: DuplicateExploratoryContactPathwayGroup[];
   duplicateAccessSignalGroups?: DuplicateAccessSignalGroup[];
   activeArtifactsOnArchivedEntities?: ActiveArtifactOnArchivedEntity[];
   warnings?: PostMaterializationIntegrityWarning[];
@@ -128,7 +117,6 @@ export interface PostMaterializationIntegritySummary {
     duplicateResearchPapers: DuplicateResearchPaperGroup[];
     duplicateCurrentMembers: DuplicateCurrentMemberGroup[];
     currentMembersOnArchivedEntities: CurrentMemberOnArchivedEntity[];
-    duplicateExploratoryContactPathways: DuplicateExploratoryContactPathwayGroup[];
     duplicateAccessSignals: DuplicateAccessSignalGroup[];
     activeArtifactsOnArchivedEntities: ActiveArtifactOnArchivedEntity[];
   };
@@ -157,7 +145,6 @@ const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'duplicateResearchPapers',
   'duplicateCurrentMembers',
   'currentMembersOnArchivedEntities',
-  'duplicateExploratoryContactPathways',
   'duplicateAccessSignals',
   'activeArtifactsOnArchivedEntities',
 ];
@@ -187,11 +174,6 @@ const RECOMMENDED_COMMANDS_BY_FAILURE: Record<
   currentMembersOnArchivedEntities: [
     betaCommand(
       'yarn --cwd server research-entity:dedupe-by-pi --limit=10000 --output /tmp/ylabs-research-entity-dedupe.json',
-    ),
-  ],
-  duplicateExploratoryContactPathways: [
-    betaCommand(
-      'yarn --cwd server pathways:dedupe-exploratory --limit=1000 --output /tmp/ylabs-dedupe-exploratory-pathways.json',
     ),
   ],
   duplicateAccessSignals: [
@@ -239,8 +221,6 @@ export function buildPostMaterializationIntegritySummary(
     duplicateResearchPapers: input.duplicateResearchPaperGroups?.length || 0,
     duplicateCurrentMembers: input.duplicateCurrentMemberGroups?.length || 0,
     currentMembersOnArchivedEntities: input.currentMembersOnArchivedEntities?.length || 0,
-    duplicateExploratoryContactPathways:
-      input.duplicateExploratoryContactPathwayGroups?.length || 0,
     duplicateAccessSignals: input.duplicateAccessSignalGroups?.length || 0,
     activeArtifactsOnArchivedEntities: input.activeArtifactsOnArchivedEntities?.length || 0,
   };
@@ -262,10 +242,6 @@ export function buildPostMaterializationIntegritySummary(
       duplicateResearchPapers: sample(input.duplicateResearchPaperGroups, limit),
       duplicateCurrentMembers: sample(input.duplicateCurrentMemberGroups, limit),
       currentMembersOnArchivedEntities: sample(input.currentMembersOnArchivedEntities, limit),
-      duplicateExploratoryContactPathways: sample(
-        input.duplicateExploratoryContactPathwayGroups,
-        limit,
-      ),
       duplicateAccessSignals: sample(input.duplicateAccessSignalGroups, limit),
       activeArtifactsOnArchivedEntities: sample(input.activeArtifactsOnArchivedEntities, limit),
     },
@@ -664,35 +640,6 @@ async function loadCurrentMembersOnArchivedEntities(
   }));
 }
 
-async function loadDuplicateExploratoryContactPathwayGroups(
-  limit: number,
-): Promise<DuplicateExploratoryContactPathwayGroup[]> {
-  const rows = await EntryPathway.aggregate([
-    {
-      $match: {
-        archived: { $ne: true },
-        pathwayType: 'EXPLORATORY_CONTACT',
-        researchEntityId: { $exists: true, $ne: null },
-      },
-    },
-    {
-      $group: {
-        _id: '$researchEntityId',
-        pathwayIds: { $push: { $toString: '$_id' } },
-        derivationKeys: { $addToSet: '$derivationKey' },
-      },
-    },
-    { $match: { 'pathwayIds.1': { $exists: true } } },
-    { $limit: limit },
-  ]);
-
-  return rows.map((row: any) => ({
-    researchEntityId: stringId(row._id),
-    pathwayIds: (row.pathwayIds || []).map(stringId).filter(Boolean),
-    derivationKeys: (row.derivationKeys || []).map(stringId).filter(Boolean),
-  }));
-}
-
 async function loadDuplicateAccessSignalGroups(
   limit: number,
 ): Promise<DuplicateAccessSignalGroup[]> {
@@ -796,14 +743,11 @@ async function loadActiveArtifactsOnArchivedEntities(
   limit: number,
 ): Promise<ActiveArtifactOnArchivedEntity[]> {
   const artifactSpecs = [
-    { artifactType: 'EntryPathway' as const, model: EntryPathway, match: {} as Record<string, unknown> },
     {
       artifactType: 'AccessSignal' as const,
       model: Signal,
       match: { type: { $in: [...accessSignalTypes] } } as Record<string, unknown>,
     },
-    { artifactType: 'ContactRoute' as const, model: ContactRoute, match: {} as Record<string, unknown> },
-    { artifactType: 'PostedOpportunity' as const, model: PostedOpportunity, match: {} as Record<string, unknown> },
   ];
   const results: ActiveArtifactOnArchivedEntity[] = [];
 
@@ -874,7 +818,6 @@ export async function runPostMaterializationIntegrityGate(
     duplicateResearchPaperGroups,
     duplicateCurrentMemberGroups,
     currentMembersOnArchivedEntities,
-    duplicateExploratoryContactPathwayGroups,
     duplicateAccessSignalGroups,
     activeArtifactsOnArchivedEntities,
     warnings,
@@ -885,7 +828,6 @@ export async function runPostMaterializationIntegrityGate(
     loadDuplicateResearchPaperGroups(queryLimit),
     loadDuplicateCurrentMemberGroups(queryLimit),
     loadCurrentMembersOnArchivedEntities(queryLimit),
-    loadDuplicateExploratoryContactPathwayGroups(queryLimit),
     loadDuplicateAccessSignalGroups(queryLimit),
     loadActiveArtifactsOnArchivedEntities(queryLimit),
     loadAmbiguousSameNameWarning(),
@@ -898,7 +840,6 @@ export async function runPostMaterializationIntegrityGate(
     duplicateResearchPaperGroups,
     duplicateCurrentMemberGroups,
     currentMembersOnArchivedEntities,
-    duplicateExploratoryContactPathwayGroups,
     duplicateAccessSignalGroups,
     activeArtifactsOnArchivedEntities,
     warnings: [...warnings, ...duplicatePersonIntegrity.warnings],

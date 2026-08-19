@@ -12,7 +12,6 @@ import {
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
   getResearchEntityBestNextStep,
-  getResearchEntityPathwaySummary,
   getFellowshipJourneySummary,
   getResearchGroupStatus,
   getDaysUntilDeadline,
@@ -83,9 +82,6 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
   const researchStatus = getResearchGroupStatus(item);
-  const researchPathwaySummary = isResearchGroup
-    ? getResearchEntityPathwaySummary(item.data)
-    : null;
   const researchBestNextStep = isResearchGroup
     ? getResearchEntityBestNextStep(item.data)
     : null;
@@ -127,11 +123,6 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
                 <span className="text-xs font-semibold text-blue-700 truncate">
                   {getResearchGroupKindLabel(item.data.kind)}
                 </span>
-                {item.data.accessSummary?.hasActivePostedOpportunity && (
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
-                    Active opportunity
-                  </span>
-                )}
               </div>
               <h3 className="text-sm font-semibold text-gray-900 truncate">
                 {getResearchGroupDisplayName(item.data)}
@@ -189,7 +180,7 @@ const BrowseListItem = React.memo(({ item, isFavorite, onToggleFavorite, onOpenM
               {item.type === 'listing'
                 ? item.data.description
                 : item.type === 'researchGroup'
-                  ? researchPathwaySummary || researchBestNextStep || item.data.description
+                  ? researchBestNextStep || item.data.description
                   : item.data.bestNextStep || fellowshipJourneySummary || item.data.summary || item.data.description}
             </p>
           </div>

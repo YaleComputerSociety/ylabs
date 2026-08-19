@@ -1,12 +1,7 @@
 import mongoose from 'mongoose';
 import { Signal } from '../models/signal';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
-import {
-  syncPathwaySearchIndexDocument,
-  syncPathwaySearchIndexDocumentsForEntity,
-} from './pathwaySearchIndexService';
 import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArtifact';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 import type { SignalConfidence, SignalType } from '../models/researchAccessTypes';
@@ -19,7 +14,6 @@ export interface UpsertSignalInput {
   confidence: SignalConfidence;
   sourceEvidenceId?: string;
   observedAt: Date;
-  entryPathwayId?: string;
   excerpt?: string;
   sourceName?: string;
   sourceUrl?: string;
@@ -72,7 +66,6 @@ export async function upsertSignal(
   const Signal = getSignalModel(deps);
   const researchEntityId = toStoredId(input.researchEntityId);
   if (!researchEntityId) return {};
-  const entryPathwayId = input.entryPathwayId ? toStoredId(input.entryPathwayId) : undefined;
   const sourceEvidenceId = toStoredObjectId(input.sourceEvidenceId);
   const derivationKey =
     input.derivationKey || `access-materializer:${input.type}:${input.sourceEvidenceId}`;
@@ -92,7 +85,6 @@ export async function upsertSignal(
     }),
     $set: omitReviewLockedFields(
       compactObject({
-        entryPathwayId,
         'source.evidenceIds': sourceEvidenceId ? [sourceEvidenceId] : undefined,
         'source.name': input.sourceName,
         'source.url': publicAccessHttpUrl(input.sourceUrl),
@@ -120,20 +112,6 @@ export async function upsertSignal(
   const doc = deps.model
     ? await write()
     : await mutateAndRefreshAdminAccessReviewProjection(researchEntityId, write);
-  if (!deps.model && process.env.PATHWAY_SEARCH_SYNC === 'true') {
-    const entryPathwayId = serializedDocumentId(doc?.entryPathwayId);
-    const researchEntityId = serializedDocumentId(doc?.researchEntityId);
-    const sync = entryPathwayId
-      ? syncPathwaySearchIndexDocument(entryPathwayId)
-      : researchEntityId
-        ? syncPathwaySearchIndexDocumentsForEntity(researchEntityId)
-        : undefined;
-    if (sync) {
-      await sync.catch((error) => {
-        console.error('Failed to sync pathway search index:', sanitizeLogValue(error));
-      });
-    }
-  }
 
   return {
     signalId: serializedDocumentId(doc?._id),

@@ -686,10 +686,7 @@ const ARTIFACT_SPECS: Array<{
   artifactType: ArchivedEntityArtifactType;
   collection: string;
 }> = [
-  { artifactType: 'EntryPathway', collection: 'entry_pathways' },
   { artifactType: 'AccessSignal', collection: 'signals' },
-  { artifactType: 'ContactRoute', collection: 'contact_routes' },
-  { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
 ];
 
 const SCALAR_REFERENCE_SPECS: Array<{
@@ -700,10 +697,7 @@ const SCALAR_REFERENCE_SPECS: Array<{
 }> = [
   { collection: 'research_entities', field: 'canonicalGroupId' },
   { collection: 'research_scholarly_links', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'entry_pathways', field: 'researchEntityId', archiveOnConflict: true },
   { collection: 'signals', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'contact_routes', field: 'researchEntityId', archiveOnConflict: true },
-  { collection: 'posted_opportunities', field: 'researchEntityId', archiveOnConflict: true },
   {
     collection: 'research_entity_relationships',
     field: 'sourceResearchEntityId',
@@ -1286,26 +1280,6 @@ async function applyDeleteModeArtifactPlan(args: {
         },
       );
       counts.artifactMerged += result.modifiedCount || 0;
-    }
-
-    if (item.artifactType === 'EntryPathway') {
-      const [signals, routes, opportunities] = await Promise.all(
-        [
-          { collection: 'signals', field: 'entryPathwayId' },
-          { collection: 'contact_routes', field: 'entryPathwayId' },
-          { collection: 'posted_opportunities', field: 'entryPathwayId' },
-        ].map(async (child) => {
-          if (!(await collectionExists(child.collection))) return { modifiedCount: 0 };
-          return db.collection(child.collection).updateMany(
-            { [child.field]: objectId(item.duplicateId), archived: { $ne: true } },
-            { $set: { [child.field]: objectId(item.canonicalId), lastMaterializedAt: args.now } },
-          );
-        }),
-      );
-      counts.artifactChildrenRelinked +=
-        (signals.modifiedCount || 0) +
-        (routes.modifiedCount || 0) +
-        (opportunities.modifiedCount || 0);
     }
 
     const outcome = await archiveOrDeleteDuplicateDocument({

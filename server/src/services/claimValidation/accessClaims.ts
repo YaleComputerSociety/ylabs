@@ -1,35 +1,19 @@
-import type {
-  AccessSignalType,
-  ContactRouteType,
-  EntryPathwayType,
-  PostedOpportunityStatus,
-} from '../../models/researchAccessTypes';
+import type { AccessSignalType } from '../../models/researchAccessTypes';
 
 export type ClaimGateStatus = 'accepted' | 'review' | 'rejected';
 
-export type AccessArtifactType =
-  | 'EntryPathway'
-  | 'AccessSignal'
-  | 'ContactRoute'
-  | 'PostedOpportunity';
+export type AccessArtifactType = 'AccessSignal';
 
 export interface AccessArtifactCandidate {
   artifactType: AccessArtifactType;
   id?: string;
   researchEntityId?: string;
-  entryPathwayId?: string;
   derivationKey?: string;
   sourceEvidenceIds?: string[];
   sourceUrls?: string[];
   sourceName?: string;
   sourceUrl?: string;
-  pathwayType?: EntryPathwayType | string;
   signalType?: AccessSignalType | string;
-  routeType?: ContactRouteType | string;
-  url?: string;
-  status?: PostedOpportunityStatus | string;
-  title?: string;
-  applicationUrl?: string;
 }
 
 export interface ClaimValidationResult {
@@ -60,12 +44,6 @@ export interface ClaimGateReport {
   };
 }
 
-const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-]);
-
 function compactStrings(values: Array<unknown>): string[] {
   return Array.from(
     new Set(
@@ -81,78 +59,10 @@ function hasEvidence(candidate: AccessArtifactCandidate): boolean {
   return compactStrings(candidate.sourceEvidenceIds || []).length > 0;
 }
 
-function hasUrl(value: unknown): boolean {
-  if (typeof value !== 'string' || !value.trim()) return false;
-  try {
-    const parsed = new URL(value.trim());
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function hasOfficialApplicationPathway(bundle: AccessArtifactCandidate[]): boolean {
-  return bundle.some(
-    (candidate) =>
-      candidate.artifactType === 'EntryPathway' &&
-      candidate.derivationKey === 'pathway:OFFICIAL_APPLICATION:JOIN_PAGE' &&
-      !FORMALIZATION_ONLY_PATHWAY_TYPES.has(String(candidate.pathwayType || '')),
-  );
-}
-
-function hasOfficialApplicationSupport(
-  candidate: AccessArtifactCandidate,
-  bundle: AccessArtifactCandidate[],
-): boolean {
-  return Boolean(candidate.entryPathwayId) || hasOfficialApplicationPathway(bundle);
-}
-
-function classifyCandidate(
-  candidate: AccessArtifactCandidate,
-  bundle: AccessArtifactCandidate[],
-): ClaimValidationResult {
+function classifyCandidate(candidate: AccessArtifactCandidate): ClaimValidationResult {
   const reasons: string[] = [];
 
   if (!hasEvidence(candidate)) reasons.push('missing_source_evidence');
-
-  if (
-    candidate.artifactType === 'EntryPathway' &&
-    FORMALIZATION_ONLY_PATHWAY_TYPES.has(String(candidate.pathwayType || ''))
-  ) {
-    return {
-      status: 'review',
-      reasons: ['formalization_only', ...reasons],
-      claim: candidate,
-    };
-  }
-
-  if (
-    candidate.artifactType === 'AccessSignal' &&
-    candidate.signalType === 'APPLICATION_FORM_EXISTS' &&
-    !hasOfficialApplicationSupport(candidate, bundle)
-  ) {
-    reasons.push('missing_official_application_pathway');
-  }
-
-  if (
-    candidate.artifactType === 'ContactRoute' &&
-    candidate.routeType === 'OFFICIAL_APPLICATION'
-  ) {
-    if (!hasOfficialApplicationSupport(candidate, bundle)) {
-      reasons.push('missing_official_application_pathway');
-    }
-    if (!hasUrl(candidate.url)) reasons.push('missing_application_route');
-  }
-
-  if (candidate.artifactType === 'PostedOpportunity') {
-    if (!candidate.title) reasons.push('missing_title');
-    if (!hasUrl(candidate.applicationUrl) && !compactStrings(candidate.sourceUrls || []).some(hasUrl)) {
-      reasons.push('missing_application_route');
-    }
-    if (!['OPEN', 'ROLLING', 'CLOSED', 'ARCHIVED'].includes(String(candidate.status || ''))) {
-      reasons.push('missing_status');
-    }
-  }
 
   if (reasons.length > 0) {
     return { status: 'rejected', reasons: Array.from(new Set(reasons)), claim: candidate };
@@ -163,7 +73,7 @@ function classifyCandidate(
 export function validateAccessArtifactBundle(
   artifacts: AccessArtifactCandidate[],
 ): ClaimValidationBundleResult {
-  const results = artifacts.map((artifact) => classifyCandidate(artifact, artifacts));
+  const results = artifacts.map((artifact) => classifyCandidate(artifact));
   return {
     accepted: results.filter((result) => result.status === 'accepted'),
     review: results.filter((result) => result.status === 'review'),

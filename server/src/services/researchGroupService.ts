@@ -29,9 +29,6 @@ import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribu
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { StudentTracking } from '../models/studentTracking';
 import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
@@ -73,11 +70,6 @@ import { buildResearchEntityPublicDescriptionRepresentation } from './researchEn
 import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import {
-  isApprovedPublicContactRoute,
-  publicPostedOpportunityMongoMatch,
-  studentPathwayMongoMatch,
-} from './studentAccessPublicationPolicy';
 import {
   canonicalScholarlyWorkKey,
   evaluateResearchActivityIntegrity,
@@ -1786,121 +1778,6 @@ export function researchDetailLeadIdentity(
   };
 }
 
-function isResearchWebsiteFacultyPiRoute(route: any, group: any): boolean {
-  if (route?.routeType !== 'FACULTY_PI') return false;
-  const researchWebsiteDestinations = new Set(
-    [group?.websiteUrl, group?.website]
-      .filter((url) => url && !isLikelyOfficialPersonProfileUrl(url))
-      .map(normalizePublicUrlDestination)
-      .filter(Boolean),
-  );
-  if (researchWebsiteDestinations.size === 0) return false;
-  return [route.url, route.sourceUrl]
-    .map(normalizePublicUrlDestination)
-    .some((destination) => destination && researchWebsiteDestinations.has(destination));
-}
-
-function contactRouteDedupeKey(route: any): string {
-  const routeType = String(route?.routeType || 'UNKNOWN')
-    .trim()
-    .toUpperCase();
-  const destination =
-    normalizePublicUrlDestination(route?.url) ||
-    normalizePublicUrlDestination(route?.sourceUrl) ||
-    String(route?.email || '')
-      .trim()
-      .toLowerCase() ||
-    String(route?.label || route?.name || '')
-      .trim()
-      .toLowerCase();
-  return `${routeType}:${destination}`;
-}
-
-function contactRouteRank(route: any): number {
-  let rank = 0;
-  if (researchGroupDocumentId(route?._id).startsWith('derived-pi-outreach-')) rank -= 20;
-  if (String(route?.email || '').trim()) rank -= 10;
-  if (normalizePublicUrlDestination(route?.url)) rank -= 5;
-  rank += Number.isFinite(route?.priority) ? route.priority : 100;
-  return rank;
-}
-
-function dedupePublicContactRoutes(routes: any[]): any[] {
-  const deduped = new Map<string, any>();
-
-  for (const [index, route] of routes.entries()) {
-    const key = contactRouteDedupeKey(route);
-    if (!key.split(':')[1]) {
-      const fallbackKey = researchGroupDocumentId(route?._id) || `route-${index}`;
-      deduped.set(fallbackKey, route);
-      continue;
-    }
-
-    const existing = deduped.get(key);
-    if (!existing || contactRouteRank(route) < contactRouteRank(existing)) {
-      deduped.set(key, route);
-    }
-  }
-
-  return Array.from(deduped.values()).sort(
-    (a, b) =>
-      (Number.isFinite(a?.priority) ? a.priority : 100) -
-        (Number.isFinite(b?.priority) ? b.priority : 100) ||
-      researchGroupDocumentId(a?._id).localeCompare(researchGroupDocumentId(b?._id)),
-  );
-}
-
-const publicContactRouteForResearchDetail = (route: any) => ({
-  routeType: route.routeType,
-  label: publicString(route.label),
-  name: publicString(route.name),
-  role: publicString(route.role),
-  priority: route.priority,
-  visibility: route.visibility,
-  contactPolicy: route.contactPolicy,
-  rationale: publicString(route.rationale),
-  url: publicHttpUrl(route.url),
-  sourceUrl: publicHttpUrl(route.sourceUrl),
-  observedAt: route.observedAt,
-  reviewStatus: route.review?.status,
-});
-
-export function buildLeadPiOutreachContactRoute(
-  members: Array<{ user: any; role: string; row?: any }>,
-  group: any,
-): any | null {
-  const lead = members
-    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
-    .find((member) => resolveLeadOfficialProfileUrl(member));
-  if (!lead) return null;
-
-  const name = memberDisplayName(lead);
-  const officialProfileUrl = resolveLeadOfficialProfileUrl(lead);
-  if (!officialProfileUrl) return null;
-
-  const key = (researchGroupDocumentId(lead.user?._id) || name || officialProfileUrl)
-    .toLowerCase()
-    .replace(/[^a-z0-9@._-]+/g, '-');
-  const route = {
-    _id: `derived-pi-outreach-${key}`,
-    routeType: 'FACULTY_PI',
-    label: name || 'Lead professor',
-    name: name || undefined,
-    role:
-      lead.role === 'director' || lead.role === 'co-director'
-        ? 'Director'
-        : 'Principal Investigator',
-    priority: 80,
-    visibility: 'PUBLIC',
-    contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-    rationale: 'Derived from the attached lead PI official profile.',
-    sourceUrl: publicHttpUrl(officialProfileUrl || lead.row?.sourceUrl || group?.websiteUrl) || '',
-  } as any;
-
-  if (officialProfileUrl) route.url = officialProfileUrl;
-  return route;
-}
-
 function normalizedWordsForMatch(value: unknown): string[] {
   return String(value || '')
     .toLowerCase()
@@ -2215,23 +2092,6 @@ const publicPathwayText = (
   return redactDirectContactInfo(sanitizeFacultyResearchEntityText(value, researchEntity));
 };
 
-const publicEntryPathwayForResearchDetail = (
-  pathway: any,
-  researchEntity: PublicResearchEntityDto,
-) => ({
-  _id: pathway._id,
-  pathwayType: pathway.pathwayType,
-  status: pathway.status,
-  evidenceStrength: pathway.evidenceStrength,
-  studentFacingLabel: publicPathwayText(pathway.studentFacingLabel, researchEntity),
-  explanation: publicPathwayText(pathway.explanation, researchEntity),
-  bestNextStep: publicPathwayText(pathway.bestNextStep, researchEntity),
-  compensation: pathway.compensation,
-  sourceUrls: publicSourceUrls(pathway.sourceUrls),
-  confidence: pathway.confidence,
-  lastObservedAt: pathway.lastObservedAt,
-});
-
 const publicAccessSignalForResearchDetail = (signal: any) => ({
   signalType: signal.type,
   confidence: signal.confidence,
@@ -2239,21 +2099,6 @@ const publicAccessSignalForResearchDetail = (signal: any) => ({
   excerpt: publicString(signal.source?.excerpt),
   sourceUrl: publicHttpUrl(signal.source?.url),
   observedAt: signal.observedAt,
-});
-
-const publicPostedOpportunityForResearchDetail = (opportunity: any) => ({
-  _id: opportunity._id,
-  title: publicString(opportunity.title),
-  description: publicString(opportunity.description),
-  term: publicString(opportunity.term),
-  deadline: opportunity.deadline,
-  applicationUrl: publicHttpUrl(opportunity.applicationUrl),
-  status: opportunity.status,
-  hoursPerWeek: opportunity.hoursPerWeek,
-  payRate: publicString(opportunity.payRate),
-  compensationType: opportunity.compensationType,
-  eligibility: publicString(opportunity.eligibility),
-  sourceUrls: publicSourceUrls(opportunity.sourceUrls),
 });
 
 const publicResearchDetailGroup = (group: any) => {
@@ -2303,23 +2148,12 @@ export async function recordResearchEntityOutreach(
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   })
-    .select('_id')
-    .lean()) as { _id: mongoose.Types.ObjectId } | null;
+    .select('_id websiteUrl')
+    .lean()) as { _id: mongoose.Types.ObjectId; websiteUrl?: string } | null;
   if (!entity) throw new Error('OUTREACH_ENTITY_NOT_FOUND');
 
-  const candidateRoutes = (await ContactRoute.find({
-    researchEntityId: entity._id,
-    archived: { $ne: true },
-    visibility: 'PUBLIC',
-    'review.status': 'approved',
-  })
-    .sort({ priority: 1, updatedAt: -1 })
-    .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
-    .lean()) as Array<Record<string, any>>;
-  const route = candidateRoutes.find((candidate) =>
-    isApprovedPublicContactRoute(candidate as Record<string, any>),
-  );
-  if (!route?.url) throw new Error('NO_APPROVED_OUTREACH_ROUTE');
+  const routeUrl = publicHttpUrl(entity.websiteUrl);
+  if (!routeUrl) throw new Error('NO_APPROVED_OUTREACH_ROUTE');
 
   const now = new Date();
   const tracking = await StudentTracking.findOneAndUpdate(
@@ -2342,7 +2176,7 @@ export async function recordResearchEntityOutreach(
     templateVersion: 'official-route-v1',
   });
 
-  return { recorded: true, routeUrl: route.url };
+  return { recorded: true, routeUrl };
 }
 
 export async function getResearchGroupDetail(slug: string): Promise<{
@@ -2354,10 +2188,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   scholarlyLinks: any[];
   memberScholarlyLinks: any[];
   activeListings: any[];
-  entryPathways: any[];
   accessSignals: any[];
-  contactRoutes: any[];
-  postedOpportunities: any[];
   undergraduateLogistics: PublicUndergraduateLogistics;
   entityRelationships: any[];
   relatedResearchEntities: PublicResearchEntitySummaryDto[];
@@ -2433,7 +2264,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     dedupedMembersWithRows,
     rawLeadMembers,
   );
-  const piOutreachRoute = buildLeadPiOutreachContactRoute(dedupedMembersWithRows, group);
   const leadMemberNames = dedupedMembersWithRows
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
     .map((member) => memberDisplayName(member))
@@ -2536,10 +2366,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     entityScholarlyLinks,
     attributedScholarlyLinks,
     activeListingsRaw,
-    entryPathways,
     accessSignals,
-    contactRoutes,
-    postedOpportunities,
     accessSummary,
     planningContexts,
     undergraduateLogistics,
@@ -2564,14 +2391,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ updatedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_LISTINGS)
       .lean(),
-    EntryPathway.find({
-      researchEntityId: (group as any)._id,
-      archived: false,
-      ...studentPathwayMongoMatch(),
-    })
-      .sort({ updatedAt: -1 })
-      .limit(MAX_PUBLIC_DETAIL_ENTRY_PATHWAYS)
-      .lean(),
     Signal.find({
       researchEntityId: (group as any)._id,
       type: { $in: accessSignalTypes },
@@ -2580,35 +2399,10 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       .sort({ observedAt: -1 })
       .limit(MAX_PUBLIC_DETAIL_ACCESS_SIGNALS)
       .lean(),
-    ContactRoute.find(
-      {
-        researchEntityId: (group as any)._id,
-        archived: false,
-        visibility: 'PUBLIC',
-        'review.status': 'approved',
-      },
-      'routeType label url priority visibility contactPolicy rationale sourceUrl observedAt review',
-    )
-      .sort({ priority: 1 })
-      .limit(MAX_PUBLIC_DETAIL_CONTACT_ROUTES)
-      .lean(),
-    PostedOpportunity.find({
-      researchEntityId: (group as any)._id,
-      ...publicPostedOpportunityMongoMatch({ archived: false }),
-    })
-      .sort({ deadline: 1 })
-      .limit(MAX_PUBLIC_DETAIL_POSTED_OPPORTUNITIES)
-      .lean(),
     getAccessSummaryForResearchEntity((group as any)._id),
     optionalPlanningContexts([(group as any)._id]),
     optionalUndergraduateLogistics((group as any)._id),
   ]);
-  const entityContactRoutes = (contactRoutes as any[]).filter(
-    (route) => !isResearchWebsiteFacultyPiRoute(route, group),
-  );
-  const publicContactRoutes = dedupePublicContactRoutes(
-    piOutreachRoute ? [...entityContactRoutes, piOutreachRoute] : entityContactRoutes,
-  ).map(publicContactRouteForResearchDetail);
 
   const scholarlyLinksById = new Map(
     (attributedScholarlyLinks as any[]).flatMap((link) => {
@@ -2654,13 +2448,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
 
   const activeListings = activeListingsRaw.map(publicListingForResearchDetail);
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
-  const publicEntryPathways = (entryPathways as any[]).map((pathway) =>
-    publicEntryPathwayForResearchDetail(pathway, publicGroupForResponse),
-  );
   const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
-  const publicPostedOpportunities = (postedOpportunities as any[]).map(
-    publicPostedOpportunityForResearchDetail,
-  );
   const studentDecisionExplanation = publicStudentDecisionExplanation(
     publicGroup.studentDecisionExplanation,
     {
@@ -2669,9 +2457,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
         publicGroup.websiteUrl,
       ].filter(Boolean),
       accessSignals: publicAccessSignals,
-      entryPathways: publicEntryPathways,
-      contactRoutes: publicContactRoutes as any[],
-      postedOpportunities: publicPostedOpportunities,
     },
   );
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
@@ -2688,10 +2473,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     roster,
     ...researchActivity,
     activeListings,
-    entryPathways: publicEntryPathways,
     accessSignals: publicAccessSignals,
-    contactRoutes: publicContactRoutes,
-    postedOpportunities: publicPostedOpportunities,
     undergraduateLogistics,
     ...relationshipPayload,
   });

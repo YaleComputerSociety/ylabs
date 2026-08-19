@@ -94,18 +94,9 @@ export interface ValidatedOrphanReferenceDecision extends OrphanReferenceReviewD
   classification: OrphanReferenceClassification;
 }
 
-export const ACCESS_REFERENCE_COLLECTIONS = new Set([
-  'entry_pathways',
-  'signals',
-  'contact_routes',
-]);
+export const ACCESS_REFERENCE_COLLECTIONS = new Set(['signals']);
 
-export const ARCHIVABLE_REFERENCE_COLLECTIONS = new Set([
-  'entry_pathways',
-  'signals',
-  'contact_routes',
-  'posted_opportunities',
-]);
+export const ARCHIVABLE_REFERENCE_COLLECTIONS = new Set(['signals']);
 
 const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
 const MAX_ARTIFACT_AGE_MS = 48 * 60 * 60 * 1000;

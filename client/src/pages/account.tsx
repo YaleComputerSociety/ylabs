@@ -11,7 +11,6 @@ import { Link } from 'react-router-dom';
 import UserContext from '../contexts/UserContext';
 import ProfileEditor from '../components/accounts/ProfileEditor';
 import FavoritesManager from '../components/accounts/FavoritesManager';
-import SavedPathwaysSection from '../components/accounts/SavedPathwaysSection';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import { safeRouteSegment } from '../utils/url';
@@ -29,10 +28,9 @@ const parsePlanningDate = (value?: string): number => {
 };
 
 const nextPlanningCue = (
-  savedPathwaySummary: PlanningSummary,
   savedFellowshipSummary: PlanningSummary,
 ): string | undefined => {
-  const candidates = [savedPathwaySummary, savedFellowshipSummary].filter(
+  const candidates = [savedFellowshipSummary].filter(
     (summary) => summary.nextDeadlineLabel,
   );
   if (candidates.length === 0) return undefined;
@@ -45,10 +43,6 @@ const Account = () => {
   const { user } = useContext(UserContext);
   useDocumentTitle('Dashboard');
   const [adminViewMode, setAdminViewMode] = useState<'student' | 'professor'>('student');
-  const [savedPathwaySummary, setSavedPathwaySummary] = useState<PlanningSummary>({
-    count: 0,
-    nextDeadlineLabel: '',
-  });
   const [savedFellowshipSummary, setSavedFellowshipSummary] = useState<PlanningSummary>({
     count: 0,
   });
@@ -154,13 +148,12 @@ const Account = () => {
 
         {!showProfView && (
           <PlanningOverview
-            savedPathwayCount={savedPathwaySummary.count}
+            savedPathwayCount={0}
             savedFellowshipCount={savedFellowshipSummary.count}
-            nextDeadlineLabel={nextPlanningCue(savedPathwaySummary, savedFellowshipSummary)}
+            nextDeadlineLabel={nextPlanningCue(savedFellowshipSummary)}
           />
         )}
 
-        {!showProfView && <SavedPathwaysSection onSummaryChange={setSavedPathwaySummary} />}
         <FavoritesManager
           variant={showProfView ? 'professor' : 'student'}
           onSummaryChange={setSavedFellowshipSummary}

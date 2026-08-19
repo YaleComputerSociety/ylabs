@@ -30,11 +30,6 @@ interface LabHeaderProps {
   group: ResearchGroup;
   dedupeWebsiteUrls?: Array<string | undefined | null>;
   actions?: React.ReactNode;
-  /**
-   * Whether the research home has at least one active canonical posted
-   * opportunity. Legacy listings are not counted here.
-   */
-  hasActivePostedOpportunity?: boolean;
 }
 
 const normalizeActionUrl = (url?: string | null): string => {
@@ -56,10 +51,9 @@ const LabHeader = ({
   group,
   dedupeWebsiteUrls = [],
   actions,
-  hasActivePostedOpportunity = false,
 }: LabHeaderProps) => {
   const { departments } = useConfig();
-  const { verdict } = computeAcceptanceVerdict(group, hasActivePostedOpportunity);
+  const { verdict } = computeAcceptanceVerdict(group);
   const verdictClasses = verdictBadgeStyles(verdict);
   const verdictText = verdictLabel(verdict);
   const websiteHref = group.websiteUrl ? ensureHttpPrefix(group.websiteUrl) : '';

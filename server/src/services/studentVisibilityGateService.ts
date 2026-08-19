@@ -1,9 +1,7 @@
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { EntryPathway } from '../models/entryPathway';
 import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import mongoose from 'mongoose';
@@ -120,12 +118,6 @@ export interface StudentVisibilityGateReport {
 }
 
 const PUBLIC_TIERS = new Set<string>(publicStudentVisibilityTiers);
-
-const FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES = [
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-];
 
 const evidenceReasons = new Set([
   'application_route',
@@ -888,7 +880,7 @@ async function planResearchEntityGateUpdates(
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [rosterByEntityId, accessRows, pathwayRows, postedRows] = await Promise.all([
+  const [rosterByEntityId, accessRows] = await Promise.all([
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -906,27 +898,6 @@ async function planResearchEntityGateUpdates(
           sourceNames: { $addToSet: '$source.name' },
         },
       },
-    ]),
-    EntryPathway.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
-          sourceUrls: { $elemMatch: { $regex: '^https?://', $options: 'i' } },
-        },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    PostedOpportunity.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          status: { $in: ['OPEN', 'ROLLING'] },
-        },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
     ]),
   ]);
 
@@ -985,8 +956,6 @@ async function planResearchEntityGateUpdates(
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
   const accessCounts = countByEntityId(accessRows as any[]);
-  const pathwayCounts = countByEntityId(pathwayRows as any[]);
-  const postedCounts = countByEntityId(postedRows as any[]);
   const sourceNamesByEntityId = new Map(
     (accessRows as any[]).map((row) => [
       studentVisibilityGateDocumentId(row._id),
@@ -1032,8 +1001,8 @@ async function planResearchEntityGateUpdates(
       entity,
       leadMembers,
       accessSignalCount: accessCounts.get(recordId) || 0,
-      actionablePathwayCount: pathwayCounts.get(recordId) || 0,
-      openPostedOpportunityCount: postedCounts.get(recordId) || 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
       duplicateRisk:
         hasProfileAreaShellDuplicateRisk({
           entity,

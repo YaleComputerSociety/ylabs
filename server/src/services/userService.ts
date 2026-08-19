@@ -17,7 +17,6 @@ import {
   addFavorite as addFellowshipFavorite,
   removeFavorite as removeFellowshipFavorite,
 } from './fellowshipService';
-import { getPathwaysByIds, type PathwaySearchHit } from './pathwaySearchService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -277,31 +276,6 @@ const isHttpUrl = (value: unknown): value is string => {
   return isPublicHttpUrl(value);
 };
 
-const sourceLinksForPathwayExport = (pathway: PathwaySearchHit): string[] =>
-  Array.from(
-    new Set(
-      [
-        ...(pathway.sourceUrls || []),
-        ...(pathway.evidence || []).map((item) => item.sourceUrl),
-        pathway.activePostedOpportunity?.applicationUrl,
-      ].filter(isHttpUrl),
-    ),
-  );
-
-const defaultIntentForPathwayExport = (pathway: PathwaySearchHit): string => {
-  switch (pathway.bestNextStepCategory) {
-    case 'apply':
-      return 'apply';
-    case 'find-funding':
-      return 'funding';
-    case 'plan-outreach':
-    case 'contact-program':
-      return 'outreach';
-    default:
-      return 'later';
-  }
-};
-
 const exportTextWithoutDirectContact = (value: unknown): string =>
   safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
 
@@ -314,78 +288,6 @@ const exportChecklistForSpreadsheet = (
   Object.fromEntries(
     Object.entries(checklist).map(([key, value]) => [exportUserTextForSpreadsheet(key), value]),
   );
-
-export const buildSavedPathwayPlansExport = (
-  pathways: PathwaySearchHit[],
-  savedPathwayPlans: Record<string, SavedPathwayPlanInput | undefined>,
-  options: SavedPathwayPlansExportOptions = {},
-): SavedPathwayPlansExport => {
-  const includePrivateNotes = options.includePrivateNotes === true;
-
-  return {
-    schemaVersion: 1,
-    exportedAt: (options.exportedAt || new Date()).toISOString(),
-    itemCount: pathways.length,
-    privacy: {
-      includesPrivateNotes: includePrivateNotes,
-      includesContactRoutes: false,
-      includesNonPublicContactEmails: false,
-    },
-    items: pathways.map((pathway) => {
-      const rawPlan = savedPathwayPlans[pathway._id] || {
-        intent: defaultIntentForPathwayExport(pathway),
-        stage: 'saved',
-        note: '',
-        checklist: {},
-      };
-      const plan = sanitizeSavedPathwayPlanForStorage(rawPlan);
-      const item: SavedPathwayPlansExportItem = {
-        pathwayId: pathway._id,
-        title: exportTextWithoutDirectContact(pathway.studentFacingLabel),
-        researchEntity: {
-          id: pathway.researchEntity._id,
-          slug: pathway.researchEntity.slug,
-          name: exportTextWithoutDirectContact(
-            pathway.researchEntity.displayName || pathway.researchEntity.name,
-          ),
-        },
-        intent: plan.intent,
-        stage: plan.stage,
-        checklist: exportChecklistForSpreadsheet(plan.checklist as Record<string, boolean>),
-        sourceLinks: sourceLinksForPathwayExport(pathway),
-        bestNextStepCategory: pathway.bestNextStepCategory,
-      };
-
-      if (includePrivateNotes && plan.note) {
-        item.privateNote = exportUserTextForSpreadsheet(plan.note);
-      }
-
-      return item;
-    }),
-  };
-};
-
-export function pruneSavedPathwayPlansForExistingPathways(
-  savedPathwayPlans: Record<string, SavedPathwayPlanInput | undefined> = {},
-  pathwayIds: Array<string | mongoose.Types.ObjectId>,
-): Record<string, SavedPathwayPlanInput | undefined> {
-  const validIds = new Set(
-    pathwayIds.map((id) => normalizeObjectIdStringForUserMutation(id, 'pathway')).filter(Boolean),
-  );
-  return Object.fromEntries(
-    Object.entries(savedPathwayPlans).filter(([pathwayId]) => validIds.has(pathwayId)),
-  );
-}
-
-export function buildSavedPathwayPlanUnsetForIds(
-  pathwayIds: Array<string | mongoose.Types.ObjectId>,
-): Record<string, ''> {
-  return Object.fromEntries(
-    pathwayIds
-      .map((pathwayId) => normalizeObjectIdStringForUserMutation(pathwayId, 'pathway'))
-      .map((pathwayId) => [`savedPathwayPlans.${pathwayId}`, '']),
-  );
-}
 
 const badRequestError = (message: string) => {
   const error: any = new Error(message);
@@ -613,30 +515,6 @@ const removeFavoriteObjectIdsWithoutCounters = async (
   const user = await User.findOneAndUpdate(
     baseFilter,
     { $pull: { [fieldName]: { $in: values } } },
-    { new: true, runValidators: true },
-  );
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-  return user.toObject();
-};
-
-const removeSavedPathwayIdsAndPlans = async (
-  id: any,
-  values: mongoose.Types.ObjectId[],
-): Promise<any> => {
-  if (values.length === 0) {
-    return readUser(id);
-  }
-
-  const unset = buildSavedPathwayPlanUnsetForIds(values);
-  const baseFilter = userLookupFilterForMutation(id);
-  const user = await User.findOneAndUpdate(
-    baseFilter,
-    {
-      $pull: { favPathways: { $in: values } },
-      ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
-    },
     { new: true, runValidators: true },
   );
   if (!user) {
@@ -1040,90 +918,6 @@ export const updateSavedProgramTracking = async (
   throw error;
 };
 
-export const addFavPathways = async (id: any, pathways: [mongoose.Types.ObjectId]) => {
-  const pathwayIds = normalizeObjectIdsForUserMutation(pathways, 'favPathways');
-  const visiblePathways = await getPathwaysByIds(
-    pathwayIds.map((pathwayId) => pathwayId.toHexString()),
-  );
-  const visiblePathwayIds = normalizeObjectIdsForUserMutation(
-    visiblePathways.map((pathway) => pathway._id),
-    'favPathways',
-  );
-  let newUser = await readUser(id);
-
-  for (const pathwayId of visiblePathwayIds) {
-    const result = await addFavoriteObjectIdIfMissing(id, 'favPathways', pathwayId);
-    newUser = result.user;
-  }
-
-  return newUser;
-};
-
-export const deleteFavPathways = async (id: any, removedPathways: [mongoose.Types.ObjectId]) => {
-  const pathwayIds = normalizeObjectIdsForUserMutation(removedPathways, 'favPathways');
-  const newUser = await removeSavedPathwayIdsAndPlans(id, pathwayIds);
-
-  return newUser;
-};
-
-export const clearFavPathways = async (id: any) => {
-  const newUser = await updateUser(id, { favPathways: [], savedPathwayPlans: {} });
-
-  return newUser;
-};
-
-export const getSavedPathwayPlans = async (id: any) => {
-  const user = await readUser(id);
-  const savedPathwayPlans = sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
-  const visiblePathways = await getPathwaysByIds(Object.keys(savedPathwayPlans));
-  return pruneSavedPathwayPlansForExistingPathways(
-    savedPathwayPlans,
-    visiblePathways.map((pathway) => pathway._id),
-  );
-};
-
-export const exportSavedPathwayPlans = async (
-  id: any,
-  options: SavedPathwayPlansExportOptions = {},
-) => {
-  const user = await readUser(id);
-  const pathwayIds = storedObjectIdStringsForUserMutation(user.favPathways, 'favPathways');
-  const pathways = await getPathwaysByIds(pathwayIds);
-
-  return buildSavedPathwayPlansExport(pathways, user.savedPathwayPlans || {}, options);
-};
-
-export const updateSavedPathwayPlan = async (
-  id: any,
-  pathwayId: string,
-  plan: SavedPathwayPlanInput,
-) => {
-  const [normalizedPathwayId] = normalizeObjectIdsForUserMutation([pathwayId], 'pathway');
-  const pathwayKey = normalizedPathwayId.toString();
-  const [visiblePathway] = await getPathwaysByIds([pathwayKey]);
-  if (!visiblePathway) {
-    throw new NotFoundError('Pathway not found');
-  }
-  const sanitized = sanitizeSavedPathwayPlanForStorage(plan);
-  const user = await updateUser(id, {
-    $set: {
-      [`savedPathwayPlans.${pathwayKey}`]: sanitized,
-    },
-  });
-  return sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
-};
-
-export const deleteSavedPathwayPlan = async (id: any, pathwayId: string) => {
-  const [normalizedPathwayId] = normalizeObjectIdsForUserMutation([pathwayId], 'pathway');
-  const pathwayKey = normalizedPathwayId.toString();
-  const user = await updateUser(id, {
-    $unset: {
-      [`savedPathwayPlans.${pathwayKey}`]: '',
-    },
-  });
-  return sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans);
-};
-
 export interface SavedResearchEntitySummary {
   _id: string;
   slug: string;
@@ -1205,127 +999,9 @@ const visibleSavedResearchEntities = async (
   });
 };
 
-export const buildSavedResearchEntityMigration = (
-  pathways: PathwaySearchHit[],
-  legacyPlans: Record<string, Required<SavedPathwayPlanInput>>,
-  existingIds: string[] = [],
-  existingPlans: Record<string, Required<SavedPathwayPlanInput>> = {},
-) => {
-  const entityIds = new Set(existingIds);
-  const plans = { ...existingPlans };
-  const conflicts: Record<string, Record<string, Required<SavedPathwayPlanInput>>> = {};
-  const grouped = new Map<string, PathwaySearchHit[]>();
-  for (const pathway of pathways) {
-    const entityId = normalizeObjectIdStringForUserMutation(
-      pathway.researchEntity?._id,
-      'researchEntity',
-    );
-    grouped.set(entityId, [...(grouped.get(entityId) || []), pathway]);
-  }
-  for (const [entityId, entityPathways] of grouped) {
-    entityIds.add(entityId);
-    const legacy = [...entityPathways]
-      .sort((a, b) => a._id.localeCompare(b._id))
-      .flatMap((pathway) =>
-        legacyPlans[pathway._id]
-          ? [{ pathwayId: pathway._id, plan: legacyPlans[pathway._id] }]
-          : [],
-      );
-    if (!plans[entityId] && legacy.length === 1) plans[entityId] = legacy[0].plan;
-    if (legacy.length > 1) {
-      conflicts[entityId] = Object.fromEntries(
-        legacy.map(({ pathwayId, plan }) => [pathwayId, plan]),
-      );
-    }
-  }
-  return { entityIds: [...entityIds], plans, conflicts };
-};
-
-export const savedResearchEntityLegacyMigrationInputs = (user: {
-  savedResearchEntityMigrationCompleted?: unknown;
-  favPathways?: unknown;
-  savedPathwayPlans?: unknown;
-}) => {
-  const migrationCompleted = user.savedResearchEntityMigrationCompleted === true;
-  return {
-    migrationCompleted,
-    pathwayIds: migrationCompleted
-      ? []
-      : storedObjectIdStringsForUserMutation(user.favPathways, 'favPathways'),
-    legacyPlans: migrationCompleted
-      ? {}
-      : sanitizeSavedPathwayPlansForResponse(user.savedPathwayPlans),
-  };
-};
-
-export const savedResearchEntityLegacyMigrationClaimFilter = (user: {
-  favPathways?: unknown;
-  savedPathwayPlans?: unknown;
-}) => ({
-  savedResearchEntityMigrationCompleted: { $ne: true },
-  $expr: {
-    $and: [
-      { $eq: [{ $ifNull: ['$favPathways', []] }, user.favPathways ?? []] },
-      { $eq: [{ $ifNull: ['$savedPathwayPlans', {}] }, user.savedPathwayPlans ?? {}] },
-    ],
-  },
-});
-
-/** Lazily moves pathway-owned saves to entity ownership without deleting rollback data. */
+/** Loads the saved research entities for a user, pruning any that are no longer visible. */
 export const migrateSavedResearchEntitiesForUser = async (id: any) => {
-  let user = await readUser(id);
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { migrationCompleted, pathwayIds, legacyPlans } =
-      savedResearchEntityLegacyMigrationInputs(user);
-    if (migrationCompleted) break;
-    const pathways = await getPathwaysByIds(pathwayIds);
-    const migration = buildSavedResearchEntityMigration(pathways, legacyPlans);
-    const visibleMigrated = await visibleSavedResearchEntities(migration.entityIds);
-    const visibleMigratedIds = new Set(visibleMigrated.map((entity) => entity._id));
-    const migratedPlans = Object.fromEntries(
-      Object.entries(migration.plans).filter(([entityId]) => visibleMigratedIds.has(entityId)),
-    );
-    const claimed = await User.findOneAndUpdate(
-      {
-        ...userLookupFilterForMutation(id),
-        ...savedResearchEntityLegacyMigrationClaimFilter(user),
-      },
-      [
-        {
-          $set: {
-            savedResearchEntities: {
-              $setUnion: [
-                { $ifNull: ['$savedResearchEntities', []] },
-                visibleMigrated.map((entity) => new mongoose.Types.ObjectId(entity._id)),
-              ],
-            },
-            savedResearchEntityPlans: {
-              $mergeObjects: [migratedPlans, { $ifNull: ['$savedResearchEntityPlans', {}] }],
-            },
-            savedResearchEntityMigrationCompleted: true,
-            ...(Object.keys(migration.conflicts).length
-              ? {
-                  savedResearchEntityPlanMigrationConflicts: {
-                    $mergeObjects: [
-                      migration.conflicts,
-                      { $ifNull: ['$savedResearchEntityPlanMigrationConflicts', {}] },
-                    ],
-                  },
-                }
-              : {}),
-          },
-        },
-      ],
-      { new: true },
-    );
-    user = await readUser(id);
-    if (claimed || user.savedResearchEntityMigrationCompleted === true) break;
-    if (attempt === 4) {
-      const error: any = new Error('Saved planning changed during migration');
-      error.status = 409;
-      throw error;
-    }
-  }
+  const user = await readUser(id);
   const existingIds = storedObjectIdStringsForUserMutation(
     user.savedResearchEntities || [],
     'savedResearchEntities',

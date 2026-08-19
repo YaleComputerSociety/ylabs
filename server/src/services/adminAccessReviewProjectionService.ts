@@ -8,16 +8,10 @@ import {
 } from '../models/adminAccessReviewProjection';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 
 export interface AdminAccessReviewProjectionCounts {
-  entryPathways: number;
   accessSignals: number;
-  contactRoutes: number;
-  postedOpportunities: number;
 }
 
 export interface AdminAccessReviewProjectionValue {
@@ -34,10 +28,7 @@ export interface AdminAccessReviewProjectionValue {
 
 interface ProjectionModelDeps {
   researchEntityModel?: typeof ResearchEntity;
-  entryPathwayModel?: typeof EntryPathway;
   accessSignalModel?: typeof Signal;
-  contactRouteModel?: typeof ContactRoute;
-  postedOpportunityModel?: typeof PostedOpportunity;
   projectionModel?: typeof AdminAccessReviewProjection;
 }
 
@@ -66,10 +57,7 @@ export class AdminAccessReviewProjectionUnavailableError extends Error {
 }
 
 const EMPTY_COUNTS = Object.freeze({
-  entryPathways: 0,
   accessSignals: 0,
-  contactRoutes: 0,
-  postedOpportunities: 0,
 });
 
 const MAX_SEARCH_PREFIXES = 500;
@@ -126,7 +114,7 @@ function reviewAggregatePipeline(
           ? {
               officialApplications: {
                 $sum: {
-                  $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$applicationUrl', ''] } }, 0] }, 1, 0],
+                  $cond: [{ $eq: ['$type', 'APPLICATION_FORM_EXISTS'] }, 1, 0],
                 },
               },
             }
@@ -137,7 +125,7 @@ function reviewAggregatePipeline(
 }
 
 async function aggregateReviewCounts(
-  model: typeof EntryPathway | typeof Signal | typeof ContactRoute | typeof PostedOpportunity,
+  model: typeof Signal,
   researchEntityId: mongoose.Types.ObjectId,
   extraMatch: Record<string, unknown> = {},
   includeOfficialApplication = false,
@@ -156,23 +144,14 @@ function projectionValueFromParts(
   researchEntityId: mongoose.Types.ObjectId,
   entity: Record<string, unknown>,
   rows: {
-    pathways: { count: number; unreviewed: number };
-    signals: { count: number; unreviewed: number };
-    routes: { count: number; unreviewed: number };
-    opportunities: { count: number; unreviewed: number; officialApplications: number };
+    signals: { count: number; unreviewed: number; officialApplications: number };
   },
 ): AdminAccessReviewProjectionValue {
   const counts = {
-    entryPathways: rows.pathways.count,
     accessSignals: rows.signals.count,
-    contactRoutes: rows.routes.count,
-    postedOpportunities: rows.opportunities.count,
   };
   const unreviewedCounts = {
-    entryPathways: rows.pathways.unreviewed,
     accessSignals: rows.signals.unreviewed,
-    contactRoutes: rows.routes.unreviewed,
-    postedOpportunities: rows.opportunities.unreviewed,
   };
   const updatedAt = entity.updatedAt;
   return {
@@ -181,7 +160,7 @@ function projectionValueFromParts(
     counts,
     unreviewedCounts,
     totalUnreviewed: Object.values(unreviewedCounts).reduce((sum, count) => sum + count, 0),
-    hasOfficialApplication: rows.opportunities.officialApplications > 0,
+    hasOfficialApplication: rows.signals.officialApplications > 0,
     sortUpdatedAt:
       updatedAt instanceof Date && !Number.isNaN(updatedAt.getTime()) ? updatedAt : new Date(0),
     computedAt: new Date(),
@@ -200,26 +179,14 @@ export async function buildAdminAccessReviewProjection(
     .lean();
   if (!entity) return null;
 
-  const [pathways, signals, routes, opportunities] = await Promise.all([
-    aggregateReviewCounts(deps.entryPathwayModel || EntryPathway, researchEntityId, {
-      derivationKey: { $not: /^faculty-opportunity:/ },
-    }),
-    aggregateReviewCounts(deps.accessSignalModel || Signal, researchEntityId, {
-      type: { $in: [...accessSignalTypes] },
-    }),
-    aggregateReviewCounts(deps.contactRouteModel || ContactRoute, researchEntityId),
-    aggregateReviewCounts(
-      deps.postedOpportunityModel || PostedOpportunity,
-      researchEntityId,
-      { submissionStatus: { $ne: 'DRAFT' } },
-      true,
-    ),
-  ]);
+  const signals = await aggregateReviewCounts(
+    deps.accessSignalModel || Signal,
+    researchEntityId,
+    { type: { $in: [...accessSignalTypes] } },
+    true,
+  );
   return projectionValueFromParts(researchEntityId, entity as Record<string, unknown>, {
-    pathways,
     signals,
-    routes,
-    opportunities,
   });
 }
 
@@ -366,7 +333,7 @@ const ZERO_REVIEW_COUNT: AggregateReviewCount = Object.freeze({
 });
 
 async function loadReviewCountMap(
-  model: typeof EntryPathway | typeof Signal | typeof ContactRoute | typeof PostedOpportunity,
+  model: typeof Signal,
   batchSize: number,
   extraMatch: Record<string, unknown> = {},
   includeOfficialApplication = false,
@@ -391,7 +358,7 @@ async function loadReviewCountMap(
           ? {
               officialApplications: {
                 $sum: {
-                  $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$applicationUrl', ''] } }, 0] }, 1, 0],
+                  $cond: [{ $eq: ['$type', 'APPLICATION_FORM_EXISTS'] }, 1, 0],
                 },
               },
             }
@@ -434,25 +401,10 @@ export async function rebuildAdminAccessReviewProjection(
   const malformedProjectionIds: mongoose.Types.ObjectId[] = [];
   await mongoose.connection.transaction(
     async (session) => {
-      const pathwayCounts = await loadReviewCountMap(
-        EntryPathway,
-        batchSize,
-        { derivationKey: { $not: /^faculty-opportunity:/ } },
-        false,
-        session,
-      );
       const signalCounts = await loadReviewCountMap(
         Signal,
         batchSize,
         { type: { $in: [...accessSignalTypes] } },
-        false,
-        session,
-      );
-      const routeCounts = await loadReviewCountMap(ContactRoute, batchSize, {}, false, session);
-      const opportunityCounts = await loadReviewCountMap(
-        PostedOpportunity,
-        batchSize,
-        { submissionStatus: { $ne: 'DRAFT' } },
         true,
         session,
       );
@@ -480,10 +432,7 @@ export async function rebuildAdminAccessReviewProjection(
         parentIds.add(key);
         const current = currentByEntityId.get(key) || null;
         const desired = projectionValueFromParts(id, entity as any, {
-          pathways: pathwayCounts.get(key) || ZERO_REVIEW_COUNT,
           signals: signalCounts.get(key) || ZERO_REVIEW_COUNT,
-          routes: routeCounts.get(key) || ZERO_REVIEW_COUNT,
-          opportunities: opportunityCounts.get(key) || ZERO_REVIEW_COUNT,
         });
         plans.push({
           id,
@@ -567,7 +516,9 @@ export async function rebuildAdminAccessReviewProjection(
           upsert: plan.generation === undefined,
         },
       }));
-      const result = await AdminAccessReviewProjection.bulkWrite(operations, { ordered: true });
+      const result = await AdminAccessReviewProjection.bulkWrite(operations as any[], {
+        ordered: true,
+      });
       const applied = Number(result.matchedCount || 0) + Number(result.upsertedCount || 0);
       summary.writesApplied += applied;
       if (applied !== batch.length) {

@@ -9,7 +9,6 @@ import RootRedirect from './pages/rootRedirect';
 import Fellowships from './pages/fellowships';
 import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
-import OpportunityDetail from './pages/opportunityDetail';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -76,12 +75,6 @@ const App = () => {
                       <Route
                         path="/research/:slug"
                         element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/opportunities/:id"
-                        element={
-                          <PrivateRoute Component={OpportunityDetail} unknownBlocked={true} />
-                        }
                       />
                       <Route
                         path="/about"

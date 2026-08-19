@@ -40,10 +40,7 @@ const ARTIFACT_SPECS: ArtifactSpec[] = [
     collection: 'research_entity_members',
     activeMatch: { isCurrentMember: { $ne: false } },
   },
-  { artifactType: 'EntryPathway', collection: 'entry_pathways' },
   { artifactType: 'AccessSignal', collection: 'signals' },
-  { artifactType: 'ContactRoute', collection: 'contact_routes' },
-  { artifactType: 'PostedOpportunity', collection: 'posted_opportunities' },
 ];
 const ARCHIVED_ARTIFACT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
@@ -415,22 +412,6 @@ async function applyRepairPlan(plan: ArchivedEntityArtifactRepairPlan) {
         { $addToSet: addToSet, $set: { lastMaterializedAt: now } },
       );
       counts.mergedCanonicalArtifacts += result.modifiedCount || 0;
-    }
-
-    if (item.artifactType === 'EntryPathway') {
-      const childSpecs = [
-        { collection: 'signals', field: 'entryPathwayId' },
-        { collection: 'contact_routes', field: 'entryPathwayId' },
-        { collection: 'posted_opportunities', field: 'entryPathwayId' },
-      ];
-      for (const child of childSpecs) {
-        if (!(await collectionExists(child.collection))) continue;
-        const result = await db.collection(child.collection).updateMany(
-          { [child.field]: duplicateObjectId, archived: { $ne: true } },
-          { $set: { [child.field]: canonicalObjectId, lastMaterializedAt: now } },
-        );
-        counts.childReferencesRelinked += result.modifiedCount || 0;
-      }
     }
 
     counts.archivedMergedDuplicates += await archiveArtifact(

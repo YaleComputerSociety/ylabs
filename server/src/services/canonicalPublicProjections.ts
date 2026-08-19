@@ -13,10 +13,8 @@ import { roleAssignmentRoles, type RoleAssignmentRole } from '../models/roleAssi
 import { isStudentVisibilityTier, type StudentVisibilityTier } from '../models/studentVisibility';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { publicHttpUrl } from '../utils/urlSafety';
-import {
-  pathwayBestNextStepCategories,
-  type PathwayBestNextStepCategory,
-} from './pathwaySearchService';
+
+const MAX_BEST_NEXT_STEP_CATEGORY_LENGTH = 120;
 
 export const MAX_PUBLIC_PERSON_NAME_LENGTH = 240;
 export const MAX_PUBLIC_PERSON_RESEARCH_PROFILES = 2;
@@ -92,7 +90,7 @@ export interface ResearchEntityDiscoveryLead {
 export interface ResearchEntityDiscoveryProjection {
   leads: ResearchEntityDiscoveryLead[];
   accessState: string;
-  bestNextStepCategory?: PathwayBestNextStepCategory;
+  bestNextStepCategory?: string;
   openOpportunityCount: number;
   browseRankScore: number;
   visibilityState: StudentVisibilityTier;
@@ -335,14 +333,15 @@ export function buildResearchEntityDiscoveryProjection(
 ): ResearchEntityDiscoveryProjection | undefined {
   const accessState = boundedPublicText(input.accessState, MAX_PUBLIC_DISCOVERY_TEXT_LENGTH);
   const computedAt = validDate(input.computedAt, options.now ?? new Date());
+  const bestNextStepCategory =
+    input.bestNextStepCategory === undefined
+      ? undefined
+      : boundedPublicText(input.bestNextStepCategory, MAX_BEST_NEXT_STEP_CATEGORY_LENGTH);
   if (
     !accessState ||
     !computedAt ||
     !isStudentVisibilityTier(input.visibilityState) ||
-    (input.bestNextStepCategory !== undefined &&
-      !pathwayBestNextStepCategories.includes(
-        input.bestNextStepCategory as PathwayBestNextStepCategory,
-      ))
+    (input.bestNextStepCategory !== undefined && !bestNextStepCategory)
   ) {
     return undefined;
   }
@@ -360,9 +359,7 @@ export function buildResearchEntityDiscoveryProjection(
   return {
     leads,
     accessState,
-    ...(input.bestNextStepCategory === undefined
-      ? {}
-      : { bestNextStepCategory: input.bestNextStepCategory as PathwayBestNextStepCategory }),
+    ...(bestNextStepCategory === undefined ? {} : { bestNextStepCategory }),
     openOpportunityCount: boundedDiscoveryCount(input.openOpportunityCount),
     browseRankScore: boundedBrowseRank(input.browseRankScore),
     visibilityState: input.visibilityState,

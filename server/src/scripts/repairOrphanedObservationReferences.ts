@@ -375,7 +375,7 @@ async function currentMaterializationEvidenceIds(input: {
     };
   }
 
-  if (['entry_pathways', 'signals', 'contact_routes'].includes(input.spec.collection)) {
+  if (input.spec.collection === 'signals') {
     const key = input.occurrence.ownerDerivationKey;
     if (!key) return { evidenceIds: [], replacesOwner: false };
     if (!context.accessArtifacts) {
@@ -387,54 +387,18 @@ async function currentMaterializationEvidenceIds(input: {
       ).artifacts;
     }
     const derived = context.accessArtifacts;
-    if (input.spec.collection === 'entry_pathways') {
-      const exact = derived.entryPathways.find((item) => item.derivationKey === key);
-      const legacyReplacement =
-        key === 'pathway:EXPLORATORY_CONTACT' ||
-        key.startsWith('pathway:EXPLORATORY_CONTACT:OFFICIAL_PROFILE:') ||
-        key.startsWith('visibility-repair:official-profile-outreach:')
-          ? derived.entryPathways.find(
-              (item) =>
-                item.pathwayType === 'EXPLORATORY_CONTACT' &&
-                /:(IDENTIFIED_FACULTY_LEAD|ORGANIZATIONAL_HOME)$/.test(item.derivationKey),
-            )
-          : undefined;
-      return {
-        evidenceIds: exact?.sourceEvidenceIds || legacyReplacement?.sourceEvidenceIds || [],
-        replacesOwner: !exact && Boolean(legacyReplacement),
-      };
-    }
-    if (input.spec.collection === 'signals') {
-      const exact = derived.accessSignals.find((item) => item.derivationKey === key);
-      const legacyReplacement =
-        key.startsWith('signal:REACH_OUT_PLAUSIBLE:OFFICIAL_PROFILE:') ||
-        key.startsWith('visibility-repair:official-profile-outreach:')
-          ? derived.accessSignals.find(
-              (item) =>
-                item.type === 'REACH_OUT_PLAUSIBLE' &&
-                /:(IDENTIFIED_FACULTY_LEAD|ORGANIZATIONAL_HOME)$/.test(item.derivationKey),
-            )
-          : undefined;
-      const id = exact?.sourceEvidenceId || legacyReplacement?.sourceEvidenceId;
-      return { evidenceIds: id ? [id] : [], replacesOwner: !exact && Boolean(legacyReplacement) };
-    }
-    const exact = derived.contactRoutes.find((item) => item.derivationKey === key);
+    const exact = derived.accessSignals.find((item) => item.derivationKey === key);
     const legacyReplacement =
-      key.startsWith('route:FACULTY_PI:OFFICIAL_PROFILE:') ||
-      key.startsWith('visibility-repair:official-profile-contact:')
-        ? derived.contactRoutes.find(
+      key.startsWith('signal:REACH_OUT_PLAUSIBLE:OFFICIAL_PROFILE:') ||
+      key.startsWith('visibility-repair:official-profile-outreach:')
+        ? derived.accessSignals.find(
             (item) =>
-              item.routeType === 'FACULTY_PI' &&
-              item.derivationKey.startsWith('route:faculty_pi:identified:'),
+              item.type === 'REACH_OUT_PLAUSIBLE' &&
+              /:(IDENTIFIED_FACULTY_LEAD|ORGANIZATIONAL_HOME)$/.test(item.derivationKey),
           )
         : undefined;
-    const route = exact || legacyReplacement;
-    return {
-      evidenceIds: Array.from(
-        new Set([...(route?.sourceEvidenceIds || []), route?.sourceEvidenceId].filter(Boolean)),
-      ) as string[],
-      replacesOwner: !exact && Boolean(legacyReplacement),
-    };
+    const id = exact?.sourceEvidenceId || legacyReplacement?.sourceEvidenceId;
+    return { evidenceIds: id ? [id] : [], replacesOwner: !exact && Boolean(legacyReplacement) };
   }
 
   return { evidenceIds: [], replacesOwner: false };

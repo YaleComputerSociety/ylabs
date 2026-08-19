@@ -1,17 +1,12 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { AdminAccessReviewProjection } from '../models/adminAccessReviewProjection';
-import { EntryPathway } from '../models/entryPathway';
 import { Signal } from '../models/signal';
-import { ContactRoute } from '../models/contactRoute';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { Observation } from '../models/observation';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { recordReviewStatuses } from '../models/modelPrimitives';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { sanitizeLogValue } from '../utils/logSanitizer';
-import { syncPathwaySearchIndexDocument } from './pathwaySearchIndexService';
 import {
   AdminAccessReviewProjectionUnavailableError,
   assertAdminAccessReviewProjectionReady,
@@ -29,10 +24,7 @@ export interface AccessReviewListInput {
 }
 
 export interface AccessReviewCountSummary {
-  entryPathways: number;
   accessSignals: number;
-  contactRoutes: number;
-  postedOpportunities: number;
 }
 
 export interface AccessReviewEntitySummary {
@@ -55,11 +47,7 @@ export interface AccessReviewProgressSummary {
   remaining: number;
 }
 
-export type AccessReviewRecordType =
-  | 'entryPathway'
-  | 'accessSignal'
-  | 'contactRoute'
-  | 'postedOpportunity';
+export type AccessReviewRecordType = 'accessSignal';
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
@@ -239,33 +227,12 @@ async function attachEvidenceItems(records: any[]): Promise<any[]> {
   }));
 }
 
-export function redactAccessReviewContactRoute(record: any): any {
-  const { email: _email, url: _url, destination: _destination, ...safeRecord } = record;
-  return safeRecord;
-}
-
-function buildReviewSummary(input: {
-  group: any;
-  entryPathways: any[];
-  accessSignals: any[];
-  contactRoutes: any[];
-  postedOpportunities: any[];
-}) {
-  const allRecords = [
-    ...input.entryPathways,
-    ...input.accessSignals,
-    ...input.contactRoutes,
-    ...input.postedOpportunities,
-  ];
+function buildReviewSummary(input: { group: any; accessSignals: any[] }) {
+  const allRecords = [...input.accessSignals];
   return {
     totalDerivedRecords: allRecords.length,
     archivedRecords: allRecords.filter((record) => record.archived === true).length,
     recordsMissingEvidence: allRecords.filter((record) => !hasEvidence(record)).length,
-    guardedContactRoutes: input.contactRoutes.filter(
-      (route) => route.visibility !== 'PUBLIC' || route.contactPolicy === 'NO_DIRECT_CONTACT',
-    ).length,
-    publicContactRoutes: input.contactRoutes.filter((route) => route.visibility === 'PUBLIC')
-      .length,
     manualLocks: input.group.manuallyLockedFields || [],
     sourceNames: sourceNames(allRecords),
   };
@@ -338,25 +305,18 @@ async function listAccessReviewEntitiesSnapshot(
   const groups = await projectionQuery;
   const total = await AdminAccessReviewProjection.countDocuments(filter, { session });
   const progressCounts: Array<{ remaining: number; reviewedToday: number }> = [];
-  for (const model of [EntryPathway, Signal, ContactRoute, PostedOpportunity]) {
+  {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
-    const visibleQueueFilter =
-      model === EntryPathway
-        ? { derivationKey: { $not: /^faculty-opportunity:/ } }
-        : model === PostedOpportunity
-          ? { submissionStatus: { $ne: 'DRAFT' } }
-          : model === Signal
-            ? { type: { $in: [...accessSignalTypes] } }
-            : {};
-    const remaining = await model.countDocuments(
+    const visibleQueueFilter = { type: { $in: [...accessSignalTypes] } };
+    const remaining = await Signal.countDocuments(
       {
         ...visibleQueueFilter,
         $or: [{ 'review.status': 'unreviewed' }, { 'review.status': { $exists: false } }],
       },
       { session },
     );
-    const reviewedToday = await model.countDocuments(
+    const reviewedToday = await Signal.countDocuments(
       {
         ...visibleQueueFilter,
         'review.status': { $ne: 'unreviewed' },
@@ -433,41 +393,21 @@ export async function getAccessReviewEntity(researchEntityId: string): Promise<a
   const id = toObjectId(researchEntityId);
   if (!id) return null;
 
-  const [group, entryPathways, accessSignals, contactRoutes, postedOpportunities] =
-    await Promise.all([
-      ResearchEntity.findById(id).select('-embedding').lean(),
-      EntryPathway.find({
-        researchEntityId: id,
-        derivationKey: { $not: /^faculty-opportunity:/ },
-      })
-        .sort({ archived: 1, updatedAt: -1 })
-        .lean(),
-      Signal.find({ researchEntityId: id, type: { $in: [...accessSignalTypes] } })
-        .sort({ archived: 1, observedAt: -1 })
-        .lean(),
-      ContactRoute.find({ researchEntityId: id }).sort({ archived: 1, priority: 1 }).lean(),
-      PostedOpportunity.find({
-        researchEntityId: id,
-        submissionStatus: { $ne: 'DRAFT' },
-      })
-        .sort({ archived: 1, deadline: 1 })
-        .lean(),
-    ]);
+  const [group, accessSignals] = await Promise.all([
+    ResearchEntity.findById(id).select('-embedding').lean(),
+    Signal.find({ researchEntityId: id, type: { $in: [...accessSignalTypes] } })
+      .sort({ archived: 1, observedAt: -1 })
+      .lean(),
+  ]);
 
   if (!group) return null;
 
   return {
     group,
-    entryPathways: await attachEvidenceItems(entryPathways),
     accessSignals: await attachEvidenceItems(accessSignals),
-    contactRoutes: (await attachEvidenceItems(contactRoutes)).map(redactAccessReviewContactRoute),
-    postedOpportunities: await attachEvidenceItems(postedOpportunities),
     reviewSummary: buildReviewSummary({
       group,
-      entryPathways,
       accessSignals,
-      contactRoutes,
-      postedOpportunities,
     }),
   };
 }
@@ -493,14 +433,8 @@ export async function updateAccessReviewManualLocks(
 
 function reviewModelForRecordType(type: AccessReviewRecordType): mongoose.Model<any> | null {
   switch (type) {
-    case 'entryPathway':
-      return EntryPathway;
     case 'accessSignal':
       return Signal;
-    case 'contactRoute':
-      return ContactRoute;
-    case 'postedOpportunity':
-      return PostedOpportunity;
     default:
       return null;
   }
@@ -518,26 +452,7 @@ export async function updateAccessReviewRecordReview(input: {
   const id = normalizeAccessReviewObjectId(input.id);
   if (!model || !id) return null;
 
-  if (input.type === 'entryPathway') {
-    const opportunityManagedPathway = await EntryPathway.findOne({
-      _id: id,
-      derivationKey: /^faculty-opportunity:/,
-    })
-      .select('_id')
-      .lean();
-    if (opportunityManagedPathway) return null;
-  }
-
-  const facultyOpportunity =
-    input.type === 'postedOpportunity'
-      ? await PostedOpportunity.findById(id)
-          .select(
-            'researchEntityId createdByUserId entryPathwayId submissionStatus review status archived revision',
-          )
-          .lean()
-      : null;
-  const projectionRecord =
-    facultyOpportunity || (await model.findById(id).select('researchEntityId').lean());
+  const projectionRecord = await model.findById(id).select('researchEntityId').lean();
   const projectionEntityId = (projectionRecord as any)?.researchEntityId;
 
   const update: Record<string, unknown> = {};
@@ -565,106 +480,20 @@ export async function updateAccessReviewRecordReview(input: {
 
   if (Object.keys(update).length === 0) return null;
 
-  const isFacultyModerationDecision = Boolean(
-    facultyOpportunity?.createdByUserId &&
-    ['unreviewed', 'approved', 'needs_source', 'disputed', 'archived_by_review'].includes(
-      String(update['review.status'] || ''),
-    ),
-  );
-  if (
-    isFacultyModerationDecision &&
-    (facultyOpportunity?.submissionStatus === 'DRAFT' ||
-      (!['unreviewed', 'archived_by_review'].includes(String(update['review.status'] || '')) &&
-        facultyOpportunity?.submissionStatus !== 'PENDING_REVIEW'))
-  ) {
-    return null;
-  }
-
-  if (isFacultyModerationDecision) {
-    update.submissionStatus =
-      update['review.status'] === 'unreviewed' ? 'PENDING_REVIEW' : 'REVIEWED';
-  }
-
   if (update['review.status'] === 'archived_by_review') {
     update.archived = true;
   }
 
-  const facultyPathway =
-    isFacultyModerationDecision && facultyOpportunity?.entryPathwayId
-      ? await EntryPathway.findById(facultyOpportunity.entryPathwayId)
-          .select('status archived review.status updatedAt')
-          .lean()
-      : null;
+  const mutate = async (session?: mongoose.ClientSession) =>
+    model
+      .findByIdAndUpdate(
+        id,
+        { $set: update },
+        { new: true, runValidators: true, ...(session ? { session } : {}) },
+      )
+      .lean();
 
-  const expectedFacultyState = isFacultyModerationDecision
-    ? {
-        revision: facultyOpportunity?.revision,
-        status: facultyOpportunity?.status,
-        archived: facultyOpportunity?.archived,
-        submissionStatus: facultyOpportunity?.submissionStatus,
-        'review.status': facultyOpportunity?.review?.status,
-      }
-    : {};
-  const mutate = async (session?: mongoose.ClientSession) => {
-    const updateQuery = isFacultyModerationDecision
-      ? model.findOneAndUpdate(
-          { _id: id, ...expectedFacultyState },
-          { $set: update, $inc: { revision: 1 } },
-          { new: true, runValidators: true, ...(session ? { session } : {}) },
-        )
-      : model.findByIdAndUpdate(
-          id,
-          { $set: update },
-          {
-            new: true,
-            runValidators: true,
-            ...(session ? { session } : {}),
-          },
-        );
-    const updated = await updateQuery.lean();
-
-    if (updated && isFacultyModerationDecision && facultyOpportunity?.entryPathwayId) {
-      const reviewUpdate = Object.fromEntries(
-        Object.entries(update).filter(([field]) => field.startsWith('review.')),
-      );
-      const pathwayResult = await EntryPathway.updateOne(
-        {
-          _id: facultyOpportunity.entryPathwayId,
-          derivationKey: `faculty-opportunity:${id.toHexString()}`,
-          status: facultyPathway?.status,
-          archived: facultyPathway?.archived,
-          'review.status': facultyPathway?.review?.status,
-          updatedAt: facultyPathway?.updatedAt,
-        },
-        {
-          $set: {
-            ...reviewUpdate,
-            ...(update['review.status'] === 'archived_by_review' ? { archived: true } : {}),
-          },
-        },
-        { runValidators: true, ...(session ? { session } : {}) },
-      );
-      if (pathwayResult.matchedCount === 0) throw new Error('Linked pathway changed');
-    }
-    return updated;
-  };
-
-  const updated = projectionEntityId
-    ? await mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, mutate)
-    : await mutate();
-  if (
-    updated &&
-    isFacultyModerationDecision &&
-    facultyOpportunity?.entryPathwayId &&
-    (process.env.PATHWAY_SEARCH_SYNC === 'true' || process.env.PATHWAY_SEARCH_BACKEND === 'meili')
-  ) {
-    const pathwayId = serializedDocumentId(facultyOpportunity.entryPathwayId);
-    if (pathwayId) {
-      await syncPathwaySearchIndexDocument(pathwayId).catch((error) => {
-        console.error('Faculty opportunity review sync failed:', sanitizeLogValue(error));
-      });
-    }
-  }
-
-  return updated;
+  return projectionEntityId
+    ? mutateAndRefreshAdminAccessReviewProjection(projectionEntityId, mutate)
+    : mutate();
 }

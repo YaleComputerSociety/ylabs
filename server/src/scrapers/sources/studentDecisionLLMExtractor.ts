@@ -5,9 +5,6 @@ import { serializedDocumentId } from '../../utils/idSerialization';
 import crypto from 'crypto';
 import { Signal } from '../../models/signal';
 import { accessSignalTypes } from '../../models/researchAccessTypes';
-import { ContactRoute } from '../../models/contactRoute';
-import { EntryPathway } from '../../models/entryPathway';
-import { PostedOpportunity } from '../../models/postedOpportunity';
 import { ResearchEntity } from '../../models/researchEntity';
 import { publicStudentDecisionExplanation } from '../../services/studentDecisionExplanationService';
 import { getCached, setCached } from '../snapshotCache';
@@ -31,23 +28,6 @@ export interface DecisionCandidate {
     confidence?: string;
     excerpt?: string;
     sourceUrl?: string;
-  }>;
-  entryPathways?: Array<{
-    pathwayType?: string;
-    status?: string;
-    studentFacingLabel?: string;
-    sourceUrls?: string[];
-  }>;
-  contactRoutes?: Array<{
-    routeType?: string;
-    visibility?: string;
-    url?: string;
-    sourceUrl?: string;
-  }>;
-  postedOpportunities?: Array<{
-    status?: string;
-    applicationUrl?: string;
-    sourceUrls?: string[];
   }>;
 }
 
@@ -169,10 +149,7 @@ function candidateMatchesOnly(candidate: DecisionCandidate, only: Set<string>): 
 function hasActionEvidence(candidate: DecisionCandidate): boolean {
   return Boolean(
     candidate.accessSummary?.bestNextStep ||
-    candidate.accessSignals?.length ||
-    candidate.entryPathways?.length ||
-    candidate.contactRoutes?.length ||
-    candidate.postedOpportunities?.length,
+    candidate.accessSignals?.length,
   );
 }
 
@@ -251,12 +228,6 @@ function compactSourceUrls(candidate: DecisionCandidate): string[] {
     new Set(
       [
         ...(candidate.accessSignals || []).map((signal) => signal.sourceUrl),
-        ...(candidate.entryPathways || []).flatMap((pathway) => pathway.sourceUrls || []),
-        ...(candidate.contactRoutes || []).map((route) => route.url || route.sourceUrl),
-        ...(candidate.postedOpportunities || []).flatMap((opp) => [
-          opp.applicationUrl,
-          ...(opp.sourceUrls || []),
-        ]),
         candidate.websiteUrl,
         ...(candidate.sourceUrls || []),
       ]
@@ -308,22 +279,6 @@ export function buildStudentDecisionPrompt(candidate: DecisionCandidate): string
       `- ${safePromptText(signal.signalType || 'SIGNAL', 80)} (${safePromptText(signal.confidence || 'UNKNOWN', 80)}): ${safePromptText(signal.excerpt)} ${safePromptUrl(signal.sourceUrl)}`.trim(),
     )
     .join('\n');
-  const entryPathways = (candidate.entryPathways || [])
-    .map((pathway) =>
-      `- ${safePromptText(pathway.pathwayType || 'PATHWAY', 80)} (${safePromptText(pathway.status || 'UNKNOWN', 80)}): ${safePromptText(pathway.studentFacingLabel)} ${(pathway.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
-    )
-    .join('\n');
-  const contacts = (candidate.contactRoutes || [])
-    .map((route) =>
-      `- ${safePromptText(route.routeType || 'CONTACT', 80)} (${safePromptText(route.visibility || 'UNKNOWN', 80)}): ${safePromptUrl(route.url || route.sourceUrl)}`.trim(),
-    )
-    .join('\n');
-  const opportunities = (candidate.postedOpportunities || [])
-    .map((opportunity) =>
-      `- ${safePromptText(opportunity.status || 'UNKNOWN', 80)}: ${safePromptUrl(opportunity.applicationUrl)} ${(opportunity.sourceUrls || []).map((url) => safePromptUrl(url)).join(', ')}`.trim(),
-    )
-    .join('\n');
-
   return [
     'Write a concise, source-backed Yale Research Best Next Step explanation.',
     'Return JSON only with recommendedAction, headline, explanation, why, notThis, confidence, sourceUrls, and reviewFlags.',
@@ -338,12 +293,6 @@ export function buildStudentDecisionPrompt(candidate: DecisionCandidate): string
     `Source URLs: ${sourceUrls.join(', ')}`,
     'Access signals:',
     accessSignals || '- none',
-    'Entry pathways:',
-    entryPathways || '- none',
-    'Contact routes:',
-    contacts || '- none',
-    'Posted opportunities:',
-    opportunities || '- none',
   ].join('\n');
 }
 
@@ -355,9 +304,6 @@ export function decisionExtractionToObservation(
   const safe = publicStudentDecisionExplanation(output, {
     sourceUrls: compactSourceUrls(candidate),
     accessSignals: candidate.accessSignals,
-    entryPathways: candidate.entryPathways,
-    contactRoutes: candidate.contactRoutes,
-    postedOpportunities: candidate.postedOpportunities,
   });
   if (!safe) return null;
 
@@ -374,18 +320,12 @@ export function decisionExtractionToObservation(
 
 async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
   const active = { archived: { $ne: true } };
-  const [signalIds, pathwayIds, opportunityIds, routeIds] = await Promise.all([
-    Signal.distinct('researchEntityId', { ...active, type: { $in: accessSignalTypes } }),
-    EntryPathway.distinct('researchEntityId', active),
-    PostedOpportunity.distinct('researchEntityId', active),
-    ContactRoute.distinct('researchEntityId', { ...active, visibility: 'PUBLIC' }),
-  ]);
+  const signalIds = await Signal.distinct('researchEntityId', {
+    ...active,
+    type: { $in: accessSignalTypes },
+  });
   const evidenceEntityIds = Array.from(
-    new Set(
-      [...signalIds, ...pathwayIds, ...opportunityIds, ...routeIds]
-        .filter(Boolean)
-        .map((id) => String(id)),
-    ),
+    new Set(signalIds.filter(Boolean).map((id) => String(id))),
   ).slice(0, 2000);
 
   if (evidenceEntityIds.length === 0) return [];
@@ -401,30 +341,22 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     .lean();
 
   const entityIds = (rows as any[]).map((row) => row._id);
-  const [signals, pathways, routes, opportunities] = await Promise.all([
-    Signal.find({ ...active, type: { $in: accessSignalTypes }, researchEntityId: { $in: entityIds } })
-      .select('researchEntityId type confidence source')
-      .lean()
-      .then((docs) =>
-        (docs as any[]).map((doc) => ({
-          researchEntityId: doc.researchEntityId,
-          signalType: doc.type,
-          confidence: doc.confidence,
-          excerpt: doc.source?.excerpt,
-          sourceUrl: doc.source?.url,
-        })),
-      ),
-    EntryPathway.find({ ...active, researchEntityId: { $in: entityIds } })
-      .select('researchEntityId pathwayType status studentFacingLabel sourceUrls')
-      .lean(),
-    ContactRoute.find({ ...active, researchEntityId: { $in: entityIds }, visibility: 'PUBLIC' })
-      .select('researchEntityId routeType visibility url sourceUrl')
-      .sort({ priority: 1 })
-      .lean(),
-    PostedOpportunity.find({ ...active, researchEntityId: { $in: entityIds } })
-      .select('researchEntityId status applicationUrl sourceUrls')
-      .lean(),
-  ]);
+  const signals = await Signal.find({
+    ...active,
+    type: { $in: accessSignalTypes },
+    researchEntityId: { $in: entityIds },
+  })
+    .select('researchEntityId type confidence source')
+    .lean()
+    .then((docs) =>
+      (docs as any[]).map((doc) => ({
+        researchEntityId: doc.researchEntityId,
+        signalType: doc.type,
+        confidence: doc.confidence,
+        excerpt: doc.source?.excerpt,
+        sourceUrl: doc.source?.url,
+      })),
+    );
 
   const byEntity = <T extends { researchEntityId?: unknown }>(items: T[]): Map<string, T[]> => {
     const grouped = new Map<string, T[]>();
@@ -437,9 +369,6 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
   };
 
   const signalsByEntity = byEntity(signals as any[]);
-  const pathwaysByEntity = byEntity(pathways as any[]);
-  const routesByEntity = byEntity(routes as any[]);
-  const opportunitiesByEntity = byEntity(opportunities as any[]);
 
   return (rows as any[]).map((row) => ({
     _id: studentDecisionDocumentId(row._id),
@@ -452,11 +381,6 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     studentDecisionExplanation: row.studentDecisionExplanation,
     accessSummary: row.accessSummary,
     accessSignals: (signalsByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 8),
-    entryPathways: (pathwaysByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 8),
-    contactRoutes: (routesByEntity.get(studentDecisionDocumentId(row._id)) || []).slice(0, 5),
-    postedOpportunities: (
-      opportunitiesByEntity.get(studentDecisionDocumentId(row._id)) || []
-    ).slice(0, 5),
   }));
 }
 

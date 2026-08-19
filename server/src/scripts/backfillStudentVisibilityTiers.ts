@@ -6,9 +6,7 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { EntryPathway } from '../models/entryPathway';
 import { Fellowship } from '../models/fellowship';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
@@ -66,12 +64,6 @@ interface PlannedTierUpdate {
   reasons: string[];
   nextRepairAction: string;
 }
-
-const FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES = [
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-];
 
 export function parseStudentVisibilityBackfillArgs(
   argv: string[],
@@ -296,7 +288,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   if (Number.isFinite(limit)) query.limit(limit);
   const entities = await query.lean();
   const entityIds = entities.map((entity: any) => entity._id);
-  const [leadRows, accessRows, pathwayRows, postedRows] = await Promise.all([
+  const [leadRows, accessRows] = await Promise.all([
     ResearchGroupMember.find({
       researchEntityId: { $in: entityIds },
       isCurrentMember: { $ne: false },
@@ -310,26 +302,6 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
           researchEntityId: { $in: entityIds },
           type: { $in: [...accessSignalTypes] },
           archived: false,
-        },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    EntryPathway.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          pathwayType: { $nin: FORMALIZATION_ONLY_ENTRY_PATHWAY_TYPES },
-        },
-      },
-      { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
-    ]),
-    PostedOpportunity.aggregate([
-      {
-        $match: {
-          researchEntityId: { $in: entityIds },
-          archived: false,
-          status: { $in: ['OPEN', 'ROLLING'] },
         },
       },
       { $group: { _id: '$researchEntityId', count: { $sum: 1 } } },
@@ -381,8 +353,6 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
   const accessCounts = countByEntityId(accessRows as any[]);
-  const pathwayCounts = countByEntityId(pathwayRows as any[]);
-  const postedCounts = countByEntityId(postedRows as any[]);
   const entityById = new Map(
     (entities as any[]).flatMap((entity) => {
       const id = serializedDocumentId(entity._id);
@@ -418,8 +388,8 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       entity,
       leadMembers,
       accessSignalCount: accessCounts.get(id) || 0,
-      actionablePathwayCount: pathwayCounts.get(id) || 0,
-      openPostedOpportunityCount: postedCounts.get(id) || 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
       duplicateRisk: hasProfileAreaShellDuplicateRisk({
         entity,
         leadMembers,

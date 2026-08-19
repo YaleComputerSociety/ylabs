@@ -69,21 +69,6 @@ const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   APPLICATION_ONLY: 'Application only',
 };
 
-const ENTRY_PATHWAY_LABELS: Record<string, string> = {
-  POSTED_ROLE: 'Posted opening',
-  RECURRING_PROGRAM: 'Recurring pathway',
-  COURSE_CREDIT: 'Course-credit pathway',
-  SENIOR_THESIS: 'Senior thesis pathway',
-  FELLOWSHIP_FUNDED_PROJECT: 'Fellowship-funded pathway',
-  WORK_STUDY: 'Work-study pathway',
-  VOLUNTEER_OUTREACH: 'Volunteer outreach',
-  EXPLORATORY_CONTACT: 'Exploratory contact',
-  CENTER_INTERNSHIP: 'Center internship',
-  FACULTY_SUPERVISION: 'Faculty supervision',
-  STUDENT_JOB: 'Student job',
-  UNKNOWN: 'Pathway evidence',
-};
-
 /**
  * Build a label like "1 past advisee" or "3 STARS scholars (2022–2024)".
  *
@@ -127,10 +112,6 @@ function accessSignalLabel(signalType: string): string {
   return ACCESS_SIGNAL_LABELS[signalType] || signalType.replace(/_/g, ' ').toLowerCase();
 }
 
-function entryPathwayLabel(pathwayType: string): string {
-  return ENTRY_PATHWAY_LABELS[pathwayType] || pathwayType.replace(/_/g, ' ').toLowerCase();
-}
-
 function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult | null {
   const summary = group.accessSummary;
   if (!summary || summary.status === 'unknown') return null;
@@ -165,26 +146,10 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
     strength: item.confidence === 'HIGH' ? 'strong' : 'moderate',
   }));
 
-  if (
-    summary.hasActivePostedOpportunity &&
-    !evidence.some((item) => item.kind === 'active-listing')
-  ) {
-    evidence.unshift({
-      kind: 'active-listing',
-      label: 'Active opportunity',
-      detail: summary.bestNextStep,
-      strength: 'strong',
-    });
-  }
-
   if (evidence.length === 0) {
-    const pathwayType = summary.entryPathwayTypes[0];
     evidence.push({
       kind: 'access-signal',
-      label: pathwayType
-        ? entryPathwayLabel(pathwayType)
-        : summary.bestNextStep || 'Evidence available',
-      detail: pathwayType ? summary.bestNextStep || undefined : undefined,
+      label: summary.bestNextStep || 'Evidence available',
       strength: summary.status === 'posted-opening' ? 'strong' : 'moderate',
     });
   }
@@ -198,13 +163,9 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
 
 /**
  * Pure verdict computation. See module-level docstring for the rules.
- *
- * The active posted-opening flag is computed by callers from canonical
- * PostedOpportunity/search-summary data. Legacy listings are not counted.
  */
 export function computeAcceptanceVerdict(
   group: ResearchGroup,
-  hasActivePostedOpportunity: boolean,
 ): AcceptanceVerdictResult {
   const evidence: EvidenceItem[] = [];
   const lockedFields = group.manuallyLockedFields || [];
@@ -266,15 +227,6 @@ export function computeAcceptanceVerdict(
       kind: 'lab-lists-undergrads',
       label: n === 1 ? 'Lists 1 undergrad' : `Lists ${n} undergrads`,
       detail: 'Current undergrads named on the lab roster.',
-      strength: 'strong',
-    });
-  }
-
-  if (hasActivePostedOpportunity) {
-    evidence.push({
-      kind: 'active-listing',
-      label: 'Active posted opening',
-      detail: 'This research home has at least one active canonical posted opportunity.',
       strength: 'strong',
     });
   }

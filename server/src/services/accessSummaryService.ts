@@ -1,9 +1,6 @@
 import mongoose from 'mongoose';
 import { Signal } from '../models/signal';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { publicPostedOpportunityMongoMatch } from './studentAccessPublicationPolicy';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -25,8 +22,6 @@ export interface AccessSummary {
     sourceUrl?: string;
   }>;
   signalTypes: string[];
-  entryPathwayTypes: string[];
-  hasActivePostedOpportunity: boolean;
   bestNextStep: string;
 }
 
@@ -35,18 +30,10 @@ const EMPTY_SUMMARY: AccessSummary = {
   confidence: 0,
   evidence: [],
   signalTypes: [],
-  entryPathwayTypes: [],
-  hasActivePostedOpportunity: false,
   bestNextStep: 'Check back later',
 };
 
 const ACCESS_SUMMARY_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
-
-const FORMALIZATION_ONLY_PATHWAY_TYPES = new Set([
-  'COURSE_CREDIT',
-  'SENIOR_THESIS',
-  'FELLOWSHIP_FUNDED_PROJECT',
-]);
 
 const MAX_ACCESS_SUMMARY_ENTITY_IDS = 100;
 const MAX_ACCESS_SUMMARY_TEXT_LENGTH = 2000;
@@ -89,11 +76,8 @@ function confidenceScore(signal: any): number {
   return 0;
 }
 
-function computeStatus(
-  signalTypes: Set<string>,
-  hasActivePostedOpportunity: boolean,
-): AccessSummaryStatus {
-  if (hasActivePostedOpportunity || signalTypes.has('POSTED_OPENING')) {
+function computeStatus(signalTypes: Set<string>): AccessSummaryStatus {
+  if (signalTypes.has('POSTED_OPENING')) {
     return 'posted-opening';
   }
   if (signalTypes.has('NOT_CURRENTLY_AVAILABLE')) {
@@ -110,19 +94,8 @@ function computeStatus(
   return 'unknown';
 }
 
-function bestNextStepFor(
-  status: AccessSummaryStatus,
-  pathways: any[],
-  signalTypes: Set<string>,
-  hasActivePostedOpportunity: boolean,
-): string {
-  if (hasActivePostedOpportunity || status === 'posted-opening') return 'Apply';
-  const exploratory = pathways.find((p) => p.pathwayType === 'EXPLORATORY_CONTACT');
-  if (exploratory)
-    return (
-      boundedString(exploratory.bestNextStep, MAX_ACCESS_SUMMARY_TEXT_LENGTH) ||
-      'Plan exploratory outreach'
-    );
+function bestNextStepFor(status: AccessSummaryStatus, signalTypes: Set<string>): string {
+  if (status === 'posted-opening') return 'Apply';
   if (status === 'not-currently-available') return 'Check back later';
   if (
     signalTypes.has('CREDIT_FORMALIZATION_POSSIBLE') ||
@@ -147,27 +120,13 @@ export async function listAccessSummariesForResearchEntities(
   if (validIds.length === 0) return new Map();
 
   const objectIds = validIds.map((id) => new mongoose.Types.ObjectId(id));
-  const [signals, pathways, opportunities] = await Promise.all([
-    Signal.find({
-      researchEntityId: { $in: objectIds },
-      type: { $in: accessSignalTypes },
-      archived: false,
-    })
-      .sort({ observedAt: -1 })
-      .lean(),
-    EntryPathway.find({
-      researchEntityId: { $in: objectIds },
-      archived: false,
-      derivationKey: { $not: /^faculty-opportunity:/ },
-    }).lean(),
-    PostedOpportunity.find({
-      researchEntityId: { $in: objectIds },
-      ...publicPostedOpportunityMongoMatch({
-        archived: false,
-        status: { $in: ['OPEN', 'ROLLING'] },
-      }),
-    }).lean(),
-  ]);
+  const signals = await Signal.find({
+    researchEntityId: { $in: objectIds },
+    type: { $in: accessSignalTypes },
+    archived: false,
+  })
+    .sort({ observedAt: -1 })
+    .lean();
 
   const signalsByEntity = new Map<string, any[]>();
   for (const signal of signals as any[]) {
@@ -176,41 +135,16 @@ export async function listAccessSummariesForResearchEntities(
     signalsByEntity.set(key, [...(signalsByEntity.get(key) || []), signal]);
   }
 
-  const pathwaysByEntity = new Map<string, any[]>();
-  for (const pathway of pathways as any[]) {
-    const key = accessSummaryEntityId(pathway.researchEntityId);
-    if (!key) continue;
-    pathwaysByEntity.set(key, [...(pathwaysByEntity.get(key) || []), pathway]);
-  }
-
-  const activeOpportunityEntityIds = new Set(
-    (opportunities as any[]).flatMap((opportunity) => {
-      const id = accessSummaryEntityId(opportunity.researchEntityId);
-      return id ? [id] : [];
-    }),
-  );
-
   const out = new Map<string, AccessSummary>();
   for (const id of validIds) {
     const entitySignals = signalsByEntity.get(id) || [];
-    const entityPathways = (pathwaysByEntity.get(id) || []).filter((pathway) => {
-      const pathwayType = boundedString(pathway.pathwayType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
-      return pathwayType && !FORMALIZATION_ONLY_PATHWAY_TYPES.has(pathwayType);
-    });
     const signalTypes = new Set(
       entitySignals.flatMap((signal) => {
         const signalType = boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
         return signalType ? [signalType] : [];
       }),
     );
-    const entryPathwayTypes = new Set(
-      entityPathways.flatMap((pathway) => {
-        const pathwayType = boundedString(pathway.pathwayType, MAX_ACCESS_SUMMARY_TYPE_LENGTH);
-        return pathwayType ? [pathwayType] : [];
-      }),
-    );
-    const hasActivePostedOpportunity = activeOpportunityEntityIds.has(id);
-    const status = computeStatus(signalTypes, hasActivePostedOpportunity);
+    const status = computeStatus(signalTypes);
     const confidence =
       entitySignals.length > 0 ? Math.max(...entitySignals.map(confidenceScore)) : 0;
 
@@ -224,12 +158,8 @@ export async function listAccessSummariesForResearchEntities(
         sourceUrl: publicHttpUrl(signal.source?.url),
       })),
       signalTypes: Array.from(signalTypes),
-      entryPathwayTypes: Array.from(entryPathwayTypes),
-      hasActivePostedOpportunity,
       bestNextStep:
-        publicText(
-          bestNextStepFor(status, entityPathways, signalTypes, hasActivePostedOpportunity),
-        ) || EMPTY_SUMMARY.bestNextStep,
+        publicText(bestNextStepFor(status, signalTypes)) || EMPTY_SUMMARY.bestNextStep,
     });
   }
 

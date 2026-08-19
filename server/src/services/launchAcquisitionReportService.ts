@@ -1,7 +1,5 @@
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { User } from '../models/user';
@@ -43,8 +41,6 @@ export interface LaunchAcquisitionReportQueueItem {
 
 interface AccessRecordCounts {
   accessSignals: number;
-  entryPathways: number;
-  contactRoutes: number;
 }
 
 interface LaunchAcquisitionReportDeps {
@@ -470,7 +466,7 @@ async function classifyActionItem(
   if (hasUntrustedExternalRouteEvidence(entity)) {
     addGroup(groups.untrustedExternalRouteEvidence, item, label, sampleLimit);
   }
-  if (accessCounts.accessSignals + accessCounts.entryPathways + accessCounts.contactRoutes > 0) {
+  if (accessCounts.accessSignals > 0) {
     addGroup(groups.sourceBackedRouteNotLaunchMaterialized, item, label, sampleLimit);
   }
 }
@@ -488,8 +484,7 @@ async function buildActionManifestRow(
   ]);
   const currentSourceUrl = currentSourceUrlForEntity(entity);
   const grantOnly = hasGrantSourceUrl(entity) && !isYaleUrl(currentSourceUrl);
-  const hasMaterializedAccess =
-    accessCounts.accessSignals + accessCounts.entryPathways + accessCounts.contactRoutes > 0;
+  const hasMaterializedAccess = accessCounts.accessSignals > 0;
 
   return {
     recordId: item.recordId,
@@ -722,17 +717,13 @@ const defaultDeps: LaunchAcquisitionReportDeps = {
   },
   async countAccessRecords(id) {
     const safeId = normalizeLaunchAcquisitionObjectId(id);
-    if (!safeId) return { accessSignals: 0, entryPathways: 0, contactRoutes: 0 };
-    const [accessSignals, entryPathways, contactRoutes] = await Promise.all([
-      Signal.countDocuments({
-        researchEntityId: safeId,
-        type: { $in: accessSignalTypes },
-        archived: { $ne: true },
-      }),
-      EntryPathway.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
-      ContactRoute.countDocuments({ researchEntityId: safeId, archived: { $ne: true } }),
-    ]);
-    return { accessSignals, entryPathways, contactRoutes };
+    if (!safeId) return { accessSignals: 0 };
+    const accessSignals = await Signal.countDocuments({
+      researchEntityId: safeId,
+      type: { $in: accessSignalTypes },
+      archived: { $ne: true },
+    });
+    return { accessSignals };
   },
 };
 

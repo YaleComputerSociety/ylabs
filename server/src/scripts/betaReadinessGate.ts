@@ -6,8 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import {
   DEFAULT_ACCEPTED_INPUT_ROOT,
   buildAcceptedInputsStatus,
@@ -321,8 +319,6 @@ async function main(): Promise<void> {
       counts: {
         users: users.length,
         researchEntities: await ResearchEntity.countDocuments({ archived: { $ne: true } }),
-        entryPathways: await EntryPathway.countDocuments({ archived: { $ne: true } }),
-        postedOpportunities: await PostedOpportunity.countDocuments({ archived: { $ne: true } }),
       },
       rollout: {
         unblockedOrder: [...BETA_ROLLOUT_ORDER],

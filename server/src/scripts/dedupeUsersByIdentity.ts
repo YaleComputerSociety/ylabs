@@ -41,11 +41,7 @@ const IDENTITY_FIELDS: UserIdentityField[] = [
 const USER_SCALAR_OBJECT_ID_REFERENCE_FIELDS: Array<{ collection: string; field: string }> = [
   { collection: 'research_entities', field: 'claimedByUserId' },
   { collection: 'research_entities', field: 'studentVisibilityReviewedByUserId' },
-  { collection: 'entry_pathways', field: 'review.reviewedByUserId' },
   { collection: 'signals', field: 'review.reviewedByUserId' },
-  { collection: 'contact_routes', field: 'personId' },
-  { collection: 'contact_routes', field: 'review.reviewedByUserId' },
-  { collection: 'posted_opportunities', field: 'review.reviewedByUserId' },
   { collection: 'paper_authors', field: 'userId' },
   { collection: 'research_scholarly_links', field: 'userId' },
   { collection: 'research_scholarly_attributions', field: 'targetUserId' },

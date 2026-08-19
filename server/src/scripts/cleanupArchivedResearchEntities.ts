@@ -36,14 +36,7 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
     field: 'researchEntityId',
     filter: { isCurrentMember: { $ne: false } },
   },
-  { collection: 'entry_pathways', field: 'researchEntityId', filter: { archived: { $ne: true } } },
   { collection: 'signals', field: 'researchEntityId', filter: { archived: { $ne: true } } },
-  { collection: 'contact_routes', field: 'researchEntityId', filter: { archived: { $ne: true } } },
-  {
-    collection: 'posted_opportunities',
-    field: 'researchEntityId',
-    filter: { archived: { $ne: true } },
-  },
   {
     collection: 'research_scholarly_links',
     field: 'researchEntityId',
@@ -69,10 +62,7 @@ const LIVE_REFERENCE_SPECS: LiveReferenceSpec[] = [
 
 const DEPENDENT_DELETE_COLLECTIONS = [
   'research_entity_members',
-  'entry_pathways',
   'signals',
-  'contact_routes',
-  'posted_opportunities',
   'research_scholarly_links',
 ];
 

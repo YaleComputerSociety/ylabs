@@ -6,9 +6,6 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import {
   buildDuplicateAccessSignalGroupsFromRows,
   type DuplicateAccessSignalGroup,
@@ -33,7 +30,6 @@ export interface RepairDuplicateAccessSignalsCliOptions {
 export interface DuplicateAccessSignalRecord {
   _id: unknown;
   researchEntityId?: unknown;
-  entryPathwayId?: unknown;
   signalType?: string;
   sourceEvidenceId?: unknown;
   observationId?: unknown;
@@ -47,32 +43,14 @@ export interface DuplicateAccessSignalRecord {
   };
 }
 
-export interface DuplicateAccessSignalPathwayContext {
-  entryPathwayId: string;
-  derivationKey?: string | null;
-  archived?: boolean;
-  activeAccessSignals: number;
-  activeContactRoutes: number;
-  activePostedOpportunities: number;
-  review?: {
-    status?: string;
-    lockedFields?: string[];
-  };
-}
-
 export interface DuplicateAccessSignalRepairPlan {
   researchEntityId: string;
   signalType: string;
   canonicalSignalId: string;
   duplicateSignalIds: string[];
-  archiveEntryPathwayIds: string[];
   identityFields: Array<{
     identityField: DuplicateAccessSignalGroup['identityField'];
     identityValue: string;
-  }>;
-  skippedEntryPathwayArchives: Array<{
-    entryPathwayId: string;
-    reason: string;
   }>;
 }
 
@@ -227,27 +205,18 @@ function groupKey(signalIds: string[]): string {
   return [...signalIds].sort().join('|');
 }
 
-function scoreSignal(
-  signal: DuplicateAccessSignalRecord,
-  pathwayContextById: Map<string, DuplicateAccessSignalPathwayContext>,
-): number {
-  const pathwayId = stringId(signal.entryPathwayId);
-  const pathway = pathwayId ? pathwayContextById.get(pathwayId) : undefined;
+function scoreSignal(signal: DuplicateAccessSignalRecord): number {
   return [
     isReviewLocked(signal) ? 1000 : 0,
-    pathway && !pathway.archived ? 100 : 0,
-    pathway?.activeContactRoutes ? 20 : 0,
-    pathway?.activePostedOpportunities ? 20 : 0,
     stringId(signal.derivationKey).startsWith('application-route-backfill:') ? 5 : 0,
   ].reduce((sum, value) => sum + value, 0);
 }
 
 function sortedSignalsForCanonicalChoice(
   signals: DuplicateAccessSignalRecord[],
-  pathwayContextById: Map<string, DuplicateAccessSignalPathwayContext>,
 ): DuplicateAccessSignalRecord[] {
   return [...signals].sort((a, b) => {
-    const scoreDelta = scoreSignal(b, pathwayContextById) - scoreSignal(a, pathwayContextById);
+    const scoreDelta = scoreSignal(b) - scoreSignal(a);
     if (scoreDelta !== 0) return scoreDelta;
     const createdDelta = timestamp(a.createdAt) - timestamp(b.createdAt);
     if (createdDelta !== 0) return createdDelta;
@@ -255,30 +224,11 @@ function sortedSignalsForCanonicalChoice(
   });
 }
 
-function pathwayArchiveSkipReason(
-  pathway: DuplicateAccessSignalPathwayContext | undefined,
-): string | null {
-  if (!pathway) return 'missing-pathway';
-  if (pathway.archived === true) return 'already-archived';
-  if (!stringId(pathway.derivationKey).startsWith('application-route-backfill:')) {
-    return 'non-application-route-pathway';
-  }
-  if (isReviewLocked(pathway)) return 'review-locked-pathway';
-  if (pathway.activeContactRoutes > 0) return 'active-contact-routes';
-  if (pathway.activePostedOpportunities > 0) return 'active-posted-opportunities';
-  if (pathway.activeAccessSignals > 1) return 'other-active-access-signals';
-  return null;
-}
-
 export function buildDuplicateAccessSignalRepairPlans(
   groups: DuplicateAccessSignalGroup[],
   signals: DuplicateAccessSignalRecord[],
-  pathwayContexts: DuplicateAccessSignalPathwayContext[],
 ): DuplicateAccessSignalRepairPlanResult {
   const signalById = new Map(signals.map((signal) => [stringId(signal._id), signal]));
-  const pathwayContextById = new Map(
-    pathwayContexts.map((pathway) => [pathway.entryPathwayId, pathway]),
-  );
   const grouped = new Map<
     string,
     {
@@ -343,10 +293,7 @@ export function buildDuplicateAccessSignalRepairPlans(
       continue;
     }
 
-    const [canonical, ...duplicates] = sortedSignalsForCanonicalChoice(
-      activeSignals,
-      pathwayContextById,
-    );
+    const [canonical, ...duplicates] = sortedSignalsForCanonicalChoice(activeSignals);
     const lockedDuplicate = duplicates.find(isReviewLocked);
     if (lockedDuplicate) {
       result.blocked.push({
@@ -357,30 +304,12 @@ export function buildDuplicateAccessSignalRepairPlans(
       continue;
     }
 
-    const archiveEntryPathwayIds: string[] = [];
-    const skippedEntryPathwayArchives: DuplicateAccessSignalRepairPlan['skippedEntryPathwayArchives'] = [];
-    for (const duplicate of duplicates) {
-      const entryPathwayId = stringId(duplicate.entryPathwayId);
-      if (!entryPathwayId || entryPathwayId === stringId(canonical.entryPathwayId)) continue;
-      const pathway = pathwayContextById.get(entryPathwayId);
-      const skipReason = pathwayArchiveSkipReason(pathway);
-      if (skipReason) {
-        if (skipReason !== 'already-archived') {
-          skippedEntryPathwayArchives.push({ entryPathwayId, reason: skipReason });
-        }
-        continue;
-      }
-      archiveEntryPathwayIds.push(entryPathwayId);
-    }
-
     result.plans.push({
       researchEntityId: [...researchEntityIds][0],
       signalType: [...signalTypes][0],
       canonicalSignalId: stringId(canonical._id),
       duplicateSignalIds: duplicates.map((signal) => stringId(signal._id)),
-      archiveEntryPathwayIds: [...new Set(archiveEntryPathwayIds)],
       identityFields: group.identityFields,
-      skippedEntryPathwayArchives,
     });
   }
 
@@ -478,49 +407,8 @@ async function loadSignalRecords(groups: DuplicateAccessSignalGroup[]): Promise<
   return rows.map((row: any) => ({ ...row, signalType: row.type })) as DuplicateAccessSignalRecord[];
 }
 
-async function loadPathwayContexts(
-  signals: DuplicateAccessSignalRecord[],
-): Promise<DuplicateAccessSignalPathwayContext[]> {
-  const entryPathwayIds = [
-    ...new Set(signals.map((signal) => stringId(signal.entryPathwayId)).filter(Boolean)),
-  ]
-    .map((id) => normalizeDuplicateAccessSignalObjectId(id))
-    .filter((id): id is string => Boolean(id));
-  if (entryPathwayIds.length === 0) return [];
-  const objectIds = entryPathwayIds.map((id) => new mongoose.Types.ObjectId(id));
-  const pathways = await EntryPathway.find({ _id: { $in: objectIds } })
-    .select('_id derivationKey archived review')
-    .lean();
-  const pathwayById = new Map(pathways.map((pathway: any) => [stringId(pathway._id), pathway]));
-  const contexts: DuplicateAccessSignalPathwayContext[] = [];
-
-  for (const entryPathwayId of entryPathwayIds) {
-    const object = objectId(entryPathwayId);
-    const [activeAccessSignals, activeContactRoutes, activePostedOpportunities] = await Promise.all([
-      Signal.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
-      ContactRoute.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
-      PostedOpportunity.countDocuments({ entryPathwayId: object, archived: { $ne: true } }),
-    ]);
-    const pathway = pathwayById.get(entryPathwayId) as any;
-    contexts.push({
-      entryPathwayId,
-      derivationKey: stringId(pathway?.derivationKey),
-      archived: pathway?.archived === true,
-      activeAccessSignals,
-      activeContactRoutes,
-      activePostedOpportunities,
-      review: pathway?.review,
-    });
-  }
-
-  return contexts;
-}
-
 function plannedWriteCount(plans: DuplicateAccessSignalRepairPlan[]): number {
-  return plans.reduce(
-    (sum, plan) => sum + plan.duplicateSignalIds.length + plan.archiveEntryPathwayIds.length,
-    0,
-  );
+  return plans.reduce((sum, plan) => sum + plan.duplicateSignalIds.length, 0);
 }
 
 async function applyPlans(plans: DuplicateAccessSignalRepairPlan[]) {
@@ -529,27 +417,14 @@ async function applyPlans(plans: DuplicateAccessSignalRepairPlan[]) {
     .flatMap((plan) => plan.duplicateSignalIds)
     .map((id) => objectId(id))
     .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  const entryPathwayIds = plans
-    .flatMap((plan) => plan.archiveEntryPathwayIds)
-    .map((id) => objectId(id))
-    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-  const [signals, pathways] = await Promise.all([
-    signalIds.length
-      ? Signal.updateMany(
-          { _id: { $in: signalIds }, archived: { $ne: true } },
-          { $set: { archived: true, lastMaterializedAt: now } },
-        )
-      : Promise.resolve({ modifiedCount: 0 }),
-    entryPathwayIds.length
-      ? EntryPathway.updateMany(
-          { _id: { $in: entryPathwayIds }, archived: { $ne: true } },
-          { $set: { archived: true, lastMaterializedAt: now } },
-        )
-      : Promise.resolve({ modifiedCount: 0 }),
-  ]);
+  const signals = signalIds.length
+    ? await Signal.updateMany(
+        { _id: { $in: signalIds }, archived: { $ne: true } },
+        { $set: { archived: true, lastMaterializedAt: now } },
+      )
+    : { modifiedCount: 0 };
   return {
     archivedDuplicateSignals: (signals as any).modifiedCount || 0,
-    archivedEntryPathways: (pathways as any).modifiedCount || 0,
   };
 }
 
@@ -564,8 +439,7 @@ async function main(): Promise<void> {
   await initializeConnections();
   const groups = await loadDuplicateAccessSignalGroups(options.limit);
   const signals = await loadSignalRecords(groups);
-  const pathwayContexts = await loadPathwayContexts(signals);
-  const planResult = buildDuplicateAccessSignalRepairPlans(groups, signals, pathwayContexts);
+  const planResult = buildDuplicateAccessSignalRepairPlans(groups, signals);
   const plannedWrites = plannedWriteCount(planResult.plans);
   assertDuplicateAccessSignalRepairApplyAllowed({
     apply: options.apply,
@@ -577,7 +451,7 @@ async function main(): Promise<void> {
 
   const applied = options.apply
     ? await applyPlans(planResult.plans)
-    : { archivedDuplicateSignals: 0, archivedEntryPathways: 0 };
+    : { archivedDuplicateSignals: 0 };
   const report = {
     generatedAt: new Date().toISOString(),
     environment: guard.environment,
@@ -589,10 +463,6 @@ async function main(): Promise<void> {
     blockedGroups: planResult.blocked.length,
     plannedDuplicateSignals: planResult.plans.reduce(
       (sum, plan) => sum + plan.duplicateSignalIds.length,
-      0,
-    ),
-    plannedEntryPathwayArchives: planResult.plans.reduce(
-      (sum, plan) => sum + plan.archiveEntryPathwayIds.length,
       0,
     ),
     plannedWrites,

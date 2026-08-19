@@ -282,24 +282,6 @@ router.delete(
   userController.removeFavFellowships,
 );
 
-router.get('/favPathwayIds', isAuthenticated, userController.getFavPathwayIds);
-router.get('/favPathways', isAuthenticated, userController.getFavPathways);
-router.get(
-  '/favPathwayFundingMatches',
-  isAuthenticated,
-  userController.getFavPathwayFundingMatches,
-);
-router.put('/favPathways', writeLimit, isAuthenticated, userController.addFavPathways);
-router.delete('/favPathways', writeLimit, isAuthenticated, userController.removeFavPathways);
-router.get('/savedResearchPlanIds', isAuthenticated, userController.getSavedResearchPlanIds);
-router.get('/savedResearchPlans', isAuthenticated, userController.getSavedResearchPlans);
-router.put('/savedResearchPlans', writeLimit, isAuthenticated, userController.addSavedResearchPlans);
-router.delete(
-  '/savedResearchPlans',
-  writeLimit,
-  isAuthenticated,
-  userController.removeSavedResearchPlans,
-);
 router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
 router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);
 router.put(
@@ -343,58 +325,6 @@ router.delete(
   validateObjectId('entityId'),
   userController.deleteSavedResearchEntityPlan,
 );
-router.get(
-  '/savedResearchPlanFundingMatches',
-  isAuthenticated,
-  userController.getSavedResearchPlanFundingMatches,
-);
-router.get(
-  '/savedResearchPlanDetails',
-  isAuthenticated,
-  userController.getSavedResearchPlanDetails,
-);
-router.get(
-  '/savedResearchPlanDetails/export',
-  isAuthenticated,
-  userController.exportSavedResearchPlanDetails,
-);
-router.post(
-  '/savedResearchPlanDetails/export',
-  isAuthenticated,
-  userController.exportSavedResearchPlanDetails,
-);
-router.put(
-  '/savedResearchPlanDetails/:pathwayId',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('pathwayId'),
-  userController.updateSavedResearchPlanDetail,
-);
-router.delete(
-  '/savedResearchPlanDetails/:pathwayId',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('pathwayId'),
-  userController.deleteSavedResearchPlanDetail,
-);
-router.get('/favPathwayPlans', isAuthenticated, userController.getSavedPathwayPlans);
-router.get('/favPathwayPlans/export', isAuthenticated, userController.exportSavedPathwayPlans);
-router.post('/favPathwayPlans/export', isAuthenticated, userController.exportSavedPathwayPlans);
-router.put(
-  '/favPathwayPlans/:pathwayId',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('pathwayId'),
-  userController.updateSavedPathwayPlan,
-);
-router.delete(
-  '/favPathwayPlans/:pathwayId',
-  writeLimit,
-  isAuthenticated,
-  validateObjectId('pathwayId'),
-  userController.deleteSavedPathwayPlan,
-);
-
 router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put('/', writeLimit, isAuthenticated, logProfileUpdateEvent, userController.updateCurrentUser);
 

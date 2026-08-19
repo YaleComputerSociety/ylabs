@@ -49,11 +49,6 @@ const signalSchema = new mongoose.Schema(
       ref: 'ResearchEntity',
       required: true,
     },
-    entryPathwayId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'EntryPathway',
-      required: false,
-    },
     type: {
       type: String,
       enum: [...signalTypes],
@@ -121,7 +116,6 @@ const signalSchema = new mongoose.Schema(
 );
 
 signalSchema.index({ researchEntityId: 1 });
-signalSchema.index({ entryPathwayId: 1 });
 signalSchema.index({ type: 1 });
 signalSchema.index({ confidence: 1 });
 signalSchema.index({ status: 1 });

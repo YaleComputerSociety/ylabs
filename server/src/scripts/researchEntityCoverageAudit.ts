@@ -6,11 +6,8 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { ContactRoute } from '../models/contactRoute';
-import { EntryPathway } from '../models/entryPathway';
 import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { sourceCoverageRegistry } from '../scrapers/sourceCoverageRegistry';
@@ -285,35 +282,14 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
 
   const [
     memberCounts,
-    pathwayCounts,
-    publicRouteCounts,
-    totalRouteCounts,
     signalCounts,
-    opportunityCounts,
     listingCounts,
     observationHints,
   ] = await Promise.all([
     aggregateCountMap(ResearchGroupMember, { researchEntityId: { $in: entityIds } }),
-    aggregateCountMap(EntryPathway, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
-    aggregateCountMap(ContactRoute, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-      visibility: 'PUBLIC',
-    }),
-    aggregateCountMap(ContactRoute, {
-      researchEntityId: { $in: entityIds },
-      archived: { $ne: true },
-    }),
     aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
       type: { $in: [...accessSignalTypes] },
-      archived: { $ne: true },
-    }),
-    aggregateCountMap(PostedOpportunity, {
-      researchEntityId: { $in: entityIds },
       archived: { $ne: true },
     }),
     aggregateCountMap(Listing, {
@@ -366,11 +342,7 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
         researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
         sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
         members: memberCounts.get(entityId) || 0,
-        pathways: pathwayCounts.get(entityId) || 0,
-        publicContactRoutes: publicRouteCounts.get(entityId) || 0,
-        totalContactRoutes: totalRouteCounts.get(entityId) || 0,
         accessSignals: signalCounts.get(entityId) || 0,
-        postedOpportunities: opportunityCounts.get(entityId) || 0,
         activeListings: listingCounts.get(entityId) || 0,
       },
       observationFlags: buildObservationFlags(observationsBySlug.get(entity.slug) || []),
@@ -454,15 +426,10 @@ async function buildSlugAudit(slug: string) {
   }
 
   const entityId = stringId(entity._id);
-  const [members, pathways, signals, routes, opportunities, listings, observations] =
+  const [members, signals, listings, observations] =
     await Promise.all([
       ResearchGroupMember.find({ researchEntityId: entity._id })
         .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
-        .lean(),
-      EntryPathway.find({ researchEntityId: entity._id, archived: { $ne: true } })
-        .select(
-          'pathwayType status evidenceStrength studentFacingLabel bestNextStep sourceUrls confidence derivationKey',
-        )
         .lean(),
       Signal.find({
         researchEntityId: entity._id,
@@ -471,15 +438,6 @@ async function buildSlugAudit(slug: string) {
       })
         .select('type confidence confidenceScore source observedAt derivationKey')
         .sort({ observedAt: -1 })
-        .lean(),
-      ContactRoute.find({ researchEntityId: entity._id, archived: { $ne: true } })
-        .select(
-          'routeType label name role url visibility contactPolicy rationale sourceName sourceUrl observedAt derivationKey',
-        )
-        .sort({ priority: 1, observedAt: -1 })
-        .lean(),
-      PostedOpportunity.find({ researchEntityId: entity._id, archived: { $ne: true } })
-        .select('title term status applicationUrl sourceUrls derivationKey')
         .lean(),
       Listing.find({ researchEntityId: entity._id, archived: { $ne: true } })
         .select('title deadline website')
@@ -508,11 +466,7 @@ async function buildSlugAudit(slug: string) {
       researchAreas: Array.isArray(entity.researchAreas) ? entity.researchAreas.length : 0,
       sourceUrls: Array.isArray(entity.sourceUrls) ? entity.sourceUrls.length : 0,
       members: members.length,
-      pathways: pathways.length,
-      publicContactRoutes: routes.filter((route) => route.visibility === 'PUBLIC').length,
-      totalContactRoutes: routes.length,
       accessSignals: signals.length,
-      postedOpportunities: opportunities.length,
       activeListings: listings.length,
     },
     observationFlags: buildObservationFlags(observationHints),
@@ -557,11 +511,7 @@ async function buildSlugAudit(slug: string) {
     observationFlags: coverageFacts.observationFlags,
     accessArtifacts: {
       members,
-      entryPathways: pathways,
       accessSignals: signals,
-      publicContactRoutes: routes.filter((route) => route.visibility === 'PUBLIC'),
-      nonPublicContactRoutes: routes.filter((route) => route.visibility !== 'PUBLIC'),
-      postedOpportunities: opportunities,
       activeListings: listings,
     },
     recentObservations: observationHints.slice(0, 40),

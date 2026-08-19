@@ -14,7 +14,6 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { ScrapeRun } from '../models/scrapeRun';
-import { PostedOpportunity } from '../models/postedOpportunity';
 import { Fellowship } from '../models/fellowship';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
@@ -62,11 +61,6 @@ interface MaterializeResult {
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
   skipped?: string;
-}
-
-interface ListingPostedOpportunityMetricDeps {
-  observationModel?: Pick<typeof Observation, 'aggregate'>;
-  postedOpportunityModel?: Pick<typeof PostedOpportunity, 'countDocuments'>;
 }
 
 const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
@@ -1777,48 +1771,6 @@ function scrapeRunIdForQuery(scrapeRunId: string): string | mongoose.Types.Objec
   return toMaterializerObjectId(scrapeRunId) || scrapeRunId;
 }
 
-export async function countListingBackedPostedOpportunitiesForRun(
-  scrapeRunId: string,
-  deps: ListingPostedOpportunityMetricDeps = {},
-): Promise<number> {
-  const observationModel = deps.observationModel || Observation;
-  const postedOpportunityModel = deps.postedOpportunityModel || PostedOpportunity;
-  const rows = await observationModel.aggregate([
-    {
-      $match: {
-        scrapeRunId: scrapeRunIdForQuery(scrapeRunId),
-        entityType: 'listing',
-      },
-    },
-    {
-      $project: {
-        listingId: {
-          $ifNull: ['$entityId', '$entityKey'],
-        },
-      },
-    },
-    {
-      $group: {
-        _id: '$listingId',
-      },
-    },
-  ]);
-  const listingIds = rows
-    .map((row: { _id?: unknown }) => row._id)
-    .filter((id): id is string | mongoose.Types.ObjectId => {
-      if (id instanceof mongoose.Types.ObjectId) return true;
-      return Boolean(normalizeMaterializerObjectId(id));
-    })
-    .map((id) => toMaterializerObjectId(id))
-    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-
-  if (listingIds.length === 0) return 0;
-
-  return postedOpportunityModel.countDocuments({
-    listingId: { $in: listingIds },
-  });
-}
-
 function entityModelFor(entityType: ObservedEntityType): mongoose.Model<any> | null {
   switch (entityType) {
     case 'paper':
@@ -2586,13 +2538,13 @@ export async function materializeEntity(
       dryRun: options.dryRun,
     });
     postMaterializationMetrics = {
-      entryPathways: accessResult.entryPathways,
+      entryPathways: 0,
       accessSignals: accessResult.accessSignals,
-      contactRoutes: accessResult.contactRoutes,
+      contactRoutes: 0,
       postedOpportunities: 0,
       undergraduateLogisticsClaims:
         logisticsResult.known + logisticsResult.stale + logisticsResult.conflicts,
-      guardedContactRoutes: accessResult.guardedContactRoutes,
+      guardedContactRoutes: 0,
       staleEvidenceSkipped: accessResult.staleEvidenceSkipped,
       conflicts: logisticsResult.conflicts,
       errors: accessResult.errors + logisticsResult.rejected,
@@ -2934,8 +2886,6 @@ export async function materializeFromRun(
     conflicts += res.conflicts;
     addPostMaterializationMetrics(postMaterializationMetrics, res.postMaterializationMetrics);
   }
-  postMaterializationMetrics.postedOpportunities +=
-    await countListingBackedPostedOpportunitiesForRun(scrapeRunId);
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
   if (!options.dryRun) {
     await ScrapeRun.updateOne(

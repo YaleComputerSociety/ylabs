@@ -9,7 +9,6 @@ import { getMeiliIndex } from '../utils/meiliClient';
 import { getListingModel } from '../db/connections';
 import { processListingTitle, isCustomTitle, generateSmartTitle } from '../utils/smartTitle';
 import * as itemOps from './itemOperations';
-import { materializePostedOpportunityFromListing } from './postedOpportunityService';
 import { findOrCreateForOwner } from './researchGroupService';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
@@ -52,13 +51,6 @@ export function normalizeListingObjectId(value: unknown): string | undefined {
 
 const placeholderYaleEmail = (netid: string): string => `${netid.trim().toLowerCase()}@yale.edu`;
 
-async function syncPostedOpportunityBridge(listing: any): Promise<void> {
-  try {
-    await materializePostedOpportunityFromListing(listing);
-  } catch (error) {
-    console.error('Failed to sync listing to PostedOpportunity:', sanitizeLogValue(error));
-  }
-}
 
 async function syncResearchEntityProfileFromListing(listing: any): Promise<void> {
   const researchEntityId = listing?.researchEntityId || listing?.researchGroupId;
@@ -482,7 +474,6 @@ export const createListing = async (data: any, owner: any) => {
   }
 
   const savedListing = listing.toObject();
-  await syncPostedOpportunityBridge(savedListing);
   await syncResearchEntityProfileFromListing(savedListing);
 
   return savedListing;
@@ -680,7 +671,6 @@ export const updateListing = async (
     }
 
     const updatedListing = listing.toObject();
-    await syncPostedOpportunityBridge(updatedListing);
     await syncResearchEntityProfileFromListing(updatedListing);
 
     return updatedListing;
@@ -740,11 +730,6 @@ export const deleteListing = async (id: any) => {
 
     const oldListingId = listing._id;
     const oldProfessorIds = listing.professorIds;
-
-    await syncPostedOpportunityBridge({
-      ...listing.toObject(),
-      archived: true,
-    });
 
     for (const id of oldProfessorIds) {
       if (await userExists(id)) {

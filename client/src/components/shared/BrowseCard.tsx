@@ -11,7 +11,6 @@ import {
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
   getResearchEntityBestNextStep,
-  getResearchEntityPathwaySummary,
   getFellowshipJourneySummary,
   getResearchGroupStatus,
   getDaysUntilDeadline,
@@ -75,15 +74,9 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
   const subtitle = getItemSubtitle(item);
   const subtitleColor = getItemSubtitleColor(item);
   const researchStatus = getResearchGroupStatus(item);
-  const researchPathwaySummary = isResearchGroup
-    ? getResearchEntityPathwaySummary(item.data)
-    : null;
   const researchBestNextStep = isResearchGroup
     ? getResearchEntityBestNextStep(item.data)
     : null;
-  const hasActiveResearchOpportunity =
-    isResearchGroup &&
-    item.data.accessSummary?.hasActivePostedOpportunity;
   const fellowshipCycleStatus = item.type === 'fellowship'
     ? getFellowshipCycleStatus(item.data)
     : null;
@@ -142,11 +135,6 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
                   {researchStatus.label}
                 </span>
               )}
-              {hasActiveResearchOpportunity && (
-                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
-                  Active opportunity
-                </span>
-              )}
             </div>
 
             <h3 className="text-base font-bold text-gray-900 leading-tight line-clamp-2">
@@ -163,20 +151,12 @@ const BrowseCard = React.memo(({ item, isFavorite, onToggleFavorite, onOpenModal
               </p>
             )}
 
-            {(researchPathwaySummary || researchBestNextStep) && !isCompact && (
+            {researchBestNextStep && !isCompact && (
               <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-gray-700">
-                {researchPathwaySummary && (
-                  <p>
-                    <span className="font-semibold text-gray-800">Pathway:</span>{' '}
-                    {researchPathwaySummary}
-                  </p>
-                )}
-                {researchBestNextStep && (
-                  <p className={researchPathwaySummary ? 'mt-1' : ''}>
-                    <span className="font-semibold text-gray-800">Best next step:</span>{' '}
-                    {researchBestNextStep}
-                  </p>
-                )}
+                <p>
+                  <span className="font-semibold text-gray-800">Best next step:</span>{' '}
+                  {researchBestNextStep}
+                </p>
               </div>
             )}
 
