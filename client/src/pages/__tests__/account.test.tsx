@@ -87,11 +87,9 @@ describe('Account page', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 saved program/)).toBeTruthy();
     expect(screen.queryByText('Your plan')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan your next research move' })).toBeNull();
-    expect(screen.getByText('Archive assistant: Due May 20, 2026')).toBeTruthy();
     expect(screen.getAllByRole('link', { name: 'Find more research homes' })).toHaveLength(1);
     expect(screen.queryByRole('link', { name: 'Yale Labs' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Programs & Fellowships' })).toBeNull();

@@ -1174,9 +1174,7 @@ describe('visibilityRepairQueueService', () => {
       applied: true,
       status: 'blocked',
       patchSummary: expect.arrayContaining([
-        'created exploratory pathway from entity-level undergraduate evidence',
         'created reach-out-plausible access signal from entity-level evidence',
-        'created public research entity source contact route',
       ]),
       remainingBlockers: expect.arrayContaining(['missing_description']),
       repairSource: profileUrl,
@@ -1789,25 +1787,15 @@ describe('visibilityRepairQueueService', () => {
     expect(report.attempts[0]).toMatchObject({
       patchSummary: [
         'attached PI member from exact source/user URL match',
-        'created low-confidence exploratory pathway from official PI profile',
         'created reach-out-plausible access signal from official PI profile',
-        'created public faculty profile contact route',
       ],
       remainingBlockers: [],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        sourceEvidenceIds: ['obs-1'],
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Example Faculty',
-        url: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceEvidenceIds: ['obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2012,251 +2000,25 @@ describe('visibilityRepairQueueService', () => {
     );
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        evidenceStrength: 'WEAK',
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
         type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         sourceEvidenceId: 'obs-1',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
-        routeType: 'FACULTY_PI',
-        visibility: 'PUBLIC',
-        contactPolicy: 'OFFICIAL_ROUTE_PREFERRED',
-        url: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-  });
-
-  it('reuses an existing exploratory contact pathway for official profile action evidence', async () => {
-    const deps = {
-      findOpenQueueItems: vi.fn().mockResolvedValue([
-        queueItem({
-          blockerReasons: ['missing_action_evidence'],
-        }),
-      ]),
-      updateQueueItem: vi.fn().mockResolvedValue(undefined),
-      findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        fullDescription:
-          'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        shortDescription:
-          'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-      }),
-      updateResearchEntity: vi.fn(),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([
-        {
-          role: 'pi',
-          userId: 'user-1',
-          user: {
-            _id: 'user-1',
-            firstName: 'Example',
-            lastName: 'Faculty',
-            profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/example-faculty/',
-            },
-          },
-        },
-      ]),
-      findReusableExploratoryContactPathway: vi.fn().mockResolvedValue({
-        pathwayId: 'existing-pathway-1',
-        doc: { _id: 'existing-pathway-1', pathwayType: 'EXPLORATORY_CONTACT' },
-      }),
-      upsertEntryPathway: vi.fn().mockResolvedValue({ pathwayId: 'new-pathway-1' }),
-      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
-      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
-      findActionEvidenceObservationIds: vi.fn().mockResolvedValue(['obs-1']),
-      findProgram: vi.fn(),
-      updateProgram: vi.fn(),
-      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
-    };
-
-    const report = await runVisibilityRepairQueue(
-      {
-        mode: 'apply',
-        collection: 'research',
-        stage: 'action_evidence',
-        limit: 1,
-      },
-      deps,
-    );
-
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.findReusableExploratoryContactPathway).toHaveBeenCalledWith('entity-1');
-    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        entryPathwayId: 'existing-pathway-1',
         type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        entryPathwayId: 'existing-pathway-1',
-        routeType: 'FACULTY_PI',
-      }),
-    );
   });
 
-  it('uses reusable pathway evidence when official profile observation lookup misses', async () => {
-    const deps = {
-      findOpenQueueItems: vi.fn().mockResolvedValue([
-        queueItem({
-          blockerReasons: ['missing_action_evidence'],
-        }),
-      ]),
-      updateQueueItem: vi.fn().mockResolvedValue(undefined),
-      findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        fullDescription:
-          'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        shortDescription:
-          'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://medicine.yale.edu/profile/example-faculty/',
-        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
-      }),
-      updateResearchEntity: vi.fn(),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([
-        {
-          role: 'pi',
-          userId: 'user-1',
-          user: {
-            _id: 'user-1',
-            firstName: 'Example',
-            lastName: 'Faculty',
-            profileUrls: {
-              medicine: 'https://medicine.yale.edu/profile/example-faculty/',
-            },
-          },
-        },
-      ]),
-      findReusableExploratoryContactPathway: vi.fn().mockResolvedValue({
-        pathwayId: 'existing-pathway-1',
-        doc: {
-          _id: 'existing-pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          sourceEvidenceIds: ['existing-obs-1'],
-        },
-      }),
-      upsertEntryPathway: vi.fn(),
-      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
-      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
-      findActionEvidenceObservationIds: vi.fn().mockResolvedValue([]),
-      findProgram: vi.fn(),
-      updateProgram: vi.fn(),
-      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
-    };
 
-    const report = await runVisibilityRepairQueue(
-      {
-        mode: 'apply',
-        collection: 'research',
-        stage: 'action_evidence',
-        limit: 1,
-      },
-      deps,
-    );
 
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
-    expect(deps.upsertSignal).not.toHaveBeenCalled();
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entryPathwayId: 'existing-pathway-1',
-        sourceEvidenceIds: ['existing-obs-1'],
-      }),
-    );
-  });
-
-  it('creates an entity-source contact route from reusable pathway evidence without a trusted lead profile', async () => {
-    const deps = {
-      findOpenQueueItems: vi.fn().mockResolvedValue([
-        queueItem({
-          blockerReasons: ['missing_action_evidence'],
-        }),
-      ]),
-      updateQueueItem: vi.fn().mockResolvedValue(undefined),
-      findResearchEntity: vi.fn().mockResolvedValue({
-        _id: 'entity-1',
-        fullDescription:
-          'The lab studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        shortDescription:
-          'Studies translational immunology, tumor microenvironments, and immune-cell engineering for cancer therapy.',
-        websiteUrl: 'https://example.yale.edu/lab',
-        sourceUrls: ['https://example.yale.edu/lab'],
-      }),
-      updateResearchEntity: vi.fn(),
-      findResearchEntityMembers: vi.fn().mockResolvedValue([
-        {
-          role: 'pi',
-          userId: 'user-1',
-          user: {
-            _id: 'user-1',
-            firstName: 'Example',
-            lastName: 'Faculty',
-          },
-        },
-      ]),
-      findReusableExploratoryContactPathway: vi.fn().mockResolvedValue({
-        pathwayId: 'existing-pathway-1',
-        doc: {
-          _id: 'existing-pathway-1',
-          pathwayType: 'EXPLORATORY_CONTACT',
-          sourceEvidenceIds: ['existing-obs-1'],
-        },
-      }),
-      upsertEntryPathway: vi.fn(),
-      upsertSignal: vi.fn().mockResolvedValue({ signalId: 'signal-1' }),
-      upsertContactRoute: vi.fn().mockResolvedValue({ contactRouteId: 'route-1' }),
-      findActionEvidenceObservationIds: vi.fn(),
-      findProgram: vi.fn(),
-      updateProgram: vi.fn(),
-      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 1 } }),
-    };
-
-    const report = await runVisibilityRepairQueue(
-      {
-        mode: 'apply',
-        collection: 'research',
-        stage: 'action_evidence',
-        limit: 1,
-      },
-      deps,
-    );
-
-    expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
-    expect(deps.upsertSignal).not.toHaveBeenCalled();
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entryPathwayId: 'existing-pathway-1',
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://example.yale.edu/lab',
-        sourceEvidenceIds: ['existing-obs-1'],
-      }),
-    );
-  });
 
   it('derives card descriptions from existing full descriptions when a trusted source URL follows metadata URLs', async () => {
     const deps = {
@@ -2370,19 +2132,11 @@ describe('visibilityRepairQueueService', () => {
         sourceName: 'visibility-repair-queue',
       }),
     );
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        sourceUrls: ['https://medicine.yale.edu/profile/priya-mehta/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Priya Mehta',
-        url: 'https://medicine.yale.edu/profile/priya-mehta/',
-        sourceEvidenceIds: ['obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2497,15 +2251,11 @@ describe('visibilityRepairQueueService', () => {
     );
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://medicine.yale.edu/profile/mei-chen/'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Mei Chen',
-        url: 'https://medicine.yale.edu/profile/mei-chen/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2567,10 +2317,10 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: 'https://medicine.yale.edu/profile/jordan-queue/',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Jordan Queue',
-        url: 'https://medicine.yale.edu/profile/jordan-queue/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2689,14 +2439,11 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: profileUrl,
       }),
     );
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: [profileUrl],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: profileUrl,
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2762,11 +2509,10 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: 'https://medicine.yale.edu/cancer/profile/john-d-roberts/',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'John D Roberts',
-        routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/cancer/profile/john-d-roberts/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2880,24 +2626,10 @@ describe('visibilityRepairQueueService', () => {
         'https://jackson.yale.edu/centers-initiatives/',
       ],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        evidenceStrength: 'WEAK',
-        sourceEvidenceIds: ['obs-1'],
-        sourceUrls: [
-          'https://jackson.yale.edu/centers-initiatives/',
-          'https://jackson.yale.edu/centers-initiatives/example-program/',
-        ],
-        derivationKey: 'visibility-repair:entity-source-outreach:entity-1',
-      }),
-    );
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
         type: 'REACH_OUT_PLAUSIBLE',
         confidence: 'LOW',
         sourceEvidenceId: 'obs-1',
@@ -2905,14 +2637,10 @@ describe('visibilityRepairQueueService', () => {
         sourceUrl: 'https://jackson.yale.edu/centers-initiatives/',
       }),
     );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         researchEntityId: 'entity-1',
-        entryPathwayId: 'pathway-1',
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://jackson.yale.edu/centers-initiatives/example-program/',
-        sourceEvidenceIds: ['obs-1'],
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -2987,13 +2715,7 @@ describe('visibilityRepairQueueService', () => {
         'https://jackson.yale.edu/centers-initiatives/',
       ],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
     expect(deps.updateQueueItem).toHaveBeenCalledWith(
       'queue-1',
       expect.objectContaining({
@@ -3104,15 +2826,7 @@ describe('visibilityRepairQueueService', () => {
     );
 
     expect(report).toMatchObject({ repaired: 1, blocked: 0, resolvedByGate: 1 });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
-      expect.objectContaining({
-        researchEntityId: 'entity-1',
-        pathwayType: 'EXPLORATORY_CONTACT',
-        status: 'PLAUSIBLE',
-        sourceUrls: ['https://example.edu/profile/example-faculty/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
   });
 
   it('repairs action evidence from opaque Yale Medicine profile slugs that match PI initials', async () => {
@@ -3173,10 +2887,10 @@ describe('visibilityRepairQueueService', () => {
       userId: 'user-1',
       sourceUrl: 'https://medicine.yale.edu/profile/br999/',
     });
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        routeType: 'FACULTY_PI',
-        url: 'https://medicine.yale.edu/profile/br999/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -3305,18 +3019,11 @@ describe('visibilityRepairQueueService', () => {
       sourceUrl: 'https://cidma.us/',
       sourceUrls: ['https://cidma.us/', 'https://orcid.org/0000-0002-2059-6716'],
     });
-    expect(deps.upsertEntryPathway).toHaveBeenCalledWith(
+    expect(deps.upsertEntryPathway).not.toHaveBeenCalled();
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourceUrls: ['https://cidma.us/'],
-        sourceEvidenceIds: ['obs-1'],
-      }),
-    );
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
-      expect.objectContaining({
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://cidma.us/',
-        sourceEvidenceIds: ['obs-1'],
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });
@@ -3392,11 +3099,10 @@ describe('visibilityRepairQueueService', () => {
         'https://reporter.nih.gov/project-details/10774311',
       ],
     });
-    expect(deps.upsertContactRoute).toHaveBeenCalledWith(
+    expect(deps.upsertSignal).toHaveBeenCalledWith(
       expect.objectContaining({
-        routeType: 'UNKNOWN',
-        role: 'Research entity source',
-        url: 'https://medicine.yale.edu/profile/fixture-modeling-lead/',
+        researchEntityId: 'entity-1',
+        type: 'REACH_OUT_PLAUSIBLE',
       }),
     );
   });

@@ -94,7 +94,7 @@ describe('accessSummaryService', () => {
         sourceUrl: 'https://lab.example.test/people',
       },
     ]);
-    expect(summary?.bestNextStep).toBe('Email [email redacted] after reading the page.');
+    expect(summary?.bestNextStep).toBe('Save for later');
     expect(JSON.stringify(summary)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(summary)).not.toContain('203-432-1234');
     expect(JSON.stringify(summary)).not.toContain('mailto:');
@@ -210,22 +210,16 @@ describe('accessSummaryService', () => {
     expect(mocks.postedOpportunityFind).not.toHaveBeenCalled();
   });
 
-  it('keeps legacy discovery rules while excluding faculty opportunities', async () => {
+  it('queries only signal access evidence for the summary', async () => {
     const entityId = new Types.ObjectId();
 
     await listAccessSummariesForResearchEntities([entityId]);
 
-    expect(mocks.entryPathwayFind.mock.calls[0][0]).toMatchObject({
-      archived: false,
-      derivationKey: { $not: /^faculty-opportunity:/ },
-    });
-    expect(mocks.entryPathwayFind.mock.calls[0][0]).not.toHaveProperty('review.status');
-    const opportunityFilter = mocks.postedOpportunityFind.mock.calls[0][0];
-    expect(opportunityFilter).toEqual({
+    expect(mocks.accessSignalFind.mock.calls[0][0]).toMatchObject({
       researchEntityId: { $in: [entityId] },
-      origin: { $ne: 'FACULTY_SUBMITTED' },
       archived: false,
-      status: { $in: ['OPEN', 'ROLLING'] },
     });
+    expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
+    expect(mocks.postedOpportunityFind).not.toHaveBeenCalled();
   });
 });

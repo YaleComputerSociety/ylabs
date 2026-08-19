@@ -95,10 +95,7 @@ describe('adminAccessReviewProjectionService', () => {
       researchAreas: ['Machine Learning'],
       updatedAt: new Date('2026-08-01T12:00:00.000Z'),
     });
-    mocks.pathwayExec.mockResolvedValue([{ count: 3, unreviewed: 2 }]);
-    mocks.signalExec.mockResolvedValue([{ count: 2, unreviewed: 1 }]);
-    mocks.routeExec.mockResolvedValue([{ count: 1, unreviewed: 0 }]);
-    mocks.opportunityExec.mockResolvedValue([{ count: 4, unreviewed: 1, officialApplications: 2 }]);
+    mocks.signalExec.mockResolvedValue([{ count: 2, unreviewed: 1, officialApplications: 2 }]);
     mocks.projectionFindOneAndUpdateLean.mockResolvedValue({ generation: 4 });
     mocks.projectionUpdateOne.mockResolvedValue({ matchedCount: 1 });
     mocks.projectionDeleteOne.mockResolvedValue({ deletedCount: 1 });
@@ -121,25 +118,19 @@ describe('adminAccessReviewProjectionService', () => {
         'machine',
       ]),
       counts: {
-        entryPathways: 3,
         accessSignals: 2,
-        contactRoutes: 1,
-        postedOpportunities: 4,
       },
-      totalUnreviewed: 4,
+      totalUnreviewed: 1,
       hasOfficialApplication: true,
       schemaVersion: 2,
     });
-    const pathwayPipeline = mocks.pathwayExec.mock.calls[0][0];
-    const opportunityPipeline = mocks.opportunityExec.mock.calls[0][0];
-    expect(pathwayPipeline[0].$match).toMatchObject({
+    const signalPipeline = mocks.signalExec.mock.calls[0][0];
+    expect(signalPipeline[0].$match).toMatchObject({
       researchEntityId: id,
-      derivationKey: { $not: /^faculty-opportunity:/ },
     });
-    expect(opportunityPipeline[0].$match).toMatchObject({
-      researchEntityId: id,
-      submissionStatus: { $ne: 'DRAFT' },
-    });
+    expect(mocks.pathwayExec).not.toHaveBeenCalled();
+    expect(mocks.opportunityExec).not.toHaveBeenCalled();
+    expect(mocks.routeExec).not.toHaveBeenCalled();
   });
 
   it('uses generation tokens so a concurrent invalidation cannot be cleared', async () => {
