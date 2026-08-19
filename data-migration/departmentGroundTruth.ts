@@ -79,7 +79,7 @@ export interface GroundTruthBuildResult {
 
 export type HtmlFetch = (url: string) => Promise<{ text(): Promise<string> }>;
 
-interface CuratedDepartment {
+export interface CuratedDepartment {
   abbreviation: string;
   name: string;
   categories: DepartmentCategory[];
@@ -91,7 +91,7 @@ interface CuratedDepartment {
   codeSystemPreference?: DepartmentCodeSystem;
 }
 
-const curatedDepartments: CuratedDepartment[] = [
+export const curatedDepartments: CuratedDepartment[] = [
   { abbreviation: 'AFST', name: 'African Studies', categories: [DepartmentCategory.HUMANITIES_ARTS] },
   { abbreviation: 'AMST', name: 'American Studies', categories: [DepartmentCategory.HUMANITIES_ARTS] },
   { abbreviation: 'ANES', name: 'Anesthesiology', categories: [DepartmentCategory.HEALTH_MEDICINE], ysmDepartmentName: 'Anesthesiology' },
