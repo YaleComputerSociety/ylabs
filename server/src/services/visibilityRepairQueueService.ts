@@ -282,9 +282,15 @@ const sourceUrlsForFieldProvenance = (entity: Record<string, any>): string[] =>
   ).filter(hasHttpUrl);
 
 const isLeadMember = (member: Record<string, any>): boolean =>
-  ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'].includes(
-    textValue(member.role).toLowerCase(),
-  );
+  [
+    'pi',
+    'co-pi',
+    'principal-investigator',
+    'principal investigator',
+    'director',
+    'co-director',
+    'lead',
+  ].includes(textValue(member.role).toLowerCase());
 
 const cleanResearchInterest = (value: unknown): string => {
   const text = textValue(value)
