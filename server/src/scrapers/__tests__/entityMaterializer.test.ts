@@ -6,7 +6,7 @@ import {
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
-  buildResearchGroupMemberUpsert,
+  buildRosterMemberUpsert,
   canonicalRosterProvenanceFromSet,
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
@@ -517,7 +517,7 @@ describe('entityMaterializer post-materialization metrics', () => {
 
   it('builds a research entity member upsert from center member observations', () => {
     const observedAt = new Date('2026-06-06T00:00:00Z');
-    const patch = buildResearchGroupMemberUpsert(
+    const patch = buildRosterMemberUpsert(
       '64f000000000000000000010',
       {
         researchGroupKey: {
@@ -612,8 +612,8 @@ describe('entityMaterializer post-materialization metrics', () => {
       freshnessExpiresAt: field('2026-08-04T00:00:00Z'),
     };
 
-    const first = buildResearchGroupMemberUpsert('64f000000000000000000010', resolved);
-    const second = buildResearchGroupMemberUpsert('64f000000000000000000010', resolved);
+    const first = buildRosterMemberUpsert('64f000000000000000000010', resolved);
+    const second = buildRosterMemberUpsert('64f000000000000000000010', resolved);
     expect(first).toEqual(second);
     expect(first).toMatchObject({
       filter: {
@@ -643,7 +643,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       hasConflict: false,
       contributingSources: ['official-research-home-roster'],
     });
-    const upsert = buildResearchGroupMemberUpsert('64f000000000000000000010', {
+    const upsert = buildRosterMemberUpsert('64f000000000000000000010', {
       role: field('grad-student'),
       name: field('Fixture Scholar'),
       profileUrl: field('https://medicine.yale.edu/lab/fixture/profile/fixture-scholar/'),
@@ -675,7 +675,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       contributingSources: ['official-research-home-roster'],
     });
     expect(
-      buildResearchGroupMemberUpsert('64f000000000000000000010', {
+      buildRosterMemberUpsert('64f000000000000000000010', {
         role: field('staff'),
         name: field('Same Name'),
         currentStatus: field('current'),
@@ -683,7 +683,7 @@ describe('entityMaterializer post-materialization metrics', () => {
       }),
     ).toBeNull();
     expect(
-      buildResearchGroupMemberUpsert('64f000000000000000000010', {
+      buildRosterMemberUpsert('64f000000000000000000010', {
         role: field('staff'),
         name: field('Conflicted Name', true),
         identityKey: field('official-profile:collision', true),
