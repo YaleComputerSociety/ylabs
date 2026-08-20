@@ -45,17 +45,24 @@ describe('ResearchTeamSection', () => {
     expect(screen.getByText(/not a recommendation to contact/)).toBeTruthy();
   });
 
-  it('presents neutral empty, withheld, and optional-source failure states', () => {
-    const { rerender } = render(
+  it('renders nothing when no verified members are present, regardless of roster status', () => {
+    const { container, rerender } = render(
       <ResearchTeamSection members={[]} roster={roster({ status: 'no-verified-data' })} />,
     );
-    expect(screen.getByText(/does not mean the team is empty/)).toBeTruthy();
+    expect(container).toBeEmptyDOMElement();
     rerender(<ResearchTeamSection members={[]} roster={roster({ status: 'withheld' })} />);
-    expect(screen.getByText(/member names are withheld/)).toBeTruthy();
+    expect(container).toBeEmptyDOMElement();
     rerender(
       <ResearchTeamSection members={[]} roster={roster({ status: 'optional-source-failure' })} />,
     );
-    expect(screen.getByText(/Team size is unknown/)).toBeTruthy();
+    expect(container).toBeEmptyDOMElement();
+    rerender(
+      <ResearchTeamSection
+        members={[{ ...member(1), rosterEvidence: undefined }]}
+        roster={roster({ status: 'current' })}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('bounds dense roster presentation to 24 members', () => {
