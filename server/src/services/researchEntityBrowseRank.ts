@@ -31,6 +31,12 @@ export interface ResearchEntityBrowseRankInput {
   leadMembers?: Array<Record<string, any>>;
   /** signalType values of the entity's active (non-archived) AccessSignals. */
   accessSignalTypes?: string[];
+  /**
+   * True when the entity is the source of at least one active affiliation
+   * relationship (it hosts labs, groups, research areas, or programs). Gates the
+   * umbrella demotion so a leaf "Center" that hosts nothing is not penalized.
+   */
+  hostsAffiliatedResearchHomes?: boolean;
 }
 
 /** Description-state contribution (source-backed + complete card is best). */
@@ -89,6 +95,12 @@ const accessPoints = (accessSignalTypes: string[]): number => {
  * direct research homes rather than excluded. The magnitude is small relative to
  * the completeness and access terms, so a strong umbrella entity can still
  * surface above a weak lab.
+ *
+ * The umbrella demotion is applied by behavior, not by name: it only affects an
+ * org-type entity that actually hosts affiliated research homes. A leaf entity
+ * that happens to be typed CENTER/INSTITUTE/INITIATIVE but hosts nothing is a
+ * direct research home and is not demoted. PROGRAM demotion is unconditional
+ * because it reflects a program offering rather than a joinable lab.
  */
 const ENTITY_TYPE_RANK_ADJUSTMENT: Partial<Record<ResearchEntityType, number>> = {
   CENTER: -25,
@@ -97,16 +109,25 @@ const ENTITY_TYPE_RANK_ADJUSTMENT: Partial<Record<ResearchEntityType, number>> =
   INITIATIVE: -10,
 };
 
-const entityTypeRankAdjustment = (entity: Record<string, any>): number => {
+const UMBRELLA_GATED_TYPES = new Set<ResearchEntityType>(['CENTER', 'INSTITUTE', 'INITIATIVE']);
+
+const entityTypeRankAdjustment = (
+  entity: Record<string, any>,
+  hostsAffiliatedResearchHomes = false,
+): number => {
   const entityType = (entity.entityType ||
     mapResearchGroupKindToEntityType(entity.kind)) as ResearchEntityType;
-  return ENTITY_TYPE_RANK_ADJUSTMENT[entityType] ?? 0;
+  const adjustment = ENTITY_TYPE_RANK_ADJUSTMENT[entityType] ?? 0;
+  if (adjustment === 0) return 0;
+  if (UMBRELLA_GATED_TYPES.has(entityType) && !hostsAffiliatedResearchHomes) return 0;
+  return adjustment;
 };
 
 export function computeResearchEntityBrowseRank({
   entity,
   leadMembers = [],
   accessSignalTypes = [],
+  hostsAffiliatedResearchHomes = false,
 }: ResearchEntityBrowseRankInput): number {
   const summary = buildResearchEntityQualitySummary({ entity, leadMembers });
 
@@ -120,7 +141,7 @@ export function computeResearchEntityBrowseRank({
     score += 10;
   }
   if (summary.repairFlags.includes('duplicate_risk')) score -= 14;
-  score += entityTypeRankAdjustment(entity);
+  score += entityTypeRankAdjustment(entity, hostsAffiliatedResearchHomes);
 
   return score;
 }
@@ -128,6 +149,7 @@ export function computeResearchEntityBrowseRank({
 export const __testing = {
   ACCESS_SIGNAL_POINTS,
   ENTITY_TYPE_RANK_ADJUSTMENT,
+  UMBRELLA_GATED_TYPES,
   descriptionPoints,
   leadPoints,
   accessPoints,

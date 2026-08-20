@@ -2,12 +2,14 @@
  * Persistence + Meilisearch sync for the ResearchEntity browse-ranking score.
  *
  * The pure scorer lives in researchEntityBrowseRank.ts. This module gathers the
- * joins the scorer needs (lead members, active access-signal types), writes the
+ * joins the scorer needs (lead members, active access-signal types, whether the
+ * entity hosts affiliated research homes), writes the
  * resulting `browseRankScore` onto the ResearchEntity document, and re-syncs the
  * affected docs to the `researchentities` Meilisearch index so the default
  * (no-query) browse can sort on it.
  */
 import { ResearchEntity } from '../models/researchEntity';
+import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAccessTypes';
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
@@ -27,6 +29,22 @@ const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[
     if (leads.length > 0) byId.set(key, leads);
   }
   return byId;
+};
+
+const entitiesHostingAffiliations = async (entityIds: any[]): Promise<Set<string>> => {
+  if (entityIds.length === 0) return new Set();
+  const sourceIds = await ResearchEntityRelationship.find({
+    sourceResearchEntityId: { $in: entityIds },
+    archived: { $ne: true },
+  })
+    .select('sourceResearchEntityId')
+    .lean();
+  const hosting = new Set<string>();
+  for (const relationship of sourceIds as any[]) {
+    const key = browseRankDocumentId(relationship.sourceResearchEntityId);
+    if (key) hosting.add(key);
+  }
+  return hosting;
 };
 
 const accessSignalTypesByEntityId = async (entityIds: any[]): Promise<Map<string, string[]>> => {
@@ -76,9 +94,10 @@ export async function recomputeBrowseRankForEntities(
 
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
   const ids = entities.map((entity) => entity._id);
-  const [leadMembers, accessSignalTypes] = await Promise.all([
+  const [leadMembers, accessSignalTypes, hostingAffiliations] = await Promise.all([
     leadMembersByEntityId(ids),
     accessSignalTypesByEntityId(ids),
+    entitiesHostingAffiliations(ids),
   ]);
 
   let updated = 0;
@@ -89,6 +108,7 @@ export async function recomputeBrowseRankForEntities(
       entity,
       leadMembers: leadMembers.get(id) || [],
       accessSignalTypes: accessSignalTypes.get(id) || [],
+      hostsAffiliatedResearchHomes: hostingAffiliations.has(id),
     });
     scoresByEntityId.set(id, score);
 
