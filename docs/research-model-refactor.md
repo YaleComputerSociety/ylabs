@@ -126,8 +126,10 @@ The programs, fellowships, grants, and funding page (separate adjacent domain).
 
 ## Migration status and open work
 
-Search and browse ranking read the canonical roster (#331), and the scraper materializer now writes canonical identity and role rows continuously alongside the legacy `ResearchGroupMember` writes (S3, #353), so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
-This is an additive dual-write: the legacy `ResearchGroupMember` writes are intentionally left in place until they are retired in S5 (#361), and the continuous writes mirror the gated batch output exactly so a batch rebuild stays a no-op superset.
+Search and browse ranking read the canonical roster (#331), and the scraper materializer writes canonical `Researcher`, `Account`, and `RoleAssignment` rows continuously on each materialize (#353), so freshly scraped PIs, members, and departures surface immediately without waiting for a batch.
+The legacy `ResearchGroupMember` write path was retired in #361, so the continuous canonical write is now the sole roster write path.
+Because the write path is canonical, the destructive batch identity apply (`phase2IdentityMigrationApply` and its `replaceCanonicalIdentityCollections`, which wiped and rebuilt the canonical identity collections from legacy sources) is retired in the same change (#353), per the sequencing rule: a batch that deletes and rebuilds from legacy would clobber continuously written canonical rows that legacy no longer explains.
+The non-destructive dry-run identity planner (`model-refactor:identity-plan`) is kept for reconciliation analysis; a one-time reconciliation after deploy is a full idempotent re-materialize of the scraped sources, never a destructive replace.
 
 The student-facing research-detail page (`getResearchGroupDetail`) also reads the canonical roster now (S4a, #360): it derives members from `getResearchEntityRoster` (`RoleAssignment` plus `Researcher` and `Account`) instead of legacy `ResearchGroupMember`/`FacultyMember`/`User`.
 Because canonical `RoleAssignment.evidenceClaimIds` is empty (full `EvidenceClaim` canonicalization needs the frozen `SourceDocument` plus predicate-registry machinery), the roster-freshness disclosure is fed by a bounded `rosterProvenance` subdoc on `RoleAssignment` (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) populated at each materializer membership write-site.
@@ -141,13 +143,13 @@ The canonical roster carries no bio, research-interest, or topic fields, so the 
 `profileService.loadProfileResearchEntities` reads `RESEARCH_ENTITY` `RoleAssignment`s (non-`HISTORICAL`, not archived, matching the prior `isCurrentMember != false` semantics) and maps each canonical role back to the legacy role string the profile DTO still expects.
 The two live scraper-source lead readers now read the canonical roster too, decoupling the scrape pipeline's lead reads ahead of the S5 write retirement (#361): `officialProfilePiBackfillScraper` derives current leads from `getResearchEntityRosterByEntityId` (lead roles, non-`HISTORICAL` state) and fetches the bio, profile-url, website, and first/last-name fields the roster does not carry via a targeted by-`netid` `User` lookup, degrading to `splitName(entry.name)` plus roster URLs when no `User` matches; `centerDirectorLLMExtractor`'s `missingLeadOnly` filter reads `RoleAssignment.distinct('target.id', ...)` for canonical lead roles (non-`HISTORICAL`, not archived).
 The `User` lookup uses a `{ locale: 'en', strength: 2 }` collation and lowercased by-`netid` map keys because `Account.netid` is lowercase while `User.netid` is mixed-case; it stays an accepted transitional dependency until `User` is retired.
-Retiring the still-present legacy `ResearchGroupMember` write path (S5, #361) and the field-retirement of the now-unused `User`/`FacultyMember` bio, research-interest, and topic fields (#208) are the remaining follow-ups.
+The field-retirement of the now-unused `User`/`FacultyMember` bio, research-interest, and topic fields, and the eventual `User`/`FacultyMember` retirement plus `Account` wiring (the long pole), remain the follow-ups.
 
 Tracked issues:
 
 - Discoverability now: search relevance #345, hybrid or embedder #346, browse filters #347, matched professor #341 area.
 - Data quality now: website coverage #348, research-area coverage #349, dedupe duplicate labs #350, department canonicalization and `OrgUnit` seed #354.
-- Model refactor: identity split #206, clean `ResearchEntity` schema #208, dangling `ResearchGroup` ref #352, remove legacy `description` #351, retire legacy `ResearchGroupMember` writes #361 (S5).
+- Model refactor: identity split #206, dangling `ResearchGroup` ref #352, remove legacy `description` #351; landed: clean `ResearchEntity` schema #208, retire legacy `ResearchGroupMember` writes #361, canonical continuous write path plus destructive batch-apply retirement #353.
 - PR #344 (an early `RoleAssignment` read cutover) was superseded by #375 and closed.
 
 Verification gates for any cutover: source and target counts with explained differences, no orphan references, no dual identities in public DTOs, no public contact leakage, source attribution for material claims, deterministic conflict handling, official-link validity with graceful failure, search relevance parity, correct visibility filtering, bounded detail payloads, private-plan isolation, no paper dependency, and rollback readiness before any collection drop.
