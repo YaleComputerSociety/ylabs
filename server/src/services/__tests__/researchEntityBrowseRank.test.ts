@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  computeResearchEntityBrowseRank,
-  __testing,
-} from '../researchEntityBrowseRank';
+import { computeResearchEntityBrowseRank, __testing } from '../researchEntityBrowseRank';
 
 // A "complete" entity: source-backed full description + official URL.
 const completeEntity = () => ({
@@ -59,9 +56,9 @@ describe('computeResearchEntityBrowseRank', () => {
 
   it('does not let a positive signal mask a co-present unavailable signal incorrectly', () => {
     // Strongest positive wins when present.
-    expect(
-      __testing.accessPoints(['NOT_CURRENTLY_AVAILABLE', 'CURRENT_UNDERGRADS']),
-    ).toBe(__testing.ACCESS_SIGNAL_POINTS.CURRENT_UNDERGRADS);
+    expect(__testing.accessPoints(['NOT_CURRENTLY_AVAILABLE', 'CURRENT_UNDERGRADS'])).toBe(
+      __testing.ACCESS_SIGNAL_POINTS.CURRENT_UNDERGRADS,
+    );
   });
 
   it('penalizes a missing source URL relative to one present', () => {
