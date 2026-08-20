@@ -515,9 +515,13 @@ export async function runShortDescriptionBackfill(options: {
   };
 }
 
-function writeBackfillReport(output: string | undefined, payload: unknown, label: string): void {
-  if (!output) return;
-  const safeOutput = resolveSafeJsonReportOutputPath(output);
+function writeBackfillReport(
+  options: ResearchDescriptionBackfillOptions,
+  payload: unknown,
+  label: string,
+): void {
+  if (!options.output) return;
+  const safeOutput = resolveSafeJsonReportOutputPath(options.output);
   fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
   fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
   console.log(`Saved ${label} report to ${safeOutput}`);
@@ -548,7 +552,7 @@ async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): P
       limit: options.explicitLimit ? options.limit : undefined,
     });
     writeBackfillReport(
-      options.output,
+      options,
       {
         generatedAt: new Date().toISOString(),
         environment: guard.environment,
@@ -587,7 +591,7 @@ async function runShortBackfillLane(options: ResearchDescriptionBackfillOptions)
       limit: options.explicitLimit ? options.limit : undefined,
     });
     writeBackfillReport(
-      options.output,
+      options,
       {
         generatedAt: new Date().toISOString(),
         environment: guard.environment,
@@ -849,7 +853,7 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
       projectedEntities: options.projectedEntities,
     });
     writeBackfillReport(
-      options.output,
+      options,
       {
         generatedAt: new Date().toISOString(),
         environment: guard.environment,
