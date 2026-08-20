@@ -208,15 +208,13 @@ export async function resolveResearcherIdForLegacyUser(
         undefined;
     }
   }
-  if (!netid && !orcid) {
-    const fid = normalizeEntityObjectId(facultyMemberId);
-    if (fid) {
-      const faculty: any = await FacultyMember.findById(fid).select('orcidId name').lean();
-      if (faculty) {
-        orcid = orcid || normalizedResolverOrcid(faculty.orcidId);
-        displayName =
-          displayName || (typeof faculty.name === 'string' && faculty.name.trim()) || undefined;
-      }
+  const fid = normalizeEntityObjectId(facultyMemberId);
+  if (fid) {
+    const faculty: any = await FacultyMember.findById(fid).select('orcidId name').lean();
+    if (faculty) {
+      orcid = orcid || normalizedResolverOrcid(faculty.orcidId);
+      displayName =
+        displayName || (typeof faculty.name === 'string' && faculty.name.trim()) || undefined;
     }
   }
 
