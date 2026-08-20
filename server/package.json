@@ -13,6 +13,7 @@
     "build:clean": "rm -rf build",
     "dev": "cross-env NODE_ENV=development tsx watch src/index.ts",
     "migrate:mongo-naming": "tsx src/scripts/migrateMongoNaming.ts",
+    "migrate:signal-consolidation": "tsx src/scripts/signalConsolidationMigration.ts",
     "research-entity:migrate": "tsx src/scripts/migrateResearchEntities.ts",
     "research-entity:cleanup-collections": "tsx src/scripts/migrateResearchEntityCollections.ts",
     "legacy:cleanup": "tsx src/scripts/cleanupLegacyMongoCollections.ts",
