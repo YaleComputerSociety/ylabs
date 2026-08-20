@@ -597,6 +597,25 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('operator_override');
   });
 
+  it('suppresses an instructional-support center whose only service language is in the profile synthesis', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Academic Excellence',
+        entityType: 'CENTER',
+        profileSynthesisDescription:
+          'Provides instructional support and faculty development, coordinating course design consultations and teaching support workshops for Yale instructors.',
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('non_research_entity');
+    expect(result.reasons).toContain('service_or_instructional_support');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+  });
+
   it('keeps a center that conducts research on teaching in research scope', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

@@ -14,6 +14,7 @@ export interface ResearchEntityResearchScopeInput {
   description?: unknown;
   shortDescription?: unknown;
   fullDescription?: unknown;
+  profileSynthesisDescription?: unknown;
   researchAreas?: unknown;
   keywords?: unknown;
 }
@@ -56,6 +57,7 @@ export function classifyResearchEntityResearchScope(
     text(entity.description),
     text(entity.shortDescription),
     text(entity.fullDescription),
+    text(entity.profileSynthesisDescription),
   ]
     .filter(Boolean)
     .join(' ');
