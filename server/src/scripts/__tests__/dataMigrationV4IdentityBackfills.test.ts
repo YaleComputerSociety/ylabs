@@ -25,12 +25,6 @@ async function importV4Backfill(relativePath: string) {
 }
 
 describe('legacy v4 identity backfill safety helpers', () => {
-  it('imports faculty member backfill without running the CLI path', async () => {
-    const mod = await importV4Backfill('BackfillV4FacultyMembers.ts');
-
-    expect(typeof mod.backfillV4FacultyMembers).toBe('function');
-  });
-
   it('imports student profile backfill without running the CLI path', async () => {
     const mod = await importV4Backfill('BackfillV4StudentProfiles.ts');
 

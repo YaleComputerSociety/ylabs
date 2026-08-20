@@ -761,7 +761,7 @@ describe('entityMaterializer post-materialization metrics', () => {
           contributingSources: ['centers-institutes-index'],
         },
       },
-      { _id: '64f000000000000000000020', facultyMemberId: '64f000000000000000000030' },
+      { _id: '64f000000000000000000020' },
     );
 
     expect(patch).toMatchObject({
@@ -776,7 +776,6 @@ describe('entityMaterializer post-materialization metrics', () => {
           researchEntityId: '64f000000000000000000010',
           researchGroupId: '64f000000000000000000010',
           userId: '64f000000000000000000020',
-          facultyMemberId: '64f000000000000000000030',
           name: 'Jane Doe',
           role: 'director',
           isCurrentMember: true,

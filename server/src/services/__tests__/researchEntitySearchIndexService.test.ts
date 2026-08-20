@@ -1,35 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Researcher } from '../../models/researcher';
+import { RoleAssignment } from '../../models/roleAssignment';
 import {
   buildResearchEntitySearchEmbedderConfig,
   buildResearchEntitySearchIndexDocument,
   buildStudentSearchTerms,
+  fetchResearchEntitySearchMemberNames,
   getResearchEntitySearchIndexSettings,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
   rebuildResearchEntitySearchIndex,
-  trustedMemberDisplayName,
 } from '../researchEntitySearchIndexService';
 
 describe('researchEntitySearchIndexService', () => {
-  it('indexes only linked person identities and suppresses linked identity collisions', () => {
-    const users = new Map([['user-1', { fname: 'Grace', lname: 'Hopper' }]]);
-    const faculty = new Map([['faculty-1', { name: 'Grace Hopper' }]]);
-
-    expect(trustedMemberDisplayName({ name: 'Unverified Name' }, users, faculty)).toBe('');
-    expect(trustedMemberDisplayName({ userId: 'user-1' }, users, faculty)).toBe('Grace Hopper');
-    expect(
-      trustedMemberDisplayName({ userId: 'user-1', facultyMemberId: 'faculty-1' }, users, faculty),
-    ).toBe('Grace Hopper');
-    expect(
-      trustedMemberDisplayName(
-        { userId: 'user-1', facultyMemberId: 'faculty-1' },
-        users,
-        new Map([['faculty-1', { name: 'Different Person' }]]),
-      ),
-    ).toBe('');
-  });
-
   it('builds Meilisearch-ready research entity documents without internal fields', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-1',
@@ -314,5 +300,62 @@ describe('researchEntitySearchIndexService', () => {
     ).rejects.toThrow('--page-size must be a safe positive integer');
 
     expect(getIndexCalls).toBe(0);
+  });
+});
+
+describe('fetchResearchEntitySearchMemberNames canonical roster projection', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['accounts', 'researchers', 'role_assignments']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  const seedMember = async (
+    entityId: mongoose.Types.ObjectId,
+    displayName: string,
+    role: string,
+    state = 'CURRENT',
+  ) => {
+    const person = await Researcher.create({
+      displayName,
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role,
+      state,
+      confidence: 0.9,
+    });
+  };
+
+  it('derives professor and lead names from the canonical roster and excludes non-professor and historical rows', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    await seedMember(entityId, 'Lead Professor', 'PI');
+    await seedMember(entityId, 'Core Faculty Member', 'CORE_FACULTY');
+    await seedMember(entityId, 'Lab Staff', 'STAFF');
+    await seedMember(entityId, 'Former Professor', 'PI', 'HISTORICAL');
+
+    const byEntityId = await fetchResearchEntitySearchMemberNames([entityId]);
+    const fields = byEntityId.get(entityId.toString());
+
+    expect(fields?.leadProfessorNames).toEqual(['Lead Professor']);
+    expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
   });
 });

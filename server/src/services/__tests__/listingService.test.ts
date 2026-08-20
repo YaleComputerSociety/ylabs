@@ -312,7 +312,7 @@ describe('listingService', () => {
       },
     );
 
-    expect(mocks.resolveResearcherIdForLegacyUser).toHaveBeenCalledWith(ownerUserId, undefined);
+    expect(mocks.resolveResearcherIdForLegacyUser).toHaveBeenCalledWith(ownerUserId);
     expect(mocks.roleAssignmentFindOne).toHaveBeenCalledWith(
       expect.objectContaining({
         personId: authorizedPersonId,

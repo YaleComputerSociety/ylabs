@@ -42,7 +42,6 @@ const userSchema = new mongoose.Schema(
     },
     facultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'FacultyMember',
       required: false,
     },
     studentProfileId: {

@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => {
     personFind: vi.fn(),
     accountFind: vi.fn(),
     userFind: vi.fn(),
-    facultyMemberFind: vi.fn(),
     getMeiliIndex: vi.fn(async (_name: string) => ({
       addDocuments,
       deleteDocument,
@@ -47,12 +46,6 @@ vi.mock('../../models/user', () => ({
   },
 }));
 
-vi.mock('../../models/facultyMember', () => ({
-  FacultyMember: {
-    find: mocks.facultyMemberFind,
-  },
-}));
-
 import {
   syncEntity,
   syncEntities,
@@ -67,13 +60,11 @@ beforeEach(() => {
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
-  mocks.facultyMemberFind.mockReset();
   mocks.getMeiliIndex.mockClear();
   mocks.roleAssignmentFind.mockReturnValue({ lean: async () => [] });
   mocks.personFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.accountFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
-  mocks.facultyMemberFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
 });
 
 describe('isSyncableEntityType', () => {

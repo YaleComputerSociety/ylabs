@@ -52,26 +52,19 @@ describe('backfillPersonDisplayFields CLI helpers', () => {
 });
 
 describe('backfillPersonDisplayFields core', () => {
-  it('prefers user values over faculty fallback and cleans empties', () => {
+  it('composes display fields from the linked user and cleans empties', () => {
     const composed = composeDisplayProfileFromLegacy({
       user: {
         title: '  Professor of Testing  ',
         primaryDepartment: '',
         imageUrl: 'https://img.example.test/u.png',
-        website: undefined,
-      },
-      facultyMember: {
-        title: 'Faculty Fallback Title',
-        primarySchool: 'School of Fallback',
-        photoUrl: 'https://img.example.test/f.png',
-        websiteUrl: 'https://faculty.example.test',
+        website: 'https://user.example.test',
       },
     });
     expect(composed).toEqual({
       title: 'Professor of Testing',
-      primaryDepartment: 'School of Fallback',
       imageUrl: 'https://img.example.test/u.png',
-      websiteUrl: 'https://faculty.example.test',
+      websiteUrl: 'https://user.example.test',
     });
   });
 
@@ -135,7 +128,7 @@ describe('backfillPersonDisplayFields apply', () => {
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['accounts', 'users', 'faculty_members', 'researchers']) {
+    for (const name of ['accounts', 'users', 'researchers']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -145,7 +138,6 @@ describe('backfillPersonDisplayFields apply', () => {
     if (!db) throw new Error('no db');
 
     const accountId = new mongoose.Types.ObjectId();
-    const facultyMemberId = new mongoose.Types.ObjectId();
     const personId = new mongoose.Types.ObjectId();
 
     await db.collection('accounts').insertOne({
@@ -155,20 +147,12 @@ describe('backfillPersonDisplayFields apply', () => {
       status: 'ACTIVE',
       archived: false,
     });
-    await db.collection('faculty_members').insertOne({
-      _id: facultyMemberId,
-      title: 'Faculty Fallback Title',
-      primarySchool: 'School of Fallback',
-      photoUrl: 'https://img.example.test/f.png',
-      websiteUrl: 'https://faculty.example.test',
-    });
     await db.collection('users').insertOne({
       netid: 'ab123',
       title: 'Professor of Testing',
       primaryDepartment: 'Department of Testing',
       imageUrl: 'https://img.example.test/u.png',
       website: 'https://user.example.test',
-      facultyMemberId,
     });
     await db.collection('researchers').insertOne({
       _id: personId,

@@ -18,7 +18,6 @@ export {
   DepartmentCodeSystem,
   categoryColorKeys,
 } from './department';
-export { FacultyMember } from './facultyMember';
 export { Grant } from './grant';
 export { Paper } from './paper';
 export { PaperAuthor } from './paperAuthor';

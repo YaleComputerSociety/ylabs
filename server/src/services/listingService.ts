@@ -90,7 +90,7 @@ const hasListingEntityAuthority = async (
     return false;
   }
 
-  const personId = await resolveResearcherIdForLegacyUser(owner?._id, owner?.facultyMemberId);
+  const personId = await resolveResearcherIdForLegacyUser(owner?._id);
   if (!personId) {
     return false;
   }

@@ -1730,7 +1730,7 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
 };
 
 const loadProfileResearchEntities = async (user: Record<string, any>) => {
-  const personId = await resolveResearcherIdForLegacyUser(user._id, user.facultyMemberId);
+  const personId = await resolveResearcherIdForLegacyUser(user._id);
   if (!personId) return [];
 
   const assignments = await RoleAssignment.find({
