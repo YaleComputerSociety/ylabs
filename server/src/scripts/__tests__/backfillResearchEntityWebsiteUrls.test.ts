@@ -17,7 +17,7 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isPublicHttpUrl('http://lab.example.org/team')).toBe(true);
     expect(isPublicHttpUrl('ftp://files.yale.edu/x')).toBe(false);
     expect(isPublicHttpUrl('mailto:pi@yale.edu')).toBe(false);
-    expect(isPublicHttpUrl('https://user:pass@yale.edu/lab')).toBe(false);
+    expect(isPublicHttpUrl('https://user:example@yale.edu/lab')).toBe(false);
     expect(isPublicHttpUrl('')).toBe(false);
     expect(isPublicHttpUrl(undefined)).toBe(false);
   });
