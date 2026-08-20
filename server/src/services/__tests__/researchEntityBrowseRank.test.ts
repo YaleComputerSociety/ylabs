@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  computeResearchEntityBrowseRank,
-  __testing,
-} from '../researchEntityBrowseRank';
+import { computeResearchEntityBrowseRank, __testing } from '../researchEntityBrowseRank';
 
 // A "complete" entity: source-backed full description + official URL.
 const completeEntity = () => ({
@@ -59,9 +56,9 @@ describe('computeResearchEntityBrowseRank', () => {
 
   it('does not let a positive signal mask a co-present unavailable signal incorrectly', () => {
     // Strongest positive wins when present.
-    expect(
-      __testing.accessPoints(['NOT_CURRENTLY_AVAILABLE', 'CURRENT_UNDERGRADS']),
-    ).toBe(__testing.ACCESS_SIGNAL_POINTS.CURRENT_UNDERGRADS);
+    expect(__testing.accessPoints(['NOT_CURRENTLY_AVAILABLE', 'CURRENT_UNDERGRADS'])).toBe(
+      __testing.ACCESS_SIGNAL_POINTS.CURRENT_UNDERGRADS,
+    );
   });
 
   it('penalizes a missing source URL relative to one present', () => {
@@ -92,7 +89,7 @@ describe('computeResearchEntityBrowseRank', () => {
     expect(withLead).toBeGreaterThan(withoutLead);
   });
 
-  it('ranks a lab above an otherwise-identical center', () => {
+  it('ranks a lab above an otherwise-identical umbrella center', () => {
     const base = { leadMembers: attachedLead(), accessSignalTypes: [] as string[] };
     const lab = computeResearchEntityBrowseRank({
       ...base,
@@ -101,9 +98,24 @@ describe('computeResearchEntityBrowseRank', () => {
     const center = computeResearchEntityBrowseRank({
       ...base,
       entity: { ...completeEntity(), entityType: 'CENTER' },
+      hostsAffiliatedResearchHomes: true,
     });
     expect(lab).toBeGreaterThan(center);
     expect(lab - center).toBe(-__testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER!);
+  });
+
+  it('does not demote a leaf center that hosts no affiliated research homes', () => {
+    const base = { leadMembers: attachedLead(), accessSignalTypes: [] as string[] };
+    const lab = computeResearchEntityBrowseRank({
+      ...base,
+      entity: { ...completeEntity(), entityType: 'LAB' },
+    });
+    const leafCenter = computeResearchEntityBrowseRank({
+      ...base,
+      entity: { ...completeEntity(), entityType: 'CENTER' },
+      hostsAffiliatedResearchHomes: false,
+    });
+    expect(leafCenter).toBe(lab);
   });
 
   it('demotes centers more than programs', () => {
@@ -113,23 +125,43 @@ describe('computeResearchEntityBrowseRank', () => {
   });
 
   it('does not demote direct research homes', () => {
-    expect(__testing.entityTypeRankAdjustment({ entityType: 'LAB' })).toBe(0);
-    expect(__testing.entityTypeRankAdjustment({ entityType: 'FACULTY_PROJECT' })).toBe(0);
-    expect(__testing.entityTypeRankAdjustment({ entityType: 'FELLOWSHIP_PROGRAM' })).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'LAB' }, true)).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'FACULTY_PROJECT' }, true)).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'FELLOWSHIP_PROGRAM' }, true)).toBe(0);
+  });
+
+  it('gates the umbrella demotion on hosting affiliated research homes', () => {
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'CENTER' }, true)).toBe(
+      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER,
+    );
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'CENTER' }, false)).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'INSTITUTE' }, false)).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'INITIATIVE' }, false)).toBe(0);
+  });
+
+  it('applies the PROGRAM demotion unconditionally', () => {
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'PROGRAM' }, false)).toBe(
+      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM,
+    );
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'PROGRAM' }, true)).toBe(
+      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM,
+    );
   });
 
   it('derives the type adjustment from kind when entityType is absent', () => {
-    expect(__testing.entityTypeRankAdjustment({ kind: 'center' })).toBe(
+    expect(__testing.entityTypeRankAdjustment({ kind: 'center' }, true)).toBe(
       __testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER,
     );
-    expect(__testing.entityTypeRankAdjustment({ kind: 'lab' })).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ kind: 'center' }, false)).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ kind: 'lab' }, true)).toBe(0);
   });
 
-  it('keeps a strong center above a bare lab despite the demotion', () => {
+  it('keeps a strong umbrella center above a bare lab despite the demotion', () => {
     const strongCenter = computeResearchEntityBrowseRank({
       entity: { ...completeEntity(), entityType: 'CENTER' },
       leadMembers: attachedLead(),
       accessSignalTypes: ['CURRENT_UNDERGRADS'],
+      hostsAffiliatedResearchHomes: true,
     });
     const bareLab = computeResearchEntityBrowseRank({
       entity: { fullDescription: '', entityType: 'LAB' },
