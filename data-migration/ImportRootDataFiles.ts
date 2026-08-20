@@ -11,7 +11,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Department } from '../server/src/models/department';
 import { FacultyMember } from '../server/src/models/facultyMember';
-import { ResearchGroup } from '../server/src/models/researchGroup';
+import { ResearchEntity } from '../server/src/models/researchEntity';
 import { Source } from '../server/src/models/source';
 import {
   assertScriptApplyAllowed,
@@ -616,7 +616,7 @@ async function findExistingResearchGroup(input: {
   if (input.labUrl) {
     filters.push({ websiteUrl: input.labUrl }, { website: input.labUrl });
   }
-  return ResearchGroup.findOne({ $or: filters }).lean<any>();
+  return ResearchEntity.findOne({ $or: filters }).lean<any>();
 }
 
 async function upsertMedicineLab(
@@ -688,7 +688,7 @@ async function upsertMedicineLab(
   const filter = existing?._id ? { _id: existing._id } : { slug };
   if (!APPLY) return existing ? 'updated' : 'created';
 
-  await ResearchGroup.updateOne(
+  await ResearchEntity.updateOne(
     filter,
     {
       $set: set,
@@ -747,7 +747,7 @@ async function verifyImport(expected: {
   const [physicsFaculty, historyFaculty, medicineLabs] = await Promise.all([
     FacultyMember.countDocuments({ 'profileUrls.rootImportSource': 'root-yale-physics-faculty-json' }),
     FacultyMember.countDocuments({ 'profileUrls.rootImportSource': 'root-yale-history-faculty-json' }),
-    ResearchGroup.countDocuments({
+    ResearchEntity.countDocuments({
       'fieldProvenance.name.sourceName': 'root-yale-medicine-labs-json',
     }),
   ]);

@@ -1,11 +1,11 @@
 /**
- * Extract legacy ResearchGroup.recentGrants subdocuments into v4 Grant records.
+ * Extract legacy ResearchEntity.recentGrants subdocuments into v4 Grant records.
  */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Grant } from '../server/src/models/grant';
-import { ResearchGroup } from '../server/src/models/researchGroup';
+import { ResearchEntity } from '../server/src/models/researchEntity';
 import { resolveScraperEnvironment } from '../server/src/scrapers/scraperEnvironment';
 import {
   buildV4MigrationOutput,
@@ -57,7 +57,7 @@ export async function backfillV4Grants(
   await connectForMigration('Backfill v4 Grant records', options);
 
   try {
-    const groups = await ResearchGroup.find({ recentGrants: { $exists: true, $ne: [] } })
+    const groups = await ResearchEntity.find({ recentGrants: { $exists: true, $ne: [] } })
       .sort({ _id: 1 })
       .limit(options.limit || 0)
       .lean<any[]>();
@@ -102,7 +102,7 @@ export async function backfillV4Grants(
       }
 
       if (options.apply) {
-        await ResearchGroup.updateOne(
+        await ResearchEntity.updateOne(
           { _id: group._id },
           {
             $set: {
