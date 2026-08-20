@@ -91,4 +91,51 @@ describe('computeResearchEntityBrowseRank', () => {
     });
     expect(withLead).toBeGreaterThan(withoutLead);
   });
+
+  it('ranks a lab above an otherwise-identical center', () => {
+    const base = { leadMembers: attachedLead(), accessSignalTypes: [] as string[] };
+    const lab = computeResearchEntityBrowseRank({
+      ...base,
+      entity: { ...completeEntity(), entityType: 'LAB' },
+    });
+    const center = computeResearchEntityBrowseRank({
+      ...base,
+      entity: { ...completeEntity(), entityType: 'CENTER' },
+    });
+    expect(lab).toBeGreaterThan(center);
+    expect(lab - center).toBe(-__testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER!);
+  });
+
+  it('demotes centers more than programs', () => {
+    expect(__testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER!).toBeLessThan(
+      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM!,
+    );
+  });
+
+  it('does not demote direct research homes', () => {
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'LAB' })).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'FACULTY_PROJECT' })).toBe(0);
+    expect(__testing.entityTypeRankAdjustment({ entityType: 'FELLOWSHIP_PROGRAM' })).toBe(0);
+  });
+
+  it('derives the type adjustment from kind when entityType is absent', () => {
+    expect(__testing.entityTypeRankAdjustment({ kind: 'center' })).toBe(
+      __testing.ENTITY_TYPE_RANK_ADJUSTMENT.CENTER,
+    );
+    expect(__testing.entityTypeRankAdjustment({ kind: 'lab' })).toBe(0);
+  });
+
+  it('keeps a strong center above a bare lab despite the demotion', () => {
+    const strongCenter = computeResearchEntityBrowseRank({
+      entity: { ...completeEntity(), entityType: 'CENTER' },
+      leadMembers: attachedLead(),
+      accessSignalTypes: ['CURRENT_UNDERGRADS'],
+    });
+    const bareLab = computeResearchEntityBrowseRank({
+      entity: { fullDescription: '', entityType: 'LAB' },
+      leadMembers: [],
+      accessSignalTypes: [],
+    });
+    expect(strongCenter).toBeGreaterThan(bareLab);
+  });
 });

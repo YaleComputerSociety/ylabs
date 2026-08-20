@@ -648,6 +648,12 @@ export async function searchResearchGroupsViaMeili(
     // recency as a tiebreak. See services/researchEntityBrowseRank.ts.
     sortConfig.push('browseRankScore:desc');
     sortConfig.push('lastObservedAt:desc');
+  } else {
+    // Text query: Meilisearch's `sort` ranking rule runs last, so this only
+    // breaks ties between comparably-relevant results. It lets the type-aware
+    // browseRankScore (which demotes umbrella centers/institutes) push a broad
+    // center below a lab of similar relevance without overriding relevance.
+    sortConfig.push('browseRankScore:desc');
   }
 
   const searchParams: Record<string, any> = {
