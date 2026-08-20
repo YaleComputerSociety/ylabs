@@ -328,6 +328,11 @@ const researchEntitySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    accessAcceptanceLevel: {
+      type: String,
+      enum: ['verified', 'likely', 'none'],
+      default: 'none',
+    },
     archived: {
       type: Boolean,
       default: false,
@@ -370,6 +375,7 @@ researchEntitySchema.index({ activeAtYaleCache: 1 });
 researchEntitySchema.index({ archived: 1 });
 researchEntitySchema.index({ lastObservedAt: 1 });
 researchEntitySchema.index({ archived: 1, browseRankScore: -1 });
+researchEntitySchema.index({ archived: 1, accessAcceptanceLevel: 1 });
 researchEntitySchema.index({ recentGrantCount: -1 });
 researchEntitySchema.index({ fundingAgencies: 1 });
 researchEntitySchema.index({ offersIndependentStudy: 1 });

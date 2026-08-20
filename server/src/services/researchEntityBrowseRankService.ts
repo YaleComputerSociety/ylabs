@@ -13,6 +13,11 @@ import { ResearchEntityRelationship } from '../models/researchEntityRelationship
 import { Signal } from '../models/signal';
 import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAccessTypes';
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
+import {
+  canonicalAcceptanceLevelFromSignals,
+  type AccessAcceptanceLevel,
+  type AccessSignalConfidenceInput,
+} from './accessAcceptanceLevel';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { syncEntity } from './meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -47,20 +52,29 @@ const entitiesHostingAffiliations = async (entityIds: any[]): Promise<Set<string
   return hosting;
 };
 
-const accessSignalTypesByEntityId = async (entityIds: any[]): Promise<Map<string, string[]>> => {
+const accessSignalsByEntityId = async (
+  entityIds: any[],
+): Promise<Map<string, AccessSignalConfidenceInput[]>> => {
   if (entityIds.length === 0) return new Map();
   const signals = await Signal.find({
     researchEntityId: { $in: entityIds },
     type: { $in: ACCESS_SIGNAL_TYPES },
     archived: { $ne: true },
   })
-    .select('researchEntityId type')
+    .select('researchEntityId type confidence confidenceScore')
     .lean();
-  const byId = new Map<string, string[]>();
+  const byId = new Map<string, AccessSignalConfidenceInput[]>();
   for (const signal of signals as any[]) {
     const key = browseRankDocumentId(signal.researchEntityId);
     if (!key || !signal.type) continue;
-    byId.set(key, [...(byId.get(key) || []), String(signal.type)]);
+    byId.set(key, [
+      ...(byId.get(key) || []),
+      {
+        type: String(signal.type),
+        confidence: signal.confidence,
+        confidenceScore: signal.confidenceScore,
+      },
+    ]);
   }
   return byId;
 };
@@ -76,6 +90,7 @@ export interface RecomputeBrowseRankResult {
   considered: number;
   updated: number;
   scoresByEntityId: Map<string, number>;
+  acceptanceLevelsByEntityId: Map<string, AccessAcceptanceLevel>;
 }
 
 /**
@@ -88,15 +103,16 @@ export async function recomputeBrowseRankForEntities(
 ): Promise<RecomputeBrowseRankResult> {
   const sync = options.sync ?? true;
   const scoresByEntityId = new Map<string, number>();
+  const acceptanceLevelsByEntityId = new Map<string, AccessAcceptanceLevel>();
   if (entityIds.length === 0) {
-    return { considered: 0, updated: 0, scoresByEntityId };
+    return { considered: 0, updated: 0, scoresByEntityId, acceptanceLevelsByEntityId };
   }
 
   const entities = (await ResearchEntity.find({ _id: { $in: entityIds } }).lean()) as any[];
   const ids = entities.map((entity) => entity._id);
-  const [leadMembers, accessSignalTypes, hostingAffiliations] = await Promise.all([
+  const [leadMembers, accessSignals, hostingAffiliations] = await Promise.all([
     leadMembersByEntityId(ids),
-    accessSignalTypesByEntityId(ids),
+    accessSignalsByEntityId(ids),
     entitiesHostingAffiliations(ids),
   ]);
 
@@ -104,21 +120,26 @@ export async function recomputeBrowseRankForEntities(
   for (const entity of entities) {
     const id = browseRankDocumentId(entity._id);
     if (!id) continue;
+    const entitySignals = accessSignals.get(id) || [];
     const score = computeResearchEntityBrowseRank({
       entity,
       leadMembers: leadMembers.get(id) || [],
-      accessSignalTypes: accessSignalTypes.get(id) || [],
+      accessSignalTypes: entitySignals.flatMap((signal) => (signal.type ? [signal.type] : [])),
       hostsAffiliatedResearchHomes: hostingAffiliations.has(id),
     });
     scoresByEntityId.set(id, score);
+    const acceptanceLevel = canonicalAcceptanceLevelFromSignals(entitySignals);
+    acceptanceLevelsByEntityId.set(id, acceptanceLevel);
 
-    if ((entity.browseRankScore ?? 0) === score) continue;
+    const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
+    const levelUnchanged = (entity.accessAcceptanceLevel ?? 'none') === acceptanceLevel;
+    if (scoreUnchanged && levelUnchanged) continue;
     updated += 1;
     if (options.dryRun) continue;
 
     await ResearchEntity.updateOne(
       { _id: entity._id },
-      { $set: { browseRankScore: score } },
+      { $set: { browseRankScore: score, accessAcceptanceLevel: acceptanceLevel } },
       { timestamps: false },
     );
     if (sync) {
@@ -127,5 +148,10 @@ export async function recomputeBrowseRankForEntities(
     }
   }
 
-  return { considered: entities.length, updated, scoresByEntityId };
+  return {
+    considered: entities.length,
+    updated,
+    scoresByEntityId,
+    acceptanceLevelsByEntityId,
+  };
 }
