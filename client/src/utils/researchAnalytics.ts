@@ -52,7 +52,14 @@ export type ResearchJourneyPayload =
     }
   | {
       operation: 'apply' | 'remove' | 'clear' | 'panel_open' | 'panel_close';
-      filter: 'school' | 'department' | 'documented_way_in' | 'admin_quality' | 'admin_trust';
+      filter:
+        | 'school'
+        | 'department'
+        | 'documented_way_in'
+        | 'admin_quality'
+        | 'admin_trust'
+        | 'research_area'
+        | 'hosts_undergrads';
     }
   | { operation: 'save' | 'remove'; surface: 'profile' | 'search' | 'saved_plans' }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }

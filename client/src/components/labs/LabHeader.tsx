@@ -6,9 +6,10 @@
  *
  * The evidence pill replaces the legacy boolean-only "Accepting Undergrads"
  * pill with a trust gradient ("Strong evidence" / "Some evidence" /
- * "Evidence unknown" / "Not currently available"). The verdict is computed by the shared
- * `computeAcceptanceVerdict` helper so this surface stays consistent with the
- * browse cards and the inquire CTA.
+ * "Not currently available"). The unknown verdict carries no signal in a
+ * directory-first product, so its pill is hidden rather than shown. The verdict
+ * is computed by the shared `computeAcceptanceVerdict` helper so this surface
+ * stays consistent with the inquire CTA.
  */
 import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
@@ -50,6 +51,7 @@ const normalizeActionUrl = (url?: string | null): string => {
 const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) => {
   const { departments } = useConfig();
   const { verdict } = computeAcceptanceVerdict(group);
+  const showVerdict = verdict !== 'unknown';
   const verdictClasses = verdictBadgeStyles(verdict);
   const verdictText = verdictLabel(verdict);
   const websiteHref = group.websiteUrl ? ensureHttpPrefix(group.websiteUrl) : '';
@@ -77,9 +79,11 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
     <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="yr-pill yr-pill-blue">{kindLabel}</span>
-        <span className={`yr-pill ${verdictClasses}`} data-verdict={verdict}>
-          {verdictText}
-        </span>
+        {showVerdict && (
+          <span className={`yr-pill ${verdictClasses}`} data-verdict={verdict}>
+            {verdictText}
+          </span>
+        )}
         {group.school && <span className="yr-pill">{group.school}</span>}
       </div>
 

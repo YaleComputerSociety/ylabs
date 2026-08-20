@@ -90,6 +90,20 @@ const readSearchParamList = <T extends string>(
     });
 };
 
+const readSearchParamCsv = (params: URLSearchParams, key: string): string[] => {
+  const seen = new Set<string>();
+  return (params.get(key) || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const lower = value.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    });
+};
+
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
   buildGroupedSearchResults({
     query,
@@ -113,7 +127,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department' | 'documented_way_in';
+  filter: 'school' | 'department' | 'documented_way_in' | 'research_area' | 'hosts_undergrads';
 }
 
 interface ResearchPageSnapshot {
@@ -127,6 +141,8 @@ interface ResearchPageSnapshot {
   trustTierFilters: ResearchTrustTierFilter[];
   selectedSchool: string;
   selectedDepartment: string;
+  selectedResearchAreas: string[];
+  hostsUndergrads: boolean;
   facetDistribution: Record<string, Record<string, number>>;
   groupedResults: GroupedResearchResults;
   searchResultResearchEntities: ResearchEntity[];
@@ -307,7 +323,7 @@ const Research = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(UserContext);
-  const { departments } = useConfig();
+  const { departments, researchAreas } = useConfig();
   const isAdmin = user?.userType === 'admin';
   const pageSnapshotKey = searchParams.toString();
   const restorableSnapshot =
@@ -356,6 +372,14 @@ const Research = () => {
   );
   const [selectedDepartment, setSelectedDepartment] = useState(
     () => restoredSnapshotRef.current?.selectedDepartment ?? searchParams.get('department') ?? '',
+  );
+  const [selectedResearchAreas, setSelectedResearchAreas] = useState<string[]>(
+    () =>
+      restoredSnapshotRef.current?.selectedResearchAreas ??
+      readSearchParamCsv(searchParams, 'researchAreas'),
+  );
+  const [hostsUndergrads, setHostsUndergrads] = useState(
+    () => restoredSnapshotRef.current?.hostsUndergrads ?? searchParams.get('undergrad') === '1',
   );
   const [facetDistribution, setFacetDistribution] = useState<
     Record<string, Record<string, number>>
@@ -418,6 +442,13 @@ const Research = () => {
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
+  const researchAreaOptions = useMemo(
+    () =>
+      Array.from(new Set(researchAreas.map((area) => area.name.trim()).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [researchAreas],
+  );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
@@ -438,6 +469,8 @@ const Research = () => {
       trustTiers?: ResearchTrustTierFilter[];
       school?: string;
       department?: string;
+      researchAreas?: string[];
+      hostsUndergrads?: boolean;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -448,6 +481,10 @@ const Research = () => {
     if (departmentLabel) params.set('dept', departmentLabel);
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
+    if (nextState.researchAreas?.length) {
+      params.set('researchAreas', nextState.researchAreas.join(','));
+    }
+    if (nextState.hostsUndergrads) params.set('undergrad', '1');
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -477,18 +514,15 @@ const Research = () => {
   useEffect(() => {
     restoredSnapshotRef.current?.defaultResearchEntities.forEach((entity, index) => {
       if (!entity._id) return;
-      void trackResearchEventOnce(
-        `${browseAnalyticsSessionRef.current}:restored:${entity._id}`,
-        {
-          eventType: 'research_entity_impression',
-          entityType: 'research_entity',
-          entityId: entity._id,
-          payload: {
-            surface: 'browse',
-            positionBucket: researchPositionBucket(index + 1),
-          },
+      void trackResearchEventOnce(`${browseAnalyticsSessionRef.current}:restored:${entity._id}`, {
+        eventType: 'research_entity_impression',
+        entityType: 'research_entity',
+        entityId: entity._id,
+        payload: {
+          surface: 'browse',
+          positionBucket: researchPositionBucket(index + 1),
         },
-      );
+      });
     });
   }, []);
 
@@ -642,6 +676,8 @@ const Research = () => {
           departmentLabel: options.departmentSearch?.label,
           school: filters.school?.[0],
           department: filters.departments?.[0],
+          researchAreas: filters.researchAreas,
+          hostsUndergrads: filters.acceptanceLevel === 'verified-or-likely',
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -815,9 +851,13 @@ const Research = () => {
   const studentSearchFilters = (
     school = selectedSchool,
     department = selectedDepartment,
+    areas = selectedResearchAreas,
+    undergrads = hostsUndergrads,
   ): ResearchSearchFilters => ({
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
+    ...(areas.length ? { researchAreas: areas } : {}),
+    ...(undergrads ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -837,6 +877,8 @@ const Research = () => {
     setDepartmentSearch(null);
     setSelectedSchool('');
     setSelectedDepartment('');
+    setSelectedResearchAreas([]);
+    setHostsUndergrads(false);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -881,16 +923,12 @@ const Research = () => {
       pendingSearchSourceParamsRef.current = null;
       pendingSearchSourceLocationKeyRef.current = null;
     }
-    if (searchParams.has('undergrad')) {
-      const canonicalParams = new URLSearchParams(searchParams);
-      canonicalParams.delete('undergrad');
-      setSearchParams(canonicalParams, { replace: true });
-      return;
-    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
+    const urlResearchAreas = readSearchParamCsv(searchParams, 'researchAreas');
+    const urlHostsUndergrads = searchParams.get('undergrad') === '1';
     const urlWeakestFirst = isAdmin && searchParams.get('weak') === '1';
     const urlQualityFilters = isAdmin
       ? readSearchParamList(
@@ -933,9 +971,19 @@ const Research = () => {
       setSelectedDepartment(urlDepartment);
       return;
     }
+    if (selectedResearchAreas.join(',') !== urlResearchAreas.join(',')) {
+      setSelectedResearchAreas(urlResearchAreas);
+      return;
+    }
+    if (hostsUndergrads !== urlHostsUndergrads) {
+      setHostsUndergrads(urlHostsUndergrads);
+      return;
+    }
     const studentFilters: ResearchSearchFilters = {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
+      ...(urlResearchAreas.length ? { researchAreas: urlResearchAreas } : {}),
+      ...(urlHostsUndergrads ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel
@@ -1023,6 +1071,8 @@ const Research = () => {
     trustTierFilters,
     selectedSchool,
     selectedDepartment,
+    selectedResearchAreas,
+    hostsUndergrads,
     departmentSearchTargetByLabel,
     departmentSearch,
     hasSubmittedSearch,
@@ -1042,6 +1092,8 @@ const Research = () => {
       trustTierFilters,
       selectedSchool,
       selectedDepartment,
+      selectedResearchAreas,
+      hostsUndergrads,
       facetDistribution,
       groupedResults,
       searchResultResearchEntities,
@@ -1068,6 +1120,8 @@ const Research = () => {
     trustTierFilters,
     selectedSchool,
     selectedDepartment,
+    selectedResearchAreas,
+    hostsUndergrads,
     facetDistribution,
     groupedResults,
     searchResultResearchEntities,
@@ -1118,7 +1172,9 @@ const Research = () => {
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
   });
-  const hasStudentFacetSelection = Boolean(selectedSchool || selectedDepartment);
+  const hasStudentFacetSelection = Boolean(
+    selectedSchool || selectedDepartment || selectedResearchAreas.length || hostsUndergrads,
+  );
   const searchDisabled = searchLoading || (query.trim().length === 0 && !hasStudentFacetSelection);
   const searchHelpText = query.trim()
     ? 'Press Enter or Search to see matching research homes.'
@@ -1127,7 +1183,16 @@ const Research = () => {
       : 'Enter a topic or name to enable Search.';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
-  const applyStudentFacets = (school: string, department: string) => {
+  const applyStudentFilters = (next: {
+    school?: string;
+    department?: string;
+    researchAreas?: string[];
+    hostsUndergrads?: boolean;
+  }) => {
+    const school = next.school ?? selectedSchool;
+    const department = next.department ?? selectedDepartment;
+    const areas = next.researchAreas ?? selectedResearchAreas;
+    const undergrads = next.hostsUndergrads ?? hostsUndergrads;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (school !== selectedSchool) {
       filterChanges.push({ operation: school ? 'apply' : 'remove', filter: 'school' });
@@ -1135,9 +1200,23 @@ const Research = () => {
     if (department !== selectedDepartment) {
       filterChanges.push({ operation: department ? 'apply' : 'remove', filter: 'department' });
     }
+    if (areas.join(',') !== selectedResearchAreas.join(',')) {
+      filterChanges.push({
+        operation: areas.length > selectedResearchAreas.length ? 'apply' : 'remove',
+        filter: 'research_area',
+      });
+    }
+    if (undergrads !== hostsUndergrads) {
+      filterChanges.push({
+        operation: undergrads ? 'apply' : 'remove',
+        filter: 'hosts_undergrads',
+      });
+    }
     setSelectedSchool(school);
     setSelectedDepartment(department);
-    const filters = studentSearchFilters(school, department);
+    setSelectedResearchAreas(areas);
+    setHostsUndergrads(undergrads);
+    const filters = studentSearchFilters(school, department, areas, undergrads);
     if (!query.trim() && !hasStructuredFilters(filters)) {
       filterChanges.forEach((change) => {
         void trackResearchEvent({
@@ -1235,12 +1314,23 @@ const Research = () => {
     facetDistribution,
     selectedSchool,
     selectedDepartment,
+    selectedResearchAreas,
+    researchAreaOptions,
+    hostsUndergrads,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
-    onSchoolChange: (school: string) => applyStudentFacets(school, selectedDepartment),
-    onDepartmentChange: (department: string) => applyStudentFacets(selectedSchool, department),
-    onClearAll: () => applyStudentFacets('', ''),
+    onSchoolChange: (school: string) => applyStudentFilters({ school }),
+    onDepartmentChange: (department: string) => applyStudentFilters({ department }),
+    onResearchAreasChange: (areas: string[]) => applyStudentFilters({ researchAreas: areas }),
+    onHostsUndergradsChange: (value: boolean) => applyStudentFilters({ hostsUndergrads: value }),
+    onClearAll: () =>
+      applyStudentFilters({
+        school: '',
+        department: '',
+        researchAreas: [],
+        hostsUndergrads: false,
+      }),
   };
 
   return (

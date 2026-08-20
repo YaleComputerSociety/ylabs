@@ -77,7 +77,7 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByRole('heading', { name: 'Example Research Home' })).toBeTruthy();
     expect(container.textContent).toContain('Neuroscience · School of Medicine');
     expect(container.textContent).toContain('Systems Neuroscience');
-    expect(container.textContent).toContain('Evidence limited');
+    expect(container.textContent).not.toContain('Evidence limited');
     expect(screen.queryByText('Research homes')).toBeNull();
     expect(container.textContent).toContain('Why it might fit');
     expect(container.textContent).toContain('Matched systems neuroscience.');
@@ -147,7 +147,9 @@ describe('ResearchHomeCard', () => {
     expect(text.indexOf('Computational Modeling')).toBeGreaterThanOrEqual(0);
     expect(text.indexOf('Computational Modeling')).toBeLessThan(text.indexOf('Social Cognition'));
     expect(text.indexOf('Social Cognition')).toBeLessThan(text.indexOf('Research description'));
-    expect(text.indexOf('Research description')).toBeLessThan(text.indexOf('Evidence limited'));
+    expect(text.indexOf('Research description')).toBeLessThan(
+      text.indexOf('Studies systems neuroscience'),
+    );
   });
 
   it('surfaces duplicate review flags for admin quality review', () => {
@@ -347,7 +349,7 @@ describe('ResearchHomeCard', () => {
     );
 
     expect(container.textContent).toContain('Summary limited');
-    expect(container.textContent).toContain('Evidence limited');
+    expect(container.textContent).not.toContain('Evidence limited');
     expect(container.textContent).not.toContain('Source-backed profile context');
     expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');

@@ -522,6 +522,9 @@ const DecisionSummary = ({
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
   const hasEvidenceDetail = evidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
+  const showEvidenceLevel = verdict !== 'unknown';
+  const planningStatus = reachOutStatus({ group });
+  const showPlanningStatus = planningStatus !== 'Source review needed';
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -599,24 +602,30 @@ const DecisionSummary = ({
           )}
         </div>
 
-        <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Evidence level
-              </dt>
-              <dd className="mt-1 font-semibold text-gray-900">{evidenceLevel}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                Planning status
-              </dt>
-              <dd className="mt-1 font-semibold text-gray-900">{reachOutStatus({ group })}</dd>
-            </div>
-          </dl>
+        <div className="divide-y divide-[var(--yr-line)] rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
+          {(showEvidenceLevel || showPlanningStatus) && (
+            <dl className="space-y-3 py-4 text-sm first:pt-0 last:pb-0">
+              {showEvidenceLevel && (
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                    Evidence level
+                  </dt>
+                  <dd className="mt-1 font-semibold text-gray-900">{evidenceLevel}</dd>
+                </div>
+              )}
+              {showPlanningStatus && (
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
+                    Planning status
+                  </dt>
+                  <dd className="mt-1 font-semibold text-gray-900">{planningStatus}</dd>
+                </div>
+              )}
+            </dl>
+          )}
           {hasEvidenceDetail && (
             <div
-              className="mt-4 border-t border-[var(--yr-line)] pt-4"
+              className="py-4 first:pt-0 last:pb-0"
               aria-label="Evidence supporting the acceptance signal"
             >
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
@@ -638,14 +647,14 @@ const DecisionSummary = ({
             </div>
           )}
           {principalInvestigator && (
-            <div className="mt-4 border-t border-[var(--yr-line)] pt-4">
+            <div className="py-4 first:pt-0 last:pb-0">
               <SectionHeading>Principal Investigator</SectionHeading>
               <div>
                 <LabMembersList members={[principalInvestigator]} singleColumn />
               </div>
             </div>
           )}
-          <div className="mt-4 border-t border-[var(--yr-line)] pt-4">
+          <div className="py-4 first:pt-0 last:pb-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
               Recommended next step
             </p>

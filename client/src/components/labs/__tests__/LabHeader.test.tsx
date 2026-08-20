@@ -96,11 +96,10 @@ describe('LabHeader', () => {
 });
 
 describe('LabHeader trust-gradient pill', () => {
-  it('shows "Evidence unknown" when there are no positive signals', () => {
+  it('hides the verdict pill when there are no positive signals', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('unknown');
-    expect(pill?.textContent).toBe('Evidence unknown');
+    expect(container.querySelector('[data-verdict]')).toBeNull();
+    expect(container.textContent).not.toContain('Evidence unknown');
   });
 
   it('shows "Strong evidence" when the PI manually confirmed', () => {
