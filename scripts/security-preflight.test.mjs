@@ -6058,11 +6058,11 @@ test('public profile research-home loading uses safe document id serialization',
   );
   assert.match(
     source,
-    /\.map\(\(membership: any\) => profileDocumentId\(membership\.researchEntityId\)\)/,
+    /\.map\(\(assignment: any\) => profileDocumentId\(assignment\?\.target\?\.id\)\)/,
   );
   assert.match(source, /_id: profileDocumentId\(entity\._id\)/);
   assert.match(source, /role: roleByEntityId\.get\(profileDocumentId\(entity\._id\)\) \|\| ''/);
-  assert.doesNotMatch(source, /String\(membership\.researchEntityId\)/);
+  assert.doesNotMatch(source, /String\(assignment\?\.target\?\.id\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
   assert.doesNotMatch(source, /roleByEntityId\.get\(String\(entity\._id\)\)/);
 });
