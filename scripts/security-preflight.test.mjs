@@ -245,7 +245,7 @@ test('research description LLM backfill redacts prompt contact data before provi
   );
   assert.match(
     source,
-    /const safeSourceText = redactDirectContactInfo\(sourceText\)\.slice\(0, MAX_REWRITE_PROMPT_SOURCE_CHARS\)/,
+    /const safeSourceText = redactDirectContactInfo\(sourceText\)\.slice\(\s*0,\s*MAX_REWRITE_PROMPT_SOURCE_CHARS,?\s*\)/,
   );
   assert.match(source, /`Research home: \$\{safeName\}`/);
   assert.match(source, /safeSourceText/);
