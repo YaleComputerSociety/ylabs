@@ -16,10 +16,6 @@ vi.mock('../../models/entryPathway', () => ({
   EntryPathway: { aggregate: modelMocks.aggregate },
 }));
 
-vi.mock('../../models/paper', () => ({
-  Paper: { aggregate: modelMocks.aggregate },
-}));
-
 vi.mock('../../models/postedOpportunity', () => ({
   PostedOpportunity: { aggregate: modelMocks.aggregate },
 }));

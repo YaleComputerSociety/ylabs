@@ -233,7 +233,8 @@ Public access excerpts should redact direct contact details. The scraper may kee
 
 The bibliographic ingestion pipeline is retired, so OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref are not research-activity, access, or description inputs.
 Reviewed Google Scholar and ORCID links remain outbound researcher navigation only.
-Historical source rows and observations, the guarded materializer, rollback audits, and stored paper and scholarly collections remain temporarily available for an explicit rollback under issue #207.
+The `Paper` and `PaperAuthor` models, their readers, and the paper materializer are fully retired with no rollback opt-in; historical `paper` source rows and observations are retained as read-only archived evidence and are never materialized.
+Stored `papers`/`paper_authors` collections remain only until the human-gated collection drop under issue #207.
 See [Retire The Bibliographic Paper Pipeline](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) for the authoritative product decision and [Publication and Professor-Profile Decision](./research-model-refactor.md#publication-and-professor-profile-decision) for the target model.
 
 ## Undergraduate Logistics

@@ -10,8 +10,6 @@ import { Grant } from '../grant';
 import { Listing } from '../listing';
 import { Observation } from '../observation';
 import { OrgUnit } from '../orgUnit';
-import { Paper } from '../paper';
-import { PaperAuthor } from '../paperAuthor';
 import { Researcher } from '../researcher';
 import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
@@ -42,8 +40,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Listing, 'listings'],
   [Observation, 'observations'],
   [OrgUnit, 'org_units'],
-  [Paper, 'papers'],
-  [PaperAuthor, 'paper_authors'],
   [Researcher, 'researchers'],
   [ResearchArea, 'research_areas'],
   [ResearchEntity, 'research_entities'],

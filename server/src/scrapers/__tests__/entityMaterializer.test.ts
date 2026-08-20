@@ -6,14 +6,11 @@ import {
   centerRelationshipTypeForResolvedTarget,
   relationshipLabelForType,
   rosterEnrichmentWithRetainedSuccessfulSnapshot,
-  buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
   canonicalRosterProvenanceFromSet,
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
-  mergeUniqueArrayValues,
-  normalizeDoiForMaterialization,
   normalizeMaterializerObjectId,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
@@ -117,12 +114,6 @@ describe('entityMaterializer post-materialization metrics', () => {
         toString: () => '507f1f77bcf86cd799439011',
       }),
     ).toBeUndefined();
-  });
-
-  it('normalizes DOI values for paper identity matching', () => {
-    expect(normalizeDoiForMaterialization(' https://doi.org/10.1000/ABC ')).toBe('10.1000/abc');
-    expect(normalizeDoiForMaterialization('')).toBeNull();
-    expect(normalizeDoiForMaterialization(undefined)).toBeNull();
   });
 
   it('normalizes prefixed user entity keys to the stored netid value', () => {
@@ -279,11 +270,6 @@ describe('entityMaterializer post-materialization metrics', () => {
     );
   });
 
-  it('unions set-like paper fields without duplicating values', () => {
-    expect(mergeUniqueArrayValues(['u1', 'u2'], ['u2', 'u3'])).toEqual(['u1', 'u2', 'u3']);
-    expect(mergeUniqueArrayValues(undefined, 'arxiv')).toEqual(['arxiv']);
-  });
-
   it('drops content-page URLs from materialized research entity source URLs', () => {
     expect(
       sanitizeResearchEntitySourceUrlsForMaterialization([
@@ -301,89 +287,6 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(
       sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news'),
     ).toBe('https://example.yale.edu/news');
-  });
-
-  it('builds paper bulk updates that union repeated set-like metadata observations', () => {
-    const patch = buildPaperUpdateFromObservations(
-      'https://openalex.org/W1',
-      [
-        {
-          field: 'title',
-          value: 'Shared paper',
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'authors',
-          value: ['Author One'],
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'authors',
-          value: ['Author Two'],
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'sources',
-          value: ['openalex'],
-          sourceName: 'openalex',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$set).toMatchObject({
-      openAlexId: 'https://openalex.org/W1',
-      title: 'Shared paper',
-    });
-    expect(patch.update.$addToSet).toMatchObject({
-      authors: { $each: ['Author One', 'Author Two'] },
-      sources: { $each: ['openalex'] },
-    });
-  });
-
-  it('does not count materializer-managed paper timestamps as resolved fields', () => {
-    const patch = buildPaperUpdateFromObservations(
-      'https://openalex.org/W1',
-      [
-        {
-          field: 'title',
-          value: 'Timestamp-safe paper',
-          sourceName: 'openalex',
-          confidence: 0.9,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'lastObservedAt',
-          value: new Date('2026-05-01T00:00:00Z'),
-          sourceName: 'openalex',
-          confidence: 0.9,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'lastObservedAt',
-          value: new Date('2026-05-02T00:00:00Z'),
-          sourceName: 'arxiv',
-          confidence: 0.89,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.conflicts).toBe(0);
-    expect(patch.fieldsWritten).toBe(1);
-    expect(patch.update.$set.title).toBe('Timestamp-safe paper');
-    expect(patch.update.$set.lastObservedAt).toBeInstanceOf(Date);
-    expect(patch.update.$set).not.toHaveProperty('confidenceByField.lastObservedAt');
   });
 
   it('ignores official-profile bio observations that are address or page chrome', () => {
@@ -463,117 +366,6 @@ describe('entityMaterializer post-materialization metrics', () => {
           'Drew Fixture studies algorithmic learning theory, formal languages, and computational models for learning from queries.',
       }),
     ).toBe(false);
-  });
-
-  it('ignores untrusted paper-source author ids when building paper updates', () => {
-    const patch = buildPaperUpdateFromObservations(
-      '2401.01234',
-      [
-        {
-          field: 'arxivId',
-          value: '2401.01234',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'title',
-          value: 'A name-matched preprint',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'yaleAuthorIds',
-          value: ['64f000000000000000000001'],
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'yaleAuthorNetIds',
-          value: ['aa1'],
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$addToSet || {}).not.toHaveProperty('yaleAuthorIds');
-    expect(patch.update.$addToSet || {}).not.toHaveProperty('yaleAuthorNetIds');
-  });
-
-  it('derives denormalized paper authors from identity-backed authorship evidence', () => {
-    const patch = buildPaperUpdateFromObservations(
-      'https://openalex.org/W1',
-      [
-        {
-          field: 'title',
-          value: 'An identity-backed paper',
-          sourceName: 'openalex',
-          confidence: 0.9,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'paperAuthorshipEvidence',
-          value: {
-            userId: '64f000000000000000000001',
-            netid: 'aa1',
-            displayName: 'Amy Arnsten',
-            sourceName: 'openalex',
-            method: 'openalex-orcid',
-            externalAuthorIds: {
-              openAlex: 'https://openalex.org/A1',
-              orcid: '0000-0001-2345-6789',
-            },
-          },
-          sourceName: 'openalex',
-          confidence: 0.95,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$addToSet).toMatchObject({
-      yaleAuthorIds: { $each: ['64f000000000000000000001'] },
-      yaleAuthorNetIds: { $each: ['aa1'] },
-    });
-    expect(patch.update.$set).not.toHaveProperty('paperAuthorshipEvidence');
-  });
-
-  it('keys arXiv paper bulk updates by arxivId rather than openAlexId', () => {
-    const patch = buildPaperUpdateFromObservations(
-      '2401.01234',
-      [
-        {
-          field: 'arxivId',
-          value: '2401.01234',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-        {
-          field: 'title',
-          value: 'A careful arXiv paper',
-          sourceName: 'arxiv',
-          confidence: 0.85,
-          observedAt: new Date('2026-05-14T00:00:00Z'),
-        },
-      ],
-      { manuallyLockedFields: [] },
-    );
-
-    expect(patch.skipped).toBeUndefined();
-    expect(patch.update.$set).toMatchObject({
-      arxivId: '2401.01234',
-      title: 'A careful arXiv paper',
-    });
-    expect(patch.update.$set).not.toHaveProperty('openAlexId');
   });
 
   it('starts with zeroed access artifact counters', () => {

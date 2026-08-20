@@ -119,12 +119,14 @@ describe('deployed scraper source contract', () => {
     expect(entityMaterializer).not.toContain('materializeOfficialProfileScholarlyLinks');
   });
 
-  it('keeps paper materialization behind an undeployed exact rollback opt-in', () => {
+  it('retires paper materialization with no rollback opt-in anywhere', () => {
     const flag = 'RETIRED_PAPER_PIPELINE_ROLLBACK';
     const packageCommands = Object.values(serverPackage.scripts || {}).join('\n');
 
-    expect(retiredPaperPipeline).toContain("env[RETIRED_PAPER_PIPELINE_ROLLBACK_ENV] === 'true'");
-    expect(entityMaterializer.match(/!isRetiredPaperPipelineRollbackEnabled\(\)/g)).toHaveLength(2);
+    expect(retiredPaperPipeline).not.toContain('RETIRED_PAPER_PIPELINE_ROLLBACK');
+    expect(entityMaterializer).not.toContain('isRetiredPaperPipelineRollbackEnabled');
+    expect(entityMaterializer).not.toContain("from '../models/paper'");
+    expect(entityMaterializer).not.toContain("from '../models/paperAuthor'");
     expect(renderBlueprint).not.toContain(flag);
     expect(serverEnvExample).not.toContain(flag);
     expect(packageCommands).not.toContain(flag);

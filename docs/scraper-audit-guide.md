@@ -19,7 +19,7 @@ Source metadata
   -> ScrapeRun
   -> Observation rows
   -> materializer/resolver
-  -> ResearchEntity/User/Paper/Grant/etc.
+  -> ResearchEntity/User/Grant/etc.
   -> Signal (access types) when evidence supports it
   -> student surfaces: Research, Evidence, Best Next Step
 ```
@@ -41,7 +41,6 @@ Materialization may then touch:
 
 - `users`: faculty/user records.
 - `research_entities`: physical backing for `ResearchEntity`.
-- `papers`: publication records.
 - `grants`: funding records.
 - `signals`: typed `Signal` rows for evidence-backed access clues and undergraduate logistics claims (each former access `signalType` and each logistics claim type is its own `Signal.type`).
 
@@ -183,7 +182,7 @@ Cancer, WTI, Economics, English, department, and center listing pages can suppor
 NIH and NSF records can support funding and research-context evidence, but must not repair `fullDescription` or `shortDescription` by copying award summaries, raw data titles, or source chrome.
 OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, Crossref, and official-profile publication ingestion are retired and must not appear in audit rollout plans; see the authoritative retirement contract in [`docs/research-data-pipeline.md`](./research-data-pipeline.md).
 Keep reviewed Google Scholar and ORCID profile links as outbound researcher navigation only.
-Historical source rows and observations, the guarded materializer, rollback audits, and stored scholarly collections remain temporarily available for an explicit rollback under issue #207.
+Paper materialization and the `Paper`/`PaperAuthor` models and their readers are fully retired with no rollback opt-in; historical `paper` source rows and observations are retained as read-only archived evidence, and stored `papers`/`paper_authors` collections remain only until the human-gated collection drop under issue #207.
 
 ## Per-Source Audit Playbooks
 

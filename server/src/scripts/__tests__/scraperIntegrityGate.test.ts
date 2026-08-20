@@ -9,7 +9,6 @@ import {
 } from '../scraperIntegrityGate';
 import {
   buildDuplicateAccessSignalGroupsFromRows,
-  buildDuplicateResearchPaperGroupsFromRows,
   buildPostMaterializationIntegritySummary,
 } from '../../scrapers/integrityGate';
 
@@ -90,7 +89,6 @@ describe('scraperIntegrityGate CLI helpers', () => {
             samePiSameNameResearchEntities: 1,
             officialLabUrlResearchEntities: 0,
             duplicatePeople: 0,
-            duplicateResearchPapers: 0,
             duplicateCurrentMembers: 0,
             currentMembersOnArchivedEntities: 0,
             duplicateExploratoryContactPathways: 0,
@@ -102,7 +100,6 @@ describe('scraperIntegrityGate CLI helpers', () => {
             samePiSameNameResearchEntities: [],
             officialLabUrlResearchEntities: [],
             duplicatePeople: [],
-            duplicateResearchPapers: [],
             duplicateCurrentMembers: [],
             currentMembersOnArchivedEntities: [],
             duplicateExploratoryContactPathways: [],
@@ -160,15 +157,8 @@ describe('scraperIntegrityGate CLI helpers', () => {
     );
   });
 
-  it('recommends read-only duplicate review artifacts for paper and access-signal failures', () => {
+  it('recommends read-only duplicate review artifacts for access-signal failures', () => {
     const summary = buildPostMaterializationIntegritySummary({
-      duplicateResearchPaperGroups: [
-        {
-          identityField: 'doi',
-          identityValue: '10.1234/example',
-          paperIds: ['paper-a', 'paper-b'],
-        },
-      ],
       duplicateAccessSignalGroups: [
         {
           researchEntityId: 'entity-1',
@@ -180,13 +170,7 @@ describe('scraperIntegrityGate CLI helpers', () => {
       ],
     });
 
-    expect(summary.failureNames).toEqual([
-      'duplicateResearchPapers',
-      'duplicateAccessSignals',
-    ]);
-    expect(summary.recommendedCommands).toContain(
-      'SCRAPER_ENV=beta yarn --cwd server scraper:integrity-duplicates-review --type=research-papers --limit=1000 --output /tmp/ylabs-integrity-duplicate-research-papers.json',
-    );
+    expect(summary.failureNames).toEqual(['duplicateAccessSignals']);
     expect(summary.recommendedCommands).toContain(
       'SCRAPER_ENV=beta yarn --cwd server access-signals:repair-duplicates --limit=1000 --output /tmp/ylabs-duplicate-access-signal-repair.json',
     );
@@ -212,34 +196,6 @@ describe('scraperIntegrityGate CLI helpers', () => {
     expect(summary.recommendedCommands).toContain(
       'SCRAPER_ENV=beta yarn --cwd server users:repair-mismatched-emails --limit=10000 --output /tmp/ylabs-mismatched-person-email-repair.json',
     );
-  });
-
-  it('builds duplicate research-paper groups from repeated paper identifiers', () => {
-    expect(
-      buildDuplicateResearchPaperGroupsFromRows([
-        {
-          identityField: 'doi',
-          identityValue: '10.1234/example',
-          paperIds: ['paper-a', 'paper-b'],
-        },
-        {
-          identityField: 'openAlexId',
-          identityValue: 'https://openalex.org/W1',
-          paperIds: ['paper-c'],
-        },
-        {
-          identityField: 'arxivId',
-          identityValue: '',
-          paperIds: ['paper-d', 'paper-e'],
-        },
-      ]),
-    ).toEqual([
-      {
-        identityField: 'doi',
-        identityValue: '10.1234/example',
-        paperIds: ['paper-a', 'paper-b'],
-      },
-    ]);
   });
 
   it('builds duplicate access-signal groups from repeated signal identities', () => {

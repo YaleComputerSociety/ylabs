@@ -126,7 +126,6 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
     '../server/src/scripts/acceptedInputs.ts',
     '../server/src/scripts/researchEntityCoverageAudit.ts',
     '../server/src/scripts/clearBetaStudentAnalytics.ts',
-    '../server/src/scripts/paperAuthorshipAudit.ts',
     '../server/src/scripts/repairMismatchedPersonEmails.ts',
     '../server/src/scripts/promoteAcceptedBetaCopy.ts',
     '../server/src/scripts/staleObservationConflictReview.ts',
@@ -1639,26 +1638,6 @@ test('stale observation supersession IDs reject object-shaped values', () => {
   assert.match(source, /const objectId = normalizeStaleObservationObjectId\(value\)/);
   assert.doesNotMatch(source, /ObjectId\.isValid/);
   assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(value\)/);
-});
-
-test('paper authorship audit IDs reject object-shaped values', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/paperAuthorshipAudit.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /const PAPER_AUTHORSHIP_AUDIT_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(source, /export function normalizePaperAuthorshipAuditObjectId/);
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /typeof value !== 'string'/);
-  assert.match(source, /const trimmed = value\.trim\(\)/);
-  assert.match(source, /normalizePaperAuthorshipAuditObjectIdString\(rawUserId\)/);
-  assert.match(source, /serializedDocumentId\(user\._id\)/);
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /\bString\(rawUserId\)/);
-  assert.doesNotMatch(source, /String\(user\._id\)/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(userId\)/);
-  assert.doesNotMatch(source, /new mongoose\.Types\.ObjectId\(id\)/);
 });
 
 test('surname lab disambiguation apply IDs reject object-shaped values', () => {
@@ -6417,7 +6396,6 @@ test('scraper materializer logs sanitize untrusted exception values', () => {
 
   assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
   assert.match(source, /sanitizeLogValue\(\{ entityId: entityIdString, error \}\)/);
-  assert.match(source, /materializePaperObservationsFromRun failed:', sanitizeLogValue\(err\)/);
   assert.doesNotMatch(
     source,
     /console\.error\('Failed to recompute browseRankScore for', entityIdString, error\)/,
@@ -6902,7 +6880,6 @@ test('publication and scholarly audit artifacts use safe JSON output paths', () 
     ['scholarly link provenance audit', '../server/src/scripts/scholarlyLinkProvenanceAudit.ts'],
     ['scholarly link suppression audit', '../server/src/scripts/scholarlyLinkSuppressionAudit.ts'],
     ['paper quality audit', '../server/src/scripts/paperQualityAudit.ts'],
-    ['paper authorship audit', '../server/src/scripts/paperAuthorshipAudit.ts'],
   ];
 
   for (const [name, file] of files) {

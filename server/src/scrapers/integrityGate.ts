@@ -1,5 +1,4 @@
 import { Signal } from '../models/signal';
-import { Paper } from '../models/paper';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
@@ -25,7 +24,6 @@ export type PostMaterializationIntegrityFailureName =
   | 'samePiSameNameResearchEntities'
   | 'officialLabUrlResearchEntities'
   | 'duplicatePeople'
-  | 'duplicateResearchPapers'
   | 'duplicateCurrentMembers'
   | 'currentMembersOnArchivedEntities'
   | 'duplicateAccessSignals'
@@ -53,12 +51,6 @@ export interface DuplicatePersonGroup {
   identityField: 'netid' | 'email' | 'orcid' | 'openAlexId' | 'googleScholarId';
   identityValue: string;
   userIds: string[];
-}
-
-export interface DuplicateResearchPaperGroup {
-  identityField: 'openAlexId' | 'semanticScholarId' | 'arxivId' | 'doi';
-  identityValue: string;
-  paperIds: string[];
 }
 
 export interface DuplicateAccessSignalGroup {
@@ -97,7 +89,6 @@ export interface BuildPostMaterializationIntegrityInput {
   samePiNameDuplicateGroups?: SamePiNameDuplicateGroup[];
   officialLabUrlDuplicateGroups?: OfficialLabUrlDuplicateGroup[];
   duplicatePersonGroups?: DuplicatePersonGroup[];
-  duplicateResearchPaperGroups?: DuplicateResearchPaperGroup[];
   duplicateCurrentMemberGroups?: DuplicateCurrentMemberGroup[];
   currentMembersOnArchivedEntities?: CurrentMemberOnArchivedEntity[];
   duplicateAccessSignalGroups?: DuplicateAccessSignalGroup[];
@@ -116,7 +107,6 @@ export interface PostMaterializationIntegritySummary {
     samePiSameNameResearchEntities: SamePiNameDuplicateGroup[];
     officialLabUrlResearchEntities: OfficialLabUrlDuplicateGroup[];
     duplicatePeople: DuplicatePersonGroup[];
-    duplicateResearchPapers: DuplicateResearchPaperGroup[];
     duplicateCurrentMembers: DuplicateCurrentMemberGroup[];
     currentMembersOnArchivedEntities: CurrentMemberOnArchivedEntity[];
     duplicateAccessSignals: DuplicateAccessSignalGroup[];
@@ -144,7 +134,6 @@ const FAILURE_ORDER: PostMaterializationIntegrityFailureName[] = [
   'samePiSameNameResearchEntities',
   'officialLabUrlResearchEntities',
   'duplicatePeople',
-  'duplicateResearchPapers',
   'duplicateCurrentMembers',
   'currentMembersOnArchivedEntities',
   'duplicateAccessSignals',
@@ -163,11 +152,6 @@ const RECOMMENDED_COMMANDS_BY_FAILURE: Record<PostMaterializationIntegrityFailur
     ),
   ],
   duplicatePeople: [betaCommand('yarn --cwd server users:dedupe-by-identity --limit=1000')],
-  duplicateResearchPapers: [
-    betaCommand(
-      'yarn --cwd server scraper:integrity-duplicates-review --type=research-papers --limit=1000 --output /tmp/ylabs-integrity-duplicate-research-papers.json',
-    ),
-  ],
   duplicateCurrentMembers: [SAME_PI_DEDUPE_REVIEW_COMMAND],
   currentMembersOnArchivedEntities: [
     betaCommand(
@@ -216,7 +200,6 @@ export function buildPostMaterializationIntegritySummary(
     samePiSameNameResearchEntities: input.samePiNameDuplicateGroups?.length || 0,
     officialLabUrlResearchEntities: input.officialLabUrlDuplicateGroups?.length || 0,
     duplicatePeople: input.duplicatePersonGroups?.length || 0,
-    duplicateResearchPapers: input.duplicateResearchPaperGroups?.length || 0,
     duplicateCurrentMembers: input.duplicateCurrentMemberGroups?.length || 0,
     currentMembersOnArchivedEntities: input.currentMembersOnArchivedEntities?.length || 0,
     duplicateAccessSignals: input.duplicateAccessSignalGroups?.length || 0,
@@ -237,7 +220,6 @@ export function buildPostMaterializationIntegritySummary(
       samePiSameNameResearchEntities: sample(input.samePiNameDuplicateGroups, limit),
       officialLabUrlResearchEntities: sample(input.officialLabUrlDuplicateGroups, limit),
       duplicatePeople: sample(input.duplicatePersonGroups, limit),
-      duplicateResearchPapers: sample(input.duplicateResearchPaperGroups, limit),
       duplicateCurrentMembers: sample(input.duplicateCurrentMemberGroups, limit),
       currentMembersOnArchivedEntities: sample(input.currentMembersOnArchivedEntities, limit),
       duplicateAccessSignals: sample(input.duplicateAccessSignalGroups, limit),
@@ -348,78 +330,6 @@ async function loadDuplicatePeopleIntegrity(): Promise<{
           ]
         : [],
   };
-}
-
-async function loadDuplicateResearchPaperGroups(
-  limit: number,
-): Promise<DuplicateResearchPaperGroup[]> {
-  const fields: DuplicateResearchPaperGroup['identityField'][] = [
-    'openAlexId',
-    'semanticScholarId',
-    'arxivId',
-    'doi',
-  ];
-  const groups: DuplicateResearchPaperGroup[] = [];
-
-  for (const field of fields) {
-    const rows = await Paper.aggregate([
-      {
-        $match: {
-          archived: { $ne: true },
-          [field]: { $exists: true, $nin: [null, ''] },
-        },
-      },
-      {
-        $project: {
-          paperId: { $toString: '$_id' },
-          identityValue: { $toString: `$${field}` },
-        },
-      },
-      { $match: { identityValue: { $nin: ['', 'null', 'undefined'] } } },
-      {
-        $group: {
-          _id: '$identityValue',
-          paperIds: { $addToSet: '$paperId' },
-        },
-      },
-      { $match: { 'paperIds.1': { $exists: true } } },
-      { $limit: Math.max(1, limit - groups.length) },
-    ]);
-
-    groups.push(
-      ...buildDuplicateResearchPaperGroupsFromRows(
-        rows.map((row: any) => ({
-          identityField: field,
-          identityValue: stringId(row._id),
-          paperIds: row.paperIds || [],
-        })),
-      ),
-    );
-    if (groups.length >= limit) return groups.slice(0, limit);
-  }
-
-  return groups;
-}
-
-export function buildDuplicateResearchPaperGroupsFromRows(
-  rows: Array<{
-    identityField: DuplicateResearchPaperGroup['identityField'];
-    identityValue?: unknown;
-    paperIds?: unknown[];
-  }>,
-): DuplicateResearchPaperGroup[] {
-  return rows.flatMap((row) => {
-    const identityValue = stringId(row.identityValue);
-    const paperIds = (row.paperIds || []).map(stringId).filter(Boolean);
-    if (!identityValue || paperIds.length < 2) return [];
-    return [
-      {
-        identityField: row.identityField,
-        identityValue,
-        paperIds,
-      },
-    ];
-  });
 }
 
 async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {
@@ -815,7 +725,6 @@ export async function runPostMaterializationIntegrityGate(
     samePiNameDuplicateGroups,
     officialLabUrlDuplicateGroups,
     duplicatePersonIntegrity,
-    duplicateResearchPaperGroups,
     duplicateCurrentMemberGroups,
     currentMembersOnArchivedEntities,
     duplicateAccessSignalGroups,
@@ -825,7 +734,6 @@ export async function runPostMaterializationIntegrityGate(
     loadSamePiNameDuplicateGroups(queryLimit),
     loadOfficialLabUrlDuplicateGroups(queryLimit),
     loadDuplicatePeopleIntegrity(),
-    loadDuplicateResearchPaperGroups(queryLimit),
     loadDuplicateCurrentMemberGroups(queryLimit),
     loadCurrentMembersOnArchivedEntities(queryLimit),
     loadDuplicateAccessSignalGroups(queryLimit),
@@ -837,7 +745,6 @@ export async function runPostMaterializationIntegrityGate(
     samePiNameDuplicateGroups,
     officialLabUrlDuplicateGroups,
     duplicatePersonGroups: duplicatePersonIntegrity.groups,
-    duplicateResearchPaperGroups,
     duplicateCurrentMemberGroups,
     currentMembersOnArchivedEntities,
     duplicateAccessSignalGroups,

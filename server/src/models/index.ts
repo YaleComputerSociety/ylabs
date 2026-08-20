@@ -19,8 +19,6 @@ export {
   categoryColorKeys,
 } from './department';
 export { Grant } from './grant';
-export { Paper } from './paper';
-export { PaperAuthor } from './paperAuthor';
 export { ResearchScholarlyLink } from './researchScholarlyLink';
 export { ResearchScholarlyAttribution } from './researchScholarlyAttribution';
 export { ResearchEntity } from './researchEntity';

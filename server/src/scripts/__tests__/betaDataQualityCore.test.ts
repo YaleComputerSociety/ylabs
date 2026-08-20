@@ -650,7 +650,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 1,
       invalidUrlCount: 2,
       expiredOpenOpportunityCount: 1,
-      paperAuthorshipIntegrityFailures: 3,
       sourceHealthErrors: 1,
       sourceHealthWarnings: 2,
       duplicateEntityClusterCount: 4,
@@ -666,14 +665,13 @@ describe('buildBetaDataQualitySummary', () => {
     });
 
     expect(summary.status).toBe('error');
-    expect(summary.errorCount).toBe(5);
+    expect(summary.errorCount).toBe(4);
     expect(summary.warnCount).toBe(9);
     expect(summary.errors.map((item) => item.name)).toEqual(
       expect.arrayContaining([
         'referenceIntegrity',
         'urlSyntax',
         'expiredOpenOpportunities',
-        'paperAuthorship',
         'sourceHealthErrors',
       ]),
     );
@@ -687,7 +685,7 @@ describe('buildBetaDataQualitySummary', () => {
         }),
       ]),
     );
-    expect(summary.errors).toHaveLength(5);
+    expect(summary.errors).toHaveLength(4);
     expect(summary.warnings.map((item) => item.name)).toContain('duplicateEntityNames');
     expect(shouldStrictModeFail(summary)).toBe(true);
   });
@@ -697,7 +695,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 0,
       invalidUrlCount: 0,
       expiredOpenOpportunityCount: 0,
-      paperAuthorshipIntegrityFailures: 0,
       sourceHealthErrors: 0,
       sourceHealthWarnings: 1,
       duplicateEntityClusterCount: 2,
@@ -734,7 +731,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 0,
       invalidUrlCount: 0,
       expiredOpenOpportunityCount: 0,
-      paperAuthorshipIntegrityFailures: 0,
       sourceHealthErrors: 0,
       sourceHealthWarnings: 0,
       duplicateEntityClusterCount: 0,
@@ -766,7 +762,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 0,
       invalidUrlCount: 0,
       expiredOpenOpportunityCount: 0,
-      paperAuthorshipIntegrityFailures: 0,
       sourceHealthErrors: 0,
       sourceHealthWarnings: 1,
       duplicateEntityClusterCount: 2,
@@ -804,7 +799,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 0,
       invalidUrlCount: 0,
       expiredOpenOpportunityCount: 0,
-      paperAuthorshipIntegrityFailures: 0,
       sourceHealthErrors: 0,
       sourceHealthWarnings: 0,
       duplicateEntityClusterCount: 0,
@@ -838,7 +832,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 0,
       invalidUrlCount: 0,
       expiredOpenOpportunityCount: 0,
-      paperAuthorshipIntegrityFailures: 0,
       sourceHealthErrors: 0,
       sourceHealthWarnings: 0,
       duplicateEntityClusterCount: 0,
@@ -866,7 +859,6 @@ describe('buildBetaDataQualitySummary', () => {
       referenceHardFailures: 0,
       invalidUrlCount: 0,
       expiredOpenOpportunityCount: 0,
-      paperAuthorshipIntegrityFailures: 0,
       sourceHealthErrors: 0,
       sourceHealthWarnings: 12,
       duplicateEntityClusterCount: 269,
