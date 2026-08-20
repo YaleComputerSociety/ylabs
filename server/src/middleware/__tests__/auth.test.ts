@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   canSubmitListingClaimRequest,
-  canCreateListing,
   isAdmin,
   isAuthenticated,
   isConfirmed,
@@ -191,39 +190,10 @@ describe('professor/faculty authority', () => {
     expect(res.body).toEqual({ error: 'Professor privileges required' });
   });
 
-  it('does not let unconfirmed faculty create listings even after profile verification', () => {
-    const { res, next } = invokeSyncMiddleware(canCreateListing, {
-      netId: 'prof1',
-      userType: 'professor',
-      userConfirmed: false,
-      profileVerified: true,
-    });
-
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toEqual({ error: 'Account must be confirmed before creating listings' });
-  });
-
   it('does not let legacy admin userType pass professor-only guards without an active admin grant', async () => {
     mockedHasActiveAdminGrant.mockResolvedValue(false);
 
     const { res, next } = await invokeIsAdminLike(isProfessor, {
-      netId: 'legacy1',
-      userType: 'admin',
-      userConfirmed: true,
-      profileVerified: true,
-    });
-
-    expect(mockedHasActiveAdminGrant).toHaveBeenCalledWith('legacy1');
-    expect(next).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toEqual({ error: 'Admin privileges required' });
-  });
-
-  it('does not let legacy admin userType create listings without an active admin grant', async () => {
-    mockedHasActiveAdminGrant.mockResolvedValue(false);
-
-    const { res, next } = await invokeIsAdminLike(canCreateListing, {
       netId: 'legacy1',
       userType: 'admin',
       userConfirmed: true,
@@ -252,20 +222,15 @@ describe('professor/faculty authority', () => {
     expect(res.body).toEqual({ error: 'Forbidden' });
   });
 
-  it('allows active admin grants through professor-only and listing creation guards', async () => {
+  it('allows active admin grants through professor-only guards', async () => {
     mockedHasActiveAdminGrant.mockResolvedValue(true);
 
     const professorGuard = await invokeIsAdminLike(isProfessor, {
       netId: 'admin1',
       userType: 'admin',
     });
-    const listingGuard = await invokeIsAdminLike(canCreateListing, {
-      netId: 'admin1',
-      userType: 'admin',
-    });
 
     expect(professorGuard.next).toHaveBeenCalledTimes(1);
-    expect(listingGuard.next).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -189,7 +189,6 @@ export type FacultyProfile = {
   topics: string[];
   profileVerified: boolean;
   profileVerificationRequestedAt?: string;
-  ownListings: string[];
 };
 
 export type Developer = {

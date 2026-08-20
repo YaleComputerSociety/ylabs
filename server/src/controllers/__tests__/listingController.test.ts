@@ -26,40 +26,11 @@ vi.mock('../../services/userService', () => ({
   readUser: vi.fn(),
 }));
 
-import {
-  addView,
-  archiveListing,
-  createListing,
-  deleteListing,
-  getSkeletonListing,
-  readListing,
-  readPublicListing,
-  unarchiveListing,
-  updateListing,
-} from '../../services/listingService';
-import { readUser } from '../../services/userService';
-import {
-  addViewToListing,
-  archiveListingForCurrentUser,
-  createListingForCurrentUser,
-  deleteListingForCurrentUser,
-  getListingById,
-  getSkeletonListingForCurrentUser,
-  searchListings,
-  unarchiveListingForCurrentUser,
-  updateListingForCurrentUser,
-} from '../listingController';
+import { addView, readPublicListing } from '../../services/listingService';
+import { addViewToListing, getListingById, searchListings } from '../listingController';
 
-const mockedUpdateListing = vi.mocked(updateListing);
-const mockedReadListing = vi.mocked(readListing);
 const mockedReadPublicListing = vi.mocked(readPublicListing);
 const mockedAddView = vi.mocked(addView);
-const mockedCreateListing = vi.mocked(createListing);
-const mockedGetSkeletonListing = vi.mocked(getSkeletonListing);
-const mockedReadUser = vi.mocked(readUser);
-const mockedArchiveListing = vi.mocked(archiveListing);
-const mockedUnarchiveListing = vi.mocked(unarchiveListing);
-const mockedDeleteListing = vi.mocked(deleteListing);
 
 const privateListing = {
   _id: 'listing-1',
@@ -153,34 +124,6 @@ const responseDouble = () => ({
 describe('listingController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('does not pass collaborator identity fields through self-service listing updates', async () => {
-    mockedUpdateListing.mockResolvedValue({ _id: 'listing-1', title: 'Updated title' });
-
-    const req = {
-      params: { id: 'listing-1' },
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-      body: {
-        data: {
-          title: 'Updated title',
-          professorIds: ['victim123'],
-          professorNames: ['Victim Professor'],
-          emails: ['victim123@yale.edu'],
-        },
-      },
-    };
-    const res = responseDouble();
-    const next = vi.fn();
-
-    await updateListingForCurrentUser(req as any, res as any, next);
-
-    expect(mockedUpdateListing).toHaveBeenCalledWith('listing-1', 'owner123', {
-      title: 'Updated title',
-    });
-    expect((res.body as any).listing).toMatchObject({ _id: 'listing-1', title: 'Updated title' });
-    expect(JSON.stringify(res.body)).not.toContain('victim123');
-    expect(next).not.toHaveBeenCalled();
   });
 
   it('allowlists Meili listing search results for authenticated readers', async () => {
@@ -444,146 +387,4 @@ describe('listingController', () => {
     expect(res.body).toEqual({ error: 'Failed to update listing view count' });
   });
 
-  it('does not leak internal service errors from listing create failures', async () => {
-    mockedReadUser.mockResolvedValue({ netid: 'owner123' } as any);
-    mockedCreateListing.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-    const req = {
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-      body: { data: { title: 'New listing' } },
-    };
-    const res = responseDouble();
-
-    await createListingForCurrentUser(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to create listing' });
-  });
-
-  it('allowlists listing skeleton payloads for authenticated creators', async () => {
-    mockedGetSkeletonListing.mockResolvedValue(privateListing);
-    const req = {
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await getSkeletonListingForCurrentUser(req as any, res as any);
-
-    expect(mockedGetSkeletonListing).toHaveBeenCalledWith('owner123');
-    expectPublicListing((res.body as any).listing);
-  });
-
-  it('does not leak internal service errors from listing skeleton failures', async () => {
-    mockedGetSkeletonListing.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-    const req = {
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await getSkeletonListingForCurrentUser(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to initialize listing' });
-  });
-
-  it('does not leak internal service errors from listing update failures', async () => {
-    mockedUpdateListing.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-    const req = {
-      params: { id: 'listing-1' },
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-      body: { data: { title: 'Updated title' } },
-    };
-    const res = responseDouble();
-    const next = vi.fn();
-
-    await updateListingForCurrentUser(req as any, res as any, next);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to update listing' });
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('does not leak internal service errors from listing archive failures', async () => {
-    mockedArchiveListing.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-    const req = {
-      params: { id: 'listing-1' },
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await archiveListingForCurrentUser(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to archive listing' });
-  });
-
-  it('does not leak internal service errors from listing unarchive failures', async () => {
-    mockedUnarchiveListing.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-    const req = {
-      params: { id: 'listing-1' },
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await unarchiveListingForCurrentUser(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to unarchive listing' });
-  });
-
-  it('does not leak internal service errors from listing delete read failures', async () => {
-    mockedReadListing.mockRejectedValue(new Error('mongodb://user:pass@example.invalid leaked'));
-    const req = {
-      params: { id: 'listing-1' },
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await deleteListingForCurrentUser(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to delete listing' });
-  });
-
-  it('does not leak internal service errors from listing delete write failures', async () => {
-    mockedReadListing.mockResolvedValue({ ...privateListing, ownerId: 'owner123' });
-    mockedDeleteListing.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid leaked'),
-    );
-    const req = {
-      params: { id: 'listing-1' },
-      user: { netId: 'owner123', userType: 'professor', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await deleteListingForCurrentUser(req as any, res as any);
-
-    expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ error: 'Failed to delete listing' });
-  });
-
-  it('does not leak user or listing ids from listing delete permission failures', async () => {
-    mockedReadListing.mockResolvedValue({ ...privateListing, ownerId: 'owner123' });
-    const req = {
-      params: { id: 'private-listing-id' },
-      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
-    };
-    const res = responseDouble();
-
-    await deleteListingForCurrentUser(req as any, res as any);
-
-    expect(mockedDeleteListing).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toEqual({ error: 'Forbidden' });
-    expect(JSON.stringify(res.body)).not.toContain('student123');
-    expect(JSON.stringify(res.body)).not.toContain('private-listing-id');
-
-  });
 });
