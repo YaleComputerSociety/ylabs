@@ -43,8 +43,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 - `runReport.ts` - structured report for a completed scrape run
 - `scrapeJobLock.ts` - acquire/heartbeat/release helpers wrapping the `ScrapeJobLock` model
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources
-- `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people/papers, current members on archived entities, duplicate access signals, active artifacts on archived entities), with recommended CLI repair commands
-- `paperAuthorshipPolicy.ts` - rollback-only policy code retained with legacy paper storage
+- `integrityGate.ts` - post-materialization integrity gate (duplicate entities/people, current members on archived entities, duplicate access signals, active artifacts on archived entities), with recommended CLI repair commands
 - `cliHelpers.ts` / `scraperCliOutput.ts` / `types.ts` - CLI parsing, output formatting, shared types
 - `scraplingBridge.py` - Python bridge for utilities requiring Python tooling
 
@@ -73,9 +72,9 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 ## Deprecated: bibliographic paper pipeline
 
 The bibliographic ingestion implementations for arXiv, OpenAlex, ORCID works, Europe PMC/PubMed, and Crossref have been removed and cannot run via the CLI, cron, a sweep, or the work planner.
-The official-profile publication producer and materializer retirement contract, including the rollback-only generic paper materializer, is documented in `docs/research-data-pipeline.md`.
-Follow `docs/scraper-deployment-runbook.md` for rollback flag handling and historical-run audit safety.
+The official-profile publication producer and materializer retirement contract is documented in `docs/research-data-pipeline.md`.
+Paper materialization and the `Paper` and `PaperAuthor` models and their readers are fully retired with no rollback opt-in; see `docs/scraper-deployment-runbook.md`.
 The launch-trust gate no longer enforces paper-quality or research-activity checks.
-Historical source rows and observations, `paperAuthorshipPolicy.ts`, the guarded materializer, rollback audits, and stored paper/scholarly collections remain temporarily available for rollback.
+Historical `paper` observations and source rows are retained as read-only archived evidence and are never materialized.
 Verified Google Scholar and ORCID identity links stay on `Researcher`.
-Readers, storage, and remaining references are removed incrementally under issue #207 (Phase 3); see `docs/research-model-refactor.md`.
+Stored `papers`/`paper_authors` collections remain only until the human-gated collection drop under issue #207; see `docs/research-model-refactor.md`.

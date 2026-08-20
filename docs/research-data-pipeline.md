@@ -14,7 +14,7 @@ Source metadata
   -> append-only Observation rows
   -> claim validation for access interpretations
   -> entity/materializer resolution
-  -> ResearchEntity / User / Paper / Grant / Fellowship records
+  -> ResearchEntity / User / Grant / Fellowship records
   -> Signal (access types) when evidence supports it
   -> Signal (logistics types) when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items

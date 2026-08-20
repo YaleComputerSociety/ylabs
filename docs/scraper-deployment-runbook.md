@@ -55,7 +55,7 @@ Source metadata
   -> ScrapeRun
   -> append-only Observation rows
   -> entity materialization
-  -> ResearchGroup/User/Paper/etc.
+  -> ResearchGroup/User/etc.
   -> access materialization where evidence supports it
   -> Signal (access types)
   -> logistics materialization where exact official evidence supports each independent claim

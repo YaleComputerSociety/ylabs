@@ -172,7 +172,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Superseded.
 - **Superseding boundary:** Yale Research links to reviewed official Yale, Google Scholar, and ORCID profiles instead of maintaining an in-product scholarly activity feed or entity activity rollups.
 - **Validation evidence:** PR `#158` completed historical contamination, duplicate, and current-versus-earlier guards.
-  The accepted refactor preserves that work as rollback context while Phase 3 removes remaining paper readers, materializers, audits, promotion paths, and storage only after its private acceptance gates.
+  Phase 3 removes the paper readers, materializers, and audits as a hard cutover with no rollback opt-in; the publication-mirror half of #207 has deleted the `Paper` and `PaperAuthor` models and their readers, leaving stored collections only until a human-gated collection drop.
 - **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158), [#220](https://github.com/YaleComputerSociety/ylabs/pull/220), [#223](https://github.com/YaleComputerSociety/ylabs/pull/223).
 
 ### Comparison And Planning
@@ -315,8 +315,8 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 #### SM-04 - Retire Bibliographic Ingestion Without Weakening Source Trust
 
 - **Status:** Active.
-- **Depends on:** the Phase 0 exit and the remaining Phase 3 archive, outbound-link, search-parity, and rollback acceptance.
-- **Acceptance criteria:** OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref cannot run through ordinary CLI, sweep, cron, or release-gate paths; reviewed official and researcher-profile links remain bounded outbound sources; remaining paper readers, materializers, audits, promotion paths, and storage are removed only after the migration gates accept rollback and parity evidence.
+- **Depends on:** the Phase 0 exit and the remaining Phase 3 archive, outbound-link, and search-parity acceptance.
+- **Acceptance criteria:** OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref cannot run through ordinary CLI, sweep, cron, or release-gate paths; reviewed official and researcher-profile links remain bounded outbound sources; paper readers, materializers, audits, and promotion paths are removed as a hard cutover with no rollback opt-in, and stored collections remain only until a human-gated collection drop.
 - **Validation evidence:** PR `#158` provides historical attribution and contamination guards.
   PRs `#220` and `#223` completed the reversible repository foundation by deregistering bibliographic sources, removing deployment residue, and quarantining rollback-only authorship tooling.
   [`research-model-refactor.md`](./research-model-refactor.md#migration-execution-status) records Phase 3 as partial and operational acceptance as pending.
