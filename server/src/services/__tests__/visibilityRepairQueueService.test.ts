@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,9 +7,11 @@ import {
   buildVisibilityRepairPlans,
   classifyVisibilityRepairStage,
   normalizeVisibilityRepairObjectId,
+  researchEntityLeadMembersFromRoster,
   runVisibilityRepairQueue,
   type VisibilityRepairQueueItemInput,
 } from '../visibilityRepairQueueService';
+import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
 
 const queueItem = (
   overrides: Partial<VisibilityRepairQueueItemInput> = {},
@@ -3145,5 +3148,55 @@ describe('visibilityRepairQueueService', () => {
         studentVisibilitySuppressionReason: expect.stringContaining('archive_review'),
       }),
     );
+  });
+});
+
+const rosterEntry = (
+  overrides: Partial<ResearchEntityRosterEntry> = {},
+): ResearchEntityRosterEntry =>
+  ({
+    role: 'pi',
+    name: 'Roster Person',
+    netid: 'rp123',
+    state: 'CURRENT',
+    ...overrides,
+  }) as unknown as ResearchEntityRosterEntry;
+
+describe('researchEntityLeadMembersFromRoster', () => {
+  it('keeps only current lead-role members', () => {
+    const members = researchEntityLeadMembersFromRoster([
+      rosterEntry({ role: 'pi', name: 'Lead PI' }),
+      rosterEntry({ role: 'co-pi', name: 'Co PI' }),
+      rosterEntry({ role: 'director', name: 'Lead Director' }),
+      rosterEntry({ role: 'co-director', name: 'Co Director' }),
+      rosterEntry({ role: 'postdoc', name: 'Postdoc Person' }),
+      rosterEntry({ role: 'grad-student', name: 'Grad Person' }),
+      rosterEntry({ role: 'pi', name: 'Historical PI', state: 'HISTORICAL' }),
+    ]);
+
+    expect(members.map((member) => member.name)).toEqual([
+      'Lead PI',
+      'Co PI',
+      'Lead Director',
+      'Co Director',
+    ]);
+  });
+
+  it('exposes the roster personId as the stable lead identity', () => {
+    const personId = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
+    const [member] = researchEntityLeadMembersFromRoster([
+      rosterEntry({ role: 'pi', name: 'Lead PI', personId }),
+    ]);
+
+    expect(member.userId).toBe('507f1f77bcf86cd799439011');
+    expect(member.user._id).toBe('507f1f77bcf86cd799439011');
+  });
+
+  it('does not carry lead bio, research interests, or topics onto members', () => {
+    const [member] = researchEntityLeadMembersFromRoster([rosterEntry({ role: 'pi' })]);
+
+    expect(member.user.bio).toBeUndefined();
+    expect(member.user.researchInterests).toBeUndefined();
+    expect(member.user.topics).toBeUndefined();
   });
 });
