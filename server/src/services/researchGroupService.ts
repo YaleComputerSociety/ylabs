@@ -1806,6 +1806,17 @@ export function researchDetailLeadIdentity(
     ),
   );
 
+  const leadsWithOfficialProfile = leadMembers.filter((member) =>
+    Boolean(resolveLeadOfficialProfileUrl(member)),
+  );
+  if (
+    entityProfileDestinations.size > 0 &&
+    leadsWithOfficialProfile.length > 0 &&
+    matchingMembers.length === 0
+  ) {
+    return { leadIdentityStatus: 'under_review' };
+  }
+
   return {
     leadIdentityStatus: 'verified',
     ...(matchingMembers.length === 1

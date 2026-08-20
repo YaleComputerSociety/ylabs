@@ -2030,6 +2030,32 @@ describe('researchDetailLeadIdentity', () => {
       ]),
     ).toEqual({ leadIdentityStatus: 'under_review' });
   });
+
+  it('preserves a review state when entity profile evidence names a different person than the displayed lead', () => {
+    expect(
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://medicine.yale.edu/profile/vishwa-dixit/'] },
+        [
+          {
+            role: 'pi',
+            user: {
+              displayName: 'Purushottam Dixit',
+              profileUrls: { official: 'https://medicine.yale.edu/profile/purushottam-dixit/' },
+            },
+            row: { facultyMemberId: 'faculty-purushottam' },
+          },
+        ],
+      ),
+    ).toEqual({ leadIdentityStatus: 'under_review' });
+  });
+
+  it('stays verified when the sole lead has no official profile of its own to conflict', () => {
+    expect(
+      researchDetailLeadIdentity({ sourceUrls: ['https://medicine.yale.edu/profile/vishwa-dixit/'] }, [
+        { role: 'pi', user: { displayName: 'Purushottam Dixit' }, row: { facultyMemberId: 'faculty-purushottam' } },
+      ]),
+    ).toEqual({ leadIdentityStatus: 'verified' });
+  });
 });
 
 describe('dedupeSameNameLeadMembers', () => {
