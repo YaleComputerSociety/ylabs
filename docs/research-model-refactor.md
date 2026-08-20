@@ -130,8 +130,9 @@ Most residual internal roster readers now read the canonical roster too (S4b, #3
 The final two legacy-user-keyed readers now resolve to a canonical `Researcher` first via `resolveResearcherIdForLegacyUser` (netid to `Account` to `Researcher.accountId`, then `identifiers.orcid`, then a single name-only `displayName` match; fail-closed, never merging distinct identities) and read `RoleAssignment` (S4c, #360).
 `listingService.hasListingEntityAuthority` checks a canonical author-role assignment (`RESEARCH_ENTITY` target, non-`HISTORICAL`, not archived), and an unresolved owner returns false so the caller falls back to creating its own entity as before.
 `canonicalResearchHomeResolver.resolveCanonicalResearchHomeForUser` reads lead `RoleAssignment`s, mapping `HISTORICAL` state to the prior ineligibility and an unresolved user to a safe shell.
-`visibilityRepairQueueService` is intentionally kept on legacy `ResearchGroupMember` reads until `Researcher` carries the bio, research-interest, and topic fields its repair candidates need.
-Retiring the legacy `ResearchGroupMember` write path (S5, #361) is the remaining follow-up.
+`visibilityRepairQueueService` was the last legacy `ResearchGroupMember` reader and now reads the canonical roster too (S4d, #360): its `findResearchEntityMembers` default dep derives lead members from `getResearchEntityRoster` (name, role, netid, title, image, website; any non-`HISTORICAL` state is current), and `isLeadMember` now includes `co-pi` and `co-director` to match the canonical lead set the roster emits.
+The canonical roster carries no bio, research-interest, or topic fields, so the lead-bio-derived entity-description candidates this service used to produce are intentionally dropped rather than canonicalizing bios onto `Researcher`; this follows the product decision to no longer show or keep professor bios, and entity descriptions continue to come from their other sources (`entity.description`, PI/profile scrapers).
+Retiring the still-present legacy `ResearchGroupMember` write path (S5, #361) and the field-retirement of the now-unused `User`/`FacultyMember` bio, research-interest, and topic fields (#208) are the remaining follow-ups.
 
 Tracked issues:
 
