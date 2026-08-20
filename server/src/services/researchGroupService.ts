@@ -1143,40 +1143,8 @@ const publicInternalProfilePathFromPath = (value: unknown): string | undefined =
   }
 };
 
-const addPublicMemberInternalProfilePath = (target: Record<string, any>, value: unknown) => {
-  const path = publicInternalProfilePath(value);
-  if (path) {
-    target.internalProfilePath = path;
-    target.internal_profile_path = path;
-  }
-};
-
 const hasPublicMemberProfileUrls = (value: Record<string, any>): boolean =>
   Boolean(value.profileUrls && Object.keys(value.profileUrls).length > 0);
-
-function publicMemberUserFromFaculty(faculty: any): any | null {
-  if (!faculty) return null;
-  const [fallbackFirstName = '', ...rest] = String(faculty.name || '')
-    .trim()
-    .split(/\s+/);
-  const fallbackLastName = rest.join(' ');
-  const publicUser: Record<string, any> = {
-    _id: faculty.userId || faculty._id,
-    fname: faculty.firstName || fallbackFirstName,
-    lname: faculty.lastName || fallbackLastName,
-    imageUrl: faculty.photoUrl,
-    image_url: faculty.photoUrl,
-    primaryDepartment: faculty.primarySchool || '',
-    primary_department: faculty.primarySchool || '',
-    title: faculty.title || faculty.bio || '',
-    websiteUrl: publicOfficialYalePersonProfileUrl(faculty.websiteUrl) || '',
-  };
-  addPublicMemberProfileUrls(publicUser, faculty.profileUrls);
-  if (!hasPublicMemberProfileUrls(publicUser) && !publicUser.websiteUrl) {
-    addPublicMemberInternalProfilePath(publicUser, faculty.netid);
-  }
-  return publicUser;
-}
 
 const addPublicMemberField = (target: Record<string, any>, key: string, value: any) => {
   if (value !== undefined && value !== null) {
@@ -1362,46 +1330,6 @@ async function withPublicMemberImageGuards<T extends { user: any }>(members: T[]
       user: { ...member.user, imageUrl: publicImageUrl, image_url: publicImageUrl },
     };
   });
-}
-
-export function publicMemberUserForRow(
-  row: any,
-  usersById: Map<string, any>,
-  facultyMembersById: Map<string, any>,
-  now = new Date(),
-): any | null {
-  const user = row.userId ? usersById.get(researchGroupDocumentId(row.userId)) || null : null;
-  const faculty = row.facultyMemberId
-    ? facultyMembersById.get(researchGroupDocumentId(row.facultyMemberId)) || null
-    : null;
-  const userFacultyId = user?.facultyMemberId ? researchGroupDocumentId(user.facultyMemberId) : '';
-  const rowFacultyId = row.facultyMemberId ? researchGroupDocumentId(row.facultyMemberId) : '';
-
-  if (faculty && (!user || (userFacultyId && userFacultyId !== rowFacultyId))) {
-    return publicMemberUserFromFaculty(faculty);
-  }
-
-  if (!user && !faculty && isVerifiedOfficialRosterRow(row, now)) {
-    const nameParts = String(row.name || '')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-    const fname = nameParts.shift() || '';
-    const lname = nameParts.join(' ');
-    if (!fname || !lname) return null;
-    return {
-      fname,
-      lname,
-      displayName: publicString(row.name),
-      title: publicString(row.title),
-      imageUrl: '',
-      image_url: '',
-      profileUrls: {},
-      profile_urls: {},
-    };
-  }
-
-  return user ? publicMemberUserForResearchDetail(user) : null;
 }
 
 const OFFICIAL_ROSTER_SOURCE_NAME = 'official-research-home-roster';

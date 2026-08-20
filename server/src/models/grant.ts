@@ -41,12 +41,10 @@ const grantSchema = new mongoose.Schema(
     },
     piFacultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'FacultyMember',
       required: false,
     },
     coPiFacultyMemberIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'FacultyMember',
       default: [],
     },
     researchGroupIds: {

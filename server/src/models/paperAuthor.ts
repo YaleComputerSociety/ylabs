@@ -1,5 +1,5 @@
 /**
- * Mongoose schema and model for Paper ↔ FacultyMember authorship.
+ * Mongoose schema and model for Paper authorship.
  */
 import mongoose from 'mongoose';
 import { fieldProvenanceSchema } from './modelPrimitives';
@@ -13,7 +13,6 @@ const paperAuthorSchema = new mongoose.Schema(
     },
     facultyMemberId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'FacultyMember',
       required: false,
     },
     userId: {

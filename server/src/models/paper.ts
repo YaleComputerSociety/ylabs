@@ -53,7 +53,6 @@ const paperSchema = new mongoose.Schema(
     },
     facultyMemberIds: {
       type: [mongoose.Schema.Types.ObjectId],
-      ref: 'FacultyMember',
       default: [],
     },
     researchGroupIds: {

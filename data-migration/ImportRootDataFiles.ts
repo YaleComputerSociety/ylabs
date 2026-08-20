@@ -10,7 +10,6 @@ import mongoose from '../server/node_modules/mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Department } from '../server/src/models/department';
-import { FacultyMember } from '../server/src/models/facultyMember';
 import { ResearchEntity } from '../server/src/models/researchEntity';
 import { Source } from '../server/src/models/source';
 import {
@@ -163,15 +162,7 @@ let APPLY = DEFAULT_OPTIONS.apply;
 let DELETE_SOURCE_FILES = DEFAULT_OPTIONS.deleteSourceFiles;
 const ROOT = path.resolve(__dirname, '..');
 const OBSERVED_AT = new Date();
-const SOURCE_FILES = [
-  'faculty_data.json',
-  'yale_physics_people.json',
-  'yale_physics_faculty_10.json',
-  'yale_physics_people_10.json',
-  'yale_history_faculty.json',
-  'yale_medicine_labs.json',
-  'yale_physics_people.csv',
-];
+const SOURCE_FILES = ['yale_medicine_labs.json'];
 
 interface ImportSource {
   _id?: mongoose.Types.ObjectId;
@@ -188,26 +179,6 @@ interface ImportSource {
     defaultConfidence: 'HIGH' | 'MEDIUM';
     notes: string;
   };
-}
-
-interface FacultyInput {
-  name?: string | null;
-  profile_link?: string | null;
-  profile_url?: string | null;
-  title?: string | null;
-  office?: string | null;
-  email?: string | null;
-  phones?: string[];
-  website?: string | null;
-  research_website?: string | null;
-  image_url?: string | null;
-  image?: string | null;
-  field_of_study?: string | null;
-  profile_bio?: string | null;
-  bio?: string | null;
-  website_text?: string | null;
-  department?: string | null;
-  fields_of_interest?: string | null;
 }
 
 interface MedicineLabInput {
@@ -229,8 +200,6 @@ interface Stats {
 }
 
 interface VerificationResult {
-  physicsFaculty: number;
-  historyFaculty: number;
   medicineLabs: number;
   passed: boolean;
 }
@@ -270,11 +239,6 @@ function norm(value: unknown): string {
   return cleanText(value).toLowerCase();
 }
 
-function normalizeEmail(value: unknown): string {
-  const email = norm(value);
-  return email.includes('@') ? email : '';
-}
-
 function slugify(input: string): string {
   return cleanText(input)
     .normalize('NFKD')
@@ -285,14 +249,6 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 100);
-}
-
-function splitName(name: string): { firstName: string; lastName: string } {
-  const parts = name.split(/\s+/).filter(Boolean);
-  return {
-    firstName: parts[0] || '',
-    lastName: parts.length > 1 ? parts.slice(1).join(' ') : '',
-  };
 }
 
 function uniqueStrings(values: Array<string | undefined | null>): string[] {
@@ -386,38 +342,8 @@ async function ensureSource(source: ImportSource): Promise<ImportSource> {
   return source;
 }
 
-function sourceSpecs(): Record<'physics' | 'history' | 'medicine', ImportSource> {
+function sourceSpecs(): Record<'medicine', ImportSource> {
   return {
-    physics: {
-      name: 'root-yale-physics-faculty-json',
-      displayName: 'Root import: Yale Physics faculty JSON',
-      description: 'One-time import from root-level Yale Physics faculty/person JSON files.',
-      baseUrl: 'https://physics.yale.edu/people',
-      defaultWeight: 0.82,
-      coverage: {
-        priority: 35,
-        tier: 'DERIVED_OFFICIAL',
-        artifactTypes: ['Observation'],
-        evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'TOPICS', 'METHODS', 'LAB_WEBSITE'],
-        defaultConfidence: 'MEDIUM',
-        notes: 'Faculty identity/profile enrichment only; not undergraduate access evidence.',
-      },
-    },
-    history: {
-      name: 'root-yale-history-faculty-json',
-      displayName: 'Root import: Yale History faculty JSON',
-      description: 'One-time import from root-level Yale History faculty JSON.',
-      baseUrl: 'https://history.yale.edu/people',
-      defaultWeight: 0.82,
-      coverage: {
-        priority: 35,
-        tier: 'DERIVED_OFFICIAL',
-        artifactTypes: ['Observation'],
-        evidenceCategories: ['ENTITY_IDENTITY', 'OFFICIAL_PROFILE', 'TOPICS', 'METHODS'],
-        defaultConfidence: 'MEDIUM',
-        notes: 'Faculty identity/profile enrichment only; not undergraduate access evidence.',
-      },
-    },
     medicine: {
       name: 'root-yale-medicine-labs-json',
       displayName: 'Root import: Yale Medicine labs JSON',
@@ -434,178 +360,6 @@ function sourceSpecs(): Record<'physics' | 'history' | 'medicine', ImportSource>
       },
     },
   };
-}
-
-function mergePhysicsRows(): FacultyInput[] {
-  const fallbackRows = readJsonArray<FacultyInput>('yale_physics_people.json');
-  const enrichedRows = readJsonArray<FacultyInput>('faculty_data.json');
-  const byKey = new Map<string, FacultyInput>();
-  for (const row of fallbackRows) {
-    const key = norm(row.profile_link) || norm(row.email) || norm(row.name);
-    if (key) byKey.set(key, row);
-  }
-  for (const row of enrichedRows) {
-    const key = norm(row.profile_link) || norm(row.email) || norm(row.name);
-    if (!key) continue;
-    const fallback = byKey.get(key) || {};
-    byKey.set(key, { ...fallback, ...row });
-  }
-  return Array.from(byKey.values());
-}
-
-function interestsFromFaculty(row: FacultyInput, department: 'Physics' | 'History'): string[] {
-  if (department === 'History') {
-    return uniqueStrings(cleanText(row.fields_of_interest).split(';'));
-  }
-  return uniqueStrings([row.field_of_study]);
-}
-
-async function upsertFaculty(
-  row: FacultyInput,
-  options: {
-    source: ImportSource;
-    departmentName: 'Physics' | 'History';
-    departmentsByName: Map<string, mongoose.Types.ObjectId>;
-  },
-): Promise<'created' | 'updated' | 'skipped'> {
-  const name = cleanText(row.name);
-  if (!name) return 'skipped';
-
-  const email = normalizeEmail(row.email);
-  const sourceUrl = cleanText(row.profile_link || row.profile_url || row.website || row.research_website);
-  const sourceSlug = slugify(`${options.departmentName}-${name}`);
-  const sourceProfileKey = options.departmentName === 'Physics' ? 'physicsProfile' : 'historyProfile';
-  const profileUrl = cleanText(row.profile_link || row.profile_url);
-  const websiteUrl = cleanText(row.website || row.research_website);
-  const imageUrl = cleanText(row.image_url || row.image);
-  const bio = cleanText(row.profile_bio || row.bio || row.website_text, 8000);
-  const interests = interestsFromFaculty(row, options.departmentName);
-  const names = splitName(name);
-  const departmentIds = departmentIdsFor([options.departmentName], options.departmentsByName);
-
-  const existing = await findExistingFaculty({ email, slug: sourceSlug, sourceProfileKey, profileUrl });
-  const existingProfileUrls = asPlainObject(existing?.profileUrls);
-  const existingConfidence = asPlainObject(existing?.confidenceByField);
-  const existingProvenance = asPlainObject(existing?.fieldProvenance);
-  const fields = uniqueStrings([
-    'name',
-    'firstName',
-    'lastName',
-    email ? 'email' : '',
-    'title',
-    websiteUrl ? 'websiteUrl' : '',
-    imageUrl ? 'photoUrl' : '',
-    bio ? 'bio' : '',
-    interests.length > 0 ? 'researchInterests' : '',
-    'profileUrls',
-    departmentIds.departmentIds.length > 0 ? 'departmentIds' : '',
-  ]);
-
-  const profileUrls = {
-    ...existingProfileUrls,
-    rootImportSource: options.source.name,
-    rootImportDepartment: options.departmentName,
-    ...(profileUrl ? { sourceProfile: profileUrl, [sourceProfileKey]: profileUrl } : {}),
-    ...(websiteUrl ? { researchWebsite: websiteUrl } : {}),
-  };
-
-  const set: Record<string, unknown> = {
-    name,
-    firstName: names.firstName,
-    lastName: names.lastName,
-    title: cleanText(row.title),
-    websiteUrl,
-    photoUrl: imageUrl,
-    bio,
-    primarySchool: options.departmentName === 'History' || options.departmentName === 'Physics'
-      ? 'Yale Faculty of Arts and Sciences'
-      : '',
-    schools: ['Yale Faculty of Arts and Sciences'],
-    researchInterests: interests,
-    topics: interests,
-    profileUrls,
-    activeAtYaleCache: true,
-    yaleStatus: 'unknown',
-    lastObservedAt: OBSERVED_AT,
-    archived: false,
-    confidenceByField: {
-      ...existingConfidence,
-      ...confidenceFor(fields, options.source),
-    },
-    fieldProvenance: {
-      ...existingProvenance,
-      ...provenanceFor(fields, options.source, sourceUrl),
-    },
-  };
-  if (email) set.email = email;
-  if (departmentIds.primaryDepartmentId) set.primaryDepartmentId = departmentIds.primaryDepartmentId;
-  if (departmentIds.departmentIds.length > 0) set.departmentIds = departmentIds.departmentIds;
-
-  const filter = existing?._id ? { _id: existing._id } : email ? { email } : { slug: sourceSlug };
-  if (!APPLY) return existing ? 'updated' : 'created';
-
-  await FacultyMember.updateOne(
-    filter,
-    {
-      $set: set,
-      $setOnInsert: {
-        slug: sourceSlug,
-      },
-    },
-    { upsert: true },
-  );
-  return existing ? 'updated' : 'created';
-}
-
-async function findExistingFaculty(input: {
-  email: string;
-  slug: string;
-  sourceProfileKey: string;
-  profileUrl: string;
-}): Promise<any | null> {
-  if (input.email) {
-    const byEmail = await FacultyMember.findOne({ email: input.email }).lean<any>();
-    if (byEmail) return byEmail;
-  }
-  if (input.profileUrl) {
-    const byProfile = await FacultyMember.findOne({
-      [`profileUrls.${input.sourceProfileKey}`]: input.profileUrl,
-    }).lean<any>();
-    if (byProfile) return byProfile;
-  }
-  return FacultyMember.findOne({ slug: input.slug }).lean<any>();
-}
-
-async function importFacultyRows(
-  rows: FacultyInput[],
-  options: {
-    source: ImportSource;
-    departmentName: 'Physics' | 'History';
-    departmentsByName: Map<string, mongoose.Types.ObjectId>;
-    limit?: number;
-  },
-): Promise<Stats> {
-  const stats = emptyStats();
-  const limitedRows = options.limit ? rows.slice(0, options.limit) : rows;
-  for (const row of limitedRows) {
-    const key = cleanText(row.email || row.profile_link || row.profile_url || row.name);
-    try {
-      const result = await upsertFaculty(row, options);
-      stats.processed++;
-      if (result === 'created') {
-        stats.plannedCreates++;
-        if (APPLY) stats.created++;
-      } else if (result === 'updated') {
-        stats.plannedUpdates++;
-        if (APPLY) stats.updated++;
-      } else {
-        stats.skipped++;
-      }
-    } catch (err: any) {
-      stats.errors.push({ key: key || 'unknown-faculty', error: err?.message || String(err) });
-    }
-  }
-  return stats;
 }
 
 async function findExistingResearchGroup(input: {
@@ -732,33 +486,15 @@ async function importMedicineLabs(
   return stats;
 }
 
-function countCsvRows(fileName: string): number {
-  const fullPath = filePath(fileName);
-  if (!fs.existsSync(fullPath)) return 0;
-  const lines = fs.readFileSync(fullPath, 'utf8').split(/\r?\n/).filter((line) => line.trim());
-  return Math.max(0, lines.length - 1);
-}
-
 async function verifyImport(expected: {
-  physicsFaculty: number;
-  historyFaculty: number;
   medicineLabs: number;
 }): Promise<VerificationResult> {
-  const [physicsFaculty, historyFaculty, medicineLabs] = await Promise.all([
-    FacultyMember.countDocuments({ 'profileUrls.rootImportSource': 'root-yale-physics-faculty-json' }),
-    FacultyMember.countDocuments({ 'profileUrls.rootImportSource': 'root-yale-history-faculty-json' }),
-    ResearchEntity.countDocuments({
-      'fieldProvenance.name.sourceName': 'root-yale-medicine-labs-json',
-    }),
-  ]);
+  const medicineLabs = await ResearchEntity.countDocuments({
+    'fieldProvenance.name.sourceName': 'root-yale-medicine-labs-json',
+  });
   return {
-    physicsFaculty,
-    historyFaculty,
     medicineLabs,
-    passed:
-      physicsFaculty >= expected.physicsFaculty &&
-      historyFaculty >= expected.historyFaculty &&
-      medicineLabs >= expected.medicineLabs,
+    passed: medicineLabs >= expected.medicineLabs,
   };
 }
 
@@ -812,59 +548,29 @@ export async function importRootDataFiles(
   try {
 
   const specs = sourceSpecs();
-  const [physicsSource, historySource, medicineSource] = await Promise.all([
-    ensureSource(specs.physics),
-    ensureSource(specs.history),
-    ensureSource(specs.medicine),
-  ]);
+  const medicineSource = await ensureSource(specs.medicine);
   const departmentsByName = await buildDepartmentMap();
 
-  const physicsRows = mergePhysicsRows();
-  const historyRows = readJsonArray<FacultyInput>('yale_history_faculty.json');
   const medicineRows = readJsonArray<MedicineLabInput>('yale_medicine_labs.json');
-  const csvRows = countCsvRows('yale_physics_people.csv');
 
   console.log('Loaded source data');
-  console.log(`  Physics faculty/person rows: ${physicsRows.length}`);
-  console.log(`  History faculty rows:        ${historyRows.length}`);
   console.log(`  Medicine lab rows:           ${medicineRows.length}`);
-  console.log(`  Physics CSV data rows:       ${csvRows} ${csvRows === 0 ? '(header-only; skipped)' : ''}`);
-  console.log('  Physics _10 files:           sample subsets; skipped');
 
-  const physicsStats = await importFacultyRows(physicsRows, {
-    source: physicsSource,
-    departmentName: 'Physics',
-    departmentsByName,
-    limit,
-  });
-  const historyStats = await importFacultyRows(historyRows, {
-    source: historySource,
-    departmentName: 'History',
-    departmentsByName,
-    limit,
-  });
   const medicineStats = await importMedicineLabs(medicineRows, {
     source: medicineSource,
     departmentsByName,
     limit,
   });
 
-  printStats('Physics faculty import', physicsStats);
-  printStats('History faculty import', historyStats);
   printStats('Medicine labs import', medicineStats);
 
-  const errorCount =
-    physicsStats.errors.length + historyStats.errors.length + medicineStats.errors.length;
+  const errorCount = medicineStats.errors.length;
   const expected = {
-    physicsFaculty: limit ? Math.min(limit, physicsRows.length) : physicsRows.length,
-    historyFaculty: limit ? Math.min(limit, historyRows.length) : historyRows.length,
     medicineLabs: limit ? Math.min(limit, medicineRows.length) : medicineRows.length,
   };
   const verification = await verifyImport(expected);
 
   console.log('\nVerification counts');
-  console.log(`  Physics FacultyMember rows tagged: ${verification.physicsFaculty}`);
-  console.log(`  History FacultyMember rows tagged: ${verification.historyFaculty}`);
   console.log(`  Medicine ResearchGroup rows tagged: ${verification.medicineLabs}`);
   console.log(`  Passed: ${verification.passed ? 'yes' : 'no'}`);
 
@@ -880,12 +586,7 @@ export async function importRootDataFiles(
 
   const output = buildRootDataImportOutput(
     {
-      physicsRows: physicsRows.length,
-      historyRows: historyRows.length,
       medicineRows: medicineRows.length,
-      csvRows,
-      physicsStats,
-      historyStats,
       medicineStats,
       verification,
     },

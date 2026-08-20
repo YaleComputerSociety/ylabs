@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   personFind: vi.fn(),
   accountFind: vi.fn(),
   userFind: vi.fn(),
-  facultyMemberFind: vi.fn(),
   researchScholarlyAttributionFind: vi.fn(),
   researchScholarlyLinkFind: vi.fn(),
   entryPathwayFind: vi.fn(),
@@ -75,12 +74,6 @@ vi.mock('../../models/user', () => ({
   },
 }));
 
-vi.mock('../../models/facultyMember', () => ({
-  FacultyMember: {
-    find: mocks.facultyMemberFind,
-  },
-}));
-
 vi.mock('../../models/researchScholarlyAttribution', () => ({
   ResearchScholarlyAttribution: {
     find: mocks.researchScholarlyAttributionFind,
@@ -121,7 +114,6 @@ import {
   listResearchEntityRelationshipPayload,
   normalizeResearchSearchQuery,
   normalizeResearchGroupObjectId,
-  publicMemberUserForRow,
   isFreshVerifiedOfficialRosterRow,
   publicRosterDisclosure,
   researchDetailLeadIdentity,
@@ -149,8 +141,6 @@ const sortLimitLeanResult = <T>(value: T) => queryResult(value);
 
 const selectSortLimitLeanResult = <T>(value: T) => queryResult(value);
 
-const selectLeanResult = <T>(value: T) => queryResult(value);
-
 const validPublicDescriptions = {
   shortDescription:
     'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
@@ -172,7 +162,6 @@ beforeEach(() => {
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
-  mocks.facultyMemberFind.mockReset();
   mocks.researchScholarlyAttributionFind.mockReset();
   mocks.researchScholarlyLinkFind.mockReset();
   mocks.entryPathwayFind.mockReset();
@@ -188,7 +177,6 @@ beforeEach(() => {
   mocks.personFind.mockReturnValue(queryResult([]));
   mocks.accountFind.mockReturnValue(queryResult([]));
   mocks.userFind.mockReturnValue(leanResult([]));
-  mocks.facultyMemberFind.mockReturnValue(selectLeanResult([]));
   mocks.researchScholarlyAttributionFind.mockReturnValue(selectSortLimitLeanResult([]));
   mocks.researchScholarlyLinkFind.mockReturnValue(sortLimitLeanResult([]));
   mocks.entryPathwayFind.mockReturnValue(queryResult([]));
@@ -1766,218 +1754,6 @@ describe('buildResearchActivityLinkPayload', () => {
         title: 'Member scholarly link',
       }),
     ]);
-  });
-});
-
-describe('publicMemberUserForRow', () => {
-  it('preserves a verified roster-only member after entity-level validation', () => {
-    const publicUser = publicMemberUserForRow(
-      {
-        sourceName: 'official-research-home-roster',
-        evidenceStatus: 'verified',
-        identityKey: 'official-profile:fixture',
-        membershipKey: 'official-profile:fixture|staff',
-        name: 'Fixture Scholar',
-        freshnessExpiresAt: '2026-08-04T00:00:00Z',
-      },
-      new Map(),
-      new Map(),
-      new Date('2026-07-14T00:00:00Z'),
-    );
-
-    expect(publicUser).toMatchObject({ fname: 'Fixture', lname: 'Scholar' });
-  });
-
-  it('preserves official profile URLs without exposing user netids', () => {
-    const row = {
-      userId: 'internal-user',
-    };
-    const usersById = new Map([
-      [
-        'internal-user',
-        {
-          _id: 'internal-user',
-          netid: 'fx1001',
-          fname: 'Jordan',
-          lname: 'Person',
-          title: 'Professor of Example Studies',
-          profileUrls: {
-            official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
-          },
-        },
-      ],
-    ]);
-
-    const publicUser = publicMemberUserForRow(row, usersById, new Map());
-    expect(publicUser).toMatchObject({
-      fname: 'Jordan',
-      lname: 'Person',
-      profileUrls: {
-        official: 'https://medicine.yale.edu/profile/jordan-researcher-fixture/',
-      },
-    });
-    expect(publicUser).not.toHaveProperty('netid');
-  });
-
-  it('exposes an internal profile path fallback without exposing user netids', () => {
-    const row = {
-      userId: 'internal-user',
-    };
-    const usersById = new Map([
-      [
-        'internal-user',
-        {
-          _id: 'internal-user',
-          netid: 'fx1001',
-          fname: 'Fixture',
-          lname: 'Scholar',
-          title: 'Professor of Example Studies',
-        },
-      ],
-    ]);
-
-    const publicUser = publicMemberUserForRow(row, usersById, new Map());
-
-    expect(publicUser).toMatchObject({
-      fname: 'Fixture',
-      lname: 'Scholar',
-      internalProfilePath: '/profile/fx1001',
-      internal_profile_path: '/profile/fx1001',
-    });
-    expect(publicUser).not.toHaveProperty('netid');
-  });
-
-  it('uses an internal profile path before generic website fallbacks', () => {
-    const row = {
-      userId: 'internal-user',
-    };
-    const usersById = new Map([
-      [
-        'internal-user',
-        {
-          _id: 'internal-user',
-          netid: 'fx1002',
-          fname: 'Fixture',
-          lname: 'Website',
-          title: 'Professor of Example Studies',
-          website: 'https://fixture-website.example.test/',
-        },
-      ],
-    ]);
-
-    const publicUser = publicMemberUserForRow(row, usersById, new Map());
-
-    expect(publicUser).toMatchObject({
-      fname: 'Fixture',
-      lname: 'Website',
-      internalProfilePath: '/profile/fx1002',
-      internal_profile_path: '/profile/fx1002',
-    });
-    expect(publicUser).not.toHaveProperty('website');
-    expect(publicUser).not.toHaveProperty('websiteUrl');
-    expect(publicUser).not.toHaveProperty('netid');
-  });
-
-  it('prefers official profile URLs over website fallbacks', () => {
-    const row = {
-      userId: 'internal-user',
-    };
-    const usersById = new Map([
-      [
-        'internal-user',
-        {
-          _id: 'internal-user',
-          netid: 'fx1003',
-          fname: 'Fixture',
-          lname: 'Official',
-          title: 'Professor of Example Studies',
-          website: 'https://fixture-official.example.test/',
-          profileUrls: {
-            official: 'https://medicine.yale.edu/profile/fixture-official/',
-          },
-        },
-      ],
-    ]);
-
-    const publicUser = publicMemberUserForRow(row, usersById, new Map());
-
-    expect(publicUser).toMatchObject({
-      fname: 'Fixture',
-      lname: 'Official',
-      profileUrls: {
-        official: 'https://medicine.yale.edu/profile/fixture-official/',
-      },
-    });
-    expect(publicUser).not.toHaveProperty('website');
-    expect(publicUser).not.toHaveProperty('internalProfilePath');
-    expect(publicUser).not.toHaveProperty('netid');
-  });
-
-  it('uses faculty identity and official profile URLs when a member row points at a mismatched user account', () => {
-    const row = {
-      userId: 'wrong-user',
-      facultyMemberId: 'correct-faculty',
-    };
-    const usersById = new Map([
-      [
-        'wrong-user',
-        {
-          _id: 'wrong-user',
-          netid: 'fx1002',
-          fname: 'Wrong',
-          lname: 'Person',
-          title: 'Assistant Professor of Neurology',
-          facultyMemberId: 'wrong-faculty',
-        },
-      ],
-    ]);
-    const facultyMembersById = new Map([
-      [
-        'correct-faculty',
-        {
-          _id: 'correct-faculty',
-          netid: 'fx1003',
-          firstName: 'Correct',
-          lastName: 'Scholar',
-          title: 'Professor of Example Studies',
-          profileUrls: {
-            official: 'https://medicine.yale.edu/profile/correct-scholar-fixture/',
-          },
-        },
-      ],
-    ]);
-
-    const publicUser = publicMemberUserForRow(row, usersById, facultyMembersById);
-    expect(publicUser).toMatchObject({
-      title: 'Professor of Example Studies',
-      profileUrls: {
-        official: 'https://medicine.yale.edu/profile/correct-scholar-fixture/',
-      },
-    });
-    expect(publicUser).not.toHaveProperty('netid');
-  });
-
-  it('applies the public email policy to faculty fallback member identities', () => {
-    const row = {
-      facultyMemberId: 'faculty-with-unsafe-email',
-    };
-    const facultyMembersById = new Map([
-      [
-        'faculty-with-unsafe-email',
-        {
-          _id: 'faculty-with-unsafe-email',
-          name: 'External Collaborator',
-          email: 'external.collaborator@example.com',
-        },
-      ],
-    ]);
-
-    const publicUser = publicMemberUserForRow(row, new Map(), facultyMembersById);
-    expect(publicUser).toMatchObject({
-      fname: 'External',
-      lname: 'Collaborator',
-    });
-    expect(publicUser).not.toHaveProperty('email');
   });
 });
 

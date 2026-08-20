@@ -1836,7 +1836,7 @@ const researchReasonActions: Record<string, string> = {
   missing_lead:
     'Attach PI, director, or owner evidence, or mark a reviewed non-person-owner exception.',
   pi_identity_conflict:
-    'Resolve mismatched User and FacultyMember identity before student visibility promotion.',
+    'Resolve the conflicting canonical researcher identity before student visibility promotion.',
   missing_source_url: 'Attach an official source URL before public promotion.',
   thin_description: 'Replace thin text with a fuller source-backed description.',
   profile_fallback_only:
