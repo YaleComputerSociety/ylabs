@@ -115,7 +115,9 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
     samples: [],
   };
 
-  for (const entity of entities as Array<Record<string, unknown> & WebsiteUrlBackfillCandidateEntity>) {
+  for (const entity of entities as Array<
+    Record<string, unknown> & WebsiteUrlBackfillCandidateEntity
+  >) {
     if (options.limit && result.scanned >= options.limit) break;
     result.scanned += 1;
     try {
