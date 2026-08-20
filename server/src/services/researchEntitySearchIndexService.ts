@@ -210,46 +210,6 @@ const uniquePersonNames = (values: unknown): string[] => {
   return out;
 };
 
-const personNameFromParts = (...parts: unknown[]): string =>
-  cleanPersonName(parts.filter(Boolean).join(' '));
-
-const userDisplayName = (user: any): string =>
-  cleanPersonName(user?.displayName) ||
-  personNameFromParts(user?.fname, user?.lname) ||
-  cleanPersonName(user?.name);
-
-const facultyDisplayName = (faculty: any): string =>
-  cleanPersonName(faculty?.name) || personNameFromParts(faculty?.firstName, faculty?.lastName);
-
-const normalizedPersonNameKey = (value: string): string =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-export const trustedMemberDisplayName = (
-  member: any,
-  usersById: Map<string, any>,
-  facultyMembersById: Map<string, any>,
-): string => {
-  const userId = serializedDocumentId(member?.userId);
-  const userName = userId ? userDisplayName(usersById.get(userId)) : '';
-  const facultyMemberId = serializedDocumentId(member?.facultyMemberId);
-  const facultyName = facultyMemberId
-    ? facultyDisplayName(facultyMembersById.get(facultyMemberId))
-    : '';
-
-  if (
-    userName &&
-    facultyName &&
-    normalizedPersonNameKey(userName) !== normalizedPersonNameKey(facultyName)
-  ) {
-    return '';
-  }
-  return userName || facultyName;
-};
-
 const normalizedAliasHaystack = (values: unknown[]): string =>
   values
     .flatMap((value) => {

@@ -13,7 +13,6 @@ import {
   type RoleAssignmentRosterProvenance,
 } from '../models/roleAssignment';
 import { User } from '../models/user';
-import { FacultyMember } from '../models/facultyMember';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -225,7 +224,6 @@ const normalizedResolverOrcid = (value: unknown): string | undefined => {
 
 export async function resolveResearcherIdForLegacyUser(
   userId?: unknown,
-  facultyMemberId?: unknown,
 ): Promise<mongoose.Types.ObjectId | undefined> {
   let netid: string | undefined;
   let orcid: string | undefined;
@@ -241,15 +239,6 @@ export async function resolveResearcherIdForLegacyUser(
         (typeof user.displayName === 'string' && user.displayName.trim()) ||
         [user.fname, user.lname].filter(Boolean).join(' ').trim() ||
         undefined;
-    }
-  }
-  const fid = normalizeEntityObjectId(facultyMemberId);
-  if (fid) {
-    const faculty: any = await FacultyMember.findById(fid).select('orcidId name').lean();
-    if (faculty) {
-      orcid = orcid || normalizedResolverOrcid(faculty.orcidId);
-      displayName =
-        displayName || (typeof faculty.name === 'string' && faculty.name.trim()) || undefined;
     }
   }
 

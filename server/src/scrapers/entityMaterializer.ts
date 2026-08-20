@@ -37,6 +37,7 @@ import {
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
+import { selectBackfillWebsiteUrl } from '../scripts/backfillResearchEntityWebsiteUrlsCore';
 import {
   archiveCanonicalRoleAssignmentsForPersons,
   archiveSupersededCanonicalRoleAssignments,
@@ -396,6 +397,19 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknow
   return value.filter((url) => !isResearchEntityContentPageSourceUrl(url));
 }
 
+export function deriveResearchEntityWebsiteUrl(
+  set: Record<string, unknown>,
+  entityDoc?: Record<string, unknown> | null,
+): string | undefined {
+  const merged = (field: string): unknown =>
+    field in set ? set[field] : entityDoc?.[field];
+  return selectBackfillWebsiteUrl({
+    websiteUrl: merged('websiteUrl'),
+    website: merged('website'),
+    sourceUrls: merged('sourceUrls'),
+  });
+}
+
 function isInitialOnlyNameValue(value: unknown): boolean {
   const raw = textValue(value);
   if (/^[A-Z]{2,}$/.test(raw)) return false;
@@ -545,7 +559,7 @@ async function findUniqueUserForResearchGroupMember(
       { website: profileUrl },
     ],
   })
-    .select('_id facultyMemberId netid email orcid')
+    .select('_id netid email orcid')
     .limit(2)
     .lean();
   return users.length === 1 ? users[0] : null;
@@ -584,14 +598,13 @@ export function buildResearchGroupMemberUpsert(
     textValue(resolved.name?.value) ||
     memberNameFromInferredUserName(resolved.inferredUserName?.value);
   const userId = idValue(user?._id);
-  const facultyMemberId = idValue(user?.facultyMemberId);
   const profileUrl = textValue(resolved.profileUrl?.value);
   const identityKey =
     textValue(resolved.identityKey?.value) ||
     (profileUrl ? `official-profile:${profileUrl.toLowerCase()}` : '');
   const membershipKey =
     textValue(resolved.membershipKey?.value) || (identityKey ? `${identityKey}|${role}` : '');
-  if ((!name && !userId && !facultyMemberId) || (!userId && !facultyMemberId && !identityKey)) {
+  if ((!name && !userId) || (!userId && !identityKey)) {
     return null;
   }
 
@@ -602,11 +615,7 @@ export function buildResearchGroupMemberUpsert(
   const sourceName = textValue(roleSource?.sourceName);
   const title = textValue(resolved.title?.value);
 
-  const identityFilter: Record<string, unknown> = userId
-    ? { userId }
-    : facultyMemberId
-      ? { facultyMemberId }
-      : { membershipKey };
+  const identityFilter: Record<string, unknown> = userId ? { userId } : { membershipKey };
   const filter = {
     researchEntityId,
     role,
@@ -632,7 +641,6 @@ export function buildResearchGroupMemberUpsert(
   };
   if (name) set.name = name;
   if (userId) set.userId = userId;
-  if (facultyMemberId) set.facultyMemberId = facultyMemberId;
   if (identityKey) set.identityKey = identityKey;
   if (membershipKey) set.membershipKey = membershipKey;
   if (textValue(resolved.evidenceStatus?.value)) {
@@ -682,12 +690,10 @@ interface CanonicalRosterMatch {
 
 async function findCanonicalRosterMatch(
   researchEntityId: string,
-  identity: { userId?: unknown; facultyMemberId?: unknown; name?: unknown },
+  identity: { userId?: unknown; name?: unknown },
 ): Promise<CanonicalRosterMatch> {
   const roster = await getResearchEntityRoster(researchEntityId);
-  const researcherId = (
-    await resolveResearcherIdForLegacyUser(identity.userId, identity.facultyMemberId)
-  )?.toString();
+  const researcherId = (await resolveResearcherIdForLegacyUser(identity.userId))?.toString();
   const name = textValue(identity.name).toLowerCase();
   const matches = (entry: ResearchEntityRosterEntry): boolean => {
     if (researcherId && entry.personId) {
@@ -773,7 +779,6 @@ async function materializeResearchGroupMember(
   const resolvedRole = String(patch.filter.role || '');
   const { roster, matches } = await findCanonicalRosterMatch(researchEntityId, {
     userId: patch.filter.userId,
-    facultyMemberId: patch.filter.facultyMemberId,
     name: patch.filter.name,
   });
 
@@ -821,7 +826,7 @@ async function materializeResearchGroupMember(
       email: user?.email,
       orcid: user?.orcid,
       displayName: textValue(patchSet.name),
-      hasCanonicalSourceReference: Boolean(patch.filter.userId || patch.filter.facultyMemberId),
+      hasCanonicalSourceReference: Boolean(patch.filter.userId),
     },
   );
   return {
@@ -922,7 +927,7 @@ async function materializeCanonicalPiMembership(
   userId: string,
 ): Promise<void> {
   const canonicalUser = userId
-    ? await User.findById(userId).select('_id facultyMemberId netid email orcid').lean()
+    ? await User.findById(userId).select('_id netid email orcid').lean()
     : null;
   const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
   const displayName = textValue(patchSet.name);
@@ -941,7 +946,7 @@ async function materializeCanonicalPiMembership(
       email: (canonicalUser as any)?.email,
       orcid: (canonicalUser as any)?.orcid,
       displayName,
-      hasCanonicalSourceReference: Boolean(patch.filter.userId || patch.filter.facultyMemberId),
+      hasCanonicalSourceReference: Boolean(patch.filter.userId),
     },
   );
 }
@@ -1009,14 +1014,13 @@ export async function materializeInferredDirectorMembership(
   if (!user?._id) return { ...empty, skipped: 'unresolved-user' };
 
   const userId = idValue(user._id);
-  const facultyMemberId = idValue(user.facultyMemberId);
   const roleSource = fieldObs('inferredDirectorRole') || nameObs;
   const observedAt = roleSource.observedAt || new Date();
   const confidence = typeof roleSource.confidence === 'number' ? roleSource.confidence : 0.85;
   const sourceUrl = textValue(roleSource.sourceUrl);
   const sourceName = textValue(roleSource.sourceName);
 
-  const directorResearcherId = await resolveResearcherIdForLegacyUser(userId, facultyMemberId);
+  const directorResearcherId = await resolveResearcherIdForLegacyUser(userId);
   const roster = await getResearchEntityRoster(researchEntityId);
   const normalizedDirectorName = textValue(name).toLowerCase();
   const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>
@@ -2420,6 +2424,13 @@ export async function materializeEntity(
   if (isResearchEntityObservationType(entityType)) {
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc);
     await applyResearchEntityResearchAreaCanonicalization(set);
+    if (!manuallyLockedFields.includes('websiteUrl')) {
+      const derivedWebsiteUrl = deriveResearchEntityWebsiteUrl(set, entityDoc);
+      if (derivedWebsiteUrl) {
+        set.websiteUrl = derivedWebsiteUrl;
+        fieldsWritten++;
+      }
+    }
   }
   if (entityType === 'paper') {
     const paperObs = materializationObs.map((o: any) => ({

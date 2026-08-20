@@ -116,8 +116,8 @@ describe('LabDetail page', () => {
     renderLabDetail();
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
-    await flushResearchAnalytics();
-    await waitFor(() =>
+    await waitFor(async () => {
+      await flushResearchAnalytics();
       expect(mockedAxios.post).toHaveBeenCalledWith(
         '/analytics/research/batch',
         {
@@ -131,8 +131,8 @@ describe('LabDetail page', () => {
           ]),
         },
         { withCredentials: true },
-      ),
-    );
+      );
+    });
     const profileOpenEvents = mockedAxios.post.mock.calls
       .filter((call) => call[0] === '/analytics/research/batch')
       .flatMap((call) => call[1]?.events ?? [])

@@ -10,6 +10,12 @@
  * entity so the description extractor (JSON-payload parser) can recover a
  * source-backed description.
  *
+ * This also covers grant-only shells: entities whose only stored evidence is a
+ * grant/identifier host (reporter.nih.gov, nsf.gov, orcid.org, scholar.google.com,
+ * doi.org) and that carry no official URL anywhere, so the zero-network promotion
+ * lane has nothing to promote. They reach websiteUrl through the same verified
+ * lead-profile resolution (see researchHomeGrantOnlyShellCore.ts).
+ *
  * Safety: a candidate URL is attached ONLY if it returns HTTP 200 AND the page
  * body mentions the lead's last name (anti-wrong-attribution). Dry-run-first;
  * apply requires --confirm-research-home-urls + explicit --limit; blocked
@@ -28,6 +34,10 @@ import { User } from '../models/user';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../utils/ssrfGuard';
+import {
+  GRANT_OR_IDENTIFIER_SOURCE_URL_REGEX,
+  isGrantOnlyShell,
+} from './researchHomeGrantOnlyShellCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +49,49 @@ const DESC_BLOCK_REASONS = [
   'missing_card_description',
   'profile_fallback_only',
 ];
+const DESCRIPTION_LANE_TIERS = ['operator_review', 'limited_but_safe'];
+const DESCRIPTION_LANE_REASONS = [...DESC_BLOCK_REASONS, 'missing_action_evidence'];
 const LEAD_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
+
+export type ResearchHomeUrlBackfillLane = 'description-block' | 'grant-only-shell';
+
+/**
+ * Description- or action-blocked lead in a still-visible tier: the original lane.
+ * Attaching the lead's live official profile URL unblocks description extraction
+ * and identified-lead ways-in derivation.
+ */
+export function isDescriptionBlockedLead(entity: {
+  studentVisibilityTier?: unknown;
+  studentVisibilityReasons?: unknown;
+}): boolean {
+  const tier =
+    typeof entity.studentVisibilityTier === 'string' ? entity.studentVisibilityTier : '';
+  if (!DESCRIPTION_LANE_TIERS.includes(tier)) return false;
+  const reasons = Array.isArray(entity.studentVisibilityReasons)
+    ? entity.studentVisibilityReasons
+    : [];
+  return reasons.some(
+    (reason) => typeof reason === 'string' && DESCRIPTION_LANE_REASONS.includes(reason),
+  );
+}
+
+/**
+ * Which lane, if any, an entity belongs to. Grant-only shells are only claimed
+ * when the description lane does not already cover them, so an entity is never
+ * double-counted and the classification-driven grant-only lane never steals an
+ * entity the original lane would have processed.
+ */
+export function classifyResearchHomeUrlBackfillLane(entity: {
+  studentVisibilityTier?: unknown;
+  studentVisibilityReasons?: unknown;
+  website?: unknown;
+  websiteUrl?: unknown;
+  sourceUrls?: unknown;
+}): ResearchHomeUrlBackfillLane | undefined {
+  if (isDescriptionBlockedLead(entity)) return 'description-block';
+  if (isGrantOnlyShell(entity)) return 'grant-only-shell';
+  return undefined;
+}
 
 export interface ResearchHomeUrlBackfillOptions {
   dryRun: boolean;
@@ -169,6 +221,13 @@ export const defaultVerifier: UrlVerifier = async (url, lastName) => {
   }
 };
 
+export interface ResearchHomeUrlBackfillLaneTotals {
+  scanned: number;
+  resolved: number;
+  attached: number;
+  unresolved: number;
+}
+
 export interface ResearchHomeUrlBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
@@ -176,7 +235,12 @@ export interface ResearchHomeUrlBackfillResult {
   attached: number;
   unresolved: number;
   errors: number;
-  samples: Array<{ slug: string; url: string }>;
+  lanes: Record<ResearchHomeUrlBackfillLane, ResearchHomeUrlBackfillLaneTotals>;
+  samples: Array<{ slug: string; url: string; lane: ResearchHomeUrlBackfillLane }>;
+}
+
+function emptyLaneTotals(): ResearchHomeUrlBackfillLaneTotals {
+  return { scanned: 0, resolved: 0, attached: 0, unresolved: 0 };
 }
 
 export async function runResearchHomeUrlBackfill(options: {
@@ -188,13 +252,37 @@ export async function runResearchHomeUrlBackfill(options: {
   const entities = await ResearchEntity.find(
     {
       archived: { $ne: true },
-      studentVisibilityTier: { $in: ['operator_review', 'limited_but_safe'] },
-      // Description-blocked OR action-blocked: in both cases attaching the lead's
-      // live official (non-grant) profile URL is the unlock — it lets the
-      // description extractor and the identified-lead ways-in derivation fire.
-      studentVisibilityReasons: { $in: [...DESC_BLOCK_REASONS, 'missing_action_evidence'] },
+      $or: [
+        // Description-blocked OR action-blocked in a still-visible tier: attaching
+        // the lead's live official (non-grant) profile URL lets the description
+        // extractor and the identified-lead ways-in derivation fire.
+        {
+          studentVisibilityTier: { $in: DESCRIPTION_LANE_TIERS },
+          studentVisibilityReasons: { $in: DESCRIPTION_LANE_REASONS },
+        },
+        // Grant-only shell: no usable websiteUrl and the only stored evidence is a
+        // grant/identifier host. The zero-network promotion lane cannot fill it,
+        // so it needs a network-verified lead-profile URL. This is a coarse
+        // pre-filter; isGrantOnlyShell refines it below.
+        {
+          websiteUrl: { $not: /^https?:\/\//i },
+          $or: [
+            { sourceUrls: { $elemMatch: { $regex: GRANT_OR_IDENTIFIER_SOURCE_URL_REGEX } } },
+            { website: { $regex: GRANT_OR_IDENTIFIER_SOURCE_URL_REGEX } },
+          ],
+        },
+      ],
     },
-    { _id: 1, slug: 1, name: 1, websiteUrl: 1, sourceUrls: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      website: 1,
+      websiteUrl: 1,
+      sourceUrls: 1,
+      studentVisibilityTier: 1,
+      studentVisibilityReasons: 1,
+    },
   ).lean();
 
   const result: ResearchHomeUrlBackfillResult = {
@@ -204,12 +292,20 @@ export async function runResearchHomeUrlBackfill(options: {
     attached: 0,
     unresolved: 0,
     errors: 0,
+    lanes: {
+      'description-block': emptyLaneTotals(),
+      'grant-only-shell': emptyLaneTotals(),
+    },
     samples: [],
   };
 
   for (const entity of entities as any[]) {
+    const lane = classifyResearchHomeUrlBackfillLane(entity);
+    if (!lane) continue;
     if (options.limit && result.scanned >= options.limit) break;
     result.scanned += 1;
+    const laneTotals = result.lanes[lane];
+    laneTotals.scanned += 1;
     try {
       const roster = await getResearchEntityRoster(entity._id);
       const lead = roster.find(
@@ -217,6 +313,7 @@ export async function runResearchHomeUrlBackfill(options: {
       );
       if (!lead?.netid) {
         result.unresolved += 1;
+        laneTotals.unresolved += 1;
         continue;
       }
       const user: any = await User.findOne(
@@ -225,6 +322,7 @@ export async function runResearchHomeUrlBackfill(options: {
       ).lean();
       if (!user) {
         result.unresolved += 1;
+        laneTotals.unresolved += 1;
         continue;
       }
       const existing = new Set(
@@ -242,10 +340,12 @@ export async function runResearchHomeUrlBackfill(options: {
       }
       if (!chosen) {
         result.unresolved += 1;
+        laneTotals.unresolved += 1;
         continue;
       }
       result.resolved += 1;
-      if (result.samples.length < 25) result.samples.push({ slug: entity.slug, url: chosen });
+      laneTotals.resolved += 1;
+      if (result.samples.length < 25) result.samples.push({ slug: entity.slug, url: chosen, lane });
       if (existing.has(chosen)) continue; // already present, nothing to attach
       if (!options.dryRun) {
         const update: Record<string, any> = { $addToSet: { sourceUrls: chosen } };
@@ -255,6 +355,7 @@ export async function runResearchHomeUrlBackfill(options: {
         await ResearchEntity.updateOne({ _id: entity._id }, update);
       }
       result.attached += 1;
+      laneTotals.attached += 1;
     } catch (error) {
       result.errors += 1;
       console.error(`URL backfill failed for ${entity.slug}:`, sanitizeLogValue(error));

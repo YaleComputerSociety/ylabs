@@ -3338,7 +3338,7 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /const safeResearchEntityId = normalizeListingObjectId\(researchEntityId\)/);
   assert.match(
     source,
-    /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id, owner\?\.facultyMemberId\)/,
+    /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id\)/,
   );
   assert.match(source, /'target\.id': new mongoose\.Types\.ObjectId\(safeResearchEntityId\)/);
   assert.match(source, /state: \{ \$ne: 'HISTORICAL' \}/);
@@ -5603,23 +5603,15 @@ test('current-user listing mutation responses use the public listing DTO', () =>
   assert.match(source, /compensationType: publicListingText\(listing\.compensationType\)/);
   assert.match(
     source,
-    /response\.status\(201\)\.json\(\{ listing: publicListingForAuthenticatedReader\(listing\) \}\)/,
-  );
-  assert.match(
-    source,
-    /const listing = await getSkeletonListing\(currentUser\.netId!\);\s*response\.status\(201\)\.json\(\{ listing: publicListingForAuthenticatedReader\(listing\) \}\)/,
-  );
-  assert.match(
-    source,
     /response\.status\(200\)\.json\(\{ listing: publicListingForAuthenticatedReader\(listing\) \}\)/,
-  );
-  assert.match(
-    source,
-    /response\.status\(200\)\.json\(\{ deletedListing: publicListingForAuthenticatedReader\(deletedListing\) \}\)/,
   );
   assert.doesNotMatch(source, /response\.status\(201\)\.json\(\{ listing \}\)/);
   assert.doesNotMatch(source, /response\.status\(200\)\.json\(\{ listing \}\)/);
   assert.doesNotMatch(source, /response\.status\(200\)\.json\(\{ deletedListing \}\)/);
+  assert.doesNotMatch(source, /createListingForCurrentUser/);
+  assert.doesNotMatch(source, /getSkeletonListingForCurrentUser/);
+  assert.doesNotMatch(source, /updateListingForCurrentUser/);
+  assert.doesNotMatch(source, /deleteListingForCurrentUser/);
   assert.doesNotMatch(source, /title: listing\.title/);
   assert.doesNotMatch(
     source,
@@ -7362,10 +7354,6 @@ test('listing permission failures do not interpolate user or listing identifiers
 
   assert.doesNotMatch(controllerSource, /User with id \$\{currentUser\.netId\}/);
   assert.doesNotMatch(controllerSource, /delete listing with id \$\{request\.params\.id\}/);
-  assert.match(
-    controllerSource,
-    /return response\.status\(403\)\.json\(\{ error: 'Forbidden' \}\)/,
-  );
   assert.doesNotMatch(serviceSource, /User with id \$\{userId\}/);
   assert.doesNotMatch(serviceSource, /update listing with id \$\{safeId\}/);
   assert.match(serviceSource, /throw new IncorrectPermissionsError\('Forbidden'\)/);

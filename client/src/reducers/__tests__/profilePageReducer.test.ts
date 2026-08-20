@@ -18,7 +18,6 @@ const sampleProfile: FacultyProfile = {
   research_interests: ['analytical engines'],
   topics: [],
   profileVerified: true,
-  ownListings: [],
 };
 
 const otherProfile: FacultyProfile = {

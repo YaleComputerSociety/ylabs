@@ -9,6 +9,7 @@ import {
   buildPaperUpdateFromObservations,
   buildResearchGroupMemberUpsert,
   canonicalRosterProvenanceFromSet,
+  deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
   mergeUniqueArrayValues,
@@ -761,7 +762,7 @@ describe('entityMaterializer post-materialization metrics', () => {
           contributingSources: ['centers-institutes-index'],
         },
       },
-      { _id: '64f000000000000000000020', facultyMemberId: '64f000000000000000000030' },
+      { _id: '64f000000000000000000020' },
     );
 
     expect(patch).toMatchObject({
@@ -776,7 +777,6 @@ describe('entityMaterializer post-materialization metrics', () => {
           researchEntityId: '64f000000000000000000010',
           researchGroupId: '64f000000000000000000010',
           userId: '64f000000000000000000020',
-          facultyMemberId: '64f000000000000000000030',
           name: 'Jane Doe',
           role: 'director',
           isCurrentMember: true,
@@ -944,6 +944,60 @@ describe('entityMaterializer post-materialization metrics', () => {
     );
 
     expect(failed).toMatchObject({ state: 'failed', lastSuccessfulSnapshot: partial });
+  });
+});
+
+describe('deriveResearchEntityWebsiteUrl', () => {
+  it('derives websiteUrl from a promotable website when currently empty', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { website: 'https://lab.yale.edu/' },
+        { websiteUrl: '' },
+      ),
+    ).toBe('https://lab.yale.edu/');
+  });
+
+  it('falls back to the first promotable sourceUrl when website is absent', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { sourceUrls: ['https://reporter.nih.gov/x', 'https://center.yale.edu/'] },
+        { websiteUrl: '' },
+      ),
+    ).toBe('https://center.yale.edu/');
+  });
+
+  it('never overwrites an already-usable websiteUrl on the existing entity', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { website: 'https://other.yale.edu/' },
+        { websiteUrl: 'https://existing.yale.edu/' },
+      ),
+    ).toBeUndefined();
+  });
+
+  it('never overwrites a websiteUrl freshly materialized in this pass', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        { websiteUrl: 'https://fresh.yale.edu/', website: 'https://other.yale.edu/' },
+        null,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('excludes grant and identifier hosts as promotable candidates', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        {
+          website: 'https://reporter.nih.gov/project/123',
+          sourceUrls: ['https://orcid.org/0000-0000-0000-0000', 'https://nsf.gov/award'],
+        },
+        { websiteUrl: '' },
+      ),
+    ).toBeUndefined();
+  });
+
+  it('leaves websiteUrl empty when no promotable evidence is present', () => {
+    expect(deriveResearchEntityWebsiteUrl({}, { websiteUrl: '' })).toBeUndefined();
   });
 });
 

@@ -5,7 +5,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Account } from '../models/account';
-import { FacultyMember } from '../models/facultyMember';
 import { Researcher } from '../models/researcher';
 import { User } from '../models/user';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -140,7 +139,7 @@ export async function backfillPersonDisplayFields(options: {
   const netids = Array.from(new Set([...netidByAccountId.values()]));
   const users = netids.length
     ? await User.find({ netid: { $in: netids } })
-        .select('netid title primaryDepartment imageUrl website facultyMemberId')
+        .select('netid title primaryDepartment imageUrl website')
         .lean()
     : [];
   const userByNetid = new Map<string, any>();
@@ -148,34 +147,15 @@ export async function backfillPersonDisplayFields(options: {
     if (typeof user.netid === 'string') userByNetid.set(user.netid, user);
   }
 
-  const facultyMemberIds = Array.from(
-    new Set(
-      users
-        .map((user: any) => asObjectIdKey(user.facultyMemberId))
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ).map((id) => new mongoose.Types.ObjectId(id));
-  const facultyMembers = facultyMemberIds.length
-    ? await FacultyMember.find({ _id: { $in: facultyMemberIds } })
-        .select('_id title primarySchool photoUrl websiteUrl')
-        .lean()
-    : [];
-  const facultyById = new Map<string, any>();
-  for (const faculty of facultyMembers as any[]) {
-    if (faculty._id) facultyById.set(faculty._id.toString(), faculty);
-  }
-
   for (const person of people as any[]) {
     peopleScanned += 1;
     const netid = person.accountId ? netidByAccountId.get(person.accountId.toString()) : undefined;
     if (!netid) continue;
     const user = userByNetid.get(netid);
-    const facultyMemberKey = asObjectIdKey(user?.facultyMemberId);
-    const facultyMember = facultyMemberKey ? facultyById.get(facultyMemberKey) : undefined;
-    if (!user && !facultyMember) continue;
+    if (!user) continue;
     peopleWithLegacyMatch += 1;
 
-    const composed = composeDisplayProfileFromLegacy({ user, facultyMember });
+    const composed = composeDisplayProfileFromLegacy({ user });
     const update = displayProfileFillUpdate(person.profile, composed);
     const fields = Object.keys(update) as PersonDisplayProfileField[];
     if (fields.length === 0) continue;

@@ -29,16 +29,8 @@ export interface LegacyUserDisplaySource {
   website?: unknown;
 }
 
-export interface LegacyFacultyDisplaySource {
-  title?: unknown;
-  primarySchool?: unknown;
-  photoUrl?: unknown;
-  websiteUrl?: unknown;
-}
-
 export interface LegacyDisplaySources {
   user?: LegacyUserDisplaySource | null;
-  facultyMember?: LegacyFacultyDisplaySource | null;
 }
 
 export type PersonDisplayProfileValues = Partial<Record<PersonDisplayProfileField, string>>;
@@ -63,22 +55,15 @@ export function composeDisplayProfileFromLegacy(
   sources: LegacyDisplaySources,
 ): PersonDisplayProfileValues {
   const user = sources.user || undefined;
-  const faculty = sources.facultyMember || undefined;
   const composed: PersonDisplayProfileValues = {};
 
-  const title = boundDisplayValue('title', cleanString(user?.title) || cleanString(faculty?.title));
+  const title = boundDisplayValue('title', cleanString(user?.title));
   const primaryDepartment = boundDisplayValue(
     'primaryDepartment',
-    cleanString(user?.primaryDepartment) || cleanString(faculty?.primarySchool),
+    cleanString(user?.primaryDepartment),
   );
-  const imageUrl = boundDisplayValue(
-    'imageUrl',
-    cleanString(user?.imageUrl) || cleanString(faculty?.photoUrl),
-  );
-  const websiteUrl = boundDisplayValue(
-    'websiteUrl',
-    cleanString(user?.website) || cleanString(faculty?.websiteUrl),
-  );
+  const imageUrl = boundDisplayValue('imageUrl', cleanString(user?.imageUrl));
+  const websiteUrl = boundDisplayValue('websiteUrl', cleanString(user?.website));
 
   if (title) composed.title = title;
   if (primaryDepartment) composed.primaryDepartment = primaryDepartment;
