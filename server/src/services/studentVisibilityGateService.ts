@@ -1106,7 +1106,13 @@ export async function runStudentVisibilityGate(
     collection: options.collection,
   });
   report.mode = options.mode;
-  if (options.mode === 'apply') await applyStudentVisibilityGatePlans(plans);
+  if (options.mode === 'apply') {
+    const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
+    if (!leadResolution.safe) {
+      throw new Error(`Refusing to apply student visibility gate: ${leadResolution.blocker}`);
+    }
+    await applyStudentVisibilityGatePlans(plans);
+  }
   return report;
 }
 
