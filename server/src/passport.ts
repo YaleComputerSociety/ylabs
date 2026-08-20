@@ -4,8 +4,8 @@
 import express from 'express';
 import passport from 'passport';
 import { Strategy } from 'passport-cas';
-import { validateUser, createUser, updateUser } from './services/userService';
-import { fetchYalie } from './services/yaliesService';
+import { recordAccountLogin, validateAccount } from './services/accountService';
+import { classifyYalieByNetid } from './services/yaliesService';
 import { fetchFromDirectory, isFacultyTitle } from './services/directoryService';
 import { logEvent } from './services/analyticsService';
 import { AnalyticsEventType } from './models/index';
@@ -30,7 +30,6 @@ const authDebug = (...args: unknown[]) => {
   if (process.env.AUTH_DEBUG === 'true') console.log(...args.map((arg) => sanitizeLogValue(arg)));
 };
 
-const STALE_THRESHOLD_MS = 30 * 24 * 60 * 60 * 1000;
 const AUTH_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 const MAX_AUTH_REDIRECT_LENGTH = 2048;
 const MAX_AUTH_ORIGIN_HEADER_LENGTH = 2048;
@@ -271,6 +270,16 @@ function publicAuthSessionUser(user: unknown): AuthenticatedSessionUser | null {
   };
 }
 
+function coerceStoredSessionPrincipal(stored: unknown): AuthenticatedSessionUser | null {
+  if (typeof stored === 'string') {
+    const netId = normalizeAuthNetId(stored);
+    return netId
+      ? { netId, userType: 'unknown', userConfirmed: false, profileVerified: false }
+      : null;
+  }
+  return publicAuthSessionUser(stored);
+}
+
 function localAuthBypassUser(
   env: NodeJS.ProcessEnv = process.env,
   headers: express.Request['headers'] = {},
@@ -302,28 +311,10 @@ async function ensureLocalAuthBypassUser(
   }
 
   const bypassUser = localAuthBypassUser(env, headers);
-  const existing = await validateUser(bypassUser.netId);
-  if (existing) {
-    return bypassUser;
-  }
-
-  try {
-    await createUser({
-      netid: bypassUser.netId,
-      email: `${bypassUser.netId.toLowerCase()}@example.invalid`,
-      fname: 'Development',
-      lname: 'User',
-      userType: bypassUser.userType,
-      userConfirmed: true,
-      profileVerified: true,
-    });
-  } catch (error) {
-    // Two first requests can race to create the same unique netid.
-    // Accept the duplicate only when the user now exists.
-    if (!(await validateUser(bypassUser.netId))) {
-      throw error;
-    }
-  }
+  await recordAccountLogin({
+    netid: bypassUser.netId,
+    email: `${bypassUser.netId.toLowerCase()}@example.invalid`,
+  });
 
   return bypassUser;
 }
@@ -359,23 +350,13 @@ async function ensureDevLoginUser(userType: unknown) {
   // exercise the rest of the app immediately.
   const isBootstrappedType = normalizedUserType !== 'unknown';
   const netId = profile.netId;
-  const userData = {
-    netid: netId,
-    email: `${netId}@example.invalid`,
-    fname: profile.fname,
-    lname: profile.lname,
-    userType: normalizedUserType,
-    userConfirmed: isBootstrappedType,
-    profileVerified: isBootstrappedType,
-  };
-  const existing = await validateUser(netId);
-  const user = existing ? await updateUser(netId, userData) : await createUser(userData);
+  await recordAccountLogin({ netid: netId, email: `${netId}@example.invalid` });
 
   return {
     netId,
-    userType: user.userType || normalizedUserType,
-    userConfirmed: user.userConfirmed !== false,
-    profileVerified: user.profileVerified || false,
+    userType: normalizedUserType,
+    userConfirmed: isBootstrappedType,
+    profileVerified: isBootstrappedType,
   };
 }
 
@@ -407,105 +388,45 @@ async function buildAuthenticatedSessionUser(
 }
 
 /**
- * Build an update object from directory data (only non-empty fields).
+ * Resolve the login principal for a CAS-authenticated netid and ensure the
+ * backing Account exists. Classification is derived at login (Yalies for
+ * undergrad/grad, Yale Directory for faculty) without persisting a legacy
+ * User; only the private Account is written, stamping lastLoginAt.
  */
-function buildDirectoryUpdate(
-  dirPerson: NonNullable<Awaited<ReturnType<typeof fetchFromDirectory>>>,
-) {
-  const update: Record<string, any> = {};
-  if (dirPerson.firstName) update.fname = dirPerson.firstName;
-  if (dirPerson.lastName) update.lname = dirPerson.lastName;
-  if (dirPerson.email) update.email = dirPerson.email;
-  if (dirPerson.department) update.departments = [dirPerson.department];
-  if (dirPerson.title) update.title = dirPerson.title;
-  if (dirPerson.phone) update.phone = dirPerson.phone;
-  if (dirPerson.upi) update.upi = dirPerson.upi;
-  if (dirPerson.unit) update.unit = dirPerson.unit;
-  if (dirPerson.physicalLocation) update.physicalLocation = dirPerson.physicalLocation;
-  if (dirPerson.buildingDesk) update.buildingDesk = dirPerson.buildingDesk;
-  if (dirPerson.mailingAddress) update.mailingAddress = dirPerson.mailingAddress;
-  return update;
-}
-
-/**
- * Shared helper: find or create a user by netid.
- * 1. Check if user already exists in DB (refresh from directory if stale)
- * 2. Try Yalies API (undergrad/grad detection)
- * 3. If Yalies fails, try Yale Directory (faculty detection)
- * 4. Fallback: create a default user
- */
-async function findOrCreateUser(netid: string) {
-  const safeNetid = normalizeAuthNetId(netid);
-  if (!safeNetid) {
+async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedUser> {
+  const netid = normalizeAuthNetId(rawNetid);
+  if (!netid) {
     throw new Error('Invalid authentication principal');
   }
 
-  netid = safeNetid;
-  let user = await validateUser(netid);
-  if (user) {
-    const updatedAt = user.updatedAt ? new Date(user.updatedAt).getTime() : 0;
-    const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
+  let userType = 'unknown';
+  let userConfirmed = false;
+  let email: string | undefined;
 
-    if (isStale) {
-      authDebug(
-        `findOrCreateUser: refreshing stale data (last updated: ${user.updatedAt || 'never'})`,
-      );
-      try {
-        const dirPerson = await fetchFromDirectory(netid, 'netid');
-        if (dirPerson && dirPerson.name) {
-          const dirUpdate = buildDirectoryUpdate(dirPerson);
-          if (user.userType === 'unknown' && isFacultyTitle(dirPerson.title)) {
-            dirUpdate.userType = 'professor';
-            dirUpdate.userConfirmed = true;
-          }
-          user = await updateUser(netid, dirUpdate);
-          authDebug('findOrCreateUser: refreshed directory data');
-        }
-      } catch {
-        authDebug('findOrCreateUser: directory refresh failed, using cached data');
+  const yalie = await classifyYalieByNetid(netid);
+  if (yalie) {
+    userType = yalie.userType;
+    userConfirmed = yalie.userConfirmed;
+    email = yalie.email;
+    authDebug(`resolveLoginPrincipalForCas: Yalies success, type=${userType}`);
+  } else {
+    try {
+      const dirPerson = await fetchFromDirectory(netid, 'netid');
+      if (dirPerson && dirPerson.name) {
+        const facultyTitle = isFacultyTitle(dirPerson.title);
+        userType = facultyTitle ? 'professor' : 'unknown';
+        userConfirmed = facultyTitle;
+        email = dirPerson.email || undefined;
+        authDebug(`resolveLoginPrincipalForCas: Directory record found, type=${userType}`);
       }
-    } else {
-      authDebug('findOrCreateUser: existing user cache hit');
+    } catch {
+      authDebug('resolveLoginPrincipalForCas: directory lookup failed, using default principal');
     }
-    return user;
   }
 
-  authDebug('findOrCreateUser: trying Yalies API lookup');
-  user = await fetchYalie(netid);
-  if (user) {
-    authDebug(`findOrCreateUser: Yalies success, type=${user.userType}`);
-    return user;
-  }
+  await recordAccountLogin({ netid, email });
 
-  authDebug('findOrCreateUser: Yalies failed, trying Yale Directory');
-  const dirPerson = await fetchFromDirectory(netid, 'netid');
-  if (dirPerson && dirPerson.name) {
-    authDebug('findOrCreateUser: Directory record found');
-
-    const userType = isFacultyTitle(dirPerson.title) ? 'professor' : 'unknown';
-    const dirFields = buildDirectoryUpdate(dirPerson);
-    user = await createUser({
-      netid,
-      fname: dirPerson.firstName || dirPerson.name.split(' ')[0] || 'NA',
-      lname: dirPerson.lastName || dirPerson.name.split(' ').slice(1).join(' ') || 'NA',
-      email: dirPerson.email || `${netid}@yale.edu`,
-      departments: dirPerson.department ? [dirPerson.department] : [],
-      userType,
-      userConfirmed: userType === 'professor',
-      ...dirFields,
-    });
-    authDebug(`findOrCreateUser: Directory user created, type=${userType}`);
-    return user;
-  }
-
-  authDebug('findOrCreateUser: Directory also failed, creating default user');
-  user = await createUser({
-    netid,
-    fname: netid,
-    lname: netid,
-    email: placeholderYaleEmail(netid),
-  });
-  return user;
+  return { netid, userType, userConfirmed, profileVerified: false };
 }
 
 const authConfig = resolveAuthConfig();
@@ -519,8 +440,10 @@ passport.use(
     },
     async function (profile, done) {
       try {
-        const user = await withMongoReconnect(() => findOrCreateUser(profile.user));
-        done(null, await buildAuthenticatedSessionUser(user, profile.user));
+        const principal = await withMongoReconnect(() =>
+          resolveLoginPrincipalForCas(profile.user),
+        );
+        done(null, await buildAuthenticatedSessionUser(principal, profile.user));
       } catch (error) {
         console.log('Error in CAS login');
         done(error);
@@ -531,32 +454,43 @@ passport.use(
 
 passport.serializeUser(function (user: any, done) {
   authDebug('Serializing user');
-  const safeNetId = normalizeAuthNetId(user?.netId);
-  if (!safeNetId) {
+  const principal = publicAuthSessionUser(user);
+  if (!principal) {
     done(new Error('Invalid authentication principal'));
     return;
   }
-  done(null, safeNetId);
+  done(null, principal);
 });
 
-// Runs on every authenticated request, so it must stay a plain read:
-// the find-or-create cascade (user creation, Yalies/Directory refresh)
-// belongs at login time only. A missing user doc means the session
-// references someone we no longer know — treat as unauthenticated.
-passport.deserializeUser(async (netId: string, done) => {
+// Runs on every authenticated request, so login-time classification
+// (Yalies/Directory) must not run here; the signed session carries the
+// classified principal and only the dynamic admin grant is re-applied. A
+// missing or archived Account deserializes to unauthenticated.
+passport.deserializeUser(async (stored: unknown, done) => {
   try {
     authDebug('Deserializing user');
-    const safeNetId = normalizeAuthNetId(netId);
-    if (!safeNetId) {
+    const principal = coerceStoredSessionPrincipal(stored);
+    if (!principal) {
       done(null, null);
       return;
     }
-    const user = await withMongoReconnect(() => validateUser(safeNetId));
-    if (!user) {
+    const account = await withMongoReconnect(() => validateAccount(principal.netId));
+    if (!account || account.archived) {
       done(null, null);
       return;
     }
-    done(null, await buildAuthenticatedSessionUser(user, safeNetId));
+    done(
+      null,
+      await buildAuthenticatedSessionUser(
+        {
+          netid: principal.netId,
+          userType: principal.userType,
+          userConfirmed: principal.userConfirmed,
+          profileVerified: principal.profileVerified,
+        },
+        principal.netId,
+      ),
+    );
   } catch (error) {
     console.log('Deserialize: Error');
     done(error, null);

@@ -27,7 +27,9 @@ Created only from Yale-confirmed evidence; external identifiers alone never crea
 Private login principal: the student or user who logs in.
 Fields: `netid` (unique), `email`, `status`, `lastLoginAt?`, `archived`.
 It is the login half of the retired `User`.
-It is currently unwired because auth still runs on legacy `User`; wiring it is the act of retiring `User` (sequenced last).
+Authentication is now wired onto `Account` (#367): CAS, dev-login, and the local bypass resolve-or-create an `Account` by netid and stamp `lastLoginAt`, and the session principal is Account-backed with no `User` read in the auth path.
+Login-time classification (undergrad/grad via Yalies, faculty via Yale Directory) is derived per login and carried in the signed session rather than persisted to a `User`.
+The remaining `User` reads (profile fields, favorites and saved plans, and scraper identity) are the follow-ups before the `User` collection can be dropped, which stays human-gated.
 
 ### `ResearchEntity` (`research_entities`)
 

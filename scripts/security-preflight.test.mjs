@@ -5290,13 +5290,21 @@ test('auth principals are normalized before user lookup and session hydration', 
     passportSource,
     /const normalized = typeof value === 'string' \? value\.trim\(\)\.toLowerCase\(\) : ''/,
   );
-  assert.match(passportSource, /const safeNetid = normalizeAuthNetId\(netid\)/);
+  assert.match(passportSource, /const netid = normalizeAuthNetId\(rawNetid\)/);
   assert.match(passportSource, /throw new Error\('Invalid authentication principal'\)/);
+  assert.match(passportSource, /await recordAccountLogin\(\{ netid/);
   assert.match(passportSource, /passport\.serializeUser\(function \(user: any, done\) \{/);
-  assert.match(passportSource, /const safeNetId = normalizeAuthNetId\(user\?\.netId\)/);
+  assert.match(passportSource, /const principal = publicAuthSessionUser\(user\)/);
+  assert.match(passportSource, /const netId = normalizeAuthNetId\(source\.netId\)/);
   assert.match(passportSource, /done\(new Error\('Invalid authentication principal'\)\)/);
-  assert.match(passportSource, /done\(null, safeNetId\)/);
-  assert.match(passportSource, /const safeNetId = normalizeAuthNetId\(netId\)/);
+  assert.match(passportSource, /done\(null, principal\)/);
+  assert.match(passportSource, /function coerceStoredSessionPrincipal\(stored: unknown\)/);
+  assert.match(passportSource, /const netId = normalizeAuthNetId\(stored\)/);
+  assert.match(
+    passportSource,
+    /const account = await withMongoReconnect\(\(\) => validateAccount\(principal\.netId\)\)/,
+  );
+  assert.match(passportSource, /if \(!account \|\| account\.archived\)/);
   assert.match(passportSource, /done\(null, null\)/);
   assert.doesNotMatch(passportSource, /done\(null, user\.netId\)/);
   assert.doesNotMatch(
