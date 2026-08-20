@@ -36,7 +36,7 @@ export interface ResearchIdentityInput {
 }
 
 export type ResearchHomeContextState = 'complete' | 'sparse';
-export type ResearchHomeEvidenceState = 'limited' | 'review' | 'publications';
+export type ResearchHomeEvidenceState = 'review' | 'publications';
 
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
@@ -56,11 +56,7 @@ export interface ResearchHomeContextSummary {
 }
 
 export interface ResearchHomeEvidenceStatus {
-  label:
-    | 'Evidence limited'
-    | 'Needs review'
-    | 'Publications found'
-    | 'Recent research activity';
+  label: 'Needs review' | 'Publications found' | 'Recent research activity';
   state: ResearchHomeEvidenceState;
 }
 
@@ -90,7 +86,7 @@ export interface ResearchCluster {
   contextState?: ResearchHomeContextState;
   contextLabel?: string;
   contextLine?: string;
-  evidenceStatus: ResearchHomeEvidenceStatus;
+  evidenceStatus?: ResearchHomeEvidenceStatus;
   matchReason: string;
   entityCount: number;
   pathwayCount: number;
@@ -471,21 +467,14 @@ export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined)
 
 export const buildResearchHomeEvidenceStatus = (
   entity: ResearchEntity | undefined,
-  pathways: PathwaySearchHit[],
-): ResearchHomeEvidenceStatus => {
+): ResearchHomeEvidenceStatus | undefined => {
   if (
     entity?.accessSummary?.status === 'not-currently-available' ||
     entity?.accessSummary?.signalTypes?.includes('NOT_CURRENTLY_AVAILABLE')
   ) {
     return { label: 'Needs review', state: 'review' };
   }
-  if (
-    (entity?.accessSummary?.evidence || []).length > 0 ||
-    pathways.some((pathway) => (pathway.sourceUrls || []).length > 0 || (pathway.evidence || []).length > 0)
-  ) {
-    return { label: 'Evidence limited', state: 'limited' };
-  }
-  return { label: 'Evidence limited', state: 'limited' };
+  return undefined;
 };
 
 const normalizeDisplayKeyPart = (value?: string): string =>
@@ -586,7 +575,7 @@ const buildProfileDiscoveryClusters = (
     const conceptTags = meaningfulMetadata(entity.searchMatch?.concepts || []);
     const pathways = pathwaysForEntities(options.pathways || [], [entity]);
     const activePostedOpportunity = pathways.find(hasCanonicalPostedOpportunity)?.activePostedOpportunity;
-    const evidenceStatus = buildResearchHomeEvidenceStatus(entity, pathways);
+    const evidenceStatus = buildResearchHomeEvidenceStatus(entity);
 
     return {
       id: entity.slug || entity.id || entity._id || slugify(displayName),

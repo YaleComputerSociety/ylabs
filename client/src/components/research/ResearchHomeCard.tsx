@@ -151,10 +151,8 @@ const ResearchHomeCard = ({
   const primaryProfileUrl = primaryLinkedEntity ? `/research/${safeRouteSegment(primaryLinkedEntity.slug)}` : '';
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
-  const meaningfulEvidenceStatus =
-    home.evidenceStatus && home.evidenceStatus.state !== 'limited' ? home.evidenceStatus : undefined;
   const showEvidenceFooter =
-    !isCompact && (Boolean(primaryEvidenceUrl) || Boolean(meaningfulEvidenceStatus));
+    !isCompact && (Boolean(primaryEvidenceUrl) || Boolean(home.evidenceStatus));
   const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
   const leadName = leadEntity?.contactName?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
@@ -287,7 +285,7 @@ const ResearchHomeCard = ({
               {home.contextLabel}
             </span>
           )}
-          {home.evidenceStatus && home.evidenceStatus.state !== 'limited' && (
+          {home.evidenceStatus && (
             <span
               className={`yr-pill min-h-0 rounded px-2 py-0.5 ${evidenceStatusClass(home.evidenceStatus.state)}`}
             >
@@ -386,7 +384,7 @@ const ResearchHomeCard = ({
             Evidence
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-            {meaningfulEvidenceStatus && <span>{meaningfulEvidenceStatus.label}</span>}
+            {home.evidenceStatus && <span>{home.evidenceStatus.label}</span>}
             {primaryEvidenceUrl && (
               <a
                 href={primaryEvidenceUrl}

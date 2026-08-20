@@ -21,10 +21,6 @@ const researchHome = (overrides: Partial<ResearchCluster> = {}): ResearchCluster
   contextState: 'complete',
   contextLabel: 'Research description',
   contextLine: 'Neuroscience · School of Medicine',
-  evidenceStatus: {
-    label: 'Evidence limited',
-    state: 'limited',
-  },
   matchReason: 'Matched systems neuroscience.',
   entityCount: 1,
   pathwayCount: 0,
@@ -337,10 +333,6 @@ describe('ResearchHomeCard', () => {
               'Review evidence and official source links for research homes connected to Computer Science.',
             contextState: 'sparse',
             contextLabel: 'Summary limited',
-            evidenceStatus: {
-              label: 'Evidence limited',
-              state: 'limited',
-            },
             metadataTags: ['Computer Science'],
             entities: [],
           })}
@@ -353,6 +345,20 @@ describe('ResearchHomeCard', () => {
     expect(container.textContent).not.toContain('Source-backed profile context');
     expect(container.textContent).toContain('Review evidence and official source links');
     expect(container.textContent).toContain('Computer Science');
+  });
+
+  it('renders a needs-review evidence status when the home is flagged', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            evidenceStatus: { label: 'Needs review', state: 'review' },
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain('Needs review');
   });
 
   it('searches a browse-only area with a student-facing CTA', () => {
