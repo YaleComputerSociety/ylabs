@@ -3338,7 +3338,7 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /const safeResearchEntityId = normalizeListingObjectId\(researchEntityId\)/);
   assert.match(
     source,
-    /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id, owner\?\.facultyMemberId\)/,
+    /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id\)/,
   );
   assert.match(source, /'target\.id': new mongoose\.Types\.ObjectId\(safeResearchEntityId\)/);
   assert.match(source, /state: \{ \$ne: 'HISTORICAL' \}/);
