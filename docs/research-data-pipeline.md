@@ -41,7 +41,10 @@ For YSM lab entities, `ysm-atoz-index` uses the current official index at `https
 
 Research-entity `sourceUrls` are durable home/profile/grant evidence pointers, not a dump of every supporting page. Materialization keeps raw observation evidence intact, but filters article, news, event, blog, podcast, video, and webinar paths out of materialized `sourceUrls` so content pages cannot make a valid lab or center look like a leaked article record.
 
-Research detail membership resolution must not display a `User` whose linked `facultyMemberId` conflicts with the membership row's `facultyMemberId`. In that case, the public detail payload falls back to the scraper-backed `FacultyMember` identity rather than showing the wrong Yale account. The student visibility gate treats `pi_identity_conflict` as a blocking reason routed to the PI identity repair lane, while a membership row with a trusted `facultyMemberId` but no `userId` still counts as attached lead evidence.
+Research detail membership and lead identity resolve from the canonical roster (`RoleAssignment` joined to `Researcher`), so the earlier `User` versus `FacultyMember` identity divergence no longer applies.
+Each roster member is a single canonical `Researcher`, and the public detail payload shows that identity rather than falling back to a separate scraper-backed `FacultyMember` record.
+Because canonical identity is unified there is no `facultyMemberId` conflict to detect, so the student visibility gate no longer raises `pi_identity_conflict` from roster leads and strong-lead detection relies on the roster member's presence and name.
+A lead `RoleAssignment` that resolves to a `Researcher` counts as attached lead evidence.
 
 The `official-research-home-roster` source acquires non-lead current membership only from an allowlisted official page and explicitly configured current section.
 Each materialized row requires a source-specific official profile identity, an honestly mapped role, a recent page publish date, an observation date, and a bounded refresh-expiry date.
