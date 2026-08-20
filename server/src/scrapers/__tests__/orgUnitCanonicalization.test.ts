@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyResearchEntityOrgUnitCanonicalization,
+  buildDepartmentToSchoolMap,
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
   orgUnitMatchKey,
@@ -111,5 +112,31 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     const result = await applyResearchEntityOrgUnitCanonicalization(set);
     expect(set).toEqual({ name: 'Some Lab' });
     expect(result.unmatchedDepartments).toEqual([]);
+  });
+
+  it('derives multi-school schools[] from the merged school + department parents', async () => {
+    const deptToSchool = new Map([
+      ['Neuroscience', 'Yale School of Medicine'],
+      ['Molecular Biophysics and Biochemistry', 'Faculty of Arts and Sciences'],
+    ]);
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index, deptToSchool));
+    const set: Record<string, unknown> = { departments: ['NSCI', 'MB&B'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'School of Medicine' });
+    expect(set.departments).toEqual(['Neuroscience', 'Molecular Biophysics and Biochemistry']);
+    expect(set.schools).toEqual(['Yale School of Medicine', 'Faculty of Arts and Sciences']);
+  });
+});
+
+describe('buildDepartmentToSchoolMap', () => {
+  it('walks parentOrgUnitId up to the nearest school, including nested sections', () => {
+    const map = buildDepartmentToSchoolMap([
+      { _id: 's', slug: 'school-of-medicine', name: 'School of Medicine', kind: 'SCHOOL' },
+      { _id: 'd', slug: 'internal-medicine', name: 'Internal Medicine', kind: 'DEPARTMENT', parentOrgUnitId: 's' },
+      { _id: 'sec', slug: 'cardiovascular-medicine', name: 'Cardiovascular Medicine', kind: 'DEPARTMENT', parentOrgUnitId: 'd' },
+      { _id: 'orphan', slug: 'mystery', name: 'Mystery', kind: 'DEPARTMENT' },
+    ]);
+    expect(map.get('Internal Medicine')).toBe('School of Medicine');
+    expect(map.get('Cardiovascular Medicine')).toBe('School of Medicine');
+    expect(map.has('Mystery')).toBe(false);
   });
 });

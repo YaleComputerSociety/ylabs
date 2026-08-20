@@ -30,6 +30,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'archived',
     'kind',
     'school',
+    'schools',
     'departments',
     'researchAreas',
     'openness',

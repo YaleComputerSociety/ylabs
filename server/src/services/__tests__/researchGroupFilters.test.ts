@@ -20,7 +20,7 @@ describe('buildResearchGroupFilterString', () => {
       departments: ['Genetics', 'Neurology'],
     });
     expect(filter).toBe(
-      'archived = false AND (school = "School of Medicine") AND (departments = "Genetics" OR departments = "Neurology")',
+      'archived = false AND (schools = "School of Medicine") AND (departments = "Genetics" OR departments = "Neurology")',
     );
   });
 
@@ -81,7 +81,7 @@ describe('buildResearchGroupFilterString', () => {
       [
         'archived = false',
         '(kind = "lab")',
-        '(school = "School of Medicine")',
+        '(schools = "School of Medicine")',
         '(departments = "Genetics")',
         '(researchAreas = "Genomics")',
         '(openness = "open" OR openness = "inquire")',

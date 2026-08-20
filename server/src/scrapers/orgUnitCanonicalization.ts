@@ -10,6 +10,8 @@ export interface OrgUnitCanonical {
 export interface OrgUnitCanonicalizer {
   canonicalizeSchool(raw: unknown): { value: string; matched: boolean };
   canonicalizeDepartments(raw: unknown): { values: string[]; unmatched: string[] };
+  /** Canonical school name a canonical department belongs to, or null. */
+  schoolForDepartment(canonicalDepartmentName: string): string | null;
 }
 
 interface OrgUnitResolverRow {
@@ -87,8 +89,12 @@ function toRawList(raw: unknown): string[] {
  */
 export function createOrgUnitCanonicalizer(
   index: Map<string, OrgUnitCanonical>,
+  departmentToSchool: Map<string, string> = new Map(),
 ): OrgUnitCanonicalizer {
   return {
+    schoolForDepartment(canonicalDepartmentName) {
+      return departmentToSchool.get(canonicalDepartmentName) ?? null;
+    },
     canonicalizeSchool(raw) {
       if (typeof raw !== 'string') return { value: '', matched: false };
       const trimmed = raw.trim();
@@ -126,19 +132,54 @@ export function setOrgUnitCanonicalizerForTesting(canonicalizer: OrgUnitCanonica
   cachedCanonicalizer = canonicalizer;
 }
 
+interface OrgUnitParentRow extends OrgUnitResolverRow {
+  _id: unknown;
+  parentOrgUnitId?: unknown;
+}
+
+/**
+ * Maps each department's canonical name to its school by walking
+ * parentOrgUnitId up to the nearest SCHOOL or DIVISION.
+ */
+export function buildDepartmentToSchoolMap(rows: OrgUnitParentRow[]): Map<string, string> {
+  const byId = new Map(rows.map((row) => [String(row._id), row]));
+  const schoolNameFor = (row: OrgUnitParentRow): string | null => {
+    const seen = new Set<string>();
+    let current: OrgUnitParentRow | undefined = row;
+    while (current) {
+      if (current.kind === 'SCHOOL' || current.kind === 'DIVISION') return current.name;
+      const parentId = current.parentOrgUnitId ? String(current.parentOrgUnitId) : '';
+      if (!parentId || seen.has(parentId)) break;
+      seen.add(parentId);
+      current = byId.get(parentId);
+    }
+    return null;
+  };
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row.kind !== 'DEPARTMENT' && row.kind !== 'OFFICE') continue;
+    const school = schoolNameFor(row);
+    if (school) map.set(row.name, school);
+  }
+  return map;
+}
+
 async function buildCanonicalizerFromDatabase(): Promise<OrgUnitCanonicalizer> {
   const rows = await OrgUnit.find({
     archived: { $ne: true },
     status: { $ne: 'INACTIVE' },
   })
-    .select({ slug: 1, name: 1, kind: 1, aliases: 1 })
-    .lean<OrgUnitResolverRow[]>();
+    .select({ slug: 1, name: 1, kind: 1, aliases: 1, parentOrgUnitId: 1 })
+    .lean<OrgUnitParentRow[]>();
   const schoolsFirst = [...rows].sort((left, right) => {
     const leftIsSchool = left.kind === 'SCHOOL' || left.kind === 'DIVISION' ? 0 : 1;
     const rightIsSchool = right.kind === 'SCHOOL' || right.kind === 'DIVISION' ? 0 : 1;
     return leftIsSchool - rightIsSchool;
   });
-  return createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(schoolsFirst));
+  return createOrgUnitCanonicalizer(
+    buildOrgUnitResolverIndex(schoolsFirst),
+    buildDepartmentToSchoolMap(rows),
+  );
 }
 
 export async function getOrgUnitCanonicalizer(): Promise<OrgUnitCanonicalizer> {
@@ -148,15 +189,24 @@ export async function getOrgUnitCanonicalizer(): Promise<OrgUnitCanonicalizer> {
   return cachedCanonicalizer;
 }
 
+const asStringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
 /**
  * Canonicalizes a research-entity materialization `$set` in place: the scalar
  * `school` and the `departments[]` strings are rewritten to their canonical
- * OrgUnit names when they resolve, and left as raw values otherwise. Never
- * throws - a canonicalization failure or an unseeded `org_units` collection
- * leaves the raw scraped values untouched so materialization keeps working.
+ * OrgUnit names when they resolve, and left as raw values otherwise. It also
+ * derives the multi-valued `schools[]` (the entity's own school plus each
+ * department's parent school) so a cross-school lab is filterable under every
+ * school it belongs to. `existing` supplies the entity's current school and
+ * departments so `schools[]` reflects the merged record when a scrape updates
+ * only one of them. Never throws - a canonicalization failure or an unseeded
+ * `org_units` collection leaves the raw scraped values untouched so
+ * materialization keeps working.
  */
 export async function applyResearchEntityOrgUnitCanonicalization(
   set: Record<string, unknown>,
+  existing?: Record<string, unknown> | null,
 ): Promise<{ unmatchedSchool?: string; unmatchedDepartments: string[] }> {
   const result: { unmatchedSchool?: string; unmatchedDepartments: string[] } = {
     unmatchedDepartments: [],
@@ -177,6 +227,22 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       set.departments = canonical.values;
       result.unmatchedDepartments = canonical.unmatched;
     }
+
+    const effectiveSchool = hasSchool ? set.school : existing?.school;
+    const effectiveDepartments = hasDepartments
+      ? asStringList(set.departments)
+      : asStringList(existing?.departments);
+    const schools: string[] = [];
+    const addSchool = (value: unknown): void => {
+      if (typeof value === 'string' && value.trim() && !schools.includes(value)) schools.push(value);
+    };
+    if (typeof effectiveSchool === 'string' && effectiveSchool.trim()) {
+      addSchool(canonicalizer.canonicalizeSchool(effectiveSchool).value);
+    }
+    for (const department of effectiveDepartments) {
+      addSchool(canonicalizer.schoolForDepartment(department));
+    }
+    if (schools.length > 0) set.schools = schools;
   } catch {
     return result;
   }

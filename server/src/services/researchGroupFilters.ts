@@ -83,7 +83,9 @@ export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput
   const kindClause = filters.kind ? orEqualsClause('kind', filters.kind) : null;
   if (kindClause) parts.push(kindClause);
 
-  const schoolClause = filters.school ? orEqualsClause('school', filters.school) : null;
+  // Filter on the multi-valued `schools` field so a cross-school lab matches
+  // under every school it belongs to. The request field stays `school`.
+  const schoolClause = filters.school ? orEqualsClause('schools', filters.school) : null;
   if (schoolClause) parts.push(schoolClause);
 
   const departmentsClause = filters.departments

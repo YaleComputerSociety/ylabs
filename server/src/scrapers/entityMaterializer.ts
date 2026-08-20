@@ -2404,7 +2404,7 @@ export async function materializeEntity(
     }
   }
   if (isResearchEntityObservationType(entityType)) {
-    await applyResearchEntityOrgUnitCanonicalization(set);
+    await applyResearchEntityOrgUnitCanonicalization(set, entityDoc);
   }
   if (entityType === 'paper') {
     const paperObs = materializationObs.map((o: any) => ({
