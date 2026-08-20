@@ -1,24 +1,27 @@
 /**
- * Grounded research-description rewrite for description-blocked research homes.
+ * Research-entity description quality backfill (issue #415).
  *
- * Many held faculty/lab entities carry an official bio that is CV/credential
- * prose ("Dr. X received an MD from ...") — correctly classified as
- * `profile_fallback`/`thin`, not a research description, so they stay held.
- * This rewrites the research content ALREADY PRESENT in that official source
- * text into a concise third-person research description using the LLM.
+ * Default lane (deterministic short-description backfill): scans active
+ * research entities, and for every entity whose short description is empty,
+ * equal to the full description, or otherwise not a genuine short summary,
+ * derives a distinct short deterministically from the full description via the
+ * shared `deriveShortDescriptionFromFullDescription` core (the same derivation
+ * the materializer uses, reused here without changing it). It reports the
+ * before/after quality scorecard, duplicate/templated full-description groups,
+ * and thin/empty full descriptions that need re-scraped source content as a
+ * follow-up rather than fabricating them. Apply requires
+ * --confirm-short-descriptions and is blocked against production unless
+ * CONFIRM_PROD_SCRAPE=true.
  *
- * Quality safety (does NOT loosen the gate, improves the data):
- *  - The LLM is instructed to use ONLY facts in the source and to return empty
- *    when the source has no research content (no invention).
- *  - The output is accepted ONLY if (a) it passes the existing
- *    `assessResearchEntityDescriptionQuality` bar AND (b) it is GROUNDED — a
- *    minimum fraction of its content words appear in the source text
- *    (anti-hallucination). Ungrounded or empty rewrites are skipped.
- *  - Accepted text is emitted as durable observations (same path the
- *    description scraper uses) so the materializer resolves them normally.
- *
- * Dry-run-first; apply requires --confirm-research-descriptions + explicit
- * --limit; blocked against production unless CONFIRM_PROD_SCRAPE=true.
+ * LLM rewrite lane (--llm-rewrite): grounded rewrite of description-blocked
+ * homes whose stored bio is CV/credential prose. The LLM is instructed to use
+ * ONLY facts in the source and to return empty when the source has no research
+ * content (no invention). Output is accepted only if it passes the existing
+ * `assessResearchEntityDescriptionQuality` bar AND is grounded (a minimum
+ * fraction of its content words appear in the source text). Accepted text is
+ * emitted as durable observations so the materializer resolves them normally.
+ * Apply requires --confirm-research-descriptions + explicit --limit; blocked
+ * against production unless CONFIRM_PROD_SCRAPE=true.
  */
 import axios from 'axios';
 import dotenv from 'dotenv';
@@ -35,6 +38,15 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import type { ObservationInput } from '../scrapers/types';
+import {
+  assessEntityDescription,
+  detectDuplicateFullGroups,
+  summarizeDescriptionBackfill,
+  type DescriptionBackfillSummary,
+  type DescriptionEntityInput,
+  type DuplicateFullReport,
+  type EntityDescriptionAssessment,
+} from './backfillDescriptionQualityCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,11 +91,15 @@ const STOPWORDS = new Set([
   'between',
 ]);
 
+const SHORT_BACKFILL_BATCH_SIZE = 200;
+
 export interface ResearchDescriptionBackfillOptions {
   dryRun: boolean;
   limit: number;
   explicitLimit: boolean;
   confirm: boolean;
+  llmRewrite: boolean;
+  confirmShortDescriptions: boolean;
   output?: string;
 }
 
@@ -93,12 +109,16 @@ export function parseResearchDescriptionBackfillArgs(argv: string[]): ResearchDe
     limit: 0,
     explicitLimit: false,
     confirm: false,
+    llmRewrite: false,
+    confirmShortDescriptions: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
+    else if (arg === '--llm-rewrite') options.llmRewrite = true;
     else if (arg === '--confirm-research-descriptions') options.confirm = true;
+    else if (arg === '--confirm-short-descriptions') options.confirmShortDescriptions = true;
     else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
@@ -358,18 +378,131 @@ export async function runResearchDescriptionBackfill(options: {
   return result;
 }
 
-async function main(): Promise<void> {
-  const options = parseResearchDescriptionBackfillArgs(process.argv.slice(2));
+const SAMPLE_LIMIT = 20;
+const SAMPLE_TEXT_CHARS = 200;
+
+const clip = (value: string): string =>
+  value.length <= SAMPLE_TEXT_CHARS ? value : `${value.slice(0, SAMPLE_TEXT_CHARS - 1)}…`;
+
+export interface ShortDescriptionBackfillResult {
+  mode: 'dry-run' | 'apply';
+  scanned: number;
+  updated: number;
+  summary: DescriptionBackfillSummary;
+  duplicateFulls: DuplicateFullReport;
+  caveatSamples: Array<{ slug?: string; after: string }>;
+  artifactSamples: Array<{ slug?: string; after: string }>;
+  derivedShortSamples: Array<{ slug?: string; shortDescription: string }>;
+  templatedStubSamples: Array<{ slug?: string }>;
+  offTopicSamples: Array<{ slug?: string }>;
+}
+
+export async function runShortDescriptionBackfill(options: {
+  dryRun: boolean;
+  limit?: number;
+  batchSize?: number;
+}): Promise<ShortDescriptionBackfillResult> {
+  const query = ResearchEntity.find(
+    { archived: { $ne: true } },
+    { _id: 1, slug: 1, shortDescription: 1, fullDescription: 1 },
+  ).sort({ _id: 1 });
+  if (options.limit) query.limit(options.limit);
+  const docs = (await query.lean()) as Array<{
+    _id: unknown;
+    slug?: string;
+    shortDescription?: unknown;
+    fullDescription?: unknown;
+  }>;
+
+  const entities: DescriptionEntityInput[] = docs.map((doc) => ({
+    id: String(doc._id),
+    slug: doc.slug,
+    shortDescription: doc.shortDescription,
+    fullDescription: doc.fullDescription,
+  }));
+
+  const assessments: EntityDescriptionAssessment[] = entities.map(assessEntityDescription);
+  const summary = summarizeDescriptionBackfill(entities, assessments);
+  const duplicateFulls = detectDuplicateFullGroups(entities);
+  const changed = assessments.filter(
+    (assessment) => assessment.proposedFull !== null || assessment.proposedShort !== null,
+  );
+
+  if (!options.dryRun && changed.length > 0) {
+    const batchSize = options.batchSize ?? SHORT_BACKFILL_BATCH_SIZE;
+    for (let i = 0; i < changed.length; i += batchSize) {
+      const batch = changed.slice(i, i + batchSize);
+      await ResearchEntity.bulkWrite(
+        batch.map((assessment) => {
+          const set: Record<string, string> = {};
+          if (assessment.proposedFull !== null) set.fullDescription = assessment.proposedFull;
+          if (assessment.proposedShort !== null) set.shortDescription = assessment.proposedShort;
+          return { updateOne: { filter: { _id: assessment.id }, update: { $set: set } } };
+        }),
+      );
+    }
+  }
+
+  return {
+    mode: options.dryRun ? 'dry-run' : 'apply',
+    scanned: entities.length,
+    updated: options.dryRun ? 0 : changed.length,
+    summary,
+    duplicateFulls,
+    caveatSamples: assessments
+      .filter((assessment) => assessment.removedCaveat && assessment.proposedFull !== null)
+      .slice(0, SAMPLE_LIMIT)
+      .map((assessment) => ({ slug: assessment.slug, after: clip(assessment.proposedFull ?? '') })),
+    artifactSamples: assessments
+      .filter((assessment) => assessment.removedArtifacts)
+      .slice(0, SAMPLE_LIMIT)
+      .map((assessment) => ({
+        slug: assessment.slug,
+        after: clip(assessment.proposedFull ?? assessment.proposedShort ?? ''),
+      })),
+    derivedShortSamples: assessments
+      .filter((assessment) => assessment.shortAction === 'set-short-derived')
+      .slice(0, SAMPLE_LIMIT)
+      .map((assessment) => ({
+        slug: assessment.slug,
+        shortDescription: clip(assessment.proposedShort ?? ''),
+      })),
+    templatedStubSamples: assessments
+      .filter((assessment) => assessment.fullClass === 'templated-stub')
+      .slice(0, SAMPLE_LIMIT)
+      .map((assessment) => ({ slug: assessment.slug })),
+    offTopicSamples: assessments
+      .filter((assessment) => assessment.fullClass === 'off-topic')
+      .slice(0, SAMPLE_LIMIT)
+      .map((assessment) => ({ slug: assessment.slug })),
+  };
+}
+
+function writeBackfillReport(output: string | undefined, payload: unknown, label: string): void {
+  if (!output) return;
+  const safeOutput = resolveSafeJsonReportOutputPath(output);
+  fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
+  fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
+  console.log(`Saved ${label} report to ${safeOutput}`);
+}
+
+async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
   const apply = !options.dryRun;
-  if (apply && !options.confirm) throw new Error('Apply mode requires --confirm-research-descriptions.');
-  if (apply && !options.explicitLimit) throw new Error('Apply mode requires an explicit --limit.');
+  if (apply && !options.confirm) {
+    throw new Error('LLM rewrite apply requires --confirm-research-descriptions.');
+  }
+  if (apply && !options.explicitLimit) {
+    throw new Error('LLM rewrite apply requires an explicit --limit.');
+  }
 
   const guard = assertScriptApplyAllowed({
     apply,
     scriptName: 'research-description rewrite backfill',
     mongoUrl: process.env.MONGODBURL,
   });
-  console.log(`Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; mode: ${apply ? 'apply' : 'dry-run'}`);
+  console.log(
+    `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; lane: llm-rewrite; mode: ${apply ? 'apply' : 'dry-run'}`,
+  );
 
   await initializeConnections();
   try {
@@ -377,23 +510,88 @@ async function main(): Promise<void> {
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
     });
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      environment: guard.environment,
-      db: guard.dbLabel,
-      options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
-      result,
-    };
-    if (options.output) {
-      const safeOutput = resolveSafeJsonReportOutputPath(options.output);
-      fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
-      fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
-      console.log(`Saved research-description backfill report to ${safeOutput}`);
-    }
+    writeBackfillReport(
+      options.output,
+      {
+        generatedAt: new Date().toISOString(),
+        environment: guard.environment,
+        db: guard.dbLabel,
+        lane: 'llm-rewrite',
+        options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+        result,
+      },
+      'research-description rewrite backfill',
+    );
     console.log(JSON.stringify(result, null, 2));
   } finally {
     await mongoose.disconnect();
   }
+}
+
+async function runShortBackfillLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
+  const apply = !options.dryRun;
+  if (apply && !options.confirmShortDescriptions) {
+    throw new Error('Short-description apply requires --confirm-short-descriptions.');
+  }
+
+  const guard = assertScriptApplyAllowed({
+    apply,
+    scriptName: 'short-description backfill',
+    mongoUrl: process.env.MONGODBURL,
+  });
+  console.log(
+    `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; lane: short-backfill; mode: ${apply ? 'apply' : 'dry-run'}`,
+  );
+
+  await initializeConnections();
+  try {
+    const result = await runShortDescriptionBackfill({
+      dryRun: options.dryRun,
+      limit: options.explicitLimit ? options.limit : undefined,
+    });
+    writeBackfillReport(
+      options.output,
+      {
+        generatedAt: new Date().toISOString(),
+        environment: guard.environment,
+        db: guard.dbLabel,
+        lane: 'short-backfill',
+        options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+        result,
+      },
+      'short-description backfill',
+    );
+    console.log(
+      JSON.stringify(
+        {
+          mode: result.mode,
+          scanned: result.scanned,
+          updated: result.updated,
+          summary: result.summary,
+          duplicateFulls: {
+            groupCount: result.duplicateFulls.groupCount,
+            documentCount: result.duplicateFulls.documentCount,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    if (apply && result.updated > 0) {
+      console.log('Rebuild the Meilisearch research index so search picks up the cleaned descriptions.');
+    }
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+async function main(): Promise<void> {
+  const options = parseResearchDescriptionBackfillArgs(process.argv.slice(2));
+  if (options.llmRewrite) {
+    await runLlmRewriteLane(options);
+    return;
+  }
+  await runShortBackfillLane(options);
 }
 
 const invokedDirectly =
