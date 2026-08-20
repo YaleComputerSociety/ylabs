@@ -1,4 +1,8 @@
 import { publicStudentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
+import {
+  evaluateRosterLeadResolution,
+  type RosterLeadResolutionResult,
+} from '../services/rosterLeadResolutionGuard';
 
 export interface StudentVisibilityPlannedUpdate {
   id: string;
@@ -7,6 +11,7 @@ export interface StudentVisibilityPlannedUpdate {
   tier: StudentVisibilityTier;
   computedTier: StudentVisibilityTier;
   reasons: string[];
+  hasResolvedLead?: boolean;
 }
 
 export interface StudentVisibilityBackfillCollectionReport {
@@ -23,6 +28,7 @@ export interface StudentVisibilityBackfillCollectionReport {
     recommendation: 'apply' | 'do_not_apply' | 'repair_source_materialization_first';
     blockers: string[];
   };
+  leadResolution?: RosterLeadResolutionResult;
   samplesByReason: Array<{
     reason: string;
     count: number;
@@ -105,6 +111,10 @@ export function buildCollectionReport(
     reasonSampleSize?: number;
     minimumPublicCount?: number;
     maxPublicCollapseRatio?: number;
+    leadResolutionGuard?: {
+      maxZeroLeadRatio?: number;
+      minLeadRequiringEntities?: number;
+    };
   },
 ): StudentVisibilityBackfillCollectionReport {
   const reasonSampleSize = normalizeReasonSampleSize(options.reasonSampleSize);
@@ -121,6 +131,7 @@ export function buildCollectionReport(
   let changedCount = 0;
   let publicCount = 0;
   let currentPublicCount = 0;
+  let resolvedLeadEntityCount = 0;
 
   for (const update of updates) {
     incrementCount(counts, update.tier);
@@ -129,6 +140,7 @@ export function buildCollectionReport(
     if (update.currentTier !== update.tier) changedCount += 1;
     if (PUBLIC_TIERS.has(update.tier)) publicCount += 1;
     if (PUBLIC_TIERS.has(update.currentTier || '')) currentPublicCount += 1;
+    if (update.hasResolvedLead) resolvedLeadEntityCount += 1;
 
     for (const reason of update.reasons) {
       incrementCount(reasonCounts, reason);
@@ -158,6 +170,19 @@ export function buildCollectionReport(
     );
   }
 
+  let leadResolution: RosterLeadResolutionResult | undefined;
+  if (options.leadResolutionGuard) {
+    leadResolution = evaluateRosterLeadResolution({
+      resolvedLeadEntityCount,
+      zeroLeadEntityCount: reasonCounts.missing_lead || 0,
+      maxZeroLeadRatio: options.leadResolutionGuard.maxZeroLeadRatio,
+      minLeadRequiringEntities: options.leadResolutionGuard.minLeadRequiringEntities,
+    });
+    if (leadResolution.blocker) {
+      blockers.push(`${options.collectionName} ${leadResolution.blocker}`);
+    }
+  }
+
   const safeToApply = blockers.length === 0;
   const recommendation = safeToApply
     ? 'apply'
@@ -179,6 +204,7 @@ export function buildCollectionReport(
       recommendation,
       blockers,
     },
+    ...(leadResolution ? { leadResolution } : {}),
     samplesByReason: Object.entries(reasonCounts)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([reason, count]) => ({

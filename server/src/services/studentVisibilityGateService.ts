@@ -28,6 +28,10 @@ import {
   type ResearchEntityPiDedupeRow,
 } from '../scripts/researchEntityPiDedupeCore';
 import { nextRepairActionForReasons } from '../scripts/studentVisibilityBackfillReport';
+import {
+  evaluateRosterLeadResolution,
+  type RosterLeadResolutionResult,
+} from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 
@@ -66,6 +70,7 @@ export interface StudentVisibilityGatePlan {
   reasons: string[];
   sourceNames: string[];
   nextRepairAction: string;
+  hasResolvedLead?: boolean;
 }
 
 export interface VisibilityQueueUpsert {
@@ -1025,6 +1030,7 @@ async function planResearchEntityGateUpdates(
       reasons: result.reasons,
       sourceNames: sourceNamesByEntityId.get(recordId) || [],
       nextRepairAction: nextRepairActionForReasons(result.reasons),
+      hasResolvedLead: leadMembers.length > 0,
     };
   });
 }
@@ -1074,6 +1080,23 @@ export async function planStudentVisibilityGate(
   return [...research, ...programs];
 }
 
+export function evaluateStudentVisibilityGateLeadResolution(
+  plans: StudentVisibilityGatePlan[],
+  options: { maxZeroLeadRatio?: number; minLeadRequiringEntities?: number } = {},
+): RosterLeadResolutionResult {
+  const researchPlans = plans.filter((plan) => plan.collection === 'research');
+  const resolvedLeadEntityCount = researchPlans.filter((plan) => plan.hasResolvedLead).length;
+  const zeroLeadEntityCount = researchPlans.filter((plan) =>
+    plan.reasons.includes('missing_lead'),
+  ).length;
+  return evaluateRosterLeadResolution({
+    resolvedLeadEntityCount,
+    zeroLeadEntityCount,
+    maxZeroLeadRatio: options.maxZeroLeadRatio,
+    minLeadRequiringEntities: options.minLeadRequiringEntities,
+  });
+}
+
 export async function runStudentVisibilityGate(
   options: StudentVisibilityGateOptions,
 ): Promise<StudentVisibilityGateReport> {
@@ -1083,7 +1106,13 @@ export async function runStudentVisibilityGate(
     collection: options.collection,
   });
   report.mode = options.mode;
-  if (options.mode === 'apply') await applyStudentVisibilityGatePlans(plans);
+  if (options.mode === 'apply') {
+    const leadResolution = evaluateStudentVisibilityGateLeadResolution(plans);
+    if (!leadResolution.safe) {
+      throw new Error(`Refusing to apply student visibility gate: ${leadResolution.blocker}`);
+    }
+    await applyStudentVisibilityGatePlans(plans);
+  }
   return report;
 }
 
