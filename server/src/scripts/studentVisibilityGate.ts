@@ -161,9 +161,7 @@ async function main() {
   if (!leadResolution.safe) {
     console.warn(`[student-visibility:gate] ${sanitizeLogValue(leadResolution.blocker)}`);
     if (options.mode === 'apply') {
-      throw new Error(
-        `Refusing to apply student visibility gate: ${leadResolution.blocker}`,
-      );
+      throw new Error(`Refusing to apply student visibility gate: ${leadResolution.blocker}`);
     }
   }
 

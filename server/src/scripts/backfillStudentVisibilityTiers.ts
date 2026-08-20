@@ -494,9 +494,7 @@ async function main() {
   ];
 
   if (researchReport.leadResolution && !researchReport.leadResolution.safe) {
-    console.warn(
-      `[student-visibility] ${sanitizeLogValue(researchReport.leadResolution.blocker)}`,
-    );
+    console.warn(`[student-visibility] ${sanitizeLogValue(researchReport.leadResolution.blocker)}`);
   }
 
   if (options.apply && applyBlockers.length > 0) {

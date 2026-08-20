@@ -52,7 +52,9 @@ export function evaluateRosterLeadResolution(
   );
   const zeroLeadEntityCount = normalizeCount(input.zeroLeadEntityCount, 'zeroLeadEntityCount');
   const maxZeroLeadRatio = normalizeMaxZeroLeadRatio(input.maxZeroLeadRatio);
-  const minLeadRequiringEntities = normalizeMinLeadRequiringEntities(input.minLeadRequiringEntities);
+  const minLeadRequiringEntities = normalizeMinLeadRequiringEntities(
+    input.minLeadRequiringEntities,
+  );
 
   const leadRequiringEntityCount = resolvedLeadEntityCount + zeroLeadEntityCount;
   const zeroLeadRatio =
@@ -77,7 +79,9 @@ export function evaluateRosterLeadResolution(
       `roster lead resolution is unhealthy: ${zeroLeadEntityCount} of ${leadRequiringEntityCount} ` +
       `lead-requiring research entities (${percent}%) resolve zero leads, above the ${(
         maxZeroLeadRatio * 100
-      ).toFixed(0)}% ceiling. Refusing to mass-suppress from a likely mid-migration empty-roster state; ` +
+      ).toFixed(
+        0,
+      )}% ceiling. Refusing to mass-suppress from a likely mid-migration empty-roster state; ` +
       `populate canonical Researcher (re-materialize scraped sources or backfill legacy identities) and re-run.`;
   }
 
