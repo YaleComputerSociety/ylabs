@@ -1,18 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  validateUser: vi.fn(),
+  validateAccount: vi.fn(),
   hasActiveAdminGrant: vi.fn(),
 }));
 
-vi.mock('../services/userService', () => ({
-  validateUser: mocks.validateUser,
-  createUser: vi.fn(),
-  updateUser: vi.fn(),
+vi.mock('../services/accountService', () => ({
+  validateAccount: mocks.validateAccount,
+  recordAccountLogin: vi.fn(),
 }));
 
 vi.mock('../services/yaliesService', () => ({
-  fetchYalie: vi.fn(),
+  classifyYalieByNetid: vi.fn(),
 }));
 
 vi.mock('../services/directoryService', () => ({
@@ -35,11 +34,11 @@ vi.mock('../services/adminGrantService', () => ({
 
 import passport from '../passport';
 
-const deserialize = async (netId: string) => {
+const deserialize = async (principal: Record<string, unknown>) => {
   const deserializer = (passport as any)._deserializers[0];
 
   return new Promise<{ error: unknown; user: any }>((resolve) => {
-    deserializer(netId, (error: unknown, user: any) => resolve({ error, user }));
+    deserializer(principal, (error: unknown, user: any) => resolve({ error, user }));
   });
 };
 
@@ -52,17 +51,24 @@ describe('passport admin authority', () => {
   });
 
   it('exposes grant-backed admins to authenticated clients as admin users', async () => {
-    mocks.validateUser.mockResolvedValue({
+    mocks.validateAccount.mockResolvedValue({
+      _id: 'acc-abc123',
       netid: 'abc123',
+      email: 'abc123@yale.edu',
+      status: 'ACTIVE',
+      archived: false,
+    });
+    mocks.hasActiveAdminGrant.mockResolvedValue(true);
+
+    const { error, user } = await deserialize({
+      netId: 'abc123',
       userType: 'student',
       userConfirmed: true,
       profileVerified: false,
     });
-    mocks.hasActiveAdminGrant.mockResolvedValue(true);
-
-    const { error, user } = await deserialize('abc123');
 
     expect(error).toBeNull();
+    expect(mocks.validateAccount).toHaveBeenCalledWith('abc123');
     expect(mocks.hasActiveAdminGrant).toHaveBeenCalledWith('abc123');
     expect(user).toMatchObject({
       netId: 'abc123',
@@ -76,15 +82,21 @@ describe('passport admin authority', () => {
     process.env.NODE_ENV = 'production';
     process.env.SSOBASEURL = 'https://secure.its.yale.edu/cas';
     process.env.SERVER_BASE_URL = 'https://yalelabs.io';
-    mocks.validateUser.mockResolvedValue({
+    mocks.validateAccount.mockResolvedValue({
+      _id: 'acc-legacy1',
       netid: 'legacy1',
+      email: 'legacy1@yale.edu',
+      status: 'ACTIVE',
+      archived: false,
+    });
+    mocks.hasActiveAdminGrant.mockResolvedValue(false);
+
+    const { error, user } = await deserialize({
+      netId: 'legacy1',
       userType: 'admin',
       userConfirmed: true,
       profileVerified: true,
     });
-    mocks.hasActiveAdminGrant.mockResolvedValue(false);
-
-    const { error, user } = await deserialize('legacy1');
 
     expect(error).toBeNull();
     expect(mocks.hasActiveAdminGrant).toHaveBeenCalledWith('legacy1');

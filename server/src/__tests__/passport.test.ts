@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import passport from 'passport';
 
-const userServiceMock = vi.hoisted(() => ({
-  validateUser: vi.fn(),
-  createUser: vi.fn(),
-  updateUser: vi.fn(),
+const accountServiceMock = vi.hoisted(() => ({
+  recordAccountLogin: vi.fn(),
+  validateAccount: vi.fn(),
 }));
-vi.mock('../services/userService', () => userServiceMock);
+vi.mock('../services/accountService', () => accountServiceMock);
 
 import {
   ensureDevLoginUser,
@@ -59,8 +58,13 @@ describe('auth environment guards', () => {
     process.env.NODE_ENV = 'development';
     process.env.SERVER_BASE_URL = 'http://localhost:4000';
 
-    userServiceMock.validateUser.mockResolvedValue(null);
-    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+    accountServiceMock.recordAccountLogin.mockImplementation(async (data: any) => ({
+      _id: 'acc-devunknown',
+      netid: data.netid,
+      email: data.email,
+      status: 'ACTIVE',
+      archived: false,
+    }));
 
     try {
       const result = await ensureDevLoginUser('unknown');
@@ -69,17 +73,12 @@ describe('auth environment guards', () => {
       expect(result.userType).toBe('unknown');
       expect(result.userConfirmed).toBe(false);
       expect(result.profileVerified).toBe(false);
-      expect(userServiceMock.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({
-          netid: 'devunknown',
-          userType: 'unknown',
-          userConfirmed: false,
-          profileVerified: false,
-        }),
-      );
+      expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith({
+        netid: 'devunknown',
+        email: 'devunknown@example.invalid',
+      });
     } finally {
-      userServiceMock.validateUser.mockReset();
-      userServiceMock.createUser.mockReset();
+      accountServiceMock.recordAccountLogin.mockReset();
       if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = originalNodeEnv;
       if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
@@ -93,8 +92,13 @@ describe('auth environment guards', () => {
     process.env.NODE_ENV = 'development';
     process.env.SERVER_BASE_URL = 'http://localhost:4000';
 
-    userServiceMock.validateUser.mockResolvedValue(null);
-    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+    accountServiceMock.recordAccountLogin.mockImplementation(async (data: any) => ({
+      _id: 'acc-test123',
+      netid: data.netid,
+      email: data.email,
+      status: 'ACTIVE',
+      archived: false,
+    }));
 
     try {
       const result = await ensureDevLoginUser('bogus');
@@ -103,9 +107,12 @@ describe('auth environment guards', () => {
       expect(result.userType).toBe('undergraduate');
       expect(result.userConfirmed).toBe(true);
       expect(result.profileVerified).toBe(true);
+      expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith({
+        netid: 'test123',
+        email: 'test123@example.invalid',
+      });
     } finally {
-      userServiceMock.validateUser.mockReset();
-      userServiceMock.createUser.mockReset();
+      accountServiceMock.recordAccountLogin.mockReset();
       if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = originalNodeEnv;
       if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
@@ -174,7 +181,7 @@ describe('auth environment guards', () => {
     });
   });
 
-  it('creates the database user required by account endpoints for a new local bypass identity', async () => {
+  it('records an Account login for a new local bypass identity', async () => {
     const env = {
       NODE_ENV: 'development',
       SERVER_BASE_URL: 'http://localhost:4000',
@@ -182,8 +189,13 @@ describe('auth environment guards', () => {
       LOCAL_AUTH_BYPASS_NETID: 'devadmin',
       LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
     };
-    userServiceMock.validateUser.mockResolvedValue(null);
-    userServiceMock.createUser.mockImplementation(async (data: any) => data);
+    accountServiceMock.recordAccountLogin.mockResolvedValue({
+      _id: 'acc-devadmin',
+      netid: 'devadmin',
+      email: 'devadmin@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
+    });
 
     try {
       await expect(ensureLocalAuthBypassUser(env)).resolves.toEqual({
@@ -192,22 +204,16 @@ describe('auth environment guards', () => {
         userConfirmed: true,
         profileVerified: true,
       });
-      expect(userServiceMock.createUser).toHaveBeenCalledWith({
+      expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith({
         netid: 'devadmin',
         email: 'devadmin@example.invalid',
-        fname: 'Development',
-        lname: 'User',
-        userType: 'admin',
-        userConfirmed: true,
-        profileVerified: true,
       });
     } finally {
-      userServiceMock.validateUser.mockReset();
-      userServiceMock.createUser.mockReset();
+      accountServiceMock.recordAccountLogin.mockReset();
     }
   });
 
-  it('does not overwrite an existing user selected by the local auth bypass', async () => {
+  it('does not clobber an existing Account selected by the local auth bypass', async () => {
     const env = {
       NODE_ENV: 'development',
       SERVER_BASE_URL: 'http://localhost:4000',
@@ -215,9 +221,12 @@ describe('auth environment guards', () => {
       LOCAL_AUTH_BYPASS_NETID: 'existing1',
       LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
     };
-    userServiceMock.validateUser.mockResolvedValue({
+    accountServiceMock.recordAccountLogin.mockResolvedValue({
+      _id: 'acc-existing1',
       netid: 'existing1',
-      userType: 'undergraduate',
+      email: 'existing1@example.invalid',
+      status: 'ACTIVE',
+      archived: false,
     });
 
     try {
@@ -225,10 +234,12 @@ describe('auth environment guards', () => {
         netId: 'existing1',
         userType: 'admin',
       });
-      expect(userServiceMock.createUser).not.toHaveBeenCalled();
-      expect(userServiceMock.updateUser).not.toHaveBeenCalled();
+      expect(accountServiceMock.recordAccountLogin).toHaveBeenCalledWith({
+        netid: 'existing1',
+        email: 'existing1@example.invalid',
+      });
     } finally {
-      userServiceMock.validateUser.mockReset();
+      accountServiceMock.recordAccountLogin.mockReset();
     }
   });
 
@@ -238,14 +249,12 @@ describe('auth environment guards', () => {
       SERVER_BASE_URL: 'http://localhost:4000',
       LOCAL_AUTH_BYPASS: 'true',
     };
-    userServiceMock.validateUser.mockResolvedValue(null);
-    userServiceMock.createUser.mockRejectedValue(new Error('database unavailable'));
+    accountServiceMock.recordAccountLogin.mockRejectedValue(new Error('database unavailable'));
 
     try {
       await expect(ensureLocalAuthBypassUser(env)).rejects.toThrow('database unavailable');
     } finally {
-      userServiceMock.validateUser.mockReset();
-      userServiceMock.createUser.mockReset();
+      accountServiceMock.recordAccountLogin.mockReset();
     }
   });
 
@@ -451,11 +460,20 @@ describe('auth environment guards', () => {
 
     await expect(
       new Promise<{ error: unknown; principal: unknown }>((resolve) => {
-        serializer({ netId: ' AbC123 ' }, (error: unknown, principal: unknown) =>
-          resolve({ error, principal }),
+        serializer(
+          { netId: ' AbC123 ', userType: 'graduate', userConfirmed: true, profileVerified: false },
+          (error: unknown, principal: unknown) => resolve({ error, principal }),
         );
       }),
-    ).resolves.toEqual({ error: null, principal: 'AbC123' });
+    ).resolves.toEqual({
+      error: null,
+      principal: {
+        netId: 'AbC123',
+        userType: 'graduate',
+        userConfirmed: true,
+        profileVerified: false,
+      },
+    });
 
     const malformed = await new Promise<{ error: unknown; principal: unknown }>((resolve) => {
       serializer({ netId: { toString: () => 'abc123' } }, (error: unknown, principal: unknown) =>

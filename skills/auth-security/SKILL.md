@@ -11,19 +11,20 @@ Prefer source verification before editing `passport.ts`, `app.ts`, security midd
 ## Authentication flow
 
 ```
-User -> Yale CAS SSO -> passport.ts findOrCreateUser
-     -> Check DB, refresh if stale over 30 days
-     -> Yalies API for student/grad detection
-     -> Yale Directory for faculty detection
-     -> Fallback: fname "NA", userType "unknown"
-     -> Create/update User
+User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
+     -> Yalies API for undergrad/grad classification
+     -> Yale Directory for faculty classification
+     -> Fallback: userType "unknown", unconfirmed
+     -> accountService.recordAccountLogin: resolve-or-create Account (netid/email), stamp lastLoginAt
      -> cookie-session for 30 days, httpOnly, secure in prod, sameSite lax
 ```
 
-The find-or-create cascade runs only at login time.
-Per-request session restore in `deserializeUser` is a plain `validateUser` read plus the admin-grant check.
+Authentication runs on the canonical `Account` (the private login principal), not the legacy `User`.
+Classification (undergrad/grad/faculty) is derived at login and carried in the signed session; it is not persisted to a `User`.
+The classification cascade runs only at login time.
+Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then re-applies the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
-A session whose user doc no longer exists deserializes to unauthenticated.
+A session whose `Account` no longer exists or is archived deserializes to unauthenticated.
 
 Dev login bypass:
 
@@ -124,7 +125,7 @@ Production responses are generic.
 
 - `server/.env` and `client/.env` contain credentials, API keys, and database URLs.
 Never commit them.
-- `server/src/passport.ts` controls CAS auth and user creation.
+- `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
 - Production scraper writes require explicit guardrails with `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.

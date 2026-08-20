@@ -88,30 +88,31 @@ export async function listYalies(options: ListYaliesOptions = {}): Promise<Yalie
   }
 }
 
-/**
- * Function to fetch a Yalie by NetID.
- * - First, check the database for cached data.
- * - If not found, fetch from Yalies API, validate required fields, store it in the database, and return it.
- */
-export const fetchYalie = async (netid: any) => {
+export interface YaliesIdentity {
+  netid: string;
+  fname: string;
+  lname: string;
+  email: string;
+  college: string;
+  year: string | number;
+  userType: 'undergraduate' | 'graduate';
+  userConfirmed: boolean;
+  major: string[];
+}
+
+export const classifyYalieByNetid = async (netid: any): Promise<YaliesIdentity | null> => {
   try {
     const normalizedNetid = normalizeYaliesNetid(netid);
     if (!normalizedNetid) return null;
 
-    const existingUser = await validateUser(normalizedNetid);
-    if (existingUser) {
-      return existingUser;
-    }
-
-    let yaliesResponse;
     const apiKey = yaliesApiKey();
     if (!apiKey) {
       console.error('YALIES_API_KEY not set');
       return null;
     }
 
+    let yaliesResponse;
     try {
-      console.log('Yalies: making post request');
       yaliesResponse = await axios.post(
         YALIES_API_URL,
         { filters: { netid: [normalizedNetid] } },
@@ -121,11 +122,9 @@ export const fetchYalie = async (netid: any) => {
       console.error('Error fetching from Yalies API:', sanitizeLogValue(yaliesRequestError(error)));
       return null;
     }
-    console.log('Yalies: done making post request');
-    const yaliesData = yaliesResponse.data;
 
+    const yaliesData = yaliesResponse.data;
     if (!yaliesData || yaliesData.length === 0) {
-      console.log('No Yalie found for requested NetID');
       return null;
     }
 
@@ -139,38 +138,42 @@ export const fetchYalie = async (netid: any) => {
       !yalie.year ||
       !yalie.school_code
     ) {
-      console.log('Missing required fields from Yalies API response');
       return null;
     }
 
-    let userType;
-
-    if (yalie.school_code === 'YC') {
-      userType = 'undergraduate';
-    } else {
-      userType = 'graduate';
-    }
-
-    const userData = {
+    return {
       netid: responseNetid,
       fname: yalie.first_name || '',
       lname: yalie.last_name || '',
       email: yalie.email,
       college: yalie.college || '',
       year: yalie.year,
-      userType: userType,
+      userType: yalie.school_code === 'YC' ? 'undergraduate' : 'graduate',
       userConfirmed: true,
       major: (yalie.major && Array.isArray(yalie.major) ? yalie.major : [yalie.major]) || [],
     };
-
-    console.log('Yalies: saving user to mongoDB');
-
-    const user = await createUser(userData);
-    console.log('Yalies: user saved, returning user');
-
-    return user;
   } catch (error) {
     console.error('Error fetching user:', sanitizeLogValue(error));
     return null;
   }
+};
+
+/**
+ * Function to fetch a Yalie by NetID.
+ * - First, check the database for cached data.
+ * - If not found, fetch from Yalies API, validate required fields, store it in the database, and return it.
+ */
+export const fetchYalie = async (netid: any) => {
+  const normalizedNetid = normalizeYaliesNetid(netid);
+  if (!normalizedNetid) return null;
+
+  const existingUser = await validateUser(normalizedNetid);
+  if (existingUser) {
+    return existingUser;
+  }
+
+  const identity = await classifyYalieByNetid(normalizedNetid);
+  if (!identity) return null;
+
+  return createUser(identity);
 };
