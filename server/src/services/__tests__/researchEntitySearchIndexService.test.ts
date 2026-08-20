@@ -100,12 +100,12 @@ describe('researchEntitySearchIndexService', () => {
         'school',
         'departments',
         'researchAreas',
-        'openness',
-        'acceptingUndergrads',
-        'acceptanceConfidence',
-        'offersIndependentStudy',
-        'currentUndergradCount',
+        'accessAcceptanceLevel',
+        'studentVisibilityTier',
       ]),
+    );
+    expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain(
+      'acceptingUndergrads',
     );
     const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));

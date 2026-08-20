@@ -458,9 +458,6 @@ const sanitizeResearchGroupSearchFilters = (
   school: boundedResearchFilterValues(filters.school),
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
-  openness: boundedResearchFilterValues(filters.openness),
-  acceptingUndergrads:
-    typeof filters.acceptingUndergrads === 'boolean' ? filters.acceptingUndergrads : undefined,
   acceptanceLevel: isAcceptanceLevelInput(filters.acceptanceLevel)
     ? filters.acceptanceLevel
     : undefined,
@@ -500,19 +497,10 @@ const mongoFilterFromResearchFilters = (
   if (filters.school?.length) mongoFilter.schools = { $in: filters.school };
   if (filters.departments?.length) mongoFilter.departments = { $in: filters.departments };
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
-  if (filters.openness?.length) mongoFilter.openness = { $in: filters.openness };
-  if (typeof filters.acceptingUndergrads === 'boolean') {
-    mongoFilter.acceptingUndergrads = filters.acceptingUndergrads;
-  }
   if (filters.acceptanceLevel === 'verified') {
-    mongoFilter.acceptingUndergrads = true;
-    mongoFilter.acceptanceConfidence = { $gte: 0.7 };
+    mongoFilter.accessAcceptanceLevel = 'verified';
   } else if (filters.acceptanceLevel === 'verified-or-likely') {
-    mongoFilter.$or = [
-      { acceptingUndergrads: true },
-      { offersIndependentStudy: true },
-      { currentUndergradCount: { $gt: 0 } },
-    ];
+    mongoFilter.accessAcceptanceLevel = { $in: ['verified', 'likely'] };
   }
 
   return mongoFilter;

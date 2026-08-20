@@ -36,7 +36,6 @@ const SEARCH_FILTER_KEYS = [
   'school',
   'departments',
   'researchAreas',
-  'openness',
   'studentVisibilityTier',
   'qualityFilters',
 ] as const;
@@ -54,10 +53,7 @@ const toStringArray = (value: unknown): string[] | undefined => {
   return undefined;
 };
 
-const PUBLIC_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
-  'lastObservedAt',
-  'name',
-];
+const PUBLIC_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = ['lastObservedAt', 'name'];
 
 const OPERATOR_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
   ...PUBLIC_ALLOWED_SORT_FIELDS,
@@ -82,13 +78,6 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   const researchAreas = toStringArray(r.researchAreas);
   if (researchAreas) filters.researchAreas = researchAreas;
 
-  const openness = toStringArray(r.openness);
-  if (openness) filters.openness = openness;
-
-  if (typeof r.acceptingUndergrads === 'boolean') {
-    filters.acceptingUndergrads = r.acceptingUndergrads;
-  }
-
   if (
     r.acceptanceLevel === 'verified' ||
     r.acceptanceLevel === 'verified-or-likely' ||
@@ -107,8 +96,9 @@ const parseStudentVisibilityTiers = (value: unknown): StudentVisibilityTier[] =>
 
 const parseQualityFilters = (value: unknown): ResearchGroupQualityFilter[] => {
   const values = toStringArray(value) || [];
-  return values.filter((filter): filter is ResearchGroupQualityFilter =>
-    filter === 'description-issue' || filter === 'missing-lead' || filter === 'profile-fallback',
+  return values.filter(
+    (filter): filter is ResearchGroupQualityFilter =>
+      filter === 'description-issue' || filter === 'missing-lead' || filter === 'profile-fallback',
   );
 };
 

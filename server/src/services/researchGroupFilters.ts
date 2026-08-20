@@ -12,27 +12,9 @@ export interface ResearchGroupFilterInput {
   school?: string[];
   departments?: string[];
   researchAreas?: string[];
-  openness?: string[];
-  acceptingUndergrads?: boolean;
-  /**
-   * Trust gradient filter:
-   *   - 'verified' → `acceptingUndergrads = true AND acceptanceConfidence >= 0.7`
-   *   - 'verified-or-likely' → ANY of:
-   *       acceptingUndergrads = true,
-   *       offersIndependentStudy = true,
-   *       (we approximate "current undergrads listed" via
-   *        currentUndergradCount > 0 — Meili does not expose array length so
-   *        the past-advisees check uses pastUndergradAdviseesCount instead.
-   *        For now we conservatively OR over the booleans + the explicit
-   *        currentUndergradCount field; lab-microsite agreements still surface
-   *        through acceptingUndergrads = true.)
-   *   - 'all' or undefined → no filter
-   */
   acceptanceLevel?: AcceptanceLevelInput;
   studentVisibilityTier?: string[];
 }
-
-const VERIFIED_CONFIDENCE_FLOOR = 0.7;
 
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -47,26 +29,13 @@ const orEqualsClause = (field: string, values: unknown[]): string | null => {
   return `(${inner})`;
 };
 
-/**
- * Build the ANDed clause(s) representing an `acceptanceLevel` choice. Returns
- * an array because the OR group for 'verified-or-likely' is one clause that
- * gets AND-ed with the rest.
- */
 const acceptanceLevelClauses = (level: AcceptanceLevelInput | undefined): string[] => {
   if (!level || level === 'all') return [];
   if (level === 'verified') {
-    return [
-      `(acceptingUndergrads = true AND acceptanceConfidence >= ${VERIFIED_CONFIDENCE_FLOOR})`,
-    ];
+    return ['accessAcceptanceLevel = "verified"'];
   }
   if (level === 'verified-or-likely') {
-    // Any positive signal qualifies. We can't easily express "array length > 0"
-    // for `pastUndergradAdvisees`, so we rely on the denormalized scalar
-    // signals: the boolean acceptingUndergrads (set by lab pages or PIs),
-    // the boolean offersIndependentStudy, and the scalar currentUndergradCount.
-    return [
-      '(acceptingUndergrads = true OR offersIndependentStudy = true OR currentUndergradCount > 0)',
-    ];
+    return ['(accessAcceptanceLevel = "verified" OR accessAcceptanceLevel = "likely")'];
   }
   return [];
 };
@@ -97,13 +66,6 @@ export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput
     ? orEqualsClause('researchAreas', filters.researchAreas)
     : null;
   if (researchAreasClause) parts.push(researchAreasClause);
-
-  const opennessClause = filters.openness ? orEqualsClause('openness', filters.openness) : null;
-  if (opennessClause) parts.push(opennessClause);
-
-  if (typeof filters.acceptingUndergrads === 'boolean') {
-    parts.push(`acceptingUndergrads = ${filters.acceptingUndergrads}`);
-  }
 
   for (const clause of acceptanceLevelClauses(filters.acceptanceLevel)) {
     parts.push(clause);
