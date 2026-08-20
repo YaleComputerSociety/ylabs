@@ -34,6 +34,7 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { ResearchEntity } from '../../models/researchEntity';
+import { RoleAssignment } from '../../models/roleAssignment';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { normalizeName, splitName } from '../utils/scraperHelpers';
 
@@ -279,8 +280,6 @@ async function defaultCallLLM(input: {
 async function defaultCenterFinder(
   options: { only?: string[]; missingLeadOnly?: boolean } = {},
 ): Promise<CandidateCenter[]> {
-  // Local import to keep the model graph lazy and avoid a hard cycle.
-  const { ResearchGroupMember } = await import('../../models/researchGroupMember');
   const only = Array.from(
     new Set((options.only || []).map((value) => value.trim()).filter(Boolean)),
   );
@@ -317,10 +316,12 @@ async function defaultCenterFinder(
   }));
 
   if (options.missingLeadOnly) {
-    const withLead = await ResearchGroupMember.distinct('researchEntityId', {
-      researchEntityId: { $in: (docs as any[]).map((doc) => doc._id) },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-      isCurrentMember: { $ne: false },
+    const withLead = await RoleAssignment.distinct('target.id', {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $in: (docs as any[]).map((doc) => doc._id) },
+      role: { $in: ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
     });
     const withLeadSet = new Set(withLead.map((id: any) => String(id)));
     candidates = candidates.filter((c) => !c._id || !withLeadSet.has(c._id));
