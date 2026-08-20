@@ -3,6 +3,10 @@ import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchGroupMember } from '../models/researchGroupMember';
+import {
+  getResearchEntityRoster,
+  type ResearchEntityRosterEntry,
+} from './researchEntityMembershipAccessor';
 import { User } from '../models/user';
 import mongoose from 'mongoose';
 import {
@@ -267,9 +271,15 @@ const sourceUrlsForFieldProvenance = (entity: Record<string, any>): string[] =>
   ).filter(hasHttpUrl);
 
 const isLeadMember = (member: Record<string, any>): boolean =>
-  ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'].includes(
-    textValue(member.role).toLowerCase(),
-  );
+  [
+    'pi',
+    'co-pi',
+    'principal-investigator',
+    'principal investigator',
+    'director',
+    'co-director',
+    'lead',
+  ].includes(textValue(member.role).toLowerCase());
 
 const cleanResearchInterest = (value: unknown): string => {
   const text = textValue(value)
@@ -821,6 +831,29 @@ const idValue = (value: unknown): string => {
 
 const leadMemberUserId = (member: Record<string, any>): string =>
   idValue(member.user?._id) || idValue(member.userId);
+
+export const researchEntityLeadMembersFromRoster = (
+  roster: ResearchEntityRosterEntry[],
+): Array<Record<string, any>> =>
+  roster
+    .filter((entry) => entry.state !== 'HISTORICAL')
+    .filter((entry) => isLeadMember({ role: entry.role }))
+    .map((entry) => {
+      const personId = idValue(entry.personId);
+      return {
+        role: entry.role,
+        name: entry.name,
+        userId: personId,
+        user: {
+          _id: personId,
+          displayName: entry.name,
+          netid: entry.netid,
+          title: entry.title,
+          imageUrl: entry.imageUrl,
+          websiteUrl: entry.websiteUrl,
+        },
+      };
+    });
 
 const getActionEvidenceObservationIds = (observations: Array<Record<string, any>>): string[] =>
   observations
@@ -2073,21 +2106,8 @@ const defaultRepairDeps: RepairDeps = {
   async findResearchEntityMembers(id) {
     const safeId = normalizeVisibilityRepairObjectId(id);
     if (!safeId) return [];
-    return ResearchGroupMember.find({
-      researchEntityId: safeId,
-      archived: { $ne: true },
-      role: { $in: ['pi', 'principal-investigator', 'principal investigator', 'director', 'lead'] },
-    })
-      .populate('userId')
-      .populate('facultyMemberId')
-      .lean()
-      .then((rows: any[]) =>
-        rows.map((row) => ({
-          ...row,
-          user: row.userId,
-          facultyMember: row.facultyMemberId,
-        })),
-      );
+    const roster = await getResearchEntityRoster(safeId);
+    return researchEntityLeadMembersFromRoster(roster);
   },
   async updateResearchEntity(id, patch) {
     const safeId = normalizeVisibilityRepairObjectId(id);
