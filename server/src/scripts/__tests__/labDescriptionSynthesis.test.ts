@@ -13,7 +13,8 @@ import {
 const genuineFull =
   'Studies zebrafish neural circuits and how they guide behavior. The group uses live imaging and genetic tools to map circuit function.';
 
-const stubFull = 'Research fields include Quantum Optics, Atomic Interactions, and Molecular Spectroscopy.';
+const stubFull =
+  'Research fields include Quantum Optics, Atomic Interactions, and Molecular Spectroscopy.';
 
 const labSource =
   'The lab studies how neural circuits in zebrafish encode navigation, using two-photon imaging, optogenetics, and behavioral assays to map circuit dynamics during active movement.';
@@ -24,7 +25,9 @@ describe('isSynthesisCandidate', () => {
   });
 
   it('selects entities whose short equals the full', () => {
-    expect(isSynthesisCandidate({ fullDescription: genuineFull, shortDescription: genuineFull })).toBe(true);
+    expect(
+      isSynthesisCandidate({ fullDescription: genuineFull, shortDescription: genuineFull }),
+    ).toBe(true);
   });
 
   it('skips entities with genuine full and a distinct short', () => {
@@ -78,7 +81,8 @@ describe('assembleSynthesisSourceText', () => {
       fullDescription:
         'Studies coastal erosion. This profile-derived summary should be checked against the linked official sources before outreach.',
       description: 'Studies coastal erosion.',
-      profileSynthesisDescription: 'Uses sediment cores https://example.org/data to reconstruct shorelines.',
+      profileSynthesisDescription:
+        'Uses sediment cores https://example.org/data to reconstruct shorelines.',
     });
     expect(text).not.toContain('before outreach');
     expect(text).not.toContain('http');
@@ -93,7 +97,8 @@ describe('evaluateSynthesisOutput', () => {
       {
         fullDescription:
           'Studies how zebrafish neural circuits encode navigation, using two-photon imaging and optogenetics to map circuit dynamics during movement.',
-        shortDescription: 'Maps how zebrafish neural circuits encode navigation using two-photon imaging.',
+        shortDescription:
+          'Maps how zebrafish neural circuits encode navigation using two-photon imaging.',
       },
       labSource,
     );
@@ -127,7 +132,10 @@ describe('evaluateSynthesisOutput', () => {
   });
 
   it('rejects empty output', () => {
-    const verdict = evaluateSynthesisOutput({ fullDescription: '', shortDescription: '' }, labSource);
+    const verdict = evaluateSynthesisOutput(
+      { fullDescription: '', shortDescription: '' },
+      labSource,
+    );
     expect(verdict.accepted).toBe(false);
     expect(verdict.reason).toBe('empty-output');
   });
@@ -135,7 +143,9 @@ describe('evaluateSynthesisOutput', () => {
 
 describe('synthesisGroundingScore', () => {
   it('scores higher when output words appear in the source', () => {
-    expect(synthesisGroundingScore('zebrafish navigation circuits', labSource)).toBeGreaterThan(0.5);
+    expect(synthesisGroundingScore('zebrafish navigation circuits', labSource)).toBeGreaterThan(
+      0.5,
+    );
     expect(synthesisGroundingScore('galaxies telescopes asteroids', labSource)).toBe(0);
   });
 });

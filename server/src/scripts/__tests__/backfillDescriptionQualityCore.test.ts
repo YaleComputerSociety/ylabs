@@ -19,7 +19,8 @@ const genuineFull =
 const numberedAreasFull =
   'Active areas of research 1- Bone marrow stem cell niches and their regulation. 2- Where and how B cell development occurs in vivo. 3- Chemoattractants, receptors, and B cell homeostasis.';
 
-const stubFull = 'Research fields include Quantum Optics, Atomic Interactions, and Molecular Spectroscopy.';
+const stubFull =
+  'Research fields include Quantum Optics, Atomic Interactions, and Molecular Spectroscopy.';
 
 const azIndexFull = 'This A–Z index lists Yale School of Medicine lab websites in one place.';
 
@@ -144,7 +145,12 @@ describe('assessEntityDescription', () => {
 describe('summarizeDescriptionBackfill', () => {
   it('reports before/after defect counts and backfill writes', () => {
     const entities: DescriptionEntityInput[] = [
-      { id: '1', slug: 'caveat', shortDescription: '', fullDescription: `${numberedAreasFull} ${LEAKED_CAVEAT}` },
+      {
+        id: '1',
+        slug: 'caveat',
+        shortDescription: '',
+        fullDescription: `${numberedAreasFull} ${LEAKED_CAVEAT}`,
+      },
       { id: '2', slug: 'stub', shortDescription: stubFull, fullDescription: stubFull },
       { id: '3', slug: 'derive', shortDescription: '', fullDescription: numberedAreasFull },
     ];

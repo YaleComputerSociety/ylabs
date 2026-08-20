@@ -12,7 +12,11 @@ export const MIN_SYNTHESIS_GROUNDING = 0.5;
 const MAX_SOURCE_CHARS = 12_000;
 const MAX_NAME_CHARS = 240;
 
-const PERSON_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT', 'INDIVIDUAL_RESEARCH']);
+const PERSON_ENTITY_TYPES = new Set([
+  'FACULTY_RESEARCH_AREA',
+  'FACULTY_PROJECT',
+  'INDIVIDUAL_RESEARCH',
+]);
 
 export function isPersonResearchEntityType(entityType?: string): boolean {
   return PERSON_ENTITY_TYPES.has(String(entityType || '').toUpperCase());
@@ -75,7 +79,9 @@ const STOPWORDS = new Set([
 export function synthesisGroundingScore(output: string, source: string): number {
   const src = source.toLowerCase();
   const words = Array.from(
-    new Set((output.toLowerCase().match(/[a-z]{5,}/g) || []).filter((word) => !STOPWORDS.has(word))),
+    new Set(
+      (output.toLowerCase().match(/[a-z]{5,}/g) || []).filter((word) => !STOPWORDS.has(word)),
+    ),
   );
   if (words.length === 0) return 0;
   const hits = words.filter((word) => src.includes(word)).length;
@@ -89,7 +95,11 @@ export interface LabSynthesisSourceFields {
 }
 
 export function assembleSynthesisSourceText(entity: LabSynthesisSourceFields): string {
-  const candidates = [entity.fullDescription, entity.description, entity.profileSynthesisDescription]
+  const candidates = [
+    entity.fullDescription,
+    entity.description,
+    entity.profileSynthesisDescription,
+  ]
     .map((value) => sanitizeDescriptionText(value).text)
     .filter((text) => text.length > 0);
   const seen = new Set<string>();
@@ -130,9 +140,7 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
   const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
   const isPerson = isPersonResearchEntityType(input.entityType);
   const subjectLabel = isPerson ? 'Researcher' : 'Research home';
-  const fullDescriptionScope = isPerson
-    ? "this researcher's research"
-    : 'the research';
+  const fullDescriptionScope = isPerson ? "this researcher's research" : 'the research';
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -161,8 +169,10 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
   const parsed = content ? JSON.parse(content) : {};
   const rawUsage = response.data?.usage;
   return {
-    fullDescription: typeof parsed.fullDescription === 'string' ? parsed.fullDescription.trim() : '',
-    shortDescription: typeof parsed.shortDescription === 'string' ? parsed.shortDescription.trim() : '',
+    fullDescription:
+      typeof parsed.fullDescription === 'string' ? parsed.fullDescription.trim() : '',
+    shortDescription:
+      typeof parsed.shortDescription === 'string' ? parsed.shortDescription.trim() : '',
     usage: rawUsage
       ? {
           promptTokens: Number(rawUsage.prompt_tokens) || 0,

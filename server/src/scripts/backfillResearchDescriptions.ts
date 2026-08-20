@@ -130,7 +130,9 @@ export interface ResearchDescriptionBackfillOptions {
 
 const DEFAULT_PROJECTED_ENTITIES = 2500;
 
-export function parseResearchDescriptionBackfillArgs(argv: string[]): ResearchDescriptionBackfillOptions {
+export function parseResearchDescriptionBackfillArgs(
+  argv: string[],
+): ResearchDescriptionBackfillOptions {
   const options: ResearchDescriptionBackfillOptions = {
     dryRun: true,
     limit: 0,
@@ -204,7 +206,10 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
   const safeName = redactDirectContactInfo(name).slice(0, MAX_REWRITE_PROMPT_NAME_CHARS);
-  const safeSourceText = redactDirectContactInfo(sourceText).slice(0, MAX_REWRITE_PROMPT_SOURCE_CHARS);
+  const safeSourceText = redactDirectContactInfo(sourceText).slice(
+    0,
+    MAX_REWRITE_PROMPT_SOURCE_CHARS,
+  );
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -228,20 +233,27 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
         },
       ],
     },
-    { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 40000 },
+    {
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      timeout: 40000,
+    },
   );
   const content = response.data?.choices?.[0]?.message?.content;
   const parsed = content ? JSON.parse(content) : {};
   return {
-    fullDescription: typeof parsed.fullDescription === 'string' ? parsed.fullDescription.trim() : '',
-    shortDescription: typeof parsed.shortDescription === 'string' ? parsed.shortDescription.trim() : '',
+    fullDescription:
+      typeof parsed.fullDescription === 'string' ? parsed.fullDescription.trim() : '',
+    shortDescription:
+      typeof parsed.shortDescription === 'string' ? parsed.shortDescription.trim() : '',
   };
 };
 
 function entityHttpUrls(entity: any): string[] {
-  return [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])].filter(
-    (u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u),
-  );
+  return [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
 }
 
 /**
@@ -252,12 +264,18 @@ function entityHttpUrls(entity: any): string[] {
  */
 export async function fetchGrantAbstract(entity: any): Promise<string> {
   const urls = entityHttpUrls(entity);
-  const nih = urls.map((u) => u.match(/reporter\.nih\.gov\/project-details\/(\d+)/i)?.[1]).find(Boolean);
+  const nih = urls
+    .map((u) => u.match(/reporter\.nih\.gov\/project-details\/(\d+)/i)?.[1])
+    .find(Boolean);
   if (nih) {
     try {
       const res = await axios.post(
         'https://api.reporter.nih.gov/v2/projects/search',
-        { criteria: { appl_ids: [Number(nih)] }, include_fields: ['AbstractText', 'ProjectTitle'], limit: 1 },
+        {
+          criteria: { appl_ids: [Number(nih)] },
+          include_fields: ['AbstractText', 'ProjectTitle'],
+          limit: 1,
+        },
         { timeout: 25000 },
       );
       const r = res.data?.results?.[0];
@@ -285,8 +303,11 @@ export async function fetchGrantAbstract(entity: any): Promise<string> {
 }
 
 function officialSourceUrl(entity: any): string {
-  const urls = [entity.websiteUrl, entity.website, ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : [])]
-    .filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
+  const urls = [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+  ].filter((u: unknown): u is string => typeof u === 'string' && /^https?:\/\//i.test(u));
   return (
     urls.find((u) => !/reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov|orcid\.org/i.test(u)) ||
     urls[0] ||
@@ -317,7 +338,16 @@ export async function runResearchDescriptionBackfill(options: {
       studentVisibilityTier: { $in: ['operator_review', 'limited_but_safe'] },
       studentVisibilityReasons: { $in: DESC_BLOCK_REASONS },
     },
-    { _id: 1, slug: 1, name: 1, displayName: 1, fullDescription: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      fullDescription: 1,
+      websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
+    },
   ).lean();
 
   const result: ResearchDescriptionBackfillResult = {
@@ -348,7 +378,10 @@ export async function runResearchDescriptionBackfill(options: {
         result.skippedNoResearch += 1;
         continue;
       }
-      const grounding = groundingScore(`${out.fullDescription} ${out.shortDescription}`, sourceText);
+      const grounding = groundingScore(
+        `${out.fullDescription} ${out.shortDescription}`,
+        sourceText,
+      );
       if (grounding < MIN_GROUNDING) {
         result.skippedUngrounded += 1;
         continue;
@@ -404,7 +437,9 @@ export async function runResearchDescriptionBackfill(options: {
         // that keeps the description on future re-materialization.
         await ResearchEntity.updateOne(
           { _id: entity._id },
-          { $set: { fullDescription: out.fullDescription, shortDescription: out.shortDescription } },
+          {
+            $set: { fullDescription: out.fullDescription, shortDescription: out.shortDescription },
+          },
         );
       }
     } catch (error) {
@@ -558,7 +593,10 @@ async function runLlmRewriteLane(options: ResearchDescriptionBackfillOptions): P
         environment: guard.environment,
         db: guard.dbLabel,
         lane: 'llm-rewrite',
-        options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+        options: {
+          dryRun: options.dryRun,
+          limit: options.explicitLimit ? options.limit : undefined,
+        },
         result,
       },
       'research-description rewrite backfill',
@@ -597,7 +635,10 @@ async function runShortBackfillLane(options: ResearchDescriptionBackfillOptions)
         environment: guard.environment,
         db: guard.dbLabel,
         lane: 'short-backfill',
-        options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+        options: {
+          dryRun: options.dryRun,
+          limit: options.explicitLimit ? options.limit : undefined,
+        },
         result,
       },
       'short-description backfill',
@@ -619,7 +660,9 @@ async function runShortBackfillLane(options: ResearchDescriptionBackfillOptions)
       ),
     );
     if (apply && result.updated > 0) {
-      console.log('Rebuild the Meilisearch research index so search picks up the cleaned descriptions.');
+      console.log(
+        'Rebuild the Meilisearch research index so search picks up the cleaned descriptions.',
+      );
     }
   } finally {
     await mongoose.disconnect();
@@ -642,7 +685,10 @@ interface SynthesisEntityDoc {
   sourceUrls?: unknown;
 }
 
-function stratifyByEntityType(candidates: SynthesisEntityDoc[], limit: number): SynthesisEntityDoc[] {
+function stratifyByEntityType(
+  candidates: SynthesisEntityDoc[],
+  limit: number,
+): SynthesisEntityDoc[] {
   const groups = new Map<string, SynthesisEntityDoc[]>();
   for (const candidate of candidates) {
     const key = String(candidate.entityType || candidate.kind || 'UNKNOWN');
@@ -793,7 +839,10 @@ export async function runLabDescriptionSynthesis(options: {
       }
     } catch (error) {
       skipped.error += 1;
-      console.error(`Synthesis failed for ${sanitizeLogValue(entity.slug)}:`, sanitizeLogValue(error));
+      console.error(
+        `Synthesis failed for ${sanitizeLogValue(entity.slug)}:`,
+        sanitizeLogValue(error),
+      );
     }
   }
 
@@ -859,7 +908,11 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
         environment: guard.environment,
         db: guard.dbLabel,
         lane: 'llm-synthesis',
-        options: { dryRun: options.dryRun, limit: options.limit, projectedEntities: options.projectedEntities },
+        options: {
+          dryRun: options.dryRun,
+          limit: options.limit,
+          projectedEntities: options.projectedEntities,
+        },
         result,
       },
       'lab-description LLM synthesis',
@@ -881,7 +934,9 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
       ),
     );
     if (apply && result.updated > 0) {
-      console.log('Rebuild the Meilisearch research index so search picks up the synthesized descriptions.');
+      console.log(
+        'Rebuild the Meilisearch research index so search picks up the synthesized descriptions.',
+      );
     }
   } finally {
     await mongoose.disconnect();
