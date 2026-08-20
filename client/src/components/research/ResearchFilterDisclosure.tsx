@@ -6,11 +6,16 @@ interface ResearchFilterDisclosureProps {
   facetDistribution: FacetDistribution;
   selectedSchool: string;
   selectedDepartment: string;
+  selectedResearchAreas: string[];
+  researchAreaOptions: string[];
+  hostsUndergrads: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
+  onResearchAreasChange: (value: string[]) => void;
+  onHostsUndergradsChange: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
 }
@@ -35,11 +40,16 @@ const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedSchool,
   selectedDepartment,
+  selectedResearchAreas,
+  researchAreaOptions,
+  hostsUndergrads,
   isApplying,
   hasFacetError,
   departmentLabel,
   onSchoolChange,
   onDepartmentChange,
+  onResearchAreasChange,
+  onHostsUndergradsChange,
   onClearAll,
   variant = 'popover',
 }: ResearchFilterDisclosureProps) => {
@@ -51,6 +61,7 @@ const ResearchFilterDisclosure = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  const firstControlRef = useRef<HTMLInputElement | null>(null);
   const firstSchoolRef = useRef<HTMLSelectElement | null>(null);
   const firstDepartmentRef = useRef<HTMLSelectElement | null>(null);
   const panelId = useId();
@@ -71,9 +82,18 @@ const ResearchFilterDisclosure = ({
     () => withSelectedOption(positiveDepartments, selectedDepartment),
     [positiveDepartments, selectedDepartment],
   );
+  const availableResearchAreas = useMemo(
+    () => researchAreaOptions.filter((area) => !selectedResearchAreas.includes(area)),
+    [researchAreaOptions, selectedResearchAreas],
+  );
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
-  const activeCount = Number(Boolean(selectedSchool)) + Number(Boolean(selectedDepartment));
+  const showResearchAreas = researchAreaOptions.length > 0 || selectedResearchAreas.length > 0;
+  const activeCount =
+    Number(Boolean(selectedSchool)) +
+    Number(Boolean(selectedDepartment)) +
+    selectedResearchAreas.length +
+    Number(hostsUndergrads);
   const visibleFacetKey = `${String(showSchool)}:${String(showDepartment)}`;
 
   const getFocusableElements = () =>
@@ -85,7 +105,12 @@ const ResearchFilterDisclosure = ({
 
   const focusFirstControl = useCallback(() => {
     if (isDesktop) {
-      (firstSchoolRef.current || firstDepartmentRef.current || closeRef.current)?.focus();
+      (
+        firstControlRef.current ||
+        firstSchoolRef.current ||
+        firstDepartmentRef.current ||
+        closeRef.current
+      )?.focus();
       return;
     }
     closeRef.current?.focus();
@@ -158,54 +183,90 @@ const ResearchFilterDisclosure = ({
     </p>
   );
 
-  const filterFields =
-    showSchool || showDepartment ? (
-      <fieldset className="min-w-0 space-y-4 border-0 p-0">
-        <legend className="sr-only">Narrow research results</legend>
-        {showSchool && (
-          <label className="block min-w-0 text-sm font-medium text-slate-800">
-            School
-            <select
-              ref={firstSchoolRef}
-              aria-label="Filter by school"
-              value={selectedSchool}
-              onChange={(event) => onSchoolChange(event.target.value)}
-              className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              <option value="">All schools</option>
-              {schoolOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.value}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {showDepartment && (
-          <label className="block min-w-0 text-sm font-medium text-slate-800">
-            Department
-            <select
-              ref={!showSchool ? firstDepartmentRef : undefined}
-              aria-label="Filter by department"
-              value={selectedDepartment}
-              onChange={(event) => onDepartmentChange(event.target.value)}
-              className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-            >
-              <option value="">All departments</option>
-              {departmentOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {departmentLabel(option.value)}
-                  {option.count !== undefined ? ` (${option.count})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </fieldset>
-    ) : (
-      <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
-    );
+  const filterFields = (
+    <fieldset className="min-w-0 space-y-4 border-0 p-0">
+      <legend className="sr-only">Narrow research results</legend>
+      <label className="flex min-w-0 items-start gap-2 text-sm font-medium text-slate-800">
+        <input
+          ref={firstControlRef}
+          type="checkbox"
+          checked={hostsUndergrads}
+          onChange={(event) => onHostsUndergradsChange(event.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+        />
+        <span>Has hosted undergrads before</span>
+      </label>
+      {showResearchAreas && (
+        <label className="block min-w-0 text-sm font-medium text-slate-800">
+          Research area
+          <select
+            aria-label="Filter by research area"
+            value=""
+            onChange={(event) => {
+              const value = event.target.value;
+              if (!value) return;
+              onResearchAreasChange([...selectedResearchAreas, value]);
+            }}
+            className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            <option value="">
+              {selectedResearchAreas.length > 0
+                ? 'Add another research area'
+                : 'All research areas'}
+            </option>
+            {availableResearchAreas.map((area) => (
+              <option key={area} value={area}>
+                {area}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {showSchool && (
+        <label className="block min-w-0 text-sm font-medium text-slate-800">
+          School
+          <select
+            ref={firstSchoolRef}
+            aria-label="Filter by school"
+            value={selectedSchool}
+            onChange={(event) => onSchoolChange(event.target.value)}
+            className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            <option value="">All schools</option>
+            {schoolOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.value}
+                {option.count !== undefined ? ` (${option.count})` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {showDepartment && (
+        <label className="block min-w-0 text-sm font-medium text-slate-800">
+          Department
+          <select
+            ref={!showSchool ? firstDepartmentRef : undefined}
+            aria-label="Filter by department"
+            value={selectedDepartment}
+            onChange={(event) => onDepartmentChange(event.target.value)}
+            className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            <option value="">All departments</option>
+            {departmentOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {departmentLabel(option.value)}
+                {option.count !== undefined ? ` (${option.count})` : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {!showSchool && !showDepartment && !showResearchAreas && (
+        <p className="text-sm leading-relaxed text-slate-600">{emptyMessage}</p>
+      )}
+    </fieldset>
+  );
 
   const clearAllButton = activeCount > 0 && (
     <button
@@ -245,6 +306,33 @@ const ResearchFilterDisclosure = ({
           <span className="min-w-0 truncate">
             Department: {departmentLabel(selectedDepartment)}
           </span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      )}
+      {selectedResearchAreas.map((area) => (
+        <button
+          key={area}
+          type="button"
+          onClick={() => onResearchAreasChange(selectedResearchAreas.filter((a) => a !== area))}
+          aria-label={`Remove Research area: ${area}`}
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">Research area: {area}</span>
+          <span aria-hidden="true" className="shrink-0">
+            ×
+          </span>
+        </button>
+      ))}
+      {hostsUndergrads && (
+        <button
+          type="button"
+          onClick={() => onHostsUndergradsChange(false)}
+          aria-label="Remove Has hosted undergrads before"
+          className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+        >
+          <span className="min-w-0 truncate">Has hosted undergrads before</span>
           <span aria-hidden="true" className="shrink-0">
             ×
           </span>
