@@ -37,6 +37,7 @@ import {
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
+import { selectBackfillWebsiteUrl } from '../scripts/backfillResearchEntityWebsiteUrlsCore';
 import {
   archiveCanonicalRoleAssignmentsForPersons,
   archiveSupersededCanonicalRoleAssignments,
@@ -394,6 +395,19 @@ export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
 export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return value.filter((url) => !isResearchEntityContentPageSourceUrl(url));
+}
+
+export function deriveResearchEntityWebsiteUrl(
+  set: Record<string, unknown>,
+  entityDoc?: Record<string, unknown> | null,
+): string | undefined {
+  const merged = (field: string): unknown =>
+    field in set ? set[field] : entityDoc?.[field];
+  return selectBackfillWebsiteUrl({
+    websiteUrl: merged('websiteUrl'),
+    website: merged('website'),
+    sourceUrls: merged('sourceUrls'),
+  });
 }
 
 function isInitialOnlyNameValue(value: unknown): boolean {
@@ -2410,6 +2424,13 @@ export async function materializeEntity(
   if (isResearchEntityObservationType(entityType)) {
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc);
     await applyResearchEntityResearchAreaCanonicalization(set);
+    if (!manuallyLockedFields.includes('websiteUrl')) {
+      const derivedWebsiteUrl = deriveResearchEntityWebsiteUrl(set, entityDoc);
+      if (derivedWebsiteUrl) {
+        set.websiteUrl = derivedWebsiteUrl;
+        fieldsWritten++;
+      }
+    }
   }
   if (entityType === 'paper') {
     const paperObs = materializationObs.map((o: any) => ({
