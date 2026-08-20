@@ -686,7 +686,7 @@ describe('Research page', () => {
     render(
       <MemoryRouter
         initialEntries={[
-          '/research?q=machine+learning&school=Yale%20College&department=Computer%20Science&undergrad=1',
+          '/research?q=machine+learning&school=Yale%20College&department=Computer%20Science',
         ]}
       >
         <ConfigContext.Provider
@@ -718,7 +718,6 @@ describe('Research page', () => {
       }),
       expect.any(Object),
     ]);
-    expect(screen.getByTestId('location').textContent).not.toContain('undergrad');
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
     expect(
       screen.getByRole('button', { name: 'Remove Department: Computer Science' }),
@@ -732,7 +731,56 @@ describe('Research page', () => {
     expect(within(schoolSelect).getByRole('option', { name: 'Yale College' })).toBeTruthy();
     expect(within(departmentSelect).getByRole('option', { name: 'Computer Science' })).toBeTruthy();
     expect(screen.queryByRole('option', { name: /\(37\)/ })).toBeNull();
-    expect(screen.queryByLabelText('Undergraduate participation documented')).toBeNull();
+  });
+
+  it('round-trips the hosts-undergrads and research-area filters from the URL', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 12,
+        facetDistribution: { school: {}, departments: {} },
+      });
+    });
+
+    render(
+      <MemoryRouter
+        initialEntries={['/research?q=machine+learning&undergrad=1&researchAreas=Genomics']}
+      >
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            researchAreas: [
+              { name: 'Genomics', field: 'Life Sciences', colorKey: 'a', isDefault: false },
+              { name: 'Robotics', field: 'Computing & AI', colorKey: 'b', isDefault: false },
+            ],
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Filters, 2 active' })).toBeTruthy();
+    const researchSearchCall = mockedAxios.post.mock.calls.find(
+      ([url]) => url === '/research/search',
+    );
+    expect(researchSearchCall?.[1]).toEqual(
+      expect.objectContaining({
+        filters: {
+          researchAreas: ['Genomics'],
+          acceptanceLevel: 'verified-or-likely',
+        },
+      }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Remove Has hosted undergrads before' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Research area: Genomics' })).toBeTruthy();
   });
 
   it('adapts facet visibility to positive query-scoped buckets while preserving selections', async () => {

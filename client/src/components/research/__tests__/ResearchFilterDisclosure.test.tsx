@@ -16,11 +16,16 @@ const renderFilters = (
     },
     selectedSchool: '',
     selectedDepartment: '',
+    selectedResearchAreas: [],
+    researchAreaOptions: [],
+    hostsUndergrads: false,
     isApplying: false,
     hasFacetError: false,
     departmentLabel: (value) => value,
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
+    onResearchAreasChange: vi.fn(),
+    onHostsUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -69,7 +74,9 @@ describe('ResearchFilterDisclosure', () => {
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
     expect(dialog.className).toContain('sm:absolute');
     expect(dialog).not.toHaveAttribute('aria-modal');
-    await waitFor(() => expect(within(dialog).getByLabelText('Filter by school')).toHaveFocus());
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText('Has hosted undergrads before')).toHaveFocus(),
+    );
     expect(within(dialog).getByRole('button', { name: 'Close filters' })).not.toHaveFocus();
 
     const last = within(dialog).getByLabelText('Filter by department');
@@ -118,6 +125,39 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
+  });
+
+  it('toggles the hosts-undergrads filter and exposes a removable chip', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({ variant: 'sidebar' });
+
+    fireEvent.click(screen.getByLabelText('Has hosted undergrads before'));
+    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
+
+    const { props: selectedProps } = renderFilters({ variant: 'sidebar', hostsUndergrads: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Has hosted undergrads before' }));
+    expect(selectedProps.onHostsUndergradsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('adds a research area from the dropdown and removes it via its chip', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      variant: 'sidebar',
+      researchAreaOptions: ['Genomics', 'Robotics'],
+    });
+
+    fireEvent.change(screen.getByLabelText('Filter by research area'), {
+      target: { value: 'Robotics' },
+    });
+    expect(props.onResearchAreasChange).toHaveBeenCalledWith(['Robotics']);
+
+    const { props: selectedProps } = renderFilters({
+      variant: 'sidebar',
+      researchAreaOptions: ['Genomics', 'Robotics'],
+      selectedResearchAreas: ['Robotics'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Research area: Robotics' }));
+    expect(selectedProps.onResearchAreasChange).toHaveBeenCalledWith([]);
   });
 
   it('hides single and non-positive facets unless selected', () => {
