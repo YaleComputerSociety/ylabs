@@ -742,10 +742,7 @@ describe('entityMaterializer post-materialization metrics', () => {
 describe('deriveResearchEntityWebsiteUrl', () => {
   it('derives websiteUrl from a promotable website when currently empty', () => {
     expect(
-      deriveResearchEntityWebsiteUrl(
-        { website: 'https://lab.yale.edu/' },
-        { websiteUrl: '' },
-      ),
+      deriveResearchEntityWebsiteUrl({ website: 'https://lab.yale.edu/' }, { websiteUrl: '' }),
     ).toBe('https://lab.yale.edu/');
   });
 

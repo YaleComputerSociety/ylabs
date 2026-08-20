@@ -374,8 +374,7 @@ export function deriveResearchEntityWebsiteUrl(
   set: Record<string, unknown>,
   entityDoc?: Record<string, unknown> | null,
 ): string | undefined {
-  const merged = (field: string): unknown =>
-    field in set ? set[field] : entityDoc?.[field];
+  const merged = (field: string): unknown => (field in set ? set[field] : entityDoc?.[field]);
   return selectBackfillWebsiteUrl({
     websiteUrl: merged('websiteUrl'),
     website: merged('website'),
