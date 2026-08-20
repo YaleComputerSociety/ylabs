@@ -2308,6 +2308,7 @@ export async function selectVisibleProfileBioTargets(
   const users =
     netids.length > 0
       ? await User.find({ netid: { $in: netids } })
+          .collation({ locale: 'en', strength: 2 })
           .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
           .sort({ updatedAt: 1 })
           .lean()
@@ -2316,7 +2317,7 @@ export async function selectVisibleProfileBioTargets(
   const memberTargets = (users as any[])
     .filter((user) => user.netid && publicBioNeedsBackfill(user))
     .map((user) => {
-      const attachedUrls = (rosterEntriesByNetid.get(user.netid) || [])
+      const attachedUrls = (rosterEntriesByNetid.get(textValue(user.netid).toLowerCase()) || [])
         .flatMap((entry) => {
           const entity = entitiesById.get(idValue(entry.researchEntityId));
           return [
@@ -2435,10 +2436,11 @@ async function annotateEntitiesWithLeadUsers(
   const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
   const users = netids.length
     ? ((await User.find({ netid: { $in: netids } })
+        .collation({ locale: 'en', strength: 2 })
         .select('netid fname lname name displayName email')
         .lean()) as Array<Record<string, any>>)
     : [];
-  const usersByNetid = new Map(users.map((user) => [textValue(user.netid), user]));
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
   const generatedProfileUrlsByEntity = new Map<string, string[]>();
 
@@ -2606,9 +2608,10 @@ async function selectResearchHomeProfileTargets(
   if (netids.length === 0) return [];
 
   const users = (await User.find({ netid: { $in: netids } })
+    .collation({ locale: 'en', strength: 2 })
     .select('netid fname lname email website websiteUrl profileUrls')
     .lean()) as Array<Record<string, any>>;
-  const usersByNetid = new Map(users.map((user) => [textValue(user.netid), user]));
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const profileUrlsByEntity = new Map<string, string[]>();
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
 
@@ -2691,10 +2694,11 @@ async function selectLeadDirectWebsiteTargets(
   const users =
     netids.length > 0
       ? ((await User.find({ netid: { $in: netids } })
+          .collation({ locale: 'en', strength: 2 })
           .select('netid website websiteUrl profileUrls')
           .lean()) as Array<Record<string, any>>)
       : [];
-  const usersByNetid = new Map(users.map((user) => [textValue(user.netid), user]));
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
 
   const urlsByEntity = new Map<string, string[]>();
   for (const entry of rosterEntries) {
