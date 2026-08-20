@@ -463,7 +463,7 @@ const mongoFilterFromResearchFilters = (
   };
 
   if (filters.kind?.length) mongoFilter.kind = { $in: filters.kind };
-  if (filters.school?.length) mongoFilter.school = { $in: filters.school };
+  if (filters.school?.length) mongoFilter.schools = { $in: filters.school };
   if (filters.departments?.length) mongoFilter.departments = { $in: filters.departments };
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
   if (filters.openness?.length) mongoFilter.openness = { $in: filters.openness };
@@ -654,7 +654,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
-    facets: ['school', 'departments'],
+    facets: ['schools', 'departments'],
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
@@ -740,7 +740,14 @@ export async function searchResearchGroupsViaMeili(
       safeOptions,
     );
   }
-  const { hits, estimatedTotalHits, facetDistribution } = searchResult;
+  const { hits, estimatedTotalHits, facetDistribution: rawFacetDistribution } = searchResult;
+  // The School filter now facets on the multi-valued `schools` field; expose it
+  // to clients under the existing `school` key so the API contract is unchanged.
+  const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
+    if (!rawFacetDistribution) return rawFacetDistribution;
+    const { schools, ...rest } = rawFacetDistribution;
+    return schools ? { ...rest, school: schools } : rest;
+  })();
 
   const hitIds = (hits || [])
     .map((hit: any) => hit.id || hit._id)
@@ -920,7 +927,7 @@ const searchResearchGroupsViaMongoFallback = async (
     researchEntityMatchesQuery(entity, trimmedQuery),
   );
   const facetDistribution = {
-    school: facetCounts(visibleCandidates, 'school'),
+    school: facetCounts(visibleCandidates, 'schools'),
     departments: facetCounts(visibleCandidates, 'departments'),
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
