@@ -82,11 +82,7 @@ function descriptionStateForEntity(
 ): ResearchEntityDescriptionState {
   if (quality.full.isUseful || quality.short.isUseful) return 'source_backed';
   if (textValue(entity.profileSynthesisDescription)) return 'profile_synthesis';
-  if (
-    textValue(entity.fullDescription) ||
-    textValue(entity.shortDescription) ||
-    textValue(entity.description)
-  ) {
+  if (textValue(entity.fullDescription) || textValue(entity.shortDescription)) {
     return 'thin';
   }
   return 'missing';

@@ -202,7 +202,6 @@ export function entityToObservations(
 
   if (entity.description) {
     observations.push(
-      { ...base, field: 'description', value: entity.description },
       { ...base, field: 'fullDescription', value: entity.description },
       { ...base, field: 'shortDescription', value: entity.description },
     );

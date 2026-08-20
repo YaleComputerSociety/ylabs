@@ -637,7 +637,7 @@ export function childCenterToObservations(
     obs.push({ ...base, field: 'school', value: parentConfig.schoolName });
   }
   if (child.description) {
-    obs.push({ ...base, field: 'description', value: child.description });
+    obs.push({ ...base, field: 'fullDescription', value: child.description });
   }
   return obs;
 }

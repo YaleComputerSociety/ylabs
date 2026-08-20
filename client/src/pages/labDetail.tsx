@@ -204,7 +204,7 @@ const BulletList = ({ items }: { items: string[] }) => (
 );
 
 const detailDescription = (group: any): string =>
-  (group.fullDescription || group.shortDescription || group.description || '')
+  (group.fullDescription || group.shortDescription || '')
     .replace(/[ \t\f\v]+/g, ' ')
     .trim();
 

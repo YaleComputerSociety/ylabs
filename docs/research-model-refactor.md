@@ -150,11 +150,15 @@ The `faculty_members` collection is left in place for a gated drop; the `User.fa
 The `Paper` and `PaperAuthor` models carrying the analogous residue are now deleted outright (publication-mirror half of #207).
 The field-retirement of the now-unused `User` bio, research-interest, and topic fields, and the eventual `User` retirement plus `Account` wiring (the long pole), remain the follow-ups.
 
+The legacy `ResearchEntity.description` field is retired (#351): `shortDescription` (card blurb) and `fullDescription` (detail) are the sole canonical prose pair, and the materializer continues to derive `shortDescription` from `fullDescription` when only the full text is scraped.
+The field is dropped from the schema, the public DTO blurb precedence (now `shortDescription || fullDescription`), the Meilisearch searchable attributes and embedder document template, and every runtime reader, writer, projection, and coverage or quality audit; the scraper sources that emitted a `description` observation now emit `fullDescription` instead.
+A gated one-time cleanup (`data-migration/DropLegacyResearchEntityDescription.ts`, dry-run by default) folds any stored `description` text into an empty `fullDescription` and unsets the field with its provenance; it is not run as part of this change.
+
 Tracked issues:
 
 - Discoverability now: search relevance #345, hybrid or embedder #346, browse filters #347, matched professor #341 area.
 - Data quality now: website coverage #348, research-area coverage #349, dedupe duplicate labs #350, department canonicalization and `OrgUnit` seed #354.
-- Model refactor: identity split #206, dangling `ResearchGroup` ref #352, remove legacy `description` #351; landed: clean `ResearchEntity` schema #208, retire legacy `ResearchGroupMember` writes #361, canonical continuous write path plus destructive batch-apply retirement #353, retire `FacultyMember` fold into `Researcher` #366 (professor-mirror half of #207).
+- Model refactor: identity split #206, dangling `ResearchGroup` ref #352; landed: clean `ResearchEntity` schema #208, retire legacy `ResearchGroupMember` writes #361, canonical continuous write path plus destructive batch-apply retirement #353, retire `FacultyMember` fold into `Researcher` #366 (professor-mirror half of #207), remove legacy `description` field and standardize on `shortDescription`/`fullDescription` #351.
 - PR #344 (an early `RoleAssignment` read cutover) was superseded by #375 and closed.
 
 Verification gates for any cutover: source and target counts with explained differences, no orphan references, no dual identities in public DTOs, no public contact leakage, source attribution for material claims, deterministic conflict handling, official-link validity with graceful failure, search relevance parity, correct visibility filtering, bounded detail payloads, private-plan isolation, no paper dependency, and rollback readiness before any collection drop.

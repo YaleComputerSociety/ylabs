@@ -649,7 +649,6 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     'kind',
     'entityType',
     'shortDescription',
-    'description',
     'role',
   ];
 
@@ -828,7 +827,7 @@ const researchInterestContextSummary = (researchEntities: any[]): string => {
 
   for (const entity of orderedEntities) {
     const cleaned = cleanResearchHomeSummaryForBio(
-      String(entity?.fullDescription || entity?._bioFullDescription || entity?.description || ''),
+      String(entity?.fullDescription || entity?._bioFullDescription || ''),
     );
     if (cleaned.length < TRUSTED_RESEARCH_HOME_BIO_MIN_SUMMARY_LENGTH) continue;
     if (summaryRestatesResearchAreas(cleaned, entity?.researchAreas)) continue;
@@ -1343,7 +1342,6 @@ const trustedLeadResearchHomeBioFallback = (
       entity?.shortDescription ||
         entity?.fullDescription ||
         entity?._bioFullDescription ||
-        entity?.description ||
         '',
     ));
 
@@ -1774,7 +1772,6 @@ const loadProfileResearchEntities = async (user: Record<string, any>) => {
       kind: entity.kind || '',
       entityType: entity.entityType || '',
       shortDescription: entity.shortDescription || '',
-      description: entity.description || '',
       departments: entity.departments || [],
       researchAreas: entity.researchAreas || [],
       _bioFullDescription: entity.fullDescription || '',

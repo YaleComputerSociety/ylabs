@@ -243,7 +243,7 @@ const Profile = () => {
                   {(profile.researchEntities || []).map((entity) => {
                     const title = entity.displayName || entity.name || 'Untitled research home';
                     const description = sanitizeFacultyResearchCopy(
-                      entity.shortDescription || entity.description || '',
+                      entity.shortDescription || entity.fullDescription || '',
                       entity,
                     );
                     const roleLabel = formatRoleLabel(entity.role);

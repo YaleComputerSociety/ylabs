@@ -333,7 +333,7 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     studentVisibilityTier: { $ne: 'suppressed' },
   })
     .select(
-      'slug name entityType description shortDescription websiteUrl sourceUrls accessSummary studentDecisionExplanation',
+      'slug name entityType fullDescription shortDescription websiteUrl sourceUrls accessSummary studentDecisionExplanation',
     )
     .lean();
 
@@ -372,7 +372,7 @@ async function defaultCandidateLoader(): Promise<DecisionCandidate[]> {
     slug: row.slug,
     name: row.name,
     entityType: row.entityType,
-    description: row.description || row.shortDescription,
+    description: row.fullDescription || row.shortDescription,
     websiteUrl: row.websiteUrl,
     sourceUrls: row.sourceUrls || (row.websiteUrl ? [row.websiteUrl] : []),
     studentDecisionExplanation: row.studentDecisionExplanation,

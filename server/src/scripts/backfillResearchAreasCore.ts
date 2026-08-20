@@ -7,7 +7,6 @@ export interface ResearchAreaBackfillEntityFacts {
   kind?: string;
   departments?: string[];
   existingResearchAreas?: string[];
-  description?: string;
   shortDescription?: string;
   fullDescription?: string;
 }
@@ -58,7 +57,6 @@ export function planResearchAreaBackfillRow(
   const textBlob = [
     facts.name,
     facts.shortDescription,
-    facts.description,
     facts.fullDescription,
   ]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)

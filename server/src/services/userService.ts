@@ -37,7 +37,6 @@ const MAX_USER_UPDATE_VALUE_DEPTH = 20;
 const MAX_USER_UPDATE_VALUE_ARRAY_ITEMS = 200;
 const MAX_USER_UPDATE_VALUE_OBJECT_KEYS = 200;
 export const MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH = 300;
-export const MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH = 1000;
 export const MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000;
 export const MAX_SAVED_PROGRAM_NOTE_LENGTH = 2000;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -907,7 +906,7 @@ export const boundSavedResearchEntitySummaryText = (
 };
 
 const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription description';
+  '_id slug name displayName kind entityType departments school shortDescription';
 
 const sanitizeEntityPlanMap = (value: unknown): Record<string, Required<SavedPathwayPlanInput>> => {
   if (!isPlainRecord(value)) return {};
@@ -943,10 +942,6 @@ const visibleSavedResearchEntities = async (
       entity.shortDescription,
       MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
     );
-    const description = boundSavedResearchEntitySummaryText(
-      entity.description,
-      MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH,
-    );
     return [
       {
         _id: String(entity._id),
@@ -960,7 +955,6 @@ const visibleSavedResearchEntities = async (
           : [],
         ...(entity.school ? { school: String(entity.school) } : {}),
         ...(shortDescription ? { shortDescription } : {}),
-        ...(description ? { description } : {}),
       },
     ];
   });

@@ -1,4 +1,4 @@
-const DESCRIPTION_FIELDS = ['description', 'shortDescription', 'fullDescription'] as const;
+const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
   ...DESCRIPTION_FIELDS,
   'profileSynthesisDescription',

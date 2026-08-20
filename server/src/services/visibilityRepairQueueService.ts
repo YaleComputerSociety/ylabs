@@ -520,7 +520,6 @@ const sourceBackedTextCandidates = (
     entitySourceUrls.find(isDescriptionEligibleSourceUrl) || entitySourceUrls[0] || '';
 
   return [
-    { value: textValue(entity.description), label: 'description', sourceUrl: entitySourceUrl },
     {
       value: textValue(entity.fullDescription),
       label: 'fullDescription',

@@ -48,7 +48,6 @@ export interface ResearchQualitySearchFacts {
   entityType?: string;
   kind?: string;
   displayName?: string;
-  description?: string;
   shortDescription?: string;
   fullDescription?: string;
   sourceUrls?: string[];
@@ -200,7 +199,6 @@ export function buildResearchQualitySearchReviewRow(
   facts: ResearchQualitySearchFacts,
 ): ResearchQualitySearchReviewRow {
   const descriptionChars = textLength(
-    facts.description,
     facts.shortDescription,
     facts.fullDescription,
   );

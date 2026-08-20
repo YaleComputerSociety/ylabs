@@ -56,7 +56,7 @@ const basePayload: LabDetailPayload = {
     name: DEFAULT_ENTITY_NAME,
     kind: 'individual',
     entityType: 'FACULTY_RESEARCH_AREA',
-    description: 'Studies mechanisms of neurological disease.',
+    fullDescription: 'Studies mechanisms of neurological disease.',
     websiteUrl: OFFICIAL_PROFILE_URL,
     location: '',
     departments: ['Neurology'],
@@ -350,7 +350,7 @@ describe('LabDetail page', () => {
       ...basePayload,
       group: {
         ...basePayload.group,
-        description: 'Studies specific mechanisms of neurological disease in source-backed terms.',
+        fullDescription: 'Studies specific mechanisms of neurological disease in source-backed terms.',
         studentDecisionExplanation: {
           recommendedAction: 'PLAN_EXPLORATORY_OUTREACH',
           headline: 'Plan careful exploratory outreach.',
@@ -780,7 +780,7 @@ describe('LabDetail page', () => {
         name: 'Example Sparse Lab',
         kind: 'lab',
         entityType: 'LAB',
-        description: 'Studies fixture evolution, population models, and synthetic DNA examples.',
+        fullDescription: 'Studies fixture evolution, population models, and synthetic DNA examples.',
         websiteUrl: RESEARCH_WEBSITE_URL,
         departments: ['Ecology and Evolutionary Biology'],
         researchAreas: ['fixture evolution', 'population models', 'synthetic DNA examples'],
@@ -1027,7 +1027,7 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         slug: 'example-health-systems-profile',
         name: 'Example Health Systems Profile',
-        description:
+        fullDescription:
           'Studies emergency medicine, health disparities, data systems, and public health research.',
         departments: ['Fixture School of Medicine'],
         researchAreas: [
@@ -1235,7 +1235,6 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         slug: 'example-publication-chrome-lab',
         name: 'Example Publication Chrome Lab',
-        description: '',
         shortDescription: 'Publications TimelineA big-picture view of P.',
         fullDescription: 'View 5 Related Publications',
         researchAreas: [
@@ -1282,7 +1281,6 @@ describe('LabDetail page', () => {
       group: {
         ...basePayload.group,
         name: 'Example Fallback Topic Lab',
-        description: '',
         shortDescription: '',
         fullDescription: '',
         departments: ['Behavioral Studies'],
@@ -1317,7 +1315,6 @@ describe('LabDetail page', () => {
         name: 'Example Synthesis Lab',
         kind: 'lab',
         entityType: 'LAB',
-        description: '',
         shortDescription: '',
         fullDescription: '',
         departments: ['Statistics & Data Science'],
@@ -1366,7 +1363,6 @@ describe('LabDetail page', () => {
         kind: 'lab',
         entityType: 'LAB',
         websiteUrl: MATERIALS_LAB_WEBSITE_URL,
-        description: '',
         shortDescription: '',
         fullDescription: '',
         profileSynthesisDescription:
@@ -1420,8 +1416,6 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         name: 'Example Full Description Lab',
         shortDescription: 'This lab focuses on fixture social cognition.',
-        description:
-          'The lab studies how synthetic groups are acquired using controlled fixture methods.',
         fullDescription,
       },
     } as LabDetailPayload);
@@ -1442,7 +1436,6 @@ describe('LabDetail page', () => {
       group: {
         ...basePayload.group,
         name: 'Example Sparse Department Lab',
-        description: '',
         shortDescription: '',
         fullDescription: '',
         departments: ['Public Policy'],

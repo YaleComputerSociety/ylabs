@@ -109,7 +109,7 @@ export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
   const blurb = publicTextString(
-    group.shortDescription || group.description || group.fullDescription || '',
+    group.shortDescription || group.fullDescription || '',
   ).slice(0, 280);
 
   return {
@@ -127,7 +127,6 @@ export function toPublicResearchEntitySummaryDto(
 }
 
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
-  'description',
   'shortDescription',
   'fullDescription',
   'profileSynthesisDescription',

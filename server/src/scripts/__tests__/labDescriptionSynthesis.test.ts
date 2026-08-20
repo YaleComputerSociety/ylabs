@@ -80,7 +80,6 @@ describe('assembleSynthesisSourceText', () => {
     const text = assembleSynthesisSourceText({
       fullDescription:
         'Studies coastal erosion. This profile-derived summary should be checked against the linked official sources before outreach.',
-      description: 'Studies coastal erosion.',
       profileSynthesisDescription:
         'Uses sediment cores https://example.org/data to reconstruct shorelines.',
     });

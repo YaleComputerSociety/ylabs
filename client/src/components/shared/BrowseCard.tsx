@@ -167,9 +167,9 @@ const BrowseCard = React.memo(
 
               <p className="text-sm text-gray-600 mb-1 line-clamp-1 leading-snug">{subtitle}</p>
 
-              {item.data.description && !isCompact && (
+              {item.data.shortDescription && !isCompact && (
                 <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
-                  {item.data.description}
+                  {item.data.shortDescription}
                 </p>
               )}
 

@@ -45,7 +45,6 @@ const DEFAULTS = {
 
 const PROSE_COMPLETENESS_FIELDS = new Set([
   'bio',
-  'description',
   'fullDescription',
   'researchInterestSummary',
 ]);

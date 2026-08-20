@@ -859,7 +859,6 @@ const researchEntitySearchText = (entity: any): string =>
     ...(Array.isArray(entity.professorNames) ? entity.professorNames : []),
     entity.shortDescription,
     entity.fullDescription,
-    entity.description,
     entity.summary,
     ...(Array.isArray(entity.departments) ? entity.departments : []),
     ...(Array.isArray(entity.researchAreas) ? entity.researchAreas : []),
@@ -1457,7 +1456,7 @@ const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 const PUBLIC_RELATED_ENTITY_PROJECTION =
-  '_id slug name displayName kind entityType departments shortDescription description fullDescription studentVisibilityTier';
+  '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier';
 
 export interface PublicRelationshipCollectionMeta {
   returned: number;

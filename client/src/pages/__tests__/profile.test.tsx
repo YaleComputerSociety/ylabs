@@ -393,7 +393,7 @@ describe('Profile page', () => {
               kind: 'individual',
               entityType: 'FACULTY_RESEARCH_AREA',
               role: 'pi',
-              description:
+              fullDescription:
                 'The Fixture Lab conducts research focused on synthetic systems. Review the lab site before contacting this lab.',
               researchAreas: ['Synthetic systems'],
             },

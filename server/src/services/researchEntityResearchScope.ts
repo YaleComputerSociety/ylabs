@@ -54,7 +54,6 @@ export function classifyResearchEntityResearchScope(
     text(entity.name),
     text(entity.displayName),
     text(entity.summary),
-    text(entity.description),
     text(entity.shortDescription),
     text(entity.fullDescription),
     text(entity.profileSynthesisDescription),

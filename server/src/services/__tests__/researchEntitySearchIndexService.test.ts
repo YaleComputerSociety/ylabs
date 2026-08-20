@@ -40,7 +40,7 @@ describe('researchEntitySearchIndexService', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-ai',
       name: 'Medical Imaging Group',
-      description: 'Uses artificial intelligence for diagnostic imaging.',
+      fullDescription: 'Uses artificial intelligence for diagnostic imaging.',
       researchAreas: ['Computer Vision'],
       archived: false,
     });
@@ -61,7 +61,7 @@ describe('researchEntitySearchIndexService', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
       name: 'URL Safety Lab',
-      description: 'Contact pi@example.edu or 203-555-1212 for research roles.',
+      fullDescription: 'Contact pi@example.edu or 203-555-1212 for research roles.',
       shortDescription: 'Email pi@example.edu for details.',
       websiteUrl: 'javascript:alert(document.cookie)',
       website: 'https://safe.example.edu/lab',
@@ -75,7 +75,7 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc).toMatchObject({
       id: 'entity-url-safety',
-      description: 'Contact [email redacted] or [phone redacted] for research roles.',
+      fullDescription: 'Contact [email redacted] or [phone redacted] for research roles.',
       shortDescription: 'Email [email redacted] for details.',
       websiteUrl: 'https://safe.example.edu/lab',
       sourceUrls: ['https://safe.example.edu/source'],
@@ -110,12 +110,13 @@ describe('researchEntitySearchIndexService', () => {
     const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
     expect(searchable).toEqual(
-      expect.arrayContaining(['description', 'shortDescription', 'fullDescription']),
+      expect.arrayContaining(['shortDescription', 'fullDescription']),
     );
     expect(searchable).not.toContain('keywords');
     expect(searchable).not.toContain('summary');
-    expect(searchable.indexOf('researchAreas')).toBeLessThan(searchable.indexOf('description'));
-    expect(searchable.indexOf('description')).toBeLessThan(searchable.indexOf('shortDescription'));
+    expect(searchable).not.toContain('description');
+    expect(searchable.indexOf('researchAreas')).toBeLessThan(searchable.indexOf('shortDescription'));
+    expect(searchable.indexOf('shortDescription')).toBeLessThan(searchable.indexOf('fullDescription'));
     expect(getResearchEntitySearchIndexSettings().rankingRules).toEqual([
       'words',
       'proximity',

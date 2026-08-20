@@ -190,7 +190,7 @@ const BrowseListItem = React.memo(
                 {item.type === 'listing'
                   ? item.data.description
                   : item.type === 'researchGroup'
-                    ? researchBestNextStep || item.data.description
+                    ? researchBestNextStep || item.data.shortDescription
                     : item.data.bestNextStep ||
                       fellowshipJourneySummary ||
                       item.data.summary ||

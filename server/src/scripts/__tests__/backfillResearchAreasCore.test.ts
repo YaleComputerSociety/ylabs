@@ -33,7 +33,7 @@ describe('planResearchAreaBackfillRow', () => {
         name: 'Vision Systems Lab',
         departments: ['Computer Vision'],
         existingResearchAreas: [],
-        description: 'We advance machine learning for public health screening.',
+        fullDescription: 'We advance machine learning for public health screening.',
       },
       options,
     );
@@ -56,7 +56,7 @@ describe('planResearchAreaBackfillRow', () => {
         name: 'AI Lab',
         departments: ['Economics'],
         existingResearchAreas: ['AI'],
-        description: 'Deep dives into machine learning.',
+        fullDescription: 'Deep dives into machine learning.',
       },
       options,
     );
@@ -93,7 +93,7 @@ describe('planResearchAreaBackfillRow', () => {
       {
         id: '5',
         existingResearchAreas: [],
-        description:
+        fullDescription:
           'machine learning, computer vision, public health, climate change, neuroscience, cell biology, artificial intelligence',
       },
       { onlyEmpty: true, maxAreas: 2 },
@@ -107,7 +107,7 @@ describe('planResearchAreaBackfillRow', () => {
       {
         id: '6',
         existingResearchAreas: ['Neuroscience'],
-        description: 'We combine machine learning with imaging.',
+        fullDescription: 'We combine machine learning with imaging.',
       },
       { onlyEmpty: false, maxAreas: 6 },
     );

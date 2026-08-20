@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import {
   MAX_SAVED_PATHWAY_NOTE_LENGTH,
   MAX_SAVED_PROGRAM_NOTE_LENGTH,
-  MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH,
   MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   boundSavedResearchEntitySummaryText,
   buildCaseInsensitiveNetidFilter,
@@ -288,11 +287,5 @@ describe('boundSavedResearchEntitySummaryText', () => {
         MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
       ),
     ).toHaveLength(MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH);
-    expect(
-      boundSavedResearchEntitySummaryText(
-        'd'.repeat(MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH + 1),
-        MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH,
-      ),
-    ).toHaveLength(MAX_SAVED_RESEARCH_ENTITY_DESCRIPTION_LENGTH);
   });
 });

@@ -53,7 +53,7 @@ describe('assessResearchEntityEvidenceCoverage', () => {
     const assessment = assessResearchEntityEvidenceCoverage({
       entity: {
         name: 'Peters Lab',
-        description:
+        fullDescription:
           'This book explores the materiality of communication and provides a genealogy of the information age.',
         sourceUrls: ['http://filmstudies.yale.edu/people/john-durham-peters'],
       },
@@ -64,7 +64,7 @@ describe('assessResearchEntityEvidenceCoverage', () => {
       observations: [
         {
           sourceName: 'ylabs-listing',
-          field: 'description',
+          field: 'fullDescription',
           value:
             'This book explores the materiality of communication and provides a genealogy of the information age.',
         },
@@ -75,7 +75,7 @@ describe('assessResearchEntityEvidenceCoverage', () => {
     expect(assessment.blockers).toContain('wrong_evidence_type_description');
     expect(assessment.rejectedFields).toEqual([
       {
-        field: 'description',
+        field: 'fullDescription',
         reason: 'publication_or_book_blurb',
         sourceName: 'ylabs-listing',
       },

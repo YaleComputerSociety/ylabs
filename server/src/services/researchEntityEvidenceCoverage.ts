@@ -150,7 +150,7 @@ const looksLikePublicationBlurb = (value: unknown): boolean => {
 
 const descriptionObservationSources = (observations: Array<Record<string, any>>) =>
   observations.filter((observation) =>
-    ['description', 'shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
+    ['shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
       textValue(observation.field),
     ),
   );
@@ -164,9 +164,9 @@ function descriptionState(
   sourceBacked: boolean;
 } {
   const rejectedFields = descriptionObservationSources(observations)
-    .filter((observation) => looksLikePublicationBlurb(observation.value || entity.description))
+    .filter((observation) => looksLikePublicationBlurb(observation.value))
     .map((observation) => ({
-      field: textValue(observation.field) || 'description',
+      field: textValue(observation.field) || 'fullDescription',
       reason: 'publication_or_book_blurb',
       sourceName: textValue(observation.sourceName) || undefined,
     }));
@@ -182,8 +182,7 @@ function descriptionState(
     website: entity.website,
     websiteUrl: entity.websiteUrl,
   });
-  const usefulDescription =
-    quality.full.isUseful || quality.short.isUseful || textValue(entity.description).length >= 80;
+  const usefulDescription = quality.full.isUseful || quality.short.isUseful;
   const sources = descriptionObservationSources(observations);
   const hasNonListingDescriptionObservation = sources.some(
     (observation) => !isListingObservation(observation),
@@ -317,7 +316,7 @@ function overlayObservation(
   const contactRoutes = [...(next.contactRoutes || [])];
 
   if (
-    ['description', 'shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
+    ['shortDescription', 'fullDescription', 'profileSynthesisDescription'].includes(
       field,
     )
   ) {
