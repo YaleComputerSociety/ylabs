@@ -3782,9 +3782,9 @@ test('official-profile PI backfill source-acquisition ids use safe serialization
     /const officialProfileDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
   assert.match(source, /officialProfileDocumentId\(entity\._id\)/);
-  assert.match(source, /officialProfileDocumentId\(member\.researchEntityId\)/);
+  assert.match(source, /idValue\(entry\.researchEntityId\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(member\.researchEntityId\)/);
+  assert.doesNotMatch(source, /String\(entry\.researchEntityId\)/);
 });
 
 test('department undergrad research scraper fetches configured pages through the shared SSRF guard', () => {
