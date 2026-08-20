@@ -50,7 +50,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { User } from '../models/user';
 import {
@@ -526,23 +526,22 @@ async function buildCandidates(regenerate: boolean): Promise<BioBackfillCandidat
   const visibleEntityIds = visibleEntities.map((entity: any) => entity._id);
   if (visibleEntityIds.length === 0) return [];
 
-  const members = await ResearchGroupMember.find({
-    researchEntityId: { $in: visibleEntityIds },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: LEAD_ROLES },
-    userId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId userId role')
-    .lean();
-  const userIds = [...new Set(members.map((m: any) => idValue(m.userId)).filter(Boolean))];
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(visibleEntityIds);
+  const leadEntries: Array<{ researchEntityId: string; netid: string; role: string }> = [];
+  for (const [entityId, entries] of rosterByEntityId) {
+    for (const entry of entries) {
+      if (entry.state === 'HISTORICAL' || !LEAD_ROLES.includes(entry.role) || !entry.netid) continue;
+      leadEntries.push({ researchEntityId: entityId, netid: entry.netid, role: entry.role });
+    }
+  }
+  const netids = [...new Set(leadEntries.map((entry) => entry.netid).filter(Boolean))];
   const memberEntityIds = [
-    ...new Set(members.map((m: any) => idValue(m.researchEntityId)).filter(Boolean)),
+    ...new Set(leadEntries.map((entry) => entry.researchEntityId).filter(Boolean)),
   ];
-  if (userIds.length === 0) return [];
+  if (netids.length === 0) return [];
 
   const [users, homes] = await Promise.all([
-    User.find({ _id: { $in: userIds } })
+    User.find({ netid: { $in: netids } })
       .select(
         '_id netid fname lname name displayName bio title primaryDepartment secondaryDepartments website websiteUrl profileUrls researchInterests topics openAlexId openalex_id manuallyLockedFields dataSources confidenceByField',
       )
@@ -555,14 +554,13 @@ async function buildCandidates(regenerate: boolean): Promise<BioBackfillCandidat
   ]);
 
   const homeById = new Map((homes as any[]).map((entity) => [idValue(entity._id), entity]));
-  const homesByUserId = new Map<string, any[]>();
-  for (const member of members as any[]) {
-    const key = idValue(member.userId);
-    const entity = homeById.get(idValue(member.researchEntityId));
-    if (!key || !entity) continue;
-    const rows = homesByUserId.get(key) || [];
-    rows.push({ ...entity, role: member.role || '' });
-    homesByUserId.set(key, rows);
+  const homesByNetid = new Map<string, any[]>();
+  for (const entry of leadEntries) {
+    const entity = homeById.get(entry.researchEntityId);
+    if (!entity) continue;
+    const rows = homesByNetid.get(entry.netid) || [];
+    rows.push({ ...entity, role: entry.role || '' });
+    homesByNetid.set(entry.netid, rows);
   }
 
   const candidates: BioBackfillCandidate[] = [];
@@ -574,7 +572,7 @@ async function buildCandidates(regenerate: boolean): Promise<BioBackfillCandidat
     const bioLocked = lockedFields.includes('bio');
     const interestsLocked = lockedFields.includes('researchInterests');
 
-    const userHomes = homesByUserId.get(idValue(user._id)) || [];
+    const userHomes = homesByNetid.get(textValue(user.netid)) || [];
     const publicProfile = normalizePublicProfile(user, {
       researchEntities: userHomes,
       trustedResearchEntities: true,

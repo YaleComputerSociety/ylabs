@@ -18,7 +18,6 @@
     "migrate:smart-titles:live": "npx tsx migrateSmartTitles.ts --live",
     "migrate:v4:faculty-members": "npx tsx BackfillV4FacultyMembers.ts",
     "migrate:v4:student-profiles": "npx tsx BackfillV4StudentProfiles.ts",
-    "migrate:v4:research-group-members": "npx tsx BackfillV4ResearchGroupMembers.ts",
     "migrate:v4:paper-graph": "npx tsx BackfillV4PaperGraph.ts",
     "migrate:v4:grants": "npx tsx BackfillV4Grants.ts",
     "migrate:v4:research-group-stats": "npx tsx BackfillV4ResearchGroupStats.ts",

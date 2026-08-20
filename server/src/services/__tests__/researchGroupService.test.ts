@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   researchEntityFindOne: vi.fn(),
   researchEntityFind: vi.fn(),
   researchEntityRelationshipFind: vi.fn(),
-  researchGroupMemberFind: vi.fn(),
   roleAssignmentFind: vi.fn(),
   personFind: vi.fn(),
   accountFind: vi.fn(),
@@ -49,12 +48,6 @@ vi.mock('../../models/researchEntity', () => ({
 vi.mock('../../models/researchEntityRelationship', () => ({
   ResearchEntityRelationship: {
     find: mocks.researchEntityRelationshipFind,
-  },
-}));
-
-vi.mock('../../models/researchGroupMember', () => ({
-  ResearchGroupMember: {
-    find: mocks.researchGroupMemberFind,
   },
 }));
 
@@ -175,7 +168,6 @@ beforeEach(() => {
   mocks.listPlanningContextsForResearchEntities.mockReset();
   mocks.getPublicUndergraduateLogistics.mockReset();
   mocks.researchEntityRelationshipFind.mockReset();
-  mocks.researchGroupMemberFind.mockReset();
   mocks.roleAssignmentFind.mockReset();
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
@@ -192,7 +184,6 @@ beforeEach(() => {
   mocks.listingFind.mockReturnValue(queryResult([]));
   mocks.researchEntityFind.mockReturnValue(queryResult([]));
   mocks.researchEntityRelationshipFind.mockReturnValue(queryResult([]));
-  mocks.researchGroupMemberFind.mockReturnValue(queryResult([]));
   mocks.roleAssignmentFind.mockReturnValue(queryResult([]));
   mocks.personFind.mockReturnValue(queryResult([]));
   mocks.accountFind.mockReturnValue(queryResult([]));
@@ -741,7 +732,6 @@ describe('getResearchGroupDetail', () => {
 
   it('fails closed when a student-ready record becomes description-empty at the public boundary', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    const userId = '67d8928150621bcef434a1d6';
     mocks.researchEntityFindOne.mockReturnValue(
       leanResult({
         _id: entityId,
@@ -759,28 +749,6 @@ describe('getResearchGroupDetail', () => {
         researchAreas: [],
         studentVisibilityTier: 'student_ready',
       }),
-    );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      sortLimitLeanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId,
-          role: 'pi',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: userId,
-          fname: 'Correct',
-          lname: 'Person',
-          displayName: 'Correct Person',
-        },
-      ]),
     );
 
     const detail = await getResearchGroupDetail('correct-person-research');
@@ -1508,31 +1476,6 @@ describe('getResearchGroupDetail', () => {
         profileSynthesisDescription:
           'This music has been performed by major music, dance, and theater organizations throughout the world, and in the most renowned concert halls and festivals in the United States and Europe.',
       }),
-    );
-    mocks.researchGroupMemberFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'member-1',
-          researchEntityId: entityId,
-          userId: 'fx1001',
-          role: 'pi',
-          archived: false,
-          isCurrentMember: true,
-        },
-      ]),
-    );
-    mocks.userFind.mockReturnValue(
-      leanResult([
-        {
-          _id: 'fx1001',
-          fname: 'David',
-          lname: 'Glahn',
-          displayName: 'David Glahn',
-          primaryDepartment: 'Psychiatry',
-          imageUrl: '',
-          netid: 'fx1001',
-        },
-      ]),
     );
 
     const detail = await getResearchGroupDetail('glahn-lab-dcg32');

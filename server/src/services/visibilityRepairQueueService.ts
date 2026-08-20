@@ -2,9 +2,10 @@ import { Fellowship } from '../models/fellowship';
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
+  resolveResearcherIdForLegacyUser,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
 import { User } from '../models/user';
@@ -137,41 +138,39 @@ interface RepairDeps {
   ) => Promise<{ counts?: { resolved?: number; promoted?: number } }>;
 }
 
-export function buildVisibilityRepairPiMemberUpsert(
-  researchEntityId: string,
-  userId: string,
+export function buildVisibilityRepairPiRoleAssignmentUpsert(
+  personId: mongoose.Types.ObjectId,
+  researchEntityId: mongoose.Types.ObjectId,
   metadata: { sourceUrl: string; sourceName: string; confidence: number },
   now = new Date(),
 ) {
   return {
     filter: {
-      researchEntityId,
-      userId,
-      role: 'pi',
-      isCurrentMember: true,
+      personId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': researchEntityId,
+      role: 'PI',
     },
     update: {
       $set: {
-        researchEntityId,
-        researchGroupId: researchEntityId,
-        userId,
-        role: 'pi',
-        isCurrentMember: true,
+        personId,
+        target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
+        role: 'PI',
+        state: 'CURRENT',
         archived: false,
-        sourceUrl: metadata.sourceUrl,
         confidence: metadata.confidence,
-        lastObservedAt: now,
-        'confidenceByField.role': metadata.confidence,
-        'fieldProvenance.role': {
+        reviewStatus: 'UNREVIEWED',
+        rosterProvenance: {
           sourceName: metadata.sourceName,
           sourceUrl: metadata.sourceUrl,
           observedAt: now,
-          confidence: metadata.confidence,
         },
       },
       $setOnInsert: {
         startedAt: now,
+        evidenceClaimIds: [],
       },
+      $unset: { endedAt: '' },
     },
     options: { upsert: true },
   };
@@ -1979,12 +1978,15 @@ const defaultRepairDeps: RepairDeps = {
     return matches.length === 1 ? matches[0] : null;
   },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
-    const { filter, update, options } = buildVisibilityRepairPiMemberUpsert(
-      researchEntityId,
-      userId,
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personId = await resolveResearcherIdForLegacyUser(userId);
+    if (!entityObjectId || !personId) return;
+    const { filter, update, options } = buildVisibilityRepairPiRoleAssignmentUpsert(
+      personId,
+      entityObjectId,
       metadata,
     );
-    await ResearchGroupMember.updateOne(filter, update, options);
+    await RoleAssignment.updateOne(filter, update, options);
   },
   async upsertSignal(input) {
     return upsertSignal(input);

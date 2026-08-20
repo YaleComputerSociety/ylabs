@@ -22,7 +22,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { materializeInferredDirectorMembership } from '../scrapers/entityMaterializer';
 import {
   CenterDirectorLLMExtractor,
@@ -152,12 +152,15 @@ export async function findCenterDirectorCandidates(
     { _id: 1, slug: 1, name: 1, websiteUrl: 1 },
   ).lean();
 
-  const withLead = await ResearchGroupMember.distinct('researchEntityId', {
-    researchEntityId: { $in: (docs as any[]).map((doc) => doc._id) },
-    role: { $in: LEAD_ROLES },
-    isCurrentMember: { $ne: false },
-  });
-  const withLeadSet = new Set(withLead.map((id: any) => serializedDocumentId(id) || ''));
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(
+    (docs as any[]).map((doc) => doc._id),
+  );
+  const withLeadSet = new Set<string>();
+  for (const [entityId, entries] of rosterByEntityId) {
+    if (entries.some((entry) => entry.state !== 'HISTORICAL' && LEAD_ROLES.includes(entry.role))) {
+      withLeadSet.add(entityId);
+    }
+  }
 
   const candidates: CandidateCenter[] = [];
   for (const doc of docs as any[]) {

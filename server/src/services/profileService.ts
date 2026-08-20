@@ -1730,37 +1730,30 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
 };
 
 const loadProfileResearchEntities = async (user: Record<string, any>) => {
-  const userId = user._id;
-  if (!userId) return [];
-
-  const personId = await resolveResearcherIdForLegacyUser(userId, user.facultyMemberId);
+  const personId = await resolveResearcherIdForLegacyUser(user._id, user.facultyMemberId);
   if (!personId) return [];
 
   const assignments = await RoleAssignment.find({
     personId,
     'target.kind': 'RESEARCH_ENTITY',
-    archived: { $ne: true },
     state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
   })
     .select('target role')
     .lean();
-  const entityIds = [
-    ...new Set(
-      assignments
-        .map((assignment: any) => profileDocumentId(assignment?.target?.id))
-        .filter(Boolean),
-    ),
-  ];
+
+  const roleByEntityId = new Map<string, string>();
+  for (const assignment of assignments as any[]) {
+    const entityId = profileDocumentId(assignment.target?.id);
+    if (!entityId || roleByEntityId.has(entityId)) continue;
+    roleByEntityId.set(
+      entityId,
+      LEGACY_ROLE_BY_CANONICAL[assignment.role as keyof typeof LEGACY_ROLE_BY_CANONICAL] || '',
+    );
+  }
+  const entityIds = [...roleByEntityId.keys()];
   if (entityIds.length === 0) return [];
 
-  const roleByEntityId = new Map(
-    assignments
-      .map((assignment: any): [string, string] => [
-        profileDocumentId(assignment?.target?.id),
-        LEGACY_ROLE_BY_CANONICAL[assignment.role as keyof typeof LEGACY_ROLE_BY_CANONICAL] || '',
-      ])
-      .filter(([entityId]) => Boolean(entityId)),
-  );
   const entities = await ResearchEntity.find({
     _id: { $in: entityIds },
     archived: { $ne: true },

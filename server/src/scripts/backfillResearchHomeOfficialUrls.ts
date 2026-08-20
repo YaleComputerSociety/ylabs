@@ -23,7 +23,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
 import { User } from '../models/user';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -211,19 +211,18 @@ export async function runResearchHomeUrlBackfill(options: {
     if (options.limit && result.scanned >= options.limit) break;
     result.scanned += 1;
     try {
-      const lead: any = await ResearchGroupMember.findOne({
-        researchEntityId: entity._id,
-        role: { $in: LEAD_ROLES },
-        isCurrentMember: { $ne: false },
-        userId: { $exists: true, $ne: null },
-      })
-        .select('userId')
-        .lean();
-      if (!lead?.userId) {
+      const roster = await getResearchEntityRoster(entity._id);
+      const lead = roster.find(
+        (entry) => entry.state !== 'HISTORICAL' && LEAD_ROLES.includes(entry.role) && entry.netid,
+      );
+      if (!lead?.netid) {
         result.unresolved += 1;
         continue;
       }
-      const user: any = await User.findById(lead.userId, { profileUrls: 1, fname: 1, lname: 1 }).lean();
+      const user: any = await User.findOne(
+        { netid: lead.netid },
+        { profileUrls: 1, fname: 1, lname: 1 },
+      ).lean();
       if (!user) {
         result.unresolved += 1;
         continue;

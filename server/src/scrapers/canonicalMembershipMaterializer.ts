@@ -252,6 +252,13 @@ async function resolveOrCreateResearcherId(
   }
 }
 
+export async function resolveOrCreateResearcherIdForIdentity(
+  identity: CanonicalMemberIdentity,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const accountId = await resolveOrCreateAccountId(identity);
+  return resolveOrCreateResearcherId(identity, accountId);
+}
+
 export async function resolveCanonicalResearcherId(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {

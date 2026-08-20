@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  buildVisibilityRepairPiMemberUpsert,
+  buildVisibilityRepairPiRoleAssignmentUpsert,
   buildVisibilityRepairPlan,
   buildVisibilityRepairPlans,
   classifyVisibilityRepairStage,
@@ -38,12 +38,14 @@ describe('visibilityRepairQueueService', () => {
     ).toBeUndefined();
   });
 
-  it('builds PI member upserts against current PI rows only', () => {
+  it('builds canonical PI role-assignment upserts against current PI rows only', () => {
     const now = new Date('2026-06-05T04:00:00.000Z');
+    const personId = new mongoose.Types.ObjectId();
+    const researchEntityId = new mongoose.Types.ObjectId();
 
-    const upsert = buildVisibilityRepairPiMemberUpsert(
-      'entity-1',
-      'user-1',
+    const upsert = buildVisibilityRepairPiRoleAssignmentUpsert(
+      personId,
+      researchEntityId,
       {
         sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
         sourceName: 'visibility-repair-queue',
@@ -54,31 +56,28 @@ describe('visibilityRepairQueueService', () => {
 
     expect(upsert).toEqual({
       filter: {
-        researchEntityId: 'entity-1',
-        userId: 'user-1',
-        role: 'pi',
-        isCurrentMember: true,
+        personId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': researchEntityId,
+        role: 'PI',
       },
       update: {
-        $set: expect.objectContaining({
-          researchEntityId: 'entity-1',
-          researchGroupId: 'entity-1',
-          userId: 'user-1',
-          role: 'pi',
-          isCurrentMember: true,
+        $set: {
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: researchEntityId },
+          role: 'PI',
+          state: 'CURRENT',
           archived: false,
-          sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
           confidence: 0.95,
-          lastObservedAt: now,
-          'confidenceByField.role': 0.95,
-          'fieldProvenance.role': {
+          reviewStatus: 'UNREVIEWED',
+          rosterProvenance: {
             sourceName: 'visibility-repair-queue',
             sourceUrl: 'https://medicine.yale.edu/profile/example-faculty/',
             observedAt: now,
-            confidence: 0.95,
           },
-        }),
-        $setOnInsert: { startedAt: now },
+        },
+        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $unset: { endedAt: '' },
       },
       options: { upsert: true },
     });

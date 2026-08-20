@@ -8,7 +8,7 @@ import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import type { StudentVisibilityTier } from '../models/studentVisibility';
 import { User } from '../models/user';
 import {
@@ -35,6 +35,8 @@ import {
 } from './studentVisibilityBackfillReport';
 
 dotenv.config();
+
+const LEAD_VISIBILITY_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 
 export interface StudentVisibilityBackfillCliOptions {
   apply: boolean;
@@ -290,14 +292,8 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   if (Number.isFinite(limit)) query.limit(limit);
   const entities = await query.lean();
   const entityIds = entities.map((entity: any) => entity._id);
-  const [leadRows, accessRows] = await Promise.all([
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId userId name role')
-      .lean(),
+  const [rosterByEntityId, accessRows] = await Promise.all([
+    getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
         $match: {
@@ -310,33 +306,42 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     ]),
   ]);
 
+  const leadRows: any[] = [];
+  for (const [, entries] of rosterByEntityId) {
+    for (const entry of entries) {
+      if (entry.state === 'HISTORICAL' || !LEAD_VISIBILITY_ROLES.includes(entry.role)) continue;
+      leadRows.push({
+        researchEntityId: entry.researchEntityId,
+        userId: entry.personId,
+        netid: entry.netid,
+        name: entry.name,
+        title: entry.title,
+        role: entry.role,
+      });
+    }
+  }
+
   const leadsByEntityId = new Map<string, any[]>();
-  const leadUserIds = Array.from(
-    new Set((leadRows as any[]).map((row) => serializedDocumentId(row.userId)).filter(Boolean)),
-  );
-  const leadUsers = leadUserIds.length
-    ? await User.find({ _id: { $in: leadUserIds } })
-        .select('fname lname')
+  const leadNetids = Array.from(new Set(leadRows.map((row) => row.netid).filter(Boolean)));
+  const leadUsers = leadNetids.length
+    ? await User.find({ netid: { $in: leadNetids } })
+        .select('netid fname lname')
         .lean()
     : [];
-  const leadUsersById = new Map(
-    (leadUsers as any[]).flatMap((user) => {
-      const id = serializedDocumentId(user._id);
-      return id ? [[id, user] as const] : [];
-    }),
-  );
+  const leadUsersByNetid = new Map((leadUsers as any[]).map((user) => [user.netid, user]));
   const profileAreaNamesByUserId = new Map<string, string[]>();
+  for (const row of leadRows) {
+    if (row.netid) row.user = leadUsersByNetid.get(row.netid);
+    const userId = serializedDocumentId(row.userId);
+    if (userId && !profileAreaNamesByUserId.has(userId)) {
+      const names = profileAreaNamesForVisibilityPi(row.user?.fname, row.user?.lname);
+      if (names.length > 0) profileAreaNamesByUserId.set(userId, names);
+    }
+    const key = serializedDocumentId(row.researchEntityId);
+    if (key) leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
+  }
   const profileAreaNames = Array.from(
-    new Set(
-      (leadUsers as any[])
-        .flatMap((user) => {
-          const names = profileAreaNamesForVisibilityPi(user.fname, user.lname);
-          const id = serializedDocumentId(user._id);
-          if (id) profileAreaNamesByUserId.set(id, names);
-          return names;
-        })
-        .filter(Boolean),
-    ),
+    new Set([...profileAreaNamesByUserId.values()].flat().filter(Boolean)),
   );
   const profileAreaEntities = profileAreaNames.length
     ? await ResearchEntity.find({ archived: { $ne: true }, name: { $in: profileAreaNames } })
@@ -348,13 +353,6 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
     const nameSet = new Set(names);
     const matches = (profileAreaEntities as any[]).filter((entity) => nameSet.has(entity.name));
     if (matches.length > 0) profileAreaEntitiesByUserId.set(userId, matches);
-  }
-  for (const row of leadRows as any[]) {
-    const userId = serializedDocumentId(row.userId);
-    if (userId) row.user = leadUsersById.get(userId);
-    const key = serializedDocumentId(row.researchEntityId);
-    if (!key) continue;
-    leadsByEntityId.set(key, [...(leadsByEntityId.get(key) || []), row]);
   }
   const accessCounts = countByEntityId(accessRows as any[]);
   const entityById = new Map(

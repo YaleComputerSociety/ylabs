@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
   buildOfficialLabUrlResearchEntityDedupePlan,
@@ -752,19 +752,21 @@ function isFullPersonLabName(normalizedName: string): boolean {
 }
 
 async function loadSamePiCandidateRows(limit: number, options: { includeRetiredMembers: boolean }) {
-  const memberMatch: Record<string, unknown> = {
-    role: 'pi',
-    researchEntityId: { $exists: true, $ne: null },
-    userId: { $exists: true, $ne: null },
+  const assignmentMatch: Record<string, unknown> = {
+    'target.kind': 'RESEARCH_ENTITY',
+    role: 'PI',
+    'target.id': { $exists: true, $ne: null },
+    personId: { $exists: true, $ne: null },
+    archived: { $ne: true },
   };
-  if (!options.includeRetiredMembers) memberMatch.isCurrentMember = { $ne: false };
+  if (!options.includeRetiredMembers) assignmentMatch.state = { $ne: 'HISTORICAL' };
 
-  const rows = await ResearchGroupMember.aggregate([
-    { $match: memberMatch },
+  const rows = await RoleAssignment.aggregate([
+    { $match: assignmentMatch },
     {
       $lookup: {
         from: 'research_entities',
-        localField: 'researchEntityId',
+        localField: 'target.id',
         foreignField: '_id',
         as: 'entity',
       },
@@ -773,18 +775,17 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
     { $match: { 'entity.archived': { $ne: true } } },
     {
       $lookup: {
-        from: 'users',
-        localField: 'userId',
+        from: 'researchers',
+        localField: 'personId',
         foreignField: '_id',
-        as: 'user',
+        as: 'person',
       },
     },
-    { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$person', preserveNullAndEmptyArrays: true } },
     {
       $project: {
-        userId: { $toString: '$userId' },
-        piFirstName: '$user.fname',
-        piLastName: '$user.lname',
+        personId: { $toString: '$personId' },
+        piDisplayName: '$person.displayName',
         entity: {
           id: { $toString: '$entity._id' },
           slug: '$entity.slug',
@@ -802,9 +803,8 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
     },
     {
       $group: {
-        _id: { userId: '$userId' },
-        piFirstName: { $first: '$piFirstName' },
-        piLastName: { $first: '$piLastName' },
+        _id: { userId: '$personId' },
+        piDisplayName: { $first: '$piDisplayName' },
         entities: { $addToSet: '$entity' },
       },
     },
@@ -813,8 +813,12 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
 
   return Promise.all(
     rows.map(async (row: any) => {
-      const firstName = String(row.piFirstName || '').trim();
-      const lastName = String(row.piLastName || '').trim();
+      const displayNameParts = String(row.piDisplayName || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      const lastName = displayNameParts.length > 0 ? displayNameParts[displayNameParts.length - 1] : '';
+      const firstName = displayNameParts.slice(0, -1).join(' ');
       const entityIds = new Set((row.entities || []).map((entity: { id?: string }) => entity.id));
       const exactPersonNames = profileAreaNamesForPi(firstName, lastName);
       const profileAreaEntities =
@@ -832,8 +836,8 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
       return {
         userId: row._id.userId,
         normalizedName: `same-pi:${row._id.userId}`,
-        piFirstName: row.piFirstName,
-        piLastName: row.piLastName,
+        piFirstName: firstName,
+        piLastName: lastName,
         entities: [
           ...(row.entities || []),
           ...profileAreaEntities
@@ -892,18 +896,20 @@ async function loadSinglePiNameCandidateRows(limit: number) {
     { $match: { 'entities.1': { $exists: true } } },
     {
       $lookup: {
-        from: 'research_entity_members',
+        from: 'role_assignments',
         let: { entityIds: '$entityIds' },
         pipeline: [
           {
             $match: {
-              $expr: { $in: ['$researchEntityId', '$$entityIds'] },
-              role: 'pi',
-              isCurrentMember: { $ne: false },
-              userId: { $exists: true, $ne: null },
+              $expr: { $in: ['$target.id', '$$entityIds'] },
+              'target.kind': 'RESEARCH_ENTITY',
+              role: 'PI',
+              state: { $ne: 'HISTORICAL' },
+              archived: { $ne: true },
+              personId: { $exists: true, $ne: null },
             },
           },
-          { $group: { _id: '$userId' } },
+          { $group: { _id: '$personId' } },
         ],
         as: 'piUsers',
       },
@@ -1015,28 +1021,30 @@ async function loadOfficialLabUrlCandidateRows(limit: number) {
 }
 
 async function loadDuplicateCurrentMemberRows(limit: number) {
-  return ResearchGroupMember.aggregate([
+  return RoleAssignment.aggregate([
     {
       $match: {
-        isCurrentMember: { $ne: false },
-        researchEntityId: { $exists: true, $ne: null },
-        userId: { $exists: true, $ne: null },
+        'target.kind': 'RESEARCH_ENTITY',
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+        'target.id': { $exists: true, $ne: null },
+        personId: { $exists: true, $ne: null },
       },
     },
     {
       $group: {
         _id: {
-          researchEntityId: '$researchEntityId',
-          userId: '$userId',
+          researchEntityId: '$target.id',
+          userId: '$personId',
           role: '$role',
         },
         members: {
           $push: {
             id: { $toString: '$_id' },
             confidence: '$confidence',
-            lastObservedAt: '$lastObservedAt',
+            lastObservedAt: '$rosterProvenance.observedAt',
             updatedAt: '$updatedAt',
-            sourceUrl: '$sourceUrl',
+            sourceUrl: '$rosterProvenance.sourceUrl',
           },
         },
       },
@@ -1503,43 +1511,44 @@ export async function applyResearchEntityDedupeMergeGroup(
         },
       );
 
-  const duplicateMembers = await ResearchGroupMember.find({
-    researchEntityId: { $in: duplicateIds },
+  const duplicateMembers = await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: duplicateIds },
   })
-    .select('_id userId role')
+    .select('_id personId role')
     .lean();
   const canonicalMemberKeys = new Set(
     (
-      await ResearchGroupMember.find({
-        researchEntityId: canonicalId,
-        userId: { $in: duplicateMembers.map((member) => member.userId).filter(Boolean) },
+      await RoleAssignment.find({
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': canonicalId,
+        personId: { $in: duplicateMembers.map((member) => member.personId).filter(Boolean) },
       })
-        .select('userId role')
+        .select('personId role')
         .lean()
-    ).map((member) => `${String(member.userId)}:${member.role || ''}`),
+    ).map((member) => `${String(member.personId)}:${member.role || ''}`),
   );
   const conflictingMemberIds = duplicateMembers
-    .filter((member) => canonicalMemberKeys.has(`${String(member.userId)}:${member.role || ''}`))
+    .filter((member) => canonicalMemberKeys.has(`${String(member.personId)}:${member.role || ''}`))
     .map((member) => member._id);
 
   const retiredConflictingMembers =
     conflictingMemberIds.length > 0
-      ? await ResearchGroupMember.updateMany(
-          { _id: { $in: conflictingMemberIds }, isCurrentMember: { $ne: false } },
+      ? await RoleAssignment.updateMany(
+          { _id: { $in: conflictingMemberIds }, state: { $ne: 'HISTORICAL' }, archived: { $ne: true } },
           {
             $set: {
-              isCurrentMember: false,
-              leftAt: now,
+              state: 'HISTORICAL',
               endedAt: now,
-              lastObservedAt: now,
+              archived: true,
             },
           },
         )
       : { modifiedCount: 0 };
 
-  const members = await ResearchGroupMember.updateMany(
-    { researchEntityId: { $in: duplicateIds }, _id: { $nin: conflictingMemberIds } },
-    { $set: { researchEntityId: canonicalId, researchGroupId: canonicalId } },
+  const members = await RoleAssignment.updateMany(
+    { 'target.kind': 'RESEARCH_ENTITY', 'target.id': { $in: duplicateIds }, _id: { $nin: conflictingMemberIds } },
+    { $set: { 'target.id': canonicalId } },
   );
 
   const shouldRelinkReferences = options.deleteDuplicates || options.relinkReferences;
@@ -1610,14 +1619,13 @@ async function retireDuplicateCurrentMembers(
         };
       }
 
-      const retired = await ResearchGroupMember.updateMany(
-        { _id: { $in: memberIds }, isCurrentMember: { $ne: false } },
+      const retired = await RoleAssignment.updateMany(
+        { _id: { $in: memberIds }, state: { $ne: 'HISTORICAL' }, archived: { $ne: true } },
         {
           $set: {
-            isCurrentMember: false,
-            leftAt: now,
+            state: 'HISTORICAL',
             endedAt: now,
-            lastObservedAt: now,
+            archived: true,
           },
         },
       );

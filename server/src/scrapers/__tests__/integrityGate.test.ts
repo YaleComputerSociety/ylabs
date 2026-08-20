@@ -28,8 +28,8 @@ vi.mock('../../models/researchEntity', () => ({
   ResearchEntity: { aggregate: modelMocks.aggregate },
 }));
 
-vi.mock('../../models/researchGroupMember', () => ({
-  ResearchGroupMember: { aggregate: modelMocks.aggregate },
+vi.mock('../../models/roleAssignment', () => ({
+  RoleAssignment: { aggregate: modelMocks.aggregate },
 }));
 
 vi.mock('../../models/user', () => ({

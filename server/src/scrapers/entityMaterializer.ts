@@ -11,7 +11,6 @@ import { Paper } from '../models/paper';
 import { PaperAuthor } from '../models/paperAuthor';
 import { User, normalizeUserType } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
@@ -44,7 +43,12 @@ import {
   resolveCanonicalResearcherId,
   type CanonicalMemberIdentity,
 } from './canonicalMembershipMaterializer';
-import type { RoleAssignmentRosterProvenance } from '../models/roleAssignment';
+import {
+  getResearchEntityRoster,
+  resolveResearcherIdForLegacyUser,
+  type ResearchEntityRosterEntry,
+} from '../services/researchEntityMembershipAccessor';
+import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/roleAssignment';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -670,6 +674,29 @@ export function buildResearchGroupMemberUpsert(
   };
 }
 
+interface CanonicalRosterMatch {
+  roster: ResearchEntityRosterEntry[];
+  matches: (entry: ResearchEntityRosterEntry) => boolean;
+}
+
+async function findCanonicalRosterMatch(
+  researchEntityId: string,
+  identity: { userId?: unknown; facultyMemberId?: unknown; name?: unknown },
+): Promise<CanonicalRosterMatch> {
+  const roster = await getResearchEntityRoster(researchEntityId);
+  const researcherId = (
+    await resolveResearcherIdForLegacyUser(identity.userId, identity.facultyMemberId)
+  )?.toString();
+  const name = textValue(identity.name).toLowerCase();
+  const matches = (entry: ResearchEntityRosterEntry): boolean => {
+    if (researcherId && entry.personId) {
+      return entry.personId.toString() === researcherId;
+    }
+    return Boolean(name) && textValue(entry.name).toLowerCase() === name;
+  };
+  return { roster, matches };
+}
+
 async function materializeResearchGroupMember(
   identifier: { entityId?: string; entityKey?: string },
   observations: any[],
@@ -742,46 +769,37 @@ async function materializeResearchGroupMember(
     };
   }
 
+  const resolvedRole = String(patch.filter.role || '');
+  const { roster, matches } = await findCanonicalRosterMatch(researchEntityId, {
+    userId: patch.filter.userId,
+    facultyMemberId: patch.filter.facultyMemberId,
+    name: patch.filter.name,
+  });
+
   // Don't add a non-lead roster row for someone who is already a lead (PI /
   // director / co-director) of this entity. The director extractor promotes a
   // roster member to `director` and removes the stale roster row; without this
   // guard the next roster materialization would re-create the duplicate
-  // (the detail-page dedup keys on user+role, so the person would render twice).
-  const resolvedRole = String(patch.filter.role || '');
+  // (the detail-page dedup keys on person+role, so the person would render twice).
   if (!LEAD_MEMBER_ROLES.has(resolvedRole)) {
-    const identity = patch.filter.userId
-      ? { userId: patch.filter.userId }
-      : patch.filter.facultyMemberId
-        ? { facultyMemberId: patch.filter.facultyMemberId }
-        : patch.filter.name
-          ? { name: patch.filter.name }
-          : null;
-    if (identity) {
-      const existingLead = await ResearchGroupMember.findOne({
-        researchEntityId: patch.filter.researchEntityId,
-        role: { $in: Array.from(LEAD_MEMBER_ROLES) },
-        isCurrentMember: { $ne: false },
-        ...identity,
-      })
-        .select('_id')
-        .lean();
-      if (existingLead) {
-        return {
-          entityType: 'researchGroupMember',
-          entityId: materializerDocumentId(entity._id),
-          entityKey: identifier.entityKey,
-          fieldsWritten: 0,
-          conflicts: 0,
-          created: false,
-          resolved,
-          skipped: 'already-lead-member',
-        };
-      }
+    const existingLead = roster.some(
+      (entry) => entry.isCurrentMember && LEAD_MEMBER_ROLES.has(entry.role) && matches(entry),
+    );
+    if (existingLead) {
+      return {
+        entityType: 'researchGroupMember',
+        entityId: materializerDocumentId(entity._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved,
+        skipped: 'already-lead-member',
+      };
     }
   }
 
-  const existing = await ResearchGroupMember.findOne(patch.filter).select('_id').lean();
-  await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
+  const existing = roster.some((entry) => entry.role === resolvedRole && matches(entry));
   const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
   await materializeCanonicalMembership(
     researchEntityId,
@@ -844,7 +862,6 @@ async function materializeInferredPiMembership(
   for (const observation of piObservations) {
     const patch = buildInferredPiMemberUpsert(researchEntityId, observation);
     if (!patch) continue;
-    await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
     await materializeCanonicalPiMembership(researchEntityId, patch, idValue(observation.value));
   }
 
@@ -865,7 +882,6 @@ async function materializeInferredPiMembership(
       value: materializerDocumentId(user._id),
     });
     if (!patch) continue;
-    await ResearchGroupMember.updateOne(patch.filter, patch.update, { upsert: true });
     await materializeCanonicalPiMembership(
       researchEntityId,
       patch,
@@ -966,7 +982,6 @@ export async function materializeInferredDirectorMembership(
   if (!nameObs || !nameObs.value) return { ...empty, skipped: 'no-observation' };
 
   const profileUrl = textValue(fieldObs('inferredDirectorProfileUrl')?.value);
-  const title = textValue(fieldObs('inferredDirectorTitle')?.value);
   const roleRaw = textValue(fieldObs('inferredDirectorRole')?.value).toLowerCase();
   const role = roleRaw === 'co-director' ? 'co-director' : 'director';
   const name =
@@ -1000,38 +1015,20 @@ export async function materializeInferredDirectorMembership(
   const sourceUrl = textValue(roleSource.sourceUrl);
   const sourceName = textValue(roleSource.sourceName);
 
-  const set: Record<string, unknown> = {
-    researchEntityId,
-    researchGroupId: researchEntityId,
-    userId,
-    role,
-    isCurrentMember: true,
-    sourceUrl: profileUrl || sourceUrl,
-    confidence,
-    lastObservedAt: observedAt,
-    'confidenceByField.role': confidence,
-    'fieldProvenance.role': { sourceName, sourceUrl, observedAt, confidence },
-  };
-  if (name) set.name = name;
-  if (facultyMemberId) set.facultyMemberId = facultyMemberId;
-  if (title) {
-    set.title = title;
-    set['confidenceByField.title'] = confidence;
-  }
-
-  const existing = await ResearchGroupMember.findOne({
-    researchEntityId,
-    userId,
-    role,
-    isCurrentMember: true,
-  })
-    .select('_id')
-    .lean();
-  await ResearchGroupMember.updateOne(
-    { researchEntityId, userId, role, isCurrentMember: true },
-    { $set: set, $setOnInsert: { startedAt: observedAt } },
-    { upsert: true },
+  const directorResearcherId = await resolveResearcherIdForLegacyUser(userId, facultyMemberId);
+  const roster = await getResearchEntityRoster(researchEntityId);
+  const normalizedDirectorName = textValue(name).toLowerCase();
+  const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>
+    directorResearcherId && entry.personId
+      ? entry.personId.toString() === directorResearcherId.toString()
+      : Boolean(normalizedDirectorName) &&
+        textValue(entry.name).toLowerCase() === normalizedDirectorName;
+  const existing = roster.some(
+    (entry) => entry.isCurrentMember && entry.role === role && matchesDirector(entry),
   );
+  const supersededCount = roster.filter(
+    (entry) => SUPERSEDED_BY_DIRECTOR_ROLES.includes(entry.role) && matchesDirector(entry),
+  ).length;
 
   const directorIdentity: CanonicalMemberIdentity = {
     netid: user.netid,
@@ -1058,11 +1055,6 @@ export async function materializeInferredDirectorMembership(
     directorIdentity,
   );
 
-  const removal = await ResearchGroupMember.deleteMany({
-    researchEntityId,
-    userId,
-    role: { $in: SUPERSEDED_BY_DIRECTOR_ROLES },
-  });
   const supersededPersonId = await resolveCanonicalResearcherId(directorIdentity);
   if (supersededPersonId) {
     await archiveSupersededCanonicalRoleAssignments(researchEntityId, supersededPersonId);
@@ -1070,8 +1062,8 @@ export async function materializeInferredDirectorMembership(
 
   return {
     written: true,
-    promoted: Boolean(existing) || (removal.deletedCount || 0) > 0,
-    removedDuplicates: removal.deletedCount || 0,
+    promoted: existing || supersededCount > 0,
+    removedDuplicates: supersededCount,
     userId,
     role,
   };
@@ -1109,12 +1101,10 @@ const idValue = (value: unknown): string => {
 interface ResolvedRelationshipMaterializationDeps {
   researchEntityModel?: Pick<typeof ResearchEntity, 'findOne' | 'find' | 'findById'>;
   relationshipModel?: Pick<typeof ResearchEntityRelationship, 'updateOne' | 'updateMany'>;
-  researchGroupMemberModel?: Pick<typeof ResearchGroupMember, 'findOne' | 'create' | 'updateOne'>;
 }
 
 interface ProfileBackedFacultyResearchAreaMemberDeps {
   userModel?: Pick<typeof User, 'findById'>;
-  researchGroupMemberModel?: Pick<typeof ResearchGroupMember, 'findOne' | 'create' | 'updateOne'>;
 }
 
 function escapeRegExp(value: string): string {
@@ -1200,18 +1190,21 @@ export async function findExistingResearchEntityByFacultyResearchAreaIdentity(
   const userObjectId = toMaterializerObjectId(userId);
   if (!userObjectId) return null;
 
-  const memberships = await ResearchGroupMember.find({
-    userId: userObjectId,
-    role: 'pi',
-    isCurrentMember: { $ne: false },
-    researchEntityId: { $exists: true, $ne: null },
+  const researcherId = await resolveResearcherIdForLegacyUser(userId);
+  if (!researcherId) return null;
+  const assignments = await RoleAssignment.find({
+    personId: researcherId,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: 'PI',
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
   })
-    .select('researchEntityId')
+    .select('target.id')
     .lean();
   const candidateIds = Array.from(
     new Set(
-      memberships
-        .map((member: any) => normalizeMaterializerObjectId(member.researchEntityId))
+      assignments
+        .map((assignment: any) => normalizeMaterializerObjectId(assignment?.target?.id))
         .filter(Boolean),
     ),
   );
@@ -1280,31 +1273,51 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   }
   if (!user?._id) return { synced: false, created: false, skipped: 'user-not-resolved' };
 
-  const memberModel = deps.researchGroupMemberModel || ResearchGroupMember;
   const userId = normalizeMaterializerObjectId(user._id) || '';
   if (!userId) return { synced: false, created: false, skipped: 'user-not-resolved' };
-  const memberLookup = { researchEntityId, userId, role: 'pi' };
-  const existing =
-    (await memberModel.findOne({ ...memberLookup, isCurrentMember: { $ne: false } }).lean()) ||
-    (await memberModel.findOne(memberLookup).lean());
-  const set = {
+  const identityUser: any =
+    (await userModel.findById(userId).select('netid email orcid fname lname').lean()) || user;
+  const displayName =
+    `${textValue(identityUser?.fname)} ${textValue(identityUser?.lname)}`.trim() ||
+    personName ||
+    '';
+  const observedAt = new Date();
+  const confidence = Number(identity.confidence) || 0.8;
+
+  const researcherId = (await resolveResearcherIdForLegacyUser(userId))?.toString();
+  const normalizedName = displayName.toLowerCase();
+  const roster = await getResearchEntityRoster(researchEntityId);
+  const existing = roster.some(
+    (entry) =>
+      entry.role === 'pi' &&
+      (researcherId && entry.personId
+        ? entry.personId.toString() === researcherId
+        : Boolean(normalizedName) && textValue(entry.name).toLowerCase() === normalizedName),
+  );
+
+  await materializeCanonicalMembership(
     researchEntityId,
-    userId,
-    name: `${textValue(user.fname)} ${textValue(user.lname)}`.trim() || personName,
-    role: 'pi',
-    isCurrentMember: true,
-    sourceUrl: textValue(identity.sourceUrl),
-    confidence: Number(identity.confidence) || 0.8,
-    lastObservedAt: new Date(),
-  };
+    {
+      legacyRole: 'pi',
+      displayName,
+      isCurrentMember: true,
+      confidence,
+      startedAt: observedAt,
+      rosterProvenance: {
+        sourceUrl: textValue(identity.sourceUrl) || undefined,
+        observedAt,
+      },
+    },
+    {
+      netid: identityUser?.netid,
+      email: identityUser?.email,
+      orcid: identityUser?.orcid,
+      displayName,
+      hasCanonicalSourceReference: true,
+    },
+  );
 
-  if (!existing) {
-    await memberModel.create(set);
-    return { synced: true, created: true, researchEntityId, userId };
-  }
-
-  await memberModel.updateOne({ _id: existing._id }, { $set: set });
-  return { synced: true, created: false, researchEntityId, userId };
+  return { synced: true, created: !existing, researchEntityId, userId };
 }
 
 function latestObservationDate(observations: Array<{ observedAt?: Date }>): Date {
@@ -2721,11 +2734,12 @@ export function buildOfficialRosterArchiveFilter(
     : [];
   if (!safeResearchEntityId || snapshot.complete !== true || memberKeys.length === 0) return null;
   return {
-    researchEntityId: safeResearchEntityId,
-    sourceName: OFFICIAL_ROSTER_SOURCE_NAME,
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': safeResearchEntityId,
+    state: { $ne: 'HISTORICAL' },
     archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    membershipKey: { $nin: memberKeys },
+    'rosterProvenance.sourceName': OFFICIAL_ROSTER_SOURCE_NAME,
+    'rosterProvenance.membershipKey': { $nin: memberKeys },
   };
 }
 
@@ -2759,44 +2773,18 @@ async function reconcileOfficialRosterSnapshotsFromRun(
     const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
     if (!filter) continue;
     const endedAt = snapshotObservation.observedAt || new Date();
-    const departingMembers = await ResearchGroupMember.find(filter)
-      .select('userId facultyMemberId name')
-      .lean();
-    const result = await ResearchGroupMember.updateMany(filter, {
-      $set: {
-        archived: true,
-        isCurrentMember: false,
+    const departing = await RoleAssignment.find(filter).select('personId').lean();
+    const departingPersonIds = (departing as any[])
+      .map((assignment) => assignment.personId)
+      .filter((id): id is mongoose.Types.ObjectId => id instanceof mongoose.Types.ObjectId);
+    if (departingPersonIds.length > 0) {
+      await archiveCanonicalRoleAssignmentsForPersons(
+        materializerDocumentId(entity._id),
+        departingPersonIds,
         endedAt,
-        evidenceStatus: 'historical',
-        'fieldProvenance.currentStatus': {
-          sourceName: OFFICIAL_ROSTER_SOURCE_NAME,
-          sourceUrl: snapshotObservation.sourceUrl || '',
-          observedAt: endedAt,
-          confidence: snapshotObservation.confidence ?? 1,
-        },
-      },
-    });
-    archived += result.modifiedCount || 0;
-    const departingPersonIds = (
-      await Promise.all(
-        (departingMembers as any[]).map(async (member) => {
-          const canonicalUser = member.userId
-            ? await User.findById(member.userId).select('netid email orcid').lean()
-            : null;
-          return resolveCanonicalResearcherId({
-            netid: (canonicalUser as any)?.netid,
-            email: (canonicalUser as any)?.email,
-            orcid: (canonicalUser as any)?.orcid,
-            displayName: member.name,
-          });
-        }),
-      )
-    ).filter((id): id is mongoose.Types.ObjectId => Boolean(id));
-    await archiveCanonicalRoleAssignmentsForPersons(
-      materializerDocumentId(entity._id),
-      departingPersonIds,
-      endedAt,
-    );
+      );
+    }
+    archived += departingPersonIds.length;
   }
   return archived;
 }

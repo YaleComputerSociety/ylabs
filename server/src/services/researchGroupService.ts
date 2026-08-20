@@ -3,9 +3,9 @@
  * find-or-create helper that gives every Listing a parent entity on creation.
  *
  * Strategy for findOrCreateForOwner:
- *   1. Look for an existing group where the owner is a 'pi' member.
+ *   1. Look for an existing group where the owner holds a canonical PI role assignment.
  *   2. If none, derive a slug from the owner (surname + 'lab' or 'individual').
- *   3. Upsert by slug; create the ResearchGroupMember row with role='pi'.
+ *   3. Upsert by slug; record the owner's canonical PI role assignment.
  *   4. Return the group _id.
  *
  * The created group is `kind: 'individual'` for fields that don't traditionally have
@@ -15,16 +15,18 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
 import {
   getResearchEntityRoster,
   getResearchEntityRosterByEntityId,
+  resolveResearcherIdForLegacyUser,
   type ResearchEntityRosterEntry,
 } from './researchEntityMembershipAccessor';
 import type { ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
+import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -187,19 +189,42 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   }
 
   const ownerObjectId = normalizeResearchGroupObjectId(owner._id);
-  if (ownerObjectId) {
-    const existingMember = await ResearchGroupMember.findOne({
-      userId: ownerObjectId,
-      role: 'pi',
-    }).lean();
-    if (existingMember) {
-      const existingResearchEntityId = normalizeResearchGroupObjectId(
-        (existingMember as any).researchEntityId || (existingMember as any).researchGroupId,
-      );
-      if (existingResearchEntityId) {
-        const group = await ResearchEntity.findById(existingResearchEntityId).lean();
-        if (group) return { group, created: false };
-      }
+  let ownerPersonId = ownerObjectId
+    ? await resolveResearcherIdForLegacyUser(ownerObjectId)
+    : undefined;
+  if (!ownerPersonId && ownerObjectId) {
+    const ownerUser: any = await User.findById(ownerObjectId)
+      .select('netid email orcid fname lname displayName')
+      .lean();
+    const ownerDisplayName =
+      (typeof ownerUser?.displayName === 'string' && ownerUser.displayName.trim()) ||
+      [ownerUser?.fname ?? owner.fname, ownerUser?.lname ?? owner.lname]
+        .filter(Boolean)
+        .join(' ')
+        .trim() ||
+      undefined;
+    ownerPersonId = await resolveOrCreateResearcherIdForIdentity({
+      netid: ownerUser?.netid ?? owner.netid,
+      email: ownerUser?.email,
+      orcid: ownerUser?.orcid,
+      displayName: ownerDisplayName,
+      hasCanonicalSourceReference: true,
+    });
+  }
+  if (ownerPersonId) {
+    const existingLeadAssignment = await RoleAssignment.findOne({
+      personId: ownerPersonId,
+      'target.kind': 'RESEARCH_ENTITY',
+      role: 'PI',
+    })
+      .select('target')
+      .lean();
+    const existingResearchEntityId = normalizeResearchGroupObjectId(
+      (existingLeadAssignment as any)?.target?.id,
+    );
+    if (existingResearchEntityId) {
+      const group = await ResearchEntity.findById(existingResearchEntityId).lean();
+      if (group) return { group, created: false };
     }
   }
 
@@ -236,18 +261,27 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     await refreshAdminAccessReviewProjection(group._id, projectionGeneration);
   }
 
-  if (ownerObjectId) {
-    await ResearchGroupMember.updateOne(
-      { researchEntityId: group._id, userId: ownerObjectId },
+  if (ownerPersonId) {
+    const now = new Date();
+    await RoleAssignment.updateOne(
       {
-        $setOnInsert: {
-          researchEntityId: group._id,
-          researchGroupId: group._id,
-          userId: ownerObjectId,
-          role: 'pi',
-          startedAt: new Date(),
-          lastObservedAt: new Date(),
+        personId: ownerPersonId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': group._id,
+        role: 'PI',
+      },
+      {
+        $set: {
+          personId: ownerPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: group._id },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 1,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
         },
+        $setOnInsert: { startedAt: now, evidenceClaimIds: [] },
+        $unset: { endedAt: '' },
       },
       { upsert: true },
     );
@@ -274,7 +308,7 @@ export async function getResearchGroupBySlug(slug: string): Promise<any | null> 
 export async function listMembersOfGroup(groupId: any): Promise<any[]> {
   const safeGroupId = normalizeResearchGroupObjectId(groupId);
   if (!safeGroupId) return [];
-  return ResearchGroupMember.find({ researchEntityId: safeGroupId }).lean();
+  return getResearchEntityRoster(safeGroupId);
 }
 
 export interface ResearchGroupSearchSort {

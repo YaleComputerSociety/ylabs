@@ -8,6 +8,7 @@ import {
 } from '../models/researcher';
 import {
   RoleAssignment,
+  roleAssignmentRoles,
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
 } from '../models/roleAssignment';
@@ -122,6 +123,36 @@ const buildRosterEntry = (
   };
 };
 
+const canonicalRolePriority = (role: RoleAssignmentRole): number => {
+  const index = roleAssignmentRoles.indexOf(role);
+  return index === -1 ? roleAssignmentRoles.length : index;
+};
+
+const collapseRosterEntriesByPerson = (
+  entries: ResearchEntityRosterEntry[],
+): ResearchEntityRosterEntry[] => {
+  const bestByPerson = new Map<string, ResearchEntityRosterEntry>();
+  const order: string[] = [];
+  const outranks = (
+    candidate: ResearchEntityRosterEntry,
+    incumbent: ResearchEntityRosterEntry,
+  ): boolean => {
+    if (candidate.isCurrentMember !== incumbent.isCurrentMember) return candidate.isCurrentMember;
+    return canonicalRolePriority(candidate.roleCanonical) < canonicalRolePriority(incumbent.roleCanonical);
+  };
+  for (const entry of entries) {
+    const personKey = entry.personId.toString();
+    const incumbent = bestByPerson.get(personKey);
+    if (!incumbent) {
+      bestByPerson.set(personKey, entry);
+      order.push(personKey);
+    } else if (outranks(entry, incumbent)) {
+      bestByPerson.set(personKey, entry);
+    }
+  }
+  return order.map((personKey) => bestByPerson.get(personKey) as ResearchEntityRosterEntry);
+};
+
 export async function getResearchEntityRosterByEntityId(
   entityIds: unknown[],
 ): Promise<Map<string, ResearchEntityRosterEntry[]>> {
@@ -169,6 +200,10 @@ export async function getResearchEntityRosterByEntityId(
     const key = serializedDocumentId(entry.researchEntityId);
     if (!key) continue;
     byEntityId.set(key, [...(byEntityId.get(key) || []), entry]);
+  }
+
+  for (const [entityKey, entries] of byEntityId) {
+    byEntityId.set(entityKey, collapseRosterEntriesByPerson(entries));
   }
 
   return byEntityId;

@@ -27,7 +27,6 @@ export { ResearchScholarlyAttribution } from './researchScholarlyAttribution';
 export { ResearchEntity } from './researchEntity';
 export { ResearchEntityRelationship } from './researchEntityRelationship';
 export { Signal } from './signal';
-export { ResearchGroupMember } from './researchGroupMember';
 export { ScrapeJobLock } from './scrapeJobLock';
 export { Source } from './source';
 export { VisibilityReleaseQueueItem } from './visibilityReleaseQueueItem';

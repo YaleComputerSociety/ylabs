@@ -9,7 +9,10 @@ import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Listing } from '../models/listing';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import {
+  getResearchEntityRoster,
+  getResearchEntityRosterByEntityId,
+} from '../services/researchEntityMembershipAccessor';
 import { sourceCoverageRegistry } from '../scrapers/sourceCoverageRegistry';
 import {
   buildCoverageAuditRow,
@@ -280,8 +283,11 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
   const slugByEntityId = new Map(entities.map((entity) => [stringId(entity._id), entity.slug]));
   const validSlugSet = new Set(slugs);
 
-  const [memberCounts, signalCounts, listingCounts, observationHints] = await Promise.all([
-    aggregateCountMap(ResearchGroupMember, { researchEntityId: { $in: entityIds } }),
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+  const memberCounts = new Map<string, number>(
+    [...rosterByEntityId].map(([key, roster]) => [key, roster.length]),
+  );
+  const [signalCounts, listingCounts, observationHints] = await Promise.all([
     aggregateCountMap(Signal, {
       researchEntityId: { $in: entityIds },
       type: { $in: [...accessSignalTypes] },
@@ -422,9 +428,7 @@ async function buildSlugAudit(slug: string) {
 
   const entityId = stringId(entity._id);
   const [members, signals, listings, observations] = await Promise.all([
-    ResearchGroupMember.find({ researchEntityId: entity._id })
-      .select('userId role isCurrentMember sourceUrl confidence lastObservedAt')
-      .lean(),
+    getResearchEntityRoster(entity._id),
     Signal.find({
       researchEntityId: entity._id,
       type: { $in: [...accessSignalTypes] },
