@@ -26,6 +26,7 @@ import type { ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
+import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -188,9 +189,28 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   }
 
   const ownerObjectId = normalizeResearchGroupObjectId(owner._id);
-  const ownerPersonId = ownerObjectId
+  let ownerPersonId = ownerObjectId
     ? await resolveResearcherIdForLegacyUser(ownerObjectId)
     : undefined;
+  if (!ownerPersonId && ownerObjectId) {
+    const ownerUser: any = await User.findById(ownerObjectId)
+      .select('netid email orcid fname lname displayName')
+      .lean();
+    const ownerDisplayName =
+      (typeof ownerUser?.displayName === 'string' && ownerUser.displayName.trim()) ||
+      [ownerUser?.fname ?? owner.fname, ownerUser?.lname ?? owner.lname]
+        .filter(Boolean)
+        .join(' ')
+        .trim() ||
+      undefined;
+    ownerPersonId = await resolveOrCreateResearcherIdForIdentity({
+      netid: ownerUser?.netid ?? owner.netid,
+      email: ownerUser?.email,
+      orcid: ownerUser?.orcid,
+      displayName: ownerDisplayName,
+      hasCanonicalSourceReference: true,
+    });
+  }
   if (ownerPersonId) {
     const existingLeadAssignment = await RoleAssignment.findOne({
       personId: ownerPersonId,
