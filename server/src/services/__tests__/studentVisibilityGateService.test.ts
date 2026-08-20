@@ -14,6 +14,7 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 }));
 
 import {
+  evaluateStudentVisibilityGateLeadResolution,
   isProfileAreaDuplicateCounterpart,
   isBlockingVisibilityReason,
   isStudentVisibilityGatePlanMateriallyChanged,
@@ -538,5 +539,47 @@ describe('studentVisibilityGateService', () => {
       }),
     );
     expect(deps.resolveArchivedResearchQueueItems).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('evaluateStudentVisibilityGateLeadResolution', () => {
+  it('flags an empty-roster gate run where research plans resolve no leads', () => {
+    const plans = Array.from({ length: 30 }, (_, index) =>
+      safePlan({
+        recordId: `entity-${index}`,
+        tier: 'operator_review',
+        computedTier: 'operator_review',
+        reasons: ['missing_lead'],
+        hasResolvedLead: false,
+      }),
+    );
+
+    const result = evaluateStudentVisibilityGateLeadResolution(plans);
+
+    expect(result.resolvedLeadEntityCount).toBe(0);
+    expect(result.zeroLeadEntityCount).toBe(30);
+    expect(result.safe).toBe(false);
+    expect(result.blocker).toContain('resolve zero leads');
+  });
+
+  it('stays safe when most research plans resolve a lead and ignores programs', () => {
+    const plans = [
+      ...Array.from({ length: 30 }, (_, index) =>
+        safePlan({ recordId: `lead-${index}`, hasResolvedLead: true }),
+      ),
+      safePlan({
+        recordId: 'missing',
+        tier: 'operator_review',
+        reasons: ['missing_lead'],
+        hasResolvedLead: false,
+      }),
+      safePlan({ collection: 'programs', recordId: 'program', reasons: ['missing_lead'] }),
+    ];
+
+    const result = evaluateStudentVisibilityGateLeadResolution(plans);
+
+    expect(result.resolvedLeadEntityCount).toBe(30);
+    expect(result.zeroLeadEntityCount).toBe(1);
+    expect(result.safe).toBe(true);
   });
 });

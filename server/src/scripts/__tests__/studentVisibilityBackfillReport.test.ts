@@ -266,4 +266,76 @@ describe('studentVisibilityBackfill CLI helpers', () => {
       },
     });
   });
+
+  it('blocks research applies when a mid-migration empty roster resolves no leads', () => {
+    const updates = Array.from({ length: 40 }, (_, index) =>
+      update({
+        id: `entity-${index}`,
+        currentTier: 'student_ready',
+        tier: 'operator_review',
+        computedTier: 'operator_review',
+        reasons: ['missing_lead', 'source_backed_description', 'concrete_next_step'],
+        hasResolvedLead: false,
+      }),
+    );
+
+    const report = buildCollectionReport(updates, {
+      collectionName: 'research',
+      leadResolutionGuard: {},
+    });
+
+    expect(report.leadResolution).toMatchObject({
+      resolvedLeadEntityCount: 0,
+      zeroLeadEntityCount: 40,
+      leadRequiringEntityCount: 40,
+      zeroLeadRatio: 1,
+      enforced: true,
+      safe: false,
+    });
+    expect(report.applySafety.safeToApply).toBe(false);
+    expect(report.applySafety.recommendation).toBe('repair_source_materialization_first');
+    expect(report.applySafety.blockers.join(' ')).toContain('resolve zero leads');
+  });
+
+  it('does not block when the populated roster resolves leads for most entities', () => {
+    const withLead = Array.from({ length: 38 }, (_, index) =>
+      update({
+        id: `lead-${index}`,
+        tier: 'student_ready',
+        computedTier: 'student_ready',
+        reasons: ['source_backed_description', 'concrete_next_step'],
+        hasResolvedLead: true,
+      }),
+    );
+    const missingLead = Array.from({ length: 2 }, (_, index) =>
+      update({
+        id: `missing-${index}`,
+        tier: 'operator_review',
+        computedTier: 'operator_review',
+        reasons: ['missing_lead'],
+        hasResolvedLead: false,
+      }),
+    );
+
+    const report = buildCollectionReport([...withLead, ...missingLead], {
+      collectionName: 'research',
+      leadResolutionGuard: {},
+    });
+
+    expect(report.leadResolution).toMatchObject({
+      resolvedLeadEntityCount: 38,
+      zeroLeadEntityCount: 2,
+      safe: true,
+    });
+    expect(report.applySafety.blockers.join(' ')).not.toContain('resolve zero leads');
+  });
+
+  it('omits the roster lead-resolution guard when it is not requested', () => {
+    const report = buildCollectionReport(
+      [update({ id: 'entity-1', reasons: ['missing_lead'], hasResolvedLead: false })],
+      { collectionName: 'research' },
+    );
+
+    expect(report.leadResolution).toBeUndefined();
+  });
 });

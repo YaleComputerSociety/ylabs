@@ -404,6 +404,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
       tier: result.tier,
       computedTier: result.computedTier,
       reasons: result.reasons,
+      hasResolvedLead: leadMembers.length > 0,
       nextRepairAction: nextRepairActionForReasons(result.reasons),
     };
   });
@@ -479,7 +480,10 @@ async function main() {
     options.collection === 'all' || options.collection === 'programs'
       ? await planProgramUpdates(options.limit)
       : [];
-  const researchReport = buildCollectionReport(research, { collectionName: 'research' });
+  const researchReport = buildCollectionReport(research, {
+    collectionName: 'research',
+    leadResolutionGuard: {},
+  });
   const programReport = buildCollectionReport(programs, {
     collectionName: 'programs',
     minimumPublicCount: programs.length > 0 ? 1 : 0,
@@ -488,6 +492,12 @@ async function main() {
     ...(research.length > 0 ? researchReport.applySafety.blockers : []),
     ...(programs.length > 0 ? programReport.applySafety.blockers : []),
   ];
+
+  if (researchReport.leadResolution && !researchReport.leadResolution.safe) {
+    console.warn(
+      `[student-visibility] ${sanitizeLogValue(researchReport.leadResolution.blocker)}`,
+    );
+  }
 
   if (options.apply && applyBlockers.length > 0) {
     throw new Error(
