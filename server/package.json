@@ -88,6 +88,7 @@
     "scraper:claim-gate": "tsx src/scripts/claimGate.ts",
     "source:health": "tsx src/scripts/sourceHealth.ts",
     "research-homes:backfill-official-urls": "tsx src/scripts/backfillResearchHomeOfficialUrls.ts",
+    "research-homes:backfill-website-urls": "tsx src/scripts/backfillResearchEntityWebsiteUrls.ts",
     "research-homes:backfill-descriptions": "tsx src/scripts/backfillResearchDescriptions.ts",
     "research-homes:backfill-browse-rank": "tsx src/scripts/backfillBrowseRank.ts",
     "research-homes:backfill-center-directors": "tsx src/scripts/backfillCenterDirectors.ts",
