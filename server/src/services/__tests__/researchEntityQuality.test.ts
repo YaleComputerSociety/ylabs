@@ -84,6 +84,30 @@ describe('buildResearchEntityQualitySummary', () => {
     expect(summary.repairFlags).toContain('pi_identity_conflict');
   });
 
+  it('treats a canonical roster lead with a resolved researcher name and no faculty divergence as attached without identity conflict', () => {
+    const summary = buildResearchEntityQualitySummary({
+      entity: {
+        fullDescription:
+          'The project studies film, media theory, and communication history using humanities methods, archival sources, and interpretive analysis.',
+        shortDescription:
+          'Studies film, media theory, and communication history using humanities methods and archival sources.',
+        sourceUrls: ['https://filmstudies.yale.edu/people/john-durham-peters'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'researcher-1',
+          name: 'John Durham Peters',
+          user: { _id: 'researcher-1', netid: 'jdp1', displayName: 'John Durham Peters' },
+        },
+      ],
+    });
+
+    expect(summary.leadState).toBe('lead_attached');
+    expect(summary.repairFlags).not.toContain('pi_identity_conflict');
+    expect(summary.repairFlags).not.toContain('missing_lead');
+  });
+
   it('flags source-backed records with no useful card description for repair', () => {
     const summary = buildResearchEntityQualitySummary({
       entity: {
