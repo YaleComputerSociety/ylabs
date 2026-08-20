@@ -26,7 +26,7 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isGrantOrIdentifierUrl('https://reporter.nih.gov/project-details/123')).toBe(true);
     expect(isGrantOrIdentifierUrl('https://api.reporter.nih.gov/v2/x')).toBe(true);
     expect(isGrantOrIdentifierUrl('https://www.nsf.gov/awardsearch/x')).toBe(true);
-    expect(isGrantOrIdentifierUrl('https://orcid.org/0000-0002-1825-0097')).toBe(true);
+    expect(isGrantOrIdentifierUrl('https://orcid.org/0000-0000-0000-0000')).toBe(true);
     expect(isGrantOrIdentifierUrl('https://scholar.google.com/citations?user=x')).toBe(true);
     expect(isGrantOrIdentifierUrl('https://doi.org/10.1000/xyz')).toBe(true);
     expect(isGrantOrIdentifierUrl('https://medicine.yale.edu/lab/smith/')).toBe(false);
@@ -73,7 +73,7 @@ describe('selectBackfillWebsiteUrl', () => {
       selectBackfillWebsiteUrl({
         sourceUrls: [
           'https://reporter.nih.gov/project-details/1',
-          'https://orcid.org/0000-0002-1825-0097',
+          'https://orcid.org/0000-0000-0000-0000',
           'https://centers.yale.edu/genomics/',
           'https://another.yale.edu/',
         ],
