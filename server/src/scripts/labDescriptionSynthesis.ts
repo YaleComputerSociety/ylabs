@@ -12,15 +12,39 @@ export const MIN_SYNTHESIS_GROUNDING = 0.5;
 const MAX_SOURCE_CHARS = 12_000;
 const MAX_NAME_CHARS = 240;
 
-const SYNTHESIS_SYSTEM_PROMPT = [
+const PERSON_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'FACULTY_PROJECT', 'INDIVIDUAL_RESEARCH']);
+
+export function isPersonResearchEntityType(entityType?: string): boolean {
+  return PERSON_ENTITY_TYPES.has(String(entityType || '').toUpperCase());
+}
+
+const SHARED_SYNTHESIS_RULES = [
+  'Do NOT include degrees, titles, appointments, awards, training or employment history, honors, contact information, or recruiting and welcome boilerplate.',
+  'Use ONLY facts present in the SOURCE text. Never invent topics, methods, findings, or claims.',
+];
+
+const LAB_SYNTHESIS_SYSTEM_PROMPT = [
   'You write concise, third-person descriptions of a Yale research HOME (a lab, center, institute, program, or project) for an undergraduate research directory.',
   'Describe what the research home STUDIES: its research focus, the questions it pursues, its topics, and its methods.',
-  "CRITICAL: describe the LAB's research, NOT the principal investigator's personal biography.",
-  "Do NOT include the PI's degrees, titles, appointments, awards, training or employment history, honors, contact information, or recruiting and welcome boilerplate.",
-  'If the source mixes a PI biography with lab research content, use ONLY the research content.',
-  'Use ONLY facts present in the SOURCE text. Never invent topics, methods, findings, or claims.',
+  "CRITICAL: describe the research home's research, NOT the principal investigator's personal biography.",
+  ...SHARED_SYNTHESIS_RULES,
+  'If the source mixes a principal investigator biography with research content, use ONLY the research content.',
   'If the source contains no description of the research itself (only a biography, a title, a keyword list, or navigation text), return empty strings for both fields.',
 ].join(' ');
+
+const PERSON_SYNTHESIS_SYSTEM_PROMPT = [
+  "You write concise, third-person descriptions of an individual Yale researcher's research for an undergraduate research directory.",
+  'Describe what THIS researcher STUDIES: their research focus, the questions they pursue, their topics, and their methods.',
+  'CRITICAL: describe the research itself, NOT the administrative CV. When the source is written as a biography, extract the research substance from it and drop the CV framing.',
+  ...SHARED_SYNTHESIS_RULES,
+  'If the source contains no description of the research itself (only a title, an appointment, a keyword list, or navigation text), return empty strings for both fields.',
+].join(' ');
+
+export function synthesisSystemPromptFor(entityType?: string): string {
+  return isPersonResearchEntityType(entityType)
+    ? PERSON_SYNTHESIS_SYSTEM_PROMPT
+    : LAB_SYNTHESIS_SYSTEM_PROMPT;
+}
 
 const STOPWORDS = new Set([
   'research',
@@ -104,6 +128,11 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
   const safeName = redactDirectContactInfo(input.name).slice(0, MAX_NAME_CHARS);
   const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
+  const isPerson = isPersonResearchEntityType(input.entityType);
+  const subjectLabel = isPerson ? 'Researcher' : 'Research home';
+  const fullDescriptionScope = isPerson
+    ? "this researcher's research"
+    : 'the research';
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
@@ -111,12 +140,12 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
       response_format: { type: 'json_object' },
       temperature: 0,
       messages: [
-        { role: 'system', content: SYNTHESIS_SYSTEM_PROMPT },
+        { role: 'system', content: synthesisSystemPromptFor(input.entityType) },
         {
           role: 'user',
           content: [
-            `Research home: ${safeName}${input.entityType ? ` (type: ${input.entityType})` : ''}`,
-            'Return JSON {"fullDescription": "...", "shortDescription": "..."}. fullDescription = 1-3 sentences on the research only; shortDescription = one concise card sentence, distinct from the fullDescription phrasing. If the source has no research content, return both as "".',
+            `${subjectLabel}: ${safeName}${input.entityType ? ` (type: ${input.entityType})` : ''}`,
+            `Return JSON {"fullDescription": "...", "shortDescription": "..."}. fullDescription = 1-3 sentences on ${fullDescriptionScope} only; shortDescription = one concise card sentence, distinct from the fullDescription phrasing. If the source has no research content, return both as "".`,
             'SOURCE:',
             safeSource,
           ].join('\n\n'),

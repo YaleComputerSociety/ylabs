@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   assembleSynthesisSourceText,
   evaluateSynthesisOutput,
+  isPersonResearchEntityType,
   isSynthesisCandidate,
   projectSynthesisCost,
   synthesisGroundingScore,
+  synthesisSystemPromptFor,
 } from '../labDescriptionSynthesis';
 
 const genuineFull =
@@ -32,6 +34,41 @@ describe('isSynthesisCandidate', () => {
         shortDescription: 'Investigates how larval circuits steer navigation in open water.',
       }),
     ).toBe(false);
+  });
+});
+
+describe('synthesisSystemPromptFor', () => {
+  it('classifies person and home entity types', () => {
+    expect(isPersonResearchEntityType('FACULTY_RESEARCH_AREA')).toBe(true);
+    expect(isPersonResearchEntityType('faculty_project')).toBe(true);
+    expect(isPersonResearchEntityType('INDIVIDUAL_RESEARCH')).toBe(true);
+    expect(isPersonResearchEntityType('LAB')).toBe(false);
+    expect(isPersonResearchEntityType('CENTER')).toBe(false);
+    expect(isPersonResearchEntityType(undefined)).toBe(false);
+  });
+
+  it('directs person entities to describe the researcher, not the lab', () => {
+    const prompt = synthesisSystemPromptFor('FACULTY_RESEARCH_AREA');
+    expect(prompt).toContain('individual Yale');
+    expect(prompt).toContain('THIS researcher');
+    expect(prompt).not.toContain('research HOME');
+    expect(prompt).not.toContain("principal investigator's personal biography");
+  });
+
+  it('directs home entities to describe the research home', () => {
+    const prompt = synthesisSystemPromptFor('LAB');
+    expect(prompt).toContain('research HOME');
+    expect(prompt).not.toContain('THIS researcher');
+  });
+
+  it('differs by entity type and keeps the shared CV-drop guardrail', () => {
+    const personPrompt = synthesisSystemPromptFor('INDIVIDUAL_RESEARCH');
+    const homePrompt = synthesisSystemPromptFor('CENTER');
+    expect(personPrompt).not.toEqual(homePrompt);
+    for (const prompt of [personPrompt, homePrompt]) {
+      expect(prompt).toContain('Do NOT include degrees, titles, appointments');
+      expect(prompt).toContain('Use ONLY facts present in the SOURCE text');
+    }
   });
 });
 
