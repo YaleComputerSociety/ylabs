@@ -108,9 +108,10 @@ function publicDepartmentArray(value: unknown): string[] {
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
-  const blurb = publicTextString(
-    group.shortDescription || group.fullDescription || '',
-  ).slice(0, 280);
+  const blurb = publicTextString(group.shortDescription || group.fullDescription || '').slice(
+    0,
+    280,
+  );
 
   return {
     id: publicResearchEntityId(group),

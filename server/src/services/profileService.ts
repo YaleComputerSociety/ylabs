@@ -627,6 +627,7 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     _bioSourceUrls,
     _bioWebsite,
     _bioWebsiteUrl,
+    description: _legacyDescription,
     ...publicEntity
   } = entity || {};
   const publicId = (
