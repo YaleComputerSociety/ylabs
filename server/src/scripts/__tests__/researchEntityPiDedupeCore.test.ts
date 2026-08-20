@@ -740,27 +740,35 @@ describe('buildResearchEntityPiDedupePlan', () => {
       maxApply: 10,
       slug: undefined,
     });
+    const acceptedDecisionsPath = path.join(
+      os.tmpdir(),
+      'ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+    );
+    const decisionTemplatePath = path.join(
+      os.tmpdir(),
+      'ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
+    );
+    const outputPath = path.join(os.tmpdir(), 'ylabs-research-entity-dedupe.json');
     expect(
       parseResearchEntityPiDedupeArgs([
         '--mode=dry-run',
         '--limit=250',
         '--max-apply=2',
-        '--accepted-decisions=/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+        `--accepted-decisions=${acceptedDecisionsPath}`,
         '--allow-empty-decisions',
         '--decision-template-output',
-        '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
-        '--output=/tmp/ylabs-research-entity-dedupe.json',
+        decisionTemplatePath,
+        `--output=${outputPath}`,
       ]),
     ).toMatchObject({
       apply: false,
       limit: 250,
       limitProvided: true,
       maxApply: 2,
-      acceptedDecisions: '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions.json',
+      acceptedDecisions: acceptedDecisionsPath,
       allowEmptyDecisions: true,
-      decisionTemplateOutput:
-        '/tmp/ylabs-research-entity-pi-dedupe-accepted-decisions-template.json',
-      output: '/tmp/ylabs-research-entity-dedupe.json',
+      decisionTemplateOutput: decisionTemplatePath,
+      output: outputPath,
     });
   });
 

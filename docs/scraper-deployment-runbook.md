@@ -270,6 +270,7 @@ SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --limit=10000
 ```
 
 Use `--apply` only after the dry-run output is reviewed and the target database is confirmed.
+The full guarded dry-run, reviewer-decision, and apply workflow for same-PI entity dedupe is documented in [`research-entity-pi-dedupe-runbook.md`](research-entity-pi-dedupe-runbook.md).
 
 ### Production Promotion Lanes
 
