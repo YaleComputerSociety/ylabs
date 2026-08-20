@@ -21,6 +21,10 @@ import {
   buildResearchEntityQualitySummary,
   ResearchEntityQualitySummary,
 } from './researchEntityQuality';
+import {
+  mapResearchGroupKindToEntityType,
+  ResearchEntityType,
+} from '../models/researchAccessTypes';
 
 export interface ResearchEntityBrowseRankInput {
   entity: Record<string, any>;
@@ -78,6 +82,27 @@ const accessPoints = (accessSignalTypes: string[]): number => {
   return best;
 };
 
+/**
+ * Type-based demotion. Umbrella organizations (a center or institute that hosts
+ * many labs) are valid research homes but are not the single joinable lab or
+ * project a student is usually looking for, so they are ranked below comparable
+ * direct research homes rather than excluded. The magnitude is small relative to
+ * the completeness and access terms, so a strong umbrella entity can still
+ * surface above a weak lab.
+ */
+const ENTITY_TYPE_RANK_ADJUSTMENT: Partial<Record<ResearchEntityType, number>> = {
+  CENTER: -25,
+  INSTITUTE: -18,
+  PROGRAM: -10,
+  INITIATIVE: -10,
+};
+
+const entityTypeRankAdjustment = (entity: Record<string, any>): number => {
+  const entityType = (entity.entityType ||
+    mapResearchGroupKindToEntityType(entity.kind)) as ResearchEntityType;
+  return ENTITY_TYPE_RANK_ADJUSTMENT[entityType] ?? 0;
+};
+
 export function computeResearchEntityBrowseRank({
   entity,
   leadMembers = [],
@@ -95,13 +120,16 @@ export function computeResearchEntityBrowseRank({
     score += 10;
   }
   if (summary.repairFlags.includes('duplicate_risk')) score -= 14;
+  score += entityTypeRankAdjustment(entity);
 
   return score;
 }
 
 export const __testing = {
   ACCESS_SIGNAL_POINTS,
+  ENTITY_TYPE_RANK_ADJUSTMENT,
   descriptionPoints,
   leadPoints,
   accessPoints,
+  entityTypeRankAdjustment,
 };
