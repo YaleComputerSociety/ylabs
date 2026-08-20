@@ -1,9 +1,12 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
-import { ResearchGroupMember } from '../../models/researchGroupMember';
 import { Observation } from '../../models/observation';
 import { User } from '../../models/user';
+import {
+  getResearchEntityRosterByEntityId,
+  type ResearchEntityRosterEntry,
+} from '../../services/researchEntityMembershipAccessor';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
@@ -43,6 +46,7 @@ const SOURCE_URL_WEBSITE_BACKFILL_KEY = 'source-url-website-backfill';
 const PROFILE_BIO_MIN_LENGTH = 120;
 const OFFICIAL_PROFILE_BIO_MAX_LENGTH = 1200;
 const VISIBLE_PROFILE_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director', 'core-faculty'];
+const LEAD_MEMBER_ROLES = ['pi', 'co-pi', 'director', 'co-director'];
 export const PROFILE_DESCRIPTION_SUPPRESSED_BY_PREFERRED_SOURCE_NAMES_FIELD =
   'profileDescriptionSuppressedByPreferredSourceNames';
 const PROFILE_DESCRIPTION_FIELDS = ['description', 'fullDescription', 'shortDescription'];
@@ -2184,6 +2188,21 @@ function applyFiniteCandidateLimit<T extends { limit(value: number): T }>(
   return query;
 }
 
+async function currentLeadRosterEntriesByEntity(
+  entityIds: unknown[],
+  roles: string[],
+): Promise<Map<string, ResearchEntityRosterEntry[]>> {
+  const roster = await getResearchEntityRosterByEntityId(entityIds);
+  const byEntity = new Map<string, ResearchEntityRosterEntry[]>();
+  for (const [key, entries] of roster) {
+    const leads = entries.filter(
+      (entry) => entry.state !== 'HISTORICAL' && roles.includes(entry.role),
+    );
+    if (leads.length > 0) byEntity.set(key, leads);
+  }
+  return byEntity;
+}
+
 async function selectQueuedEntities(limit: number): Promise<Array<Record<string, any>>> {
   const queueItems = await applyFiniteCandidateLimit(
     VisibilityReleaseQueueItem.find({
@@ -2199,24 +2218,16 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
   const entityIds = uniqueStrings(queueItems.map((item: any) => String(item.recordId || '')));
   if (entityIds.length === 0) return [];
 
-  const [entities, leadMembers] = await Promise.all([
+  const [entities, leadRosterByEntity] = await Promise.all([
     ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
       .select('_id slug name displayName website websiteUrl sourceUrls')
       .lean(),
-    ResearchGroupMember.find({
-      researchEntityId: { $in: entityIds },
-      isCurrentMember: { $ne: false },
-      role: { $in: ['pi', 'co-pi', 'director', 'co-director'] },
-    })
-      .select('researchEntityId')
-      .lean(),
+    currentLeadRosterEntriesByEntity(entityIds, LEAD_MEMBER_ROLES),
   ]);
   const entitiesById = new Map(
     (entities as any[]).map((entity) => [officialProfileDocumentId(entity._id), entity]),
   );
-  const hasLead = new Set(
-    (leadMembers as any[]).map((member) => officialProfileDocumentId(member.researchEntityId)),
-  );
+  const hasLead = new Set(leadRosterByEntity.keys());
 
   const annotatedEntities = await annotateEntitiesWithSourceObservationUrls(
     entityIds
@@ -2278,23 +2289,26 @@ export async function selectVisibleProfileBioTargets(
     .lean();
   const entitiesById = new Map((entities as any[]).map((entity) => [idValue(entity._id), entity]));
 
-  const members =
-    entities.length > 0
-      ? await ResearchGroupMember.find({
-          researchEntityId: { $in: entities.map((entity: any) => entity._id) },
-          archived: { $ne: true },
-          isCurrentMember: { $ne: false },
-          role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-          userId: { $exists: true, $ne: null },
-        })
-          .select('researchEntityId userId sourceUrl')
-          .lean()
-      : [];
-  const userIds = uniqueStrings(members.map((member: any) => String(member.userId || '')));
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity: any) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const rosterEntries = Array.from(leadRosterByEntity.values())
+    .flat()
+    .filter((entry) => entry.netid);
+  const rosterEntriesByNetid = new Map<string, ResearchEntityRosterEntry[]>();
+  for (const entry of rosterEntries) {
+    rosterEntriesByNetid.set(entry.netid, [
+      ...(rosterEntriesByNetid.get(entry.netid) || []),
+      entry,
+    ]);
+  }
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
 
   const users =
-    userIds.length > 0
-      ? await User.find({ _id: { $in: userIds } })
+    netids.length > 0
+      ? await User.find({ netid: { $in: netids } })
+          .collation({ locale: 'en', strength: 2 })
           .select('_id netid email fname lname userType title bio website websiteUrl profileUrls')
           .sort({ updatedAt: 1 })
           .lean()
@@ -2303,15 +2317,15 @@ export async function selectVisibleProfileBioTargets(
   const memberTargets = (users as any[])
     .filter((user) => user.netid && publicBioNeedsBackfill(user))
     .map((user) => {
-      const attachedUrls = (members as any[])
-        .filter((member) => idValue(member.userId) === idValue(user._id))
-        .flatMap((member) => {
-          const entity = entitiesById.get(idValue(member.researchEntityId));
+      const attachedUrls = (rosterEntriesByNetid.get(textValue(user.netid).toLowerCase()) || [])
+        .flatMap((entry) => {
+          const entity = entitiesById.get(idValue(entry.researchEntityId));
           return [
             entity?.websiteUrl,
             entity?.website,
             ...(Array.isArray(entity?.sourceUrls) ? entity.sourceUrls : []),
-            member.sourceUrl,
+            entry.rosterProvenance?.profileUrl,
+            entry.rosterProvenance?.sourceUrl,
           ];
         })
         .filter((url) => visibleBioProfileUrlMatchesUser(textValue(url), user));
@@ -2414,36 +2428,33 @@ async function annotateEntitiesWithLeadUsers(
   ).filter((id) => /^[a-f0-9]{24}$/i.test(id));
   if (entityIds.length === 0) return entities;
 
-  const members = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entityIds },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-  })
-    .select('researchEntityId userId fname lname name email')
-    .lean()) as Array<Record<string, any>>;
-  const userIds = uniqueStrings(members.map((member) => idValue(member.userId))).filter((id) =>
-    /^[a-f0-9]{24}$/i.test(id),
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entityIds,
+    VISIBLE_PROFILE_MEMBER_ROLES,
   );
-  const users = userIds.length
-    ? ((await User.find({ _id: { $in: userIds } })
-        .select('_id fname lname name displayName email')
+  const rosterEntries = Array.from(leadRosterByEntity.values()).flat();
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  const users = netids.length
+    ? ((await User.find({ netid: { $in: netids } })
+        .collation({ locale: 'en', strength: 2 })
+        .select('netid fname lname name displayName email')
         .lean()) as Array<Record<string, any>>)
     : [];
-  const usersById = new Map(users.map((user) => [idValue(user._id), user]));
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
   const generatedProfileUrlsByEntity = new Map<string, string[]>();
 
-  for (const member of members) {
-    const user = usersById.get(idValue(member.userId)) || member;
+  for (const entry of rosterEntries) {
+    const user = usersByNetid.get(entry.netid);
+    const split = splitName(entry.name);
     const lead = {
-      fname: user.fname,
-      lname: user.lname,
-      name: user.name || user.displayName || member.name,
-      displayName: user.displayName || user.name || member.name,
-      email: user.email || member.email,
+      fname: user?.fname || split.first,
+      lname: user?.lname || split.last,
+      name: user?.name || user?.displayName || entry.name,
+      displayName: user?.displayName || user?.name || entry.name,
+      email: user?.email || entry.email,
     };
-    const entityId = idValue(member.researchEntityId);
+    const entityId = idValue(entry.researchEntityId);
     leadUsersByEntity.set(entityId, [...(leadUsersByEntity.get(entityId) || []), lead]);
     generatedProfileUrlsByEntity.set(entityId, [
       ...(generatedProfileUrlsByEntity.get(entityId) || []),
@@ -2586,42 +2597,43 @@ async function selectResearchHomeProfileTargets(
   ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
-  const members = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entities.map((entity) => entity._id) },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-    userId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId userId')
-    .lean()) as Array<Record<string, any>>;
-  const userIds = uniqueStrings(members.map((member) => idValue(member.userId)));
-  if (userIds.length === 0) return [];
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const rosterEntries = Array.from(leadRosterByEntity.values())
+    .flat()
+    .filter((entry) => entry.netid);
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  if (netids.length === 0) return [];
 
-  const users = (await User.find({ _id: { $in: userIds } })
-    .select('_id fname lname email website websiteUrl profileUrls')
+  const users = (await User.find({ netid: { $in: netids } })
+    .collation({ locale: 'en', strength: 2 })
+    .select('netid fname lname email website websiteUrl profileUrls')
     .lean()) as Array<Record<string, any>>;
-  const usersById = new Map(users.map((user) => [idValue(user._id), user]));
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
   const profileUrlsByEntity = new Map<string, string[]>();
   const leadUsersByEntity = new Map<string, Array<Record<string, any>>>();
 
-  for (const member of members) {
-    const user = usersById.get(idValue(member.userId));
-    if (!user) continue;
+  for (const entry of rosterEntries) {
+    const user = usersByNetid.get(entry.netid);
     const urls = uniqueStrings([
-      user.website,
-      user.websiteUrl,
-      ...objectStringValues(user.profileUrls),
+      user?.website,
+      user?.websiteUrl,
+      ...objectStringValues(user?.profileUrls),
+      entry.websiteUrl,
+      entry.rosterProvenance?.profileUrl,
     ]);
     if (urls.length === 0) continue;
-    const entityId = idValue(member.researchEntityId);
+    const split = splitName(entry.name);
+    const entityId = idValue(entry.researchEntityId);
     profileUrlsByEntity.set(entityId, [...(profileUrlsByEntity.get(entityId) || []), ...urls]);
     leadUsersByEntity.set(entityId, [
       ...(leadUsersByEntity.get(entityId) || []),
       {
-        fname: user.fname,
-        lname: user.lname,
-        email: user.email,
+        fname: user?.fname || split.first,
+        lname: user?.lname || split.last,
+        email: user?.email || entry.email,
       },
     ]);
   }
@@ -2671,31 +2683,33 @@ async function selectLeadDirectWebsiteTargets(
   ).lean()) as Array<Record<string, any>>;
   if (entities.length === 0) return [];
 
-  const members = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entities.map((entity) => entity._id) },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-    userId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId userId')
-    .lean()) as Array<Record<string, any>>;
-  const userIds = uniqueStrings(members.map((member) => idValue(member.userId)));
+  const leadRosterByEntity = await currentLeadRosterEntriesByEntity(
+    entities.map((entity) => entity._id),
+    VISIBLE_PROFILE_MEMBER_ROLES,
+  );
+  const rosterEntries = Array.from(leadRosterByEntity.values())
+    .flat()
+    .filter((entry) => entry.netid);
+  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
   const users =
-    userIds.length > 0
-      ? ((await User.find({ _id: { $in: userIds } })
-          .select('_id website websiteUrl profileUrls')
+    netids.length > 0
+      ? ((await User.find({ netid: { $in: netids } })
+          .collation({ locale: 'en', strength: 2 })
+          .select('netid website websiteUrl profileUrls')
           .lean()) as Array<Record<string, any>>)
       : [];
-  const usersById = new Map(users.map((user) => [idValue(user._id), user]));
+  const usersByNetid = new Map(users.map((user) => [textValue(user.netid).toLowerCase(), user]));
 
   const urlsByEntity = new Map<string, string[]>();
-  for (const member of members) {
-    const user = usersById.get(idValue(member.userId));
-    if (!user) continue;
-    const urls = leadDirectResearchHomeUrlsForUser(user);
+  for (const entry of rosterEntries) {
+    const user = usersByNetid.get(entry.netid);
+    const urls = uniqueStrings([
+      ...(user ? leadDirectResearchHomeUrlsForUser(user) : []),
+      publicLeadDirectResearchHomeUrl(entry.websiteUrl),
+      publicLeadDirectResearchHomeUrl(entry.rosterProvenance?.profileUrl),
+    ]);
     if (urls.length === 0) continue;
-    const entityId = idValue(member.researchEntityId);
+    const entityId = idValue(entry.researchEntityId);
     urlsByEntity.set(entityId, uniqueStrings([...(urlsByEntity.get(entityId) || []), ...urls]));
   }
   const candidateUrls = uniqueStrings(Array.from(urlsByEntity.values()).flat());
