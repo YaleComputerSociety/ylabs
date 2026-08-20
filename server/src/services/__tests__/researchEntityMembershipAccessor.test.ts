@@ -124,7 +124,7 @@ describe('resolveResearcherIdForLegacyUser faculty fallback', () => {
   });
 
   it('resolves via the FacultyMember orcid when the User netid does not resolve', async () => {
-    const orcid = '0000-0002-1825-0097';
+    const orcid = '0009-0009-0009-0003';
     const researcher = await Researcher.create({
       displayName: 'Canonical Researcher Name',
       identifiers: { orcid },
