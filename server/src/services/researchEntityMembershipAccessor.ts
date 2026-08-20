@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Account } from '../models/account';
 import {
   Researcher,
+  isValidOrcid,
   type ResearcherDisplayProfile,
   type ResearcherProfileLink,
 } from '../models/researcher';
@@ -10,6 +11,8 @@ import {
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
 } from '../models/roleAssignment';
+import { User } from '../models/user';
+import { FacultyMember } from '../models/facultyMember';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 
@@ -178,4 +181,64 @@ export async function getResearchEntityRoster(
   if (!key) return [];
   const byEntityId = await getResearchEntityRosterByEntityId([entityId]);
   return byEntityId.get(key) || [];
+}
+
+const normalizedResolverOrcid = (value: unknown): string | undefined => {
+  const orcid = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return orcid && isValidOrcid(orcid) ? orcid : undefined;
+};
+
+export async function resolveResearcherIdForLegacyUser(
+  userId?: unknown,
+  facultyMemberId?: unknown,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  let netid: string | undefined;
+  let orcid: string | undefined;
+  let displayName: string | undefined;
+
+  const uid = normalizeEntityObjectId(userId);
+  if (uid) {
+    const user: any = await User.findById(uid).select('netid orcid fname lname displayName').lean();
+    if (user) {
+      netid = typeof user.netid === 'string' ? user.netid.trim().toLowerCase() : undefined;
+      orcid = normalizedResolverOrcid(user.orcid);
+      displayName =
+        (typeof user.displayName === 'string' && user.displayName.trim()) ||
+        [user.fname, user.lname].filter(Boolean).join(' ').trim() ||
+        undefined;
+    }
+  }
+  const fid = normalizeEntityObjectId(facultyMemberId);
+  if (fid) {
+    const faculty: any = await FacultyMember.findById(fid).select('orcidId name').lean();
+    if (faculty) {
+      orcid = orcid || normalizedResolverOrcid(faculty.orcidId);
+      displayName =
+        displayName || (typeof faculty.name === 'string' && faculty.name.trim()) || undefined;
+    }
+  }
+
+  if (netid) {
+    const account: any = await Account.findOne({ netid }).select('_id').lean();
+    if (account?._id) {
+      const researcher: any = await Researcher.findOne({ accountId: account._id })
+        .select('_id')
+        .lean();
+      if (researcher?._id) return researcher._id;
+    }
+  }
+  if (orcid) {
+    const researcher: any = await Researcher.findOne({ 'identifiers.orcid': orcid })
+      .select('_id')
+      .lean();
+    if (researcher?._id) return researcher._id;
+  }
+  if (displayName) {
+    const matches: any[] = await Researcher.find({ displayName, archived: { $ne: true } })
+      .select('_id')
+      .limit(2)
+      .lean();
+    if (matches.length === 1) return matches[0]._id;
+  }
+  return undefined;
 }

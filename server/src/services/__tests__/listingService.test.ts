@@ -60,7 +60,8 @@ const mocks = vi.hoisted(() => {
     readUser: vi.fn(),
     researchEntityFindById: vi.fn(),
     researchEntityUpdateOne: vi.fn(),
-    researchGroupMemberFindOne: vi.fn(),
+    resolveResearcherIdForLegacyUser: vi.fn(),
+    roleAssignmentFindOne: vi.fn(),
     userExists: vi.fn(),
   };
 });
@@ -76,10 +77,14 @@ vi.mock('../../models/researchEntity', () => ({
   },
 }));
 
-vi.mock('../../models/researchGroupMember', () => ({
-  ResearchGroupMember: {
-    findOne: mocks.researchGroupMemberFindOne,
+vi.mock('../../models/roleAssignment', () => ({
+  RoleAssignment: {
+    findOne: mocks.roleAssignmentFindOne,
   },
+}));
+
+vi.mock('../researchEntityMembershipAccessor', () => ({
+  resolveResearcherIdForLegacyUser: mocks.resolveResearcherIdForLegacyUser,
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
@@ -150,7 +155,12 @@ describe('listingService', () => {
     mocks.readUser.mockReset();
     mocks.researchEntityFindById.mockReset();
     mocks.researchEntityUpdateOne.mockReset();
-    mocks.researchGroupMemberFindOne.mockReset();
+    mocks.resolveResearcherIdForLegacyUser.mockReset();
+    mocks.roleAssignmentFindOne.mockReset();
+    mocks.resolveResearcherIdForLegacyUser.mockResolvedValue(undefined);
+    mocks.roleAssignmentFindOne.mockReturnValue({
+      select: () => ({ lean: async () => null }),
+    });
     mocks.userExists.mockReset();
 
     mocks.getMeiliIndex.mockResolvedValue({
@@ -173,7 +183,10 @@ describe('listingService', () => {
       group: { _id: ownerEntityId },
       created: false,
     });
-    mocks.researchGroupMemberFindOne.mockReturnValue({
+    mocks.resolveResearcherIdForLegacyUser.mockResolvedValue(
+      new mongoose.Types.ObjectId('64a0000000000000000000aa'),
+    );
+    mocks.roleAssignmentFindOne.mockReturnValue({
       select: () => ({
         lean: async () => null,
       }),
@@ -274,9 +287,11 @@ describe('listingService', () => {
     const authorizedEntityId = '64a000000000000000000004';
     const ownerUserId = '64a000000000000000000005';
 
-    mocks.researchGroupMemberFindOne.mockReturnValue({
+    const authorizedPersonId = new mongoose.Types.ObjectId('64a0000000000000000000bb');
+    mocks.resolveResearcherIdForLegacyUser.mockResolvedValue(authorizedPersonId);
+    mocks.roleAssignmentFindOne.mockReturnValue({
       select: () => ({
-        lean: async () => ({ _id: 'membership-1' }),
+        lean: async () => ({ _id: 'role-assignment-1' }),
       }),
     });
 
@@ -297,10 +312,11 @@ describe('listingService', () => {
       },
     );
 
-    expect(mocks.researchGroupMemberFindOne).toHaveBeenCalledWith(
+    expect(mocks.resolveResearcherIdForLegacyUser).toHaveBeenCalledWith(ownerUserId, undefined);
+    expect(mocks.roleAssignmentFindOne).toHaveBeenCalledWith(
       expect.objectContaining({
-        researchEntityId: authorizedEntityId,
-        $or: [{ userId: ownerUserId }],
+        personId: authorizedPersonId,
+        'target.kind': 'RESEARCH_ENTITY',
       }),
     );
     expect(mocks.findOrCreateForOwner).not.toHaveBeenCalled();

@@ -4,7 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Account } from '../../models/account';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
-import { getResearchEntityRoster } from '../researchEntityMembershipAccessor';
+import { User } from '../../models/user';
+import { FacultyMember } from '../../models/facultyMember';
+import {
+  getResearchEntityRoster,
+  resolveResearcherIdForLegacyUser,
+} from '../researchEntityMembershipAccessor';
 
 describe('getResearchEntityRoster display profile projection', () => {
   let replSet: MongoMemoryReplSet;
@@ -94,5 +99,66 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.primaryDepartment).toBeUndefined();
     expect(entry.imageUrl).toBeUndefined();
     expect(entry.websiteUrl).toBeUndefined();
+  });
+});
+
+describe('resolveResearcherIdForLegacyUser faculty fallback', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['accounts', 'researchers', 'role_assignments', 'users', 'faculty_members']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  it('resolves via the FacultyMember orcid when the User netid does not resolve', async () => {
+    const orcid = '0009-0009-0009-0003';
+    const researcher = await Researcher.create({
+      displayName: 'Canonical Researcher Name',
+      identifiers: { orcid },
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const user = await User.create({
+      netid: 'unresolved1',
+      email: 'unresolved1@example.test',
+      fname: 'Unrelated',
+      lname: 'PersonOne',
+    });
+    const faculty = await FacultyMember.create({
+      name: 'Faculty Display Name',
+      orcidId: orcid,
+    });
+
+    const resolved = await resolveResearcherIdForLegacyUser(user._id, faculty._id);
+
+    expect(resolved?.toString()).toBe(researcher._id.toString());
+  });
+
+  it('returns undefined when neither the User nor the FacultyMember resolve', async () => {
+    const user = await User.create({
+      netid: 'unresolved2',
+      email: 'unresolved2@example.test',
+      fname: 'Unrelated',
+      lname: 'PersonTwo',
+    });
+    const faculty = await FacultyMember.create({ name: 'Unlinked Faculty' });
+
+    const resolved = await resolveResearcherIdForLegacyUser(user._id, faculty._id);
+
+    expect(resolved).toBeUndefined();
   });
 });
