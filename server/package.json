@@ -29,7 +29,6 @@
     "users:repair-mismatched-emails": "tsx src/scripts/repairMismatchedPersonEmails.ts",
     "observations:cross-source-conflict-review": "tsx src/scripts/crossSourceObservationConflictReview.ts",
     "observations:repair-profile-description-conflicts": "tsx src/scripts/repairProfileDescriptionBackfillConflicts.ts",
-    "research-entities:repair-july-legacy-medicine": "tsx src/scripts/repairJulyLegacyMedicineImport.ts",
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",
     "observations:repair-orphaned-references": "tsx src/scripts/repairOrphanedObservationReferences.ts",
     "pfr3:outreach-report": "tsx src/scripts/pfr3StudentOutreachReport.ts",
