@@ -1,19 +1,8 @@
 /**
  * Controller handlers for listing CRUD routes.
  */
-import { Request, Response, NextFunction } from 'express';
-import {
-  archiveListing,
-  createListing,
-  deleteListing,
-  readListing,
-  readPublicListing,
-  unarchiveListing,
-  updateListing,
-  getSkeletonListing,
-  addView,
-} from '../services/listingService';
-import { readUser } from '../services/userService';
+import { Request, Response } from 'express';
+import { readPublicListing, addView } from '../services/listingService';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { getConfig } from '../services/configService';
 import { logEvent } from '../services/analyticsService';
@@ -719,113 +708,12 @@ export const searchListings = async (request: Request, response: Response) => {
   }
 };
 
-export const createListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    const user = await readUser(currentUser.netId);
-    const listing = await createListing(request.body.data, user);
-    response.status(201).json({ listing: publicListingForAuthenticatedReader(listing) });
-  } catch (error: any) {
-    console.error('Listing create failed:', sanitizeLogValue(error));
-    sendListingError(response, error, 'Failed to create listing');
-  }
-};
-
-export const getSkeletonListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    const listing = await getSkeletonListing(currentUser.netId!);
-    response.status(201).json({ listing: publicListingForAuthenticatedReader(listing) });
-  } catch (error: any) {
-    console.error('Listing skeleton failed:', sanitizeLogValue(error));
-    sendListingError(response, error, 'Failed to initialize listing');
-  }
-};
-
 export const getListingById = async (request: Request, response: Response) => {
   try {
     const listing = await readPublicListing(request.params.id);
     response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
   } catch (error: any) {
     sendListingError(response, error, 'Failed to fetch listing');
-  }
-};
-
-const LISTING_SELF_UPDATABLE_FIELDS = [
-  'title',
-  'hiringStatus',
-  'websites',
-  'description',
-  'applicantDescription',
-  'researchAreas',
-  'keywords',
-  'established',
-  'departments',
-] as const;
-
-const filterListingUpdate = (data: any): Record<string, any> => {
-  const update: Record<string, any> = {};
-  if (!data || typeof data !== 'object') return update;
-  for (const field of LISTING_SELF_UPDATABLE_FIELDS) {
-    if (data[field] !== undefined) {
-      update[field] = data[field];
-    }
-  }
-  return update;
-};
-
-export const updateListingForCurrentUser = async (
-  request: Request,
-  response: Response,
-  _next: NextFunction,
-) => {
-  try {
-    const currentUser = request.user as {
-      netId?: string;
-      userType: string;
-      userConfirmed: boolean;
-    };
-
-    const safeData = filterListingUpdate(request.body?.data);
-    const listing = await updateListing(request.params.id, currentUser.netId!, safeData);
-    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
-  } catch (error: any) {
-    console.error('Listing update failed:', sanitizeLogValue(error));
-    sendListingError(response, error, 'Failed to update listing');
-  }
-};
-
-export const archiveListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-
-    const listing = await archiveListing(request.params.id, currentUser.netId!);
-    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
-  } catch (error: any) {
-    console.error('Listing archive failed:', sanitizeLogValue(error));
-    sendListingError(response, error, 'Failed to archive listing');
-  }
-};
-
-export const unarchiveListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-
-    const listing = await unarchiveListing(request.params.id, currentUser.netId!);
-    response.status(200).json({ listing: publicListingForAuthenticatedReader(listing) });
-  } catch (error: any) {
-    console.error('Listing unarchive failed:', sanitizeLogValue(error));
-    sendListingError(response, error, 'Failed to unarchive listing');
   }
 };
 
@@ -840,19 +728,3 @@ export const addViewToListing = async (request: Request, response: Response) => 
   }
 };
 
-export const deleteListingForCurrentUser = async (request: Request, response: Response) => {
-  try {
-    const currentUser = request.user as { netId?: string; userType: string; userConfirmed: boolean };
-
-    const currentListing = await readListing(request.params.id);
-    if (currentUser.netId !== currentListing.ownerId) {
-      return response.status(403).json({ error: 'Forbidden' });
-    }
-
-    const deletedListing = await deleteListing(request.params.id);
-    response.status(200).json({ deletedListing: publicListingForAuthenticatedReader(deletedListing) });
-  } catch (error: any) {
-    console.error('Listing delete failed:', sanitizeLogValue(error));
-    sendListingError(response, error, 'Failed to delete listing');
-  }
-};

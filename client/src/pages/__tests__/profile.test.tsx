@@ -84,7 +84,6 @@ const profile = {
   topics: [],
   bio: 'Researches computational methods.',
   profileVerified: true,
-  ownListings: ['listing-1'],
 };
 
 afterEach(() => {

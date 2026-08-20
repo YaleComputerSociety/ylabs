@@ -18,7 +18,6 @@ const baseProfile: FacultyProfile = {
   research_interests: [],
   topics: [],
   profileVerified: false,
-  ownListings: [],
 };
 
 const renderProfileHeader = (profile: FacultyProfile) =>
@@ -164,15 +163,6 @@ describe('ProfileHeader', () => {
 
     expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
     expect(container.textContent).not.toContain('researcher@example.test');
-  });
-
-  it('does not surface legacy listing counts from faculty profiles', () => {
-    const { container } = renderProfileHeader({
-      ...baseProfile,
-      ownListings: ['listing-1', 'listing-2'],
-    });
-
-    expect(container.textContent).not.toContain('listing');
   });
 
   it('crops profile images toward the face area instead of centering full portraits', () => {

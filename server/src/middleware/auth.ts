@@ -86,49 +86,6 @@ export const isTrustworthy = (
 };
 
 /**
- * Middleware to check if user has permission to create listings.
- * Requires professor/faculty/admin type AND profileVerified (admins bypass verification).
- */
-export const canCreateListing = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  const currentUser = req.user as AuthenticatedUser;
-
-  if (!hasAuthenticatedPrincipal(currentUser)) {
-    return sendAuthRequired(res);
-  }
-
-  if (currentUser.userType === 'admin') {
-    return hasAdminAuthority(currentUser)
-      .then((authorized) => {
-        if (authorized) return next();
-        return res.status(403).json({ error: 'Admin privileges required' });
-      })
-      .catch(next);
-  }
-
-  const allowedTypes = ['professor', 'faculty'];
-  if (!allowedTypes.includes(String(currentUser.userType ?? ''))) {
-    return res.status(403).json({ error: 'User does not have permission to create listings' });
-  }
-
-  if (currentUser.userType !== 'admin' && currentUser.userConfirmed !== true) {
-    return res.status(403).json({ error: 'Account must be confirmed before creating listings' });
-  }
-
-  if (currentUser.userType !== 'admin' && !currentUser.profileVerified) {
-    return res.status(403).json({
-      error:
-        'You must verify your profile before creating listings. Go to your account page to review and verify your profile.',
-    });
-  }
-
-  next();
-};
-
-/**
  * Middleware to check if user can submit listing claim/correction requests.
  * These requests create admin-review work items, so they are limited to
  * confirmed faculty/staff/operator accounts rather than all authenticated users.
