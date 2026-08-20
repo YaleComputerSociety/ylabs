@@ -15,7 +15,9 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
+import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
+import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { User } from '../models/user';
 import {
@@ -937,17 +939,30 @@ async function main(): Promise<void> {
       .limit(options.limit)
       .lean();
 
-    const userIds = users.map((user: any) => user._id).filter(Boolean);
-    const memberships = await ResearchGroupMember.find({
-      userId: { $in: userIds },
-      archived: { $ne: true },
-      isCurrentMember: { $ne: false },
-      researchEntityId: { $exists: true, $ne: null },
-    })
-      .select('userId researchEntityId role')
-      .lean();
+    const researcherIdToUser = new Map<string, any>();
+    for (const user of users as any[]) {
+      const personId = await resolveResearcherIdForLegacyUser(user._id);
+      if (personId) researcherIdToUser.set(personId.toString(), user);
+    }
+    const researcherIds = [...researcherIdToUser.keys()].map(
+      (id) => new mongoose.Types.ObjectId(id),
+    );
+    const memberships = researcherIds.length
+      ? await RoleAssignment.find({
+          personId: { $in: researcherIds },
+          'target.kind': 'RESEARCH_ENTITY',
+          state: { $ne: 'HISTORICAL' },
+          archived: { $ne: true },
+        })
+          .select('personId target role')
+          .lean()
+      : [];
     const entityIds = [
-      ...new Set(memberships.map((membership: any) => serializedDocumentId(membership.researchEntityId)).filter(Boolean)),
+      ...new Set(
+        memberships
+          .map((membership: any) => serializedDocumentId(membership.target?.id))
+          .filter(Boolean),
+      ),
     ];
     const entities = await ResearchEntity.find({
       _id: { $in: entityIds },
@@ -961,9 +976,11 @@ async function main(): Promise<void> {
     const entityById = new Map((entities as any[]).map((entity) => [serializedDocumentId(entity._id) || '', entity]));
     const homesByUserId = new Map<string, any[]>();
     for (const membership of memberships as any[]) {
-      const entity = entityById.get(serializedDocumentId(membership.researchEntityId) || '');
+      const entity = entityById.get(serializedDocumentId(membership.target?.id) || '');
       if (!entity) continue;
-      const key = serializedDocumentId(membership.userId) || '';
+      const user = researcherIdToUser.get(serializedDocumentId(membership.personId) || '');
+      if (!user) continue;
+      const key = serializedDocumentId(user._id) || '';
       const rows = homesByUserId.get(key) || [];
       rows.push({
         _id: serializedDocumentId(entity._id) || '',
@@ -980,7 +997,7 @@ async function main(): Promise<void> {
         _bioSourceUrls: entity.sourceUrls || [],
         _bioWebsite: entity.website || '',
         _bioWebsiteUrl: entity.websiteUrl || '',
-        role: membership.role || '',
+        role: LEGACY_ROLE_BY_CANONICAL[membership.role as keyof typeof LEGACY_ROLE_BY_CANONICAL] || '',
       });
       homesByUserId.set(key, rows);
     }

@@ -16,7 +16,6 @@ import { PaperAuthor } from '../paperAuthor';
 import { Researcher } from '../researcher';
 import { ResearchArea } from '../researchArea';
 import { ResearchEntity } from '../researchEntity';
-import { ResearchGroupMember } from '../researchGroupMember';
 import { RoleAssignment } from '../roleAssignment';
 import { Signal } from '../signal';
 import { ResearchPlan } from '../researchPlan';
@@ -50,7 +49,6 @@ const models: Array<[mongoose.Model<any>, string]> = [
   [Researcher, 'researchers'],
   [ResearchArea, 'research_areas'],
   [ResearchEntity, 'research_entities'],
-  [ResearchGroupMember, 'research_entity_members'],
   [RoleAssignment, 'role_assignments'],
   [Signal, 'signals'],
   [ResearchPlan, 'research_plans'],

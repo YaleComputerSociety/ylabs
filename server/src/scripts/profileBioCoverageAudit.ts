@@ -4,7 +4,7 @@ import path from 'path';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
 import { User } from '../models/user';
 import {
@@ -156,23 +156,28 @@ async function buildProfessorBioCoverageInputs(): Promise<ProfessorBioCoverageIn
   const visibleEntityIds = visibleEntities.map((entity: any) => entity._id);
   if (visibleEntityIds.length === 0) return [];
 
-  const members = await ResearchGroupMember.find({
-    researchEntityId: { $in: visibleEntityIds },
-    archived: { $ne: true },
-    isCurrentMember: { $ne: false },
-    role: { $in: VISIBLE_PROFILE_MEMBER_ROLES },
-    userId: { $exists: true, $ne: null },
-  })
-    .select('researchEntityId userId role')
-    .lean();
-  const userIds = [...new Set(members.map((member: any) => idValue(member.userId)).filter(Boolean))];
+  const rosterByEntityId = await getResearchEntityRosterByEntityId(visibleEntityIds);
+  const leadEntries: Array<{ researchEntityId: string; netid: string; role: string }> = [];
+  for (const [entityId, entries] of rosterByEntityId) {
+    for (const entry of entries) {
+      if (
+        entry.state === 'HISTORICAL' ||
+        !VISIBLE_PROFILE_MEMBER_ROLES.includes(entry.role) ||
+        !entry.netid
+      ) {
+        continue;
+      }
+      leadEntries.push({ researchEntityId: entityId, netid: entry.netid, role: entry.role });
+    }
+  }
+  const netids = [...new Set(leadEntries.map((entry) => entry.netid).filter(Boolean))];
   const memberEntityIds = [
-    ...new Set(members.map((member: any) => idValue(member.researchEntityId)).filter(Boolean)),
+    ...new Set(leadEntries.map((entry) => entry.researchEntityId).filter(Boolean)),
   ];
-  if (userIds.length === 0) return [];
+  if (netids.length === 0) return [];
 
   const [users, researchHomes] = await Promise.all([
-    User.find({ _id: { $in: userIds } })
+    User.find({ netid: { $in: netids } })
       .select(
         '_id netid fname lname name displayName bio title website websiteUrl profileUrls researchInterests topics openAlexId openalex_id',
       )
@@ -185,20 +190,17 @@ async function buildProfessorBioCoverageInputs(): Promise<ProfessorBioCoverageIn
   ]);
 
   const homeById = new Map((researchHomes as any[]).map((entity) => [idValue(entity._id), entity]));
-  const membersByUserId = new Map<string, any[]>();
-  for (const member of members as any[]) {
-    const key = idValue(member.userId);
-    if (!key) continue;
-    const rows = membersByUserId.get(key) || [];
-    rows.push(member);
-    membersByUserId.set(key, rows);
+  const membersByNetid = new Map<string, Array<{ researchEntityId: string; role: string }>>();
+  for (const entry of leadEntries) {
+    const rows = membersByNetid.get(entry.netid) || [];
+    rows.push({ researchEntityId: entry.researchEntityId, role: entry.role });
+    membersByNetid.set(entry.netid, rows);
   }
 
   return (users as any[]).map((user) => {
-    const userId = idValue(user._id);
-    const homes = (membersByUserId.get(userId) || [])
+    const homes = (membersByNetid.get(textValue(user.netid)) || [])
       .map((member) => {
-        const entity = homeById.get(idValue(member.researchEntityId));
+        const entity = homeById.get(member.researchEntityId);
         return entity ? { ...entity, role: member.role || '' } : null;
       })
       .filter(Boolean);
@@ -208,7 +210,7 @@ async function buildProfessorBioCoverageInputs(): Promise<ProfessorBioCoverageIn
     });
 
     return {
-      id: userId,
+      id: idValue(user._id),
       netid: user.netid || '',
       name: publicDisplayName(user),
       title: user.title || '',

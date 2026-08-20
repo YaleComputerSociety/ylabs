@@ -5,8 +5,9 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
-import { User } from '../models/user';
+import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { Researcher } from '../models/researcher';
+import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -406,18 +407,26 @@ export async function runDisambiguateSurnameLabNames(args: DisambiguateSurnameLa
     .limit(args.limit)
     .lean()) as any[];
   const entityIds = entityRows.map((entity) => entity._id);
-  const memberRows = (await ResearchGroupMember.find({
-    researchEntityId: { $in: entityIds },
+  const roleAssignmentRows = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
     archived: { $ne: true },
-    role: { $in: ['pi', 'director', 'co-pi', 'co-director'] },
+    role: { $in: ['PI', 'DIRECTOR', 'CO_PI', 'CO_DIRECTOR'] },
   })
-    .select('researchEntityId userId role isCurrentMember archived')
+    .select('target personId role state')
     .lean()) as any[];
-  const userIds = memberRows
+  const memberRows = roleAssignmentRows.map((assignment) => ({
+    researchEntityId: assignment.target?.id,
+    userId: assignment.personId,
+    role: LEGACY_ROLE_BY_CANONICAL[assignment.role as RoleAssignmentRole],
+    isCurrentMember: assignment.state !== 'HISTORICAL',
+    archived: false,
+  }));
+  const personIds = memberRows
     .map((member) => member.userId)
     .filter((id): id is mongoose.Types.ObjectId => !!id);
-  const userRows = (await User.find({ _id: { $in: userIds } })
-    .select('_id fname lname netid')
+  const userRows = (await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
+    .select('_id displayName')
     .lean()) as any[];
   const existingNames = (
     (await ResearchEntity.find(ACTIVE_FILTER).select('name').lean()) as Array<{ name?: string }>
@@ -438,12 +447,17 @@ export async function runDisambiguateSurnameLabNames(args: DisambiguateSurnameLa
       isCurrentMember: member.isCurrentMember,
       archived: member.archived,
     })),
-    users: userRows.map((user) => ({
-      id: serializedDocumentId(user._id) || '',
-      fname: user.fname,
-      lname: user.lname,
-      netid: user.netid,
-    })),
+    users: userRows.map((user) => {
+      const nameParts = String(user.displayName || '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      return {
+        id: serializedDocumentId(user._id) || '',
+        fname: nameParts.slice(0, -1).join(' '),
+        lname: nameParts.length > 0 ? nameParts[nameParts.length - 1] : '',
+      };
+    }),
     existingActiveNames: existingNames,
   });
 

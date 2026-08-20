@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => {
   return {
     addDocuments,
     deleteDocument,
-    researchGroupMemberFind: vi.fn(),
     roleAssignmentFind: vi.fn(),
     personFind: vi.fn(),
     accountFind: vi.fn(),
@@ -22,12 +21,6 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('../../utils/meiliClient', () => ({
   getMeiliIndex: (name: string) => mocks.getMeiliIndex(name),
-}));
-
-vi.mock('../../models/researchGroupMember', () => ({
-  ResearchGroupMember: {
-    find: mocks.researchGroupMemberFind,
-  },
 }));
 
 vi.mock('../../models/roleAssignment', () => ({
@@ -70,14 +63,12 @@ import {
 beforeEach(() => {
   mocks.addDocuments.mockReset();
   mocks.deleteDocument.mockReset();
-  mocks.researchGroupMemberFind.mockReset();
   mocks.roleAssignmentFind.mockReset();
   mocks.personFind.mockReset();
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
   mocks.facultyMemberFind.mockReset();
   mocks.getMeiliIndex.mockClear();
-  mocks.researchGroupMemberFind.mockReturnValue({ lean: async () => [] });
   mocks.roleAssignmentFind.mockReturnValue({ lean: async () => [] });
   mocks.personFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.accountFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });

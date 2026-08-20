@@ -7,7 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
 import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -332,10 +332,8 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
     )
     .lean()) as unknown as EntityRecord[];
 
-  const [members, signalStats] = await Promise.all([
-    ResearchGroupMember.find({ researchEntityId: { $in: validIds } })
-      .select('researchEntityId role name')
-      .lean(),
+  const [rosterByEntityId, signalStats] = await Promise.all([
+    getResearchEntityRosterByEntityId(validIds),
     aggregateCountAndTypes(Signal, validIds, 'type', {
       type: { $in: [...accessSignalTypes] },
       archived: { $ne: true },
@@ -343,12 +341,15 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
   ]);
 
   const membersByEntityId = new Map<string, MemberRecord[]>();
-  for (const member of members as MemberRecord[]) {
-    const id = stringId(member.researchEntityId);
-    if (!id) continue;
-    const list = membersByEntityId.get(id) || [];
-    list.push(member);
-    membersByEntityId.set(id, list);
+  for (const [entityId, roster] of rosterByEntityId) {
+    membersByEntityId.set(
+      entityId,
+      roster.map((entry) => ({
+        researchEntityId: entry.researchEntityId,
+        role: entry.role,
+        name: entry.name,
+      })),
+    );
   }
 
   const duplicateCandidates = duplicateCandidatesFor(entities);

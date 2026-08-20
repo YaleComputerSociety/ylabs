@@ -117,7 +117,6 @@ test('test fixtures do not contain known real Yale identifiers', () => {
 test('operator scripts sanitize raw caught error messages before logging', () => {
   const files = [
     '../server/src/scripts/crossSourceObservationConflictReview.ts',
-    '../server/src/scripts/researchEntityMemberReferenceAudit.ts',
     '../server/src/scripts/dedupeUsersByIdentity.ts',
     '../server/src/scripts/repairDuplicateAccessSignals.ts',
     '../server/src/scripts/betaDataQuality.ts',
@@ -1724,8 +1723,10 @@ test('center director backfill only filters reject object-shaped IDs', () => {
   assert.match(source, /normalizeCenterDirectorBackfillObjectId\(value\)/);
   assert.match(
     source,
-    /const withLeadSet = new Set\(withLead\.map\(\(id: any\) => serializedDocumentId\(id\) \|\| ''\)\)/,
+    /const rosterByEntityId = await getResearchEntityRosterByEntityId\(/,
   );
+  assert.match(source, /const withLeadSet = new Set<string>\(\)/);
+  assert.match(source, /withLeadSet\.add\(entityId\)/);
   assert.match(source, /const centerId = serializedDocumentId\(doc\._id\) \|\| ''/);
   assert.match(source, /_id: centerId/);
   assert.match(
@@ -2490,7 +2491,7 @@ test('entity materializer ObjectId handling is primitive-normalized', () => {
     source,
     /return user\?\._id \? materializerDocumentId\(user\._id\) \|\| null : null/,
   );
-  assert.match(source, /normalizeMaterializerObjectId\(member\.researchEntityId\)/);
+  assert.match(source, /normalizeMaterializerObjectId\(assignment\?\.target\?\.id\)/);
   assert.match(source, /const userId = normalizeMaterializerObjectId\(user\._id\) \|\| ''/);
   assert.match(source, /entityId: materializerDocumentId\(source\._id\)/);
   assert.match(
@@ -2761,34 +2762,6 @@ test('maintenance and scraper id helpers do not execute duck-typed toHexString h
   }
 });
 
-test('research entity member reference repair ids are primitive-normalized', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scripts/researchEntityMemberReferenceAudit.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MEMBER_REFERENCE_OBJECT_ID_RE = \/\^\[a-f0-9\]\{24\}\$\/i/);
-  assert.match(
-    source,
-    /export function normalizeMemberReferenceObjectId\(value: unknown\): string \| undefined/,
-  );
-  assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
-  assert.match(source, /\.map\(\(id\) => normalizeMemberReferenceObjectId\(id\)\)/);
-  assert.match(
-    source,
-    /const replacementUserId = normalizeMemberReferenceObjectId\(item\.replacementUserId\)/,
-  );
-  assert.match(
-    source,
-    /const replacementResearchEntityIdValue = normalizeMemberReferenceObjectId\(/,
-  );
-  assert.match(source, /serializedDocumentId\(row\._id\) \|\| ''/);
-  assert.match(source, /serializedDocumentId\(row\.userId\) \|\| ''/);
-  assert.doesNotMatch(source, /ObjectId\.isValid/);
-  assert.doesNotMatch(source, /String\(row\._id \|\| ''\)/);
-  assert.doesNotMatch(source, /String\(row\.userId \|\| ''\)/);
-});
-
 test('student visibility backfill report and grouping ids use safe serialization', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scripts/backfillStudentVisibilityTiers.ts', import.meta.url),
@@ -2811,11 +2784,9 @@ test('audit planning and source seed artifacts are constrained to safe JSON root
   for (const [name, file] of [
     ['research entity rename audit', '../server/src/scripts/auditResearchEntityRename.ts'],
     ['accepted inputs JSON report', '../server/src/scripts/acceptedInputs.ts'],
-    ['department lead repair plan', '../server/src/scripts/departmentLeadRepairPlan.ts'],
     ['source registry seed', '../server/src/scrapers/seedSources.ts'],
     ['surname lab disambiguation', '../server/src/scripts/disambiguateSurnameLabNames.ts'],
     ['profile data quality audit', '../server/src/scripts/profileDataQualityAudit.ts'],
-    ['member reference audit', '../server/src/scripts/researchEntityMemberReferenceAudit.ts'],
     [
       'member reference audit core',
       '../server/src/scripts/researchEntityMemberReferenceAuditCore.ts',
@@ -2824,37 +2795,6 @@ test('audit planning and source seed artifacts are constrained to safe JSON root
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /resolveSafeJsonReportOutputPath/, `${name} must use safe JSON paths`);
   }
-
-  const departmentLeadRepairPlan = fs.readFileSync(
-    new URL('../server/src/scripts/departmentLeadRepairPlan.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(
-    departmentLeadRepairPlan,
-    /resolveSafeJsonReportOutputPath\(expectPlanValue, '--expect-plan'\)/,
-  );
-  assert.match(
-    departmentLeadRepairPlan,
-    /const expectedPlanPath = resolveSafeJsonReportOutputPath\(options\.expectPlan, '--expect-plan'\)/,
-  );
-  assert.match(departmentLeadRepairPlan, /readFile\(expectedPlanPath, 'utf8'\)/);
-  assert.doesNotMatch(departmentLeadRepairPlan, /readFile\(options\.expectPlan, 'utf8'\)/);
-  assert.match(
-    departmentLeadRepairPlan,
-    /import \{ serializedDocumentId \} from '\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(departmentLeadRepairPlan, /id: serializedDocumentId\(entity\._id\) \|\| ''/);
-  assert.match(departmentLeadRepairPlan, /entityId: serializedDocumentId\(observation\.entityId\)/);
-  assert.match(departmentLeadRepairPlan, /id: serializedDocumentId\(user\._id\) \|\| ''/);
-  assert.match(
-    departmentLeadRepairPlan,
-    /researchEntityId: serializedDocumentId\(member\.researchEntityId\) \|\| ''/,
-  );
-  assert.match(departmentLeadRepairPlan, /userId: serializedDocumentId\(member\.userId\)/);
-  assert.doesNotMatch(departmentLeadRepairPlan, /String\(entity\._id\)/);
-  assert.doesNotMatch(departmentLeadRepairPlan, /String\(observation\.entityId\)/);
-  assert.doesNotMatch(departmentLeadRepairPlan, /String\(user\._id\)/);
-  assert.doesNotMatch(departmentLeadRepairPlan, /String\(member\.researchEntityId\)/);
 });
 
 test('faculty import input JSON is constrained before database import reads', () => {
@@ -3105,13 +3045,6 @@ test('Phase 0 complementary audits enforce fail-closed summary-only output', () 
       '../server/src/scripts/dedupeUsersByIdentity.ts',
       '../server/src/scripts/dedupeUsersByIdentity.ts',
       'buildDedupeUsersByIdentitySummaryOnlyOutput',
-    ],
-    [
-      'member reference audit',
-      '../server/src/scripts/researchEntityMemberReferenceAuditCore.ts',
-      '../server/src/scripts/researchEntityMemberReferenceAudit.ts',
-      '../server/src/scripts/researchEntityMemberReferenceAuditCore.ts',
-      'buildResearchEntityMemberReferenceSummaryOnlyOutput',
     ],
     [
       'duplicate entity name review',
@@ -3781,10 +3714,12 @@ test('official-profile PI backfill source-acquisition ids use safe serialization
     source,
     /const officialProfileDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
+  assert.match(source, /const idValue = \(value: unknown\): string => \{/);
+  assert.match(source, /const directId = serializedDocumentId\(value\)/);
   assert.match(source, /officialProfileDocumentId\(entity\._id\)/);
-  assert.match(source, /officialProfileDocumentId\(member\.researchEntityId\)/);
+  assert.match(source, /idValue\(entry\.researchEntityId\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(member\.researchEntityId\)/);
+  assert.doesNotMatch(source, /String\(entry\.researchEntityId\)/);
 });
 
 test('department undergrad research scraper fetches configured pages through the shared SSRF guard', () => {
@@ -4057,14 +3992,18 @@ test('profile data-quality audit ids use safe serialization for report grouping'
   assert.match(source, /\[serializedDocumentId\(entity\._id\) \|\| '', entity\]/);
   assert.match(
     source,
-    /entityById\.get\(serializedDocumentId\(membership\.researchEntityId\) \|\| ''\)/,
+    /entityById\.get\(serializedDocumentId\(membership\.target\?\.id\) \|\| ''\)/,
   );
-  assert.match(source, /const key = serializedDocumentId\(membership\.userId\) \|\| ''/);
+  assert.match(
+    source,
+    /researcherIdToUser\.get\(serializedDocumentId\(membership\.personId\) \|\| ''\)/,
+  );
+  assert.match(source, /const key = serializedDocumentId\(user\._id\) \|\| ''/);
   assert.match(source, /_id: serializedDocumentId\(entity\._id\) \|\| ''/);
   assert.match(source, /homesByUserId\.get\(serializedDocumentId\(user\._id\) \|\| ''\)/);
   assert.doesNotMatch(source, /String\(entity\._id\)/);
-  assert.doesNotMatch(source, /String\(membership\.researchEntityId\)/);
-  assert.doesNotMatch(source, /String\(membership\.userId\)/);
+  assert.doesNotMatch(source, /String\(membership\.target\?\.id\)/);
+  assert.doesNotMatch(source, /String\(membership\.personId\)/);
   assert.doesNotMatch(source, /String\(user\._id\)/);
 });
 
@@ -5115,7 +5054,6 @@ test('Mongo-connected gate and import scripts sanitize fatal errors', () => {
     '../server/src/scripts/profileImageQualityAudit.ts',
     '../server/src/scripts/repairProfileDescriptionBackfillConflicts.ts',
     '../server/src/scripts/repairListingResearchEntityProfiles.ts',
-    '../server/src/scripts/departmentLeadRepairPlan.ts',
     '../server/src/scripts/migrateResearchEntityCollections.ts',
     '../server/src/scripts/scraperIntegrityDuplicateReview.ts',
     '../server/src/scripts/rebuildResearchEntitySearchIndex.ts',
@@ -6058,11 +5996,11 @@ test('public profile research-home loading uses safe document id serialization',
   );
   assert.match(
     source,
-    /\.map\(\(membership: any\) => profileDocumentId\(membership\.researchEntityId\)\)/,
+    /const entityId = profileDocumentId\(assignment\.target\?\.id\)/,
   );
   assert.match(source, /_id: profileDocumentId\(entity\._id\)/);
   assert.match(source, /role: roleByEntityId\.get\(profileDocumentId\(entity\._id\)\) \|\| ''/);
-  assert.doesNotMatch(source, /String\(membership\.researchEntityId\)/);
+  assert.doesNotMatch(source, /String\(assignment\.target\?\.id\)/);
   assert.doesNotMatch(source, /_id: String\(entity\._id\)/);
   assert.doesNotMatch(source, /roleByEntityId\.get\(String\(entity\._id\)\)/);
 });

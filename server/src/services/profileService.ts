@@ -3,9 +3,10 @@
  */
 import { User } from '../models/user';
 import { getListingModel } from '../db/connections';
-import { FacultyMember } from '../models/facultyMember';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
+import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
+import { resolveResearcherIdForLegacyUser } from './researchEntityMembershipAccessor';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
@@ -1728,76 +1729,31 @@ const loadProfileScholarlyLinks = async (user: Record<string, any>) => {
   return orderProfileScholarlyLinks(scholarlyLinks).slice(0, 10);
 };
 
-export const buildProfileResearchMembershipFilter = (
-  user: Record<string, any>,
-  facultyMemberIds: unknown[] = [],
-) => {
-  const userId = user._id;
-  const clauses: Record<string, unknown>[] = [];
-
-  if (userId) clauses.push({ userId });
-
-  const linkedFacultyMemberIds = [
-    user.facultyMemberId,
-    ...facultyMemberIds,
-  ]
-    .map((id) => profileDocumentId(id))
-    .filter(Boolean);
-  const uniqueFacultyMemberIds = [...new Set(linkedFacultyMemberIds)];
-  if (uniqueFacultyMemberIds.length > 0) {
-    clauses.push({ facultyMemberId: { $in: uniqueFacultyMemberIds } });
-  }
-
-  if (clauses.length === 0) return null;
-
-  return {
-    $or: clauses,
-    isCurrentMember: { $ne: false },
-    researchEntityId: { $exists: true, $ne: null },
-  };
-};
-
 const loadProfileResearchEntities = async (user: Record<string, any>) => {
-  const userId = user._id;
-  if (!userId) return [];
+  const personId = await resolveResearcherIdForLegacyUser(user._id, user.facultyMemberId);
+  if (!personId) return [];
 
-  const facultyIdentityClauses: Record<string, unknown>[] = [];
-  if (user.facultyMemberId) facultyIdentityClauses.push({ _id: user.facultyMemberId });
-  if (userId) facultyIdentityClauses.push({ userId });
-  if (user.netid) facultyIdentityClauses.push({ netid: user.netid });
-  if (user.email) facultyIdentityClauses.push({ email: user.email });
-  const linkedFacultyMembers = facultyIdentityClauses.length
-    ? await FacultyMember.find({
-        $or: facultyIdentityClauses,
-        archived: { $ne: true },
-      })
-        .select('_id')
-        .lean()
-    : [];
-  const membershipFilter = buildProfileResearchMembershipFilter(
-    user,
-    linkedFacultyMembers.map((faculty: any) => faculty._id),
-  );
-  if (!membershipFilter) return [];
-
-  const memberships = await ResearchGroupMember.find(membershipFilter)
-    .select('researchEntityId role')
+  const assignments = await RoleAssignment.find({
+    personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('target role')
     .lean();
-  const entityIds = [
-    ...new Set(
-      memberships
-        .map((membership: any) => profileDocumentId(membership.researchEntityId))
-        .filter(Boolean),
-    ),
-  ];
+
+  const roleByEntityId = new Map<string, string>();
+  for (const assignment of assignments as any[]) {
+    const entityId = profileDocumentId(assignment.target?.id);
+    if (!entityId || roleByEntityId.has(entityId)) continue;
+    roleByEntityId.set(
+      entityId,
+      LEGACY_ROLE_BY_CANONICAL[assignment.role as keyof typeof LEGACY_ROLE_BY_CANONICAL] || '',
+    );
+  }
+  const entityIds = [...roleByEntityId.keys()];
   if (entityIds.length === 0) return [];
 
-  const roleByEntityId = new Map(
-    memberships.map((membership: any) => [
-      profileDocumentId(membership.researchEntityId),
-      membership.role,
-    ]),
-  );
   const entities = await ResearchEntity.find({
     _id: { $in: entityIds },
     archived: { $ne: true },

@@ -11,7 +11,6 @@ vi.mock('../../models/user', () => ({
 
 import {
   adminUpdateProfile,
-  buildProfileResearchMembershipFilter,
   cleanPublicProfileBio,
   dedupeProfileResearchEntities,
   isLikelySameNameContaminatedProfile,
@@ -1668,25 +1667,6 @@ describe('profileService profile shaping', () => {
 
     expect(profile.bio).toContain('Roshan Gunasekara leads the Gunasekara Lab.');
     expect(profile.bio).toContain('combines chemistry and neuroscience');
-  });
-
-  it('builds profile research-home membership filters across user and faculty identities', () => {
-    expect(
-      buildProfileResearchMembershipFilter(
-        {
-          _id: 'user-1',
-          facultyMemberId: 'faculty-direct',
-        },
-        ['faculty-linked', 'faculty-direct'],
-      ),
-    ).toEqual({
-      $or: [
-        { userId: 'user-1' },
-        { facultyMemberId: { $in: ['faculty-direct', 'faculty-linked'] } },
-      ],
-      isCurrentMember: { $ne: false },
-      researchEntityId: { $exists: true, $ne: null },
-    });
   });
 
   it('extracts compact labels from prose research interests before exposing profile chips', () => {

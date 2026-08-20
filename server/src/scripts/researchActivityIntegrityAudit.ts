@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment } from '../models/roleAssignment';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import {
@@ -12,6 +12,7 @@ import {
   researchActivityIntegrityCounts,
   type ResearchActivityCandidate,
 } from '../services/researchActivityIntegrity';
+import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -61,7 +62,7 @@ async function main() {
   });
   await initializeConnections();
 
-  const [attributions, links, members, entities] = await Promise.all([
+  const [attributions, links, assignments, entities] = await Promise.all([
     ResearchScholarlyAttribution.find({ archived: { $ne: true } })
       .select(
         'scholarlyLinkId targetUserId relationshipBasis evidenceLabel confidence observedAt sourceName sourceUrl',
@@ -70,8 +71,12 @@ async function main() {
     ResearchScholarlyLink.find({ archived: { $ne: true } })
       .select('_id title url year venue externalIds discoveredVia destinationKind')
       .lean(),
-    ResearchGroupMember.find({ archived: { $ne: true }, endedAt: { $exists: false } })
-      .select('researchEntityId researchGroupId userId startedAt endedAt')
+    RoleAssignment.find({
+      'target.kind': 'RESEARCH_ENTITY',
+      state: 'CURRENT',
+      archived: { $ne: true },
+    })
+      .select('target personId startedAt endedAt')
       .lean(),
     ResearchEntity.find({ archived: { $ne: true } })
       .select('_id name researchAreas methods shortDescription fullDescription')
@@ -80,19 +85,29 @@ async function main() {
 
   const linksById = new Map(links.map((link: any) => [id(link._id), link]));
   const entitiesById = new Map(entities.map((entity: any) => [id(entity._id), entity]));
-  const membershipsByUser = new Map<string, any[]>();
-  for (const member of members as any[]) {
-    const userId = id(member.userId);
-    if (!userId) continue;
-    membershipsByUser.set(userId, [...(membershipsByUser.get(userId) || []), member]);
+  const membershipsByPerson = new Map<string, any[]>();
+  for (const assignment of assignments as any[]) {
+    const personId = id(assignment.personId);
+    if (!personId) continue;
+    membershipsByPerson.set(personId, [...(membershipsByPerson.get(personId) || []), assignment]);
+  }
+
+  const researcherIdByUserId = new Map<string, string>();
+  for (const userId of new Set(
+    (attributions as any[]).map((attribution) => id(attribution.targetUserId)).filter(Boolean),
+  )) {
+    const researcherId = await resolveResearcherIdForLegacyUser(userId);
+    if (researcherId) researcherIdByUserId.set(userId, id(researcherId));
   }
 
   const candidatesByEntity = new Map<string, ResearchActivityCandidate[]>();
   for (const attribution of attributions as any[]) {
     const link = linksById.get(id(attribution.scholarlyLinkId));
     if (!link) continue;
-    for (const member of membershipsByUser.get(id(attribution.targetUserId)) || []) {
-      const entityId = id(member.researchEntityId || member.researchGroupId);
+    const researcherId = researcherIdByUserId.get(id(attribution.targetUserId));
+    if (!researcherId) continue;
+    for (const member of membershipsByPerson.get(researcherId) || []) {
+      const entityId = id(member.target?.id);
       if (!entityId || !entitiesById.has(entityId)) continue;
       const candidate: ResearchActivityCandidate = {
         link,

@@ -2,8 +2,10 @@ import { Signal } from '../models/signal';
 import { Paper } from '../models/paper';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { ResearchEntity } from '../models/researchEntity';
-import { ResearchGroupMember } from '../models/researchGroupMember';
+import { RoleAssignment, type RoleAssignmentRole } from '../models/roleAssignment';
+import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
 import { User } from '../models/user';
+import { splitName } from './utils/scraperHelpers';
 import {
   buildUserIdentityDedupePlan,
   type UserIdentityCollision,
@@ -421,19 +423,21 @@ export function buildDuplicateResearchPaperGroupsFromRows(
 }
 
 async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameDuplicateGroup[]> {
-  const rows = await ResearchGroupMember.aggregate([
+  const rows = await RoleAssignment.aggregate([
     {
       $match: {
-        role: 'pi',
-        isCurrentMember: { $ne: false },
-        researchEntityId: { $exists: true, $ne: null },
-        userId: { $exists: true, $ne: null },
+        role: 'PI',
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': { $exists: true, $ne: null },
+        personId: { $exists: true, $ne: null },
       },
     },
     {
       $lookup: {
         from: 'research_entities',
-        localField: 'researchEntityId',
+        localField: 'target.id',
         foreignField: '_id',
         as: 'entity',
       },
@@ -442,18 +446,17 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
     { $match: { 'entity.archived': { $ne: true } } },
     {
       $lookup: {
-        from: 'users',
-        localField: 'userId',
+        from: 'researchers',
+        localField: 'personId',
         foreignField: '_id',
-        as: 'user',
+        as: 'person',
       },
     },
-    { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$person', preserveNullAndEmptyArrays: true } },
     {
       $project: {
-        userId: { $toString: '$userId' },
-        piFirstName: '$user.fname',
-        piLastName: '$user.lname',
+        personId: { $toString: '$personId' },
+        personDisplayName: '$person.displayName',
         entity: {
           id: { $toString: '$entity._id' },
           slug: '$entity.slug',
@@ -469,9 +472,8 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
     },
     {
       $group: {
-        _id: { userId: '$userId' },
-        piFirstName: { $first: '$piFirstName' },
-        piLastName: { $first: '$piLastName' },
+        _id: { personId: '$personId' },
+        personDisplayName: { $first: '$personDisplayName' },
         entities: { $addToSet: '$entity' },
       },
     },
@@ -480,13 +482,17 @@ async function loadSamePiNameDuplicateGroups(limit: number): Promise<SamePiNameD
   ]);
 
   return buildSamePiNameDuplicateGroupsFromDedupeRows(
-    rows.map((row: any) => ({
-      userId: stringId(row._id?.userId),
-      normalizedName: `same-pi:${stringId(row._id?.userId)}`,
-      piFirstName: stringId(row.piFirstName),
-      piLastName: stringId(row.piLastName),
-      entities: row.entities || [],
-    })),
+    rows.map((row: any) => {
+      const personId = stringId(row._id?.personId);
+      const { first, last } = splitName(stringId(row.personDisplayName));
+      return {
+        userId: personId,
+        normalizedName: `same-pi:${personId}`,
+        piFirstName: first,
+        piLastName: last,
+        entities: row.entities || [],
+      };
+    }),
   ).slice(0, limit);
 }
 
@@ -559,19 +565,21 @@ async function loadOfficialLabUrlDuplicateGroups(
 async function loadDuplicateCurrentMemberGroups(
   limit: number,
 ): Promise<DuplicateCurrentMemberGroup[]> {
-  const rows = await ResearchGroupMember.aggregate([
+  const rows = await RoleAssignment.aggregate([
     {
       $match: {
-        isCurrentMember: { $ne: false },
-        researchEntityId: { $exists: true, $ne: null },
-        userId: { $exists: true, $ne: null },
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': { $exists: true, $ne: null },
+        personId: { $exists: true, $ne: null },
       },
     },
     {
       $group: {
         _id: {
-          researchEntityId: '$researchEntityId',
-          userId: '$userId',
+          researchEntityId: '$target.id',
+          personId: '$personId',
           role: '$role',
         },
         memberIds: { $push: { $toString: '$_id' } },
@@ -583,8 +591,8 @@ async function loadDuplicateCurrentMemberGroups(
 
   return rows.map((row: any) => ({
     researchEntityId: stringId(row._id?.researchEntityId),
-    userId: stringId(row._id?.userId),
-    role: row._id?.role,
+    userId: stringId(row._id?.personId),
+    role: LEGACY_ROLE_BY_CANONICAL[row._id?.role as RoleAssignmentRole] ?? row._id?.role,
     memberIds: (row.memberIds || []).map(stringId).filter(Boolean),
   }));
 }
@@ -592,18 +600,19 @@ async function loadDuplicateCurrentMemberGroups(
 async function loadCurrentMembersOnArchivedEntities(
   limit: number,
 ): Promise<CurrentMemberOnArchivedEntity[]> {
-  const rows = await ResearchGroupMember.aggregate([
+  const rows = await RoleAssignment.aggregate([
     {
       $match: {
         archived: { $ne: true },
-        isCurrentMember: { $ne: false },
-        researchEntityId: { $exists: true, $ne: null },
+        state: { $ne: 'HISTORICAL' },
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': { $exists: true, $ne: null },
       },
     },
     {
       $lookup: {
         from: 'research_entities',
-        localField: 'researchEntityId',
+        localField: 'target.id',
         foreignField: '_id',
         as: 'entity',
       },
@@ -613,8 +622,8 @@ async function loadCurrentMembersOnArchivedEntities(
     {
       $project: {
         memberId: { $toString: '$_id' },
-        researchEntityId: { $toString: '$researchEntityId' },
-        userId: { $toString: '$userId' },
+        researchEntityId: { $toString: '$target.id' },
+        personId: { $toString: '$personId' },
         role: '$role',
         canonicalGroupId: { $toString: '$entity.canonicalGroupId' },
       },
@@ -625,8 +634,8 @@ async function loadCurrentMembersOnArchivedEntities(
   return rows.map((row: any) => ({
     researchEntityId: stringId(row.researchEntityId),
     memberId: stringId(row.memberId),
-    userId: stringId(row.userId) || undefined,
-    role: row.role,
+    userId: stringId(row.personId) || undefined,
+    role: LEGACY_ROLE_BY_CANONICAL[row.role as RoleAssignmentRole] ?? row.role,
     canonicalGroupId: stringId(row.canonicalGroupId) || null,
   }));
 }

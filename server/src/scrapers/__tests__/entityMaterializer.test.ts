@@ -909,11 +909,12 @@ describe('entityMaterializer post-materialization metrics', () => {
         memberKeys: ['official-profile:current|staff'],
       }),
     ).toEqual({
-      researchEntityId: '64f000000000000000000010',
-      sourceName: 'official-research-home-roster',
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': '64f000000000000000000010',
+      state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
-      isCurrentMember: { $ne: false },
-      membershipKey: { $nin: ['official-profile:current|staff'] },
+      'rosterProvenance.sourceName': 'official-research-home-roster',
+      'rosterProvenance.membershipKey': { $nin: ['official-profile:current|staff'] },
     });
     expect(
       buildOfficialRosterArchiveFilter('64f000000000000000000010', {

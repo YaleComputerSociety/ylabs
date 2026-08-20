@@ -37,9 +37,4 @@ describe('legacy v4 identity backfill safety helpers', () => {
     expect(typeof mod.backfillV4StudentProfiles).toBe('function');
   });
 
-  it('imports research group member backfill without running the CLI path', async () => {
-    const mod = await importV4Backfill('BackfillV4ResearchGroupMembers.ts');
-
-    expect(typeof mod.backfillV4ResearchGroupMembers).toBe('function');
-  });
 });
