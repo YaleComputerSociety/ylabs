@@ -100,6 +100,44 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(entry.imageUrl).toBeUndefined();
     expect(entry.websiteUrl).toBeUndefined();
   });
+
+  it('collapses multiple current assignments for one person to the highest-priority role', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const account = await Account.create({
+      netid: 'dup01',
+      email: 'dup01@example.test',
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const person = await Researcher.create({
+      displayName: 'Duplicated Person',
+      accountId: account._id,
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'CORE_FACULTY',
+      state: 'CURRENT',
+      confidence: 0.8,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 0.9,
+    });
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0].personId.toString()).toBe(person._id.toString());
+    expect(roster[0].roleCanonical).toBe('PI');
+    expect(roster[0].role).toBe('pi');
+  });
 });
 
 describe('resolveResearcherIdForLegacyUser faculty fallback', () => {

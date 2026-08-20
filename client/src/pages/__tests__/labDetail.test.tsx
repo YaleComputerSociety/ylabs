@@ -443,6 +443,37 @@ describe('LabDetail page', () => {
     expect(screen.getByText('Recommended next step')).toBeTruthy();
   });
 
+  it('hides the evidence level and planning status rows when there is no signal', async () => {
+    renderLabDetail();
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByText('Evidence level')).toBeNull();
+    expect(screen.queryByText('Planning status')).toBeNull();
+    expect(screen.getByText('Recommended next step')).toBeTruthy();
+  });
+
+  it('shows planning status when the access summary carries a plausible route', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.6,
+          evidence: [],
+          signalTypes: [],
+          bestNextStep: 'Review the official profile, then plan your outreach.',
+        },
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('Planning status')).toBeTruthy();
+    expect(screen.getByText('Planning context available')).toBeTruthy();
+  });
+
   it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
     const secondInvestigatorProfileUrl = 'https://medicine.yale.edu/profile/second-investigator/';
     renderLabDetail({

@@ -2,7 +2,7 @@
 
 Status: ratified target model as of 2026-08-18.
 This document is the single source of truth for the data model.
-It supersedes the earlier phased contract; where older notes, issues, or code still describe `Person`, `RoleAssignment`, `EntryPathway`, `ContactRoute`, `PostedOpportunity`, `OrgUnit`-as-reference, `TaxonomyTerm`, or the evidence claim-graph as active, this document wins.
+It supersedes the earlier phased contract; where older notes, issues, or code still describe `Person`, `EntryPathway`, `ContactRoute`, `PostedOpportunity`, `OrgUnit`-as-reference, `TaxonomyTerm`, or the evidence claim-graph as active, this document wins.
 
 ## What we are solving
 
@@ -13,7 +13,7 @@ We help by surfacing, per lab, the PI, the official Yale profile and lab website
 The model refactor is a means to that end, not a goal in itself.
 Judge every change by whether it improves discoverability or data quality.
 
-## Ratified target model (7 live collections)
+## Ratified target model (8 live collections)
 
 ### `Researcher` (`researchers`)
 
@@ -33,10 +33,16 @@ It is currently unwired because auth still runs on legacy `User`; wiring it is t
 
 The lab, center, institute, or faculty project - the discovery center.
 Declared as a clean schema (not the legacy `researchGroupSchema`).
-Owns its roster inline: `members: [{ researcherId, role, state, confidence?, reviewStatus?, startedAt?, endedAt? }]` (join `Researcher` for names and links).
+Its roster is modeled as canonical `RoleAssignment` rows (see `RoleAssignment` below), joined to `Researcher` - not embedded.
 Carries canonicalized `school` and `departments[]` and `researchAreas[]` strings (see Canonicalization).
 Keeps `slug`, `name`, `entityType`, `shortDescription`, `fullDescription`, `websiteUrl`, `sourceUrls[]`, `studentVisibilityTier`.
 Does not carry an embedded `discovery` projection blob, embedded access booleans, embedded contact, or paper caches.
+
+### `RoleAssignment` (`role_assignments`)
+
+The person-to-lab membership edge (the roster); replaces legacy `ResearchGroupMember`.
+Fields: `researcherId`, `target` (`{ kind: RESEARCH_ENTITY, id }`), `role`, `state` (`CURRENT` | `HISTORICAL` | `UNKNOWN`), `reviewStatus`, `confidence`, and a bounded `rosterProvenance` subdoc (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) that feeds the roster-freshness disclosure. `evidenceClaimIds` stays empty while the evidence claim-graph is frozen.
+Read via `getResearchEntityRoster` (joins `Researcher` + `Account`). This kept `RoleAssignment` as a first-class roster collection over an earlier "embed `members[]` on `ResearchEntity`" idea: the fork resolved to `RoleAssignment` because the write path and readers were built on it.
 
 ### `Signal` (`signals`)
 
@@ -63,7 +69,7 @@ The only student write surface.
 
 ## Removed, frozen, separate, retired
 
-Removed (do not model): `RoleAssignment` (roster is embedded on `ResearchEntity.members`), `EntryPathway`, `ContactRoute`, `PostedOpportunity`, `TaxonomyTerm`, the embedded `discovery` projection, and the old `AccessSignal` and `UndergraduateLogisticsClaim` (folded into `Signal`).
+Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, `TaxonomyTerm`, the embedded `discovery` projection, and the old `AccessSignal` and `UndergraduateLogisticsClaim` (folded into `Signal`).
 
 Frozen (exist, unwired, do-not-build-on): `EvidenceClaim`, `SourceDocument`, `ReviewDecision`.
 Delete now (dead): `MaterializedProvenance`.
@@ -72,7 +78,7 @@ The heavy governed evidence claim-graph is deferred; the lightweight `Observatio
 Separate adjacent domain (not the lab model): `Fellowship` and `Grant` power the programs and funding page (their own Mongo `$text` search).
 Note the "program" split-brain: a program can appear both as a `Fellowship` and as a `ResearchEntity`; keep this out of lab-model scope but track it.
 
-Retired legacy: `User` splits into `Account` plus `Researcher`; `FacultyMember` folds into `Researcher`; `ResearchGroupMember` becomes embedded `ResearchEntity.members`; `Paper` and `PaperAuthor` are retired.
+Retired legacy: `User` splits into `Account` plus `Researcher`; `FacultyMember` folds into `Researcher`; `ResearchGroupMember` becomes `RoleAssignment`; `Paper` and `PaperAuthor` are retired.
 
 ## Derived, not stored
 
@@ -127,11 +133,14 @@ The student-facing research-detail page (`getResearchGroupDetail`) also reads th
 Because canonical `RoleAssignment.evidenceClaimIds` is empty (full `EvidenceClaim` canonicalization needs the frozen `SourceDocument` plus predicate-registry machinery), the roster-freshness disclosure is fed by a bounded `rosterProvenance` subdoc on `RoleAssignment` (source name/url, profile url, section label, evidence status, membership key, observed and freshness-expiry timestamps) populated at each materializer membership write-site.
 This subdoc is a deliberate, pragmatic deviation from the ratified `EvidenceClaim` provenance model, scoped to keep the existing freshness logic working until the heavy claim-graph is built.
 Most residual internal roster readers now read the canonical roster too (S4b, #360): `researchEntityEvidenceCoverage`, `researchEntityPublicDescriptionAuditService`, `studentVisibilityGateService`, `launchAcquisitionReportService`, and `accessMaterializer` derive lead and member display name and role from the canonical `Researcher` via `getResearchEntityRoster`/`getResearchEntityRosterByEntityId`, treat any non-`HISTORICAL` state as current, and key downstream on `personId` instead of legacy `userId`/`facultyMemberId`.
-The final two legacy-user-keyed readers now resolve to a canonical `Researcher` first via `resolveResearcherIdForLegacyUser` (netid to `Account` to `Researcher.accountId`, then `identifiers.orcid`, then a single name-only `displayName` match; fail-closed, never merging distinct identities) and read `RoleAssignment` (S4c, #360).
+The final legacy-user-keyed readers now resolve to a canonical `Researcher` first via `resolveResearcherIdForLegacyUser` (netid to `Account` to `Researcher.accountId`, then `identifiers.orcid`, then a single name-only `displayName` match; fail-closed, never merging distinct identities) and read `RoleAssignment` (S4c, #360).
 `listingService.hasListingEntityAuthority` checks a canonical author-role assignment (`RESEARCH_ENTITY` target, non-`HISTORICAL`, not archived), and an unresolved owner returns false so the caller falls back to creating its own entity as before.
 `canonicalResearchHomeResolver.resolveCanonicalResearchHomeForUser` reads lead `RoleAssignment`s, mapping `HISTORICAL` state to the prior ineligibility and an unresolved user to a safe shell.
-`visibilityRepairQueueService` was the last legacy `ResearchGroupMember` reader and now reads the canonical roster too (S4d, #360): its `findResearchEntityMembers` default dep derives lead members from `getResearchEntityRoster` (name, role, netid, title, image, website; any non-`HISTORICAL` state is current), and `isLeadMember` now includes `co-pi` and `co-director` to match the canonical lead set the roster emits.
+`visibilityRepairQueueService` was the last legacy `ResearchGroupMember` reader in the runtime read path and now reads the canonical roster too (S4d, #360): its `findResearchEntityMembers` default dep derives lead members from `getResearchEntityRoster` (name, role, netid, title, image, website; any non-`HISTORICAL` state is current), and `isLeadMember` now includes `co-pi` and `co-director` to match the canonical lead set the roster emits.
 The canonical roster carries no bio, research-interest, or topic fields, so the lead-bio-derived entity-description candidates this service used to produce are intentionally dropped rather than canonicalizing bios onto `Researcher`; this follows the product decision to no longer show or keep professor bios, and entity descriptions continue to come from their other sources (`entity.description`, PI/profile scrapers).
+`profileService.loadProfileResearchEntities` reads `RESEARCH_ENTITY` `RoleAssignment`s (non-`HISTORICAL`, not archived, matching the prior `isCurrentMember != false` semantics) and maps each canonical role back to the legacy role string the profile DTO still expects.
+The two live scraper-source lead readers now read the canonical roster too, decoupling the scrape pipeline's lead reads ahead of the S5 write retirement (#361): `officialProfilePiBackfillScraper` derives current leads from `getResearchEntityRosterByEntityId` (lead roles, non-`HISTORICAL` state) and fetches the bio, profile-url, website, and first/last-name fields the roster does not carry via a targeted by-`netid` `User` lookup, degrading to `splitName(entry.name)` plus roster URLs when no `User` matches; `centerDirectorLLMExtractor`'s `missingLeadOnly` filter reads `RoleAssignment.distinct('target.id', ...)` for canonical lead roles (non-`HISTORICAL`, not archived).
+The `User` lookup uses a `{ locale: 'en', strength: 2 }` collation and lowercased by-`netid` map keys because `Account.netid` is lowercase while `User.netid` is mixed-case; it stays an accepted transitional dependency until `User` is retired.
 Retiring the still-present legacy `ResearchGroupMember` write path (S5, #361) and the field-retirement of the now-unused `User`/`FacultyMember` bio, research-interest, and topic fields (#208) are the remaining follow-ups.
 
 Tracked issues:
@@ -139,6 +148,6 @@ Tracked issues:
 - Discoverability now: search relevance #345, hybrid or embedder #346, browse filters #347, matched professor #341 area.
 - Data quality now: website coverage #348, research-area coverage #349, dedupe duplicate labs #350, department canonicalization and `OrgUnit` seed #354.
 - Model refactor: identity split #206, clean `ResearchEntity` schema #208, dangling `ResearchGroup` ref #352, remove legacy `description` #351, retire legacy `ResearchGroupMember` writes #361 (S5).
-- Superseded: PR #344 read canonical `RoleAssignment`, which is now removed in favor of embedded `members`; close it.
+- PR #344 (an early `RoleAssignment` read cutover) was superseded by #375 and closed.
 
 Verification gates for any cutover: source and target counts with explained differences, no orphan references, no dual identities in public DTOs, no public contact leakage, source attribution for material claims, deterministic conflict handling, official-link validity with graceful failure, search relevance parity, correct visibility filtering, bounded detail payloads, private-plan isolation, no paper dependency, and rollback readiness before any collection drop.
