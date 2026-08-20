@@ -182,7 +182,6 @@ export async function buildBetaDataQualityScorecard(
     urlHygiene,
     emailHygiene,
     opportunityState,
-    paperAuthorship,
     sourceHealth,
     coverage,
     descriptionQuality,
@@ -198,7 +197,6 @@ export async function buildBetaDataQualityScorecard(
     timed('urlHygiene', () => buildUrlHygiene(options.includeSamples)),
     timed('emailHygiene', () => buildEmailHygiene(options.includeSamples)),
     timed('opportunityState', () => buildOpportunityState(options.includeSamples, generatedAt)),
-    timed('paperAuthorship', () => buildPaperAuthorshipSummary(options.includeSamples)),
     timed('sourceHealth', () => buildSourceHealthSummary(options.days, options.includeSamples)),
     timed('researchEntityCoverage', () => buildResearchEntityCoverage()),
     timed('descriptionQuality', () => buildDescriptionQuality(options.includeSamples)),
@@ -221,7 +219,6 @@ export async function buildBetaDataQualityScorecard(
     invalidUrlCount: urlHygiene.invalidTotal,
     invalidEmailCount: emailHygiene.invalidTotal,
     expiredOpenOpportunityCount: opportunityState.expiredOpenCount,
-    paperAuthorshipIntegrityFailures: paperAuthorship.integrityFailureTotal,
     sourceHealthErrors: sourceHealth.riskCounts.error,
     sourceHealthWarnings: sourceHealth.riskCounts.warn,
     duplicateEntityClusterCount: duplicateEntityNames.clusterCount,
@@ -258,7 +255,6 @@ export async function buildBetaDataQualityScorecard(
       betaStudentAnalyticsEvents: studentAnalyticsContamination,
     },
     opportunityState,
-    paperAuthorship,
     sourceHealth,
     researchEntityCoverage: coverage,
     descriptionQuality,
@@ -281,8 +277,6 @@ async function buildCollectionCounts(): Promise<Record<string, number>> {
     'signals',
     'contact_routes',
     'posted_opportunities',
-    'papers',
-    'paper_authors',
     'observations',
     'scrape_runs',
     'sources',
@@ -542,60 +536,6 @@ async function buildReferenceIntegrity(
       includeSamples,
     ),
     referenceAudit(
-      'paper_authors.paperId',
-      'paper_authors',
-      'paperId',
-      'papers',
-      true,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'paper_authors.userId',
-      'paper_authors',
-      'userId',
-      'users',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'paper_authors.facultyMemberId',
-      'paper_authors',
-      'facultyMemberId',
-      'faculty_members',
-      false,
-      false,
-      includeSamples,
-    ),
-    referenceAudit(
-      'papers.yaleAuthorIds',
-      'papers',
-      'yaleAuthorIds',
-      'users',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'papers.facultyMemberIds',
-      'papers',
-      'facultyMemberIds',
-      'faculty_members',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
-      'papers.researchEntityIds',
-      'papers',
-      'researchEntityIds',
-      'research_entities',
-      false,
-      true,
-      includeSamples,
-    ),
-    referenceAudit(
       'listings.researchEntityId',
       'listings',
       'researchEntityId',
@@ -802,11 +742,6 @@ async function buildUrlHygiene(includeSamples: boolean): Promise<FieldIssueSumma
         scalarFields: ['applicationUrl'],
         arrayFields: ['sourceUrls'],
       },
-      {
-        collection: 'papers',
-        scalarFields: ['url', 'openAccessUrl', 'landingPageUrl', 'pdfUrl'],
-        arrayFields: [],
-      },
       { collection: 'observations', scalarFields: ['sourceUrl'], arrayFields: [] },
     ],
     validator: (value, context) =>
@@ -967,168 +902,6 @@ async function buildOpportunityState(
         }
       : {}),
   };
-}
-
-async function buildPaperAuthorshipSummary(includeSamples: boolean): Promise<{
-  totalPapers: number;
-  totalPaperAuthors: number;
-  papersWithYaleAuthorIds: number;
-  papersWithPaperAuthorRows: number;
-  invalidPaperAuthorRows: number;
-  orphanedPaperAuthorRows: number;
-  duplicatePaperAuthorLinks: number;
-  unsupportedDirectAuthorLinks: number;
-  activeDirectAuthorFieldObservations: number;
-  integrityFailureTotal: number;
-  samples?: Record<string, unknown[]>;
-}> {
-  const [
-    totalPapers,
-    totalPaperAuthors,
-    papersWithYaleAuthorIds,
-    papersWithPaperAuthorRows,
-    invalidPaperAuthorRows,
-    orphanedPaperAuthorRows,
-    duplicatePaperAuthorLinks,
-    unsupportedDirectAuthorLinks,
-    activeDirectAuthorFieldObservations,
-  ] = await Promise.all([
-    collection('papers').countDocuments({ archived: { $ne: true } }),
-    collection('paper_authors').countDocuments({}),
-    collection('papers').countDocuments({
-      yaleAuthorIds: { $exists: true, $ne: [] },
-      archived: { $ne: true },
-    }),
-    countFromAggregate('paper_authors', [{ $group: { _id: '$paperId' } }, { $count: 'count' }]),
-    collection('paper_authors').countDocuments({
-      $or: [
-        { paperId: { $exists: false } },
-        { paperId: null },
-        { displayName: { $exists: false } },
-        { displayName: '' },
-      ],
-    }),
-    countPaperAuthorOrphans(),
-    countDuplicatePaperAuthorLinks(),
-    countUnsupportedDirectAuthorLinks(),
-    collection('observations').countDocuments({
-      entityType: 'paper',
-      field: { $in: ['yaleAuthorIds', 'yaleAuthorNetIds'] },
-      superseded: { $ne: true },
-      sourceName: { $ne: 'manual' },
-    }),
-  ]);
-
-  const integrityFailureTotal =
-    invalidPaperAuthorRows +
-    orphanedPaperAuthorRows +
-    duplicatePaperAuthorLinks +
-    unsupportedDirectAuthorLinks +
-    activeDirectAuthorFieldObservations;
-
-  const samples = includeSamples
-    ? {
-        invalidPaperAuthorRows: await collection('paper_authors')
-          .find({
-            $or: [
-              { paperId: { $exists: false } },
-              { paperId: null },
-              { displayName: { $exists: false } },
-              { displayName: '' },
-            ],
-          })
-          .project({ paperId: 1, userId: 1, facultyMemberId: 1, displayName: 1 })
-          .limit(10)
-          .toArray(),
-      }
-    : undefined;
-
-  return {
-    totalPapers,
-    totalPaperAuthors,
-    papersWithYaleAuthorIds,
-    papersWithPaperAuthorRows,
-    invalidPaperAuthorRows,
-    orphanedPaperAuthorRows,
-    duplicatePaperAuthorLinks,
-    unsupportedDirectAuthorLinks,
-    activeDirectAuthorFieldObservations,
-    integrityFailureTotal,
-    ...(samples ? { samples } : {}),
-  };
-}
-
-async function countPaperAuthorOrphans(): Promise<number> {
-  return countFromAggregate('paper_authors', [
-    {
-      $lookup: {
-        from: 'papers',
-        localField: 'paperId',
-        foreignField: '_id',
-        as: '_paper',
-      },
-    },
-    {
-      $lookup: {
-        from: 'users',
-        localField: 'userId',
-        foreignField: '_id',
-        as: '_user',
-      },
-    },
-    {
-      $lookup: {
-        from: 'faculty_members',
-        localField: 'facultyMemberId',
-        foreignField: '_id',
-        as: '_faculty',
-      },
-    },
-    {
-      $match: {
-        $or: [
-          { _paper: { $size: 0 } },
-          { $and: [{ userId: { $exists: true, $ne: null } }, { _user: { $size: 0 } }] },
-          { $and: [{ facultyMemberId: { $exists: true, $ne: null } }, { _faculty: { $size: 0 } }] },
-        ],
-      },
-    },
-    { $count: 'count' },
-  ]);
-}
-
-async function countDuplicatePaperAuthorLinks(): Promise<number> {
-  return countFromAggregate('paper_authors', [
-    {
-      $group: {
-        _id: {
-          paperId: '$paperId',
-          userId: '$userId',
-          facultyMemberId: '$facultyMemberId',
-          displayName: { $toLower: { $trim: { input: '$displayName' } } },
-        },
-        count: { $sum: 1 },
-      },
-    },
-    { $match: { count: { $gt: 1 } } },
-    { $count: 'count' },
-  ]);
-}
-
-async function countUnsupportedDirectAuthorLinks(): Promise<number> {
-  return countFromAggregate('papers', [
-    { $match: { yaleAuthorIds: { $exists: true, $ne: [] }, archived: { $ne: true } } },
-    {
-      $lookup: {
-        from: 'paper_authors',
-        localField: '_id',
-        foreignField: 'paperId',
-        as: '_paperAuthors',
-      },
-    },
-    { $match: { _paperAuthors: { $size: 0 } } },
-    { $count: 'count' },
-  ]);
 }
 
 async function buildSourceHealthSummary(

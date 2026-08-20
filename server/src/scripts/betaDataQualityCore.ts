@@ -109,7 +109,6 @@ export interface BetaDataQualitySummaryInput {
   invalidUrlCount: number;
   invalidEmailCount?: number;
   expiredOpenOpportunityCount: number;
-  paperAuthorshipIntegrityFailures: number;
   sourceHealthErrors: number;
   sourceHealthWarnings: number;
   duplicateEntityClusterCount: number;
@@ -707,13 +706,6 @@ export function buildBetaDataQualitySummary(
       'error',
       input.expiredOpenOpportunityCount,
       'Open posted opportunities have deadlines in the past.',
-      0,
-    ),
-    buildCheck(
-      'paperAuthorship',
-      'error',
-      input.paperAuthorshipIntegrityFailures,
-      'Paper-authorship integrity audit found hard failures.',
       0,
     ),
     buildCheck(
