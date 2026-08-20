@@ -36,6 +36,7 @@ import {
 } from './undergraduateLogisticsMaterializer';
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
+import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
 import {
   archiveCanonicalRoleAssignmentsForPersons,
   archiveSupersededCanonicalRoleAssignments,
@@ -2418,6 +2419,7 @@ export async function materializeEntity(
   }
   if (isResearchEntityObservationType(entityType)) {
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc);
+    await applyResearchEntityResearchAreaCanonicalization(set);
   }
   if (entityType === 'paper') {
     const paperObs = materializationObs.map((o: any) => ({
