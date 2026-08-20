@@ -649,12 +649,13 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     'kind',
     'entityType',
     'shortDescription',
+    'fullDescription',
     'role',
   ];
 
   for (const field of textFields) {
     if (publicEntity[field] !== undefined) {
-      const text = ['shortDescription', 'description'].includes(field)
+      const text = ['shortDescription', 'fullDescription'].includes(field)
         ? publicResearchSummaryText(publicEntity[field])
         : publicProfileText(publicEntity[field]);
       if (text) publicEntity[field] = text;
@@ -1772,6 +1773,7 @@ const loadProfileResearchEntities = async (user: Record<string, any>) => {
       kind: entity.kind || '',
       entityType: entity.entityType || '',
       shortDescription: entity.shortDescription || '',
+      fullDescription: entity.fullDescription || '',
       departments: entity.departments || [],
       researchAreas: entity.researchAreas || [],
       _bioFullDescription: entity.fullDescription || '',

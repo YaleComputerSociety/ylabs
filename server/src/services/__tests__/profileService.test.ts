@@ -380,7 +380,7 @@ describe('profileService profile shaping', () => {
             kind: 'lab',
             entityType: 'LAB',
             shortDescription: 'Studies computing history. Questions: hidden@example.edu',
-            description: 'Call 203-432-1234 before applying.',
+            fullDescription: 'The lab studies computing history. Call 203-432-1234 before applying.',
             websiteUrl: 'javascript:alert(document.cookie)',
             website: 'https://ada-lab.example.test',
             sourceUrls: [
@@ -405,10 +405,11 @@ describe('profileService profile shaping', () => {
       website: 'https://ada-lab.example.test/',
       sourceUrls: ['https://source.example.test/profile'],
       shortDescription: 'Studies computing history. Questions: [email redacted]',
-      description: 'Call [phone redacted] before applying.',
+      fullDescription: 'The lab studies computing history. Call [phone redacted] before applying.',
       researchAreas: ['Computing History'],
     });
     expect(profile.researchEntities[0]).not.toHaveProperty('websiteUrl');
+    expect(profile.researchEntities[0]).not.toHaveProperty('description');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('javascript:');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('data:text/html');
