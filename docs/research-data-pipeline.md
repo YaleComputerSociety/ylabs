@@ -104,9 +104,9 @@ Explicit `View Lab Website` links on official Yale profiles are a stronger resea
 
 The department-roster scraper no longer extracts official-profile publications or linked publication lists, and the entity materializer ignores historical `officialProfilePublications` observations instead of creating `research_scholarly_links`.
 The standalone official-profile publication-pointer repair command is also retired.
-Generic paper Observation materialization is disabled by default at both the per-entity and per-run boundaries, before any legacy paper Observation, `Paper`, `PaperAuthor`, or paper Meilisearch work.
-The retained implementation is reachable only with the exact one-shot rollback opt-in `RETIRED_PAPER_PIPELINE_ROLLBACK=true`; normal scraper environment, release, and write-confirmation guards still apply.
-Stored observations and scholarly sidecars remain available only for the rollback-safe retirement sequence in issue #207.
+Paper Observation materialization and the `Paper` and `PaperAuthor` models and their readers are fully retired, with no rollback opt-in.
+Historical `paper` observations are retained as read-only archived evidence and are never materialized.
+Stored observations and scholarly sidecars remain available only for the human-gated `papers`/`paper_authors` collection-drop step in issue #207.
 
 Description extraction should follow newly discovered official research-home websites before falling back to older profile/source URLs. `lab-microsite-description-llm` prefers non-profile `websiteUrl`/`website` values over profile source URLs, and non-profile official page descriptions carry higher confidence than profile-page descriptions so center/lab pages can replace biographical profile fallback copy. Profile-page extraction stays lower confidence and should not override better official research-home pages. One unreachable or broken page must be logged and skipped without aborting the remaining bounded extraction batch.
 
