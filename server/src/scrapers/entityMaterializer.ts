@@ -108,7 +108,7 @@ type InferredPiObservation = {
   confidence?: number;
 };
 
-type ResearchGroupMemberMaterializationPatch = {
+type RosterMemberMaterializationPatch = {
   filter: Record<string, unknown>;
   update: { $set: Record<string, unknown>; $setOnInsert: Record<string, unknown> };
   fieldsWritten: number;
@@ -374,8 +374,7 @@ export function deriveResearchEntityWebsiteUrl(
   set: Record<string, unknown>,
   entityDoc?: Record<string, unknown> | null,
 ): string | undefined {
-  const merged = (field: string): unknown =>
-    field in set ? set[field] : entityDoc?.[field];
+  const merged = (field: string): unknown => (field in set ? set[field] : entityDoc?.[field]);
   return selectBackfillWebsiteUrl({
     websiteUrl: merged('websiteUrl'),
     website: merged('website'),
@@ -516,7 +515,7 @@ function normalizeMemberRole(value: unknown): string {
   return MEMBER_ROLES.has(role) ? role : '';
 }
 
-async function findUniqueUserForResearchGroupMember(
+async function findUniqueUserForRosterMember(
   resolved: Record<string, ResolvedField>,
 ): Promise<any | null> {
   const profileUrl = textValue(resolved.profileUrl?.value);
@@ -538,11 +537,11 @@ async function findUniqueUserForResearchGroupMember(
   return users.length === 1 ? users[0] : null;
 }
 
-export function buildResearchGroupMemberUpsert(
+export function buildRosterMemberUpsert(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
   user: Record<string, unknown> | null = null,
-): ResearchGroupMemberMaterializationPatch | null {
+): RosterMemberMaterializationPatch | null {
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
   const role = normalizeMemberRole(resolved.role?.value);
   if (!role) return null;
@@ -677,7 +676,7 @@ async function findCanonicalRosterMatch(
   return { roster, matches };
 }
 
-async function materializeResearchGroupMember(
+async function materializeRosterMember(
   identifier: { entityId?: string; entityKey?: string },
   observations: any[],
   options: MaterializeOptions,
@@ -722,8 +721,8 @@ async function materializeResearchGroupMember(
   }
 
   const researchEntityId = normalizeMaterializerObjectId(entity._id) || '';
-  const user = await findUniqueUserForResearchGroupMember(resolved);
-  const patch = buildResearchGroupMemberUpsert(researchEntityId, resolved, user);
+  const user = await findUniqueUserForRosterMember(resolved);
+  const patch = buildRosterMemberUpsert(researchEntityId, resolved, user);
   if (!patch) {
     return {
       entityType: 'researchGroupMember',
@@ -983,7 +982,7 @@ export async function materializeInferredDirectorMembership(
       hasConflict: false,
     };
   }
-  const user = await findUniqueUserForResearchGroupMember(lookupFields);
+  const user = await findUniqueUserForRosterMember(lookupFields);
   if (!user?._id) return { ...empty, skipped: 'unresolved-user' };
 
   const userId = idValue(user._id);
@@ -1892,7 +1891,7 @@ export async function materializeEntity(
   }
 
   if (entityType === 'researchGroupMember') {
-    return materializeResearchGroupMember(identifier, obs, options);
+    return materializeRosterMember(identifier, obs, options);
   }
 
   if (entityType === 'researchEntityRelationship') {
@@ -2226,9 +2225,14 @@ async function reconcileOfficialRosterSnapshotsFromRun(
     if (!filter) continue;
     const endedAt = snapshotObservation.observedAt || new Date();
     const departing = await RoleAssignment.find(filter).select('personId').lean();
-    const departingPersonIds = (departing as any[])
-      .map((assignment) => assignment.personId)
-      .filter((id): id is mongoose.Types.ObjectId => id instanceof mongoose.Types.ObjectId);
+    const departingPersonIds = Array.from(
+      new Map(
+        (departing as any[])
+          .map((assignment) => assignment.personId)
+          .filter((id): id is mongoose.Types.ObjectId => id instanceof mongoose.Types.ObjectId)
+          .map((id) => [id.toString(), id] as const),
+      ).values(),
+    );
     if (departingPersonIds.length > 0) {
       await archiveCanonicalRoleAssignmentsForPersons(
         materializerDocumentId(entity._id),
