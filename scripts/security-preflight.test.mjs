@@ -361,35 +361,6 @@ test('scraper LLM extractors redact prompt page text before provider calls', () 
   assert.doesNotMatch(undergradSource, /parts\.push\(page\.text\)/);
 });
 
-test('student decision LLM prompt redacts materialized evidence before provider calls', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scrapers/sources/studentDecisionLLMExtractor.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /import \{ redactDirectContactInfo \} from '\.\.\/\.\.\/utils\/contactRedaction'/,
-  );
-  assert.match(source, /const MAX_PROMPT_TEXT_FIELD_LENGTH = 2000/);
-  assert.match(source, /const MAX_PROMPT_URL_FIELD_LENGTH = 2048/);
-  assert.match(
-    source,
-    /const safePromptText = \(value: unknown, maxLength = MAX_PROMPT_TEXT_FIELD_LENGTH\): string =>/,
-  );
-  assert.match(source, /redactDirectContactInfo\(String\(value \|\| ''\)\)\.slice\(0, maxLength\)/);
-  assert.match(source, /const safePromptUrl = \(value: unknown\): string =>/);
-  assert.match(source, /compactSourceUrls\(candidate\)\.map\(\(url\) => safePromptUrl\(url\)\)/);
-  assert.match(source, /safePromptText\(signal\.excerpt\)/);
-  assert.match(source, /safePromptUrl\(signal\.sourceUrl\)/);
-  assert.match(source, /`Research entity: \$\{safePromptText\(candidate\.name, 240\)\}`/);
-  assert.match(source, /`Description: \$\{safePromptText\(candidate\.description\)\}`/);
-  assert.doesNotMatch(source, /`Research entity: \$\{candidate\.name\}`/);
-  assert.doesNotMatch(source, /`Description: \$\{candidate\.description \|\| ''\}`/);
-  assert.doesNotMatch(source, /signal\.excerpt \|\| ''/);
-  assert.doesNotMatch(source, /route\.url \|\| route\.sourceUrl \|\| ''/);
-});
-
 test('rendered fetch process boundary constrains env-selected command and bridge inputs', () => {
   const source = fs.readFileSync(
     new URL('../server/src/scrapers/renderedFetch.ts', import.meta.url),
@@ -959,7 +930,6 @@ test('credentialed scraper backfills do not log raw caught error messages', () =
     '../server/src/scrapers/sources/departmentRosterScraper.ts',
     '../server/src/scrapers/sources/centerDirectorLLMExtractor.ts',
     '../server/src/scrapers/sources/centerAffiliationLLMExtractor.ts',
-    '../server/src/scrapers/sources/studentDecisionLLMExtractor.ts',
     '../server/src/scrapers/sources/labMicrositeUndergradLLMExtractor.ts',
   ];
 
@@ -2531,31 +2501,6 @@ test('scraper orchestrator run ids use safe serialization before context handoff
   assert.match(source, /runId: scrapeRunId/);
   assert.doesNotMatch(source, /scrapeRunId: String\(run\._id\)/);
   assert.doesNotMatch(source, /runId: String\(run\._id\)/);
-});
-
-test('student-decision LLM candidate ids use safe serialization before provider egress', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/scrapers/sources/studentDecisionLLMExtractor.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(
-    source,
-    /import \{ serializedDocumentId \} from '\.\.\/\.\.\/utils\/idSerialization'/,
-  );
-  assert.match(
-    source,
-    /const studentDecisionDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
-  );
-  assert.match(
-    source,
-    /const key = studentDecisionDocumentId\(\(item as any\)\.researchEntityId\)/,
-  );
-  assert.match(source, /_id: studentDecisionDocumentId\(row\._id\)/);
-  assert.match(source, /signalsByEntity\.get\(studentDecisionDocumentId\(row\._id\)\)/);
-  assert.doesNotMatch(source, /_id: String\(row\._id\)/);
-  assert.doesNotMatch(source, /String\(row\._id\)/);
-  assert.doesNotMatch(source, /String\(\(item as any\)\.researchEntityId \|\| ''\)/);
 });
 
 test('LLM source-acquisition ObjectId filters are primitive-normalized', () => {
@@ -7509,7 +7454,6 @@ test('source-acquisition report errors sanitize raw exception messages', () => {
     '../server/src/scrapers/sources/yaleDirectoryScraper.ts',
     '../server/src/scrapers/sources/nsfAwardScraper.ts',
     '../server/src/scrapers/renderedFetch.ts',
-    '../server/src/scrapers/sources/studentDecisionLLMExtractor.ts',
     '../server/src/scrapers/sources/yaleCollegeFellowshipsOfficeScraper.ts',
     '../server/src/scrapers/sources/labMicrositeDescriptionLLMExtractor.ts',
     '../server/src/scripts/researchQualitySearchReview.ts',
