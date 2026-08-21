@@ -214,14 +214,15 @@ describe('LabDetail page', () => {
     expect(JSON.stringify(actionEvent)).not.toContain(JOIN_PAGE_URL);
   });
 
-  it('shows an official-profile next step when no pathways or contact routes exist', async () => {
+  it('shows the constant contact prompt and profile link when no pathways or contact routes exist', async () => {
     renderLabDetail();
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
+    expect(screen.getByText('How to get involved')).toBeTruthy();
     expect(
       screen.getByText(
-        'Review the official profile first, then use the source details to plan what to verify next.',
+        /Undergraduate research almost always starts with an email\./,
       ),
     ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
@@ -345,54 +346,7 @@ describe('LabDetail page', () => {
     expect(screen.getByText('What this program focuses on')).toBeTruthy();
   });
 
-  it('renders a precomputed student decision explanation when one is present', async () => {
-    const { container } = renderLabDetail({
-      ...basePayload,
-      group: {
-        ...basePayload.group,
-        fullDescription: 'Studies specific mechanisms of neurological disease in source-backed terms.',
-        studentDecisionExplanation: {
-          recommendedAction: 'PLAN_EXPLORATORY_OUTREACH',
-          headline: 'Plan careful exploratory outreach.',
-          explanation:
-            'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
-          why: ['The access evidence points to an official profile route.'],
-          notThis: 'Not a posted opening.',
-          confidence: 0.72,
-          sourceUrls: [OFFICIAL_PROFILE_URL],
-        },
-      },
-    });
-
-    await screen.findByText(DEFAULT_ENTITY_NAME);
-
-    expect(
-      screen.getByText(
-        'Studies specific mechanisms of neurological disease in source-backed terms.',
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText('Plan from source-backed context.')).toBeTruthy();
-    expect(
-      screen.getByText(
-        'This profile has source-backed context for planning, but no active posted role is attached.',
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText('Why')).toBeTruthy();
-    expect(
-      screen.getByText('The access evidence points to an official profile route.'),
-    ).toBeTruthy();
-    expect(screen.getByText('What this page is')).toBeTruthy();
-    expect(
-      screen.getByText(
-        'This page summarizes the research context and source evidence, not a posted opening.',
-      ),
-    ).toBeTruthy();
-    expect(container.textContent?.indexOf('Studies specific mechanisms')).toBeLessThan(
-      container.textContent?.indexOf('Plan from source-backed context.'),
-    );
-  });
-
-  it('renders one full PI card in the student decision panel without a duplicate section', async () => {
+  it('renders one full PI card without a duplicate section', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -440,38 +394,43 @@ describe('LabDetail page', () => {
     ).toBeGreaterThan(1);
     expect(screen.getByText('Professor of Example Studies')).toBeTruthy();
     expect(screen.getByText('Example Studies')).toBeTruthy();
-    expect(screen.getByText('Recommended next step')).toBeTruthy();
+    expect(screen.getByText('How to get involved')).toBeTruthy();
   });
 
-  it('hides the evidence level and planning status rows when there is no signal', async () => {
+  it('never renders verdict-tier or planning-status rows, only a constant contact prompt', async () => {
     renderLabDetail();
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByText('Evidence level')).toBeNull();
     expect(screen.queryByText('Planning status')).toBeNull();
-    expect(screen.getByText('Recommended next step')).toBeTruthy();
+    expect(screen.queryByText('Student decision')).toBeNull();
+    expect(screen.getByText('How to get involved')).toBeTruthy();
   });
 
-  it('shows planning status when the access summary carries a plausible route', async () => {
+  it('always offers an email-the-PI action when the PI has an email, regardless of signals', async () => {
     renderLabDetail({
       ...basePayload,
-      group: {
-        ...basePayload.group,
-        accessSummary: {
-          status: 'reach-out-plausible',
-          confidence: 0.6,
-          evidence: [],
-          signalTypes: [],
-          bestNextStep: 'Review the official profile, then plan your outreach.',
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+          },
         },
-      },
+      ],
     });
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText('Planning status')).toBeTruthy();
-    expect(screen.getByText('Planning context available')).toBeTruthy();
+    const emailLink = screen.getByRole('link', { name: 'Email Jordan Researcher' });
+    expect(emailLink.getAttribute('href')).toBe(
+      'mailto:jordan.researcher@example.test?subject=Interest%20in%20undergraduate%20research',
+    );
   });
 
   it('keeps multiple PI cards together in a dedicated pluralized section', async () => {
@@ -809,7 +768,7 @@ describe('LabDetail page', () => {
     expect(screen.getByText('Fixture Evolution')).toBeTruthy();
     expect(screen.getByText('Population Models')).toBeTruthy();
     expect(screen.getByText('Synthetic DNA Examples')).toBeTruthy();
-    expect(text).toContain('Recommended next step');
+    expect(text).toContain('How to get involved');
     expect(text).not.toContain('Why this matched');
     expect(text).not.toContain('Student fit');
     expect(text).not.toContain('Likely preparation');
