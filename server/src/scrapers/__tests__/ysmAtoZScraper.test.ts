@@ -388,9 +388,7 @@ describe('extractLabHomepageDescription', () => {
     expect(
       extractLabHomepageDescription(
         pageDataHtml({
-          mainComponents: [
-            { key: 'GenericContent', model: { metaData: { description: piBio } } },
-          ],
+          mainComponents: [{ key: 'GenericContent', model: { metaData: { description: piBio } } }],
         }),
         { kind: 'person' },
       ),

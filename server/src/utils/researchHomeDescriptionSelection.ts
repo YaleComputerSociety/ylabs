@@ -51,7 +51,10 @@ function scoreDescriptionCandidate(text: string, kind: DescriptionEntityKind): n
   return 0;
 }
 
-export function collectDescriptionCandidates(values: unknown[], minLength = DEFAULT_MIN_LENGTH): string[] {
+export function collectDescriptionCandidates(
+  values: unknown[],
+  minLength = DEFAULT_MIN_LENGTH,
+): string[] {
   const seen = new Set<string>();
   const candidates: string[] = [];
   for (const value of values) {

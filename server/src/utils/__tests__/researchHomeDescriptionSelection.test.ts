@@ -68,14 +68,14 @@ describe('selectResearchHomeDescription', () => {
   });
 
   it('does not penalize a person-centric bio when the entity is a person', () => {
-    expect(
-      selectResearchHomeDescription([PI_BIO_RESEARCH_BLOCK], { kind: 'person' }),
-    ).toBe(PI_BIO_RESEARCH_BLOCK);
+    expect(selectResearchHomeDescription([PI_BIO_RESEARCH_BLOCK], { kind: 'person' })).toBe(
+      PI_BIO_RESEARCH_BLOCK,
+    );
   });
 
   it('defaults to organization handling when no kind is provided', () => {
-    expect(
-      selectResearchHomeDescription([PI_BIO_RESEARCH_BLOCK, LAB_RESEARCH_BLOCK]),
-    ).toBe(LAB_RESEARCH_BLOCK);
+    expect(selectResearchHomeDescription([PI_BIO_RESEARCH_BLOCK, LAB_RESEARCH_BLOCK])).toBe(
+      LAB_RESEARCH_BLOCK,
+    );
   });
 });
