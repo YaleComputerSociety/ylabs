@@ -291,7 +291,7 @@ Minimum copy set for the accepted full Beta posture:
 - Research discovery: `research_entities`, `research_entity_members`, `signals`, and `grants`.
 - Transitional note: until the human-gated `signalConsolidationMigration` is applied, the legacy `access_signals` and `undergraduate_logistics_claims` collections may still hold un-migrated rows and must also be copied and audited alongside `signals`.
 - Source audit trail: `sources`, `scrape_runs`, and retained `observations`.
-- Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, and `fellowships`.
+- Base/support collections only after parity is fresh: `users`, `listings`, `departments`, `research_areas`, `taxonomy_terms` (the governed research-area canonicalization registry - ingest fails closed to raw areas without it), and `fellowships`.
 
 Rollback for a bad copy is restoring Production from the pre-copy Atlas backup, then rebuilding or resyncing Meilisearch.
 

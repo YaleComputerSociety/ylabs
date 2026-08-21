@@ -352,9 +352,7 @@ async function buildCanonicalizerFromDatabase(): Promise<ResearchAreaCanonicaliz
     .select({ label: 1, aliases: 1 })
     .lean<Array<{ label: string; aliases?: string[] }>>();
   return createResearchAreaCanonicalizer(
-    buildResearchAreaResolverIndex(
-      rows.map((row) => ({ name: row.label, aliases: row.aliases })),
-    ),
+    buildResearchAreaResolverIndex(rows.map((row) => ({ name: row.label, aliases: row.aliases }))),
   );
 }
 
