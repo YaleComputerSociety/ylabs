@@ -106,7 +106,7 @@ The page should answer:
 
 Primary UX ingredients:
 
-- Header with entity type, department/school, short description, website, and credible access summary.
+- Header with entity type, department/school, short description, and website, carrying no computed verdict or access-summary badge.
 - A Ways to approach or planning-context section before or near active opportunities.
 - Evidence section with source-backed snippets.
 - A deduped Sources section that shows each official source once and explains which pathways/evidence/routes it supports.
