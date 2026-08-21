@@ -1880,6 +1880,7 @@ function compactResearchSample(row: any) {
   return {
     id,
     label: row.name || row.slug || id || '[unknown research]',
+    slug: row.slug || '',
     tier: row.studentVisibilityTier,
     reasons: row.studentVisibilityReasons || [],
     sourceUrl: row.websiteUrl || row.sourceUrls?.[0] || '',
