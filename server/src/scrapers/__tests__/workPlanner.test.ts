@@ -16,7 +16,6 @@ describe('buildEntityWorkPlan', () => {
     expect(workPlannerSourcePolicies.map((policy) => policy.sourceName)).toEqual([
       'lab-microsite-description-llm',
       'lab-microsite-undergrad-llm',
-      'student-decision-llm',
     ]);
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')).toMatchObject({
       entityType: 'researchEntity',
@@ -37,14 +36,7 @@ describe('buildEntityWorkPlan', () => {
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')?.targetFields).toEqual([
       'lastObservedAt',
     ]);
-    expect(getWorkPlannerSourcePolicy('student-decision-llm')).toMatchObject({
-      entityType: 'researchEntity',
-      paid: true,
-      defaultRecurringCadence: 'manual',
-    });
-    expect(getWorkPlannerSourcePolicy('student-decision-llm')?.targetFields).toEqual([
-      'studentDecisionExplanation',
-    ]);
+    expect(getWorkPlannerSourcePolicy('student-decision-llm')).toBeUndefined();
     expect(getWorkPlannerSourcePolicy('unknown-source')).toBeUndefined();
     for (const sourceName of ['openalex', 'orcid', 'europe-pmc', 'pubmed', 'crossref']) {
       expect(getWorkPlannerSourcePolicy(sourceName), sourceName).toBeUndefined();

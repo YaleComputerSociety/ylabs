@@ -166,7 +166,6 @@ The claim gate is read-only. It validates existing access-signal artifacts again
 | `official-research-home-roster`    | Acquire reviewed current non-lead team membership from explicit official roster sections                                              | `researchEntity`, `researchGroupMember`                                | `research_entities`, `research_entity_members`                                                 | Team context only. Must not create access, availability, or contact claims.                                                                                                                         | Disabled by default. Require stable official-profile identity, bounded freshness, a clean structural audit, and an attributable sampled-precision review before broad enablement.                                                                                                                                                                                                                                                                                                                           |
 | `lab-microsite-undergrad-llm`      | Extract evidence from lab/faculty websites: join pages, role language, constraints, contact instructions, and undergraduate logistics | `researchEntity`                                                       | `research_entities`, access records, and logistics `signals` when exact evidence supports them | Can create access and logistics `signals` and independent logistics claims through validated materializers. Bare join-page URLs without undergrad access evidence should not create access signals. | Start with small `--limit`. Requires `OPENAI_API_KEY`. Review every logistics quote against its exact `quoteSourceUrl`, inspect freshness, and complete the sampled precision audit before broad release.                                                                                                                                                                                                                                                                                                   |
 | `lab-microsite-description-llm`    | Extract source-backed description, topics, and methods from official lab/profile/center pages                                         | `researchEntity`                                                       | `research_entities` through normal materialization                                             | Description only. Must not emit undergrad access, contact, opening, or application claims.                                                                                                          | Defaults to open `source_description` visibility-queue rows, considers `websiteUrl`, `website`, and `sourceUrls`, and supports targeted `--only <id-or-slug>` plus `--offset`/`--limit`. Requires `OPENAI_API_KEY`; dry-run and inspect conflict report first.                                                                                                                                                                                                                                              |
-| `student-decision-llm`             | Explain existing source-backed access evidence as a student-facing Best Next Step                                                     | `researchEntity`                                                       | `research_entities.studentDecisionExplanation` via observations                                | Display-only guidance. Must validate against existing access signals and source URLs.                                                                                                               | Review invalid/rejected outputs for invented URLs, direct contact details, unsupported "apply" recommendations, and claims not backed by evidence.                                                                                                                                                                                                                                                                                                                                                          |
 | `undergrad-fellowships-recipients` | Capture evidence of past undergrad advisees and fellowship-compatible research                                                        | `researchEntity`                                                       | `research_entities`, `signals`                                                                 | Can create exploratory outreach access signals plus `PAST_UNDERGRADS` and `FELLOWSHIP_COMPATIBLE` signals. Fellowship funding remains formalization evidence, not a standalone access signal.       | Many programs require manual upload or CSV/PDF handling. Audit skipped/manual-upload programs separately.                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `yale-college-fellowships-office`  | Capture official Yale fellowship catalog and public detail-page evidence                                                              | `fellowship`                                                           | `observations`, then Fellowship/program records through guarded backfill/materialization flows | Emits classification, visibility, research-focus, and source-backed application-process observations; missing evidence remains unknown. Does not derive access signals or opportunities.            | Canonicalizes the moved Mellon Mays URL from `yalecollege.yale.edu/finances/...` to `college.yale.edu/life-at-yale/...`; never fetches gated CommunityForce application pages.                                                                                                                                                                                                                                                                                                                              |
 | `centers-institutes-index`         | Discover centers, institutes, child centers, directors/members, official pages                                                        | `researchEntity`, `user`, `researchGroupMember` depending on extractor | `research_entities`, `users`, `research_entity_members`                                        | Entity and membership context. Should not imply undergrad access unless explicit access evidence is added later.                                                                                    | Check member/director parsing and skipped JS/gated configs.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -273,37 +272,6 @@ Project impact:
 
 - Converts source acquisition into a targeted lane instead of repeatedly retrying the deterministic repair queue.
 - Helps distinguish rows that need better official URLs from rows where existing profile pages are insufficient to clear the launch gate.
-
-### `student-decision-llm`
-
-Commands:
-
-```bash
-SCRAPER_ENV=beta \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source student-decision-llm --limit 10 --use-cache
-```
-
-```bash
-SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source student-decision-llm --limit 10 --use-cache --auto-materialize
-```
-
-Expected collections:
-
-- `observations`: `studentDecisionExplanation` observations keyed by `researchEntity.slug`.
-- `research_entities`: materialized `studentDecisionExplanation` plus field provenance.
-
-Audit focus:
-
-- Requires `OPENAI_API_KEY`.
-- Starts from existing access `Signal` evidence; it does not scrape new pages.
-- The validator rejects invented URLs, direct emails, unsupported `APPLY` or `OPEN_OFFICIAL_ROUTE` actions, unsupported undergrad-access claims, and action-like `notThis` copy.
-- Materialization conflicts can appear when multiple low-confidence LLM observations exist for the same entity and field; inspect the active materialized value before treating them as source errors.
-
-Project impact:
-
-- Converts existing evidence into concise student-facing Best Next Step copy.
-- Keeps LLM decisions out of live page loads by precomputing and validating the display field during ingestion.
 
 ### `department-undergrad-research`
 

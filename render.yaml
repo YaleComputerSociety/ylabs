@@ -109,7 +109,6 @@ services:
       yarn --cwd server scrape cron --source lab-microsite-description-llm --release ;
       yarn --cwd server scrape cron --source lab-microsite-undergrad-llm --release ;
       yarn --cwd server scrape cron --source center-affiliation-llm --release ;
-      yarn --cwd server scrape cron --source student-decision-llm --release ;
       yarn --cwd server scrape cron --source dept-faculty-roster --release
     envVars:
       - fromGroup: ylabs-prod

@@ -152,7 +152,6 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'prerequisiteCourses',
   'creditOptions',
   'fundingPrograms',
-  'studentDecisionExplanation',
   'timeCommitmentHoursPerWeek',
   'acceptanceConfidence',
   'lastObservedAt',

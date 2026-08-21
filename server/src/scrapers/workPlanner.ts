@@ -100,16 +100,6 @@ export const workPlannerSourcePolicies = [
     notes:
       'Official microsite evidence; use the source-level lastObservedAt heartbeat to skip fresh entities before fetch/LLM calls.',
   },
-  {
-    sourceName: 'student-decision-llm',
-    entityType: 'researchEntity',
-    targetFields: ['studentDecisionExplanation'],
-    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
-    paid: true,
-    defaultRecurringCadence: 'manual',
-    notes:
-      'Derived student-facing decision guidance; run only as a bounded/manual enrichment after source-backed access evidence exists.',
-  },
 ] satisfies WorkPlannerSourcePolicy[];
 
 export function getWorkPlannerSourcePolicy(
