@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { getResearchEntityBestNextStep, isItemOpen, BrowsableItem } from '../browsable';
+import { getResearchEntityBestNextStep, getItemTags, isItemOpen, BrowsableItem } from '../browsable';
 import { ResearchEntity } from '../researchEntity';
+import { Fellowship } from '../types';
+
+const fellowshipItem = (overrides: Partial<Fellowship> = {}): BrowsableItem => ({
+  type: 'fellowship',
+  data: {
+    studentFacingCategory: 'Fellowship funding',
+    entryMode: '',
+    yearOfStudy: [],
+    purpose: [],
+    ...overrides,
+  } as Fellowship,
+});
+
+const neutralColor = () => ({ bg: 'bg-gray-50', text: 'text-gray-700' });
 
 const researchEntity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   _id: 'entity-1',
@@ -24,6 +38,22 @@ const researchEntity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity
   contactRole: '',
   sourceUrls: [],
   ...overrides,
+});
+
+describe('getItemTags fellowship audience', () => {
+  it('labels graduate-only programs with a Graduate tag', () => {
+    const tags = getItemTags(fellowshipItem({ undergraduateOnly: false }), neutralColor);
+    expect(tags.map((t) => t.label)).toContain('Graduate');
+  });
+
+  it('does not add a Graduate tag for undergraduate or unknown-audience programs', () => {
+    expect(
+      getItemTags(fellowshipItem({ undergraduateOnly: true }), neutralColor).map((t) => t.label),
+    ).not.toContain('Graduate');
+    expect(
+      getItemTags(fellowshipItem({ undergraduateOnly: null }), neutralColor).map((t) => t.label),
+    ).not.toContain('Graduate');
+  });
 });
 
 describe('isItemOpen for research entities', () => {

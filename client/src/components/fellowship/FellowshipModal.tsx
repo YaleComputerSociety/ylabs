@@ -422,6 +422,18 @@ const FellowshipModal = ({
                           programKindLabel(fellowship.programKind)}
                       </p>
                     </div>
+                    {(fellowship.undergraduateOnly === false ||
+                      fellowship.undergraduateOnly === true ||
+                      fellowship.yaleCollegeOnly === true) && (
+                      <div>
+                        <span className="text-xs text-slate-500">Audience</span>
+                        <p className="text-sm font-medium text-slate-900">
+                          {fellowship.undergraduateOnly === false
+                            ? 'Graduate students'
+                            : 'Undergraduate students'}
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <span className="text-xs text-slate-500">Entry mode</span>
                       <p className="text-sm font-medium text-slate-900">
