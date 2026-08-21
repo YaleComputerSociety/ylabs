@@ -25,6 +25,8 @@ export function isPersonResearchEntityType(entityType?: string): boolean {
 const SHARED_SYNTHESIS_RULES = [
   'Do NOT include degrees, titles, appointments, awards, training or employment history, honors, contact information, or recruiting and welcome boilerplate.',
   'Use ONLY facts present in the SOURCE text. Never invent topics, methods, findings, or claims.',
+  'The SOURCE describes only the single named subject. If it also contains material about a different person or organization, ignore that material entirely and describe ONLY the named subject.',
+  'If the SOURCE appears to describe a different subject than the named one, return empty strings for both fields rather than describing the wrong subject.',
 ];
 
 const LAB_SYNTHESIS_SYSTEM_PROMPT = [
@@ -76,33 +78,55 @@ const STOPWORDS = new Set([
   'between',
 ]);
 
-export function synthesisGroundingScore(output: string, source: string): number {
-  const src = source.toLowerCase();
-  const words = Array.from(
-    new Set(
-      (output.toLowerCase().match(/[a-z]{5,}/g) || []).filter((word) => !STOPWORDS.has(word)),
-    ),
+function distinctiveTokens(text: string): string[] {
+  return Array.from(
+    new Set((text.toLowerCase().match(/[a-z]{5,}/g) || []).filter((word) => !STOPWORDS.has(word))),
   );
+}
+
+function tokenOverlapCoefficient(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const larger = a.length >= b.length ? new Set(a) : new Set(b);
+  const smaller = a.length >= b.length ? b : a;
+  const shared = smaller.filter((token) => larger.has(token)).length;
+  return shared / smaller.length;
+}
+
+export function synthesisGroundingScore(output: string, source: string): number {
+  const words = distinctiveTokens(output);
   if (words.length === 0) return 0;
+  const src = source.toLowerCase();
   const hits = words.filter((word) => src.includes(word)).length;
   return hits / words.length;
+}
+
+export const MIN_ANCHOR_TOKENS = 4;
+export const MIN_SECONDARY_CORROBORATION = 0.1;
+
+function normalizeResearchAreas(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  return value
+    .map((area) => sanitizeDescriptionText(area).text)
+    .filter((text) => text.length > 0)
+    .join(', ');
 }
 
 export interface LabSynthesisSourceFields {
   fullDescription?: unknown;
   profileSynthesisDescription?: unknown;
+  researchAreas?: unknown;
 }
 
-export function assembleSynthesisSourceText(entity: LabSynthesisSourceFields): string {
-  const candidates = [
-    entity.fullDescription,
-    entity.profileSynthesisDescription,
-  ]
-    .map((value) => sanitizeDescriptionText(value).text)
-    .filter((text) => text.length > 0);
+export interface SynthesisSources {
+  sourceText: string;
+  groundingAnchor: string;
+}
+
+function dedupeJoin(parts: string[]): string {
   const seen = new Set<string>();
   const unique: string[] = [];
-  for (const text of candidates) {
+  for (const text of parts) {
+    if (text.length === 0) continue;
     const key = text.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
@@ -110,6 +134,32 @@ export function assembleSynthesisSourceText(entity: LabSynthesisSourceFields): s
     }
   }
   return unique.join('\n\n');
+}
+
+export function buildSynthesisSources(entity: LabSynthesisSourceFields): SynthesisSources {
+  const primary = sanitizeDescriptionText(entity.fullDescription).text;
+  const secondary = sanitizeDescriptionText(entity.profileSynthesisDescription).text;
+  const researchAreas = normalizeResearchAreas(entity.researchAreas);
+
+  const ownEvidenceTokens = distinctiveTokens(`${primary}\n${researchAreas}`);
+  const canArbitrate = ownEvidenceTokens.length >= MIN_ANCHOR_TOKENS;
+  const secondaryCorroborates =
+    secondary.length > 0 &&
+    (!canArbitrate ||
+      tokenOverlapCoefficient(distinctiveTokens(secondary), ownEvidenceTokens) >=
+        MIN_SECONDARY_CORROBORATION);
+
+  const trustedFields: string[] = [];
+  if (primary.length > 0) trustedFields.push(primary);
+  if (secondaryCorroborates) trustedFields.push(secondary);
+
+  const sourceText = dedupeJoin(trustedFields);
+  const groundingAnchor = dedupeJoin([...trustedFields, researchAreas]);
+  return { sourceText, groundingAnchor };
+}
+
+export function assembleSynthesisSourceText(entity: LabSynthesisSourceFields): string {
+  return buildSynthesisSources(entity).sourceText;
 }
 
 export interface LabSynthesisInput {
@@ -151,7 +201,8 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
           role: 'user',
           content: [
             `${subjectLabel}: ${safeName}${input.entityType ? ` (type: ${input.entityType})` : ''}`,
-            `Return JSON {"fullDescription": "...", "shortDescription": "..."}. fullDescription = 1-3 sentences on ${fullDescriptionScope} only; shortDescription = one concise card sentence, distinct from the fullDescription phrasing. If the source has no research content, return both as "".`,
+            `Describe ONLY ${safeName}. Ignore any SOURCE material that is about a different person or organization.`,
+            `Return JSON {"fullDescription": "...", "shortDescription": "..."}. fullDescription = 1-3 sentences on ${fullDescriptionScope} only; shortDescription = one concise card sentence, distinct from the fullDescription phrasing. If the source has no research content for ${safeName}, return both as "".`,
             'SOURCE:',
             safeSource,
           ].join('\n\n'),
@@ -207,14 +258,14 @@ export interface SynthesisAcceptance {
 
 export function evaluateSynthesisOutput(
   output: { fullDescription: string; shortDescription: string },
-  sourceText: string,
+  groundingAnchor: string,
 ): SynthesisAcceptance {
   if (!output.fullDescription || !output.shortDescription) {
     return { accepted: false, reason: 'empty-output', grounding: 0 };
   }
   const grounding = synthesisGroundingScore(
     `${output.fullDescription} ${output.shortDescription}`,
-    sourceText,
+    groundingAnchor,
   );
   if (grounding < MIN_SYNTHESIS_GROUNDING) {
     return { accepted: false, reason: 'ungrounded', grounding };
