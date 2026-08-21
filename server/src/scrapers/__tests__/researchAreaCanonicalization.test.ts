@@ -83,7 +83,7 @@ describe('deriveResearchAreasFromText', () => {
     expect(canonicalizer.deriveResearchAreasFromText('biomachine learning device')).toEqual([]);
   });
 
-  it('never derives single-word areas from prose', () => {
+  it('does not derive an ambiguous single-word area (economics) from prose', () => {
     expect(canonicalizer.deriveResearchAreasFromText('the state of the art in economics')).toEqual(
       [],
     );
@@ -93,6 +93,57 @@ describe('deriveResearchAreasFromText', () => {
     expect(
       canonicalizer.deriveResearchAreasFromText('work on human computer interaction methods'),
     ).toEqual(['Human-Computer Interaction']);
+  });
+});
+
+describe('single-word specific-term derivation', () => {
+  const specificRows = [
+    { name: 'Immunology' },
+    { name: 'Genomics' },
+    { name: 'Bioinformatics' },
+    { name: 'Neuroscience' },
+    { name: 'Machine Learning' },
+    { name: 'Art' },
+    { name: 'History' },
+    { name: 'Statistics' },
+    { name: 'Economics' },
+    { name: 'Art History' },
+  ];
+  const specific = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(specificRows));
+
+  it('derives specific single-word technical terms from prose', () => {
+    expect(
+      specific.deriveResearchAreasFromText(
+        'The lab studies immunology and genomics using bioinformatics pipelines.',
+      ),
+    ).toEqual(expect.arrayContaining(['Immunology', 'Genomics', 'Bioinformatics']));
+  });
+
+  it('keeps ambiguous single-word names out of prose derivation', () => {
+    const derived = specific.deriveResearchAreasFromText(
+      'A survey of the history of art, with attention to economics and statistics.',
+    );
+    expect(derived).not.toContain('Art');
+    expect(derived).not.toContain('History');
+    expect(derived).not.toContain('Economics');
+    expect(derived).not.toContain('Statistics');
+  });
+
+  it('still derives a multi-word area whose words are individually ambiguous', () => {
+    expect(specific.deriveResearchAreasFromText('a course in art history and criticism')).toEqual([
+      'Art History',
+    ]);
+  });
+
+  it('does not fire a single-word term glued inside a longer token', () => {
+    expect(specific.deriveResearchAreasFromText('immunologist training program')).toEqual([]);
+  });
+
+  it('resolves an ambiguous single-word area through the exact index', () => {
+    expect(specific.matchCanonicalResearchAreas(['Economics', 'Statistics'])).toEqual([
+      'Economics',
+      'Statistics',
+    ]);
   });
 });
 
