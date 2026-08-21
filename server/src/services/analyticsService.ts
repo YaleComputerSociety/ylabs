@@ -1215,7 +1215,6 @@ export const getFunnelAnalytics = async (
       'open_position',
       'official_application',
       'reviewed_route',
-      'qualified_participation',
     ]),
     applicationOpens: countQualifiedCategories(['open_position', 'official_application']),
     confirmedOutcomes: counts[AnalyticsEventType.OUTREACH_OUTCOME] ?? 0,
@@ -1312,17 +1311,19 @@ export const getActionNeededAnalytics = async (
   };
 };
 
-export const getAnalytics = async () => {
+export const getAnalytics = async (range: AnalyticsDateRange = {}) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const rangeTimestampMatch = buildRangeTimestampMatch(range);
 
   const visitorStats = await AnalyticsEvent.aggregate([
     {
       $match: {
         eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] },
+        ...rangeTimestampMatch,
       },
     },
     {
@@ -1488,6 +1489,7 @@ export const getAnalytics = async () => {
   ]);
 
   const engagementStats = await AnalyticsEvent.aggregate([
+    { $match: { ...rangeTimestampMatch } },
     {
       $facet: {
         searchStats: [
@@ -1513,7 +1515,6 @@ export const getAnalytics = async () => {
           {
             $match: {
               eventType: AnalyticsEventType.SEARCH,
-              timestamp: { $gte: thirtyDaysAgo },
               searchQuery: { $exists: true, $ne: '' },
             },
           },
@@ -1582,7 +1583,6 @@ export const getAnalytics = async () => {
           {
             $match: {
               eventType: AnalyticsEventType.LISTING_VIEW,
-              timestamp: { $gte: thirtyDaysAgo },
               listingId: { $exists: true },
             },
           },
@@ -1605,11 +1605,6 @@ export const getAnalytics = async () => {
         ],
         userActivityStats: [
           {
-            $match: {
-              timestamp: { $gte: sevenDaysAgo },
-            },
-          },
-          {
             $group: {
               _id: '$netid',
               totalEvents: { $sum: 1 },
@@ -1624,11 +1619,6 @@ export const getAnalytics = async () => {
           },
         ],
         mostActiveUsers: [
-          {
-            $match: {
-              timestamp: { $gte: thirtyDaysAgo },
-            },
-          },
           {
             $group: {
               _id: { netid: '$netid', userType: '$userType' },
@@ -1670,6 +1660,7 @@ export const getAnalytics = async () => {
     {
       $match: {
         eventType: { $in: researchEventTypes },
+        ...rangeTimestampMatch,
       },
     },
     {
@@ -1740,7 +1731,6 @@ export const getAnalytics = async () => {
           {
             $match: {
               eventType: AnalyticsEventType.RESEARCH_VIEW,
-              timestamp: { $gte: thirtyDaysAgo },
               entityType: { $exists: true, $ne: null },
               entityId: { $exists: true, $ne: '' },
             },
@@ -1929,6 +1919,7 @@ export const getAnalytics = async () => {
     {
       $match: {
         eventType: { $in: outreachEventTypes },
+        ...rangeTimestampMatch,
       },
     },
     {
@@ -2185,25 +2176,37 @@ export const getAnalytics = async () => {
   // so the dashboard leads with how complete and fresh that corpus is.
   // "Active" means not archived (archived: { $ne: true }) — the canonical
   // active filter for research entities.
+  const activeResearchEntityMatch = { $match: { archived: { $ne: true } } };
   const researchEntityStats = await ResearchEntity.aggregate([
-    { $match: { archived: { $ne: true } } },
     {
       $facet: {
-        overview: [{ $group: { _id: null, total: { $sum: 1 } } }],
+        overview: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              active: { $sum: { $cond: [{ $ne: ['$archived', true] }, 1, 0] } },
+            },
+          },
+        ],
         byType: [
+          activeResearchEntityMatch,
           { $group: { _id: '$entityType', count: { $sum: 1 } } },
           { $sort: { count: -1 } },
           { $project: { _id: 0, entityType: '$_id', count: 1 } },
         ],
         byVisibilityTier: [
+          activeResearchEntityMatch,
           { $group: { _id: '$studentVisibilityTier', count: { $sum: 1 } } },
           { $project: { _id: 0, tier: '$_id', count: 1 } },
         ],
         byOpenness: [
+          activeResearchEntityMatch,
           { $group: { _id: '$opennessStatusCache', count: { $sum: 1 } } },
           { $project: { _id: 0, status: '$_id', count: 1 } },
         ],
         freshness: [
+          activeResearchEntityMatch,
           {
             $group: {
               _id: null,
@@ -2236,6 +2239,7 @@ export const getAnalytics = async () => {
           },
         ],
         scholarly: [
+          activeResearchEntityMatch,
           {
             $group: {
               _id: null,
@@ -2256,7 +2260,9 @@ export const getAnalytics = async () => {
   const users = userStats[0];
   const research = researchStats[0];
   const researchEntities = researchEntityStats[0];
-  const activeResearchEntityCount = researchEntities.overview[0]?.total || 0;
+  const researchEntityOverview = researchEntities.overview[0] || { total: 0, active: 0 };
+  const activeResearchEntityCount = researchEntityOverview.active || 0;
+  const totalResearchEntityCount = researchEntityOverview.total || 0;
 
   const trendingListingIds = engagement.trendingListings
     .map((t: any) => normalizeAnalyticsStoredObjectIdString(t.listingId))
@@ -2383,7 +2389,7 @@ export const getAnalytics = async () => {
     researchEntities: {
       overview: {
         active: activeResearchEntityCount,
-        total: activeResearchEntityCount,
+        total: totalResearchEntityCount,
       },
       byType: researchEntities.byType || [],
       byVisibilityTier: researchEntities.byVisibilityTier || [],

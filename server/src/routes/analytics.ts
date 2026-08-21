@@ -276,11 +276,11 @@ const publicAnalyticsDebugEvent = (event: any) => ({
 
 router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
-    const analytics = await getAnalytics();
+    const analytics = await getAnalytics(parseAnalyticsRange(request.query.range));
     response.status(200).json(analytics);
   } catch (error) {
     console.error('Error fetching analytics:', sanitizeLogValue(error));
-    response.status(500).json({ error: 'Failed to fetch analytics' });
+    handleAnalyticsError(response, error, 'Failed to fetch analytics');
   }
 });
 

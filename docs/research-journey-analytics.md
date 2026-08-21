@@ -48,5 +48,5 @@ The endpoint remains first-party, authenticated, private, and covered by the exi
 
 The admin funnel reports source inspections, official-route attempts, application opens, and confirmed outcomes separately.
 Application opens include only `open_position` and `official_application` qualified categories.
-Official-route attempts include all currently qualified categories.
+Official-route attempts include only the `open_position`, `official_application`, and `reviewed_route` categories, and exclude `qualified_participation`.
 Confirmed outcomes remain `outreach_outcome` records and are never inferred from route attempts.

@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   analyticsFind: vi.fn(),
   analyticsUpdateOne: vi.fn(),
   userFindOneAndUpdate: vi.fn(),
+  userAggregate: vi.fn(),
+  researchEntityAggregate: vi.fn(),
+  getListingModel: vi.fn(),
 }));
 
 vi.mock('../../models/analytics', () => ({
@@ -55,11 +58,15 @@ vi.mock('../../models/index', () => ({
   User: {
     findOne: vi.fn(),
     findOneAndUpdate: mocks.userFindOneAndUpdate,
+    aggregate: mocks.userAggregate,
+  },
+  ResearchEntity: {
+    aggregate: mocks.researchEntityAggregate,
   },
 }));
 
 vi.mock('../../db/connections', () => ({
-  getListingModel: vi.fn(),
+  getListingModel: mocks.getListingModel,
 }));
 
 import {
@@ -68,6 +75,7 @@ import {
   getUserAnalyticsDrilldown,
   getSearchQualityAnalytics,
   getFunnelAnalytics,
+  getAnalytics,
   logEvent,
   normalizeAnalyticsUserTypeBucket,
   shouldSuppressBetaAnalyticsEvent,
@@ -150,16 +158,164 @@ describe('claim-specific research funnel', () => {
         count: 2,
         uniqueNetids: ['student-1', 'student-4'],
       },
+      {
+        eventType: 'research_qualified_action',
+        actionCategory: 'qualified_participation',
+        count: 2,
+        uniqueNetids: ['student-5', 'student-6'],
+      },
       { eventType: 'outreach_outcome', count: 1 },
     ]);
 
-    await expect(getFunnelAnalytics()).resolves.toMatchObject({
+    const funnel = await getFunnelAnalytics();
+
+    expect(funnel).toMatchObject({
       sourceInspections: 7,
-      qualifiedActions: 4,
+      qualifiedActions: 6,
       officialRouteAttempts: 4,
       applicationOpens: 3,
       confirmedOutcomes: 1,
     });
+    expect(funnel.officialRouteAttempts).not.toBe(funnel.qualifiedActions);
+    expect(funnel.applicationOpens).toBeLessThan(funnel.officialRouteAttempts);
+    expect(funnel.officialRouteAttempts).toBeLessThan(funnel.qualifiedActions);
+  });
+});
+
+describe('getAnalytics research coverage and range scoping', () => {
+  const eventFacetStub = {
+    lifetimeVisitors: [],
+    lifetimeVisitorsByType: [],
+    last7DaysVisitors: [],
+    last7DaysVisitorsByType: [],
+    todayVisitors: [],
+    todayVisitorsByType: [],
+    totalLogins: [],
+    loginsLast7Days: [],
+    loginsToday: [],
+    searchStats: [],
+    topSearchQueries: [],
+    viewStats: [],
+    favoriteStats: [],
+    trendingListings: [],
+    userActivityStats: [],
+    mostActiveUsers: [],
+    byEventType: [],
+    byEntityType: [],
+    byUserType: [],
+    topEntities: [],
+    summary: [],
+    byOutcome: [],
+    topListings: [],
+    recentEvents: [],
+  };
+
+  const listingFacetStub = {
+    overview: [],
+    newListingsLast7Days: [],
+    newListingsToday: [],
+    listingsByDepartment: [],
+    listingsPerProfessor: [],
+    listingsWithZeroViews: [],
+    topViewedListings: [],
+    topFavoritedListings: [],
+    viewsAndFavorites: [],
+    viewsByDepartment: [],
+  };
+
+  const chainableFind = () => ({
+    select: () => ({ lean: async () => [] }),
+    lean: async () => [],
+  });
+
+  const primeAnalyticsMocks = () => {
+    mocks.analyticsAggregate.mockResolvedValue([eventFacetStub]);
+    mocks.userAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 50, confirmed: 40 }],
+        byType: [],
+        newUsersLast7Days: [],
+        newUsersToday: [],
+        newUsersTodayByType: [],
+      },
+    ]);
+    mocks.getListingModel.mockReturnValue({
+      aggregate: vi.fn().mockResolvedValue([listingFacetStub]),
+      find: chainableFind,
+      collection: { name: 'listings' },
+    });
+  };
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reports total as archived-inclusive and active as the non-archived subset', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 12, active: 9 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    const analytics = await getAnalytics();
+
+    expect(analytics.researchEntities.overview).toEqual({ active: 9, total: 12 });
+    expect(analytics.researchEntities.overview.total).toBeGreaterThan(
+      analytics.researchEntities.overview.active,
+    );
+  });
+
+  it('threads the selected range into event-based aggregations', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    const start = new Date('2026-01-01T00:00:00.000Z');
+    const end = new Date('2026-02-01T00:00:00.000Z');
+    await getAnalytics({ start, end });
+
+    const everyEventPipelineScoped = mocks.analyticsAggregate.mock.calls.every((call) => {
+      const topMatch = call[0][0].$match;
+      return topMatch && topMatch.timestamp && topMatch.timestamp.$gte instanceof Date;
+    });
+    expect(mocks.analyticsAggregate).toHaveBeenCalled();
+    expect(everyEventPipelineScoped).toBe(true);
+  });
+
+  it('leaves event aggregations unfiltered when no range is selected', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    await getAnalytics();
+
+    const noneScoped = mocks.analyticsAggregate.mock.calls.every((call) => {
+      const topMatch = call[0][0].$match || {};
+      return topMatch.timestamp === undefined;
+    });
+    expect(noneScoped).toBe(true);
   });
 });
 

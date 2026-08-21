@@ -124,7 +124,10 @@ describe('Analytics page', () => {
     expect(screen.getByRole('button', { name: 'Retry Analytics' })).toBeTruthy();
     expect(screen.queryByText('Loading analytics...')).toBeNull();
     expect(mockedAxios.get).toHaveBeenCalledTimes(1);
-    expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', { withCredentials: true });
+    expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', {
+      withCredentials: true,
+      params: { range: '30d' },
+    });
   });
 
   it('leads with scraped research coverage instead of posted-opportunity metrics', async () => {
@@ -184,7 +187,7 @@ describe('Analytics page', () => {
     render(<Analytics />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Research Data Coverage' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: /Research Data Coverage/ })).toBeTruthy();
     });
 
     // Scraped-data coverage is the focus; legacy posted-opportunity sections are gone.
@@ -205,7 +208,7 @@ describe('Analytics page', () => {
     expect(screen.getByRole('button', { name: 'Refresh Data' }).className).toContain(
       'min-h-[44px]',
     );
-    expect(screen.getByLabelText('Range').className).toContain('min-h-[44px]');
+    expect(screen.getByLabelText('Range', { exact: false }).className).toContain('min-h-[44px]');
     expect(screen.getByRole('button', { name: 'Refresh Users' }).className).toContain(
       'min-h-[44px]',
     );
@@ -545,5 +548,96 @@ describe('Analytics page', () => {
         { withCredentials: true },
       );
     });
+  });
+
+  const mockDashboardEndpoints = () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') {
+        return Promise.resolve({ data: analyticsData });
+      }
+      if (url === '/analytics/users') {
+        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
+      }
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+        });
+      }
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
+      }
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [], limit: 25 } });
+      }
+      if (url === '/analytics/funnel') {
+        return Promise.resolve({ data: { stages: [] } });
+      }
+      if (url === '/analytics/actions') {
+        return Promise.resolve({ data: { cards: [], items: [] } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+  };
+
+  it('labels usage metrics with the selected range and threads the range to the server', async () => {
+    mockDashboardEndpoints();
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Visitors (30 Days)')).toBeTruthy();
+    });
+    expect(screen.getByText('Login Events (30 Days)')).toBeTruthy();
+    expect(screen.getByText('Searches (30 Days)')).toBeTruthy();
+    expect(screen.getByText('Visitors (Last 7 Days)')).toBeTruthy();
+    expect(screen.getByText('Visitors Today')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Last 7 Days by Type' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Today by Type' })).toBeTruthy();
+    expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', {
+      withCredentials: true,
+      params: { range: '30d' },
+    });
+
+    fireEvent.change(screen.getByLabelText('Range', { exact: false }), {
+      target: { value: 'today' },
+    });
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', {
+        withCredentials: true,
+        params: { range: 'today' },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Visitors (Today)')).toBeTruthy();
+    });
+    expect(screen.getByText('Login Events (Today)')).toBeTruthy();
+    expect(screen.queryByText('Visitors (Last 7 Days)')).toBeNull();
+    expect(screen.queryByText('Visitors Today')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Last 7 Days by Type' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Today by Type' })).toBeNull();
+  });
+
+  it('marks corpus and account sections as current snapshots regardless of range', async () => {
+    mockDashboardEndpoints();
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Research Data Coverage/ })).toBeTruthy();
+    });
+    expect(screen.getAllByText('Current snapshot').length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.change(screen.getByLabelText('Range', { exact: false }), {
+      target: { value: 'today' },
+    });
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/analytics', {
+        withCredentials: true,
+        params: { range: 'today' },
+      });
+    });
+    expect(screen.getAllByText('Current snapshot').length).toBeGreaterThanOrEqual(2);
   });
 });
