@@ -76,11 +76,16 @@ import {
   getSearchQualityAnalytics,
   getFunnelAnalytics,
   getAnalytics,
+  invalidateAnalyticsCaches,
   logEvent,
   normalizeAnalyticsUserTypeBucket,
   shouldSuppressBetaAnalyticsEvent,
 } from '../analyticsService';
 import { AnalyticsEventType } from '../../models/analytics';
+
+afterEach(() => {
+  invalidateAnalyticsCaches();
+});
 
 describe('analytics user type normalization', () => {
   it('combines professor and faculty into the canonical professor bucket', () => {
@@ -104,7 +109,7 @@ describe('search engagement attribution', () => {
     vi.clearAllMocks();
   });
 
-  it('reports action-aware success and uses a bounded same-user attribution lookup', async () => {
+  it('reports action-aware success from a single windowed pass without a self-join', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([
       {
         overall: [
@@ -129,12 +134,39 @@ describe('search engagement attribution', () => {
     });
 
     const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
-    const lookup = pipeline.find((stage: any) => stage.$lookup)?.$lookup;
-    expect(lookup.from).toBe('analytics_events');
-    expect(JSON.stringify(lookup)).toContain('$$searchNetid');
-    expect(JSON.stringify(lookup)).toContain('amount":30');
+    expect(pipeline.some((stage: any) => stage.$lookup)).toBe(false);
+    const windowStage = pipeline.find((stage: any) => stage.$setWindowFields)?.$setWindowFields;
+    expect(windowStage.partitionBy).toBe('$netid');
+    expect(windowStage.sortBy).toEqual({ timestamp: 1 });
+    expect(windowStage.output.forwardEvents.window).toEqual({ range: [0, 30], unit: 'minute' });
     expect(JSON.stringify(pipeline)).toContain('nextSearchAt');
     expect(JSON.stringify(pipeline)).toContain('$resultCount');
+    expect(JSON.stringify(pipeline)).toContain('amount":30');
+  });
+
+  it('shares one computed search-quality result across repeated reads', async () => {
+    mocks.analyticsAggregate.mockResolvedValue([
+      {
+        overall: [
+          {
+            totalSearches: 4,
+            zeroResultSearches: 1,
+            uniqueSearchers: 2,
+            engagedSearches: 2,
+            returnedButIgnoredSearches: 1,
+          },
+        ],
+        byQueryAndEntityType: [],
+      },
+    ]);
+
+    const start = new Date('2026-03-01T00:00:00.000Z');
+    const end = new Date('2026-03-08T00:00:00.000Z');
+    const first = await getSearchQualityAnalytics({ start, end });
+    const second = await getSearchQualityAnalytics({ start, end });
+
+    expect(second).toBe(first);
+    expect(mocks.analyticsAggregate).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -145,26 +177,21 @@ describe('claim-specific research funnel', () => {
 
   it('keeps source inspection, route attempts, application opens, and outcomes separate', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([
-      { eventType: 'research_source_review', count: 7 },
       {
-        eventType: 'research_qualified_action',
-        actionCategory: 'official_application',
-        count: 3,
-        uniqueNetids: ['student-1', 'student-2', 'student-3'],
+        uniqueActorsByEventType: [
+          { eventType: 'research_source_review', count: 7 },
+          { eventType: 'research_qualified_action', count: 6 },
+          { eventType: 'outreach_outcome', count: 1 },
+        ],
+        qualifiedActorsByCategory: [
+          {
+            actionCategory: 'official_application',
+            uniqueNetids: ['student-1', 'student-2', 'student-3'],
+          },
+          { actionCategory: 'reviewed_route', uniqueNetids: ['student-1', 'student-4'] },
+          { actionCategory: 'qualified_participation', uniqueNetids: ['student-5', 'student-6'] },
+        ],
       },
-      {
-        eventType: 'research_qualified_action',
-        actionCategory: 'reviewed_route',
-        count: 2,
-        uniqueNetids: ['student-1', 'student-4'],
-      },
-      {
-        eventType: 'research_qualified_action',
-        actionCategory: 'qualified_participation',
-        count: 2,
-        uniqueNetids: ['student-5', 'student-6'],
-      },
-      { eventType: 'outreach_outcome', count: 1 },
     ]);
 
     const funnel = await getFunnelAnalytics();
@@ -316,6 +343,61 @@ describe('getAnalytics research coverage and range scoping', () => {
       return topMatch.timestamp === undefined;
     });
     expect(noneScoped).toBe(true);
+  });
+
+  it('serves a repeated dashboard load from the short-TTL cache and recomputes after invalidation', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    const start = new Date('2026-04-01T00:00:00.000Z');
+    const end = new Date('2026-04-08T00:00:00.000Z');
+
+    const first = await getAnalytics({ start, end });
+    const passesAfterFirst = mocks.analyticsAggregate.mock.calls.length;
+    expect(passesAfterFirst).toBeGreaterThan(0);
+
+    const second = await getAnalytics({ start, end });
+    expect(second).toBe(first);
+    expect(mocks.analyticsAggregate.mock.calls.length).toBe(passesAfterFirst);
+
+    invalidateAnalyticsCaches();
+    await getAnalytics({ start, end });
+    expect(mocks.analyticsAggregate.mock.calls.length).toBeGreaterThan(passesAfterFirst);
+  });
+
+  it('keeps distinct ranges in separate cache entries', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    await getAnalytics({
+      start: new Date('2026-05-01T00:00:00.000Z'),
+      end: new Date('2026-05-08T00:00:00.000Z'),
+    });
+    const passesAfterFirstRange = mocks.analyticsAggregate.mock.calls.length;
+
+    await getAnalytics({
+      start: new Date('2026-06-01T00:00:00.000Z'),
+      end: new Date('2026-06-08T00:00:00.000Z'),
+    });
+    expect(mocks.analyticsAggregate.mock.calls.length).toBeGreaterThan(passesAfterFirstRange);
   });
 });
 

@@ -775,14 +775,88 @@ export const logEvent = async (params: LogEventParams): Promise<void> => {
   }
 };
 
-export const getSearchQualityAnalytics = async (
+const SEARCH_ATTRIBUTION_WINDOW_MINUTES = 30;
+
+const SEARCH_ATTRIBUTION_EVENT_TYPES = [
+  AnalyticsEventType.SEARCH,
+  AnalyticsEventType.LISTING_VIEW,
+  AnalyticsEventType.LISTING_FAVORITE,
+  AnalyticsEventType.FELLOWSHIP_VIEW,
+  AnalyticsEventType.FELLOWSHIP_FAVORITE,
+  AnalyticsEventType.RESEARCH_VIEW,
+  AnalyticsEventType.PATHWAY_SAVE,
+];
+
+const ANALYTICS_CACHE_TTL_MS = 30 * 1000;
+
+interface RangeCacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+const rangeCacheKey = (range: AnalyticsDateRange): string => {
+  const bucket = (value?: Date): string =>
+    value instanceof Date && !Number.isNaN(value.getTime())
+      ? String(Math.floor(value.getTime() / ANALYTICS_CACHE_TTL_MS))
+      : 'none';
+  return `${bucket(range.start)}:${bucket(range.end)}`;
+};
+
+const createRangeTtlCache = <T>() => {
+  const store = new Map<string, RangeCacheEntry<T>>();
+
+  const load = async (range: AnalyticsDateRange, compute: () => Promise<T>): Promise<T> => {
+    const key = rangeCacheKey(range);
+    const now = Date.now();
+    const cached = store.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+
+    const value = await compute();
+    store.set(key, { value, expiresAt: now + ANALYTICS_CACHE_TTL_MS });
+
+    for (const [existingKey, entry] of store) {
+      if (entry.expiresAt <= now) {
+        store.delete(existingKey);
+      }
+    }
+
+    return value;
+  };
+
+  const clear = (): void => {
+    store.clear();
+  };
+
+  return { load, clear };
+};
+
+const computeSearchQualityAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<SearchQualityAnalytics> => {
   const [result] = await AnalyticsEvent.aggregate([
     {
       $match: {
-        eventType: AnalyticsEventType.SEARCH,
+        eventType: { $in: SEARCH_ATTRIBUTION_EVENT_TYPES },
         ...buildRangeTimestampMatch(range),
+      },
+    },
+    {
+      $setWindowFields: {
+        partitionBy: '$netid',
+        sortBy: { timestamp: 1 },
+        output: {
+          forwardEvents: {
+            $push: { eventType: '$eventType', timestamp: '$timestamp' },
+            window: { range: [0, SEARCH_ATTRIBUTION_WINDOW_MINUTES], unit: 'minute' },
+          },
+        },
+      },
+    },
+    {
+      $match: {
+        eventType: AnalyticsEventType.SEARCH,
       },
     },
     {
@@ -797,46 +871,29 @@ export const getSearchQualityAnalytics = async (
             onNull: 0,
           },
         },
-      },
-    },
-    {
-      $lookup: {
-        from: 'analytics_events',
-        let: { searchNetid: '$netid', searchAt: '$timestamp' },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $and: [
-                  { $eq: ['$netid', '$$searchNetid'] },
-                  { $gt: ['$timestamp', '$$searchAt'] },
-                  {
-                    $lte: [
-                      '$timestamp',
-                      { $dateAdd: { startDate: '$$searchAt', unit: 'minute', amount: 30 } },
-                    ],
-                  },
-                  {
-                    $in: [
-                      '$eventType',
-                      [
-                        AnalyticsEventType.SEARCH,
-                        AnalyticsEventType.LISTING_VIEW,
-                        AnalyticsEventType.LISTING_FAVORITE,
-                        AnalyticsEventType.FELLOWSHIP_VIEW,
-                        AnalyticsEventType.FELLOWSHIP_FAVORITE,
-                        AnalyticsEventType.RESEARCH_VIEW,
-                        AnalyticsEventType.PATHWAY_SAVE,
-                      ],
-                    ],
-                  },
-                ],
-              },
+        attributionEvents: {
+          $filter: {
+            input: '$forwardEvents',
+            as: 'event',
+            cond: {
+              $and: [
+                { $gt: ['$$event.timestamp', '$timestamp'] },
+                {
+                  $lte: [
+                    '$$event.timestamp',
+                    {
+                      $dateAdd: {
+                        startDate: '$timestamp',
+                        unit: 'minute',
+                        amount: SEARCH_ATTRIBUTION_WINDOW_MINUTES,
+                      },
+                    },
+                  ],
+                },
+              ],
             },
           },
-          { $sort: { timestamp: 1 } },
-        ],
-        as: 'attributionEvents',
+        },
       },
     },
     {
@@ -1122,7 +1179,7 @@ export const getSearchQueryAnalytics = async (
 export const getFunnelAnalytics = async (
   range: AnalyticsDateRange = {},
 ): Promise<FunnelAnalytics> => {
-  const rows = await AnalyticsEvent.aggregate([
+  const [facet] = await AnalyticsEvent.aggregate([
     {
       $match: {
         eventType: {
@@ -1148,42 +1205,46 @@ export const getFunnelAnalytics = async (
       },
     },
     {
-      $group: {
-        _id: {
-          eventType: '$eventType',
-          actionCategory: '$metadata.actionCategory',
-        },
-        uniqueNetids: { $addToSet: '$netid' },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        eventType: '$_id.eventType',
-        actionCategory: '$_id.actionCategory',
-        uniqueNetids: 1,
-        count: { $size: '$uniqueNetids' },
+      $facet: {
+        uniqueActorsByEventType: [
+          { $group: { _id: { eventType: '$eventType', netid: '$netid' } } },
+          { $group: { _id: '$_id.eventType', count: { $sum: 1 } } },
+          { $project: { _id: 0, eventType: '$_id', count: 1 } },
+        ],
+        qualifiedActorsByCategory: [
+          { $match: { eventType: AnalyticsEventType.RESEARCH_QUALIFIED_ACTION } },
+          { $group: { _id: { actionCategory: '$metadata.actionCategory', netid: '$netid' } } },
+          {
+            $group: {
+              _id: '$_id.actionCategory',
+              uniqueNetids: { $addToSet: '$_id.netid' },
+            },
+          },
+          { $project: { _id: 0, actionCategory: '$_id', uniqueNetids: 1 } },
+        ],
       },
     },
   ]);
 
-  const counts = rows.reduce(
-    (
-      result: Partial<Record<AnalyticsEventType, number>>,
-      row: { eventType: AnalyticsEventType; count: number },
-    ) => {
-      result[row.eventType] = (result[row.eventType] || 0) + row.count;
+  const uniqueActorsByEventType = (facet?.uniqueActorsByEventType ?? []) as Array<{
+    eventType: AnalyticsEventType;
+    count: number;
+  }>;
+  const qualifiedActorsByCategory = (facet?.qualifiedActorsByCategory ?? []) as Array<{
+    actionCategory?: string;
+    uniqueNetids: string[];
+  }>;
+
+  const counts = uniqueActorsByEventType.reduce(
+    (result: Partial<Record<AnalyticsEventType, number>>, row) => {
+      result[row.eventType] = row.count;
       return result;
     },
     {},
   );
-  const qualifiedActionRows = rows.filter(
-    (row: { eventType: AnalyticsEventType }) =>
-      row.eventType === AnalyticsEventType.RESEARCH_QUALIFIED_ACTION,
-  ) as Array<{ actionCategory?: string; uniqueNetids: string[] }>;
   const countQualifiedCategories = (categories: string[]) =>
     new Set(
-      qualifiedActionRows
+      qualifiedActorsByCategory
         .filter((row) => categories.includes(row.actionCategory || ''))
         .flatMap((row) => row.uniqueNetids),
     ).size;
@@ -1311,7 +1372,7 @@ export const getActionNeededAnalytics = async (
   };
 };
 
-export const getAnalytics = async (range: AnalyticsDateRange = {}) => {
+const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -2406,4 +2467,22 @@ export const getAnalytics = async (range: AnalyticsDateRange = {}) => {
     },
     timestamp: now.toISOString(),
   };
+};
+
+type AnalyticsResult = Awaited<ReturnType<typeof computeAnalytics>>;
+
+const analyticsCache = createRangeTtlCache<AnalyticsResult>();
+const searchQualityCache = createRangeTtlCache<SearchQualityAnalytics>();
+
+export const getSearchQualityAnalytics = (
+  range: AnalyticsDateRange = {},
+): Promise<SearchQualityAnalytics> =>
+  searchQualityCache.load(range, () => computeSearchQualityAnalytics(range));
+
+export const getAnalytics = (range: AnalyticsDateRange = {}): Promise<AnalyticsResult> =>
+  analyticsCache.load(range, () => computeAnalytics(range));
+
+export const invalidateAnalyticsCaches = (): void => {
+  analyticsCache.clear();
+  searchQualityCache.clear();
 };
