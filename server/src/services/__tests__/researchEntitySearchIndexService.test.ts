@@ -37,6 +37,38 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('embedding');
   });
 
+  it('strips retired legacy access fields while preserving the graded access signal', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-access',
+      name: 'Access Signal Lab',
+      archived: false,
+      openness: 'open',
+      acceptingUndergrads: true,
+      acceptanceConfidence: 0.9,
+      opennessSignals: ['posted-opening'],
+      opennessStatusCache: 'verified-accepting',
+      opennessExplanationCache: 'Has a posted opening.',
+      opennessComputedAt: '2026-01-01T00:00:00.000Z',
+      opennessLastSignalAt: '2026-01-01T00:00:00.000Z',
+      accessAcceptanceLevel: 'verified',
+      accessSummary: { status: 'posted-opening', confidence: 0.9 },
+    });
+
+    expect(doc).toMatchObject({
+      id: 'entity-access',
+      accessAcceptanceLevel: 'verified',
+      accessSummary: { status: 'posted-opening', confidence: 0.9 },
+    });
+    expect(doc).not.toHaveProperty('openness');
+    expect(doc).not.toHaveProperty('acceptingUndergrads');
+    expect(doc).not.toHaveProperty('acceptanceConfidence');
+    expect(doc).not.toHaveProperty('opennessSignals');
+    expect(doc).not.toHaveProperty('opennessStatusCache');
+    expect(doc).not.toHaveProperty('opennessExplanationCache');
+    expect(doc).not.toHaveProperty('opennessComputedAt');
+    expect(doc).not.toHaveProperty('opennessLastSignalAt');
+  });
+
   it('adds curated student topic aliases to searchable index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-ai',

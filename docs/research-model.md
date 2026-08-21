@@ -315,7 +315,8 @@ Examples:
 
 The student-facing vocabulary for this section should usually be "Best Next Step", not `RecommendedNextStep`.
 
-Initial implementation note: `accessSummaryService.ts` computes a compatibility `accessSummary` for research search/detail payloads. This lets the UI present Evidence and Best Next Step without removing legacy `acceptingUndergrads` fields yet.
+`accessSummaryService.ts` computes the `accessSummary` for research search/detail payloads so the UI presents Evidence and Best Next Step.
+The legacy stored access fields (`acceptingUndergrads`, `openness`, `acceptanceConfidence`, and the openness caches) were retired in #420, so access now derives solely from the Signal-backed `accessSummary` and its indexed `accessAcceptanceLevel` grade (`verified`, `likely`, or `none`).
 
 2026-05-13 update: client API boundaries now normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`, and Explore Research cards derive access summaries from `accessSummary`.
 
