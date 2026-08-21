@@ -36,6 +36,13 @@ import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import {
+  detectProfileIdentityRisk,
+  entityOfficialPersonProfileDestinations,
+  hasSpecificOfficialPersonPathSegment,
+  normalizeOfficialProfileDestination,
+  resolveLeadOfficialProfileUrl,
+} from './leadProfileIdentity';
+import {
   invalidateAdminAccessReviewProjection,
   refreshAdminAccessReviewProjection,
 } from './adminAccessReviewProjectionService';
@@ -1008,47 +1015,6 @@ const PUBLIC_MEMBER_PROFILE_URL_KEYS = new Set([
   'yale',
 ]);
 
-const GENERIC_PERSON_DIRECTORY_SEGMENTS = new Set([
-  'directory',
-  'directories',
-  'faculty',
-  'faculty-directory',
-  'members',
-  'people',
-  'person',
-  'profiles',
-  'staff',
-]);
-const GENERIC_PROFILE_CATEGORY_SEGMENTS = new Set([
-  'active',
-  'adjunct',
-  'affiliated',
-  'affiliate',
-  'all',
-  'clinical',
-  'emeriti',
-  'emeritus',
-  'instructional',
-  'ladder',
-  'postdoctoral',
-  'postdocs',
-  'primary',
-  'research',
-  'secondary',
-  'visiting',
-]);
-
-const hasSpecificOfficialPersonPathSegment = (pathSegments: string[], label: string): boolean => {
-  const index = pathSegments.indexOf(label);
-  if (index < 0) return false;
-  const nextSegment = pathSegments[index + 1] || '';
-  return (
-    Boolean(nextSegment) &&
-    !GENERIC_PERSON_DIRECTORY_SEGMENTS.has(nextSegment) &&
-    !GENERIC_PROFILE_CATEGORY_SEGMENTS.has(nextSegment)
-  );
-};
-
 const hasSpecificOfficialPersonProfilePath = (pathname: string): boolean => {
   const pathSegments = pathname
     .toLowerCase()
@@ -1603,86 +1569,6 @@ function memberDisplayName(member: { user?: any }): string {
   ).trim();
 }
 
-const OFFICIAL_PROFILE_URL_KEYS = [
-  'official',
-  'medicine',
-  'ysm',
-  'departmental',
-  'directory',
-  'yalies',
-];
-
-const safeProfileUrlObject = (value: unknown): Record<string, string> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(([, url]) => publicHttpUrl(url)),
-  ) as Record<string, string>;
-};
-
-const isLikelyOfficialPersonProfileUrl = (value: unknown): boolean => {
-  if (typeof value !== 'string') return false;
-  const trimmed = value.trim();
-
-  try {
-    if (!isPublicHttpUrl(trimmed)) return false;
-    const parsed = new URL(trimmed);
-    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    const pathSegments = parsed.pathname
-      .toLowerCase()
-      .split('/')
-      .map((segment) => segment.trim())
-      .filter(Boolean);
-    const isYaleOwned = host === 'yale.edu' || host.endsWith('.yale.edu') || host === 'yalies.io';
-    if (!isYaleOwned) return false;
-    if (host === 'yalies.io') return true;
-
-    return (
-      hasSpecificOfficialPersonPathSegment(pathSegments, 'profile') ||
-      hasSpecificOfficialPersonPathSegment(pathSegments, 'profiles') ||
-      hasSpecificOfficialPersonPathSegment(pathSegments, 'people') ||
-      hasSpecificOfficialPersonPathSegment(pathSegments, 'person') ||
-      hasSpecificOfficialPersonPathSegment(pathSegments, 'faculty') ||
-      hasSpecificOfficialPersonPathSegment(pathSegments, 'faculty-directory')
-    );
-  } catch {
-    return false;
-  }
-};
-
-const resolveLeadOfficialProfileUrl = (lead: { user?: any; row?: any }): string => {
-  const profileUrls = safeProfileUrlObject(lead.user?.profileUrls || lead.user?.profile_urls);
-  const orderedKeys = [
-    ...OFFICIAL_PROFILE_URL_KEYS,
-    ...Object.keys(profileUrls).filter((key) => !OFFICIAL_PROFILE_URL_KEYS.includes(key)),
-  ];
-
-  for (const key of orderedKeys) {
-    const url = profileUrls[key];
-    if (isLikelyOfficialPersonProfileUrl(url)) return url.trim();
-  }
-
-  const fallbackUrls = [lead.user?.websiteUrl, lead.user?.website, lead.row?.sourceUrl];
-  return fallbackUrls.find(isLikelyOfficialPersonProfileUrl)?.trim() || '';
-};
-
-const normalizePublicUrlDestination = (url?: string | null): string => {
-  const value = String(url || '').trim();
-  if (!value) return '';
-
-  try {
-    const parsed = new URL(value);
-    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    const path = parsed.pathname.replace(/\/+$/, '') || '/';
-    return `${host}${path}`;
-  } catch {
-    return value
-      .replace(/^https?:\/\//i, '')
-      .replace(/^www\./i, '')
-      .replace(/\/+$/, '')
-      .toLowerCase();
-  }
-};
-
 export function researchDetailLeadIdentity(
   group: Record<string, any>,
   members: Array<{ user: any; role: string; row?: any }>,
@@ -1701,31 +1587,14 @@ export function researchDetailLeadIdentity(
     return { leadIdentityStatus: 'under_review' };
   }
 
-  const entityProfileDestinations = new Set(
-    [
-      group.websiteUrl,
-      group.website,
-      ...(Array.isArray(group.sourceUrls) ? group.sourceUrls : []),
-      ...Object.values(safeProfileUrlObject(group.profileUrls || group.profile_urls)),
-    ]
-      .filter(isLikelyOfficialPersonProfileUrl)
-      .map((url) => normalizePublicUrlDestination(String(url)))
-      .filter(Boolean),
-  );
+  const entityProfileDestinations = entityOfficialPersonProfileDestinations(group);
   const matchingMembers = leadMembers.filter((member) =>
     entityProfileDestinations.has(
-      normalizePublicUrlDestination(resolveLeadOfficialProfileUrl(member)),
+      normalizeOfficialProfileDestination(resolveLeadOfficialProfileUrl(member)),
     ),
   );
 
-  const leadsWithOfficialProfile = leadMembers.filter((member) =>
-    Boolean(resolveLeadOfficialProfileUrl(member)),
-  );
-  if (
-    entityProfileDestinations.size > 0 &&
-    leadsWithOfficialProfile.length > 0 &&
-    matchingMembers.length === 0
-  ) {
+  if (detectProfileIdentityRisk({ entity: group, leadMembers })) {
     return { leadIdentityStatus: 'under_review' };
   }
 
