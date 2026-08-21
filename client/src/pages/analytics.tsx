@@ -88,7 +88,10 @@ const Analytics = () => {
   const fetchAnalytics = useCallback(async () => {
     dispatch({ type: 'FETCH_START' });
     try {
-      const response = await axios.get('/analytics', { withCredentials: true });
+      const response = await axios.get('/analytics', {
+        withCredentials: true,
+        params: { range: analyticsRange },
+      });
       dispatch({
         type: 'FETCH_SUCCESS',
         payload: { data: response.data, timestamp: new Date().toLocaleString() },
@@ -104,7 +107,7 @@ const Analytics = () => {
         payload: 'Failed to load analytics data',
       });
     }
-  }, []);
+  }, [analyticsRange]);
 
   const fetchUserActivity = useCallback(async () => {
     setIsUserActivityLoading(true);
@@ -587,6 +590,14 @@ const Analytics = () => {
   };
   const selectedRangeLabel =
     analyticsRanges.find((range) => range.value === analyticsRange)?.label || 'Selected range';
+  const showSevenDayBreakdown =
+    analyticsRange === '30d' || analyticsRange === 'semester' || analyticsRange === 'all';
+  const showTodayBreakdown = analyticsRange !== 'today';
+  const ScopeBadge = ({ label }: { label: string }) => (
+    <span className="ml-3 inline-flex items-center rounded-full border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-2.5 py-0.5 align-middle text-xs font-medium text-gray-500">
+      {label}
+    </span>
+  );
   const searchSuccessRate = searchTotal > 0 ? engagedSearches / searchTotal : null;
   const researchCoverage = data.researchEntities;
   const activeEntities = researchCoverage.overview.active;
@@ -638,6 +649,9 @@ const Analytics = () => {
                     </option>
                   ))}
                 </select>
+                <span className="mt-1 block text-xs text-gray-500">
+                  Scopes usage metrics. Corpus and account snapshots show current state.
+                </span>
               </label>
               <button
                 onClick={() => {
@@ -689,7 +703,7 @@ const Analytics = () => {
             <DashboardMetric
               title="Official-route attempts"
               value={formatNumber(journeyMetrics.officialRouteAttempts)}
-              context="Clicks whose category was re-qualified by the server at event time."
+              context="Open-position, official-application, and reviewed-route clicks re-qualified by the server. Excludes qualified-participation."
               tone="blue"
             />
             <DashboardMetric
@@ -1057,10 +1071,13 @@ const Analytics = () => {
         <section id="research-coverage" className="mb-10">
           <div className="mb-4 flex flex-col gap-2 border-b border-[var(--yr-line)] pb-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800">Research Data Coverage</h2>
+              <h2 className="text-2xl font-bold text-gray-800">
+                Research Data Coverage
+                <ScopeBadge label="Current snapshot" />
+              </h2>
               <p className="text-sm text-gray-500">
                 Scraped ResearchEntity corpus — the primary catalog students browse. Counts cover
-                active (non-archived) entities.
+                active (non-archived) entities and reflect current state, not the selected range.
               </p>
             </div>
           </div>
@@ -1182,44 +1199,52 @@ const Analytics = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <StatCard
-              title="Total Visitors (Lifetime)"
+              title={`Visitors (${selectedRangeLabel})`}
               value={data.visitors.lifetime.total}
-              subtitle="Unique users who've logged in"
+              subtitle="Unique users who logged in"
             />
-            <StatCard
-              title="Visitors (Last 7 Days)"
-              value={data.visitors.last7Days.total}
-              subtitle="Active in past week"
-            />
-            <StatCard
-              title="Visitors Today"
-              value={data.visitors.today.total}
-              subtitle="Logged in today"
-            />
+            {showSevenDayBreakdown && (
+              <StatCard
+                title="Visitors (Last 7 Days)"
+                value={data.visitors.last7Days.total}
+                subtitle="Active in past week"
+              />
+            )}
+            {showTodayBreakdown && (
+              <StatCard
+                title="Visitors Today"
+                value={data.visitors.today.total}
+                subtitle="Logged in today"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <StatCard
-              title="Total Login Events"
+              title={`Login Events (${selectedRangeLabel})`}
               value={data.visitors.loginFrequency.totalLogins}
-              subtitle="All-time login count"
+              subtitle="Login count in range"
             />
-            <StatCard
-              title="Logins (Last 7 Days)"
-              value={data.visitors.loginFrequency.loginsLast7Days}
-              subtitle="Total logins this week"
-            />
-            <StatCard
-              title="Logins Today"
-              value={data.visitors.loginFrequency.loginsToday}
-              subtitle="Login events today"
-            />
+            {showSevenDayBreakdown && (
+              <StatCard
+                title="Logins (Last 7 Days)"
+                value={data.visitors.loginFrequency.loginsLast7Days}
+                subtitle="Total logins this week"
+              />
+            )}
+            {showTodayBreakdown && (
+              <StatCard
+                title="Logins Today"
+                value={data.visitors.loginFrequency.loginsToday}
+                subtitle="Login events today"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
               <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                Lifetime Visitors by Type
+                Visitors by Type ({selectedRangeLabel})
               </h3>
               <div className="space-y-2">
                 {data.visitors.lifetime.byType.map((item) => (
@@ -1231,20 +1256,23 @@ const Analytics = () => {
               </div>
             </div>
 
-            <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Last 7 Days by Type</h3>
-              <div className="space-y-2">
-                {data.visitors.last7Days.byType.map((item) => (
-                  <div key={item.userType} className="flex justify-between text-sm">
-                    <span className="text-gray-600">{formatUserType(item.userType)}:</span>
-                    <span className="font-medium">{item.count}</span>
-                  </div>
-                ))}
+            {showSevenDayBreakdown && (
+              <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Last 7 Days by Type</h3>
+                <div className="space-y-2">
+                  {data.visitors.last7Days.byType.map((item) => (
+                    <div key={item.userType} className="flex justify-between text-sm">
+                      <span className="text-gray-600">{formatUserType(item.userType)}:</span>
+                      <span className="font-medium">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
+            {showTodayBreakdown && (
+              <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
               <div className="space-y-2">
                 {data.visitors.today.byType.length > 0 ? (
                   data.visitors.today.byType.map((item) => (
@@ -1256,8 +1284,9 @@ const Analytics = () => {
                 ) : (
                   <p className="text-sm text-gray-500">No visitors yet today</p>
                 )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </section>
 
@@ -1268,26 +1297,30 @@ const Analytics = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <StatCard
-              title="Total Searches"
+              title={`Searches (${selectedRangeLabel})`}
               value={data.engagement.search.totalSearches}
-              subtitle="All-time search queries"
+              subtitle="Search queries in range"
             />
-            <StatCard
-              title="Searches (Last 7 Days)"
-              value={data.engagement.search.searchesLast7Days}
-              subtitle="Recent searches"
-            />
-            <StatCard
-              title="Searches Today"
-              value={data.engagement.search.searchesToday}
-              subtitle="Searches today"
-            />
+            {showSevenDayBreakdown && (
+              <StatCard
+                title="Searches (Last 7 Days)"
+                value={data.engagement.search.searchesLast7Days}
+                subtitle="Recent searches"
+              />
+            )}
+            {showTodayBreakdown && (
+              <StatCard
+                title="Searches Today"
+                value={data.engagement.search.searchesToday}
+                subtitle="Searches today"
+              />
+            )}
           </div>
 
           {data.engagement.topSearchQueries.length > 0 && (
             <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)] mb-6">
               <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                Top Search Queries (Last 30 Days)
+                Top Search Queries ({selectedRangeLabel})
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {data.engagement.topSearchQueries.map((item, index) => (
@@ -1302,14 +1335,14 @@ const Analytics = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <StatCard
-              title="Active Users (Last 7 Days)"
+              title={`Active Users (${selectedRangeLabel})`}
               value={data.engagement.userActivity.activeUsers}
-              subtitle="Users with activity"
+              subtitle="Users with activity in range"
             />
             <StatCard
               title="Avg Events Per User"
               value={data.engagement.userActivity.avgEventsPerUser.toFixed(1)}
-              subtitle="Last 7 days"
+              subtitle={`Per active user in ${selectedRangeLabel}`}
             />
           </div>
         </section>
@@ -1323,17 +1356,29 @@ const Analytics = () => {
             <StatCard
               title="Email Contact Clicks"
               value={outreach.summary.totalAttempts}
-              subtitle={`${outreach.summary.attemptsLast7Days} in last 7 days`}
+              subtitle={
+                showSevenDayBreakdown
+                  ? `${selectedRangeLabel} · ${outreach.summary.attemptsLast7Days} last 7 days`
+                  : selectedRangeLabel
+              }
             />
             <StatCard
               title="Reported Outcomes"
               value={outreach.summary.totalOutcomes}
-              subtitle={`${outreach.summary.outcomesLast7Days} in last 7 days`}
+              subtitle={
+                showSevenDayBreakdown
+                  ? `${selectedRangeLabel} · ${outreach.summary.outcomesLast7Days} last 7 days`
+                  : selectedRangeLabel
+              }
             />
             <StatCard
               title="Contact Details Revealed"
               value={outreach.summary.totalReveals}
-              subtitle={`${outreach.summary.revealsLast7Days} in last 7 days`}
+              subtitle={
+                showSevenDayBreakdown
+                  ? `${selectedRangeLabel} · ${outreach.summary.revealsLast7Days} last 7 days`
+                  : selectedRangeLabel
+              }
             />
           </div>
 
@@ -1719,7 +1764,7 @@ const Analytics = () => {
         {data.engagement.mostActiveUsers.length > 0 && (
           <section className="mb-10">
             <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
-              Most Active Users (Last 30 Days)
+              Most Active Users ({selectedRangeLabel})
             </h2>
             <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
               <div className="overflow-x-auto">
@@ -2072,7 +2117,7 @@ const Analytics = () => {
         <section className="mb-10">
           <DetailSectionHeader
             title="Research Engagement"
-            description="Student-facing research surface events across profiles, opportunities, and programs."
+            description={`Student-facing research surface events across profiles, opportunities, and programs. Scoped to ${selectedRangeLabel}.`}
           />
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -2081,7 +2126,14 @@ const Analytics = () => {
                 key={item.eventType}
                 title={formatEventType(item.eventType)}
                 value={item.total}
-                subtitle={`${item.last7Days} last 7 days, ${item.today} today`}
+                subtitle={
+                  [
+                    showSevenDayBreakdown ? `${item.last7Days} last 7 days` : null,
+                    showTodayBreakdown ? `${item.today} today` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(', ') || selectedRangeLabel
+                }
               />
             ))}
             {data.research.byEventType.length === 0 && (
@@ -2131,7 +2183,7 @@ const Analytics = () => {
 
             <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
               <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                Top Research Entities (30 Days)
+                Top Research Entities ({selectedRangeLabel})
               </h3>
               <div className="space-y-2">
                 {data.research.topEntities.length > 0 ? (
@@ -2159,6 +2211,7 @@ const Analytics = () => {
         <section className="mb-10">
           <h2 className="text-2xl font-semibold mb-4 text-slate-950 border-b border-[var(--yr-line)] pb-2">
             User Statistics
+            <ScopeBadge label="Current snapshot" />
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <StatCard title="Total Users" value={data.users.overview.total} />
