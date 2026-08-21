@@ -62,7 +62,6 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 | `labMicrositeUndergradLLMExtractor.ts`   | LLM extraction of undergrad-access signals and claim-specific logistics from lab microsites                                           |
 | `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites                                                                                |
 | `centerDirectorLLMExtractor.ts`          | LLM extraction of the single named director of an organizational home from its official site + leadership pages                       |
-| `studentDecisionLLMExtractor.ts`         | LLM extraction of student-decision signals from lab microsites                                                                        |
 | `officialProfilePiBackfillScraper.ts`    | Backfill scraper for PI official-profile data                                                                                         |
 | `officialResearchHomeRosterScraper.ts`   | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness |
 | `yaleResearchOfficialScraper.ts`         | Yale Research (provost/OVPR) official data                                                                                            |

@@ -319,8 +319,6 @@ Initial implementation note: `accessSummaryService.ts` computes a compatibility 
 
 2026-05-13 update: client API boundaries now normalize canonical `researchEntities`/`researchEntity` payloads before falling back to legacy `hits`/`group`, and Explore Research cards derive access summaries from `accessSummary`.
 
-2026-05-29 update: research detail payloads may include a precomputed `studentDecisionExplanation` generated from existing source-backed access signals and source URLs. The explanation is display-only student guidance for "Best Next Step"; it must validate against existing public evidence and must not expose direct scraped contact details or override canonical access artifacts.
-
 ## Admin Review
 
 Admins need a way to inspect derived access records before deeper editorial workflows are built.
