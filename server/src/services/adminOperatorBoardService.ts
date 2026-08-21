@@ -347,6 +347,7 @@ export type PromotionCopyDryRunArtifact =
 const evidenceReasons = new Set([
   'application_route',
   'concrete_next_step',
+  'graduate_relevant',
   'official_source',
   'source_backed_description',
   'undergraduate_relevant',
@@ -1848,7 +1849,8 @@ const programReasonActions: Record<string, string> = {
   application_source_only:
     'Find a richer non-portal official source page before promoting above limited visibility.',
   archive_review: 'Keep hidden or rewrite as a real recurring planning record.',
-  not_undergraduate_relevant: 'Suppress unless an undergraduate-specific child record exists.',
+  not_undergraduate_relevant: 'Catalog or administrative page, not a real program; keep suppressed.',
+  graduate_relevant: 'Graduate-audience research program; surface with a Graduate label, not suppressed.',
   official_source: 'Review for possible promotion if audience and route are student-safe.',
   application_route: 'Verify the route is the official next step, not a generic catalog link.',
 };

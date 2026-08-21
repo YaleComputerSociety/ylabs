@@ -807,13 +807,42 @@ describe('computeProgramStudentVisibility', () => {
     expect(mentorMatching.reasons).not.toContain('formalization_only');
   });
 
-  it('suppresses graduate-only programs', () => {
+  it('surfaces graduate-only research programs with a source and route as student-ready, labeled graduate', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Graduate Dissertation Research Fellowship',
+      studentFacingCategory: 'Fellowship funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      sourceUrl: 'https://gsas.yale.edu/funding/dissertation-research-fellowship',
+      applicationLink: 'https://apply.yale.edu/dissertation-research-fellowship',
+      undergraduateOnly: false,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('graduate_relevant');
+    expect(result.reasons).not.toContain('not_undergraduate_relevant');
+  });
+
+  it('does not suppress graduate-only programs; archive/review still holds them out', () => {
     const result = computeProgramStudentVisibility({
       title: 'Graduate Dissertation Research Fellowship',
       studentFacingCategory: 'Archive / review',
       sourceUrl: 'https://example.yale.edu',
       applicationLink: 'https://apply.example.yale.edu',
       undergraduateOnly: false,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).not.toContain('not_undergraduate_relevant');
+    expect(result.reasons).toContain('graduate_relevant');
+  });
+
+  it('still suppresses catalog and administrative program pages', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Find Funding: Student Grants Database',
+      studentFacingCategory: 'Research travel funding',
+      sourceUrl: 'https://yalecollege.yale.edu/find-funding',
+      applicationLink: 'https://apply.yale.edu/find-funding',
+      undergraduateOnly: true,
     });
 
     expect(result.tier).toBe('suppressed');

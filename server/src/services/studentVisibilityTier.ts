@@ -406,6 +406,9 @@ export function computeProgramStudentVisibility(
     /^https:\/\/yale\.communityforce\.com\/Funds\/FundDetails\.aspx\?/i.test(sourceUrl);
   const isArchiveReview = category === 'Archive / review';
   const graduateOnly = program.undergraduateOnly === false;
+  const undergraduateRelevant =
+    program.undergraduateOnly === true || program.yaleCollegeOnly === true;
+  const audienceKnown = undergraduateRelevant || graduateOnly;
   const formalizationOnly = isFormalizationOnlyProgram(program);
   const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
   const catalogOrAdmin =
@@ -419,32 +422,30 @@ export function computeProgramStudentVisibility(
   if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
   if (isArchiveReview) reasons.push('archive_review');
-  if (graduateOnly || catalogOrAdmin) reasons.push('not_undergraduate_relevant');
-  const undergraduateRelevant =
-    program.undergraduateOnly === true || program.yaleCollegeOnly === true;
-  if (undergraduateRelevant) {
-    reasons.push('undergraduate_relevant');
-  }
+  if (catalogOrAdmin) reasons.push('not_undergraduate_relevant');
+  if (undergraduateRelevant) reasons.push('undergraduate_relevant');
+  if (graduateOnly) reasons.push('graduate_relevant');
   if (formalizationOnly) reasons.push('formalization_only');
   if (!researchRelated) reasons.push('non_research_program');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
-  if (graduateOnly || catalogOrAdmin || !researchRelated) {
+  if (catalogOrAdmin || !researchRelated) {
     computedTier = 'suppressed';
   } else if (
     !isArchiveReview &&
-    undergraduateRelevant &&
+    audienceKnown &&
     hasOfficialSource &&
     hasApplicationRoute &&
     !sourceIsApplicationPortal
   ) {
-    // Undergraduate-relevant research programs with a real (non-portal) official source and
-    // an application route are student-ready. This includes research funding (senior thesis,
-    // research travel, fellowship funding): on a research-focused surface, undergrad research
-    // funding is a destination students should see, not a hidden formalization step. The
-    // `formalization_only` reason is still recorded for transparency but no longer caps tier.
+    // A research program with a known audience, a real (non-portal) official source, and an
+    // application route is student-ready regardless of whether that audience is undergraduate
+    // or graduate: on a research-discovery surface, audience is an honest label (surfaced as a
+    // Graduate badge for graduate-only records), not a suppression trigger. Only catalog/admin
+    // pages and non-research records stay suppressed. The `formalization_only` reason is still
+    // recorded for transparency but no longer caps tier.
     computedTier = 'student_ready';
-  } else if (!isArchiveReview && undergraduateRelevant && hasOfficialSource) {
+  } else if (!isArchiveReview && audienceKnown && hasOfficialSource) {
     computedTier = 'limited_but_safe';
   }
 

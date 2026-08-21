@@ -50,14 +50,11 @@ export function getProgramJourneyStatus(
     };
   }
 
-  if (
-    fellowship.undergraduateOnly === false ||
-    fellowship.studentFacingCategory === 'Archive / review'
-  ) {
+  if (fellowship.studentFacingCategory === 'Archive / review') {
     return {
       category: 'archive',
       label: 'Archive / Review',
-      description: 'Records that need eligibility review or are not undergraduate-first.',
+      description: 'Records that need eligibility review.',
     };
   }
 

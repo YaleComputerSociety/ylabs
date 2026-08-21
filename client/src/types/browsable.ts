@@ -130,6 +130,15 @@ export function getItemTags(
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
   return [
+    ...(item.data.undergraduateOnly === false
+      ? [
+          {
+            label: 'Graduate',
+            bg: 'bg-violet-50',
+            text: 'text-violet-700',
+          },
+        ]
+      : []),
     ...(item.data.studentFacingCategory
       ? [
           {
