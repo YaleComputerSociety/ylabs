@@ -29,8 +29,9 @@ const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_PROMPT_CHARS = 40_000;
 // The lab's own microsite is the authoritative source of its real name, so its
-// name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
-// (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
+// name observation must outrank the NIH/NSF "<PI> Lab" placeholder fallback
+// (PI_DERIVED_LAB_NAME_CONFIDENCE in nihReporterScraper.ts / nsfAwardScraper.ts)
+// during field resolution (issue #456).
 const LAB_NAME_CONFIDENCE = 0.95;
 const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
