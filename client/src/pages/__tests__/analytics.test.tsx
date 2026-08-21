@@ -318,10 +318,14 @@ describe('Analytics page', () => {
       expect(
         screen.getByText(/6 of 20 searches led to a view or save within 30 minutes/),
       ).toBeTruthy();
-      expect(
-        screen.getByText(/10 searches returned results but led to no view or save/),
-      ).toBeTruthy();
     });
+
+    expect(screen.getAllByText('quantum materials')).toHaveLength(1);
+    expect(screen.getAllByText('Outreach Clicked')).toHaveLength(1);
+    expect(screen.getByText('Returned but ignored')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'High-Impact Diagnostics' }).getAttribute('href')).toBe(
+      '#high-impact-diagnostics',
+    );
   });
 
   it('shows current admin access from the admin grants source of truth', async () => {
