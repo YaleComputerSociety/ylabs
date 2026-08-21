@@ -64,9 +64,10 @@ export type AreaWorkPlanLoaderFn = (
 export interface ResearchAreaSourceExtractorDeps {
   fetchPage?: FetchAreaPageFn;
   canonicalizerLoader?: () => Promise<ResearchAreaCanonicalizer>;
-  entityFinder?: (options?: { only?: string[]; exhaustive?: boolean }) => Promise<
-    CandidateAreaEntity[]
-  >;
+  entityFinder?: (options?: {
+    only?: string[];
+    exhaustive?: boolean;
+  }) => Promise<CandidateAreaEntity[]>;
   workPlanLoader?: AreaWorkPlanLoaderFn;
 }
 
@@ -278,7 +279,10 @@ function htmlToText(html: string): string {
 
 function proseTextFromPage(html: string): string {
   const embedded = extractLabHomepageDescription(html, { kind: 'organization' });
-  return textValue([embedded?.description || '', htmlToText(html)].join(' ')).slice(0, MAX_SCAN_CHARS);
+  return textValue([embedded?.description || '', htmlToText(html)].join(' ')).slice(
+    0,
+    MAX_SCAN_CHARS,
+  );
 }
 
 export interface ResearchAreaExtraction {

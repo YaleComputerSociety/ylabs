@@ -30,9 +30,11 @@ const canonicalizer: ResearchAreaCanonicalizer = createResearchAreaCanonicalizer
   buildResearchAreaResolverIndex(approvedRows),
 );
 
-function makeContext(
-  options: Partial<ScraperContext['options']> = {},
-): { ctx: ScraperContext; emitted: ObservationInput[]; logs: string[] } {
+function makeContext(options: Partial<ScraperContext['options']> = {}): {
+  ctx: ScraperContext;
+  emitted: ObservationInput[];
+  logs: string[];
+} {
   const emitted: ObservationInput[] = [];
   const logs: string[] = [];
   return {
@@ -85,7 +87,12 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
 
   it('only surfaces entities with empty research areas and a usable url', () => {
     const candidates = candidateAreaEntitiesFromDocs([
-      { _id: 'a', slug: 'empty-lab', websiteUrl: 'https://example.edu/research/a', researchAreas: [] },
+      {
+        _id: 'a',
+        slug: 'empty-lab',
+        websiteUrl: 'https://example.edu/research/a',
+        researchAreas: [],
+      },
       {
         _id: 'b',
         slug: 'already-has-areas',
@@ -100,7 +107,12 @@ describe('candidateAreaUrlsForDoc and candidateAreaEntitiesFromDocs', () => {
 
   it('treats whitespace-only stored areas as empty', () => {
     const candidates = candidateAreaEntitiesFromDocs([
-      { _id: 'e', slug: 'blank-area', websiteUrl: 'https://example.edu/research/e', researchAreas: ['  '] },
+      {
+        _id: 'e',
+        slug: 'blank-area',
+        websiteUrl: 'https://example.edu/research/e',
+        researchAreas: ['  '],
+      },
     ]);
     expect(candidates.map((candidate) => candidate.slug)).toEqual(['blank-area']);
   });
@@ -124,9 +136,9 @@ describe('extractLabeledResearchAreaItems', () => {
   });
 
   it('returns nothing when no research-area label is present', () => {
-    expect(extractLabeledResearchAreaItems('<h2>Recent News</h2><p>We hosted a seminar.</p>')).toEqual(
-      [],
-    );
+    expect(
+      extractLabeledResearchAreaItems('<h2>Recent News</h2><p>We hosted a seminar.</p>'),
+    ).toEqual([]);
   });
 });
 
@@ -264,7 +276,10 @@ describe('ResearchAreaSourceExtractor.run', () => {
     const extractor = new ResearchAreaSourceExtractor({
       fetchPage: async () => {
         fetchCalls += 1;
-        return { url: entity.websiteUrl, html: '<h3>Research Areas</h3><ul><li>Immunology</li></ul>' };
+        return {
+          url: entity.websiteUrl,
+          html: '<h3>Research Areas</h3><ul><li>Immunology</li></ul>',
+        };
       },
       canonicalizerLoader: async () => canonicalizer,
       entityFinder: async () => [entity],
