@@ -42,7 +42,63 @@ export const RESEARCH_AREA_ALIASES: Record<string, string[]> = {
   'Cell Biology': ['Cellular Biology'],
   'Developmental Biology': ['Development Biology'],
   'Political Science': ['Politics'],
+  'Art History': ['History of Art'],
+  'Planetary Science': ['Planetary Sciences'],
+  'Materials Science': ['Materials Sciences'],
+  'Reproductive Medicine': ['Reproductive Sciences'],
 };
+
+/**
+ * Single-word canonical area names that are common-English or generic enough to
+ * fire non-topically in free-text prose ("state of the art", "literature
+ * review", "study design", "family history"). They are kept out of the
+ * description phrase scan to protect precision; they still resolve through the
+ * exact index when they appear as a whole existing-area or department string.
+ * Any single-word canonical name not listed here is a specific technical term
+ * (Immunology, Genomics, Bioinformatics, ...) and is safe to derive from prose.
+ */
+export const AMBIGUOUS_SINGLE_WORD_AREAS: readonly string[] = [
+  'Accounting',
+  'Aesthetics',
+  'Architecture',
+  'Art',
+  'Auditing',
+  'Banking',
+  'Cinema',
+  'Classics',
+  'Composition',
+  'Dance',
+  'Design',
+  'Drama',
+  'Economics',
+  'Education',
+  'Emotion',
+  'Ethics',
+  'Fiction',
+  'Finance',
+  'Governance',
+  'History',
+  'Immigration',
+  'Inequality',
+  'Investment',
+  'Law',
+  'Literature',
+  'Logic',
+  'Longevity',
+  'Manufacturing',
+  'Medicine',
+  'Music',
+  'Optimization',
+  'Philosophy',
+  'Photography',
+  'Poetry',
+  'Rhetoric',
+  'Statistics',
+  'Surgery',
+  'Sustainability',
+  'Theater',
+  'Topology',
+];
 
 const MULTI_WORD_TOKEN_MINIMUM = 2;
 
@@ -50,6 +106,10 @@ export function researchAreaMatchKey(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return slugify(raw).replace(/^the-/, '');
 }
+
+const AMBIGUOUS_SINGLE_WORD_AREA_KEYS = new Set(
+  AMBIGUOUS_SINGLE_WORD_AREAS.map((name) => researchAreaMatchKey(name)),
+);
 
 /**
  * Space-delimited, diacritic-stripped scan form padded with single spaces so a
@@ -69,21 +129,28 @@ function textScanForm(raw: unknown): string {
   return ` ${normalized} `;
 }
 
-function phraseFromSlug(canonical: string, value: string): ResearchAreaPhrase | null {
+function phraseFromSlug(
+  canonical: string,
+  value: string,
+  allowSingleWord: boolean,
+): ResearchAreaPhrase | null {
   const scan = textScanForm(value).trim();
   if (!scan) return null;
   const tokens = scan.split(' ').filter(Boolean).length;
-  if (tokens < MULTI_WORD_TOKEN_MINIMUM) return null;
+  if (tokens < MULTI_WORD_TOKEN_MINIMUM && !allowSingleWord) return null;
   return { phrase: ` ${scan} `, tokens, canonical };
 }
 
 /**
- * Deterministic normalized-key -> canonical research-area index plus a
- * multi-word phrase list for description scanning. Earlier rows win on a key
- * collision. Single-word canonical names deliberately stay out of the phrase
- * list so free-text scanning cannot map a common word ("art", "law", "design")
- * onto an area; single-word areas are only recovered from existing area strings
- * or canonical department names via the exact index.
+ * Deterministic normalized-key -> canonical research-area index plus a phrase
+ * list for description scanning. Earlier rows win on a key collision. Multi-word
+ * canonical names and multi-word aliases always join the phrase list. A
+ * single-word canonical name joins it only when it is a specific technical term
+ * (not in `AMBIGUOUS_SINGLE_WORD_AREAS`), so prose can recover "Immunology" or
+ * "Bioinformatics" while a generic word ("art", "law", "history") can only be
+ * recovered through the exact index from an existing-area or department string.
+ * Single-word aliases (abbreviations like "CV") stay out of the phrase list to
+ * avoid colliding with unrelated prose tokens.
  */
 export function buildResearchAreaResolverIndex(
   rows: ResearchAreaResolverRow[],
@@ -95,8 +162,15 @@ export function buildResearchAreaResolverIndex(
     for (const value of [row.name, ...aliases]) {
       const key = researchAreaMatchKey(value);
       if (key && !exact.has(key)) exact.set(key, row.name);
-      const phrase = phraseFromSlug(row.name, value);
-      if (phrase) phrases.push(phrase);
+    }
+    const nameAllowsSingleWord = !AMBIGUOUS_SINGLE_WORD_AREA_KEYS.has(
+      researchAreaMatchKey(row.name),
+    );
+    const namePhrase = phraseFromSlug(row.name, row.name, nameAllowsSingleWord);
+    if (namePhrase) phrases.push(namePhrase);
+    for (const alias of aliases) {
+      const aliasPhrase = phraseFromSlug(row.name, alias, false);
+      if (aliasPhrase) phrases.push(aliasPhrase);
     }
   }
   phrases.sort((left, right) => right.tokens - left.tokens);

@@ -117,6 +117,74 @@ describe('planResearchAreaBackfillRow', () => {
   });
 });
 
+describe('planResearchAreaBackfillRow specific-term and department coverage', () => {
+  const richCanonicalizer = createResearchAreaCanonicalizer(
+    buildResearchAreaResolverIndex([
+      { name: 'Immunology' },
+      { name: 'Bioinformatics' },
+      { name: 'Diagnostics' },
+      { name: 'Biophysics' },
+      { name: 'Biochemistry' },
+      { name: 'Molecular Biophysics' },
+      { name: 'Ecology' },
+      { name: 'Evolutionary Biology' },
+      { name: 'Medicine' },
+    ]),
+  );
+
+  it('fills an empty entity from specific single-word terms in the description', () => {
+    const row = planResearchAreaBackfillRow(
+      richCanonicalizer,
+      {
+        id: 's1',
+        name: 'Keck Bioinformatics Resource',
+        existingResearchAreas: [],
+        fullDescription: 'Consultation on immunology assays and molecular diagnostics for labs.',
+      },
+      options,
+    );
+    expect(row.changed).toBe(true);
+    expect(row.after).toEqual(
+      expect.arrayContaining(['Bioinformatics', 'Immunology', 'Diagnostics']),
+    );
+    expect(row.after).not.toContain('Medicine');
+  });
+
+  it('splits a multi-topic department name into its component areas', () => {
+    const row = planResearchAreaBackfillRow(
+      richCanonicalizer,
+      {
+        id: 's2',
+        name: 'Certain Lab',
+        departments: ['Molecular Biophysics and Biochemistry'],
+        existingResearchAreas: [],
+      },
+      options,
+    );
+    expect(row.fromDepartments).toEqual(
+      expect.arrayContaining(['Molecular Biophysics', 'Biophysics', 'Biochemistry']),
+    );
+    expect(row.after).toEqual(
+      expect.arrayContaining(['Molecular Biophysics', 'Biophysics', 'Biochemistry']),
+    );
+  });
+
+  it('recovers both areas from an "X and Y Biology" department', () => {
+    const row = planResearchAreaBackfillRow(
+      richCanonicalizer,
+      {
+        id: 's3',
+        departments: ['Ecology and Evolutionary Biology'],
+        existingResearchAreas: [],
+      },
+      options,
+    );
+    expect(row.fromDepartments).toEqual(
+      expect.arrayContaining(['Ecology', 'Evolutionary Biology']),
+    );
+  });
+});
+
 describe('summarizeResearchAreaBackfill', () => {
   it('aggregates changes, empty fills, and a review queue', () => {
     const rows = [

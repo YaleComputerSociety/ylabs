@@ -44,6 +44,18 @@ function arraysEqual(left: string[], right: string[]): boolean {
   return left.every((value, index) => value === right[index]);
 }
 
+function dedupeInOrder(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
 export function planResearchAreaBackfillRow(
   canonicalizer: ResearchAreaCanonicalizer,
   facts: ResearchAreaBackfillEntityFacts,
@@ -54,20 +66,18 @@ export function planResearchAreaBackfillRow(
   const hadAreas = before.length > 0;
   const deriveAllowed = !options.onlyEmpty || !hadAreas;
 
-  const textBlob = [
-    facts.name,
-    facts.shortDescription,
-    facts.fullDescription,
-  ]
+  const textBlob = [facts.name, facts.shortDescription, facts.fullDescription]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join('\n');
 
+  const departmentList = cleanList(facts.departments);
   const fromDepartments = deriveAllowed
-    ? canonicalizer.matchCanonicalResearchAreas(cleanList(facts.departments))
+    ? dedupeInOrder([
+        ...canonicalizer.matchCanonicalResearchAreas(departmentList),
+        ...canonicalizer.deriveResearchAreasFromText(departmentList.join('\n')),
+      ])
     : [];
-  const fromDescription = deriveAllowed
-    ? canonicalizer.deriveResearchAreasFromText(textBlob)
-    : [];
+  const fromDescription = deriveAllowed ? canonicalizer.deriveResearchAreasFromText(textBlob) : [];
 
   const after: string[] = [];
   const seen = new Set<string>();
@@ -86,7 +96,8 @@ export function planResearchAreaBackfillRow(
   const existingKeys = new Set(existing.values.map((value) => value.toLocaleLowerCase()));
   const added = after.filter((value) => !existingKeys.has(value.toLocaleLowerCase()));
   const addedFromDepartments = fromDepartments.filter(
-    (value) => afterKeys.has(value.toLocaleLowerCase()) && !existingKeys.has(value.toLocaleLowerCase()),
+    (value) =>
+      afterKeys.has(value.toLocaleLowerCase()) && !existingKeys.has(value.toLocaleLowerCase()),
   );
   const addedDepartmentKeys = new Set(
     addedFromDepartments.map((value) => value.toLocaleLowerCase()),
