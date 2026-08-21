@@ -149,9 +149,7 @@ export const officialProfileUrlFromRosterEntry = (entry: {
   return isLikelyOfficialPersonProfileUrl(entry.websiteUrl) ? String(entry.websiteUrl).trim() : '';
 };
 
-export const entityOfficialPersonProfileDestinations = (
-  entity: Record<string, any>,
-): Set<string> =>
+export const entityOfficialPersonProfileDestinations = (entity: Record<string, any>): Set<string> =>
   new Set(
     [
       entity.websiteUrl,

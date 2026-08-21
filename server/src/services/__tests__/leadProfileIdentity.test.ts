@@ -56,7 +56,9 @@ describe('officialProfileUrlFromRosterEntry', () => {
       }),
     ).toBe('https://medicine.yale.edu/profile/john-smith/');
     expect(
-      officialProfileUrlFromRosterEntry({ websiteUrl: 'https://example.yale.edu/labs/example-lab' }),
+      officialProfileUrlFromRosterEntry({
+        websiteUrl: 'https://example.yale.edu/labs/example-lab',
+      }),
     ).toBe('');
   });
 });
