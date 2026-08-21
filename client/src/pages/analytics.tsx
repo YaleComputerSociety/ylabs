@@ -480,12 +480,11 @@ const Analytics = () => {
 
   const formatOpenness = (status?: string) => {
     const statusMap: Record<string, string> = {
-      'verified-accepting': 'Verified accepting',
-      'likely-accepting': 'Likely accepting',
-      unknown: 'Unknown',
-      'not-available': 'Not available',
+      verified: 'Verified accepting',
+      likely: 'Likely accepting',
+      none: 'No access evidence',
     };
-    return status ? statusMap[status] || status : 'Unknown';
+    return status ? statusMap[status] || status : 'No access evidence';
   };
 
   const formatNumber = (value?: number | null, digits = 0) => {

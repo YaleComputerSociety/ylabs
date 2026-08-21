@@ -62,7 +62,6 @@ const basePayload: LabDetailPayload = {
     departments: ['Neurology'],
     researchAreas: ['Neuroscience'],
     school: 'School of Medicine',
-    openness: 'unknown',
     typicalUndergradRoles: [],
     prerequisiteCourses: [],
     creditOptions: [],

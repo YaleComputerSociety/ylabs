@@ -33,8 +33,6 @@ export type ResearchEntityType =
   | 'GROUP'
   | 'INDIVIDUAL_RESEARCH';
 
-export type ResearchGroupOpenness = 'open' | 'inquire' | 'closed' | 'unknown';
-
 export interface AccessSummary {
   status:
     | 'posted-opening'
@@ -129,16 +127,9 @@ export interface ResearchGroup {
   profileResearchAreas?: string[];
   researchAreaSource?: 'PI_PROFILE_FALLBACK';
   school: string;
-  openness: ResearchGroupOpenness;
-  /**
-   * The scraper subsystem now writes undefined/null when it cannot determine
-   * acceptance — only an explicit boolean carries meaning. Treat absence as
-   * "unknown" rather than coercing to a default.
-   */
-  acceptingUndergrads?: boolean;
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
-  /** Verbatim quote from the source page that supports acceptingUndergrads. */
+  /** Verbatim quote from the source page supporting undergraduate access. */
   undergradEvidenceQuote?: string;
   /** Past undergrad advisees discovered via thesis/STARS/etc. scrapers. */
   pastUndergradAdvisees?: PastUndergradAdvisee[];
@@ -148,12 +139,6 @@ export interface ResearchGroup {
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
-  /**
-   * Denormalized 0–1 confidence score for `acceptingUndergrads`. Materializer
-   * mirrors `confidenceByField['acceptingUndergrads']` here so Meili can filter
-   * on it (Meili can't filter into nested mixed objects).
-   */
-  acceptanceConfidence?: number;
   typicalUndergradRoles: string[];
   prerequisiteCourses: string[];
   creditOptions: string[];

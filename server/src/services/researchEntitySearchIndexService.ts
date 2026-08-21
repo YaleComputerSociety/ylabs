@@ -122,6 +122,17 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
 
 const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
 
+const RETIRED_ACCESS_INDEX_FIELDS = [
+  'openness',
+  'acceptingUndergrads',
+  'acceptanceConfidence',
+  'opennessSignals',
+  'opennessStatusCache',
+  'opennessExplanationCache',
+  'opennessComputedAt',
+  'opennessLastSignalAt',
+] as const;
+
 const STUDENT_TOPIC_ALIASES: Record<string, string[]> = {
   ai: ['ai', 'artificial intelligence', 'machine learning', 'deep learning'],
   'artificial intelligence': ['ai', 'artificial intelligence', 'machine learning', 'deep learning'],
@@ -359,6 +370,9 @@ export function buildResearchEntitySearchIndexDocument(
   delete out._id;
   delete out.__v;
   delete out.embedding;
+  for (const field of RETIRED_ACCESS_INDEX_FIELDS) {
+    delete out[field];
+  }
   sanitizeResearchEntityIndexDocument(out);
   return out;
 }

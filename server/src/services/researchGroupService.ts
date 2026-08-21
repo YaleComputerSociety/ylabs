@@ -237,8 +237,6 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       name,
       kind,
       entityType: mapResearchGroupKindToEntityType(kind),
-      openness: 'open',
-      acceptingUndergrads: true,
       lastObservedAt: new Date(),
       sourceUrls: [],
       departments: owner.primaryDepartment ? [owner.primaryDepartment] : [],

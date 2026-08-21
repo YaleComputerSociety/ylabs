@@ -19,7 +19,6 @@ const entity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity => ({
   departments: ['History'],
   researchAreas: ['Digital humanities'],
   school: 'Yale College',
-  openness: 'unknown',
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],

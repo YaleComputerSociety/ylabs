@@ -48,7 +48,6 @@ interface DepartmentSearchTarget {
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   school?: string[];
-  openness?: string[];
   acceptanceLevel?: 'verified' | 'verified-or-likely' | 'all';
 };
 

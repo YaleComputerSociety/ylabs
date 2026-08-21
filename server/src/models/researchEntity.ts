@@ -6,7 +6,7 @@ import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
-import { fieldProvenanceSchema, opennessSignalSchema } from './modelPrimitives';
+import { fieldProvenanceSchema } from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
   researchEntityTypes,
@@ -97,36 +97,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     availableFrom: {
       type: Date,
-      required: false,
-    },
-    opennessSignals: {
-      type: [opennessSignalSchema],
-      default: [],
-    },
-    opennessStatusCache: {
-      type: String,
-      enum: ['verified-accepting', 'likely-accepting', 'unknown', 'not-available'],
-      default: 'unknown',
-    },
-    opennessExplanationCache: {
-      type: [String],
-      default: [],
-    },
-    opennessComputedAt: {
-      type: Date,
-      required: false,
-    },
-    opennessLastSignalAt: {
-      type: Date,
-      required: false,
-    },
-    openness: {
-      type: String,
-      enum: ['open', 'inquire', 'closed', 'unknown'],
-      default: 'open',
-    },
-    acceptingUndergrads: {
-      type: Boolean,
       required: false,
     },
     currentUndergradCount: {
@@ -298,15 +268,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       of: fieldProvenanceSchema,
       default: {},
     },
-    /**
-     * Denormalized mirror of `confidenceByField['acceptingUndergrads']` so
-     * Meilisearch can filter on it (Meili can't index nested mixed objects).
-     * The materializer is the only writer — see entityMaterializer.ts.
-     */
-    acceptanceConfidence: {
-      type: Number,
-      default: 0,
-    },
     manuallyLockedFields: {
       type: [String],
       default: [],
@@ -368,8 +329,6 @@ researchEntitySchema.index({ school: 1 });
 researchEntitySchema.index({ schools: 1 });
 researchEntitySchema.index({ departments: 1 });
 researchEntitySchema.index({ researchAreas: 1 });
-researchEntitySchema.index({ openness: 1, acceptingUndergrads: 1 });
-researchEntitySchema.index({ opennessStatusCache: 1 });
 researchEntitySchema.index({ activeAtYaleCache: 1 });
 researchEntitySchema.index({ archived: 1 });
 researchEntitySchema.index({ lastObservedAt: 1 });

@@ -276,7 +276,6 @@ const researchEntity = {
   departments: ['Computer Science'],
   researchAreas: ['AI safety'],
   school: 'Yale College',
-  openness: 'unknown',
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],

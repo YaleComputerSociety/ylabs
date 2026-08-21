@@ -61,7 +61,6 @@ interface MaterializeResult {
   skipped?: string;
 }
 
-const DISCOVERY_ONLY_ACCESS_FIELD_SOURCES = new Set(['ysm-atoz-index', 'yse-centers-index']);
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 // Retained only to fail closed on historical observations after the producer was retired.
 const OFFICIAL_PROFILE_PUBLICATIONS_FIELD = 'officialProfilePublications';
@@ -172,6 +171,8 @@ function isResearchEntityObservationType(entityType: ObservedEntityType): boolea
   return entityType === 'researchEntity' || entityType === 'researchGroup';
 }
 
+const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set(['acceptingUndergrads', 'openness']);
+
 export function shouldIgnoreObservationForEntityMaterialization(
   entityType: ObservedEntityType,
   observation: MaterializerObservationLike,
@@ -194,25 +195,8 @@ export function shouldIgnoreObservationForEntityMaterialization(
   }
   return (
     isResearchEntityObservationType(entityType) &&
-    observation.field === 'acceptingUndergrads' &&
-    !!observation.sourceName &&
-    DISCOVERY_ONLY_ACCESS_FIELD_SOURCES.has(observation.sourceName)
-  );
-}
-
-export function shouldClearIgnoredAccessClaimForEntity(
-  entityType: ObservedEntityType,
-  observations: MaterializerObservationLike[],
-  manuallyLockedFields: string[] = [],
-): boolean {
-  if (!isResearchEntityObservationType(entityType)) return false;
-  if (manuallyLockedFields.includes('acceptingUndergrads')) return false;
-
-  const acceptingObservations = observations.filter((obs) => obs.field === 'acceptingUndergrads');
-  if (acceptingObservations.length === 0) return false;
-
-  return acceptingObservations.every((obs) =>
-    shouldIgnoreObservationForEntityMaterialization(entityType, obs),
+    !!observation.field &&
+    RETIRED_ACCESS_OBSERVATION_FIELDS.has(observation.field)
   );
 }
 
@@ -1956,11 +1940,6 @@ export async function materializeEntity(
   const confidenceByField: Record<string, number> = {
     ...(entityDoc?.confidenceByField || {}),
   };
-  const clearIgnoredAccessClaim = shouldClearIgnoredAccessClaimForEntity(
-    entityType,
-    obs,
-    manuallyLockedFields,
-  );
   let conflicts = 0;
   let fieldsWritten = 0;
   for (const [field, r] of Object.entries(resolved)) {
@@ -2017,23 +1996,7 @@ export async function materializeEntity(
       }
     }
   }
-  if (clearIgnoredAccessClaim) {
-    delete set.acceptingUndergrads;
-    delete confidenceByField.acceptingUndergrads;
-    unset.acceptingUndergrads = '';
-  }
   set.confidenceByField = confidenceByField;
-  // For ResearchGroup, mirror the per-field acceptance confidence to a
-  // top-level scalar so Meilisearch can filter on it. Meili can't index
-  // nested mixed objects (see researchGroupFilters.ts). Prefer the freshly
-  // resolved confidence (which includes the 1.0 boost for manually-locked
-  // fields) over whatever was already on the doc.
-  if (isResearchEntityObservationType(entityType)) {
-    const resolvedScore = resolved['acceptingUndergrads']?.confidence;
-    const fallbackScore = confidenceByField['acceptingUndergrads'];
-    const score = typeof resolvedScore === 'number' ? resolvedScore : fallbackScore;
-    set.acceptanceConfidence = typeof score === 'number' ? score : 0;
-  }
   set.lastObservedAt = new Date();
 
   if (options.dryRun) {

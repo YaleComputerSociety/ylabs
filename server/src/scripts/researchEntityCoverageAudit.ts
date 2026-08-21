@@ -60,7 +60,6 @@ interface AuditEntityRecord {
   websiteUrl?: string;
   researchAreas?: string[];
   sourceUrls?: string[];
-  acceptanceConfidence?: number;
   undergradEvidenceQuote?: string;
   lastObservedAt?: Date;
 }
@@ -414,7 +413,7 @@ export function buildResearchEntityCoverageSummaryOnlyOutput(
 async function buildSlugAudit(slug: string) {
   const entity = (await ResearchEntity.findOne({ slug })
     .select(
-      '_id slug name kind entityType school shortDescription fullDescription websiteUrl sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
+      '_id slug name kind entityType school shortDescription fullDescription websiteUrl sourceUrls researchAreas undergradEvidenceQuote lastObservedAt',
     )
     .lean()) as AuditEntityRecord | null;
   if (!entity) {
@@ -491,7 +490,6 @@ async function buildSlugAudit(slug: string) {
       fullDescription: entity.fullDescription,
       researchAreas: entity.researchAreas || [],
       sourceUrls: entity.sourceUrls || [],
-      acceptanceConfidence: entity.acceptanceConfidence ?? 0,
       undergradEvidenceQuote: entity.undergradEvidenceQuote || '',
       lastObservedAt: entity.lastObservedAt || null,
     },

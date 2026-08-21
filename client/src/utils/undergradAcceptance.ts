@@ -44,10 +44,6 @@ export interface AcceptanceVerdictResult {
   evidence: EvidenceItem[];
 }
 
-const MANUAL_LOCK_FIELD = 'acceptingUndergrads';
-const LLM_CONFIDENCE_MIN = 0.5;
-const LLM_CONFIDENCE_MAX = 1.0;
-
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   POSTED_OPENING: 'Posted opening',
   RECURRING_PROGRAM: 'Recurring pathway',
@@ -166,54 +162,13 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
  * Pure verdict computation. See module-level docstring for the rules.
  */
 export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdictResult {
-  const evidence: EvidenceItem[] = [];
-  const lockedFields = group.manuallyLockedFields || [];
-  const isManuallyLocked = lockedFields.includes(MANUAL_LOCK_FIELD);
-  const llmConfidence = group.confidenceByField?.[MANUAL_LOCK_FIELD];
-
-  // Rule 1: PI manual lock — highest trust, short-circuits.
-  if (isManuallyLocked) {
-    if (group.acceptingUndergrads === true) {
-      evidence.push({
-        kind: 'pi-claim',
-        label: 'PI confirmed',
-        detail: 'The PI manually confirmed undergraduate access.',
-        strength: 'strong',
-      });
-      return { verdict: 'verified-accepting', confidence: 1.0, evidence };
-    }
-    if (group.acceptingUndergrads === false) {
-      evidence.push({
-        kind: 'closed-toggle',
-        label: 'PI marked closed',
-        detail: 'The PI explicitly indicated this pathway is not currently available.',
-        strength: 'strong',
-      });
-      return { verdict: 'not-accepting', confidence: 1.0, evidence };
-    }
-  }
-
   const accessSummaryVerdict = verdictFromAccessSummary(group);
   if (accessSummaryVerdict) {
     return accessSummaryVerdict;
   }
 
-  // Closed by any non-locked source — also short-circuits.
-  if (group.acceptingUndergrads === false) {
-    evidence.push({
-      kind: 'closed-evidence',
-      label: 'Marked not accepting',
-      detail: group.undergradEvidenceQuote || undefined,
-      strength: 'strong',
-    });
-    return {
-      verdict: 'not-accepting',
-      confidence: typeof llmConfidence === 'number' ? llmConfidence : 0.7,
-      evidence,
-    };
-  }
+  const evidence: EvidenceItem[] = [];
 
-  // Rule 2: collect positive signals.
   const past = group.pastUndergradAdvisees || [];
   if (past.length > 0) {
     const { label, detail } = summarizePastAdvisees(past);
@@ -242,21 +197,6 @@ export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdic
     });
   }
 
-  if (
-    group.acceptingUndergrads === true &&
-    typeof llmConfidence === 'number' &&
-    llmConfidence >= LLM_CONFIDENCE_MIN &&
-    llmConfidence < LLM_CONFIDENCE_MAX
-  ) {
-    evidence.push({
-      kind: 'llm-evidence',
-      label: 'Lab page mentions undergrads',
-      detail: group.undergradEvidenceQuote || undefined,
-      strength: 'moderate',
-    });
-  }
-
-  // Rule 3: tally signals → verdict.
   const strong = evidence.filter((e) => e.strength === 'strong').length;
   const moderate = evidence.filter((e) => e.strength === 'moderate').length;
 
@@ -266,25 +206,18 @@ export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdic
   else if (moderate > 0) verdict = 'likely-accepting';
   else verdict = 'unknown';
 
-  // Sort: strong first, then moderate, preserving insertion order within group.
   evidence.sort((a, b) => {
     if (a.strength === b.strength) return 0;
     return a.strength === 'strong' ? -1 : 1;
   });
 
-  // Rule 4: confidence — prefer the materializer's score if present, else
-  // derive from signal count so the gradient stays coherent.
   let confidence: number;
-  if (typeof llmConfidence === 'number') {
-    confidence = llmConfidence;
-  } else if (verdict === 'verified-accepting') {
+  if (verdict === 'verified-accepting') {
     confidence = 0.95;
   } else if (verdict === 'likely-accepting') {
     confidence = 0.7;
-  } else if (verdict === 'unknown') {
-    confidence = 0.0;
   } else {
-    confidence = 0.4;
+    confidence = 0.0;
   }
 
   return { verdict, confidence, evidence };
