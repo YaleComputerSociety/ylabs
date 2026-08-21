@@ -2,6 +2,10 @@
  * Canonical Mongoose model for research entities (`research_entities`).
  */
 import mongoose from 'mongoose';
+import {
+  canonicalSchemaVersionField,
+  defineCanonicalSchemaVersion,
+} from './canonicalSchemaVersion';
 import { fieldProvenanceSchema, opennessSignalSchema } from './modelPrimitives';
 import {
   mapResearchGroupKindToEntityType,
@@ -10,8 +14,11 @@ import {
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
 
-const researchEntitySchema = new mongoose.Schema(
+export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
+
+const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
   {
+    schemaVersion: canonicalSchemaVersionField(researchEntitySchemaVersion),
     slug: {
       type: String,
       required: true,
