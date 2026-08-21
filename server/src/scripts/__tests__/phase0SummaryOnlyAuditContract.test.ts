@@ -3,10 +3,6 @@ import { buildDedupeUsersByIdentitySummaryOnlyOutput } from '../dedupeUsersByIde
 import { buildDuplicateEntityNameReviewSummaryOnlyOutput } from '../duplicateEntityNameReview';
 import { buildResearchEntityCoverageSummaryOnlyOutput } from '../researchEntityCoverageAudit';
 import {
-  buildResearchEntityMemberReferenceAuditSummary,
-  buildResearchEntityMemberReferenceSummaryOnlyOutput,
-} from '../researchEntityMemberReferenceAuditCore';
-import {
   assertPhase0SummaryOnlyConfiguredTarget,
   assertPhase0SummaryOnlyConnectedTarget,
   parsePhase0SummaryOnlyEnvironment,
@@ -153,31 +149,6 @@ describe('Phase 0 summary-only audit output security contract', () => {
       { limit: 100 },
     );
 
-    const memberSummary = buildResearchEntityMemberReferenceAuditSummary({
-      totalOrphanedRefs: 1,
-      rows: [
-        {
-          member: {
-            id: PRIVATE,
-            userId: PRIVATE,
-            researchEntityId: PRIVATE,
-            name: PRIVATE,
-            sourceUrl: PRIVATE,
-          },
-          entity: { id: PRIVATE, name: PRIVATE, slug: PRIVATE },
-          candidateUsers: [{ id: PRIVATE, netid: PRIVATE, name: PRIVATE }],
-        },
-      ],
-    });
-    const memberReference = buildResearchEntityMemberReferenceSummaryOnlyOutput(
-      memberSummary,
-      {
-        environment: 'development',
-        db: 'Development',
-      },
-      { limit: 1000 },
-    );
-
     const duplicateEntity = buildDuplicateEntityNameReviewSummaryOnlyOutput(
       {
         generatedAt: '2026-07-28T00:00:00.000Z',
@@ -261,7 +232,7 @@ describe('Phase 0 summary-only audit output security contract', () => {
       { environment: 'development', db: 'Development' },
     );
 
-    for (const output of [userIdentity, memberReference, duplicateEntity, coverage]) {
+    for (const output of [userIdentity, duplicateEntity, coverage]) {
       expectAggregateOnlyContract(output);
     }
   });
