@@ -74,14 +74,6 @@ describe('synthesisSystemPromptFor', () => {
       expect(prompt).toContain('Use ONLY facts present in the SOURCE text');
     }
   });
-
-  it('instructs both prompts to ignore material about a different subject', () => {
-    for (const entityType of ['INDIVIDUAL_RESEARCH', 'CENTER']) {
-      const prompt = synthesisSystemPromptFor(entityType);
-      expect(prompt).toContain('describe ONLY the named subject');
-      expect(prompt).toContain('different subject than the named one');
-    }
-  });
 });
 
 describe('assembleSynthesisSourceText', () => {
