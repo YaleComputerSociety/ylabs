@@ -63,7 +63,6 @@ import {
 } from '../scripts/profileImageQualityAuditCore';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
-import { publicStudentDecisionExplanation } from './studentDecisionExplanationService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -2407,16 +2406,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
   const activeListings = activeListingsRaw.map(publicListingForResearchDetail);
   const publicGroupForResponse = publicResearchDetailGroup(publicGroup);
   const publicAccessSignals = (accessSignals as any[]).map(publicAccessSignalForResearchDetail);
-  const studentDecisionExplanation = publicStudentDecisionExplanation(
-    publicGroup.studentDecisionExplanation,
-    {
-      sourceUrls: [
-        ...(Array.isArray(publicGroup.sourceUrls) ? publicGroup.sourceUrls : []),
-        publicGroup.websiteUrl,
-      ].filter(Boolean),
-      accessSignals: publicAccessSignals,
-    },
-  );
   const relationshipPayload = await listResearchEntityRelationshipPayload((group as any)._id);
 
   return addResearchEntityDetailAlias({
@@ -2425,7 +2414,6 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       ...leadIdentity,
       accessSummary,
       planningContext: planningContexts.contexts.get(researchGroupDocumentId((group as any)._id)),
-      studentDecisionExplanation: studentDecisionExplanation || undefined,
     },
     members,
     roster,

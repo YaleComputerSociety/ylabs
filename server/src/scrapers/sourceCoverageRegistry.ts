@@ -109,22 +109,6 @@ export const sourceCoverageRegistry = {
     notes:
       'Bounded lab/faculty microsite extraction from canonical ResearchEntity websites; evidence remains public-page quotes and source URLs.',
   },
-  'student-decision-llm': {
-    priority: 1,
-    tier: 'DERIVED_OFFICIAL',
-    artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: [
-      'JOIN_INSTRUCTIONS',
-      'UNDERGRAD_ROLE_LANGUAGE',
-      'OFFICIAL_CONTACT_ROUTE',
-      'APPLICATION_LINK',
-      'CONSTRAINTS',
-      'POSTED_OPENING',
-    ],
-    defaultConfidence: 'LOW',
-    notes:
-      'Precomputed LLM explanation of source-backed Ways In evidence for student-facing Best Next Step copy; must not invent opportunities, URLs, or contact details.',
-  },
   'lab-microsite-llm': {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',

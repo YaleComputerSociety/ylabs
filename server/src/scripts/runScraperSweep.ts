@@ -43,7 +43,6 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'center-director-llm', phase: 'relationships' },
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
   { name: 'lab-microsite-undergrad-llm', phase: 'content-access' },
-  { name: 'student-decision-llm', phase: 'content-access' },
 ];
 
 interface ScraperSweepModeConfig {

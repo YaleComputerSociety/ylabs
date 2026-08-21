@@ -26,6 +26,11 @@ describe('seedSources CLI helpers', () => {
     }
   });
 
+  it('retires the student-decision LLM source instead of seeding it as active', () => {
+    expect(ACTIVE_SOURCE_NAMES).not.toContain('student-decision-llm');
+    expect(RETIRED_SOURCE_NAMES).toContain('student-decision-llm');
+  });
+
   it('parses reset, dry-run, and output flags', () => {
     expect(parseSeedSourcesArgs([])).toEqual({
       apply: false,

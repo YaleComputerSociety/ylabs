@@ -275,15 +275,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'student-decision-llm',
-    displayName: 'Student decision LLM',
-    description:
-      'Precomputed, source-backed LLM explanations for student-facing Best Next Step decisions.',
-    baseUrl: '',
-    defaultWeight: 0.55,
-    cadence: 'after-materialization',
-  },
-  {
     name: 'nih-reporter',
     displayName: 'NIH RePORTER',
     description: 'Pulls active NIH grants by Yale PI to identify funded labs and recent activity.',
@@ -349,6 +340,7 @@ export const RETIRED_SOURCE_NAMES = [
   'yale-course-catalog',
   'apify-google-scholar-bootstrap',
   'apify-google-scholar',
+  'student-decision-llm',
   ...RETIRED_BIBLIOGRAPHIC_SOURCE_NAMES,
 ];
 

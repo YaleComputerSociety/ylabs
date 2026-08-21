@@ -106,7 +106,7 @@ describe('researchEntityDto', () => {
       departments: ['TEST - Department hidden@example.edu'],
       researchAreas: ['Calls to 203-555-1212'],
       shortDescription: 'Questions go to hidden@example.edu.',
-      studentDecisionExplanation: {
+      planningContext: {
         bestNextStep: 'Email hidden@example.edu after reading the source.',
         reasons: ['Call 203-555-1212 before outreach.'],
       },
@@ -125,7 +125,7 @@ describe('researchEntityDto', () => {
     expect(dto.departments).toEqual(['Department [email redacted]']);
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
-    expect(dto.studentDecisionExplanation).toEqual({
+    expect(dto.planningContext).toEqual({
       bestNextStep: 'Email [email redacted] after reading the source.',
       reasons: ['Call [phone redacted] before outreach.'],
     });
@@ -199,7 +199,7 @@ describe('researchEntityDto', () => {
         shortDescription: 'x'.repeat(6000),
         researchAreas,
         sourceUrls,
-        studentDecisionExplanation: { reasons },
+        planningContext: { reasons },
         qualitySummary,
       },
       { includeOperatorFields: true },
@@ -208,7 +208,7 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toHaveLength(5000);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
-    expect((dto.studentDecisionExplanation as any).reasons).toHaveLength(100);
+    expect((dto.planningContext as any).reasons).toHaveLength(100);
     expect(Object.keys(dto.qualitySummary as Record<string, unknown>)).toHaveLength(100);
   });
 

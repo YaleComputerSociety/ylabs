@@ -232,10 +232,6 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
-    studentDecisionExplanation: {
-      type: mongoose.Schema.Types.Mixed,
-      required: false,
-    },
     rosterEnrichment: {
       type: {
         state: {

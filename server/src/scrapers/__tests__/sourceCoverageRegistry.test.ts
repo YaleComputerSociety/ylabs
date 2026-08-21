@@ -15,7 +15,6 @@ const prioritySources = [
   'official-profile-enrichment',
   'official-profile-pi-backfill',
   'yale-research-official',
-  'student-decision-llm',
   'undergrad-fellowships-recipients',
   'yale-college-fellowships-office',
   'ylabs-listing',
@@ -30,6 +29,10 @@ describe('sourceCoverageRegistry', () => {
 
   it('does not expose retired Apify Scholar as active coverage', () => {
     expect(getSourceCoverage('apify-google-scholar')).toBeUndefined();
+  });
+
+  it('does not expose the retired student-decision LLM as active coverage', () => {
+    expect(getSourceCoverage('student-decision-llm')).toBeUndefined();
   });
 
   it('does not expose retired bibliography sources as active coverage', () => {

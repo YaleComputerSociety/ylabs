@@ -19,7 +19,6 @@ import { LabMicrositeUndergradLLMExtractor } from './sources/labMicrositeUndergr
 import { CenterAffiliationLLMExtractor } from './sources/centerAffiliationLLMExtractor';
 import { CenterDirectorLLMExtractor } from './sources/centerDirectorLLMExtractor';
 import { OfficialProfilePiBackfillScraper } from './sources/officialProfilePiBackfillScraper';
-import { StudentDecisionLLMExtractor } from './sources/studentDecisionLLMExtractor';
 import { OfficialResearchHomeRosterScraper } from './sources/officialResearchHomeRosterScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
@@ -45,7 +44,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CenterAffiliationLLMExtractor());
   o.register(new CenterDirectorLLMExtractor());
   o.register(new OfficialProfilePiBackfillScraper());
-  o.register(new StudentDecisionLLMExtractor());
   o.register(new OfficialResearchHomeRosterScraper());
   return o;
 }
