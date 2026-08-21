@@ -1,8 +1,8 @@
 /**
  * Classifies whether an organizational ResearchEntity is actually a research
  * home. Organization type and polished source copy are not sufficient by
- * themselves: service and instructional-support units need positive evidence
- * that they conduct or organize research.
+ * themselves: service, administrative, and instructional-support units need
+ * positive evidence that they conduct or organize research.
  */
 
 export interface ResearchEntityResearchScopeInput {
@@ -11,7 +11,6 @@ export interface ResearchEntityResearchScopeInput {
   kind?: unknown;
   entityType?: unknown;
   summary?: unknown;
-  description?: unknown;
   shortDescription?: unknown;
   fullDescription?: unknown;
   profileSynthesisDescription?: unknown;
@@ -29,6 +28,9 @@ const ORGANIZATIONAL_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE'
 
 const SERVICE_OR_INSTRUCTIONAL_SUPPORT =
   /\b(teaching and learning|teaching support|instructional support|faculty development|educational development|pedagogical support|course design|teaching consultation|teaching consultations|writing center|tutoring|academic support)\b/i;
+
+const ADMINISTRATIVE_OR_SERVICE_ORGANIZATION =
+  /\b(administrative (?:office|services|support|unit|operations)|office of administration|business operations|operations (?:office|team|unit)|human resources|career services|career advising|academic advising|advising services|student (?:services|affairs)|dean of students|office of the registrar|registrar's office|financial aid office|office of financial aid|admissions office|office of admissions|information technology services|help ?desk|technical support|facilities management|facilities services|event (?:planning|management|services)|conference services|communications office|office of communications|marketing and communications|communications and marketing|public relations|media relations|alumni relations|development office|office of development|advancement office)\b/i;
 
 const CONDUCTS_OR_ORGANIZES_RESEARCH =
   /\b(conducts? research|research center|research institute|research initiative|research program|research programs|research project|research projects|researchers?|investigators?|laborator(?:y|ies)|fieldwork|clinical trials?|research fellows?|postdoctoral research|data collection|empirical research|scholarly research)\b/i;
@@ -61,13 +63,19 @@ export function classifyResearchEntityResearchScope(
     .filter(Boolean)
     .join(' ');
   const serviceOrInstructionalSupport = SERVICE_OR_INSTRUCTIONAL_SUPPORT.test(narrative);
+  const administrativeOrServiceOrganization =
+    ADMINISTRATIVE_OR_SERVICE_ORGANIZATION.test(narrative);
   const positiveResearchEvidence = CONDUCTS_OR_ORGANIZES_RESEARCH.test(narrative);
 
-  if (serviceOrInstructionalSupport && !positiveResearchEvidence) {
-    return {
-      researchHomeEligible: false,
-      reasons: ['service_or_instructional_support', 'missing_positive_research_evidence'],
-    };
+  const nonResearchOrganization =
+    serviceOrInstructionalSupport || administrativeOrServiceOrganization;
+
+  if (nonResearchOrganization && !positiveResearchEvidence) {
+    const reasons: string[] = [];
+    if (serviceOrInstructionalSupport) reasons.push('service_or_instructional_support');
+    if (administrativeOrServiceOrganization) reasons.push('administrative_or_service_organization');
+    reasons.push('missing_positive_research_evidence');
+    return { researchHomeEligible: false, reasons };
   }
 
   return {

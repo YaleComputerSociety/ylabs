@@ -634,6 +634,50 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).not.toContain('non_research_entity');
   });
+
+  it('suppresses an administrative or service center without positive research evidence', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Student Services',
+        entityType: 'CENTER',
+        shortDescription:
+          'Coordinates academic advising, career services, and financial aid support for enrolled students.',
+        fullDescription:
+          'The center manages student affairs, registrar operations, and event planning for the college community.',
+        studentVisibilityOverrideTier: 'student_ready',
+        sourceUrls: ['https://example.yale.edu/student-services'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('non_research_entity');
+    expect(result.reasons).toContain('administrative_or_service_organization');
+    expect(result.reasons).toContain('missing_positive_research_evidence');
+    expect(result.reasons).not.toContain('operator_override');
+  });
+
+  it('keeps an administrative-sounding center that conducts research eligible', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Human Resources Research',
+        entityType: 'CENTER',
+        shortDescription:
+          'Conducts empirical research on human resources and organizational behavior.',
+        fullDescription:
+          'The center conducts empirical research on human resources and organizational behavior. Its investigators lead research projects and data collection on workforce outcomes.',
+        sourceUrls: ['https://example.yale.edu/hr-research'],
+      },
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('non_research_entity');
+    expect(result.reasons).not.toContain('administrative_or_service_organization');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {
