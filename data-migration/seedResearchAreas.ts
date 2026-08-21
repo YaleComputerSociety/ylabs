@@ -725,6 +725,9 @@ const defaultResearchAreas = [
   { name: "Information Economics", field: ResearchField.ECONOMICS }
 ];
 
+export const RESEARCH_AREA_GROUND_TRUTH: ReadonlyArray<{ name: string; field: ResearchField }> =
+  defaultResearchAreas;
+
 // Schema definition
 const researchAreaSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true, trim: true },

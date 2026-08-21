@@ -209,6 +209,31 @@ describe('summarizeResearchAreaBackfill', () => {
     expect(summary.filledFromEmpty).toBe(1);
     expect(summary.changed).toBe(1);
     expect(summary.reviewQueue).toEqual([{ value: 'Basket Weaving', count: 2 }]);
+    expect(summary.distinctRawAreasBefore).toBe(1);
+    expect(summary.distinctCanonicalAreasAfter).toBe(1);
+    expect(summary.distinctFallThroughToRaw).toBe(1);
+    expect(summary.entitiesWithCanonicalizedAreaChange).toBe(0);
+    expect(summary.distinctLeakageDropped).toBe(0);
+    expect(summary.leakageDroppedOccurrences).toBe(0);
+  });
+
+  it('reports the distinct-count collapse and leakage dropped for canonicalized areas', () => {
+    const rows = [
+      planResearchAreaBackfillRow(
+        canonicalizer,
+        { id: 'z', existingResearchAreas: ['AI', 'Research Areas:', 'artificial intelligence'] },
+        { onlyEmpty: false, maxAreas: 6 },
+      ),
+    ];
+    const summary = summarizeResearchAreaBackfill(rows);
+    expect(summary.distinctRawAreasBefore).toBe(3);
+    expect(summary.distinctCanonicalAreasAfter).toBe(1);
+    expect(summary.distinctFallThroughToRaw).toBe(0);
+    expect(summary.entitiesWithCanonicalizedAreaChange).toBe(1);
+    expect(summary.distinctLeakageDropped).toBe(1);
+    expect(summary.leakageDroppedOccurrences).toBe(1);
+    expect(rows[0].droppedLeakage).toEqual(['Research Areas:']);
+    expect(rows[0].canonicalizationChanged).toBe(true);
   });
 });
 

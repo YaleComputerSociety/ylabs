@@ -1,4 +1,4 @@
-import { ResearchArea } from '../models/researchArea';
+import { TaxonomyTerm } from '../models/taxonomyTerm';
 import { slugify } from './utils/scraperHelpers';
 
 export interface ResearchAreaResolverRow {
@@ -18,7 +18,11 @@ export interface ResearchAreaResolverIndex {
 }
 
 export interface ResearchAreaCanonicalizer {
-  canonicalizeResearchAreas(raw: unknown): { values: string[]; unmatched: string[] };
+  canonicalizeResearchAreas(raw: unknown): {
+    values: string[];
+    unmatched: string[];
+    dropped: string[];
+  };
   matchCanonicalResearchAreas(raw: unknown): string[];
   deriveResearchAreasFromText(text: unknown): string[];
 }
@@ -47,6 +51,88 @@ export const RESEARCH_AREA_ALIASES: Record<string, string[]> = {
   'Materials Science': ['Materials Sciences'],
   'Reproductive Medicine': ['Reproductive Sciences'],
 };
+
+function researchAreaLeakageKey(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[:;.,]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Scraped section headers, role/status labels, and publication chrome that leak
+ * into `researchAreas[]` as extraction artifacts rather than topics (issue #208
+ * area slice). Matched leakage is dropped at ingest so it never becomes an area,
+ * canonical or raw, and never pollutes the review queue. The set is intentionally
+ * conservative - only unambiguous non-topics - so a real area is never dropped.
+ */
+const RESEARCH_AREA_LEAKAGE_KEYS: ReadonlySet<string> = new Set([
+  'research area',
+  'research areas',
+  'area of research',
+  'areas of research',
+  'active areas of research',
+  'area of interest',
+  'areas of interest',
+  'area of focus',
+  'areas of focus',
+  'area of specialization',
+  'areas of specialization',
+  'area of expertise',
+  'areas of expertise',
+  'research focus',
+  'research interest',
+  'research interests',
+  'research topics',
+  'field of interest',
+  'fields of interest',
+  'field of study',
+  'fields of study',
+  'specialization',
+  'teaching interest',
+  'teaching interests',
+  'theorist',
+  'experimentalist',
+  'observational',
+  'observer',
+  'emeritus',
+  'faculty',
+  'researcher',
+  'ysm researcher',
+  'ysm researchers',
+  'principal investigator',
+  'publication',
+  'publications',
+  'citation',
+  'citations',
+  'concept',
+  'concepts',
+  'keyword',
+  'keywords',
+  'keywords and concepts',
+  'overview',
+  'biography',
+  'about',
+  'profile',
+  'n/a',
+  'na',
+  'none',
+]);
+
+const RESEARCH_AREA_LEAKAGE_PATTERNS: readonly RegExp[] = [
+  /^\d+\s*ysm\s+researchers?$/i,
+  /^[\d.,]+$/,
+];
+
+export function isResearchAreaLabelLeakage(raw: unknown): boolean {
+  const key = researchAreaLeakageKey(raw);
+  if (!key) return false;
+  if (RESEARCH_AREA_LEAKAGE_KEYS.has(key)) return true;
+  return RESEARCH_AREA_LEAKAGE_PATTERNS.some((pattern) => pattern.test(key));
+}
 
 /**
  * Single-word canonical area names that are common-English or generic enough to
@@ -196,10 +282,15 @@ export function createResearchAreaCanonicalizer(
     canonicalizeResearchAreas(raw) {
       const values: string[] = [];
       const unmatched: string[] = [];
+      const dropped: string[] = [];
       const seen = new Set<string>();
       for (const entry of toRawList(raw)) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
+        if (isResearchAreaLabelLeakage(trimmed)) {
+          dropped.push(trimmed);
+          continue;
+        }
         const hit = resolveExact(trimmed);
         const canonical = hit ?? trimmed;
         if (!hit) unmatched.push(trimmed);
@@ -208,12 +299,13 @@ export function createResearchAreaCanonicalizer(
         seen.add(dedupeKey);
         values.push(canonical);
       }
-      return { values, unmatched };
+      return { values, unmatched, dropped };
     },
     matchCanonicalResearchAreas(raw) {
       const values: string[] = [];
       const seen = new Set<string>();
       for (const entry of toRawList(raw)) {
+        if (isResearchAreaLabelLeakage(entry)) continue;
         const hit = resolveExact(entry);
         if (!hit) continue;
         if (seen.has(hit)) continue;
@@ -252,9 +344,15 @@ export function setResearchAreaCanonicalizerForTesting(
 }
 
 async function buildCanonicalizerFromDatabase(): Promise<ResearchAreaCanonicalizer> {
-  const rows = await ResearchArea.find({}).select({ name: 1 }).lean<Array<{ name: string }>>();
+  const rows = await TaxonomyTerm.find({
+    reviewStatus: 'APPROVED',
+    status: 'ACTIVE',
+    archived: false,
+  })
+    .select({ label: 1, aliases: 1 })
+    .lean<Array<{ label: string; aliases?: string[] }>>();
   return createResearchAreaCanonicalizer(
-    buildResearchAreaResolverIndex(rows.map((row) => ({ name: row.name }))),
+    buildResearchAreaResolverIndex(rows.map((row) => ({ name: row.label, aliases: row.aliases }))),
   );
 }
 
@@ -266,16 +364,21 @@ export async function getResearchAreaCanonicalizer(): Promise<ResearchAreaCanoni
 }
 
 /**
- * Canonicalizes a research-entity materialization `$set` in place: the
- * `researchAreas[]` strings are rewritten to their canonical catalog names when
- * they resolve and left as their raw trimmed values otherwise, deduped. Never
- * throws - a canonicalization failure or an unseeded `research_areas` collection
- * leaves the raw scraped values untouched so materialization keeps working.
+ * Canonicalizes a research-entity materialization `$set` in place: scraper-label
+ * leakage is dropped, the surviving `researchAreas[]` strings are rewritten to
+ * their canonical `TaxonomyTerm` names when they resolve against an approved term
+ * and left as their raw trimmed values otherwise, deduped. Never throws - a
+ * canonicalization failure or an unseeded/empty approved `taxonomy_terms`
+ * registry leaves the raw scraped values untouched so materialization keeps
+ * working (fail closed to raw, never guess-collapse distinct topics).
  */
 export async function applyResearchEntityResearchAreaCanonicalization(
   set: Record<string, unknown>,
-): Promise<{ unmatchedResearchAreas: string[] }> {
-  const result: { unmatchedResearchAreas: string[] } = { unmatchedResearchAreas: [] };
+): Promise<{ unmatchedResearchAreas: string[]; droppedResearchAreas: string[] }> {
+  const result: { unmatchedResearchAreas: string[]; droppedResearchAreas: string[] } = {
+    unmatchedResearchAreas: [],
+    droppedResearchAreas: [],
+  };
   if (!Object.prototype.hasOwnProperty.call(set, 'researchAreas')) return result;
   if (!Array.isArray(set.researchAreas)) return result;
 
@@ -284,6 +387,7 @@ export async function applyResearchEntityResearchAreaCanonicalization(
     const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
     set.researchAreas = canonical.values;
     result.unmatchedResearchAreas = canonical.unmatched;
+    result.droppedResearchAreas = canonical.dropped;
   } catch {
     return result;
   }

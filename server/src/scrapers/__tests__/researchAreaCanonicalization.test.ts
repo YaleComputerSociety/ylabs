@@ -3,6 +3,7 @@ import {
   applyResearchEntityResearchAreaCanonicalization,
   buildResearchAreaResolverIndex,
   createResearchAreaCanonicalizer,
+  isResearchAreaLabelLeakage,
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
   setResearchAreaCanonicalizerForTesting,
@@ -63,6 +64,60 @@ describe('matchCanonicalResearchAreas', () => {
     expect(canonicalizer.matchCanonicalResearchAreas(['Economics', 'Underwater Ceramics'])).toEqual(
       ['Economics'],
     );
+  });
+
+  it('drops scraper-label leakage before matching', () => {
+    expect(
+      canonicalizer.matchCanonicalResearchAreas(['Research Areas:', 'Economics', 'Theorist']),
+    ).toEqual(['Economics']);
+  });
+});
+
+describe('isResearchAreaLabelLeakage', () => {
+  it('flags section headers, role labels, and publication chrome as leakage', () => {
+    for (const junk of [
+      'Research Areas:',
+      'Research Areas',
+      'Fields of Interest',
+      'Field of Study',
+      'YSM Researcher',
+      '3 YSM Researchers',
+      'Experimentalist',
+      'Theorist',
+      'Publications',
+      'Citations',
+      'Keywords and Concepts',
+      '42',
+      'N/A',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('never flags a real research area as leakage', () => {
+    for (const area of [
+      'Machine Learning',
+      'Neuroscience',
+      'Public Health',
+      'Condensed Matter Physics',
+      'Art History',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+});
+
+describe('canonicalizeResearchAreas leakage stop-list', () => {
+  it('drops leakage entirely - not into values nor the review queue', () => {
+    const result = canonicalizer.canonicalizeResearchAreas([
+      'Research Areas:',
+      'Theorist',
+      'machine learning',
+      'Basket Weaving',
+    ]);
+    expect(result.values).toEqual(['Machine Learning', 'Basket Weaving']);
+    expect(result.unmatched).toEqual(['Basket Weaving']);
+    expect(result.dropped).toEqual(['Research Areas:', 'Theorist']);
   });
 });
 
@@ -240,5 +295,16 @@ describe('applyResearchEntityResearchAreaCanonicalization', () => {
     const result = await applyResearchEntityResearchAreaCanonicalization(set);
     expect(set).toEqual({ school: 'Yale College' });
     expect(result.unmatchedResearchAreas).toEqual([]);
+    expect(result.droppedResearchAreas).toEqual([]);
+  });
+
+  it('drops scraper-label leakage from the set and reports it', async () => {
+    setResearchAreaCanonicalizerForTesting(canonicalizer);
+    const set: Record<string, unknown> = {
+      researchAreas: ['Fields of Interest', 'AI', 'YSM Researcher'],
+    };
+    const result = await applyResearchEntityResearchAreaCanonicalization(set);
+    expect(set.researchAreas).toEqual(['Artificial Intelligence']);
+    expect(result.droppedResearchAreas).toEqual(['Fields of Interest', 'YSM Researcher']);
   });
 });

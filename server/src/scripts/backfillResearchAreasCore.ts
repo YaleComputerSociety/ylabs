@@ -22,6 +22,8 @@ export interface ResearchAreaBackfillPlanRow {
   fromDepartments: string[];
   fromDescription: string[];
   unmatchedForReview: string[];
+  droppedLeakage: string[];
+  canonicalizationChanged: boolean;
   changed: boolean;
 }
 
@@ -120,6 +122,8 @@ export function planResearchAreaBackfillRow(
     fromDepartments: addedFromDepartments,
     fromDescription: addedFromDescription,
     unmatchedForReview: existing.unmatched,
+    droppedLeakage: existing.dropped,
+    canonicalizationChanged: !arraysEqual(dedupeInOrder(before), existing.values),
     changed: !arraysEqual(before, after),
   };
 }
@@ -129,20 +133,42 @@ export interface ResearchAreaBackfillSummary {
   changed: number;
   filledFromEmpty: number;
   areasAdded: number;
+  distinctRawAreasBefore: number;
+  distinctCanonicalAreasAfter: number;
+  distinctFallThroughToRaw: number;
+  entitiesWithCanonicalizedAreaChange: number;
+  leakageDroppedOccurrences: number;
+  distinctLeakageDropped: number;
   reviewQueue: Array<{ value: string; count: number }>;
+}
+
+function normalizeDistinctKey(value: string): string {
+  return value.trim().toLocaleLowerCase();
 }
 
 export function summarizeResearchAreaBackfill(
   rows: ResearchAreaBackfillPlanRow[],
 ): ResearchAreaBackfillSummary {
   const reviewCounts = new Map<string, number>();
+  const distinctRawBefore = new Set<string>();
+  const distinctCanonicalAfter = new Set<string>();
+  const distinctLeakage = new Set<string>();
   let changed = 0;
   let filledFromEmpty = 0;
   let areasAdded = 0;
+  let entitiesWithCanonicalizedAreaChange = 0;
+  let leakageDroppedOccurrences = 0;
   for (const row of rows) {
     if (row.changed) changed += 1;
+    if (row.canonicalizationChanged) entitiesWithCanonicalizedAreaChange += 1;
     if (row.before.length === 0 && row.after.length > 0) filledFromEmpty += 1;
     areasAdded += row.added.length;
+    for (const value of row.before) distinctRawBefore.add(normalizeDistinctKey(value));
+    for (const value of row.fromExisting) distinctCanonicalAfter.add(normalizeDistinctKey(value));
+    for (const value of row.droppedLeakage) {
+      leakageDroppedOccurrences += 1;
+      distinctLeakage.add(normalizeDistinctKey(value));
+    }
     for (const value of row.unmatchedForReview) {
       reviewCounts.set(value, (reviewCounts.get(value) || 0) + 1);
     }
@@ -155,6 +181,12 @@ export function summarizeResearchAreaBackfill(
     changed,
     filledFromEmpty,
     areasAdded,
+    distinctRawAreasBefore: distinctRawBefore.size,
+    distinctCanonicalAreasAfter: distinctCanonicalAfter.size,
+    distinctFallThroughToRaw: reviewQueue.length,
+    entitiesWithCanonicalizedAreaChange,
+    leakageDroppedOccurrences,
+    distinctLeakageDropped: distinctLeakage.size,
     reviewQueue,
   };
 }
