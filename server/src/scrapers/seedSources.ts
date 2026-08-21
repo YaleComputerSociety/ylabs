@@ -327,6 +327,15 @@ const SOURCES: SourceSeed[] = [
     defaultWeight: 0.5,
     cadence: 'weekly',
   },
+  {
+    name: 'research-area-source-extractor',
+    displayName: 'Research-area source extractor',
+    description:
+      'Deterministic recovery of approved research areas for empty-area research entities from their official lab/department/profile pages; emits approved TaxonomyTerm areas only.',
+    baseUrl: '',
+    defaultWeight: 0.65,
+    cadence: 'monthly',
+  },
 ];
 
 const SOURCES_WITH_COVERAGE: SourceSeed[] = SOURCES.map((seed) => ({

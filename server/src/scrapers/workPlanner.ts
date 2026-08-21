@@ -100,6 +100,16 @@ export const workPlannerSourcePolicies = [
     notes:
       'Official microsite evidence; use the source-level lastObservedAt heartbeat to skip fresh entities before fetch/LLM calls.',
   },
+  {
+    sourceName: 'research-area-source-extractor',
+    entityType: 'researchEntity',
+    targetFields: ['researchAreas'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    paid: false,
+    defaultRecurringCadence: 'monthly',
+    notes:
+      'Deterministic approved-registry area recovery for empty-area entities from their official pages; skip entities already carrying a recent area observation.',
+  },
 ] satisfies WorkPlannerSourcePolicy[];
 
 export function getWorkPlannerSourcePolicy(

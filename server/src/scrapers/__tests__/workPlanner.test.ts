@@ -16,6 +16,15 @@ describe('buildEntityWorkPlan', () => {
     expect(workPlannerSourcePolicies.map((policy) => policy.sourceName)).toEqual([
       'lab-microsite-description-llm',
       'lab-microsite-undergrad-llm',
+      'research-area-source-extractor',
+    ]);
+    expect(getWorkPlannerSourcePolicy('research-area-source-extractor')).toMatchObject({
+      entityType: 'researchEntity',
+      paid: false,
+      defaultRecurringCadence: 'monthly',
+    });
+    expect(getWorkPlannerSourcePolicy('research-area-source-extractor')?.targetFields).toEqual([
+      'researchAreas',
     ]);
     expect(getWorkPlannerSourcePolicy('lab-microsite-undergrad-llm')).toMatchObject({
       entityType: 'researchEntity',
