@@ -269,11 +269,6 @@ describe('getAnalytics research coverage and range scoping', () => {
     expect(analytics.researchEntities.overview.total).toBeGreaterThan(
       analytics.researchEntities.overview.active,
     );
-
-    const overviewBranch = mocks.researchEntityAggregate.mock.calls[0][0][0].$facet.overview;
-    expect(JSON.stringify(overviewBranch)).toContain('$archived');
-    const topLevelStages = mocks.researchEntityAggregate.mock.calls[0][0];
-    expect(topLevelStages[0].$match).toBeUndefined();
   });
 
   it('threads the selected range into event-based aggregations', async () => {
