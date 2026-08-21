@@ -726,9 +726,7 @@ const Analytics = () => {
                 Start with search success and funnel movement: they show whether discovery intent
                 becomes visible next-step behavior.
               </p>
-              <p>
-                Treat low-result queries and action cards as the work queue, not just warnings.
-              </p>
+              <p>Treat low-result queries and action cards as the work queue, not just warnings.</p>
               <p>
                 See the full funnel breakdown and zero- or low-result queries in{' '}
                 <a
