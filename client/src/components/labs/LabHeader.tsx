@@ -1,26 +1,14 @@
 /**
  * Hero header for a lab detail page: name, kind badge, school, location,
- * trust-gradient evidence pill, departments, research areas, website link.
+ * departments, research areas, website link.
  *
  * Pure presentational — takes a ResearchGroup, no fetching or context.
- *
- * The evidence pill replaces the legacy boolean-only "Accepting Undergrads"
- * pill with a trust gradient ("Strong evidence" / "Some evidence" /
- * "Not currently available"). The unknown verdict carries no signal in a
- * directory-first product, so its pill is hidden rather than shown. The verdict
- * is computed by the shared `computeAcceptanceVerdict` helper so this surface
- * stays consistent with the inquire CTA.
  */
 import { ResearchGroup } from '../../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
-import {
-  computeAcceptanceVerdict,
-  verdictBadgeStyles,
-  verdictLabel,
-} from '../../utils/undergradAcceptance';
 import {
   entityKindLabel,
   isFacultyResearchEntity as isFacultyResearchEntityCopy,
@@ -50,10 +38,6 @@ const normalizeActionUrl = (url?: string | null): string => {
 
 const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) => {
   const { departments } = useConfig();
-  const { verdict } = computeAcceptanceVerdict(group);
-  const showVerdict = verdict !== 'unknown';
-  const verdictClasses = verdictBadgeStyles(verdict);
-  const verdictText = verdictLabel(verdict);
   const websiteHref = group.websiteUrl ? ensureHttpPrefix(group.websiteUrl) : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);
   const hideWebsiteHref =
@@ -79,11 +63,6 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
     <div className="yr-panel flex flex-col gap-4 rounded-md p-4 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="yr-pill yr-pill-blue">{kindLabel}</span>
-        {showVerdict && (
-          <span className={`yr-pill ${verdictClasses}`} data-verdict={verdict}>
-            {verdictText}
-          </span>
-        )}
         {group.school && <span className="yr-pill">{group.school}</span>}
       </div>
 

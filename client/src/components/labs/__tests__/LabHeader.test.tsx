@@ -95,68 +95,23 @@ describe('LabHeader', () => {
   });
 });
 
-describe('LabHeader trust-gradient pill', () => {
-  it('hides the verdict pill when there are no positive signals', () => {
-    const { container } = render(<LabHeader group={baseGroup} />);
-    expect(container.querySelector('[data-verdict]')).toBeNull();
-    expect(container.textContent).not.toContain('Evidence unknown');
-  });
-
-  it('shows "Strong evidence" when the PI manually confirmed', () => {
+describe('LabHeader signal-only header', () => {
+  it('renders no verdict-tier badge', () => {
     const { container } = render(
       <LabHeader
         group={{
           ...baseGroup,
           manuallyLockedFields: ['acceptingUndergrads'],
           acceptingUndergrads: true,
-        }}
-      />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
-    expect(pill?.textContent).toBe('Strong evidence');
-  });
-
-  it('shows "Some evidence" with a single strong signal (past advisees)', () => {
-    const { container } = render(
-      <LabHeader
-        group={{
-          ...baseGroup,
-          pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 1 }],
-        }}
-      />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('likely-accepting');
-    expect(pill?.textContent).toBe('Some evidence');
-  });
-
-  it('shows "Strong evidence" when there are 2+ strong signals', () => {
-    const { container } = render(
-      <LabHeader
-        group={{
-          ...baseGroup,
           pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
           currentUndergradCount: 3,
         }}
       />,
     );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('verified-accepting');
-  });
-
-  it('shows "Not currently available" when acceptingUndergrads=false', () => {
-    const { container } = render(
-      <LabHeader
-        group={{
-          ...baseGroup,
-          acceptingUndergrads: false,
-          manuallyLockedFields: ['acceptingUndergrads'],
-        }}
-      />,
-    );
-    const pill = container.querySelector('[data-verdict]');
-    expect(pill?.getAttribute('data-verdict')).toBe('not-accepting');
-    expect(pill?.textContent).toBe('Not currently available');
+    expect(container.querySelector('[data-verdict]')).toBeNull();
+    expect(container.textContent).not.toContain('Strong evidence');
+    expect(container.textContent).not.toContain('Some evidence');
+    expect(container.textContent).not.toContain('Not currently available');
+    expect(container.textContent).not.toContain('Evidence unknown');
   });
 });
