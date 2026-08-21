@@ -2711,10 +2711,6 @@ test('audit planning and source seed artifacts are constrained to safe JSON root
     ['source registry seed', '../server/src/scrapers/seedSources.ts'],
     ['surname lab disambiguation', '../server/src/scripts/disambiguateSurnameLabNames.ts'],
     ['profile data quality audit', '../server/src/scripts/profileDataQualityAudit.ts'],
-    [
-      'member reference audit core',
-      '../server/src/scripts/researchEntityMemberReferenceAuditCore.ts',
-    ],
   ]) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /resolveSafeJsonReportOutputPath/, `${name} must use safe JSON paths`);

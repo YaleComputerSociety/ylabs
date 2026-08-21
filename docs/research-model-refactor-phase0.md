@@ -186,7 +186,6 @@ Deeper collision and identity analysis already lives in dedicated scripts and sh
 
 - `yarn --cwd server users:dedupe-by-identity` for same-person user shells.
 - `yarn --cwd server model-refactor:identity-collisions` for bounded shared-identity and same-name-only evidence.
-- `yarn --cwd server research-entity-members:audit-user-refs` for membership reference integrity.
 - `yarn --cwd server research-entity:duplicate-name-review` for duplicate entity identities.
 - `yarn --cwd server research-entity:coverage-audit` for entity evidence coverage.
 
@@ -271,12 +270,6 @@ SCRAPER_ENV=development yarn --cwd server users:dedupe-by-identity \
   --limit=10000 \
   --output /tmp/ylabs-development-user-identity-summary.json
 
-SCRAPER_ENV=development yarn --cwd server research-entity-members:audit-user-refs \
-  --summary-only \
-  --environment=development \
-  --limit=10000 \
-  --output /tmp/ylabs-development-member-reference-summary.json
-
 SCRAPER_ENV=development yarn --cwd server research-entity:duplicate-name-review \
   --summary-only \
   --environment=development \
@@ -296,7 +289,6 @@ The duplicate-name audit also rejects accepted-decision and decision-template op
 The coverage audit rejects `--slug` because a slug-targeted report is record-specific.
 User-identity collision limits apply per identity field, and duplicate-name limits apply to normalized-name clusters.
 Their summary reports include explicit possible-truncation indicators and label limit-reached counts as bounded lower-bound evidence rather than full coverage.
-The member-reference summary preserves full orphan and archived-entity-member totals, while its proposed repair classifications remain detail-limit bounded and carry a separate possible-plan-truncation indicator.
 Coverage `totalEntitiesScanned` is computed over all entities selected by the aggregate filters.
 `flaggedEntities` and `issueCounts` are computed from entities whose issue score meets `--min-score`.
 `--all` controls detailed row inclusion only and is unnecessary in summary-only mode.
