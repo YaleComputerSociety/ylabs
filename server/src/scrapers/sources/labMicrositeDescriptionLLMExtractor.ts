@@ -28,6 +28,10 @@ import type { DescriptionEntityKind } from '../../utils/researchHomeDescriptionS
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_PROMPT_CHARS = 40_000;
+// The lab's own microsite is the authoritative source of its real name, so its
+// name observation must outrank the 0.9 NIH/NSF "<PI> Lab" placeholder fallback
+// (nihReporterScraper.ts / nsfAwardScraper.ts) during field resolution (issue #456).
+const LAB_NAME_CONFIDENCE = 0.95;
 const DESCRIPTION_LLM_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export function normalizeDescriptionLlmObjectId(value: unknown): string | undefined {
@@ -73,6 +77,7 @@ export interface DescriptionExtraction {
   shortDescription: string;
   topics: string[];
   methods: string[];
+  name?: string;
 }
 
 export type FetchDescriptionPageFn = (url: string) => Promise<FetchedDescriptionPage | null>;
@@ -314,6 +319,13 @@ function htmlToText(html: string): string {
   return textValue($('body').text() || $.root().text()).slice(0, MAX_PROMPT_CHARS);
 }
 
+function usefulLabName(value: unknown): string {
+  const text = textValue(value);
+  if (text.length < 2 || text.length > 120) return '';
+  if (/^(?:n\/a|none|unknown|the lab|lab|laboratory|research)$/i.test(text)) return '';
+  return text;
+}
+
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
   context: { entityId?: string; entityKey?: string; sourceUrl: string },
@@ -343,6 +355,14 @@ export function descriptionExtractionToObservations(
   if (topics.length) observations.push({ ...base, field: 'researchAreas', value: topics });
   const methods = uniqueStrings(extraction.methods || []).slice(0, 12);
   if (methods.length) observations.push({ ...base, field: 'methods', value: methods });
+
+  const labName = usefulLabName(extraction.name);
+  const isProfileSource = /\/profile\//i.test(context.sourceUrl);
+  if (labName && !isProfileSource) {
+    const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
+    observations.push({ ...nameBase, field: 'name', value: labName });
+    observations.push({ ...nameBase, field: 'displayName', value: labName });
+  }
   return observations;
 }
 
@@ -388,7 +408,8 @@ async function defaultCallLLM(input: {
           content: [
             `Lab: ${safeLabName}`,
             `Source URL: ${safeSourceUrl}`,
-            'Return JSON with fullDescription, shortDescription, topics, methods.',
+            'Return JSON with fullDescription, shortDescription, topics, methods, name.',
+            'For name, return the research home\'s own proper or branded name exactly as it appears prominently on the page (for example "The Efficient Computing Lab (ECL)"). If the page only identifies it by the principal investigator\'s personal name, or no clear proper name is stated, return an empty string.',
             safePageText,
           ].join('\n\n'),
         },

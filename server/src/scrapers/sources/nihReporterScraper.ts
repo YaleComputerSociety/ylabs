@@ -39,6 +39,9 @@ import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
+// any real-name source (microsite, official profile) so those always win (issue #456).
+const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
 const RECENT_GRANTS_PER_PI = 10;
@@ -405,7 +408,12 @@ export function piGrantsToObservations(
   const piDisplayName = canonicalName;
   if (!canonicalResearchHomeSlug) {
     out.push({ ...groupBase, field: 'slug', value: slug });
-    out.push({ ...groupBase, field: 'name', value: `${piDisplayName} Lab` });
+    out.push({
+      ...groupBase,
+      field: 'name',
+      value: `${piDisplayName} Lab`,
+      confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
+    });
     out.push({ ...groupBase, field: 'kind', value: 'lab' });
   }
   out.push({ ...groupBase, field: 'recentGrants', value: recentRecords });

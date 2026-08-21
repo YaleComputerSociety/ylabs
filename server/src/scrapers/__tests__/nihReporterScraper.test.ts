@@ -381,6 +381,7 @@ describe('piGrantsToObservations', () => {
     expect(groupObs.every((o) => o.entityKey === 'nih-pi-amy-arnsten')).toBe(true);
     expect(groupObs.find((o) => o.field === 'slug')?.value).toBe('nih-pi-amy-arnsten');
     expect(groupObs.find((o) => o.field === 'name')?.value).toBe('Amy Arnsten Lab');
+    expect(groupObs.find((o) => o.field === 'name')?.confidenceOverride).toBe(0.3);
     expect(groupObs.find((o) => o.field === 'kind')?.value).toBe('lab');
     expect(groupObs.find((o) => o.field === 'fundingAgencies')?.value).toEqual(['NIH']);
 

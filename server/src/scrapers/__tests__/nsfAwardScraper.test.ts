@@ -502,6 +502,9 @@ describe('NsfAwardScraper.run', () => {
     expect(rgObs.find((o) => o.field === 'inferredPiUserId')?.value).toBe('user-holland');
     const inferredObs = rgObs.find((o) => o.field === 'inferredPiUserId');
     expect(inferredObs?.confidenceOverride).toBe(0.7);
+    const nameObs = rgObs.find((o) => o.field === 'name');
+    expect(String(nameObs?.value)).toMatch(/ Lab$/);
+    expect(nameObs?.confidenceOverride).toBe(0.3);
   });
 
   it('targets one resolved canonical home and preserves its identity fields', async () => {

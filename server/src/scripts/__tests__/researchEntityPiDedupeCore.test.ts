@@ -89,6 +89,90 @@ describe('buildResearchEntityPiDedupePlan', () => {
     ]);
   });
 
+  it('keeps a real-website faculty home as canonical instead of archiving it into the PI-derived grant shell', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-fenwick-user',
+        normalizedName: 'same-pi:fixture-fenwick-user',
+        piFirstName: 'Robin',
+        piLastName: 'Fenwick',
+        entities: [
+          {
+            id: 'grant-shell',
+            slug: 'nsf-pi-robin-fenwick',
+            name: 'Robin Fenwick Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://efficient-computing.example.org/',
+            sourceUrls: [
+              'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500001',
+              'https://efficient-computing.example.org/',
+            ],
+          },
+          {
+            id: 'faculty-home',
+            slug: 'dept-cs-robin-fenwick',
+            name: 'Robin Fenwick',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://efficient-computing.example.org/',
+            sourceUrls: [
+              'https://efficient-computing.example.org/',
+              'https://cs.yale.edu/profile/robin-fenwick/',
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      { canonicalEntityId: 'faculty-home', duplicateEntityIds: ['grant-shell'] },
+    ]);
+    expect(plan.some((group) => group.duplicateEntityIds.includes('faculty-home'))).toBe(false);
+  });
+
+  it('carries the concrete website and name from a merged grant shell onto a canonical that lacks its own site', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-chen-user',
+        normalizedName: 'same-pi:fixture-chen-user',
+        piFirstName: 'Riley',
+        piLastName: 'Chen',
+        entities: [
+          {
+            id: 'dept-home',
+            slug: 'dept-cs-riley-chen',
+            name: 'Riley Chen Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            sourceUrls: ['https://cs.yale.edu/profile/riley-chen/'],
+          },
+          {
+            id: 'grant-shell',
+            slug: 'nsf-pi-riley-chen',
+            name: 'Riley Chen Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://chen-systems.example.org/',
+            sourceUrls: [
+              'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500003',
+              'https://chen-systems.example.org/',
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'dept-home',
+        duplicateEntityIds: ['grant-shell'],
+        canonicalWebsiteUrl: 'https://chen-systems.example.org/',
+        canonicalName: 'Riley Chen Lab',
+      },
+    ]);
+  });
+
   it('plans same-user profile-area shells even when the shell uses a preferred-name variant', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
@@ -458,7 +542,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
               'https://medicine.yale.edu/cancer/profile/fixture-systems-lead/',
               'https://medicine.yale.edu/profile/fixture-systems-lead/',
             ],
-            fullDescription: 'Research fields include systems immunology, maternal-infant dyads, and vaccines.',
+            fullDescription:
+              'Research fields include systems immunology, maternal-infant dyads, and vaccines.',
             shortDescription: 'Studies systems immunology, maternal-infant dyads, and vaccines.',
           },
         ],
@@ -800,9 +885,9 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(() =>
       parseResearchEntityPiDedupeArgs(['--decision-template-output', '--apply']),
     ).toThrow(/--decision-template-output requires a path/);
-    expect(() =>
-      parseResearchEntityPiDedupeArgs(['--decision-template-output=--apply']),
-    ).toThrow(/--decision-template-output requires a path/);
+    expect(() => parseResearchEntityPiDedupeArgs(['--decision-template-output=--apply'])).toThrow(
+      /--decision-template-output requires a path/,
+    );
     expect(() => parseResearchEntityPiDedupeArgs(['--output=/var/tmp/entity-dedupe.json'])).toThrow(
       /--output must write under/,
     );
@@ -925,9 +1010,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
   });
 
   it('blocks archived-document conflict deletion unless delete mode explicitly allows it', () => {
-    expect(chooseArchivedDocumentConflictOutcome({ allowDeleteOnConflict: false })).toBe(
-      'blocked',
-    );
+    expect(chooseArchivedDocumentConflictOutcome({ allowDeleteOnConflict: false })).toBe('blocked');
     expect(chooseArchivedDocumentConflictOutcome({ allowDeleteOnConflict: true })).toBe('delete');
   });
 
@@ -1028,6 +1111,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
             'Radioactive element chemistry and processing',
             'Extraction and Separation Processes',
           ],
+          canonicalName: 'Jamie Award Lab',
+          canonicalWebsiteUrl: 'https://award-lab.example.org/',
         },
       ]),
     ).toMatchObject({
@@ -1038,6 +1123,8 @@ describe('buildResearchEntityPiDedupePlan', () => {
       crossDepartmentGroups: 1,
       groupsWithMergedResearchAreas: 1,
       highResearchAreaMergeGroups: 1,
+      groupsCarryingCanonicalName: 1,
+      groupsCarryingCanonicalWebsite: 1,
       recommendedNarrowCommands: [
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --reviewed-profile-area-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-reviewed-profile-area.json',
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --funding-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-funding-only.json',
@@ -1067,9 +1154,9 @@ describe('buildResearchEntityPiDedupePlan', () => {
       plannedGroups: 1,
       plannedDuplicateEntities: 2,
     });
-    expect(() =>
-      writeResearchEntityPiDedupeOutput(payload, '/var/tmp/entity-dedupe.json'),
-    ).toThrow(/--output must write under/);
+    expect(() => writeResearchEntityPiDedupeOutput(payload, '/var/tmp/entity-dedupe.json')).toThrow(
+      /--output must write under/,
+    );
   });
 
   it('builds same-PI dedupe reviewer decision templates without enabling apply', () => {
@@ -1108,10 +1195,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       ],
     });
     expect(() =>
-      writeResearchEntityPiDedupeDecisionTemplate(
-        template,
-        '/var/tmp/entity-dedupe-template.json',
-      ),
+      writeResearchEntityPiDedupeDecisionTemplate(template, '/var/tmp/entity-dedupe-template.json'),
     ).toThrow(/--decision-template-output must write under/);
   });
 
