@@ -339,6 +339,61 @@ describe('extractLabHomepageDescription', () => {
       description,
     });
   });
+
+  function pageDataHtml(pageData: unknown): string {
+    const escapedJson = JSON.stringify(pageData).replace(/"/g, '&quot;');
+    return `<html><body><script>${escapedJson}</script></body></html>`;
+  }
+
+  it('prefers the lab research block over a PI bio that appears first', () => {
+    const piBio =
+      'Dr. Fenwick Aldabra earned his doctorate from a coastal university and joined the faculty in 2007. He served as department chair from 2016 to 2021 and has received several honors for teaching and mentoring.';
+    const labResearch =
+      'The Aldabra Lab studies how reef microbiomes shape coral resilience and how thermal stress reshapes symbiont communities. We integrate field surveys, metagenomics, and controlled aquarium experiments to understand reef recovery.';
+
+    expect(
+      extractLabHomepageDescription(
+        pageDataHtml({
+          mainComponents: [
+            { key: 'ProfileContactWidget', model: { metaData: { description: piBio } } },
+            { key: 'GenericContent', model: { metaData: { description: labResearch } } },
+          ],
+        }),
+      ),
+    ).toMatchObject({ description: labResearch });
+  });
+
+  it('returns null when the page only offers a PI bio and welcome boilerplate', () => {
+    const piBio =
+      'Dr. Fenwick Aldabra earned his doctorate from a coastal university and joined the faculty in 2007. He served as department chair from 2016 to 2021 and has received several honors for teaching and mentoring.';
+    const welcome =
+      'Welcome to the homepage of the Aldabra Lab. Here you will find information about our team, recent news, publications, and opportunities to get involved. Please use the navigation menu to explore.';
+
+    expect(
+      extractLabHomepageDescription(
+        pageDataHtml({
+          mainComponents: [
+            { key: 'ProfileContactWidget', model: { metaData: { description: piBio } } },
+            { key: 'GenericContent', model: { metaData: { description: welcome } } },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps a research-focused profile bio for a person entity', () => {
+    const piBio =
+      'Professor Fenwick Aldabra is a coral reef ecologist at a coastal university. His research examines how reef microbiomes shape coral resilience and how thermal stress reshapes symbiont communities.';
+
+    expect(
+      extractLabHomepageDescription(
+        pageDataHtml({
+          mainComponents: [{ key: 'GenericContent', model: { metaData: { description: piBio } } }],
+        }),
+        { kind: 'person' },
+      ),
+    ).toMatchObject({ description: piBio });
+  });
 });
 
 describe('extractResearchFacultyUrl', () => {

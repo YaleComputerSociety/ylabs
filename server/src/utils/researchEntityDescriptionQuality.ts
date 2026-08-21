@@ -575,6 +575,10 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   };
 }
 
+export function describesResearchFocus(value: unknown): boolean {
+  return hasResearchFocusPhrase(textValue(value));
+}
+
 export function assessResearchEntityDescriptionQuality(
   input: ResearchEntityDescriptionQualityInput,
 ): ResearchEntityDescriptionQuality {

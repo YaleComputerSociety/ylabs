@@ -19,6 +19,10 @@ import * as cheerio from 'cheerio';
 import { User } from '../../models/user';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { deriveShortDescriptionFromFullDescription } from '../../utils/researchEntityDescriptionQuality';
+import {
+  selectResearchHomeDescription,
+  type DescriptionEntityKind,
+} from '../../utils/researchHomeDescriptionSelection';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import { isLikelyPersonSpecificYaleEmail, netidFromEmail } from '../utils/scraperHelpers';
@@ -231,54 +235,61 @@ function clippedDescription(value: string, maxChars = 280): string {
   return clipped || value.slice(0, maxChars).trim();
 }
 
-export function extractLabHomepageDescription(html: string): LabHomepageDescription | null {
+function collectLabHomepageDescriptionCandidates(html: string): string[] {
   const $ = cheerio.load(html);
+  const candidates: string[] = [];
+
   const pageData = parsePageDataPayloads(html).find(
     (payload) =>
       Array.isArray(payload?.mainComponents) && JSON.stringify(payload).includes('metaData'),
   );
-
   if (pageData) {
     try {
       const components = Array.isArray(pageData?.mainComponents) ? pageData.mainComponents : [];
-      const descriptions = components
-        .map((component: any) => cleanDescription(component?.model?.metaData?.description))
-        .filter((description: string) => description.length >= 120);
-      const firstParagraph = components
-        .flatMap((component: any) =>
-          Array.isArray(component?.model?.paragraphs) ? component.model.paragraphs : [],
-        )
-        .map((paragraph: any) => cleanDescription(paragraph?.text))
-        .find((description: string) => description.length >= 120);
-
-      const description = descriptions[0] || firstParagraph || '';
-      if (description) {
-        return {
-          description,
-          shortDescription:
-            deriveShortDescriptionFromFullDescription(description) ||
-            clippedDescription(description),
-        };
+      for (const component of components) {
+        candidates.push(cleanDescription(component?.model?.metaData?.description));
+      }
+      for (const component of components) {
+        const paragraphs = Array.isArray(component?.model?.paragraphs)
+          ? component.model.paragraphs
+          : [];
+        for (const paragraph of paragraphs) {
+          candidates.push(cleanDescription(paragraph?.text));
+        }
       }
     } catch {
       /* Fall back to meta tags below. */
     }
   }
 
-  const metaDescription = cleanDescription(
-    $('meta[property="og:description"]').attr('content') ||
-      $('meta[name="description"]').attr('content'),
+  candidates.push(
+    cleanDescription(
+      $('meta[property="og:description"]').attr('content') ||
+        $('meta[name="description"]').attr('content'),
+    ),
   );
-  if (metaDescription.length >= 120) {
-    return {
-      description: metaDescription,
-      shortDescription:
-        deriveShortDescriptionFromFullDescription(metaDescription) ||
-        clippedDescription(metaDescription),
-    };
-  }
 
-  return null;
+  return candidates.filter(Boolean);
+}
+
+export interface ExtractLabHomepageDescriptionOptions {
+  kind?: DescriptionEntityKind;
+}
+
+export function extractLabHomepageDescription(
+  html: string,
+  options: ExtractLabHomepageDescriptionOptions = {},
+): LabHomepageDescription | null {
+  const candidates = collectLabHomepageDescriptionCandidates(html);
+  const description = selectResearchHomeDescription(candidates, {
+    kind: options.kind ?? 'organization',
+  });
+  if (!description) return null;
+  return {
+    description,
+    shortDescription:
+      deriveShortDescriptionFromFullDescription(description) || clippedDescription(description),
+  };
 }
 
 export function extractResearchFacultyUrl(html: string, baseUrl: string): string {

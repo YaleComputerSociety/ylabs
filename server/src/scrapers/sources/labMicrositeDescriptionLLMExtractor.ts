@@ -22,6 +22,8 @@ import {
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
+import type { DescriptionEntityKind } from '../../utils/researchHomeDescriptionSelection';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -44,6 +46,8 @@ export interface CandidateDescriptionLab {
   websiteUrl: string;
   sourceUrls?: string[];
   manuallyLockedFields?: string[];
+  entityType?: string;
+  kind?: string;
 }
 
 export interface CandidateDescriptionLabDoc {
@@ -55,6 +59,8 @@ export interface CandidateDescriptionLabDoc {
   website?: string;
   sourceUrls?: string[];
   manuallyLockedFields?: string[];
+  entityType?: string;
+  kind?: string;
 }
 
 export interface FetchedDescriptionPage {
@@ -238,6 +244,8 @@ export function candidateDescriptionLabsFromDocs(
       websiteUrl: urls[0],
       sourceUrls: urls,
       manuallyLockedFields: doc.manuallyLockedFields || [],
+      entityType: doc.entityType,
+      kind: doc.kind,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
   });
@@ -454,6 +462,8 @@ async function defaultLabFinder(
       website: 1,
       sourceUrls: 1,
       manuallyLockedFields: 1,
+      entityType: 1,
+      kind: 1,
     },
   ).lean();
   return candidateDescriptionLabsFromDocs(docs as CandidateDescriptionLabDoc[], {
@@ -590,7 +600,13 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           embeddedHostname = '';
         }
         if (/(^|\.)yale\.edu$/i.test(embeddedHostname)) {
-          const embedded = extractLabHomepageDescription(page.html);
+          const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
+            entityType: lab.entityType,
+            kind: lab.kind,
+          })
+            ? 'person'
+            : 'organization';
+          const embedded = extractLabHomepageDescription(page.html, { kind });
           if (embedded?.description) {
             const embeddedObservations = descriptionExtractionToObservations(
               {
