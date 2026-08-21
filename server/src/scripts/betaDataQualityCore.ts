@@ -318,7 +318,7 @@ const BETA_CHECK_OPERATOR_METADATA: Record<
   referenceIntegrity: {
     owner: 'data-quality operator',
     nextCommand: betaCommand(
-      'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+      'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
     ),
   },
   publicDescriptionInvariant: {

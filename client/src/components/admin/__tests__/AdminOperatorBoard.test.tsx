@@ -172,7 +172,7 @@ describe('AdminOperatorBoard', () => {
                 count: 1,
                 owner: 'data-quality operator',
                 nextCommand:
-                  'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+                  'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
               },
             ],
             blockersByOwner: [
@@ -521,7 +521,7 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('referenceIntegrity')).toBeTruthy();
     expect(
       screen.getByText(
-        'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+        'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
       ),
     ).toBeTruthy();
     expect(screen.getAllByText('data-quality operator').length).toBeGreaterThanOrEqual(2);

@@ -277,7 +277,7 @@ describe('adminOperatorBoardService', () => {
               count: 1,
               owner: 'data-quality operator',
               nextCommand:
-                'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+                'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
             },
           ],
           promotionBlockersByOwner: [
@@ -388,7 +388,7 @@ describe('adminOperatorBoardService', () => {
           count: 1,
           owner: 'data-quality operator',
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         },
       ],
       promotionBlockersByOwner: [
@@ -477,7 +477,7 @@ describe('adminOperatorBoardService', () => {
           count: 1,
           owner: 'data-quality operator',
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         },
       ],
       blockersByOwner: [
@@ -749,7 +749,7 @@ describe('adminOperatorBoardService', () => {
               name: 'referenceIntegrity',
               count: 1,
               nextCommand:
-                'yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+                'yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
             },
           ],
         },
@@ -812,7 +812,7 @@ describe('adminOperatorBoardService', () => {
       hardErrors: [
         {
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         },
       ],
       duplicateNamePreflight: {

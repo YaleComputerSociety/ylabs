@@ -681,7 +681,7 @@ describe('buildBetaDataQualitySummary', () => {
           name: 'referenceIntegrity',
           owner: 'data-quality operator',
           nextCommand:
-            'SCRAPER_ENV=beta yarn --cwd server research-entity-members:audit-user-refs --limit=1000 --output /tmp/ylabs-member-user-ref-audit.json',
+            'SCRAPER_ENV=beta yarn --cwd server beta:data-quality --include-samples --output /tmp/ylabs-beta-quality.json',
         }),
       ]),
     );
