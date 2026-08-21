@@ -39,7 +39,7 @@ import {
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
 import { formatTitleCaseLabel } from '../utils/displayText';
-import { computeAcceptanceVerdict, EvidenceItem, verdictLabel } from '../utils/undergradAcceptance';
+import { computeAcceptanceVerdict, EvidenceItem } from '../utils/undergradAcceptance';
 import {
   decisionHeadingLabel,
   isFacultyResearchEntity,
@@ -192,21 +192,8 @@ const compactDepartmentLabels = (
     (departments || []).filter((department): department is string => Boolean(department)),
   );
 
-const BulletList = ({ items }: { items: string[] }) => (
-  <ul className="space-y-1.5 text-sm leading-relaxed text-gray-700">
-    {items.map((item) => (
-      <li key={item} className="flex gap-2">
-        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-hidden="true" />
-        <span>{item}</span>
-      </li>
-    ))}
-  </ul>
-);
-
 const detailDescription = (group: any): string =>
-  (group.fullDescription || group.shortDescription || '')
-    .replace(/[ \t\f\v]+/g, ' ')
-    .trim();
+  (group.fullDescription || group.shortDescription || '').replace(/[ \t\f\v]+/g, ' ').trim();
 
 const hasProfileSynthesisDescription = (group: any): boolean =>
   group.descriptionSource === 'PI_PROFILE_SYNTHESIS' &&
@@ -237,57 +224,6 @@ const detailTopics = (group: any, limit = 6): string[] =>
   uniqueCompact([...(group.researchAreas || [])], limit * 2)
     .filter((value) => !isGenericTopic(value))
     .slice(0, limit);
-
-const directoryFirstPlanningCopy = (value: string | undefined | null, group: any): string => {
-  if (!value) return '';
-  return sanitizeFacultyResearchCopy(value, group)
-    .replace('Plan careful exploratory outreach.', 'Plan from source-backed context.')
-    .replace(
-      'This profile has source-backed evidence that outreach may be plausible, but no active posted role is attached.',
-      'This profile has source-backed context for planning, but no active posted role is attached.',
-    )
-    .replace(
-      'Review the PI profile and lab site first, then decide whether targeted exploratory outreach is appropriate.',
-      'Review the PI profile and lab site first, then decide what source details you should verify next.',
-    )
-    .replace(
-      'Review the profile before outreach.',
-      'Review the profile and source details before planning next steps.',
-    )
-    .replace(
-      'Contact the program manager through the listed route.',
-      'Review the listed route and verify whether it has current instructions.',
-    )
-    .replace(
-      'Plan a specific outreach note that references the group’s work.',
-      'Plan notes that reference the group’s work before taking next steps.',
-    )
-    .replace(
-      /targeted exploratory outreach is appropriate/gi,
-      'source details you should verify next',
-    )
-    .replace(/targeted outreach is appropriate/gi, 'source details you should verify next')
-    .replace(/outreach may be plausible/gi, 'planning context is available')
-    .replace(/before outreach/gi, 'before planning next steps')
-    .replace(/outreach note/gi, 'planning note');
-};
-
-const decisionNextStep = ({ group }: { group: any }): string => {
-  const bestNextStep = group.accessSummary?.bestNextStep?.trim();
-  if (bestNextStep && bestNextStep !== 'Check back later') {
-    return directoryFirstPlanningCopy(bestNextStep, group);
-  }
-  return 'Review the official profile first, then use the source details to plan what to verify next.';
-};
-
-const reachOutStatus = ({ group }: { group: any }): string => {
-  const status = group.accessSummary?.status;
-  if (status === 'posted-opening') return 'Posted route available';
-  if (status === 'reach-out-plausible' || status === 'evidence-backed') {
-    return 'Planning context available';
-  }
-  return 'Source review needed';
-};
 
 const ResearchPlanSaveButton = ({
   isSaved,
@@ -493,17 +429,6 @@ const DecisionSummary = ({
   const usesFacultyResearchWording =
     isFacultyResearchEntity(group) || (usesProfileSynthesis && isFacultyResearchFallback(group));
   const sourceBackedDescription = detailDescription(group);
-  const studentDecisionExplanation = group.studentDecisionExplanation;
-  const displayStudentDecisionExplanation = studentDecisionExplanation
-    ? {
-        ...studentDecisionExplanation,
-        headline: directoryFirstPlanningCopy(studentDecisionExplanation.headline, group),
-        explanation: directoryFirstPlanningCopy(studentDecisionExplanation.explanation, group),
-        why: studentDecisionExplanation.why.map((item: string) =>
-          directoryFirstPlanningCopy(item, group),
-        ),
-      }
-    : null;
   const rawDescription =
     (usesProfileSynthesis ? group.profileSynthesisDescription : '') || sourceBackedDescription;
   const description = sanitizeFacultyResearchCopy(rawDescription, group);
@@ -517,14 +442,17 @@ const DecisionSummary = ({
       ),
     );
   }, [description, group._id, group.slug]);
-  const { verdict, evidence } = computeAcceptanceVerdict(group);
-  const evidenceLevel = verdictLabel(verdict);
+  const { evidence } = computeAcceptanceVerdict(group);
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
   const hasEvidenceDetail = evidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
-  const showEvidenceLevel = verdict !== 'unknown';
-  const planningStatus = reachOutStatus({ group });
-  const showPlanningStatus = planningStatus !== 'Source review needed';
+  const piEmail = principalInvestigator?.user?.email?.trim();
+  const piName =
+    principalInvestigator?.user?.displayName?.trim() ||
+    [principalInvestigator?.user?.fname, principalInvestigator?.user?.lname]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -542,39 +470,6 @@ const DecisionSummary = ({
                 className="mt-2 text-base leading-relaxed text-gray-800"
               />
             </>
-          )}
-          {displayStudentDecisionExplanation && (
-            <div className="mt-5 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
-              <SectionHeading>Student decision</SectionHeading>
-              <h3 className="text-base font-semibold text-gray-950">
-                {displayStudentDecisionExplanation.headline}
-              </h3>
-              <p className="mt-2 text-base leading-relaxed text-gray-800">
-                {displayStudentDecisionExplanation.explanation}
-              </p>
-              {displayStudentDecisionExplanation.why.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                    Why
-                  </p>
-                  <div className="mt-2">
-                    <BulletList items={displayStudentDecisionExplanation.why} />
-                  </div>
-                </div>
-              )}
-              {displayStudentDecisionExplanation.notThis && (
-                <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-3 py-2">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                    What this page is
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-gray-800">
-                    {displayStudentDecisionExplanation.notThis === 'Not a posted opening.'
-                      ? 'This page summarizes the research context and source evidence, not a posted opening.'
-                      : displayStudentDecisionExplanation.notThis}
-                  </p>
-                </div>
-              )}
-            </div>
           )}
           {usesProfileSynthesis && (
             <p className="mt-3 text-sm leading-relaxed text-gray-600">
@@ -603,26 +498,6 @@ const DecisionSummary = ({
         </div>
 
         <div className="divide-y divide-[var(--yr-line)] rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-4">
-          {(showEvidenceLevel || showPlanningStatus) && (
-            <dl className="space-y-3 py-4 text-sm first:pt-0 last:pb-0">
-              {showEvidenceLevel && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                    Evidence level
-                  </dt>
-                  <dd className="mt-1 font-semibold text-gray-900">{evidenceLevel}</dd>
-                </div>
-              )}
-              {showPlanningStatus && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-                    Planning status
-                  </dt>
-                  <dd className="mt-1 font-semibold text-gray-900">{planningStatus}</dd>
-                </div>
-              )}
-            </dl>
-          )}
           {hasEvidenceDetail && (
             <div
               className="py-4 first:pt-0 last:pb-0"
@@ -656,21 +531,38 @@ const DecisionSummary = ({
           )}
           <div className="py-4 first:pt-0 last:pb-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
-              Recommended next step
+              How to get involved
             </p>
             <p className="mt-1 text-sm leading-relaxed text-gray-800">
-              {decisionNextStep({ group })}
+              Undergraduate research almost always starts with an email. Reach out to introduce
+              yourself and ask about getting involved.
             </p>
-            {profileUrl && (
-              <a
-                href={profileUrl}
-                target="_blank"
-                rel={EXTERNAL_LINK_REL}
-                className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-              >
-                Open official profile
-              </a>
-            )}
+            <div className="mt-3 flex flex-col gap-2">
+              {piEmail && (
+                <a
+                  href={`mailto:${piEmail}?subject=${encodeURIComponent(
+                    'Interest in undergraduate research',
+                  )}`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  {piName ? `Email ${piName}` : 'Email the PI'}
+                </a>
+              )}
+              {profileUrl && (
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className={
+                    piEmail
+                      ? 'inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50'
+                      : 'inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200'
+                  }
+                >
+                  Open official profile
+                </a>
+              )}
+            </div>
           </div>
         </div>
       </div>

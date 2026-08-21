@@ -127,8 +127,11 @@ They should not create a research-paper section, display metrics, or replace the
 
 ## CTA Vocabulary
 
-CTA options should depend on the access evidence, route, and current next step:
+Contact is constant and primary: always offer to email the PI with a prefilled mailto when an email exists, shown alongside "Open official profile".
+The contact prompt is never conditioned on access evidence, route, or computed confidence, and never gates outreach.
+Other CTA options surface alongside it when the supporting evidence exists:
 
+- Email the PI
 - Apply
 - View official profile
 - View Google Scholar
@@ -144,8 +147,8 @@ CTA options should depend on the access evidence, route, and current next step:
 - Check back later
 
 Exploratory planning should be specific and evidence-based.
-The product should not encourage students to spam faculty or imply that yLabs has verified an official outreach channel.
-Prefer official applications, official profiles, public source routes, saved planning, or check-back guidance when those are the supported actions.
+The site never blocks or discourages emailing; richer source-backed signals instead make each student's outreach more specific and targeted, which reduces low-quality mass outreach rather than encouraging it.
+yLabs should not imply it has verified an official outreach channel, but it should always make emailing the PI easy alongside official applications, official profiles, public source routes, and saved planning.
 
 Student-facing labels should use warmer language than internal model names:
 

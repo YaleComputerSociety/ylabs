@@ -111,16 +111,17 @@ Primary UX ingredients:
 - Evidence section with source-backed snippets.
 - A deduped Sources section that shows each official source once and explains which pathways/evidence/routes it supports.
 - People section that distinguishes PI, program manager, lab manager, mentor, and other roles where possible.
-- A Best Next Step summary with guarded CTAs for official applications, source review, profile review, or saved planning.
+- A constant contact prompt that always offers to email the PI (a prefilled mailto) when an email exists, shown alongside "Open official profile" and source-backed signals, rather than a computed verdict or ranked next-step CTA.
 
-Current gap: the detail page now presents planning context, evidence, best next step, saved-plan actions, and deduped sources before active opportunities. Research detail pages should keep the source-backed research summary above generated Student Decision / Best Next Step guidance, so faculty research pages do not read like posted openings. The next improvement should reduce duplication between official route CTAs and the main Best Next Step CTA without hiding the action on mobile.
+Current gap: the detail page presents the source-backed research summary, evidence, source-verified team context, deduped sources, and saved-plan actions before active opportunities.
+The sidebar surfaces evidence as a flat additive signal list and a constant prompt to email the PI, not a computed verdict, evidence-level tier, or ranked next-step CTA, so faculty research pages never gate outreach and do not read like posted openings.
 
 ## UX Principles
 
 - **Exploration before application**: a student may be curious before they know the right program, faculty member, method, or funding route.
 - **Evidence over assertion**: prefer source-backed snippets, evidence strength, observed dates, and confidence labels over binary claims.
 - **Planning context is not a posting**: use open/application language only for real posted opportunities.
-- **Guarded contact**: do not turn scraped contact details into spam infrastructure or imply yLabs provides an official outreach channel. Prefer official applications, public source routes, profile/source review, and saved planning.
+- **Contact is constant**: always make emailing the PI easy and never block or discourage outreach; richer source-backed signals make each student's email more specific and targeted, which reduces low-quality mass outreach rather than encouraging it. yLabs should not imply it provides an official outreach channel.
 - **Discipline-flexible structure**: humanities, social sciences, collections work, course-credit research, thesis advising, and centers should not be forced into a STEM lab hierarchy.
 - **Dense but humane**: the UI should stay scannable and efficient while using warmer student-facing labels.
 
@@ -139,4 +140,3 @@ Current gap: the detail page now presents planning context, evidence, best next 
 - Should `/fellowships` stay separate long term, or become a funding/formalization view with a dedicated fellowship detail experience?
 - What is the right saved-workflow model: favorites, thesis planning list, research plan, funding plan, or multiple lists?
 - How much source evidence belongs on cards versus detail pages?
-- Should "Best Next Step" be shown as a single computed CTA or as a short ranked action list?
