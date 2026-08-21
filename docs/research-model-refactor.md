@@ -71,7 +71,10 @@ The only student write surface.
 
 ## Removed, frozen, separate, retired
 
-Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, `TaxonomyTerm`, the embedded `discovery` projection, and the old `AccessSignal` and `UndergraduateLogisticsClaim` (folded into `Signal`).
+Removed (do not model): `EntryPathway`, `ContactRoute`, `PostedOpportunity`, the embedded `discovery` projection, and the old `AccessSignal` and `UndergraduateLogisticsClaim` (folded into `Signal`).
+
+`TaxonomyTerm` (`taxonomy_terms`) is kept, but only as an ingest-time governed research-area canonicalization registry (see Canonicalization), never as a reference stored on `ResearchEntity`.
+This is the owner-approved option A resolution of #208 and supersedes the earlier "remove `TaxonomyTerm`" note: entities still store canonical `researchAreas[]` strings, `TaxonomyTerm` is never a foreign key on `ResearchEntity`, and research areas are never id-normalized.
 
 Frozen (exist, unwired, do-not-build-on): `EvidenceClaim`, `SourceDocument`, `ReviewDecision`.
 Delete now (dead): `MaterializedProvenance`.
@@ -101,8 +104,11 @@ Ingest maps a scraped department string to the canonical value by deterministic 
 Aliases grow from the review queue.
 `OrgUnit` only escalates to full ID-normalization if a school-to-department-to-program tree-browse feature is wanted.
 
-Research areas: canonicalized `researchAreas[]` strings, no `TaxonomyTerm`.
-Synonym and related-topic matching is the job of semantic search, not a curated taxonomy.
+Research areas: `ResearchEntity` stores canonicalized `researchAreas[]` strings, never `topicIds`/`methodIds` references.
+Ingest canonicalizes each scraped area string against an approved `TaxonomyTerm` (`TOPIC`/`METHOD`) registry by deterministic normalized-name plus governed-alias match, and fails closed to the raw string plus review when no approved term matches, so a guessed grouping can never collapse two distinct topics (issue #208 option A).
+Only `reviewStatus: APPROVED` terms canonicalize; seeded-but-unratified groupings stay `UNREVIEWED` and are inert until a human approves them, and aliases grow from that review queue - the same fail-closed, human-gated pattern as `OrgUnit`.
+A scraper-label stop-list drops non-topic extraction artifacts (section headers like "Research Areas:"/"Fields of Interest", role labels like "YSM Researcher"/"Theorist"/"Experimentalist", and publication chrome) at this ingest step so they never become areas.
+Synonym and broader related-topic matching beyond governed aliases remains the job of semantic search, not this curated registry.
 
 ## Sequencing rules
 
