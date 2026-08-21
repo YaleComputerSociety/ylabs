@@ -1,3 +1,8 @@
+import {
+  isPersonProfileOrDirectoryUrl,
+  sourceUrlToResearchHomeWebsiteUrl,
+} from '../utils/researchHomeWebsiteUrl';
+
 export interface WebsiteUrlBackfillCandidateEntity {
   websiteUrl?: unknown;
   website?: unknown;
@@ -48,30 +53,56 @@ export function isContentPageUrl(value: unknown): boolean {
   return CONTENT_PAGE_PATH.test(url.pathname);
 }
 
+export function isProfilePageWebsiteUrl(value: unknown): boolean {
+  return isPersonProfileOrDirectoryUrl(value);
+}
+
 export function isPromotableWebsiteUrl(value: unknown): boolean {
-  return isPublicHttpUrl(value) && !isGrantOrIdentifierUrl(value) && !isContentPageUrl(value);
+  return (
+    isPublicHttpUrl(value) &&
+    !isGrantOrIdentifierUrl(value) &&
+    !isContentPageUrl(value) &&
+    !isProfilePageWebsiteUrl(value)
+  );
 }
 
 export function hasUsableWebsiteUrl(entity: WebsiteUrlBackfillCandidateEntity): boolean {
   return isPublicHttpUrl(entity.websiteUrl);
 }
 
+function selectResearchHomeWebsiteUrl(candidates: unknown[]): string | undefined {
+  for (const candidate of candidates) {
+    if (!isPromotableWebsiteUrl(candidate)) continue;
+    const url = sourceUrlToResearchHomeWebsiteUrl(candidate);
+    if (url) return url;
+  }
+  return undefined;
+}
+
 /**
  * Deterministic, evidence-first selection of a website URL already present in the
- * entity's materialized evidence. Prefers the `website` field, then the ordered
- * `sourceUrls`. Grant/identifier hosts and article/news content pages are never
- * promoted, and an entity that already has a usable `websiteUrl` is left untouched.
+ * entity's materialized evidence. Grant/identifier hosts, article/news content
+ * pages, and Yale profile / faculty-directory / people-directory pages are never
+ * promoted, so a profile page can never beat a real lab site. An entity whose
+ * existing `websiteUrl` is a profile page is corrected only to a genuine research
+ * home / lab site (never to a directory or opportunities page) when one exists in
+ * its evidence; any other usable `websiteUrl` is left untouched. When no usable
+ * `websiteUrl` exists, the first promotable candidate (`website` then ordered
+ * `sourceUrls`) is used.
  */
 export function selectBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
 ): string | undefined {
-  if (hasUsableWebsiteUrl(entity)) return undefined;
   const candidates: unknown[] = [
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
-  for (const candidate of candidates) {
-    if (isPromotableWebsiteUrl(candidate)) return cleanString(candidate);
+  if (hasUsableWebsiteUrl(entity)) {
+    if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
+      return selectResearchHomeWebsiteUrl(candidates);
+    }
+    return undefined;
   }
-  return undefined;
+  const promotable = candidates.find(isPromotableWebsiteUrl);
+  return promotable ? cleanString(promotable) : undefined;
 }

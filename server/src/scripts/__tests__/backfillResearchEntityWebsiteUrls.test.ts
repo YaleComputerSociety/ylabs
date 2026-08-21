@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isContentPageUrl,
   isGrantOrIdentifierUrl,
+  isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
   selectBackfillWebsiteUrl,
@@ -44,6 +45,22 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isPromotableWebsiteUrl('https://ubel.yale.edu/')).toBe(true);
     expect(isPromotableWebsiteUrl('https://reporter.nih.gov/project-details/9')).toBe(false);
     expect(isPromotableWebsiteUrl('https://lab.yale.edu/news/x')).toBe(false);
+  });
+
+  it('never promotes profile, faculty-directory, or people-directory pages', () => {
+    expect(
+      isPromotableWebsiteUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+      ),
+    ).toBe(false);
+    expect(isPromotableWebsiteUrl('https://medicine.example.edu/profile/jordan-example/')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
+    expect(isProfilePageWebsiteUrl('https://labs.example.edu/directory/faculty/jordan-example/')).toBe(
+      true,
+    );
+    expect(isProfilePageWebsiteUrl('https://lab.example.org/')).toBe(false);
   });
 });
 
@@ -110,6 +127,63 @@ describe('selectBackfillWebsiteUrl', () => {
         sourceUrls: ['https://lab.yale.edu/'],
       }),
     ).toBe('https://lab.yale.edu/');
+  });
+
+  it('prefers a real lab site over a faculty-directory page earlier in sourceUrls', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        websiteUrl: '',
+        sourceUrls: [
+          'https://www.nsf.gov/awardsearch/showAward?AWD_ID=1',
+          'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+          'https://example-computing-lab.example.org/',
+        ],
+      }),
+    ).toBe('https://example-computing-lab.example.org/');
+  });
+
+  it('corrects an existing faculty-directory websiteUrl to a better source URL', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        websiteUrl:
+          'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/1',
+          'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+          'https://example-computing-lab.example.org/',
+        ],
+      }),
+    ).toBe('https://example-computing-lab.example.org/');
+  });
+
+  it('corrects an existing profile-page websiteUrl to a better source URL', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.example.edu/profile/jordan-example/',
+        sourceUrls: ['https://campuspress-example.example.edu/jordan-example/'],
+      }),
+    ).toBe('https://campuspress-example.example.edu/jordan-example/');
+  });
+
+  it('leaves a profile-page websiteUrl untouched when no better source URL exists', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.example.edu/profile/jordan-example/',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/1',
+          'https://physics.example.edu/people/jordan-example/',
+        ],
+      }),
+    ).toBeUndefined();
+  });
+
+  it('leaves a real lab-site websiteUrl untouched even when other candidates exist', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        websiteUrl: 'https://example-computing-lab.example.org/',
+        sourceUrls: ['https://centers.example.edu/genomics/'],
+      }),
+    ).toBeUndefined();
   });
 });
 
