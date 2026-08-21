@@ -16,8 +16,6 @@ const sampleGroup: ResearchGroup = {
   departments: ['Computer Science'],
   researchAreas: ['Theoretical CS'],
   school: 'Fixture School of Research',
-  openness: 'open',
-  acceptingUndergrads: true,
   typicalUndergradRoles: ['Research Assistant'],
   prerequisiteCourses: ['CPSC 201'],
   creditOptions: ['CPSC 490'],

@@ -2202,7 +2202,7 @@ export const getAnalytics = async (range: AnalyticsDateRange = {}) => {
         ],
         byOpenness: [
           activeResearchEntityMatch,
-          { $group: { _id: '$opennessStatusCache', count: { $sum: 1 } } },
+          { $group: { _id: '$accessAcceptanceLevel', count: { $sum: 1 } } },
           { $project: { _id: 0, status: '$_id', count: 1 } },
         ],
         freshness: [

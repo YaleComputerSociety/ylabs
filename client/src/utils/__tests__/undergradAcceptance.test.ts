@@ -24,7 +24,6 @@ const baseGroup = (overrides: Partial<ResearchGroup> = {}): ResearchGroup => ({
   departments: [],
   researchAreas: [],
   school: '',
-  openness: 'open',
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
@@ -36,60 +35,10 @@ const baseGroup = (overrides: Partial<ResearchGroup> = {}): ResearchGroup => ({
   ...overrides,
 });
 
-describe('computeAcceptanceVerdict — manual lock takes priority', () => {
-  it('PI manual lock + acceptingUndergrads=true → verified-accepting with pi-claim chip', () => {
+describe('computeAcceptanceVerdict — access summary drives the verdict', () => {
+  it('uses posted-opening accessSummary as the primary access source', () => {
     const result = computeAcceptanceVerdict(
       baseGroup({
-        manuallyLockedFields: ['acceptingUndergrads'],
-        acceptingUndergrads: true,
-        // Even with extra signals, the PI claim is the only chip when locked.
-        pastUndergradAdvisees: [{ year: 2024, count: 3 }],
-        currentUndergradCount: 5,
-      }),
-    );
-    expect(result.verdict).toBe('verified-accepting');
-    expect(result.confidence).toBe(1.0);
-    expect(result.evidence).toHaveLength(1);
-    expect(result.evidence[0].kind).toBe('pi-claim');
-  });
-
-  it('PI manual lock + acceptingUndergrads=false → not-accepting with closed-toggle chip', () => {
-    const result = computeAcceptanceVerdict(
-      baseGroup({
-        manuallyLockedFields: ['acceptingUndergrads'],
-        acceptingUndergrads: false,
-      }),
-    );
-    expect(result.verdict).toBe('not-accepting');
-    expect(result.confidence).toBe(1.0);
-    expect(result.evidence).toHaveLength(1);
-    expect(result.evidence[0].kind).toBe('closed-toggle');
-  });
-});
-
-describe('computeAcceptanceVerdict — closed by non-locked source', () => {
-  it('acceptingUndergrads=false (no lock) → not-accepting with closed-evidence chip', () => {
-    const result = computeAcceptanceVerdict(
-      baseGroup({
-        acceptingUndergrads: false,
-        undergradEvidenceQuote: 'Lab is at capacity for the spring.',
-        confidenceByField: { acceptingUndergrads: 0.6 },
-      }),
-    );
-    expect(result.verdict).toBe('not-accepting');
-    expect(result.evidence[0].kind).toBe('closed-evidence');
-    expect(result.evidence[0].detail).toBe('Lab is at capacity for the spring.');
-    // Confidence comes from the materializer when present.
-    expect(result.confidence).toBe(0.6);
-  });
-});
-
-describe('computeAcceptanceVerdict — access summary compatibility', () => {
-  it('uses posted-opening accessSummary before legacy scalar fallback', () => {
-    const result = computeAcceptanceVerdict(
-      baseGroup({
-        acceptingUndergrads: false,
-        undergradEvidenceQuote: 'Legacy field says closed.',
         accessSummary: {
           status: 'posted-opening',
           confidence: 0.88,
@@ -212,35 +161,7 @@ describe('computeAcceptanceVerdict — verdict thresholds', () => {
     expect(result.evidence[0].detail).toBe('TEST 101');
   });
 
-  it('LLM evidence with confidence in [0.5, 1) → moderate signal, likely-accepting', () => {
-    const result = computeAcceptanceVerdict(
-      baseGroup({
-        acceptingUndergrads: true,
-        undergradEvidenceQuote: 'We welcome motivated undergraduate researchers.',
-        confidenceByField: { acceptingUndergrads: 0.65 },
-      }),
-    );
-    expect(result.verdict).toBe('likely-accepting');
-    expect(result.evidence[0].kind).toBe('llm-evidence');
-    expect(result.evidence[0].detail).toBe('We welcome motivated undergraduate researchers.');
-    // Confidence floor floor — when LLM score exists, prefer it over derived.
-    expect(result.confidence).toBe(0.65);
-  });
-
-  it('LLM confidence = 1.0 does NOT add an llm-evidence chip (treated as a hard claim)', () => {
-    // confidence === 1.0 means it has been fully confirmed (e.g., another
-    // strong signal already wrote it). The chip would be redundant.
-    const result = computeAcceptanceVerdict(
-      baseGroup({
-        acceptingUndergrads: true,
-        confidenceByField: { acceptingUndergrads: 1.0 },
-      }),
-    );
-    expect(result.evidence.find((e) => e.kind === 'llm-evidence')).toBeUndefined();
-    expect(result.verdict).toBe('unknown');
-  });
-
-  it('no positive signals + acceptingUndergrads undefined → unknown', () => {
+  it('no positive signals and no access summary → unknown', () => {
     const result = computeAcceptanceVerdict(baseGroup());
     expect(result.verdict).toBe('unknown');
     expect(result.confidence).toBe(0.0);
@@ -283,16 +204,6 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
     // strong: past-advisees, lab-lists-undergrads
     // moderate: offers-indep-study
     expect(kinds.indexOf('offers-indep-study')).toBe(kinds.length - 1);
-  });
-
-  it('LLM evidence is ignored when its confidence is below 0.5', () => {
-    const result = computeAcceptanceVerdict(
-      baseGroup({
-        acceptingUndergrads: true,
-        confidenceByField: { acceptingUndergrads: 0.3 },
-      }),
-    );
-    expect(result.evidence.find((e) => e.kind === 'llm-evidence')).toBeUndefined();
   });
 
   it('past advisee count of 0 entries is handled (label uses fallback)', () => {

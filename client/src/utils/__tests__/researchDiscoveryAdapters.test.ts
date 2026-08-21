@@ -27,7 +27,6 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   departments: overrides.departments || [],
   researchAreas: overrides.researchAreas || [],
   school: overrides.school || '',
-  openness: overrides.openness || 'unknown',
   typicalUndergradRoles: overrides.typicalUndergradRoles || [],
   prerequisiteCourses: overrides.prerequisiteCourses || [],
   creditOptions: overrides.creditOptions || [],

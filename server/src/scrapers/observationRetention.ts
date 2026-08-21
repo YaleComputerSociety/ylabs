@@ -33,7 +33,6 @@ export interface ObservationReferenceSpec {
 
 export const OBSERVATION_REFERENCE_SPECS: ObservationReferenceSpec[] = [
   { collection: 'observations', field: 'supersededBy' },
-  { collection: 'research_entities', field: 'opennessSignals.observationId' },
   { collection: 'signals', field: 'source.evidenceIds' },
   { collection: 'research_entities', field: 'fieldProvenance', kind: 'provenance-map' },
   { collection: 'faculty_members', field: 'fieldProvenance', kind: 'provenance-map' },

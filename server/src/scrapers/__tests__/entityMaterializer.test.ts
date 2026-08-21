@@ -16,7 +16,6 @@ import {
   sanitizeResearchEntitySourceUrlsForMaterialization,
   selectOfficialProfileObservationUserMatch,
   shouldPreserveExistingUserIdentityField,
-  shouldClearIgnoredAccessClaimForEntity,
   shouldIgnoreObservationForEntityMaterialization,
   uniqueKeyValueForIdentifier,
   userLookupFiltersForOfficialProfileObservations,
@@ -413,7 +412,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     });
   });
 
-  it('ignores discovery-only acceptingUndergrads observations for research groups', () => {
+  it('treats retired access fields as signal-source-only, never persisting them to the entity doc', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('researchEntity', {
         field: 'lastObservedAt',
@@ -426,45 +425,21 @@ describe('entityMaterializer post-materialization metrics', () => {
         sourceName: 'dept-faculty-roster',
       }),
     ).toBe(true);
-    expect(
-      shouldIgnoreObservationForEntityMaterialization('researchGroup', {
-        field: 'acceptingUndergrads',
-        sourceName: 'ysm-atoz-index',
-      }),
-    ).toBe(true);
-    expect(
-      shouldIgnoreObservationForEntityMaterialization('researchGroup', {
-        field: 'acceptingUndergrads',
-        sourceName: 'lab-microsite-undergrad-llm',
-      }),
-    ).toBe(false);
+    for (const field of ['acceptingUndergrads', 'openness']) {
+      for (const sourceName of ['ysm-atoz-index', 'lab-microsite-undergrad-llm']) {
+        expect(
+          shouldIgnoreObservationForEntityMaterialization('researchGroup', { field, sourceName }),
+        ).toBe(true);
+        expect(
+          shouldIgnoreObservationForEntityMaterialization('researchEntity', { field, sourceName }),
+        ).toBe(true);
+      }
+    }
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {
         field: 'acceptingUndergrads',
         sourceName: 'ysm-atoz-index',
       }),
-    ).toBe(false);
-  });
-
-  it('clears legacy discovery-only acceptance claims unless manually locked or supported', () => {
-    expect(
-      shouldClearIgnoredAccessClaimForEntity('researchGroup', [
-        { field: 'acceptingUndergrads', sourceName: 'ysm-atoz-index' },
-        { field: 'acceptingUndergrads', sourceName: 'yse-centers-index' },
-      ]),
-    ).toBe(true);
-    expect(
-      shouldClearIgnoredAccessClaimForEntity(
-        'researchGroup',
-        [{ field: 'acceptingUndergrads', sourceName: 'ysm-atoz-index' }],
-        ['acceptingUndergrads'],
-      ),
-    ).toBe(false);
-    expect(
-      shouldClearIgnoredAccessClaimForEntity('researchGroup', [
-        { field: 'acceptingUndergrads', sourceName: 'ysm-atoz-index' },
-        { field: 'acceptingUndergrads', sourceName: 'lab-microsite-undergrad-llm' },
-      ]),
     ).toBe(false);
   });
 

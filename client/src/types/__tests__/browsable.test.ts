@@ -28,7 +28,6 @@ const researchEntity = (overrides: Partial<ResearchEntity> = {}): ResearchEntity
   departments: [],
   researchAreas: [],
   school: '',
-  openness: 'open',
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
@@ -57,10 +56,10 @@ describe('getItemTags fellowship audience', () => {
 });
 
 describe('isItemOpen for research entities', () => {
-  it('does not treat legacy openness as evidence-backed availability', () => {
+  it('does not treat an entity without access evidence as available', () => {
     const item: BrowsableItem = {
       type: 'researchGroup',
-      data: researchEntity({ openness: 'open' }),
+      data: researchEntity({}),
     };
 
     expect(isItemOpen(item)).toBe(false);
@@ -70,7 +69,6 @@ describe('isItemOpen for research entities', () => {
     const item: BrowsableItem = {
       type: 'researchGroup',
       data: researchEntity({
-        openness: 'unknown',
         accessSummary: {
           status: 'posted-opening',
           confidence: 0.9,

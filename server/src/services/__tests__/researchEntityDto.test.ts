@@ -14,6 +14,8 @@ describe('researchEntityDto', () => {
       kind: 'initiative',
       description: 'Archives and computational methods.',
       acceptingUndergrads: true,
+      openness: 'open',
+      acceptanceConfidence: 1,
       departments: ['History'],
       researchAreas: ['Digital humanities'],
       sourceUrls: ['https://example.yale.edu/project'],
@@ -28,12 +30,14 @@ describe('researchEntityDto', () => {
         kind: 'initiative',
         entityKind: 'initiative',
         entityType: 'INITIATIVE',
-        acceptingUndergrads: true,
         departments: ['History'],
         researchAreas: ['Digital humanities'],
         sourceUrls: ['https://example.yale.edu/project'],
       }),
     );
+    expect(dto).not.toHaveProperty('acceptingUndergrads');
+    expect(dto).not.toHaveProperty('openness');
+    expect(dto).not.toHaveProperty('acceptanceConfidence');
   });
 
   it('keeps explicit entityType values from materialized records', () => {

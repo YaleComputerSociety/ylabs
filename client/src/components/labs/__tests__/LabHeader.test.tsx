@@ -22,8 +22,6 @@ const baseGroup: ResearchGroup = {
   departments: ['Computer Science', 'Mathematics'],
   researchAreas: ['Theoretical CS'],
   school: 'School of Engineering & Applied Science',
-  openness: 'open',
-  acceptingUndergrads: true,
   typicalUndergradRoles: [],
   prerequisiteCourses: [],
   creditOptions: [],
@@ -101,8 +99,6 @@ describe('LabHeader signal-only header', () => {
       <LabHeader
         group={{
           ...baseGroup,
-          manuallyLockedFields: ['acceptingUndergrads'],
-          acceptingUndergrads: true,
           pastUndergradAdvisees: [{ year: 2024, programName: 'STARS', count: 2 }],
           currentUndergradCount: 3,
         }}
