@@ -1273,17 +1273,17 @@ const Analytics = () => {
             {showTodayBreakdown && (
               <div className="bg-[var(--yr-panel)] rounded-lg shadow-md p-6 border border-[var(--yr-line)]">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Today by Type</h3>
-              <div className="space-y-2">
-                {data.visitors.today.byType.length > 0 ? (
-                  data.visitors.today.byType.map((item) => (
-                    <div key={item.userType} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{formatUserType(item.userType)}:</span>
-                      <span className="font-medium">{item.count}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500">No visitors yet today</p>
-                )}
+                <div className="space-y-2">
+                  {data.visitors.today.byType.length > 0 ? (
+                    data.visitors.today.byType.map((item) => (
+                      <div key={item.userType} className="flex justify-between text-sm">
+                        <span className="text-gray-600">{formatUserType(item.userType)}:</span>
+                        <span className="font-medium">{item.count}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-gray-500">No visitors yet today</p>
+                  )}
                 </div>
               </div>
             )}
