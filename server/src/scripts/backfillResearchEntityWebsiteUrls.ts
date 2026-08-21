@@ -156,7 +156,8 @@ export interface ResearchEntityWebsiteUrlCorrectiveResult {
   samples: Array<{ slug: string; from: string; to: string }>;
 }
 
-const PROFILE_PAGE_WEBSITE_URL_PREFILTER = /^https?:\/\/[^?#]*(?:profile|people|person|faculty|who-we-are)/i;
+const PROFILE_PAGE_WEBSITE_URL_PREFILTER =
+  /^https?:\/\/[^?#]*(?:profile|people|person|faculty|who-we-are)/i;
 
 export async function runResearchEntityWebsiteUrlCorrectivePass(options: {
   dryRun: boolean;
@@ -231,8 +232,7 @@ async function main(): Promise<void> {
   try {
     const limit = options.explicitLimit ? options.limit : undefined;
     const result = await runResearchEntityWebsiteUrlBackfill({ dryRun: options.dryRun, limit });
-    const correctiveLimit =
-      limit === undefined ? undefined : Math.max(limit - result.updated, 0);
+    const correctiveLimit = limit === undefined ? undefined : Math.max(limit - result.updated, 0);
     const corrective = await runResearchEntityWebsiteUrlCorrectivePass({
       dryRun: options.dryRun,
       limit: correctiveLimit,

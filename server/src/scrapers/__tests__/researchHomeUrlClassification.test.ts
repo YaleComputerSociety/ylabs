@@ -6,10 +6,12 @@ import {
 
 describe('isProfileOrDirectoryPageUrl', () => {
   it('flags profile and directory listing pages regardless of host', () => {
-    expect(isProfileOrDirectoryPageUrl('https://medicine.yale.edu/profile/pat-fixture/')).toBe(true);
-    expect(isProfileOrDirectoryPageUrl('https://medicine.yale.edu/cancer/profile/pat-fixture')).toBe(
+    expect(isProfileOrDirectoryPageUrl('https://medicine.yale.edu/profile/pat-fixture/')).toBe(
       true,
     );
+    expect(
+      isProfileOrDirectoryPageUrl('https://medicine.yale.edu/cancer/profile/pat-fixture'),
+    ).toBe(true);
     expect(
       isProfileOrDirectoryPageUrl(
         'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
@@ -31,10 +33,14 @@ describe('isProfileOrDirectoryPageUrl', () => {
 
   it('does not flag campuspress personal-microsite lab pages using a people path', () => {
     expect(
-      isProfileOrDirectoryPageUrl('https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/'),
+      isProfileOrDirectoryPageUrl(
+        'https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/',
+      ),
     ).toBe(false);
     expect(
-      isProfileOrDirectoryPageUrl('https://campuspress.yale.edu/squirrel/people/elena-gracheva-lab/'),
+      isProfileOrDirectoryPageUrl(
+        'https://campuspress.yale.edu/squirrel/people/elena-gracheva-lab/',
+      ),
     ).toBe(false);
   });
 
@@ -69,7 +75,9 @@ describe('resolveSourceUrlResearchHomeUrl', () => {
       '',
     );
     expect(
-      resolveSourceUrlResearchHomeUrl('https://medicine.yale.edu/cancer/research/membership/directory'),
+      resolveSourceUrlResearchHomeUrl(
+        'https://medicine.yale.edu/cancer/research/membership/directory',
+      ),
     ).toBe('');
     expect(
       resolveSourceUrlResearchHomeUrl(

@@ -34,7 +34,6 @@ import {
 } from '../utils/scraperHelpers';
 import {
   canonicalLegacyResearchHomeUrl,
-  genericYaleWebsiteSubdomains,
   isCustomYaleResearchHomeSubdomain,
   isProfileOrDirectoryPageUrl,
   resolveSourceUrlResearchHomeUrl,

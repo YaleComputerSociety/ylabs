@@ -124,9 +124,9 @@ describe('profile-page website URL exclusion', () => {
       ),
     ).toBe(true);
     expect(isProfilePageWebsiteUrl('https://english.yale.edu/people/kai-fixture/')).toBe(true);
-    expect(isProfilePageWebsiteUrl('https://environment.yale.edu/directory/faculty/sam-fixture/')).toBe(
-      true,
-    );
+    expect(
+      isProfilePageWebsiteUrl('https://environment.yale.edu/directory/faculty/sam-fixture/'),
+    ).toBe(true);
     expect(isProfilePageWebsiteUrl('https://synthlab.yale.edu/')).toBe(false);
     expect(isProfilePageWebsiteUrl('reporter.nih.gov/project/1')).toBe(false);
   });
@@ -170,11 +170,9 @@ describe('selectCorrectiveWebsiteUrl', () => {
   it('demotes an already-wrong profile websiteUrl in favor of a real lab site', () => {
     expect(
       selectCorrectiveWebsiteUrl({
-        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
-        sourceUrls: [
-          'https://reporter.nih.gov/project-details/1',
-          'https://synthlab.example.org/',
-        ],
+        websiteUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
+        sourceUrls: ['https://reporter.nih.gov/project-details/1', 'https://synthlab.example.org/'],
       }),
     ).toBe('https://synthlab.example.org/');
   });
