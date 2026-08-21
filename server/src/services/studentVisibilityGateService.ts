@@ -34,6 +34,7 @@ import {
 } from './rosterLeadResolutionGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -169,7 +170,7 @@ const suppressionRepairReasons = new Set([
 ]);
 const reviewExceptionReasons = new Set(['formalization_only']);
 export const researchEntityGateProjection =
-  '_id slug name displayName kind entityType website websiteUrl sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons';
 
 const repairStageForReasons = (reasons: string[]) => {
   if (reasons.some((reason) => reviewExceptionReasons.has(reason))) return 'review_exception';
@@ -917,6 +918,7 @@ async function planResearchEntityGateUpdates(
         .trim()
         .split(/\s+/);
       const lname = rest.join(' ');
+      const officialProfileUrl = officialProfileUrlFromRosterEntry(entry);
       return {
         researchEntityId: entry.researchEntityId,
         role: entry.role,
@@ -930,6 +932,8 @@ async function planResearchEntityGateUpdates(
           fname,
           lname,
           ...(entry.title ? { title: entry.title } : {}),
+          ...(entry.websiteUrl ? { websiteUrl: entry.websiteUrl } : {}),
+          ...(officialProfileUrl ? { profileUrls: { official: officialProfileUrl } } : {}),
         },
       };
     });

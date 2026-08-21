@@ -18,6 +18,7 @@ import {
   STUDENT_VISIBILITY_VERSION,
 } from '../services/studentVisibilityTier';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import { officialProfileUrlFromRosterEntry } from '../services/leadProfileIdentity';
 import {
   selectSamePiDuplicateRiskEntityIds,
   type ResearchEntityPiDedupeRow,
@@ -317,6 +318,7 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
         name: entry.name,
         title: entry.title,
         role: entry.role,
+        officialProfileUrl: officialProfileUrlFromRosterEntry(entry),
       });
     }
   }
@@ -331,7 +333,13 @@ async function planResearchEntityUpdates(limit: number): Promise<PlannedTierUpda
   const leadUsersByNetid = new Map((leadUsers as any[]).map((user) => [user.netid, user]));
   const profileAreaNamesByUserId = new Map<string, string[]>();
   for (const row of leadRows) {
-    if (row.netid) row.user = leadUsersByNetid.get(row.netid);
+    const baseUser = row.netid ? leadUsersByNetid.get(row.netid) : undefined;
+    if (baseUser || row.officialProfileUrl) {
+      row.user = {
+        ...(baseUser || {}),
+        ...(row.officialProfileUrl ? { profileUrls: { official: row.officialProfileUrl } } : {}),
+      };
+    }
     const userId = serializedDocumentId(row.userId);
     if (userId && !profileAreaNamesByUserId.has(userId)) {
       const names = profileAreaNamesForVisibilityPi(row.user?.fname, row.user?.lname);

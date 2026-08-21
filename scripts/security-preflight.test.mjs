@@ -6179,7 +6179,7 @@ test('current-user mutation responses omit internal account join fields', () => 
 
 test('public PI official profile routes reject credential-bearing URLs', () => {
   const source = fs.readFileSync(
-    new URL('../server/src/services/researchGroupService.ts', import.meta.url),
+    new URL('../server/src/services/leadProfileIdentity.ts', import.meta.url),
     'utf8',
   );
 
@@ -6190,7 +6190,7 @@ test('public PI official profile routes reject credential-bearing URLs', () => {
   assert.match(source, /if \(!isPublicHttpUrl\(trimmed\)\) return false/);
   assert.match(
     source,
-    /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => publicHttpUrl\(url\)\s*,?\s*\)/,
+    /Object\.entries\(value as Record<string, unknown>\)\.filter\(\s*\(\[, url\]\) => isPublicHttpUrl\(url\)\s*,?\s*\)/,
   );
 });
 

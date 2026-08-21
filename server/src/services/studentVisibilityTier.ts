@@ -7,6 +7,7 @@ import { buildResearchEntityPublicDescriptionRepresentation } from './researchEn
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
+import { detectProfileIdentityRisk } from './leadProfileIdentity';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
 
@@ -312,6 +313,7 @@ export function computeResearchEntityStudentVisibility({
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
+  const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
 
@@ -332,6 +334,7 @@ export function computeResearchEntityStudentVisibility({
   if (quality.repairFlags.includes('missing_card_description'))
     reasons.push('missing_card_description');
   if (quality.repairFlags.includes('pi_identity_conflict')) reasons.push('pi_identity_conflict');
+  if (profileIdentityRisk) reasons.push('profile_identity_risk');
   if (requiresLead && quality.leadState !== 'lead_attached') reasons.push('missing_lead');
   if (quality.repairFlags.includes('missing_source_url')) reasons.push('missing_source_url');
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
@@ -359,6 +362,7 @@ export function computeResearchEntityStudentVisibility({
     quality.cardState === 'complete' &&
     (!requiresLead || quality.leadState === 'lead_attached') &&
     !quality.repairFlags.includes('pi_identity_conflict') &&
+    !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     hasActionEvidence &&
     !duplicateRisk
@@ -369,6 +373,7 @@ export function computeResearchEntityStudentVisibility({
     quality.cardState === 'complete' &&
     (!requiresLead || quality.leadState === 'lead_attached') &&
     !quality.repairFlags.includes('pi_identity_conflict') &&
+    !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
     !duplicateRisk
   ) {

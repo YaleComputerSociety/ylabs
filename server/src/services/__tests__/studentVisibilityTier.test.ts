@@ -678,6 +678,102 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('non_research_entity');
     expect(result.reasons).not.toContain('administrative_or_service_organization');
   });
+
+  it('suppresses a person-derived entity whose attached lead profile does not match the entity identity', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-contested',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'john-smith',
+          user: {
+            fname: 'John',
+            lname: 'Smith',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/john-smith/' },
+          },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).toBe('operator_review');
+    expect(result.reasons).toContain('profile_identity_risk');
+  });
+
+  it('keeps a person-derived entity student-ready when the attached lead profile matches its identity', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-consistent',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab-consistent',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'jane-doe',
+          user: {
+            fname: 'Jane',
+            lname: 'Doe',
+            profileUrls: { official: 'https://medicine.yale.edu/profile/jane-doe/' },
+          },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('profile_identity_risk');
+  });
+
+  it('does not flag profile identity risk for a person-derived entity when no lead profile evidence exists', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-no-lead-profile',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab-no-profile',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+      },
+      leadMembers: [{ role: 'pi', userId: 'jane-doe', user: { fname: 'Jane', lname: 'Doe' } }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('profile_identity_risk');
+    expect(result.tier).toBe('student_ready');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {
