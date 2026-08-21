@@ -193,6 +193,42 @@ describe('mathematics idiom single-word derivation precision', () => {
   });
 });
 
+describe('generic seeded single-word derivation precision', () => {
+  const genericRows = [
+    { name: 'Aesthetics' },
+    { name: 'Classics' },
+    { name: 'Immigration' },
+    { name: 'Photography' },
+    { name: 'Sustainability' },
+    { name: 'Genomics' },
+  ];
+  const generic = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(genericRows));
+
+  it('does not derive generic seeded words from non-topical prose', () => {
+    const derived = generic.deriveResearchAreasFromText(
+      'The team weighs the aesthetics of the interface and the long-term sustainability of the program, drawing on classics of the field, while immigration reshaped the cohort and photography documented the work; separately they study genomics.',
+    );
+    expect(derived).not.toContain('Aesthetics');
+    expect(derived).not.toContain('Classics');
+    expect(derived).not.toContain('Immigration');
+    expect(derived).not.toContain('Photography');
+    expect(derived).not.toContain('Sustainability');
+    expect(derived).toContain('Genomics');
+  });
+
+  it('still resolves generic seeded areas through the exact index', () => {
+    expect(
+      generic.matchCanonicalResearchAreas([
+        'Aesthetics',
+        'Classics',
+        'Immigration',
+        'Photography',
+        'Sustainability',
+      ]),
+    ).toEqual(['Aesthetics', 'Classics', 'Immigration', 'Photography', 'Sustainability']);
+  });
+});
+
 describe('applyResearchEntityResearchAreaCanonicalization', () => {
   it('rewrites the set researchAreas in place and reports unmatched', async () => {
     setResearchAreaCanonicalizerForTesting(canonicalizer);
