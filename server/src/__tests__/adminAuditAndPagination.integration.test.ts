@@ -5,7 +5,6 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AdminAuditEvent } from '../models/adminAuditEvent';
-import { AdminGrant } from '../models/adminGrant';
 import { AnalyticsEvent, AnalyticsEventType } from '../models/analytics';
 import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
 import { listAdminAuditEvents } from '../services/adminAuditService';
