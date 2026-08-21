@@ -66,11 +66,7 @@ export function planResearchAreaBackfillRow(
   const hadAreas = before.length > 0;
   const deriveAllowed = !options.onlyEmpty || !hadAreas;
 
-  const textBlob = [
-    facts.name,
-    facts.shortDescription,
-    facts.fullDescription,
-  ]
+  const textBlob = [facts.name, facts.shortDescription, facts.fullDescription]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
     .join('\n');
 
@@ -81,9 +77,7 @@ export function planResearchAreaBackfillRow(
         ...canonicalizer.deriveResearchAreasFromText(departmentList.join('\n')),
       ])
     : [];
-  const fromDescription = deriveAllowed
-    ? canonicalizer.deriveResearchAreasFromText(textBlob)
-    : [];
+  const fromDescription = deriveAllowed ? canonicalizer.deriveResearchAreasFromText(textBlob) : [];
 
   const after: string[] = [];
   const seen = new Set<string>();
@@ -102,7 +96,8 @@ export function planResearchAreaBackfillRow(
   const existingKeys = new Set(existing.values.map((value) => value.toLocaleLowerCase()));
   const added = after.filter((value) => !existingKeys.has(value.toLocaleLowerCase()));
   const addedFromDepartments = fromDepartments.filter(
-    (value) => afterKeys.has(value.toLocaleLowerCase()) && !existingKeys.has(value.toLocaleLowerCase()),
+    (value) =>
+      afterKeys.has(value.toLocaleLowerCase()) && !existingKeys.has(value.toLocaleLowerCase()),
   );
   const addedDepartmentKeys = new Set(
     addedFromDepartments.map((value) => value.toLocaleLowerCase()),

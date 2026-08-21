@@ -37,11 +37,7 @@ describe('researchAreaMatchKey', () => {
 
 describe('canonicalizeResearchAreas', () => {
   it('maps exact names and curated aliases to canonical values', () => {
-    const result = canonicalizer.canonicalizeResearchAreas([
-      'machine learning',
-      'AI',
-      'HCI',
-    ]);
+    const result = canonicalizer.canonicalizeResearchAreas(['machine learning', 'AI', 'HCI']);
     expect(result.values).toEqual([
       'Machine Learning',
       'Artificial Intelligence',
@@ -64,9 +60,9 @@ describe('canonicalizeResearchAreas', () => {
 
 describe('matchCanonicalResearchAreas', () => {
   it('returns only canonical matches and drops unmatched candidates', () => {
-    expect(
-      canonicalizer.matchCanonicalResearchAreas(['Economics', 'Underwater Ceramics']),
-    ).toEqual(['Economics']);
+    expect(canonicalizer.matchCanonicalResearchAreas(['Economics', 'Underwater Ceramics'])).toEqual(
+      ['Economics'],
+    );
   });
 });
 
