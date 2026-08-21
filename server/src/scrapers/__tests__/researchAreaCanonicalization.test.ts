@@ -175,6 +175,24 @@ describe('finance and business single-word derivation precision', () => {
   });
 });
 
+describe('mathematics idiom single-word derivation precision', () => {
+  const mathRows = [{ name: 'Topology' }, { name: 'Optics' }, { name: 'Genomics' }];
+  const math = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(mathRows));
+
+  it('does not derive Topology from the "network topology" idiom', () => {
+    const derived = math.deriveResearchAreasFromText(
+      'The group designs distributed systems and studies network topology and optics for sensor genomics.',
+    );
+    expect(derived).not.toContain('Topology');
+    expect(derived).toContain('Optics');
+    expect(derived).toContain('Genomics');
+  });
+
+  it('still resolves Topology through the exact index', () => {
+    expect(math.matchCanonicalResearchAreas(['Topology'])).toEqual(['Topology']);
+  });
+});
+
 describe('applyResearchEntityResearchAreaCanonicalization', () => {
   it('rewrites the set researchAreas in place and reports unmatched', async () => {
     setResearchAreaCanonicalizerForTesting(canonicalizer);

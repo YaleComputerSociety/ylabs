@@ -92,6 +92,7 @@ export const AMBIGUOUS_SINGLE_WORD_AREAS: readonly string[] = [
   'Statistics',
   'Surgery',
   'Theater',
+  'Topology',
 ];
 
 const MULTI_WORD_TOKEN_MINIMUM = 2;
