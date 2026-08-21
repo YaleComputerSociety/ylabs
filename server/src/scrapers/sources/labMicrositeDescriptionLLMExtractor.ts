@@ -329,7 +329,12 @@ function usefulLabName(value: unknown): string {
 
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
-  context: { entityId?: string; entityKey?: string; sourceUrl: string },
+  context: {
+    entityId?: string;
+    entityKey?: string;
+    sourceUrl: string;
+    entityKind?: DescriptionEntityKind;
+  },
 ): ObservationInput[] {
   if (isRejectedDescriptionSourceUrl(context.sourceUrl)) return [];
   const fullDescription = normalizeKnownDescriptionAcronyms(
@@ -359,7 +364,8 @@ export function descriptionExtractionToObservations(
 
   const labName = usefulLabName(extraction.name);
   const isProfileSource = /\/profile\//i.test(context.sourceUrl);
-  if (labName && !isProfileSource) {
+  const isOrganizationEntity = context.entityKind !== 'person';
+  if (labName && !isProfileSource && isOrganizationEntity) {
     const nameBase = { ...base, confidenceOverride: LAB_NAME_CONFIDENCE };
     observations.push({ ...nameBase, field: 'name', value: labName });
     observations.push({ ...nameBase, field: 'displayName', value: labName });
@@ -571,6 +577,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
 
     for (const lab of candidates) {
       try {
+        const entityKind: DescriptionEntityKind = isFacultyResearchTextEntity({
+          entityType: lab.entityType,
+          kind: lab.kind,
+        })
+          ? 'person'
+          : 'organization';
         if (workPlannerPolicy) {
           if (!idValue(lab._id) && !lab.slug) {
             recordWorkPlannerNoIdentifier(workPlannerMetrics);
@@ -622,13 +634,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           embeddedHostname = '';
         }
         if (/(^|\.)yale\.edu$/i.test(embeddedHostname)) {
-          const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
-            entityType: lab.entityType,
-            kind: lab.kind,
-          })
-            ? 'person'
-            : 'organization';
-          const embedded = extractLabHomepageDescription(page.html, { kind });
+          const embedded = extractLabHomepageDescription(page.html, { kind: entityKind });
           if (embedded?.description) {
             const embeddedObservations = descriptionExtractionToObservations(
               {
@@ -641,6 +647,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                 entityId: serializedDocumentId(lab._id),
                 entityKey: lab.slug,
                 sourceUrl: page.url,
+                entityKind,
               },
             );
             if (embeddedObservations.length) {
@@ -666,6 +673,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           entityId: serializedDocumentId(lab._id),
           entityKey: lab.slug,
           sourceUrl: page.url,
+          entityKind,
         });
         if (!observations.length) continue;
 

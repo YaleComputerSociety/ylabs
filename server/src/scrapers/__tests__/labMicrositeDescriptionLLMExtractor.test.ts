@@ -577,6 +577,80 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(nameObservation?.confidenceOverride).toBeGreaterThan(0.9);
   });
 
+  it('does not rename a faculty/person entity to a branded lab name from a non-profile microsite', async () => {
+    const { ctx, emitted } = makeContext();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-person',
+          slug: 'nsf-pi-example-person',
+          name: 'Alex Example Faculty Research',
+          websiteUrl: 'https://example-computing.example.org/',
+          entityType: 'FACULTY_RESEARCH_AREA',
+        },
+      ],
+      fetchPage: vi.fn().mockResolvedValue({
+        url: 'https://example-computing.example.org/',
+        html: '<main><h1>The Example Computing Lab</h1><p>The lab studies energy-efficient hardware, compiler co-design, and low-power machine-learning systems for edge devices.</p></main>',
+      }),
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription:
+          'The Example Computing Lab studies energy-efficient hardware, compiler co-design, and low-power machine-learning systems for edge devices.',
+        shortDescription:
+          'Studies energy-efficient hardware, compiler co-design, and low-power machine learning.',
+        topics: [],
+        methods: [],
+        name: 'The Example Computing Lab (ECL)',
+      } satisfies DescriptionExtraction),
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted.map((obs) => obs.field)).toContain('fullDescription');
+    expect(emitted.map((obs) => obs.field)).not.toContain('name');
+    expect(emitted.map((obs) => obs.field)).not.toContain('displayName');
+  });
+
+  it('emits a branded lab name for an organization entity from a non-profile microsite', async () => {
+    const { ctx, emitted } = makeContext();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-org',
+          slug: 'nsf-pi-example-org',
+          name: 'Example Computing',
+          websiteUrl: 'https://example-computing.example.org/',
+          entityType: 'RESEARCH_GROUP',
+        },
+      ],
+      fetchPage: vi.fn().mockResolvedValue({
+        url: 'https://example-computing.example.org/',
+        html: '<main><h1>The Example Computing Lab</h1><p>The lab studies energy-efficient hardware, compiler co-design, and low-power machine-learning systems for edge devices.</p></main>',
+      }),
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription:
+          'The Example Computing Lab studies energy-efficient hardware, compiler co-design, and low-power machine-learning systems for edge devices.',
+        shortDescription:
+          'Studies energy-efficient hardware, compiler co-design, and low-power machine learning.',
+        topics: [],
+        methods: [],
+        name: 'The Example Computing Lab (ECL)',
+      } satisfies DescriptionExtraction),
+    });
+
+    await scraper.run(ctx);
+
+    expect(emitted.find((obs) => obs.field === 'name')).toMatchObject({
+      value: 'The Example Computing Lab (ECL)',
+      confidenceOverride: 0.95,
+    });
+    expect(emitted.find((obs) => obs.field === 'displayName')).toMatchObject({
+      value: 'The Example Computing Lab (ECL)',
+    });
+  });
+
   it('does not emit a lab name from a profile page or when no proper name is extracted', () => {
     const profileObservations = descriptionExtractionToObservations(
       {

@@ -58,10 +58,10 @@ export const sourceCoverageRegistry = {
     priority: 1,
     tier: 'PRIMARY_OFFICIAL',
     artifactTypes: ['ResearchEntity', 'Observation'],
-    evidenceCategories: ['LAB_WEBSITE', 'TOPICS', 'METHODS'],
+    evidenceCategories: ['LAB_WEBSITE', 'TOPICS', 'METHODS', 'ENTITY_IDENTITY'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
+      "Official microsite description extraction for research focus, questions, methods, and conservative areas, plus the research home's own proper name from non-profile organization pages; must not create access, route, or opportunity evidence.",
   },
   'center-affiliation-llm': {
     priority: 2,
