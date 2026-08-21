@@ -221,9 +221,7 @@ describe('LabDetail page', () => {
 
     expect(screen.getByText('How to get involved')).toBeTruthy();
     expect(
-      screen.getByText(
-        /Undergraduate research almost always starts with an email\./,
-      ),
+      screen.getByText(/Undergraduate research almost always starts with an email\./),
     ).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
       OFFICIAL_PROFILE_URL,

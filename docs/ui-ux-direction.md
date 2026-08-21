@@ -113,7 +113,8 @@ Primary UX ingredients:
 - People section that distinguishes PI, program manager, lab manager, mentor, and other roles where possible.
 - A Best Next Step summary with guarded CTAs for official applications, source review, profile review, or saved planning.
 
-Current gap: the detail page now presents planning context, evidence, best next step, saved-plan actions, and deduped sources before active opportunities. Research detail pages should keep the source-backed research summary above generated Student Decision / Best Next Step guidance, so faculty research pages do not read like posted openings. The next improvement should reduce duplication between official route CTAs and the main Best Next Step CTA without hiding the action on mobile.
+Current gap: the detail page presents the source-backed research summary, evidence, source-verified team context, deduped sources, and saved-plan actions before active opportunities.
+The sidebar surfaces evidence as a flat additive signal list and a constant prompt to email the PI, not a computed verdict, evidence-level tier, or ranked next-step CTA, so faculty research pages never gate outreach and do not read like posted openings.
 
 ## UX Principles
 
