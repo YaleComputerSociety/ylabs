@@ -616,7 +616,6 @@ const Analytics = () => {
         ? 'amber'
         : 'green';
   const topAction = actionCards[0]?.title || 'No urgent admin action returned';
-  const largestFunnelStageCount = Math.max(...funnelStages.map((stage) => stage.count), 1);
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
@@ -720,73 +719,27 @@ const Analytics = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-5 border-t border-[var(--yr-line)] p-5 xl:grid-cols-[1fr_1.2fr]">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Decision Readout</h2>
-              <div className="mt-3 space-y-3 text-sm leading-6 text-gray-600">
-                <p>
-                  Start with search success and funnel movement: they show whether discovery intent
-                  becomes visible next-step behavior.
-                </p>
-                <p>
-                  Treat low-result queries and action cards as the work queue, not just warnings.
-                </p>
-                <p className="text-gray-500">Last updated: {lastUpdated || 'Not refreshed yet'}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Funnel Snapshot</h3>
-                <div className="mt-3 space-y-3">
-                  {funnelStages.length > 0 ? (
-                    funnelStages.map((stage) => (
-                      <div key={stage.key || stage.stage || stage.label}>
-                        <div className="mb-1 flex items-center justify-between gap-3 text-sm">
-                          <span className="font-medium text-gray-700">{stage.label}</span>
-                          <span className="text-gray-500">{formatNumber(stage.count)}</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-[var(--yr-panel-muted)]">
-                          <div
-                            className="h-2 rounded-full bg-blue-600"
-                            style={{
-                              width: `${Math.min((stage.count / largestFunnelStageCount) * 100, 100)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500">No funnel stages returned.</p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Search Gaps</h3>
-                <p className="mt-1 text-xs text-gray-500">
-                  {formatNumber(returnedButIgnoredSearches)} searches returned results but led to no
-                  view or save.
-                </p>
-                <div className="mt-3 space-y-2">
-                  {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
-                    <div
-                      key={`${query.query}-${index}`}
-                      className="flex items-center justify-between gap-3 rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm"
-                    >
-                      <span className="min-w-0 truncate text-gray-700">
-                        {query.query || '(empty search)'}
-                      </span>
-                      <span className="shrink-0 font-medium text-gray-900">
-                        {formatCompactMetric(query.zeroResults ?? query.count)}
-                      </span>
-                    </div>
-                  ))}
-                  {zeroResultQueries.length === 0 && lowResultQueries.length === 0 && (
-                    <p className="text-sm text-gray-500">No search quality flags returned.</p>
-                  )}
-                </div>
-              </div>
+          <div className="border-t border-[var(--yr-line)] p-5">
+            <h2 className="text-lg font-semibold text-gray-900">Decision Readout</h2>
+            <div className="mt-3 space-y-3 text-sm leading-6 text-gray-600">
+              <p>
+                Start with search success and funnel movement: they show whether discovery intent
+                becomes visible next-step behavior.
+              </p>
+              <p>
+                Treat low-result queries and action cards as the work queue, not just warnings.
+              </p>
+              <p>
+                See the full funnel breakdown and zero- or low-result queries in{' '}
+                <a
+                  href="#high-impact-diagnostics"
+                  className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                >
+                  High-Impact Diagnostics
+                </a>
+                .
+              </p>
+              <p className="text-gray-500">Last updated: {lastUpdated || 'Not refreshed yet'}</p>
             </div>
           </div>
         </section>
@@ -1532,12 +1485,18 @@ const Analytics = () => {
                   <span>Avg results/search</span>
                   <span className="font-medium text-gray-900">{formatNumber(avgResults, 1)}</span>
                 </div>
-                <div className="mb-3 flex justify-between text-gray-600">
+                <div className="mb-2 flex justify-between text-gray-600">
                   <span>Avg latency</span>
                   <span className="font-medium text-gray-900">
                     {searchQuality?.avgLatencyMs
                       ? `${formatNumber(searchQuality.avgLatencyMs)} ms`
                       : '-'}
+                  </span>
+                </div>
+                <div className="mb-3 flex justify-between text-gray-600">
+                  <span>Returned but ignored</span>
+                  <span className="font-medium text-gray-900">
+                    {formatNumber(returnedButIgnoredSearches)}
                   </span>
                 </div>
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
