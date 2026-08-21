@@ -737,7 +737,8 @@ describe('LabDetail page', () => {
         name: 'Example Sparse Lab',
         kind: 'lab',
         entityType: 'LAB',
-        fullDescription: 'Studies fixture evolution, population models, and synthetic DNA examples.',
+        fullDescription:
+          'Studies fixture evolution, population models, and synthetic DNA examples.',
         websiteUrl: RESEARCH_WEBSITE_URL,
         departments: ['Ecology and Evolutionary Biology'],
         researchAreas: ['fixture evolution', 'population models', 'synthetic DNA examples'],

@@ -193,9 +193,7 @@ const compactDepartmentLabels = (
   );
 
 const detailDescription = (group: any): string =>
-  (group.fullDescription || group.shortDescription || '')
-    .replace(/[ \t\f\v]+/g, ' ')
-    .trim();
+  (group.fullDescription || group.shortDescription || '').replace(/[ \t\f\v]+/g, ' ').trim();
 
 const hasProfileSynthesisDescription = (group: any): boolean =>
   group.descriptionSource === 'PI_PROFILE_SYNTHESIS' &&
