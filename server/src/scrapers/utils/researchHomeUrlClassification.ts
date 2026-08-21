@@ -1,6 +1,8 @@
 const PROFILE_OR_DIRECTORY_PATH =
   /(?:\/profile\/|\/(?:people|person|faculty|faculty-directory)\/|\/directory\/faculty\/|\/who-we-are\/faculty\/|(?:^|[/-])people(?:[/-]|$))/i;
 
+const PERSONAL_RESEARCH_MICROSITE_HOST = /(?:^|\.)campuspress\.yale\.edu$/i;
+
 const text = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
@@ -13,6 +15,7 @@ export function isProfileOrDirectoryPageUrl(value: unknown): boolean {
   } catch {
     return false;
   }
+  if (PERSONAL_RESEARCH_MICROSITE_HOST.test(url.hostname)) return false;
   const path = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
   return PROFILE_OR_DIRECTORY_PATH.test(path);
 }

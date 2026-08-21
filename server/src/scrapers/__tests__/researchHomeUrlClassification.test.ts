@@ -29,6 +29,15 @@ describe('isProfileOrDirectoryPageUrl', () => {
     expect(isProfileOrDirectoryPageUrl('https://campuspress.yale.edu/synthlab/')).toBe(false);
   });
 
+  it('does not flag campuspress personal-microsite lab pages using a people path', () => {
+    expect(
+      isProfileOrDirectoryPageUrl('https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/'),
+    ).toBe(false);
+    expect(
+      isProfileOrDirectoryPageUrl('https://campuspress.yale.edu/squirrel/people/elena-gracheva-lab/'),
+    ).toBe(false);
+  });
+
   it('returns false for non-URL and non-http-parseable input', () => {
     expect(isProfileOrDirectoryPageUrl('')).toBe(false);
     expect(isProfileOrDirectoryPageUrl(undefined)).toBe(false);
@@ -47,6 +56,12 @@ describe('resolveSourceUrlResearchHomeUrl', () => {
     expect(resolveSourceUrlResearchHomeUrl('https://synthpi.example.org/team')).toBe(
       'https://synthpi.example.org/team/',
     );
+  });
+
+  it('is idempotent on the canonical campuspress lab research homes it produces', () => {
+    const canonical = 'https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/';
+    expect(resolveSourceUrlResearchHomeUrl('https://slavlab.yale.edu/')).toBe(canonical);
+    expect(resolveSourceUrlResearchHomeUrl(canonical)).toBe(canonical);
   });
 
   it('rejects profile pages, generic listings, and non-site hosts', () => {

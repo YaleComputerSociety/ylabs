@@ -231,9 +231,11 @@ async function main(): Promise<void> {
   try {
     const limit = options.explicitLimit ? options.limit : undefined;
     const result = await runResearchEntityWebsiteUrlBackfill({ dryRun: options.dryRun, limit });
+    const correctiveLimit =
+      limit === undefined ? undefined : Math.max(limit - result.updated, 0);
     const corrective = await runResearchEntityWebsiteUrlCorrectivePass({
       dryRun: options.dryRun,
-      limit,
+      limit: correctiveLimit,
     });
     const payload = {
       generatedAt: new Date().toISOString(),

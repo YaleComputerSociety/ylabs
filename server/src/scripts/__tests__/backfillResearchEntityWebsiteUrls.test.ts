@@ -209,6 +209,19 @@ describe('selectCorrectiveWebsiteUrl', () => {
       }),
     ).toBeUndefined();
   });
+
+  it('does not demote a canonical campuspress lab research home that uses a people path', () => {
+    const canonical = 'https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/';
+    expect(isProfilePageWebsiteUrl(canonical)).toBe(false);
+    expect(isPromotableWebsiteUrl(canonical)).toBe(true);
+    expect(
+      selectCorrectiveWebsiteUrl({
+        websiteUrl: canonical,
+        website: 'https://another.example.org/',
+        sourceUrls: ['https://slavlab.yale.edu/'],
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe('parseResearchEntityWebsiteUrlBackfillArgs', () => {
