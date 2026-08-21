@@ -8,7 +8,9 @@ import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  isProfilePageWebsiteUrl,
   selectBackfillWebsiteUrl,
+  selectCorrectiveWebsiteUrl,
   type WebsiteUrlBackfillCandidateEntity,
 } from './backfillResearchEntityWebsiteUrlsCore';
 
@@ -145,6 +147,72 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
   return result;
 }
 
+export interface ResearchEntityWebsiteUrlCorrectiveResult {
+  mode: 'dry-run' | 'apply';
+  profilePageWebsiteUrls: number;
+  corrected: number;
+  noBetterCandidate: number;
+  errors: number;
+  samples: Array<{ slug: string; from: string; to: string }>;
+}
+
+const PROFILE_PAGE_WEBSITE_URL_PREFILTER = /^https?:\/\/[^?#]*(?:profile|people|person|faculty|who-we-are)/i;
+
+export async function runResearchEntityWebsiteUrlCorrectivePass(options: {
+  dryRun: boolean;
+  limit?: number;
+}): Promise<ResearchEntityWebsiteUrlCorrectiveResult> {
+  const entities = await ResearchEntity.find(
+    {
+      archived: { $ne: true },
+      websiteUrl: PROFILE_PAGE_WEBSITE_URL_PREFILTER,
+    },
+    { _id: 1, slug: 1, name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+  ).lean();
+
+  const result: ResearchEntityWebsiteUrlCorrectiveResult = {
+    mode: options.dryRun ? 'dry-run' : 'apply',
+    profilePageWebsiteUrls: 0,
+    corrected: 0,
+    noBetterCandidate: 0,
+    errors: 0,
+    samples: [],
+  };
+
+  for (const entity of entities as Array<
+    Record<string, unknown> & WebsiteUrlBackfillCandidateEntity
+  >) {
+    if (!isProfilePageWebsiteUrl(entity.websiteUrl)) continue;
+    if (options.limit && result.profilePageWebsiteUrls >= options.limit) break;
+    result.profilePageWebsiteUrls += 1;
+    try {
+      const chosen = selectCorrectiveWebsiteUrl(entity);
+      if (!chosen) {
+        result.noBetterCandidate += 1;
+        continue;
+      }
+      if (result.samples.length < 25) {
+        result.samples.push({
+          slug: String(entity.slug ?? ''),
+          from: String(entity.websiteUrl ?? ''),
+          to: chosen,
+        });
+      }
+      if (!options.dryRun) {
+        await ResearchEntity.updateOne({ _id: entity._id }, { $set: { websiteUrl: chosen } });
+      }
+      result.corrected += 1;
+    } catch (error) {
+      result.errors += 1;
+      console.error(
+        `research-entity website-url corrective pass failed for ${String(entity.slug ?? entity._id)}:`,
+        sanitizeLogValue(error),
+      );
+    }
+  }
+  return result;
+}
+
 async function main(): Promise<void> {
   const options = parseResearchEntityWebsiteUrlBackfillArgs(process.argv.slice(2));
   assertResearchEntityWebsiteUrlApplyAllowed(options);
@@ -161,16 +229,19 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const result = await runResearchEntityWebsiteUrlBackfill({
+    const limit = options.explicitLimit ? options.limit : undefined;
+    const result = await runResearchEntityWebsiteUrlBackfill({ dryRun: options.dryRun, limit });
+    const corrective = await runResearchEntityWebsiteUrlCorrectivePass({
       dryRun: options.dryRun,
-      limit: options.explicitLimit ? options.limit : undefined,
+      limit,
     });
     const payload = {
       generatedAt: new Date().toISOString(),
       environment: guard.environment,
       db: guard.dbLabel,
-      options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+      options: { dryRun: options.dryRun, limit },
       result,
+      corrective,
     };
     if (options.output) {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
@@ -178,7 +249,7 @@ async function main(): Promise<void> {
       fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
       console.log(`Saved research-entity website-url backfill report to ${safeOutput}`);
     }
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ result, corrective }, null, 2));
   } finally {
     await mongoose.disconnect();
   }

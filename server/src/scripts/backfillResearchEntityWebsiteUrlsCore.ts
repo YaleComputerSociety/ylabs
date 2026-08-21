@@ -1,3 +1,8 @@
+import {
+  isProfileOrDirectoryPageUrl,
+  resolveSourceUrlResearchHomeUrl,
+} from '../scrapers/utils/researchHomeUrlClassification';
+
 export interface WebsiteUrlBackfillCandidateEntity {
   websiteUrl?: unknown;
   website?: unknown;
@@ -48,8 +53,17 @@ export function isContentPageUrl(value: unknown): boolean {
   return CONTENT_PAGE_PATH.test(url.pathname);
 }
 
+export function isProfilePageWebsiteUrl(value: unknown): boolean {
+  return isPublicHttpUrl(value) && isProfileOrDirectoryPageUrl(cleanString(value));
+}
+
 export function isPromotableWebsiteUrl(value: unknown): boolean {
-  return isPublicHttpUrl(value) && !isGrantOrIdentifierUrl(value) && !isContentPageUrl(value);
+  return (
+    isPublicHttpUrl(value) &&
+    !isGrantOrIdentifierUrl(value) &&
+    !isContentPageUrl(value) &&
+    !isProfilePageWebsiteUrl(value)
+  );
 }
 
 export function hasUsableWebsiteUrl(entity: WebsiteUrlBackfillCandidateEntity): boolean {
@@ -57,21 +71,54 @@ export function hasUsableWebsiteUrl(entity: WebsiteUrlBackfillCandidateEntity): 
 }
 
 /**
- * Deterministic, evidence-first selection of a website URL already present in the
- * entity's materialized evidence. Prefers the `website` field, then the ordered
- * `sourceUrls`. Grant/identifier hosts and article/news content pages are never
- * promoted, and an entity that already has a usable `websiteUrl` is left untouched.
+ * Resolves a candidate to the canonical real research-home site URL to promote, or
+ * undefined. Layers the coarse promotable gate (rejects non-http, grant/identifier,
+ * article/news content, and profile/directory pages) over the shared research-home
+ * resolver (which additionally rejects membership/opportunity listings and generic
+ * pages, and canonicalizes the URL), so a promoted `websiteUrl` is always a real site.
  */
-export function selectBackfillWebsiteUrl(
-  entity: WebsiteUrlBackfillCandidateEntity,
-): string | undefined {
-  if (hasUsableWebsiteUrl(entity)) return undefined;
+function resolvePromotableWebsiteUrl(value: unknown): string | undefined {
+  if (!isPromotableWebsiteUrl(value)) return undefined;
+  return resolveSourceUrlResearchHomeUrl(value) || undefined;
+}
+
+function firstPromotableCandidate(entity: WebsiteUrlBackfillCandidateEntity): string | undefined {
   const candidates: unknown[] = [
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
   for (const candidate of candidates) {
-    if (isPromotableWebsiteUrl(candidate)) return cleanString(candidate);
+    const resolved = resolvePromotableWebsiteUrl(candidate);
+    if (resolved) return resolved;
   }
   return undefined;
+}
+
+/**
+ * Deterministic, evidence-first selection of a website URL already present in the
+ * entity's materialized evidence. Prefers the `website` field, then the ordered
+ * `sourceUrls`. Grant/identifier hosts, article/news content pages, and Yale
+ * profile / faculty-directory / people-directory pages are never promoted, so a
+ * real lab site wins over a profile page regardless of ordering. An entity that
+ * already has a usable `websiteUrl` is left untouched.
+ */
+export function selectBackfillWebsiteUrl(
+  entity: WebsiteUrlBackfillCandidateEntity,
+): string | undefined {
+  if (hasUsableWebsiteUrl(entity)) return undefined;
+  return firstPromotableCandidate(entity);
+}
+
+/**
+ * Corrective selection for an entity whose current `websiteUrl` is a Yale profile /
+ * faculty-directory / people-directory page. Returns the first real lab-site candidate
+ * from the entity's evidence so the profile URL can be demoted in favor of it. Returns
+ * undefined when the current `websiteUrl` is not a profile page or when no better
+ * candidate exists.
+ */
+export function selectCorrectiveWebsiteUrl(
+  entity: WebsiteUrlBackfillCandidateEntity,
+): string | undefined {
+  if (!isProfilePageWebsiteUrl(entity.websiteUrl)) return undefined;
+  return firstPromotableCandidate(entity);
 }

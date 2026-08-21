@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   isContentPageUrl,
   isGrantOrIdentifierUrl,
+  isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
   selectBackfillWebsiteUrl,
+  selectCorrectiveWebsiteUrl,
 } from '../backfillResearchEntityWebsiteUrlsCore';
 import {
   assertResearchEntityWebsiteUrlApplyAllowed,
@@ -110,6 +112,102 @@ describe('selectBackfillWebsiteUrl', () => {
         sourceUrls: ['https://lab.yale.edu/'],
       }),
     ).toBe('https://lab.yale.edu/');
+  });
+});
+
+describe('profile-page website URL exclusion', () => {
+  it('flags Yale profile, faculty-directory, and people-directory pages', () => {
+    expect(isProfilePageWebsiteUrl('https://medicine.yale.edu/profile/pat-fixture/')).toBe(true);
+    expect(
+      isProfilePageWebsiteUrl(
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
+      ),
+    ).toBe(true);
+    expect(isProfilePageWebsiteUrl('https://english.yale.edu/people/kai-fixture/')).toBe(true);
+    expect(isProfilePageWebsiteUrl('https://environment.yale.edu/directory/faculty/sam-fixture/')).toBe(
+      true,
+    );
+    expect(isProfilePageWebsiteUrl('https://synthlab.yale.edu/')).toBe(false);
+    expect(isProfilePageWebsiteUrl('reporter.nih.gov/project/1')).toBe(false);
+  });
+
+  it('never treats a profile or faculty-directory page as promotable', () => {
+    expect(isPromotableWebsiteUrl('https://medicine.yale.edu/profile/pat-fixture/')).toBe(false);
+    expect(
+      isPromotableWebsiteUrl(
+        'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
+      ),
+    ).toBe(false);
+    expect(isPromotableWebsiteUrl('https://english.yale.edu/people/kai-fixture/')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://synthlab.yale.edu/')).toBe(true);
+  });
+
+  it('prefers a real lab site over a profile page regardless of ordering', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/1',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
+          'https://synthlab.example.org/',
+        ],
+      }),
+    ).toBe('https://synthlab.example.org/');
+  });
+
+  it('leaves websiteUrl unset when every candidate is a profile page', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/pat-fixture/',
+          'https://english.yale.edu/people/kai-fixture/',
+        ],
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe('selectCorrectiveWebsiteUrl', () => {
+  it('demotes an already-wrong profile websiteUrl in favor of a real lab site', () => {
+    expect(
+      selectCorrectiveWebsiteUrl({
+        websiteUrl: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/lee-fixture/',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/1',
+          'https://synthlab.example.org/',
+        ],
+      }),
+    ).toBe('https://synthlab.example.org/');
+  });
+
+  it('prefers the website field over sourceUrls when correcting', () => {
+    expect(
+      selectCorrectiveWebsiteUrl({
+        websiteUrl: 'https://medicine.yale.edu/profile/pat-fixture/',
+        website: 'https://synthlab.yale.edu/',
+        sourceUrls: ['https://another.example.org/'],
+      }),
+    ).toBe('https://synthlab.yale.edu/');
+  });
+
+  it('returns undefined when the current websiteUrl is already a real lab site', () => {
+    expect(
+      selectCorrectiveWebsiteUrl({
+        websiteUrl: 'https://synthlab.yale.edu/',
+        sourceUrls: ['https://another.example.org/'],
+      }),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when a profile websiteUrl has no better candidate', () => {
+    expect(
+      selectCorrectiveWebsiteUrl({
+        websiteUrl: 'https://medicine.yale.edu/profile/pat-fixture/',
+        sourceUrls: [
+          'https://reporter.nih.gov/project-details/1',
+          'https://english.yale.edu/people/kai-fixture/',
+        ],
+      }),
+    ).toBeUndefined();
   });
 });
 
