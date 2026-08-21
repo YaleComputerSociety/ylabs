@@ -24,6 +24,7 @@ import { extractLabHomepageDescription } from './ysmAtoZScraper';
 const SOURCE_KEY = 'research-area-source-extractor';
 const MAX_SCAN_CHARS = 40_000;
 const MAX_AREAS_PER_ENTITY = 12;
+const MAX_CANDIDATE_SCAN = 1000;
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export interface CandidateAreaEntity {
@@ -372,7 +373,7 @@ async function defaultEntityFinder(
       { sourceUrls: /^https?:\/\//i },
     ],
   };
-  const docs = await ResearchEntity.find(
+  const query = ResearchEntity.find(
     { $and: [{ archived: { $ne: true } }, emptyAreasFilter, urlFilter, identityFilter] },
     {
       _id: 1,
@@ -385,7 +386,11 @@ async function defaultEntityFinder(
       researchAreas: 1,
       manuallyLockedFields: 1,
     },
-  ).lean();
+  ).sort({ _id: 1 });
+  if (!only.length && !options.exhaustive) {
+    query.limit(MAX_CANDIDATE_SCAN);
+  }
+  const docs = await query.lean();
   return candidateAreaEntitiesFromDocs(docs as CandidateAreaEntityDoc[], { only });
 }
 
