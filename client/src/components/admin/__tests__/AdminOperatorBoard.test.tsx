@@ -716,6 +716,86 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getByText('Collection categories: 3')).toBeTruthy();
   });
 
+  it('deep-links flagged queue rows to the matching entity', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        trustTiers: { research: [], programs: [] },
+        reasonCounts: { research: [], programs: [] },
+        queues: [
+          {
+            collection: 'research',
+            reason: 'missing_action_evidence',
+            kind: 'blocking',
+            count: 3,
+            nextAction: 'Add source-backed action evidence.',
+            samples: [
+              {
+                id: 'sample-research-linked',
+                label: 'Linked Research Home',
+                slug: 'linked-research-home',
+                tier: 'operator_review',
+                reasons: ['missing_action_evidence'],
+              },
+              {
+                id: 'sample-research-plain',
+                label: 'Unlinked Research Home',
+                tier: 'operator_review',
+                reasons: ['missing_action_evidence'],
+              },
+            ],
+          },
+          {
+            collection: 'programs',
+            reason: 'formalization_only',
+            kind: 'review',
+            count: 1,
+            nextAction: 'Keep capped unless source evidence shows a real entry route.',
+            samples: [
+              {
+                id: 'sample-program-linked',
+                label: 'Linked Program',
+                tier: 'limited_but_safe',
+                reasons: ['formalization_only'],
+                sourceUrl: 'https://example.edu/program',
+              },
+            ],
+          },
+        ],
+        gates: {
+          dataQuality: {
+            status: 'manual',
+            command: 'yarn --cwd server beta:data-quality --include-samples',
+            note: 'Saved data-quality artifact is stale; rerun the gate before promotion.',
+          },
+          scraperIntegrity: {
+            status: 'unknown',
+            command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+            latestRuns: [],
+          },
+        },
+        sourceFreshness: {
+          windowDays: 30,
+          riskCounts: { ok: 0, warn: 0, error: 0 },
+          rows: [],
+        },
+      },
+    });
+
+    render(<AdminOperatorBoard />);
+
+    const researchLink = await screen.findByRole('link', { name: 'Linked Research Home' });
+    expect(researchLink.getAttribute('href')).toBe('/research/linked-research-home');
+    expect(researchLink.getAttribute('target')).toBe('_blank');
+
+    const programLink = screen.getByRole('link', { name: 'Linked Program' });
+    expect(programLink.getAttribute('href')).toBe('https://example.edu/program');
+    expect(programLink.getAttribute('target')).toBe('_blank');
+
+    expect(screen.queryByRole('link', { name: 'Unlinked Research Home' })).toBeNull();
+    expect(screen.getByText('Unlinked Research Home')).toBeTruthy();
+  });
+
   it('shows stale saved data-quality gates as manual work', async () => {
     mockedAxios.get.mockResolvedValue({
       data: {

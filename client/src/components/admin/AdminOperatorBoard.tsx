@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from '../../utils/axios';
+import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 
 type Tier = 'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 type Risk = 'ok' | 'warn' | 'error';
@@ -19,12 +20,63 @@ interface TierCount {
 interface QueueSample {
   id: string;
   label: string;
+  slug?: string;
   tier: Tier;
   reasons: string[];
   sourceUrl?: string;
   category?: string;
   summary?: string;
 }
+
+type EntityCollection = 'research' | 'programs';
+
+interface EntityLinkTarget {
+  href: string;
+  external: boolean;
+}
+
+const entitySampleLinkTarget = (
+  sample: Pick<QueueSample, 'slug' | 'sourceUrl'>,
+  collection: EntityCollection,
+): EntityLinkTarget | null => {
+  if (collection === 'research') {
+    const segment = safeRouteSegment(sample.slug);
+    if (segment) return { href: `/research/${segment}`, external: false };
+  }
+  const externalHref = safeHttpUrl(sample.sourceUrl);
+  if (externalHref) return { href: externalHref, external: true };
+  return null;
+};
+
+const EntitySampleLabel = ({
+  sample,
+  collection,
+}: {
+  sample: Pick<QueueSample, 'label' | 'slug' | 'sourceUrl'>;
+  collection: EntityCollection;
+}) => {
+  const target = entitySampleLinkTarget(sample, collection);
+  if (!target) return <span className="font-medium text-gray-900">{sample.label}</span>;
+
+  return (
+    <a
+      href={target.href}
+      target="_blank"
+      rel={EXTERNAL_LINK_REL}
+      className="inline-flex items-center gap-1 font-medium text-blue-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+      title={
+        target.external
+          ? `Open official source for ${sample.label} in a new tab`
+          : `Open ${sample.label} in a new tab`
+      }
+    >
+      {sample.label}
+      <span aria-hidden="true" className="text-xs text-blue-500">
+        ↗
+      </span>
+    </a>
+  );
+};
 
 interface ReasonCount {
   reason: string;
@@ -1722,7 +1774,7 @@ const AdminOperatorBoard = () => {
 
                               return (
                                 <div key={sample.id} className="mb-3 last:mb-0">
-                                  <div className="font-medium text-gray-900">{sample.label}</div>
+                                  <EntitySampleLabel sample={sample} collection={queue.collection} />
                                   <ReasonList
                                     label="Likely blockers"
                                     reasons={blockers}
