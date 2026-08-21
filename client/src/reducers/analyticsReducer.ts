@@ -202,6 +202,7 @@ export interface AnalyticsUserActivityResponse {
   users: AnalyticsUserActivityRow[];
   total: number;
   limit: number;
+  offset: number;
 }
 
 export interface AnalyticsUserDrilldownResponse {
@@ -218,6 +219,13 @@ export interface AdminAccessUser {
   userType?: string;
 }
 
+export interface AdminAccessGrantHistoryEntry {
+  action: 'granted' | 'revoked';
+  actorNetid: string;
+  note: string;
+  at: string | null;
+}
+
 export interface AdminAccessGrant {
   netid: string;
   status: 'active' | 'revoked';
@@ -227,13 +235,47 @@ export interface AdminAccessGrant {
   revokedBy?: string;
   revokedAt?: string | null;
   note?: string;
+  history?: AdminAccessGrantHistoryEntry[];
   user?: AdminAccessUser;
+}
+
+export interface AdminAccessHistoryEntry {
+  action: 'granted' | 'revoked';
+  actorNetid: string;
+  note: string;
+  at: string | null;
+  subjectNetid: string;
 }
 
 export interface AdminAccessResponse {
   activeCount: number;
   grants: AdminAccessGrant[];
   legacyAdminsWithoutGrant: AdminAccessUser[];
+  history: AdminAccessHistoryEntry[];
+}
+
+export interface AdminAuditEventSummary {
+  fields?: string[];
+  note?: string;
+  status?: string;
+}
+
+export interface AdminAuditEvent {
+  id: string;
+  actorNetid: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  summary: AdminAuditEventSummary | null;
+  timestamp: string | null;
+}
+
+export interface AdminAuditEventsResponse {
+  events: AdminAuditEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export type AnalyticsRange = 'today' | '7d' | '30d' | 'semester' | 'all';

@@ -19,6 +19,8 @@ import {
   AnalyticsUserActivityRow,
   AnalyticsUserDrilldownResponse,
   AdminAccessResponse,
+  AdminAuditEvent,
+  AdminAuditEventsResponse,
   analyticsReducer,
   createInitialAnalyticsState,
 } from '../reducers/analyticsReducer';
@@ -38,12 +40,44 @@ const defaultUserActivity: AnalyticsUserActivityResponse = {
   users: [],
   total: 0,
   limit: 25,
+  offset: 0,
 };
+
+const defaultAuditEvents: AdminAuditEventsResponse = {
+  events: [],
+  total: 0,
+  page: 1,
+  pageSize: 25,
+  totalPages: 1,
+};
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  'admin_grant.grant': 'Admin granted',
+  'admin_grant.revoke': 'Admin revoked',
+  'listing.update': 'Listing edited',
+  'listing.delete': 'Listing deleted',
+  'profile.update': 'Profile edited',
+  'department.create': 'Department created',
+  'department.update': 'Department edited',
+  'department.delete': 'Department deleted',
+  'research_area.update': 'Research area edited',
+  'research_area.delete': 'Research area deleted',
+  'fellowship.update': 'Fellowship edited',
+  'fellowship.archive': 'Fellowship archived',
+  'fellowship.unarchive': 'Fellowship unarchived',
+  'fellowship.delete': 'Fellowship deleted',
+  'access_review.manual_locks': 'Visibility locks changed',
+  'access_review.record_review': 'Access review recorded',
+  'listing_claim.review': 'Listing claim reviewed',
+};
+
+const auditActionLabel = (action: string): string => AUDIT_ACTION_LABELS[action] || action;
 
 const defaultAdminAccess: AdminAccessResponse = {
   activeCount: 0,
   grants: [],
   legacyAdminsWithoutGrant: [],
+  history: [],
 };
 
 const Analytics = () => {
@@ -60,8 +94,16 @@ const Analytics = () => {
   const [userSearch, setUserSearch] = useState('');
   const [userTypeFilter, setUserTypeFilter] = useState('all');
   const [userActivityLimit, setUserActivityLimit] = useState(25);
+  const [userActivityOffset, setUserActivityOffset] = useState(0);
   const [userActivitySort, setUserActivitySort] = useState<UserActivitySort>('lastActive');
   const [userActivityOrder, setUserActivityOrder] = useState<SortOrder>('desc');
+  const [auditEvents, setAuditEvents] = useState<AdminAuditEventsResponse>(defaultAuditEvents);
+  const [isAuditLoading, setIsAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditActorFilter, setAuditActorFilter] = useState('');
+  const [auditActionFilter, setAuditActionFilter] = useState('all');
+  const [auditTargetTypeFilter, setAuditTargetTypeFilter] = useState('all');
+  const [auditPage, setAuditPage] = useState(1);
   const [selectedNetid, setSelectedNetid] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<AnalyticsUserDrilldownResponse | null>(null);
   const [isSelectedUserLoading, setIsSelectedUserLoading] = useState(false);
@@ -121,6 +163,7 @@ const Analytics = () => {
           sort: userActivitySort,
           direction: userActivityOrder,
           limit: userActivityLimit,
+          offset: userActivityOffset,
         },
       });
       setUserActivity({
@@ -134,7 +177,41 @@ const Analytics = () => {
     } finally {
       setIsUserActivityLoading(false);
     }
-  }, [userActivityLimit, userActivityOrder, userActivitySort, userSearch, userTypeFilter]);
+  }, [
+    userActivityLimit,
+    userActivityOffset,
+    userActivityOrder,
+    userActivitySort,
+    userSearch,
+    userTypeFilter,
+  ]);
+
+  const fetchAuditEvents = useCallback(async () => {
+    setIsAuditLoading(true);
+    setAuditError(null);
+    try {
+      const response = await axios.get<AdminAuditEventsResponse>('/admin/audit-events', {
+        withCredentials: true,
+        params: {
+          actor: auditActorFilter.trim().toLowerCase() || undefined,
+          action: auditActionFilter === 'all' ? undefined : auditActionFilter,
+          targetType: auditTargetTypeFilter === 'all' ? undefined : auditTargetTypeFilter,
+          page: auditPage,
+          pageSize: defaultAuditEvents.pageSize,
+        },
+      });
+      setAuditEvents({
+        ...defaultAuditEvents,
+        ...response.data,
+        events: response.data.events || [],
+      });
+    } catch {
+      console.error('Error fetching admin audit events.');
+      setAuditError('Failed to load admin audit log');
+    } finally {
+      setIsAuditLoading(false);
+    }
+  }, [auditActionFilter, auditActorFilter, auditPage, auditTargetTypeFilter]);
 
   const fetchAdminAccess = useCallback(async () => {
     setAdminAccessError(null);
@@ -147,6 +224,7 @@ const Analytics = () => {
         ...response.data,
         grants: response.data.grants || [],
         legacyAdminsWithoutGrant: response.data.legacyAdminsWithoutGrant || [],
+        history: response.data.history || [],
       });
     } catch {
       console.error('Error fetching admin access.');
@@ -314,6 +392,20 @@ const Analytics = () => {
       fetchAdminAccess();
     }
   }, [data, fetchAdminAccess, fetchUserActivity]);
+
+  useEffect(() => {
+    setUserActivityOffset(0);
+  }, [userSearch, userTypeFilter, userActivitySort, userActivityOrder, userActivityLimit]);
+
+  useEffect(() => {
+    setAuditPage(1);
+  }, [auditActorFilter, auditActionFilter, auditTargetTypeFilter]);
+
+  useEffect(() => {
+    if (data) {
+      fetchAuditEvents();
+    }
+  }, [data, fetchAuditEvents]);
 
   useEffect(() => {
     if (data) {
@@ -553,6 +645,14 @@ const Analytics = () => {
 
   const selectedUserSummary: AnalyticsUserActivityRow | null =
     selectedUser?.user || userActivity.users.find((user) => user.netid === selectedNetid) || null;
+
+  const adminAccessHistory = adminAccess.history || [];
+
+  const userActivityPageStart =
+    userActivity.total === 0 ? 0 : userActivity.offset + 1;
+  const userActivityPageEnd = userActivity.offset + userActivity.users.length;
+  const userActivityHasPrev = userActivity.offset > 0;
+  const userActivityHasNext = userActivityPageEnd < userActivity.total;
   const outreach = data.engagement.outreach || {
     summary: {
       totalReveals: 0,
@@ -935,6 +1035,41 @@ const Analytics = () => {
               </table>
             </div>
           </div>
+
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-gray-800">Admin access history</h3>
+            <p className="mb-3 text-sm text-gray-500">
+              Every grant and revoke, newest first, from the recorded grant history.
+            </p>
+            {adminAccessHistory.length > 0 ? (
+              <ol className="space-y-2 border-l border-[var(--yr-line-strong)] pl-4">
+                {adminAccessHistory.map((entry, index) => (
+                  <li
+                    key={`${entry.subjectNetid}-${entry.action}-${entry.at ?? index}`}
+                    className="relative rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
+                  >
+                    <span
+                      className={`mr-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
+                        entry.action === 'granted'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-red-50 text-red-700'
+                      }`}
+                    >
+                      {entry.action}
+                    </span>
+                    <span className="font-medium text-gray-900">{entry.subjectNetid}</span>
+                    <span className="text-gray-600"> by {entry.actorNetid || '-'}</span>
+                    <span className="ml-2 text-xs text-gray-500">{formatDateTime(entry.at)}</span>
+                    {entry.note && (
+                      <p className="mt-1 text-xs italic text-gray-600">{entry.note}</p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="text-sm text-gray-500">No admin access history recorded yet.</p>
+            )}
+          </div>
           {pendingAdminGrantNetid && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -990,6 +1125,189 @@ const Analytics = () => {
               </div>
             </div>
           )}
+        </section>
+
+        <section className="mb-10">
+          <div className="mb-4 flex flex-col gap-2 border-b border-slate-200 pb-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-800">Admin Action Audit Log</h2>
+              <p className="text-sm text-gray-500">
+                Append-only record of privileged operator mutations. Filter by actor, action, or
+                target.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchAuditEvents}
+              className="inline-flex min-h-[44px] items-center justify-center self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 md:self-auto"
+              disabled={isAuditLoading}
+            >
+              {isAuditLoading ? 'Refreshing...' : 'Refresh Log'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 lg:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Actor NetID
+              </span>
+              <input
+                type="search"
+                value={auditActorFilter}
+                onChange={(event) => setAuditActorFilter(event.target.value)}
+                placeholder="e.g. fixture-admin"
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Action
+              </span>
+              <select
+                value={auditActionFilter}
+                onChange={(event) => setAuditActionFilter(event.target.value)}
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">All actions</option>
+                {Object.entries(AUDIT_ACTION_LABELS).map(([action, label]) => (
+                  <option key={action} value={action}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Target Type
+              </span>
+              <select
+                value={auditTargetTypeFilter}
+                onChange={(event) => setAuditTargetTypeFilter(event.target.value)}
+                className="min-h-[44px] w-full rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="all">All targets</option>
+                <option value="adminGrant">Admin grant</option>
+                <option value="listing">Listing</option>
+                <option value="profile">Profile</option>
+                <option value="department">Department</option>
+                <option value="researchArea">Research area</option>
+                <option value="fellowship">Fellowship</option>
+                <option value="researchEntity">Research entity</option>
+                <option value="accessReviewRecord">Access review record</option>
+                <option value="listingClaim">Listing claim</option>
+              </select>
+            </label>
+          </div>
+
+          {auditError && (
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {auditError}
+            </div>
+          )}
+
+          <div className="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-md">
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">When</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                      Actor
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                      Action
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                      Target
+                    </th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                      Details
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isAuditLoading && auditEvents.events.length === 0 ? (
+                    <tr>
+                      <td className="px-4 py-6 text-center text-gray-500" colSpan={5}>
+                        Loading audit log...
+                      </td>
+                    </tr>
+                  ) : auditEvents.events.length > 0 ? (
+                    auditEvents.events.map((event: AdminAuditEvent) => (
+                      <tr key={event.id} className="border-b align-top hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {formatDateTime(event.timestamp)}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900">{event.actorNetid}</td>
+                        <td className="px-4 py-3 text-gray-700">{auditActionLabel(event.action)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {event.targetType ? (
+                            <>
+                              <span className="font-medium text-gray-700">{event.targetType}</span>
+                              {event.targetId && (
+                                <span className="block break-all text-xs text-gray-500">
+                                  {event.targetId}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
+                          {event.summary?.status && (
+                            <span className="mr-2 rounded-md bg-blue-50 px-2 py-0.5 font-semibold text-blue-700">
+                              {event.summary.status}
+                            </span>
+                          )}
+                          {event.summary?.fields && event.summary.fields.length > 0 && (
+                            <span className="text-gray-500">
+                              {event.summary.fields.join(', ')}
+                            </span>
+                          )}
+                          {event.summary?.note && (
+                            <p className="mt-1 italic text-gray-600">{event.summary.note}</p>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-4 py-6 text-center text-gray-500" colSpan={5}>
+                        No admin actions recorded for these filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Page {auditEvents.page} of {auditEvents.totalPages} - {auditEvents.total} total actions
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAuditPage((page) => Math.max(1, page - 1))}
+                disabled={isAuditLoading || auditEvents.page <= 1}
+                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setAuditPage((page) => Math.min(auditEvents.totalPages, page + 1))
+                }
+                disabled={isAuditLoading || auditEvents.page >= auditEvents.totalPages}
+                className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </section>
 
         <DetailSectionHeader
@@ -1849,17 +2167,42 @@ const Analytics = () => {
               <div className="min-w-0 flex-1">
                 <div className="mb-3 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
                   <span>
-                    Showing {userActivity.users.length} of {userActivity.total} matching users
+                    Showing {userActivityPageStart}-{userActivityPageEnd} of {userActivity.total}{' '}
+                    matching users
                   </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
-                    }
-                    className="inline-flex min-h-[44px] items-center self-start rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:self-auto"
-                  >
-                    Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUserActivityOffset((offset) =>
+                          Math.max(0, offset - userActivityLimit),
+                        )
+                      }
+                      disabled={isUserActivityLoading || !userActivityHasPrev}
+                      className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUserActivityOffset((offset) => offset + userActivityLimit)
+                      }
+                      disabled={isUserActivityLoading || !userActivityHasNext}
+                      className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUserActivityOrder(userActivityOrder === 'asc' ? 'desc' : 'asc')
+                      }
+                      className="inline-flex min-h-[44px] items-center self-start rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:self-auto"
+                    >
+                      Order: {userActivityOrder === 'asc' ? 'Ascending' : 'Descending'}
+                    </button>
+                  </div>
                 </div>
 
                 {userActivityError && (

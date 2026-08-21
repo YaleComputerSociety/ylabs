@@ -47,6 +47,8 @@ import {
   revokeAdminAccess,
 } from '../services/adminGrantService';
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
+import { listAdminAuditEvents } from '../services/adminAuditService';
+import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
 import { listVisibilityReleaseQueue } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -64,6 +66,7 @@ function setPrivateAdminCacheHeaders(_req: Request, res: Response, next: () => v
 }
 
 router.use(setPrivateAdminCacheHeaders, isAuthenticated, isAdmin);
+router.use(adminAuditMutationLogger);
 
 export const MAX_ADMIN_URL_CHECK_URLS = 25;
 export const MAX_ADMIN_URL_CHECK_URL_LENGTH = 2048;
@@ -577,6 +580,32 @@ router.post(
     }
   },
 );
+
+const MAX_ADMIN_AUDIT_FILTER_LENGTH = 128;
+
+const adminAuditFilter = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().slice(0, MAX_ADMIN_AUDIT_FILTER_LENGTH);
+  return trimmed || undefined;
+};
+
+router.get('/audit-events', async (req: Request, res: Response) => {
+  try {
+    res.json(
+      await listAdminAuditEvents({
+        actor: adminAuditFilter(req.query.actor),
+        action: adminAuditFilter(req.query.action),
+        targetType: adminAuditFilter(req.query.targetType),
+        targetId: adminAuditFilter(req.query.targetId),
+        page: req.query.page,
+        pageSize: req.query.pageSize,
+      }),
+    );
+  } catch (error) {
+    console.error('Admin: Error fetching audit events:', sanitizeLogValue(error));
+    res.status(500).json({ error: 'Failed to fetch admin audit events' });
+  }
+});
 
 router.get('/operator-board', async (_req: Request, res: Response) => {
   try {

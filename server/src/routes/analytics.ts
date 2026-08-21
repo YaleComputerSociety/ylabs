@@ -208,6 +208,29 @@ const parseAnalyticsLimit = (limit: unknown, max: number): number | undefined =>
   return numericLimit;
 };
 
+const MAX_USER_ANALYTICS_OFFSET = 100_000;
+
+const parseAnalyticsOffset = (offset: unknown): number | undefined => {
+  if (offset === undefined) {
+    return undefined;
+  }
+
+  if (typeof offset !== 'string' || offset.length > 16) {
+    throw new AnalyticsRequestError('Invalid analytics request');
+  }
+
+  const numericOffset = Number(offset);
+  if (
+    !Number.isInteger(numericOffset) ||
+    numericOffset < 0 ||
+    numericOffset > MAX_USER_ANALYTICS_OFFSET
+  ) {
+    throw new AnalyticsRequestError('Invalid analytics request');
+  }
+
+  return numericOffset;
+};
+
 const parseAnalyticsUserSort = (sort: unknown): AnalyticsUserSort | undefined => {
   if (sort === undefined) {
     return undefined;
@@ -286,7 +309,7 @@ router.get('/', isAuthenticated, isAdmin, async (request: Request, response: Res
 
 router.get('/users', isAuthenticated, isAdmin, async (request: Request, response: Response) => {
   try {
-    const { userType, activeSince, search, sort, direction, limit } = request.query;
+    const { userType, activeSince, search, sort, direction, limit, offset } = request.query;
     const analytics = await getUserAnalytics({
       userType: parseAnalyticsUserType(userType),
       activeSince: parseAnalyticsActiveSince(activeSince),
@@ -294,6 +317,7 @@ router.get('/users', isAuthenticated, isAdmin, async (request: Request, response
       sort: parseAnalyticsUserSort(sort),
       direction: parseAnalyticsSortDirection(direction),
       limit: parseAnalyticsLimit(limit, 200),
+      offset: parseAnalyticsOffset(offset),
     });
 
     response.status(200).json(analytics);
