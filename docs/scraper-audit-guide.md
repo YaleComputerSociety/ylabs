@@ -257,7 +257,7 @@ SCRAPER_ENV=beta ALLOW_NON_PROD_SCRAPER_WRITES=true \
 
 Expected collections:
 
-- `observations`: `fullDescription`, `shortDescription`, `researchAreas`, and `methods`.
+- `observations`: `fullDescription`, `shortDescription`, `researchAreas`, and `methods`, plus high-confidence `name`/`displayName` when a non-profile organization page states its own proper or branded name (see [`docs/research-data-pipeline.md`](./research-data-pipeline.md)).
 - `research_entities`: profile fields only after accepted materialization.
 
 Audit focus:
