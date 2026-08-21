@@ -147,6 +147,34 @@ describe('single-word specific-term derivation', () => {
   });
 });
 
+describe('finance and business single-word derivation precision', () => {
+  const financeRows = [
+    { name: 'Accounting' },
+    { name: 'Auditing' },
+    { name: 'Banking' },
+    { name: 'Genomics' },
+  ];
+  const finance = createResearchAreaCanonicalizer(buildResearchAreaResolverIndex(financeRows));
+
+  it('does not derive finance idiom words from non-topical prose', () => {
+    const derived = finance.deriveResearchAreasFromText(
+      'Estimates adjust for confounders after accounting for age and sex, banking on repeated measures while auditing the analysis pipeline; the team also studies genomics.',
+    );
+    expect(derived).not.toContain('Accounting');
+    expect(derived).not.toContain('Auditing');
+    expect(derived).not.toContain('Banking');
+    expect(derived).toContain('Genomics');
+  });
+
+  it('still resolves finance areas through the exact index', () => {
+    expect(finance.matchCanonicalResearchAreas(['Accounting', 'Banking', 'Auditing'])).toEqual([
+      'Accounting',
+      'Banking',
+      'Auditing',
+    ]);
+  });
+});
+
 describe('applyResearchEntityResearchAreaCanonicalization', () => {
   it('rewrites the set researchAreas in place and reports unmatched', async () => {
     setResearchAreaCanonicalizerForTesting(canonicalizer);

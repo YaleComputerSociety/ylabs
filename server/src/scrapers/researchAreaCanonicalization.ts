@@ -58,8 +58,11 @@ export const RESEARCH_AREA_ALIASES: Record<string, string[]> = {
  * (Immunology, Genomics, Bioinformatics, ...) and is safe to derive from prose.
  */
 export const AMBIGUOUS_SINGLE_WORD_AREAS: readonly string[] = [
+  'Accounting',
   'Architecture',
   'Art',
+  'Auditing',
+  'Banking',
   'Cinema',
   'Composition',
   'Dance',
