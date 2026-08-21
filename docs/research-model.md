@@ -122,7 +122,8 @@ ResearchEntity {
   name: string;
   slug: string;
   entityType: ResearchEntityType;
-  description?: string;
+  shortDescription?: string;
+  fullDescription?: string;
   orgUnitIds: string[];
   people: PersonRole[];
   methods: string[];
@@ -172,7 +173,7 @@ The `/account` planning workspace hydrates bounded entity summaries and treats a
 Current behavior:
 
 - `/api/users/savedResearchEntityIds` returns canonical entity ids for optimistic UI state.
-- `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters and `description` to 1,000 characters, and prunes archived, hidden, or deleted entities.
+- `/api/users/savedResearchEntities` returns allowlisted entity summaries, bounds `shortDescription` to 300 characters, and prunes archived, hidden, or deleted entities.
 - `PUT` and `DELETE /api/users/savedResearchEntities` add and remove entity-owned saves for the authenticated account.
 - `/api/users/savedResearchEntityPlans` stores the owning student's sanitized planning details, keyed by entity id.
 - `GET /api/users/savedResearchEntityPlans/export` exports saved entities without private notes.

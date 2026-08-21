@@ -89,7 +89,6 @@ export function buildListingResearchEntityProfilePatch({
   if (description) {
     if (missingText(entity?.shortDescription)) patch.shortDescription = description;
     if (missingText(entity?.fullDescription)) patch.fullDescription = description;
-    if (missingText(entity?.description)) patch.description = description;
   }
   if (departments.length > 0 && missingArray(entity?.departments)) patch.departments = departments;
   if (researchAreas.length > 0 && missingArray(entity?.researchAreas)) {

@@ -665,7 +665,6 @@ export function weakAffiliationSummaryIssue(publicProfile: Record<string, any>):
         entity?.name,
         entity?.displayName,
         entity?.shortDescription,
-        entity?.description,
       ]
         .map(textValue)
         .filter(Boolean)
@@ -688,7 +687,7 @@ export function weakAffiliationSummaryIssue(publicProfile: Record<string, any>):
   }
 
   const weakEntity = researchEntities.find((entity: any) =>
-    weakResearchSummaryTextIssue([entity?.shortDescription, entity?.description].map(textValue).join(' ')),
+    weakResearchSummaryTextIssue([entity?.shortDescription].map(textValue).join(' ')),
   );
   if (weakEntity) {
     return {
@@ -698,7 +697,7 @@ export function weakAffiliationSummaryIssue(publicProfile: Record<string, any>):
       title: textValue(publicProfile.title),
       currentEntity: textValue(weakEntity.name || weakEntity.displayName),
       detail: weakResearchSummaryTextIssue(
-        [weakEntity.shortDescription, weakEntity.description].map(textValue).join(' '),
+        [weakEntity.shortDescription].map(textValue).join(' '),
       ),
     };
   }
@@ -990,7 +989,6 @@ async function main(): Promise<void> {
         kind: entity.kind || '',
         entityType: entity.entityType || '',
         shortDescription: entity.shortDescription || '',
-        description: entity.description || '',
         departments: entity.departments || [],
         researchAreas: entity.researchAreas || [],
         _bioFullDescription: entity.fullDescription || '',

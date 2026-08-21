@@ -21,7 +21,7 @@ const entity = (overrides: Partial<ResearchEntity>): ResearchEntity => ({
   name: overrides.name || 'Example Research Group',
   displayName: overrides.displayName,
   kind: overrides.kind || 'lab',
-  description: overrides.description || 'Studies a focused research area.',
+  fullDescription: overrides.fullDescription || 'Studies a focused research area.',
   websiteUrl: overrides.websiteUrl || '',
   location: overrides.location || '',
   departments: overrides.departments || [],

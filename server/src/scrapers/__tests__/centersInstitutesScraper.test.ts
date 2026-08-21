@@ -522,7 +522,7 @@ describe('childCenterToObservations', () => {
     );
     const fields = obs.map((o) => o.field);
     expect(fields).toEqual(
-      expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'school', 'description']),
+      expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'school', 'fullDescription']),
     );
     expect(obs[0].entityKey).toBe('center-jackson-centers-schmidt-program-on-ai');
     expect(obs.find((o) => o.field === 'kind')!.value).toBe('program');

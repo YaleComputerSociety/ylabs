@@ -90,14 +90,12 @@ export function synthesisGroundingScore(output: string, source: string): number 
 
 export interface LabSynthesisSourceFields {
   fullDescription?: unknown;
-  description?: unknown;
   profileSynthesisDescription?: unknown;
 }
 
 export function assembleSynthesisSourceText(entity: LabSynthesisSourceFields): string {
   const candidates = [
     entity.fullDescription,
-    entity.description,
     entity.profileSynthesisDescription,
   ]
     .map((value) => sanitizeDescriptionText(value).text)

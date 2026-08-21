@@ -140,7 +140,6 @@ function researchHomeInput(entity: Record<string, any>, role: string): Professor
     summary: textValue(
       entity.shortDescription ||
         entity.fullDescription ||
-        entity.description ||
         '',
     ),
   };

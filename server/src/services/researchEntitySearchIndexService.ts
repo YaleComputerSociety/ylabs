@@ -17,7 +17,6 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'researchAreas',
     'studentSearchTerms',
     'departments',
-    'description',
     'shortDescription',
     'fullDescription',
     'school',
@@ -105,7 +104,6 @@ export function getResearchEntitySearchIndexSettings() {
 const SEARCH_INDEX_TEXT_FIELDS = [
   'name',
   'displayName',
-  'description',
   'summary',
   'shortDescription',
   'fullDescription',
@@ -231,7 +229,6 @@ export function buildStudentSearchTerms(doc: any): string[] {
   const haystack = normalizedAliasHaystack([
     doc?.name,
     doc?.displayName,
-    doc?.description,
     doc?.summary,
     doc?.shortDescription,
     doc?.fullDescription,
@@ -419,7 +416,7 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
       'Professors: {{doc.professorNames}}\n' +
       'Departments: {{doc.departments}}\n' +
       'Research areas: {{doc.researchAreas}}\n' +
-      'Description: {{doc.shortDescription}} {{doc.fullDescription}} {{doc.description}}',
+      'Description: {{doc.shortDescription}} {{doc.fullDescription}}',
   },
 });
 

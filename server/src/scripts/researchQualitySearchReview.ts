@@ -184,7 +184,6 @@ function buildLexicalReasons(hit: Record<string, unknown>, query: string): strin
   const fields: Array<[string, unknown]> = [
     ['name', hit.name],
     ['displayName', hit.displayName],
-    ['description', hit.description],
     ['shortDescription', hit.shortDescription],
     ['fullDescription', hit.fullDescription],
     ['researchAreas', hit.researchAreas],
@@ -328,7 +327,7 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
 
   const entities = (await ResearchEntity.find({ _id: { $in: validIds } })
     .select(
-      '_id slug name entityType kind displayName description shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
+      '_id slug name entityType kind displayName shortDescription fullDescription sourceUrls websiteUrl researchAreas departments',
     )
     .lean()) as unknown as EntityRecord[];
 
@@ -363,7 +362,6 @@ async function buildReview(options: ResearchQualitySearchReviewCliOptions) {
         entityType: entity.entityType,
         kind: entity.kind,
         displayName: entity.displayName,
-        description: entity.description,
         shortDescription: entity.shortDescription,
         fullDescription: entity.fullDescription,
         sourceUrls: entity.sourceUrls || [],

@@ -133,7 +133,6 @@ const normalizeStudentDecisionExplanation = (
 const normalizeResearchEntity = (entity: ResearchEntity): ResearchEntity => ({
   ...entity,
   shortDescription: publicResearchDescriptionText(entity.shortDescription),
-  description: publicResearchDescriptionText(entity.description),
   fullDescription: publicResearchDescriptionText(entity.fullDescription),
   researchAreas: normalizeResearchMetadataLabels(entity.researchAreas),
   searchMatch: normalizeSearchMatch(entity.searchMatch),

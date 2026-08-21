@@ -18,7 +18,6 @@ export interface CoverageAuditFacts {
   kind?: string;
   school?: string;
   websiteUrl?: string;
-  description?: string;
   shortDescription?: string;
   fullDescription?: string;
   counts: CoverageAuditCounts;
@@ -32,7 +31,6 @@ export interface CoverageAuditRow {
   kind?: string;
   school?: string;
   websiteUrl?: string;
-  descriptionChars: number;
   shortDescriptionChars: number;
   fullDescriptionChars: number;
   counts: CoverageAuditCounts;
@@ -75,7 +73,6 @@ export function extractSuspiciousConstraintQuotes(
 }
 
 export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
-  const descriptionChars = textLength(facts.description);
   const shortDescriptionChars = textLength(facts.shortDescription);
   const fullDescriptionChars = textLength(facts.fullDescription);
   const { researchAreas, members, accessSignals, activeListings } = facts.counts;
@@ -83,7 +80,7 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
   const noActionableAccess = accessSignals === 0 && activeListings === 0;
   const issues: string[] = [];
 
-  if (descriptionChars === 0 && shortDescriptionChars === 0 && fullDescriptionChars === 0) {
+  if (shortDescriptionChars === 0 && fullDescriptionChars === 0) {
     issues.push('MISSING_DESCRIPTION');
   }
   if (researchAreas === 0) {
@@ -117,7 +114,8 @@ export function buildCoverageIssues(facts: CoverageAuditFacts): string[] {
     issues.push('SUSPICIOUS_CONSTRAINT_QUOTE_UNCLASSIFIED');
   }
   if (
-    descriptionChars === 0 &&
+    shortDescriptionChars === 0 &&
+    fullDescriptionChars === 0 &&
     researchAreas === 0 &&
     members === 0 &&
     noActionableAccess &&
@@ -141,7 +139,6 @@ export function buildCoverageAuditRow(facts: CoverageAuditFacts): CoverageAuditR
     kind: facts.kind,
     school: facts.school,
     websiteUrl: facts.websiteUrl,
-    descriptionChars: textLength(facts.description),
     shortDescriptionChars: textLength(facts.shortDescription),
     fullDescriptionChars: textLength(facts.fullDescription),
     counts: facts.counts,

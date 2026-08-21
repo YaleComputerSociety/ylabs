@@ -265,7 +265,7 @@ async function aggregateCountMap(
 async function fetchEntities(filter: Record<string, unknown>) {
   return (await ResearchEntity.find(filter)
     .select(
-      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl researchAreas sourceUrls archived',
+      '_id slug name kind entityType school shortDescription fullDescription websiteUrl researchAreas sourceUrls archived',
     )
     .sort({ name: 1 })
     .lean()) as unknown as AuditEntityRecord[];
@@ -336,7 +336,6 @@ async function buildBulkAudit(options: ResearchEntityCoverageAuditCliOptions) {
       kind: entity.kind,
       school: entity.school,
       websiteUrl: entity.websiteUrl,
-      description: entity.description,
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
       counts: {
@@ -415,7 +414,7 @@ export function buildResearchEntityCoverageSummaryOnlyOutput(
 async function buildSlugAudit(slug: string) {
   const entity = (await ResearchEntity.findOne({ slug })
     .select(
-      '_id slug name kind entityType school description shortDescription fullDescription websiteUrl sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
+      '_id slug name kind entityType school shortDescription fullDescription websiteUrl sourceUrls researchAreas acceptanceConfidence undergradEvidenceQuote lastObservedAt',
     )
     .lean()) as AuditEntityRecord | null;
   if (!entity) {
@@ -457,7 +456,6 @@ async function buildSlugAudit(slug: string) {
     kind: entity.kind,
     school: entity.school,
     websiteUrl: entity.websiteUrl,
-    description: entity.description,
     shortDescription: entity.shortDescription,
     fullDescription: entity.fullDescription,
     counts: {
@@ -489,7 +487,6 @@ async function buildSlugAudit(slug: string) {
       entityType: entity.entityType,
       school: entity.school,
       websiteUrl: entity.websiteUrl,
-      description: entity.description,
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
       researchAreas: entity.researchAreas || [],

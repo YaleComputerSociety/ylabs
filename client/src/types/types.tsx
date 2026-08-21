@@ -179,7 +179,7 @@ export type FacultyProfile = {
     name: string;
     displayName?: string;
     shortDescription?: string;
-    description?: string;
+    fullDescription?: string;
     departments?: string[];
     researchAreas?: string[];
     role?: string;

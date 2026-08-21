@@ -380,7 +380,7 @@ describe('profileService profile shaping', () => {
             kind: 'lab',
             entityType: 'LAB',
             shortDescription: 'Studies computing history. Questions: hidden@example.edu',
-            description: 'Call 203-432-1234 before applying.',
+            fullDescription: 'The lab studies computing history. Call 203-432-1234 before applying.',
             websiteUrl: 'javascript:alert(document.cookie)',
             website: 'https://ada-lab.example.test',
             sourceUrls: [
@@ -405,10 +405,11 @@ describe('profileService profile shaping', () => {
       website: 'https://ada-lab.example.test/',
       sourceUrls: ['https://source.example.test/profile'],
       shortDescription: 'Studies computing history. Questions: [email redacted]',
-      description: 'Call [phone redacted] before applying.',
+      fullDescription: 'The lab studies computing history. Call [phone redacted] before applying.',
       researchAreas: ['Computing History'],
     });
     expect(profile.researchEntities[0]).not.toHaveProperty('websiteUrl');
+    expect(profile.researchEntities[0]).not.toHaveProperty('description');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('javascript:');
     expect(JSON.stringify(profile.researchEntities)).not.toContain('data:text/html');
@@ -432,7 +433,7 @@ describe('profileService profile shaping', () => {
             name: 'Morgan Vector Faculty Research',
             shortDescription:
               'Studies synthetic policy and Research Areas: synthetic policy.',
-            description:
+            fullDescription:
               'Morgan Vector is affiliated with the Example Center and the Program in Synthetic Studies.',
             researchAreas: ['Synthetic Policy'],
           },
@@ -442,11 +443,41 @@ describe('profileService profile shaping', () => {
 
     expect(profile.research_interest_summary).toBe('');
     expect(profile.researchEntities[0]).not.toHaveProperty('shortDescription');
+    expect(profile.researchEntities[0]).not.toHaveProperty('fullDescription');
     expect(profile.researchEntities[0]).not.toHaveProperty('description');
     expect(profile.researchEntities[0]).toMatchObject({
       name: 'Morgan Vector Faculty Research',
       researchAreas: ['Synthetic Policy'],
     });
+  });
+
+  it('strips a legacy description field from public profile cards', () => {
+    const profile = normalizePublicProfile(
+      {
+        netid: 'lg123',
+        fname: 'Legacy',
+        lname: 'Gauge',
+        bio: '',
+      },
+      {
+        researchEntities: [
+          {
+            slug: 'legacy-gauge-lab',
+            name: 'Legacy Gauge Lab',
+            shortDescription:
+              'Studies archival evidence and computational methods for public systems.',
+            description:
+              'Stale pre-cutover blurb that must not reach the public payload.',
+            researchAreas: ['Public Systems'],
+          },
+        ],
+      },
+    );
+
+    expect(profile.researchEntities[0]).not.toHaveProperty('description');
+    expect(JSON.stringify(profile.researchEntities)).not.toContain(
+      'Stale pre-cutover blurb',
+    );
   });
 
   it('keeps direct research-home summaries on public profile cards', () => {
@@ -464,7 +495,7 @@ describe('profileService profile shaping', () => {
             name: 'Riley Vector Lab',
             shortDescription:
               'Studies archival evidence and computational methods for public systems.',
-            description:
+            fullDescription:
               'The lab develops mixed-method approaches for evaluating public systems.',
             researchAreas: ['Public Systems'],
           },
@@ -475,9 +506,10 @@ describe('profileService profile shaping', () => {
     expect(profile.researchEntities[0]).toMatchObject({
       shortDescription:
         'Studies archival evidence and computational methods for public systems.',
-      description:
+      fullDescription:
         'The lab develops mixed-method approaches for evaluating public systems.',
     });
+    expect(profile.researchEntities[0]).not.toHaveProperty('description');
   });
 
   it('keeps same-person profile URLs for compact compound last-name slugs', () => {

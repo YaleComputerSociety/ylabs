@@ -40,7 +40,6 @@ export type ResearchHomeEvidenceState = 'review' | 'publications';
 
 export interface ResearchHomeContextInput {
   shortDescription?: string | null;
-  description?: string | null;
   fullDescription?: string | null;
   profileSynthesisDescription?: string | null;
   researchAreas?: Array<string | undefined | null>;
@@ -290,7 +289,7 @@ const buildCompleteContextSummary = (
 };
 
 const hasUsefulFullDescription = (input: ResearchHomeContextInput): boolean => {
-  const fullText = normalizeContextText(input.fullDescription || input.description);
+  const fullText = normalizeContextText(input.fullDescription);
   return Boolean(fullText && !isGenericResearchHomeDescription(fullText));
 };
 
@@ -313,7 +312,7 @@ const selectResearchDescriptionSummary = (
       ? undefined
       : buildCompleteContextSummary(input.shortDescription);
     if (shortSummary) return shortSummary;
-    return buildCompleteContextSummary(input.fullDescription || input.description);
+    return buildCompleteContextSummary(input.fullDescription);
   }
 
   const summaries = [
@@ -561,7 +560,6 @@ const buildProfileDiscoveryClusters = (
     const displayName = entityDisplayName(entity);
     const contextSummary = buildResearchHomeContextSummary({
       shortDescription: entity.shortDescription,
-      description: entity.description,
       fullDescription: entity.fullDescription,
       profileSynthesisDescription: entity.profileSynthesisDescription,
       researchAreas: entity.researchAreas,

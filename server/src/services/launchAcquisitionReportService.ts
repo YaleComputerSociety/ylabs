@@ -525,7 +525,7 @@ async function classifySourceDescriptionItem(
   if (
     urls.some(isYaleProfileUrl) &&
     reasons.includes('thin_description') &&
-    !usefulDescriptionText(entity.fullDescription || entity.description)
+    !usefulDescriptionText(entity.fullDescription)
   ) {
     addGroup(groups.yaleProfileThinText, item, label, sampleLimit);
   }
@@ -534,7 +534,7 @@ async function classifySourceDescriptionItem(
   }
   if (
     reasons.includes('missing_card_description') &&
-    usefulDescriptionText(entity.fullDescription || entity.description)
+    usefulDescriptionText(entity.fullDescription)
   ) {
     addGroup(groups.cardDescriptionDerivable, item, label, sampleLimit);
   }

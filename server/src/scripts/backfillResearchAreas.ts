@@ -152,7 +152,7 @@ export async function runResearchAreaBackfill(options: {
   }
 
   const query = ResearchEntity.find(filter)
-    .select('_id slug name kind departments researchAreas description shortDescription fullDescription')
+    .select('_id slug name kind departments researchAreas shortDescription fullDescription')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = (await query.lean()) as EntityRow[];
@@ -167,7 +167,6 @@ export async function runResearchAreaBackfill(options: {
         kind: entity.kind,
         departments: entity.departments,
         existingResearchAreas: entity.researchAreas,
-        description: entity.description,
         shortDescription: entity.shortDescription,
         fullDescription: entity.fullDescription,
       },

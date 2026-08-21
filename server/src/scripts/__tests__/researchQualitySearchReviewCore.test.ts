@@ -21,7 +21,6 @@ function baseFacts(): ResearchQualitySearchFacts {
     slug: 'example-lab',
     name: 'Example Lab',
     displayName: 'Example Lab',
-    description: 'Short.',
     shortDescription: '',
     fullDescription: '',
     sourceUrls: ['not-a-url'],
@@ -94,8 +93,6 @@ describe('buildResearchQualitySearchReviewRow', () => {
   it('does not flag a well-explained result with lead, context, and actionable evidence', () => {
     const row = buildResearchQualitySearchReviewRow({
       ...baseFacts(),
-      description:
-        'This lab studies student-facing research questions in computational biology, including methods, datasets, and collaboration patterns for undergraduate projects.',
       shortDescription: 'Computational biology research with undergraduate project context.',
       fullDescription:
         'Students can understand what the group studies, who leads it, and why a pathway result matched their search.',
@@ -121,7 +118,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       entityType: 'CENTER',
       slug: 'center-yale-cancer-center',
       name: 'Yale Cancer Center',
-      description:
+      fullDescription:
         'The center supports cancer research across immunology, prevention, genomics, clinical trials, and precision medicine through affiliated faculty, member labs, shared programs, and source-backed center activity.',
       shortDescription:
         'Cancer research center with affiliated faculty, member labs, shared programs, and source-backed center activity.',
@@ -145,7 +142,7 @@ describe('buildResearchQualitySearchReviewRow', () => {
       entityType: 'FACULTY_RESEARCH_AREA',
       slug: 'faculty-research-area-example',
       name: 'Example Faculty Research',
-      description:
+      fullDescription:
         'This faculty research area studies computational biology, statistical learning, and translational genomics through faculty-led research projects and public profile context.',
       shortDescription:
         'Faculty research area in computational biology, statistical learning, and translational genomics.',

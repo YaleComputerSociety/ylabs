@@ -117,7 +117,6 @@ export interface ResearchGroup {
   displayName?: string;
   kind: ResearchGroupKind;
   entityType?: ResearchEntityType;
-  description: string;
   shortDescription?: string;
   fullDescription?: string;
   profileSynthesisDescription?: string;

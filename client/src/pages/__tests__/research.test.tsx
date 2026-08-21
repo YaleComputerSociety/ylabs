@@ -270,7 +270,7 @@ const researchEntity = {
   name: 'AI Safety Lab',
   displayName: 'AI Safety Lab',
   kind: 'lab',
-  description: 'Studies reliable machine learning systems.',
+  fullDescription: 'Studies reliable machine learning systems.',
   websiteUrl: '',
   location: '',
   departments: ['Computer Science'],
@@ -303,7 +303,7 @@ const pathwayHit = {
     slug: 'ai-safety-lab',
     name: 'AI Safety Lab',
     displayName: 'AI Safety Lab',
-    description: 'Studies reliable machine learning systems.',
+    fullDescription: 'Studies reliable machine learning systems.',
   },
   evidence: [
     {
@@ -1939,7 +1939,7 @@ describe('Research page', () => {
       slug: 'archives-lab',
       name: 'Archives Lab',
       displayName: 'Archives Lab',
-      description: 'Studies archival collections.',
+      fullDescription: 'Studies archival collections.',
       departments: ['History of Art'],
       researchAreas: ['Archival research'],
     };
@@ -2047,7 +2047,7 @@ describe('Research page', () => {
                 slug: 'digital-humanities-lab',
                 name: 'Yale Digital Humanities Lab',
                 displayName: 'Yale Digital Humanities Lab',
-                description: 'Computational text analysis and archive-centered research.',
+                fullDescription: 'Computational text analysis and archive-centered research.',
                 departments: ['English'],
                 researchAreas: ['digital humanities'],
                 sourceUrls: ['https://example.yale.edu'],

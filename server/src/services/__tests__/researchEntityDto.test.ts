@@ -105,7 +105,6 @@ describe('researchEntityDto', () => {
       displayName: 'Recursive 203-555-1212 Lab',
       departments: ['TEST - Department hidden@example.edu'],
       researchAreas: ['Calls to 203-555-1212'],
-      description: 'Email hidden@example.edu or call 203-555-1212.',
       shortDescription: 'Questions go to hidden@example.edu.',
       studentDecisionExplanation: {
         bestNextStep: 'Email hidden@example.edu after reading the source.',
@@ -125,7 +124,6 @@ describe('researchEntityDto', () => {
     expect(dto.displayName).toBe('Recursive [phone redacted] Lab');
     expect(dto.departments).toEqual(['Department [email redacted]']);
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
-    expect(dto.description).toBe('Email [email redacted] or call [phone redacted].');
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
     expect(dto.studentDecisionExplanation).toEqual({
       bestNextStep: 'Email [email redacted] after reading the source.',
@@ -198,7 +196,7 @@ describe('researchEntityDto', () => {
         id: 'entity-dto-bounds',
         slug: 'dto-bounds-lab',
         name: 'DTO Bounds Lab',
-        description: 'x'.repeat(6000),
+        shortDescription: 'x'.repeat(6000),
         researchAreas,
         sourceUrls,
         studentDecisionExplanation: { reasons },
@@ -207,7 +205,7 @@ describe('researchEntityDto', () => {
       { includeOperatorFields: true },
     );
 
-    expect(dto.description).toHaveLength(5000);
+    expect(dto.shortDescription).toHaveLength(5000);
     expect(dto.researchAreas).toHaveLength(100);
     expect(dto.sourceUrls).toHaveLength(50);
     expect((dto.studentDecisionExplanation as any).reasons).toHaveLength(100);

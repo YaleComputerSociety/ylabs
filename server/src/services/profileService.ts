@@ -627,6 +627,7 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     _bioSourceUrls,
     _bioWebsite,
     _bioWebsiteUrl,
+    description: _legacyDescription,
     ...publicEntity
   } = entity || {};
   const publicId = (
@@ -649,13 +650,13 @@ const publicProfileResearchEntity = (entity: Record<string, any>): Record<string
     'kind',
     'entityType',
     'shortDescription',
-    'description',
+    'fullDescription',
     'role',
   ];
 
   for (const field of textFields) {
     if (publicEntity[field] !== undefined) {
-      const text = ['shortDescription', 'description'].includes(field)
+      const text = ['shortDescription', 'fullDescription'].includes(field)
         ? publicResearchSummaryText(publicEntity[field])
         : publicProfileText(publicEntity[field]);
       if (text) publicEntity[field] = text;
@@ -828,7 +829,7 @@ const researchInterestContextSummary = (researchEntities: any[]): string => {
 
   for (const entity of orderedEntities) {
     const cleaned = cleanResearchHomeSummaryForBio(
-      String(entity?.fullDescription || entity?._bioFullDescription || entity?.description || ''),
+      String(entity?.fullDescription || entity?._bioFullDescription || ''),
     );
     if (cleaned.length < TRUSTED_RESEARCH_HOME_BIO_MIN_SUMMARY_LENGTH) continue;
     if (summaryRestatesResearchAreas(cleaned, entity?.researchAreas)) continue;
@@ -1343,7 +1344,6 @@ const trustedLeadResearchHomeBioFallback = (
       entity?.shortDescription ||
         entity?.fullDescription ||
         entity?._bioFullDescription ||
-        entity?.description ||
         '',
     ));
 
@@ -1774,7 +1774,7 @@ const loadProfileResearchEntities = async (user: Record<string, any>) => {
       kind: entity.kind || '',
       entityType: entity.entityType || '',
       shortDescription: entity.shortDescription || '',
-      description: entity.description || '',
+      fullDescription: entity.fullDescription || '',
       departments: entity.departments || [],
       researchAreas: entity.researchAreas || [],
       _bioFullDescription: entity.fullDescription || '',

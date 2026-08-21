@@ -1624,7 +1624,7 @@ describe('listResearchEntityRelationshipPayload', () => {
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
     expect(select).toHaveBeenCalledWith(
-      '_id slug name displayName kind entityType departments shortDescription description fullDescription studentVisibilityTier',
+      '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier',
     );
     expect(result.relatedResearchEntities).toHaveLength(50);
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 50, truncated: true });

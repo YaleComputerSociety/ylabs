@@ -72,7 +72,6 @@ describe('studentVisibilityGateService', () => {
   it('loads public description and override fields when planning research entity gates', () => {
     expect(researchEntityGateProjection.split(/\s+/)).toEqual(
       expect.arrayContaining([
-        'description',
         'shortDescription',
         'fullDescription',
         'profileSynthesisDescription',
@@ -80,6 +79,7 @@ describe('studentVisibilityGateService', () => {
         'studentVisibilityOverrideTier',
       ]),
     );
+    expect(researchEntityGateProjection.split(/\s+/)).not.toContain('description');
   });
 
   it('caps release queue page before building Mongo skip and limit values', async () => {

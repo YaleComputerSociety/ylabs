@@ -30,8 +30,6 @@ describe('buildListingResearchEntityProfilePatch', () => {
         'Professor Thomas focuses on the relation between accounting information and stock prices.',
       fullDescription:
         'Professor Thomas focuses on the relation between accounting information and stock prices.',
-      description:
-        'Professor Thomas focuses on the relation between accounting information and stock prices.',
       departments: ['South Asian Studies'],
       researchAreas: ['Accounting'],
     });

@@ -96,7 +96,7 @@ export async function auditStudentReadyPublicDescriptions({
     studentVisibilityTier: 'student_ready',
   })
     .select(
-      '_id slug name displayName kind entityType website websiteUrl sourceUrls description shortDescription fullDescription profileSynthesisDescription descriptionSource',
+      '_id slug name displayName kind entityType website websiteUrl sourceUrls shortDescription fullDescription profileSynthesisDescription descriptionSource',
     )
     .sort({ name: 1 })
     .lean();

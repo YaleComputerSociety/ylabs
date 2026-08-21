@@ -25,7 +25,6 @@ function baseFacts(): CoverageAuditFacts {
     kind: 'lab',
     school: 'Yale School of Engineering & Applied Science',
     websiteUrl: 'https://yuejiechi.github.io/',
-    description: '',
     shortDescription: '',
     fullDescription: '',
     counts: {
@@ -89,7 +88,6 @@ describe('buildCoverageAuditRow', () => {
     const row = buildCoverageAuditRow(baseFacts());
 
     expect(row.issueScore).toBeGreaterThan(0);
-    expect(row.descriptionChars).toBe(0);
   });
 });
 
@@ -100,7 +98,6 @@ describe('summarizeIssueCounts', () => {
       ...baseFacts(),
       slug: 'wu-tsai',
       name: 'Wu Tsai Institute',
-      description: 'Studies neuroscience and computation.',
       shortDescription: 'Neuroscience institute.',
       counts: {
         ...baseFacts().counts,
@@ -130,7 +127,7 @@ describe('selectCoverageAuditRows', () => {
     slug: 'missing-website-only',
     name: 'Missing Website Only',
     websiteUrl: '',
-    description: 'Complete description.',
+    fullDescription: 'Complete description.',
     counts: {
       ...baseFacts().counts,
       researchAreas: 2,
@@ -148,7 +145,7 @@ describe('selectCoverageAuditRows', () => {
     slug: 'complete-entity',
     name: 'Complete Entity',
     websiteUrl: 'https://example.test/',
-    description: 'Complete description.',
+    fullDescription: 'Complete description.',
     counts: {
       ...baseFacts().counts,
       researchAreas: 2,

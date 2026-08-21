@@ -485,7 +485,6 @@ function labDescriptionToObservations(
   return [
     { ...base, field: 'displayName', value: lab.name },
     { ...base, field: 'entityType', value: 'LAB' },
-    { ...base, field: 'description', value: description.description },
     { ...base, field: 'fullDescription', value: description.description },
     { ...base, field: 'shortDescription', value: description.shortDescription },
   ];
