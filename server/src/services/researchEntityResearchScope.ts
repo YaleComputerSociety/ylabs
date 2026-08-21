@@ -73,8 +73,7 @@ export function classifyResearchEntityResearchScope(
   if (nonResearchOrganization && !positiveResearchEvidence) {
     const reasons: string[] = [];
     if (serviceOrInstructionalSupport) reasons.push('service_or_instructional_support');
-    if (administrativeOrServiceOrganization)
-      reasons.push('administrative_or_service_organization');
+    if (administrativeOrServiceOrganization) reasons.push('administrative_or_service_organization');
     reasons.push('missing_positive_research_evidence');
     return { researchHomeEligible: false, reasons };
   }

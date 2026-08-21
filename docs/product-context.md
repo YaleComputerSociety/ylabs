@@ -24,7 +24,7 @@ Once a home and supervisor are plausible, the relationship may be formalized thr
 STEM often looks like faculty-led labs, humanities often looks like faculty projects or collections work, and social science often mixes project teams, centers, thesis advising, and term-specific RA programs.
 
 The app should make this ecosystem navigable without forcing every discipline into a lab-opening model or forcing every directory record to have a pathway.
-Organizational service and instructional-support units should stay out of student discovery unless their public description positively establishes that they conduct or organize research.
+Organizational service, administrative, and instructional-support units should stay out of student discovery unless their public description positively establishes that they conduct or organize research.
 
 ## Primary Surfaces
 
