@@ -6,7 +6,7 @@ import { getSearchQualityAnalytics, invalidateAnalyticsCaches } from '../analyti
 
 const WINDOW_MINUTES = 30;
 
-const legacySelfJoinPipeline = () => [
+const legacySelfJoinPipeline = (): mongoose.PipelineStage[] => [
   {
     $match: {
       eventType: AnalyticsEventType.SEARCH,
