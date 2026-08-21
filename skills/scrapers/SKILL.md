@@ -61,6 +61,7 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists                                                                                                  |
 | `labMicrositeUndergradLLMExtractor.ts`   | LLM extraction of undergrad-access signals and claim-specific logistics from lab microsites                                           |
 | `labMicrositeDescriptionLLMExtractor.ts` | LLM extraction of lab description text from microsites                                                                                |
+| `researchAreaSourceExtractor.ts`         | Deterministic recovery of approved research areas for empty-area entities from their official page (labeled Research Interests/Areas sections plus an approved-registry prose scan); emits approved `TaxonomyTerm` areas only, fail-closed |
 | `centerDirectorLLMExtractor.ts`          | LLM extraction of the single named director of an organizational home from its official site + leadership pages                       |
 | `officialProfilePiBackfillScraper.ts`    | Backfill scraper for PI official-profile data                                                                                         |
 | `officialResearchHomeRosterScraper.ts`   | Disabled-by-default, allowlisted current non-lead research-home rosters with stable official-profile identities and bounded freshness |
