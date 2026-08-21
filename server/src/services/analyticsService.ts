@@ -1689,11 +1689,27 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           { $sort: { eventCount: -1 } },
           { $limit: 10 },
           {
+            $lookup: {
+              from: 'users',
+              localField: '_id.netid',
+              foreignField: 'netid',
+              as: 'user',
+            },
+          },
+          {
+            $unwind: {
+              path: '$user',
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
             $project: {
               _id: 0,
               userId: '$_id.netid',
               userType: '$_id.userType',
               eventCount: 1,
+              fname: '$user.fname',
+              lname: '$user.lname',
             },
           },
         ],

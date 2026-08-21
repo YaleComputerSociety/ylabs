@@ -47,7 +47,13 @@ export interface AnalyticsData {
       activeUsers: number;
       avgEventsPerUser: number;
     };
-    mostActiveUsers: Array<{ userId: string; userType: string; eventCount: number }>;
+    mostActiveUsers: Array<{
+      userId: string;
+      userType: string;
+      eventCount: number;
+      fname?: string;
+      lname?: string;
+    }>;
     outreach?: {
       summary: {
         totalReveals: number;

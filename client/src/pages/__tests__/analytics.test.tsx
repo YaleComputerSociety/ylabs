@@ -644,4 +644,97 @@ describe('Analytics page', () => {
     });
     expect(screen.getAllByText('Current snapshot').length).toBeGreaterThanOrEqual(2);
   });
+
+  it('renders display names alongside NetIDs in the operator user tables', async () => {
+    const withActiveUsers: AnalyticsData = {
+      ...analyticsData,
+      engagement: {
+        ...analyticsData.engagement,
+        mostActiveUsers: [
+          {
+            userId: 'analyst01',
+            userType: 'undergraduate',
+            eventCount: 9,
+            fname: 'Ada',
+            lname: 'Analyst',
+          },
+          { userId: 'nameless02', userType: 'graduate', eventCount: 4 },
+        ],
+      },
+    };
+
+    const userRow = (netid: string, fname?: string, lname?: string) => ({
+      netid,
+      userType: netid === 'analyst01' ? 'undergraduate' : 'graduate',
+      fname,
+      lname,
+      totalEvents: 9,
+      logins: 2,
+      searches: 4,
+      views: 3,
+      fellowshipViews: 0,
+      listingFavorites: 0,
+      listingUnfavorites: 0,
+      fellowshipFavorites: 0,
+      fellowshipUnfavorites: 0,
+      outreachClicks: 0,
+      outreachOutcomes: 0,
+      listingCreates: 0,
+      listingUpdates: 0,
+      listingArchives: 0,
+      listingUnarchives: 0,
+      profileUpdates: 0,
+      loginCount: 2,
+      lastActive: '2026-05-17T00:00:00.000Z',
+    });
+
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') {
+        return Promise.resolve({ data: withActiveUsers });
+      }
+      if (url === '/analytics/users') {
+        return Promise.resolve({
+          data: {
+            users: [userRow('analyst01', 'Ada', 'Analyst'), userRow('nameless02')],
+            total: 2,
+            limit: 25,
+          },
+        });
+      }
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+        });
+      }
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
+      }
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [], limit: 25 } });
+      }
+      if (url === '/analytics/funnel') {
+        return Promise.resolve({ data: { stages: [] } });
+      }
+      if (url === '/analytics/actions') {
+        return Promise.resolve({ data: { cards: [], items: [] } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(<Analytics />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Most Active Users/ })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'NetID User Activity' })).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Ada Analyst').length).toBeGreaterThanOrEqual(2);
+    });
+    expect(screen.getAllByText('analyst01').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('nameless02').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('undefined')).toBeNull();
+  });
 });
