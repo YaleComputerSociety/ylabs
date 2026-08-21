@@ -41,6 +41,8 @@ export interface ResearchEntityDedupeMergeGroup {
   mergedDepartments: string[];
   mergedResearchAreas: string[];
   mergedSourceUrls: string[];
+  canonicalName?: string;
+  canonicalWebsiteUrl?: string;
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
@@ -112,6 +114,8 @@ export interface ResearchEntityPiDedupeDecisionTemplate {
     duplicateSlugs: string[];
     mergedDepartments: string[];
     mergedResearchAreas: string[];
+    canonicalName?: string;
+    canonicalWebsiteUrl?: string;
     dedupeCategory?: string;
     decision: '';
     reviewedBy: '';
@@ -381,6 +385,8 @@ export function buildResearchEntityPiDedupeDecisionTemplate(
       duplicateSlugs: plan.duplicateSlugs,
       mergedDepartments: plan.mergedDepartments,
       mergedResearchAreas: plan.mergedResearchAreas,
+      canonicalName: plan.canonicalName,
+      canonicalWebsiteUrl: plan.canonicalWebsiteUrl,
       dedupeCategory: plan.dedupeCategory,
       decision: '',
       reviewedBy: '',
@@ -643,6 +649,8 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
     duplicateSlugs: string[];
     mergedDepartments?: string[];
     mergedResearchAreas?: string[];
+    canonicalName?: string;
+    canonicalWebsiteUrl?: string;
   }>,
 ) {
   const fundingSlugPattern = /^(nih|nsf)-pi-/;
@@ -665,6 +673,12 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
   const highResearchAreaMergeGroups = groups.filter(
     (group) => uniqueCount(group.mergedResearchAreas) >= 6,
   ).length;
+  const groupsCarryingCanonicalName = groups.filter((group) =>
+    Boolean(String(group.canonicalName || '').trim()),
+  ).length;
+  const groupsCarryingCanonicalWebsite = groups.filter((group) =>
+    Boolean(String(group.canonicalWebsiteUrl || '').trim()),
+  ).length;
 
   return {
     totalGroups: groups.length,
@@ -677,6 +691,8 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
     crossDepartmentGroups,
     groupsWithMergedResearchAreas,
     highResearchAreaMergeGroups,
+    groupsCarryingCanonicalName,
+    groupsCarryingCanonicalWebsite,
     recommendedNarrowCommands: [
       betaCommand(
         'yarn --cwd server research-entity:dedupe-by-pi --reviewed-profile-area-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-reviewed-profile-area.json',
@@ -817,7 +833,8 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
         .trim()
         .split(/\s+/)
         .filter(Boolean);
-      const lastName = displayNameParts.length > 0 ? displayNameParts[displayNameParts.length - 1] : '';
+      const lastName =
+        displayNameParts.length > 0 ? displayNameParts[displayNameParts.length - 1] : '';
       const firstName = displayNameParts.slice(0, -1).join(' ');
       const entityIds = new Set((row.entities || []).map((entity: { id?: string }) => entity.id));
       const exactPersonNames = profileAreaNamesForPi(firstName, lastName);
@@ -1486,6 +1503,15 @@ export async function applyResearchEntityDedupeMergeGroup(
   }
   const now = new Date();
 
+  const canonicalIdentitySet: Record<string, unknown> = { lastObservedAt: new Date() };
+  const carriedName = String(group.canonicalName || '').trim();
+  const carriedWebsiteUrl = String(group.canonicalWebsiteUrl || '').trim();
+  if (carriedName) {
+    canonicalIdentitySet.name = carriedName;
+    canonicalIdentitySet.displayName = carriedName;
+  }
+  if (carriedWebsiteUrl) canonicalIdentitySet.websiteUrl = carriedWebsiteUrl;
+
   const canonicalUpdate = await ResearchEntity.updateOne(
     { _id: canonicalId, archived: { $ne: true } },
     {
@@ -1494,7 +1520,7 @@ export async function applyResearchEntityDedupeMergeGroup(
         researchAreas: { $each: group.mergedResearchAreas },
         sourceUrls: { $each: group.mergedSourceUrls },
       },
-      $set: { lastObservedAt: new Date() },
+      $set: canonicalIdentitySet,
     },
   );
 
@@ -1535,7 +1561,11 @@ export async function applyResearchEntityDedupeMergeGroup(
   const retiredConflictingMembers =
     conflictingMemberIds.length > 0
       ? await RoleAssignment.updateMany(
-          { _id: { $in: conflictingMemberIds }, state: { $ne: 'HISTORICAL' }, archived: { $ne: true } },
+          {
+            _id: { $in: conflictingMemberIds },
+            state: { $ne: 'HISTORICAL' },
+            archived: { $ne: true },
+          },
           {
             $set: {
               state: 'HISTORICAL',
@@ -1547,7 +1577,11 @@ export async function applyResearchEntityDedupeMergeGroup(
       : { modifiedCount: 0 };
 
   const members = await RoleAssignment.updateMany(
-    { 'target.kind': 'RESEARCH_ENTITY', 'target.id': { $in: duplicateIds }, _id: { $nin: conflictingMemberIds } },
+    {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $in: duplicateIds },
+      _id: { $nin: conflictingMemberIds },
+    },
     { $set: { 'target.id': canonicalId } },
   );
 

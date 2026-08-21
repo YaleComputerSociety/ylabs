@@ -545,4 +545,68 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
       })[0],
     ).toEqual(expect.objectContaining({ confidenceOverride: 0.55 }));
   });
+
+  it('emits the real lab name from a non-profile microsite above the PI-derived fallback confidence', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Example Computing Lab studies energy-efficient hardware, compiler co-design, and low-power machine-learning systems for edge devices.',
+        shortDescription:
+          'Studies energy-efficient hardware, compiler co-design, and low-power machine learning.',
+        topics: [],
+        methods: [],
+        name: 'The Example Computing Lab (ECL)',
+      },
+      {
+        entityId: 'entity-ecl',
+        entityKey: 'nsf-pi-example',
+        sourceUrl: 'https://example-computing.example.org/',
+      },
+    );
+
+    const nameObservation = observations.find((obs) => obs.field === 'name');
+    const displayNameObservation = observations.find((obs) => obs.field === 'displayName');
+    expect(nameObservation).toMatchObject({
+      value: 'The Example Computing Lab (ECL)',
+      confidenceOverride: 0.95,
+    });
+    expect(displayNameObservation).toMatchObject({
+      value: 'The Example Computing Lab (ECL)',
+      confidenceOverride: 0.95,
+    });
+    expect(nameObservation?.confidenceOverride).toBeGreaterThan(0.9);
+  });
+
+  it('does not emit a lab name from a profile page or when no proper name is extracted', () => {
+    const profileObservations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The center supports research in metabolic disease, diabetes, mitochondrial biology, insulin resistance, and translational medicine.',
+        shortDescription: 'Studies metabolic disease, diabetes, and insulin resistance.',
+        topics: [],
+        methods: [],
+        name: 'Some Person',
+      },
+      {
+        entityId: 'entity-1',
+        entityKey: 'metabolism',
+        sourceUrl: 'https://medicine.yale.edu/profile/fixture-lead/',
+      },
+    );
+    expect(profileObservations.map((obs) => obs.field)).not.toContain('name');
+    expect(profileObservations.map((obs) => obs.field)).not.toContain('displayName');
+
+    const noNameObservations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.',
+        shortDescription: 'Studies immune mechanisms and tumor biology.',
+        topics: [],
+        methods: [],
+        name: '   ',
+      },
+      { entityId: 'entity-1', entityKey: 'lab', sourceUrl: 'https://example-lab.example.org/' },
+    );
+    expect(noNameObservations.map((obs) => obs.field)).not.toContain('name');
+  });
 });

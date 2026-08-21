@@ -56,6 +56,9 @@ const PAGE_SIZE = 25; // NSF API max
 const MAX_PAGES = 200; // safety cap (5000 awards) — well above current ~400
 const DEFAULT_LOOKBACK_YEARS = 5;
 const MAX_GRANTS_PER_PI = 10;
+// "<PI> Lab" is only a placeholder when no real name is known; keep it well below
+// any real-name source (microsite, official profile) so those always win (issue #456).
+const PI_DERIVED_LAB_NAME_CONFIDENCE = 0.3;
 
 // Quote-wrapped exact-phrase match. Without quotes the API does a fuzzy
 // keyword search across all awardees and returns ~every university.
@@ -463,7 +466,12 @@ export function buildResearchGroupObservations(
     ...(!canonicalResearchHomeSlug
       ? [
           { ...base, field: 'slug', value: slug },
-          { ...base, field: 'name', value: labName },
+          {
+            ...base,
+            field: 'name',
+            value: labName,
+            confidenceOverride: PI_DERIVED_LAB_NAME_CONFIDENCE,
+          },
           { ...base, field: 'kind', value: 'lab' },
         ]
       : []),

@@ -33,6 +33,7 @@ Narrowing modes let an operator review one risk class at a time:
 - `--slug=<slug>` restricts the plan to a single canonical or duplicate slug.
 
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
+An entity that carries its own real (non-profile, non-funding) lab website is treated as a concrete research home, never as a profile-area shell, so it is preferred as canonical and is never archived into a PI-derived `<PI> Lab` grant shell that would discard its real name and site.
 The canonical entity's slug is preserved; only the duplicate entities are archived by id.
 
 ## Data preserved on merge
@@ -42,6 +43,7 @@ A merge never discards evidence:
 - The canonical entity gains the union of duplicate `departments`, `researchAreas`, and `sourceUrls` through `$addToSet`.
 - Non-conflicting duplicate memberships are relinked to the canonical entity; a duplicate membership that would collide with an existing canonical membership is retired with `isCurrentMember: false` and an `endedAt` timestamp instead of being dropped.
 - Relationships, entry pathways, access signals, contact routes, posted opportunities, and scholarly links are relinked to the canonical entity, or archived when relinking would violate a unique key.
+- When the canonical entity lacks a concrete website but a merged duplicate carries one, the canonical inherits that concrete `websiteUrl`, and if its own name is only a PI-derived `<PI> Lab` placeholder it also inherits the donor's real `name`/`displayName`; the `reviewBreakdown` reports these as `groupsCarryingCanonicalWebsite` and `groupsCarryingCanonicalName`.
 - After apply, the student visibility gate is recomputed for each affected canonical entity so reads never serve a stale tier.
 
 ## Review and apply workflow

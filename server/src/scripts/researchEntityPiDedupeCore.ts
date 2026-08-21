@@ -1,5 +1,7 @@
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import {
+  concreteLabWebsiteForEntity,
+  entityCarriesConcreteWebsite,
   isConcreteResearchHomeEntity,
   isProfileAreaShellEntity,
 } from '../utils/profileAreaDuplicateRisk';
@@ -34,6 +36,8 @@ export interface ResearchEntityPiDedupeGroup {
   mergedDepartments: string[];
   mergedResearchAreas: string[];
   mergedSourceUrls: string[];
+  canonicalName?: string;
+  canonicalWebsiteUrl?: string;
   dedupeCategory?: 'profile_area_shell_with_concrete_home';
 }
 
@@ -74,6 +78,7 @@ function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): 
     (entity.researchAreas?.length || 0) * 2 +
     (hasYaleEvidence(entity) ? 20 : 0) +
     ((entity.websiteUrl || '').trim() ? 5 : 0) +
+    (entityCarriesConcreteWebsite(entity) ? 6 : 0) +
     (hasFullDescription ? 18 : 0) +
     (hasShortDescription ? 8 : 0) +
     (!isSpecialShell ? 80 : 0) +
@@ -148,7 +153,9 @@ function isOfficialYaleProfileUrl(value: string | undefined): boolean {
   try {
     const parsed = new URL(value || '');
     const host = parsed.hostname.toLowerCase();
-    return (host === 'yale.edu' || host.endsWith('.yale.edu')) && /\/profile\//i.test(parsed.pathname);
+    return (
+      (host === 'yale.edu' || host.endsWith('.yale.edu')) && /\/profile\//i.test(parsed.pathname)
+    );
   } catch {
     return false;
   }
@@ -297,6 +304,7 @@ function buildGroupFromCluster(
   })[0];
   const duplicates = entities.filter((entity) => entity.id !== canonical.id);
   if (duplicates.length === 0) return null;
+  const { canonicalName, canonicalWebsiteUrl } = carriedCanonicalIdentity(canonical, entities, row);
   return {
     userId: row.userId,
     normalizedName: row.normalizedName,
@@ -313,6 +321,27 @@ function buildGroupFromCluster(
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
     ]),
+    ...(canonicalName ? { canonicalName } : {}),
+    ...(canonicalWebsiteUrl ? { canonicalWebsiteUrl } : {}),
+  };
+}
+
+function carriedCanonicalIdentity(
+  canonical: ResearchEntityPiDedupeRow['entities'][number],
+  entities: ResearchEntityPiDedupeRow['entities'],
+  row: ResearchEntityPiDedupeRow,
+): { canonicalName?: string; canonicalWebsiteUrl?: string } {
+  if (concreteLabWebsiteForEntity(canonical)) return {};
+  const donor = entities.find(
+    (entity) => entity.id !== canonical.id && entityCarriesConcreteWebsite(entity),
+  );
+  if (!donor) return {};
+
+  const donorName = (donor.name || '').trim();
+  const canonicalNameIsPiDerivedPlaceholder = comparablePiLabName(canonical, row) !== null;
+  return {
+    canonicalName: canonicalNameIsPiDerivedPlaceholder && donorName ? donorName : undefined,
+    canonicalWebsiteUrl: concreteLabWebsiteForEntity(donor),
   };
 }
 
@@ -326,16 +355,21 @@ function buildProfileAreaShellDuplicateGroup(
   const profileBackedSurnameShells = entities.filter((entity) =>
     isProfileBackedSurnameLabShell(entity, row),
   );
-  const duplicateShells = [...profileAreaShells, ...profileBackedSurnameShells];
-  const duplicateShellIds = new Set(duplicateShells.map((entity) => entity.id));
-  const concreteHomes = entities.filter(
-    (entity) => {
-      if (duplicateShellIds.has(entity.id)) return false;
-      if (!isConcreteResearchHomeEntity(entity) || isFundingOnlyEntity(entity)) return false;
-      if (profileAreaShells.length > 0) return true;
-      return [entity.websiteUrl, ...(entity.sourceUrls || [])].some(isOfficialYaleLabUrl);
-    },
+  // An entity that carries its own real (non-profile, non-funding) lab website is the
+  // concrete research home, not a thin profile-area shell - never archive it into a
+  // PI-derived grant "<PI> Lab" shell and discard its name/site (issue #456).
+  const duplicateShells = [...profileAreaShells, ...profileBackedSurnameShells].filter(
+    (entity) => !entityCarriesConcreteWebsite(entity),
   );
+  const duplicateShellIds = new Set(duplicateShells.map((entity) => entity.id));
+  const concreteHomes = entities.filter((entity) => {
+    if (duplicateShellIds.has(entity.id)) return false;
+    if (isFundingOnlyEntity(entity)) return false;
+    if (entityCarriesConcreteWebsite(entity)) return true;
+    if (!isConcreteResearchHomeEntity(entity)) return false;
+    if (profileAreaShells.length > 0) return true;
+    return [entity.websiteUrl, ...(entity.sourceUrls || [])].some(isOfficialYaleLabUrl);
+  });
   if (duplicateShells.length === 0 || concreteHomes.length === 0) return null;
 
   const canonical = [...concreteHomes].sort((a, b) => {
@@ -346,10 +380,8 @@ function buildProfileAreaShellDuplicateGroup(
   const duplicates = duplicateShells.filter((entity) => entity.id !== canonical.id);
   if (duplicates.length === 0) return null;
 
-  const group = buildGroupFromCluster(
-    row,
-    [canonical, ...duplicates],
-    (entity) => (entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity)),
+  const group = buildGroupFromCluster(row, [canonical, ...duplicates], (entity) =>
+    entity.id === canonical.id ? Number.MAX_SAFE_INTEGER : canonicalScore(entity),
   );
   if (!group) return null;
   return {
@@ -358,7 +390,9 @@ function buildProfileAreaShellDuplicateGroup(
   };
 }
 
-function dedupePlanGroupsByEntitySet(groups: ResearchEntityPiDedupeGroup[]): ResearchEntityPiDedupeGroup[] {
+function dedupePlanGroupsByEntitySet(
+  groups: ResearchEntityPiDedupeGroup[],
+): ResearchEntityPiDedupeGroup[] {
   const seen = new Set<string>();
   return groups.filter((group) => {
     const key = [group.canonicalEntityId, ...group.duplicateEntityIds].sort().join(':');

@@ -3,6 +3,37 @@ export interface ProfileAreaDuplicateEntity {
   name?: string;
   kind?: string;
   entityType?: string;
+  websiteUrl?: string;
+  sourceUrls?: string[];
+}
+
+const fundingPortalHosts = ['reporter.nih.gov', 'nih.gov', 'nsf.gov', 'api.nsf.gov'];
+
+const nonLabWebsitePathPatterns = [
+  /\/profile\//i,
+  /\/(?:people|faculty|directory|members|membership|humans)\b/i,
+  /(?:^|\.)orcid\.org/i,
+  /(?:^|\.)doi\.org/i,
+  /(?:^|\.)openalex\.org/i,
+  /(?:^|\.)crossref\.org/i,
+];
+
+function isFundingPortalHost(host: string): boolean {
+  return fundingPortalHosts.some((portal) => host === portal || host.endsWith(`.${portal}`));
+}
+
+function isConcreteLabWebsiteUrl(value: string | undefined): boolean {
+  const text = (value || '').trim();
+  if (!/^https?:\/\//i.test(text)) return false;
+  try {
+    const url = new URL(text);
+    const host = url.hostname.toLowerCase();
+    if (isFundingPortalHost(host)) return false;
+    const hostPath = `${host}${url.pathname}`.replace(/\/+$/, '');
+    return !nonLabWebsitePathPatterns.some((pattern) => pattern.test(hostPath));
+  } catch {
+    return false;
+  }
 }
 
 const individualEntityTypes = new Set(['FACULTY_RESEARCH_AREA', 'INDIVIDUAL_RESEARCH']);
@@ -40,10 +71,7 @@ export function profileAreaShellNameMatchesPerson(
   const last = normalizedProfileAreaWords(lastName).at(-1);
   if (!first || !last) return true;
 
-  const values = [
-    entity.name,
-    entity.slug?.replace(/^faculty-research-area-/i, ''),
-  ];
+  const values = [entity.name, entity.slug?.replace(/^faculty-research-area-/i, '')];
   return values.some((value) => {
     const words = normalizedProfileAreaWords(value);
     return words.includes(first) && words.includes(last);
@@ -63,7 +91,9 @@ export function isProfileAreaShellEntity(
     kind === 'solo' ||
     individualEntityTypes.has(entityType);
 
-  return shellShape && profileAreaShellNameMatchesPerson(entity, options.firstName, options.lastName);
+  return (
+    shellShape && profileAreaShellNameMatchesPerson(entity, options.firstName, options.lastName)
+  );
 }
 
 export function isConcreteResearchHomeEntity(entity: ProfileAreaDuplicateEntity): boolean {
@@ -71,5 +101,19 @@ export function isConcreteResearchHomeEntity(entity: ProfileAreaDuplicateEntity)
   const kind = (entity.kind || '').toLowerCase();
   const entityType = (entity.entityType || '').toUpperCase();
   if (concreteKinds.has(kind) || concreteEntityTypes.has(entityType)) return true;
-  return !kind && !entityType && !(entity.slug || '').toLowerCase().startsWith('faculty-research-area-');
+  return (
+    !kind && !entityType && !(entity.slug || '').toLowerCase().startsWith('faculty-research-area-')
+  );
+}
+
+export function concreteLabWebsiteForEntity(
+  entity: ProfileAreaDuplicateEntity,
+): string | undefined {
+  return [entity.websiteUrl, ...(entity.sourceUrls || [])].find((value) =>
+    isConcreteLabWebsiteUrl(value),
+  );
+}
+
+export function entityCarriesConcreteWebsite(entity: ProfileAreaDuplicateEntity): boolean {
+  return Boolean(concreteLabWebsiteForEntity(entity));
 }
