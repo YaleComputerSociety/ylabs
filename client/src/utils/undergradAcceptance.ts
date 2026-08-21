@@ -8,9 +8,9 @@
  * UI needs a single source of truth for translating those signals into a
  * verdict + a small ordered list of "evidence chips" that explain WHY.
  *
- * This module is pure — no React, no axios, no DOM. The browse-card, the
- * detail-page header, and the inquire CTA all call `computeAcceptanceVerdict`
- * so the trust label / chips never drift out of sync between surfaces.
+ * This module is pure — no React, no axios, no DOM. The browse card and the
+ * research detail page both call `computeAcceptanceVerdict` so the trust label
+ * and evidence chips never drift out of sync between surfaces.
  */
 import { ResearchGroup } from '../types/researchGroup';
 
@@ -291,8 +291,8 @@ export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdic
 }
 
 /**
- * Tailwind class-strings for each verdict's badge. Centralized so the browse
- * card, detail header, and inquire-card chips all stay color-aligned.
+ * Tailwind class-strings for each verdict's badge. Centralized so every
+ * verdict-badge surface stays color-aligned.
  */
 export function verdictBadgeStyles(verdict: TrustVerdict): string {
   switch (verdict) {
