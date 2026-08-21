@@ -63,6 +63,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence.',
   },
+  'research-area-source-extractor': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['LAB_WEBSITE', 'TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Deterministic research-area recovery for empty-area research entities from their official lab/department/profile pages. Emits only approved TaxonomyTerm areas (fail-closed); never creates access, route, description, or identity evidence.',
+  },
   'center-affiliation-llm': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
