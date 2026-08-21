@@ -443,9 +443,7 @@ describe('getAnalytics research coverage and range scoping', () => {
     ]);
 
     const facetCall = mocks.analyticsAggregate.mock.calls.find((call) =>
-      call[0].some(
-        (stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers,
-      ),
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers),
     );
     expect(facetCall).toBeDefined();
     const mostActiveStages = facetCall![0].find(

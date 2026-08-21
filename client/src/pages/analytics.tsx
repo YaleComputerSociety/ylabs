@@ -1978,17 +1978,14 @@ const Analytics = () => {
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800">
                       {selectedNetid
-                        ? formatFullName(
-                            selectedUserSummary?.fname,
-                            selectedUserSummary?.lname,
-                          ) || selectedNetid
+                        ? formatFullName(selectedUserSummary?.fname, selectedUserSummary?.lname) ||
+                          selectedNetid
                         : 'Select a NetID'}
                     </h3>
                     {selectedNetid &&
-                      formatFullName(
-                        selectedUserSummary?.fname,
-                        selectedUserSummary?.lname,
-                      ) && <p className="text-xs text-gray-500">{selectedNetid}</p>}
+                      formatFullName(selectedUserSummary?.fname, selectedUserSummary?.lname) && (
+                        <p className="text-xs text-gray-500">{selectedNetid}</p>
+                      )}
                     {selectedUserSummary && (
                       <p className="text-sm text-gray-500">
                         {formatUserType(selectedUserSummary.userType)} -{' '}
