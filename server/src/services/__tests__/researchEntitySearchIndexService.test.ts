@@ -110,14 +110,16 @@ describe('researchEntitySearchIndexService', () => {
     );
     const searchable = getResearchEntitySearchIndexSettings().searchableAttributes;
     expect(searchable).toEqual(expect.arrayContaining(['leadProfessorNames', 'professorNames']));
-    expect(searchable).toEqual(
-      expect.arrayContaining(['shortDescription', 'fullDescription']),
-    );
+    expect(searchable).toEqual(expect.arrayContaining(['shortDescription', 'fullDescription']));
     expect(searchable).not.toContain('keywords');
     expect(searchable).not.toContain('summary');
     expect(searchable).not.toContain('description');
-    expect(searchable.indexOf('researchAreas')).toBeLessThan(searchable.indexOf('shortDescription'));
-    expect(searchable.indexOf('shortDescription')).toBeLessThan(searchable.indexOf('fullDescription'));
+    expect(searchable.indexOf('researchAreas')).toBeLessThan(
+      searchable.indexOf('shortDescription'),
+    );
+    expect(searchable.indexOf('shortDescription')).toBeLessThan(
+      searchable.indexOf('fullDescription'),
+    );
     expect(getResearchEntitySearchIndexSettings().rankingRules).toEqual([
       'words',
       'proximity',
