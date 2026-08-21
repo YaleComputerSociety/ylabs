@@ -543,8 +543,11 @@ const Analytics = () => {
     return userActivityOrder === 'asc' ? ' ^' : ' v';
   };
 
+  const formatFullName = (fname?: string, lname?: string) =>
+    [fname, lname].filter(Boolean).join(' ');
+
   const formatSearcherName = (searcher: { fname?: string; lname?: string; netid: string }) => {
-    const name = [searcher.fname, searcher.lname].filter(Boolean).join(' ');
+    const name = formatFullName(searcher.fname, searcher.lname);
     return name ? `${searcher.netid} (${name})` : searcher.netid;
   };
 
@@ -1738,7 +1741,14 @@ const Analytics = () => {
                         key={`${user.userId}-${index}`}
                         className="border-b hover:bg-[var(--yr-panel-muted)]"
                       >
-                        <td className="py-3 px-4 text-gray-800">{user.userId}</td>
+                        <td className="py-3 px-4 text-gray-800">
+                          <div className="font-medium text-gray-900">{user.userId}</div>
+                          {formatFullName(user.fname, user.lname) && (
+                            <div className="text-xs text-gray-500">
+                              {formatFullName(user.fname, user.lname)}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-gray-600">{formatUserType(user.userType)}</td>
                         <td className="py-3 px-4 text-right font-medium">{user.eventCount}</td>
                       </tr>
@@ -1931,7 +1941,14 @@ const Analytics = () => {
                             }`}
                             onClick={() => setSelectedNetid(user.netid)}
                           >
-                            <td className="px-4 py-3 font-medium text-gray-900">{user.netid}</td>
+                            <td className="px-4 py-3 font-medium text-gray-900">
+                              <div>{user.netid}</div>
+                              {formatFullName(user.fname, user.lname) && (
+                                <div className="text-xs font-normal text-gray-500">
+                                  {formatFullName(user.fname, user.lname)}
+                                </div>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-gray-600">
                               {formatUserType(user.userType)}
                             </td>
@@ -1960,8 +1977,15 @@ const Analytics = () => {
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800">
-                      {selectedNetid ? selectedNetid : 'Select a NetID'}
+                      {selectedNetid
+                        ? formatFullName(selectedUserSummary?.fname, selectedUserSummary?.lname) ||
+                          selectedNetid
+                        : 'Select a NetID'}
                     </h3>
+                    {selectedNetid &&
+                      formatFullName(selectedUserSummary?.fname, selectedUserSummary?.lname) && (
+                        <p className="text-xs text-gray-500">{selectedNetid}</p>
+                      )}
                     {selectedUserSummary && (
                       <p className="text-sm text-gray-500">
                         {formatUserType(selectedUserSummary.userType)} -{' '}

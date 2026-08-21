@@ -399,6 +399,63 @@ describe('getAnalytics research coverage and range scoping', () => {
     });
     expect(mocks.analyticsAggregate.mock.calls.length).toBeGreaterThan(passesAfterFirstRange);
   });
+
+  it('joins display names onto most-active users and preserves them through the payload', async () => {
+    primeAnalyticsMocks();
+    mocks.analyticsAggregate.mockResolvedValue([
+      {
+        ...eventFacetStub,
+        mostActiveUsers: [
+          {
+            userId: 'analyst01',
+            userType: 'undergraduate',
+            eventCount: 7,
+            fname: 'Ada',
+            lname: 'Analyst',
+          },
+        ],
+      },
+    ]);
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    const analytics = await getAnalytics({
+      start: new Date('2026-07-01T00:00:00.000Z'),
+      end: new Date('2026-07-08T00:00:00.000Z'),
+    });
+
+    expect(analytics.engagement.mostActiveUsers).toEqual([
+      {
+        userId: 'analyst01',
+        userType: 'undergraduate',
+        eventCount: 7,
+        fname: 'Ada',
+        lname: 'Analyst',
+      },
+    ]);
+
+    const facetCall = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers),
+    );
+    expect(facetCall).toBeDefined();
+    const mostActiveStages = facetCall![0].find(
+      (stage: Record<string, any>) => stage.$facet && stage.$facet.mostActiveUsers,
+    ).$facet.mostActiveUsers;
+    const lookupStage = mostActiveStages.find((stage: Record<string, any>) => stage.$lookup);
+    expect(lookupStage.$lookup.from).toBe('users');
+    expect(lookupStage.$lookup.foreignField).toBe('netid');
+    const projectStage = mostActiveStages.find((stage: Record<string, any>) => stage.$project);
+    expect(projectStage.$project.fname).toBe('$user.fname');
+    expect(projectStage.$project.lname).toBe('$user.lname');
+  });
 });
 
 describe('shouldSuppressBetaAnalyticsEvent', () => {
