@@ -464,6 +464,7 @@ const riskStyles: Record<Risk, string> = {
 const evidenceReasons = new Set([
   'application_route',
   'concrete_next_step',
+  'graduate_relevant',
   'official_source',
   'source_backed_description',
   'undergraduate_relevant',
