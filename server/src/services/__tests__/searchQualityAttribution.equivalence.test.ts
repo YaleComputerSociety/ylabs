@@ -40,7 +40,9 @@ const legacySelfJoinPipeline = () => [
                 {
                   $lte: [
                     '$timestamp',
-                    { $dateAdd: { startDate: '$$searchAt', unit: 'minute', amount: WINDOW_MINUTES } },
+                    {
+                      $dateAdd: { startDate: '$$searchAt', unit: 'minute', amount: WINDOW_MINUTES },
+                    },
                   ],
                 },
                 {
