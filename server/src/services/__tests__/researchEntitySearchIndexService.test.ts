@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import {
@@ -358,5 +359,62 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
 
     expect(fields?.leadProfessorNames).toEqual(['Lead Professor']);
     expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
+  });
+});
+
+describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  }, 60000);
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet.stop();
+  });
+
+  beforeEach(async () => {
+    await ResearchEntity.deleteMany({});
+  });
+
+  const collectIndexedIds = async () => {
+    const indexedIds: string[] = [];
+    const fakeIndex = {
+      updateSettings: async () => {},
+      deleteAllDocuments: async () => {},
+      addDocuments: async (documents: Array<{ id: string }>) => {
+        for (const document of documents) indexedIds.push(document.id);
+      },
+    };
+    await rebuildResearchEntitySearchIndex({
+      pageSize: 50,
+      clearExisting: true,
+      getIndex: async () => fakeIndex as any,
+      fetchMemberNames: async () => new Map(),
+    });
+    return indexedIds;
+  };
+
+  it('excludes dedupe-archived entities from the rebuilt index payload', async () => {
+    const active = await ResearchEntity.create({ slug: 'active-lab', name: 'Active Lab' });
+    const explicitlyLive = await ResearchEntity.create({
+      slug: 'live-lab',
+      name: 'Live Lab',
+      archived: false,
+    });
+    await ResearchEntity.create({
+      slug: 'archived-shell',
+      name: 'Archived Shell',
+      archived: true,
+    });
+
+    const indexedIds = await collectIndexedIds();
+
+    expect(indexedIds).toEqual(
+      expect.arrayContaining([active._id.toString(), explicitlyLive._id.toString()]),
+    );
+    expect(indexedIds).toHaveLength(2);
   });
 });

@@ -388,7 +388,7 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
 }
 
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {
-  return ResearchEntity.find({})
+  return ResearchEntity.find({ archived: { $ne: true } })
     .sort({ _id: 1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
