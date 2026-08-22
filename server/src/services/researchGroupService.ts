@@ -1865,6 +1865,24 @@ export function dedupeSameNameLeadMembers<T extends { user: any; role: string; r
   });
 }
 
+const isCorroboratedLeadMember = (member: { role: string; row?: any }): boolean =>
+  PUBLIC_LEAD_ROLES.has(member.role) && (Number(member.row?.confidence) || 0) > 0;
+
+const isUncorroboratedPhantomLeadMember = (member: { role: string; row?: any }): boolean => {
+  if (!PUBLIC_LEAD_ROLES.has(member.role)) return false;
+  const confidence = Number(member.row?.confidence) || 0;
+  const reviewStatus = String(member.row?.reviewStatus || '');
+  const hasEvidence = Boolean(member.row?.evidenceStatus);
+  return confidence === 0 && reviewStatus === 'UNREVIEWED' && !hasEvidence;
+};
+
+export function dropUncorroboratedPhantomLeads<T extends { role: string; row?: any }>(
+  members: T[],
+): T[] {
+  if (!members.some(isCorroboratedLeadMember)) return members;
+  return members.filter((member) => !isUncorroboratedPhantomLeadMember(member));
+}
+
 export function buildResearchActivityLinkPayload({
   researchEntityId,
   entityTopicEvidence = [],
@@ -2210,7 +2228,8 @@ export async function getResearchGroupDetail(slug: string): Promise<{
       );
     })
     .sort((a, b) => (ROLE_PRIORITY[a.role] ?? 99) - (ROLE_PRIORITY[b.role] ?? 99));
-  const imageGuardedMembersWithRows = await withPublicMemberImageGuards(canonicalMembers);
+  const corroboratedMembers = dropUncorroboratedPhantomLeads(canonicalMembers);
+  const imageGuardedMembersWithRows = await withPublicMemberImageGuards(corroboratedMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
   const rawLeadMembers = dedupedMembersWithRows
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))

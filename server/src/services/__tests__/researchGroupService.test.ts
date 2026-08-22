@@ -110,6 +110,7 @@ import {
   buildResearchActivityLinkPayload,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
+  dropUncorroboratedPhantomLeads,
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
   normalizeResearchSearchQuery,
@@ -2073,5 +2074,75 @@ describe('dedupeSameNameLeadMembers', () => {
     ];
 
     expect(dedupeSameNameLeadMembers(members, {})).toEqual([members[0]]);
+  });
+});
+
+describe('dropUncorroboratedPhantomLeads', () => {
+  it('drops a zero-confidence unreviewed same-surname phantom PI when a corroborated PI exists', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'phantom', fname: 'Michael', lname: 'Schwartz' },
+      },
+      {
+        role: 'pi',
+        row: { confidence: 0.86, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Martin', lname: 'Schwartz' },
+      },
+      {
+        role: 'director',
+        row: { confidence: 1, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Martin', lname: 'Schwartz' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual([members[1], members[2]]);
+  });
+
+  it('keeps a solo zero-confidence inferred PI when no corroborated lead exists', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'only', fname: 'Solo', lname: 'Lead' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
+  });
+
+  it('keeps a zero-confidence lead that carries evidence', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0.9, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Real', lname: 'Lead' },
+      },
+      {
+        role: 'co-pi',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED', evidenceStatus: 'SNAPSHOT_BACKED' },
+        user: { _id: 'evidenced', fname: 'Evidenced', lname: 'CoLead' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
+  });
+
+  it('does not touch non-lead members', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0.8, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Real', lname: 'Lead' },
+      },
+      {
+        role: 'core-faculty',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'member', fname: 'Team', lname: 'Member' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
   });
 });
