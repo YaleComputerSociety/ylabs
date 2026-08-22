@@ -27,6 +27,7 @@ Scrapers collect evidence. They should not create unsupported student-facing con
 
 Research description visibility is assessed after the same lead-aware sanitization used by the public detail response.
 A `student_ready` entity must have useful public full and card descriptions after sanitization, and an operator override cannot bypass that invariant.
+A lead-requiring research entity (a lab or group, not a program or organizational home) with no attached lead is likewise held at `operator_review`: a missing, weak, or conflicting PI is a hard floor that no operator override can lift to a public tier.
 Run `yarn --cwd server research-entity:audit-public-descriptions --strict --include-samples --output /tmp/ylabs-public-description-audit.json` against Beta before promotion.
 The strict Beta data-quality scorecard includes this audit as an error-level check.
 
