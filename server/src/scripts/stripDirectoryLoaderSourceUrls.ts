@@ -97,7 +97,13 @@ export function assertStripDirectoryLoaderSourceUrlsApplyAllowed(
 }
 
 export function planDirectoryLoaderSourceStrips(
-  entities: Array<{ _id: unknown; sourceUrls?: unknown; displayName?: unknown; name?: unknown; slug?: unknown }>,
+  entities: Array<{
+    _id: unknown;
+    sourceUrls?: unknown;
+    displayName?: unknown;
+    name?: unknown;
+    slug?: unknown;
+  }>,
 ): PlannedStrip[] {
   const strips: PlannedStrip[] = [];
   for (const entity of entities) {

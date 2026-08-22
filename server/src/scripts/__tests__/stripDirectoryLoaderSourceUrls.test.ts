@@ -38,7 +38,9 @@ describe('planDirectoryLoaderSourceStrips', () => {
       {
         _id: 'b'.repeat(24),
         name: 'No Loader Entity',
-        sourceUrls: ['https://engineering.yale.edu/research-and-faculty/faculty-directory/shruti-puri'],
+        sourceUrls: [
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/shruti-puri',
+        ],
       },
     ]);
     expect(strips).toHaveLength(1);

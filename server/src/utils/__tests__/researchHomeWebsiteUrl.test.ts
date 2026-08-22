@@ -36,13 +36,11 @@ describe('isDirectoryLoaderUrl', () => {
         'https://engineering.example.edu/research-and-faculty/faculty-directory/load_faculty/172',
       ),
     ).toBe(true);
-    expect(
-      isDirectoryLoaderUrl('https://example.edu/directory/load_person/9001'),
-    ).toBe(true);
+    expect(isDirectoryLoaderUrl('https://example.edu/directory/load_person/9001')).toBe(true);
     expect(isDirectoryLoaderUrl('https://example.edu/people/load_more/40')).toBe(true);
-    expect(
-      isDirectoryLoaderUrl('https://engineering.example.edu/faculty-directory/172'),
-    ).toBe(true);
+    expect(isDirectoryLoaderUrl('https://engineering.example.edu/faculty-directory/172')).toBe(
+      true,
+    );
   });
 
   it('keeps a named person profile subpath (fail-safe, #549)', () => {

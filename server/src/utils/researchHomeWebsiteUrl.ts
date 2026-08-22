@@ -58,7 +58,9 @@ export function isDirectoryLoaderUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   const pathname = url.pathname.toLowerCase();
-  return DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) || DIRECTORY_NUMERIC_ID_SUBPATH.test(pathname);
+  return (
+    DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) || DIRECTORY_NUMERIC_ID_SUBPATH.test(pathname)
+  );
 }
 
 export function isListingOrIndexUrl(value: unknown): boolean {
