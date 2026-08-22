@@ -121,7 +121,9 @@ describe('YseCenters HTML parsing', () => {
     const entities = parseCenters(SAMPLE_HTML);
     const eds = entities.find((e) => e.name === 'Environmental Data Science Initiative');
     expect(eds).toBeDefined();
-    expect(eds!.url).toBe('https://environment.yale.edu/research/initiatives/environmental-data-science');
+    expect(eds!.url).toBe(
+      'https://environment.yale.edu/research/initiatives/environmental-data-science',
+    );
   });
 });
 
@@ -154,10 +156,24 @@ describe('slugifyFromName', () => {
 
 describe('inferKind', () => {
   it('classifies institutes, initiatives, programs, and centers', () => {
-    expect(inferKind('Yale Institute for Biospheric Studies (YIBS)', 'https://x/institute-biospheric-studies')).toBe('institute');
-    expect(inferKind('Environmental Data Science Initiative', 'https://x/research/initiatives/environmental-data-science')).toBe('initiative');
-    expect(inferKind('Yale Applied Science Synthesis Program (YASSP)', 'https://x/yassp')).toBe('program');
-    expect(inferKind('Center for Industrial Ecology (CIE)', 'https://x/industrial-ecology')).toBe('center');
+    expect(
+      inferKind(
+        'Yale Institute for Biospheric Studies (YIBS)',
+        'https://x/institute-biospheric-studies',
+      ),
+    ).toBe('institute');
+    expect(
+      inferKind(
+        'Environmental Data Science Initiative',
+        'https://x/research/initiatives/environmental-data-science',
+      ),
+    ).toBe('initiative');
+    expect(inferKind('Yale Applied Science Synthesis Program (YASSP)', 'https://x/yassp')).toBe(
+      'program',
+    );
+    expect(inferKind('Center for Industrial Ecology (CIE)', 'https://x/industrial-ecology')).toBe(
+      'center',
+    );
   });
 
   it('falls back to center for ambiguous names and tags forums/dialogues as group', () => {
@@ -205,14 +221,7 @@ describe('entityToObservations', () => {
       'https://environment.yale.edu/research/centers',
     );
     const fields = obs.map((o) => o.field);
-    expect(fields).toEqual([
-      'slug',
-      'name',
-      'kind',
-      'school',
-      'websiteUrl',
-      'sourceUrls',
-    ]);
+    expect(fields).toEqual(['slug', 'name', 'kind', 'school', 'websiteUrl', 'sourceUrls']);
     expect(obs.find((o) => o.field === 'openness')).toBeUndefined();
     expect(obs.every((o) => o.entityKey === 'yse-industrial-ecology')).toBe(true);
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
@@ -239,11 +248,10 @@ describe('YSE access detail parsing', () => {
       ]),
     );
 
-    expect(obs.map((o) => o.field)).toEqual([
-      'undergradEvidenceQuote',
-      'pastUndergradAdvisees',
-    ]);
-    expect(obs.every((o) => o.entityKey === 'yse-yale-applied-science-synthesis-program-yassp')).toBe(true);
+    expect(obs.map((o) => o.field)).toEqual(['undergradEvidenceQuote', 'pastUndergradAdvisees']);
+    expect(
+      obs.every((o) => o.entityKey === 'yse-yale-applied-science-synthesis-program-yassp'),
+    ).toBe(true);
     expect(obs.every((o) => o.sourceUrl === sourceUrl)).toBe(true);
     expect(obs.find((o) => o.field === 'pastUndergradAdvisees')?.value).toEqual([
       { name: 'Nicole Gotthardt', role: 'Former Undergraduate Student Researcher', count: 1 },
@@ -252,7 +260,9 @@ describe('YSE access detail parsing', () => {
 
   it('does not emit YASSP access evidence from a generic team page', () => {
     const obs = yasspAccessObservations(
-      new Map([['https://synthesis.yale.edu/research-team', '<main><h1>Research Team</h1></main>']]),
+      new Map([
+        ['https://synthesis.yale.edu/research-team', '<main><h1>Research Team</h1></main>'],
+      ]),
     );
     expect(obs).toEqual([]);
   });

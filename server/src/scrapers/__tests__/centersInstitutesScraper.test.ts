@@ -362,10 +362,7 @@ describe('centerToGroupObservations', () => {
       url: 'https://wti.yale.edu/humans/faculty',
       extractor: wuTsaiExtractor,
     };
-    const members: CenterMember[] = [
-      { name: 'Ian Abraham' },
-      { name: 'Amy Arnsten' },
-    ];
+    const members: CenterMember[] = [{ name: 'Ian Abraham' }, { name: 'Amy Arnsten' }];
     const { observations, entityKey } = centerToGroupObservations(
       config,
       members,
@@ -374,14 +371,7 @@ describe('centerToGroupObservations', () => {
     expect(entityKey).toBe('center-wu-tsai');
     const fields = observations.map((o) => o.field);
     expect(fields).toEqual(
-      expect.arrayContaining([
-        'slug',
-        'name',
-        'kind',
-        'websiteUrl',
-        'sourceUrls',
-        'departments',
-      ]),
+      expect.arrayContaining(['slug', 'name', 'kind', 'websiteUrl', 'sourceUrls', 'departments']),
     );
     expect(observations.find((o) => o.field === 'openness')).toBeUndefined();
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('institute');
@@ -463,9 +453,7 @@ describe('centerMemberRelationshipObservations', () => {
     expect(obs.every((o) => o.entityType === 'researchEntityRelationship')).toBe(true);
     expect(
       obs.every(
-        (o) =>
-          o.entityKey ===
-          'center-wu-tsai:faculty-research-area-jane-doe:MEMBER_RESEARCH_AREA',
+        (o) => o.entityKey === 'center-wu-tsai:faculty-research-area-jane-doe:MEMBER_RESEARCH_AREA',
       ),
     ).toBe(true);
     expect(obs.find((o) => o.field === 'sourceEntityKey')!.value).toBe('center-wu-tsai');
@@ -595,9 +583,7 @@ describe('CentersInstitutesScraper.run', () => {
       },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
 
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx, emitted } = makeContext();
@@ -615,9 +601,7 @@ describe('CentersInstitutesScraper.run', () => {
 
     // Cowles is no longer allowlisted-out: its members now emit relationship obs too.
     const relationshipObs = emitted.filter((o) => o.entityType === 'researchEntityRelationship');
-    expect(
-      relationshipObs.some((o) => o.entityKey?.startsWith('center-cowles:')),
-    ).toBe(true);
+    expect(relationshipObs.some((o) => o.entityKey?.startsWith('center-cowles:'))).toBe(true);
 
     const memberObs = emitted.filter((o) => o.entityType === 'researchGroupMember');
     const janeObs = memberObs.filter((o) => o.entityKey === 'center-cowles:jane-doe');
@@ -657,9 +641,7 @@ describe('CentersInstitutesScraper.run', () => {
       },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
 
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx } = makeContext({ only: ['wu-tsai'] });
@@ -673,14 +655,33 @@ describe('CentersInstitutesScraper.run', () => {
   it('caps centers processed at the limit option', async () => {
     const ext = vi.fn((): ExtractorResult => ({ members: [{ name: 'x' }] }));
     const configs: CenterConfig[] = [
-      { centerKey: 'a', centerName: 'A', schoolName: '', kind: 'center', url: 'https://x/a', extractor: ext },
-      { centerKey: 'b', centerName: 'B', schoolName: '', kind: 'center', url: 'https://x/b', extractor: ext },
-      { centerKey: 'c', centerName: 'C', schoolName: '', kind: 'center', url: 'https://x/c', extractor: ext },
+      {
+        centerKey: 'a',
+        centerName: 'A',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/a',
+        extractor: ext,
+      },
+      {
+        centerKey: 'b',
+        centerName: 'B',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/b',
+        extractor: ext,
+      },
+      {
+        centerKey: 'c',
+        centerName: 'C',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/c',
+        extractor: ext,
+      },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx } = makeContext({ limit: 2 });
     await scraper.run(ctx);
@@ -691,12 +692,17 @@ describe('CentersInstitutesScraper.run', () => {
   it('rejects unsafe runtime limits before fetching center pages', async () => {
     const ext = vi.fn((): ExtractorResult => ({ members: [{ name: 'x' }] }));
     const configs: CenterConfig[] = [
-      { centerKey: 'a', centerName: 'A', schoolName: '', kind: 'center', url: 'https://x/a', extractor: ext },
+      {
+        centerKey: 'a',
+        centerName: 'A',
+        schoolName: '',
+        kind: 'center',
+        url: 'https://x/a',
+        extractor: ext,
+      },
     ];
     const axios = (await import('axios')).default;
-    const getSpy = vi
-      .spyOn(axios, 'get')
-      .mockResolvedValue({ data: '<html></html>' } as any);
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
     const scraper = new CentersInstitutesScraper(configs);
     const { ctx } = makeContext({ limit: 9007199254740992 });
 
@@ -708,9 +714,7 @@ describe('CentersInstitutesScraper.run', () => {
 
   it('records fetch failure status and emits no observations for that center', async () => {
     const failing = vi.fn();
-    const working = vi.fn(
-      (): ExtractorResult => ({ members: [{ name: 'Working Person' }] }),
-    );
+    const working = vi.fn((): ExtractorResult => ({ members: [{ name: 'Working Person' }] }));
     const configs: CenterConfig[] = [
       {
         centerKey: 'broken',
