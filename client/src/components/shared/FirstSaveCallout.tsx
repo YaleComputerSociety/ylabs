@@ -27,9 +27,7 @@ const FirstSaveCallout = ({ kind, onDismiss }: FirstSaveCalloutProps) => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold">{message.title}</p>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-blue-900">
-            {message.body}
-          </p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-blue-900">{message.body}</p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
