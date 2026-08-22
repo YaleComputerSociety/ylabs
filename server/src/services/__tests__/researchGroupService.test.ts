@@ -223,6 +223,24 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('keeps field-name and topic tokens that collide with filler words', () => {
+    expect(normalizeResearchSearchQuery('american studies')).toMatchObject({
+      query: 'american studies',
+      tokens: ['american', 'studies'],
+      isShortAliasQuery: false,
+    });
+    expect(normalizeResearchSearchQuery('environmental studies')).toMatchObject({
+      query: 'environmental studies',
+      tokens: ['environmental', 'studies'],
+      isShortAliasQuery: false,
+    });
+    expect(normalizeResearchSearchQuery('group theory')).toMatchObject({
+      query: 'group theory',
+      tokens: ['group', 'theory'],
+      isShortAliasQuery: false,
+    });
+  });
+
   it('keeps an all-filler query non-empty by preserving its original tokens', () => {
     expect(normalizeResearchSearchQuery('how do i')).toMatchObject({
       query: 'how do i',
