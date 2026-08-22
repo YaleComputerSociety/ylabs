@@ -60,7 +60,7 @@ import {
   type EntityDescriptionAssessment,
 } from './backfillDescriptionQualityCore';
 import {
-  assembleSynthesisSourceText,
+  buildSynthesisSources,
   defaultLabDescriptionSynthesizer,
   evaluateSynthesisOutput,
   isSynthesisCandidate,
@@ -680,6 +680,7 @@ interface SynthesisEntityDoc {
   fullDescription?: unknown;
   description?: unknown;
   profileSynthesisDescription?: unknown;
+  researchAreas?: unknown;
   websiteUrl?: unknown;
   website?: unknown;
   sourceUrls?: unknown;
@@ -758,6 +759,7 @@ export async function runLabDescriptionSynthesis(options: {
       fullDescription: 1,
       description: 1,
       profileSynthesisDescription: 1,
+      researchAreas: 1,
       websiteUrl: 1,
       website: 1,
       sourceUrls: 1,
@@ -786,10 +788,13 @@ export async function runLabDescriptionSynthesis(options: {
   const samples: LabDescriptionSynthesisResult['samples'] = [];
 
   for (const entity of selected) {
-    let sourceText = assembleSynthesisSourceText(entity);
+    let { sourceText, groundingAnchor } = buildSynthesisSources(entity);
     if (sourceText.length < MIN_SYNTHESIS_SOURCE_CHARS) {
       const abstract = await fetchGrantAbstract(entity);
-      if (abstract) sourceText = sourceText ? `${sourceText}\n\n${abstract}` : abstract;
+      if (abstract) {
+        sourceText = sourceText ? `${sourceText}\n\n${abstract}` : abstract;
+        groundingAnchor = groundingAnchor ? `${groundingAnchor}\n\n${abstract}` : abstract;
+      }
     }
     if (sourceText.length < MIN_SYNTHESIS_SOURCE_CHARS) {
       skipped['no-source'] += 1;
@@ -808,7 +813,7 @@ export async function runLabDescriptionSynthesis(options: {
         totalCompletionTokens += output.usage.completionTokens;
         callCount += 1;
       }
-      const verdict = evaluateSynthesisOutput(output, sourceText);
+      const verdict = evaluateSynthesisOutput(output, groundingAnchor);
       if (!verdict.accepted) {
         skipped[verdict.reason ?? 'low-quality'] += 1;
         continue;

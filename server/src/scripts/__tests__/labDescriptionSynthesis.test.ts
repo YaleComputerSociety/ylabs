@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assembleSynthesisSourceText,
+  buildSynthesisSources,
   evaluateSynthesisOutput,
   isPersonResearchEntityType,
   isSynthesisCandidate,
@@ -137,6 +138,96 @@ describe('evaluateSynthesisOutput', () => {
     );
     expect(verdict.accepted).toBe(false);
     expect(verdict.reason).toBe('empty-output');
+  });
+});
+
+const physicsFieldsStub =
+  'Research fields include quantum optics, atomic interactions, ultracold gases, and molecular spectroscopy.';
+
+const foreignPoetryBio =
+  'A literary scholar whose work explores Romantic verse, translation of medieval sonnets, and the aesthetics of lyric poetry across nineteenth-century literature.';
+
+const corroboratingPhysicsProse =
+  'The group traps ultracold atoms in optical lattices to probe quantum coherence and the molecular states revealed by precision spectroscopy.';
+
+const physicsResearchAreas = ['Atomic, Molecular and Optical Physics', 'Quantum Science'];
+
+describe('buildSynthesisSources', () => {
+  it('keeps a corroborating secondary field and folds research areas into the anchor', () => {
+    const { sourceText, groundingAnchor } = buildSynthesisSources({
+      fullDescription: physicsFieldsStub,
+      profileSynthesisDescription: corroboratingPhysicsProse,
+      researchAreas: physicsResearchAreas,
+    });
+    expect(sourceText).toContain('quantum optics');
+    expect(sourceText).toContain('ultracold atoms');
+    expect(groundingAnchor).toContain('ultracold atoms');
+    expect(groundingAnchor).toContain('Quantum Science');
+  });
+
+  it('drops a secondary field that shares no evidence with the entity own record', () => {
+    const { sourceText, groundingAnchor } = buildSynthesisSources({
+      fullDescription: physicsFieldsStub,
+      profileSynthesisDescription: foreignPoetryBio,
+      researchAreas: physicsResearchAreas,
+    });
+    expect(sourceText).toContain('quantum optics');
+    expect(sourceText).not.toContain('sonnets');
+    expect(sourceText).not.toContain('poetry');
+    expect(groundingAnchor).not.toContain('sonnets');
+    expect(groundingAnchor).toContain('Quantum Science');
+  });
+
+  it('falls back to the lone source when the entity has no distinctive own evidence', () => {
+    const { sourceText } = buildSynthesisSources({
+      fullDescription: 'Research at Yale University.',
+      profileSynthesisDescription: foreignPoetryBio,
+    });
+    expect(sourceText).toContain('sonnets');
+  });
+});
+
+describe('identity conflation guard (#470)', () => {
+  const conflatedOutput = {
+    fullDescription:
+      'Explores Romantic verse and the translation of medieval sonnets, examining the aesthetics of lyric poetry across nineteenth-century literature.',
+    shortDescription: 'Explores Romantic poetry, medieval sonnets, and lyric aesthetics.',
+  };
+
+  it('naive union grounding would accept a description of the wrong person', () => {
+    const naiveUnion = [physicsFieldsStub, foreignPoetryBio].join('\n\n');
+    const verdict = evaluateSynthesisOutput(conflatedOutput, naiveUnion);
+    expect(verdict.grounding).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('hardened anchor rejects the conflated description as ungrounded', () => {
+    const { groundingAnchor } = buildSynthesisSources({
+      fullDescription: physicsFieldsStub,
+      profileSynthesisDescription: foreignPoetryBio,
+      researchAreas: physicsResearchAreas,
+    });
+    const verdict = evaluateSynthesisOutput(conflatedOutput, groundingAnchor);
+    expect(verdict.accepted).toBe(false);
+    expect(verdict.reason).toBe('ungrounded');
+  });
+
+  it('still accepts a description grounded in the entity own evidence', () => {
+    const { groundingAnchor } = buildSynthesisSources({
+      fullDescription: physicsFieldsStub,
+      profileSynthesisDescription: corroboratingPhysicsProse,
+      researchAreas: physicsResearchAreas,
+    });
+    const verdict = evaluateSynthesisOutput(
+      {
+        fullDescription:
+          'Investigates how ultracold atomic gases behave when trapped in optical lattices, studying quantum coherence and using precision molecular spectroscopy to reveal how these systems evolve.',
+        shortDescription:
+          'Studies ultracold atomic gases and quantum coherence with precision molecular spectroscopy.',
+      },
+      groundingAnchor,
+    );
+    expect(verdict.accepted).toBe(true);
+    expect(verdict.grounding).toBeGreaterThanOrEqual(0.5);
   });
 });
 
