@@ -14,6 +14,7 @@ import {
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
   RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+  RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
   rebuildResearchEntitySearchIndex,
 } from '../researchEntitySearchIndexService';
 
@@ -187,6 +188,18 @@ describe('researchEntitySearchIndexService', () => {
     settings.pagination.maxTotalHits = 1;
     expect(getResearchEntitySearchIndexSettings().pagination.maxTotalHits).toBe(
       RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+    );
+  });
+
+  it('raises the facet-value ceiling above the Meili default so every department stays selectable', () => {
+    const settings = getResearchEntitySearchIndexSettings();
+
+    expect(settings.faceting.maxValuesPerFacet).toBe(RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET);
+    expect(settings.faceting.maxValuesPerFacet).toBeGreaterThan(100);
+
+    settings.faceting.maxValuesPerFacet = 1;
+    expect(getResearchEntitySearchIndexSettings().faceting.maxValuesPerFacet).toBe(
+      RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
     );
   });
 

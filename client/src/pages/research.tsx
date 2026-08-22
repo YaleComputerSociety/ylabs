@@ -231,18 +231,19 @@ const resultSummary = (
   query: string,
   loading: boolean,
   departmentGapLabel?: string,
+  totalMatchingHomeCount?: number,
 ): string => {
   if (loading) return `Searching Yale Research for ${query}.`;
-  const matchingHomeCount = results.clusters.length;
-  if (
-    departmentGapLabel &&
-    results.clusters.length === 0 &&
-    matchingHomeCount === 0 &&
-    results.people.length === 0
-  ) {
+  const loadedHomeCount = results.clusters.length;
+  const matchingHomeCount = Math.max(totalMatchingHomeCount ?? loadedHomeCount, loadedHomeCount);
+  if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research homes yet for ${departmentGapLabel}.`;
   }
-  const parts = [pluralize(matchingHomeCount, 'research home')];
+  const homeSummary =
+    matchingHomeCount > loadedHomeCount
+      ? `Showing ${loadedHomeCount.toLocaleString()} of ${pluralize(matchingHomeCount, 'research home')}`
+      : pluralize(matchingHomeCount, 'research home');
+  const parts = [homeSummary];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
   }
@@ -1554,6 +1555,7 @@ const Research = () => {
                         submittedQuery,
                         searchLoading,
                         departmentSearch?.label,
+                        searchTotal,
                       )}
                     </p>
                   </div>

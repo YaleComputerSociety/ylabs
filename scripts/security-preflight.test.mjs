@@ -4174,7 +4174,10 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   );
   assert.match(source, /const safeOptions = sanitizeResearchGroupSearchOptions\(options\)/);
   assert.match(source, /const trimmedQuery = boundedResearchSearchQuery\(query\)/);
-  assert.match(source, /buildResearchGroupFilterString\(safeFilters\)/);
+  assert.match(
+    source,
+    /buildResearchGroupFilterString\(\s*applyVisibilityScopeToFilters\(safeFilters, safeOptions\.includeNonPublic\),?\s*\)/,
+  );
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
   assert.match(source, /await getResearchEntityRoster\(\(group as any\)\._id\)/);

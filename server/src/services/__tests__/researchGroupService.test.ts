@@ -670,6 +670,32 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(filter).not.toContain('Injected');
   });
 
+  it('scopes the Meili count to public tiers for non-admin readers so totals reconcile', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+
+    await searchResearchGroupsViaMeili('cancer', {}, 1, 24);
+
+    const filter = String(mocks.search.mock.calls[0][1].filter);
+    expect(filter).toContain('studentVisibilityTier = "student_ready"');
+    expect(filter).not.toContain('operator_review');
+    expect(filter).not.toContain('suppressed');
+  });
+
+  it('does not restrict the Meili count when the reader may see non-public entities', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+    });
+
+    await searchResearchGroupsViaMeili('cancer', {}, 1, 24, {}, { includeNonPublic: true });
+
+    const filter = String(mocks.search.mock.calls[0][1].filter);
+    expect(filter).not.toContain('studentVisibilityTier');
+  });
+
   it('allows admin searches to resolve explicitly requested non-public visibility tiers', async () => {
     const reviewEntityId = '67d8928150621bcef434a1d7';
     mocks.search.mockResolvedValueOnce({
@@ -1906,9 +1932,16 @@ describe('researchDetailLeadIdentity', () => {
 
   it('stays verified when the sole lead has no official profile of its own to conflict', () => {
     expect(
-      researchDetailLeadIdentity({ sourceUrls: ['https://medicine.yale.edu/profile/vishwa-dixit/'] }, [
-        { role: 'pi', user: { displayName: 'Purushottam Dixit' }, row: { facultyMemberId: 'faculty-purushottam' } },
-      ]),
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://medicine.yale.edu/profile/vishwa-dixit/'] },
+        [
+          {
+            role: 'pi',
+            user: { displayName: 'Purushottam Dixit' },
+            row: { facultyMemberId: 'faculty-purushottam' },
+          },
+        ],
+      ),
     ).toEqual({ leadIdentityStatus: 'verified' });
   });
 });
