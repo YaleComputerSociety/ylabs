@@ -27,6 +27,7 @@ import {
 
 export interface FellowshipReadOptions {
   includeNonPublic?: boolean;
+  skipIdLimit?: boolean;
 }
 
 const PUBLIC_FELLOWSHIP_SORT_FIELDS = new Set([
@@ -334,12 +335,15 @@ export const readFellowship = async (id: any, options: FellowshipReadOptions = {
 };
 
 export const readFellowships = async (ids: any[], options: FellowshipReadOptions = {}) => {
-  const validIds = Array.isArray(ids)
-    ? ids.slice(0, MAX_FELLOWSHIP_ID_READS).flatMap((id) => {
-        const safeId = normalizeFellowshipObjectId(id);
-        return safeId ? [safeId] : [];
-      })
+  const boundedIds = Array.isArray(ids)
+    ? options.skipIdLimit
+      ? ids
+      : ids.slice(0, MAX_FELLOWSHIP_ID_READS)
     : [];
+  const validIds = boundedIds.flatMap((id) => {
+    const safeId = normalizeFellowshipObjectId(id);
+    return safeId ? [safeId] : [];
+  });
   if (validIds.length === 0) return [];
 
   const fellowships = await Fellowship.find({

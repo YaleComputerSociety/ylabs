@@ -50,16 +50,16 @@ describe('useFavorites', () => {
     expect(mockedSwal).not.toHaveBeenCalled();
   });
 
-  it('uses saved program endpoints for canonical program favorites', async () => {
-    mockedAxios.get.mockResolvedValueOnce({ data: { savedProgramIds: ['program-1'] } });
+  it('uses watched program endpoints for canonical program watching', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { watchedProgramIds: ['program-1'] } });
 
-    const { result } = renderHook(() => useFavorites('programs'));
+    const { result } = renderHook(() => useFavorites('watchedPrograms'));
 
     await waitFor(() => {
       expect(result.current.favIds).toEqual(['program-1']);
     });
 
-    expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedProgramIds', {
+    expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
       withCredentials: true,
     });
   });

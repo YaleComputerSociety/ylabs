@@ -186,6 +186,9 @@ The `User.favPathways` and `User.savedPathwayPlans` schema fields are intentiona
 The embedded `User.savedResearchEntities` and `User.savedResearchEntityPlans` fields are likewise retained only for a pending dry-run-first backfill onto `ResearchPlan`.
 The saved-research routes read and write the canonical `ResearchPlan` collection through `researchPlanService`, so nothing consumes the embedded planning fields at runtime.
 
+Program watching (the account Program Watch surface and the `/programs` watch affordance) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
+The client cut watched programs over from the embedded `User.savedPrograms` store; that legacy store and its `/api/users/savedPrograms*` routes are retained only for the additive backfill onto `ResearchPlan` and are no longer read by the client.
+
 Keep saved-entity planning separate from the legacy listing favorites.
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
 Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.

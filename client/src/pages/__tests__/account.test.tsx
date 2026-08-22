@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import UserContext from '../../contexts/UserContext';
 import Account from '../account';
 
-type PlanningSummary = {
+type ProgramSummary = {
   count: number;
   nextDeadlineLabel?: string;
   nextDeadlineDate?: string;
 };
 
 let savedResearchCount = 2;
-let savedProgramSummary: PlanningSummary = { count: 1 };
+let programSummary: ProgramSummary = { count: 1 };
 
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
@@ -30,23 +30,19 @@ vi.mock('../../components/accounts/SavedResearchPlans', () => {
   return { default: MockSavedResearchPlans };
 });
 
-vi.mock('../../components/accounts/FavoritesManager', () => {
-  const MockFavoritesManager = ({
+vi.mock('../../components/accounts/ProgramWatch', () => {
+  const MockProgramWatch = ({
     onSummaryChange,
   }: {
-    onSummaryChange?: (summary: {
-      count: number;
-      nextDeadlineLabel?: string;
-      nextDeadlineDate?: string;
-    }) => void;
+    onSummaryChange?: (summary: ProgramSummary) => void;
   }) => {
     useEffect(() => {
-      onSummaryChange?.(savedProgramSummary);
+      onSummaryChange?.(programSummary);
     }, [onSummaryChange]);
-    return <section>Favorites manager</section>;
+    return <section>Program watch list</section>;
   };
 
-  return { default: MockFavoritesManager };
+  return { default: MockProgramWatch };
 });
 
 const renderAccount = (userType: string) =>
@@ -73,26 +69,37 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   savedResearchCount = 2;
-  savedProgramSummary = { count: 1 };
+  programSummary = { count: 1 };
 });
 
 describe('Account page', () => {
-  it('renders a compact student command center without duplicate launch CTAs', () => {
+  it('renders exactly two surfaces with live counts', () => {
     renderAccount('student');
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByText(/2 research plans/)).toBeTruthy();
-    expect(screen.getByText(/1 saved program/)).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Dashboard (2)' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Program Watch (1)' })).toBeTruthy();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.queryByText('Your plan')).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Plan your next research move' })).toBeNull();
-    expect(screen.getAllByRole('link', { name: 'Find more research homes' })).toHaveLength(1);
-    expect(screen.queryByRole('link', { name: 'Yale Labs' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Programs & Fellowships' })).toBeNull();
+    expect(screen.getByText('Program watch list')).toBeTruthy();
+    expect(screen.getByText(/2 research plans/)).toBeTruthy();
+    expect(screen.getByText(/1 watched program/)).toBeTruthy();
   });
 
-  it('uses the saved program deadline as the next planning cue', () => {
-    savedProgramSummary = {
+  it('lets an account switch between the Dashboard and Program Watch surfaces', () => {
+    renderAccount('student');
+
+    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+    expect(programTab.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(programTab);
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('uses the watched program deadline as the next planning cue', () => {
+    programSummary = {
       count: 1,
       nextDeadlineDate: '2099-06-30T00:00:00.000Z',
       nextDeadlineLabel: 'Summer Research Grant: Due Jun 30, 2099',
@@ -103,13 +110,12 @@ describe('Account page', () => {
     expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
   });
 
-  it('shows every account the same read-only dashboard with no faculty edit surface', () => {
+  it('shows every account the same read-only surfaces with no faculty edit surface', () => {
     renderAccount('professor');
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByText('Saved research plans')).toBeTruthy();
-    expect(screen.getByText('Favorites manager')).toBeTruthy();
-    expect(screen.getByText(/2 research plans/)).toBeTruthy();
+    expect(screen.getByText('Program watch list')).toBeTruthy();
     expect(screen.queryByText('Profile editor')).toBeNull();
     expect(screen.queryByText('Faculty profile center')).toBeNull();
     expect(
