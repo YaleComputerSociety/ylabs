@@ -21,6 +21,7 @@ export type DescriptionQualityFlag =
   | 'incomplete-sentence'
   | 'duplicated-fragment'
   | 'recruitment-boilerplate'
+  | 'consent-boilerplate'
   | 'source-news-fragment'
   | 'paper-fragment'
   | 'same-as-full'
@@ -94,6 +95,15 @@ const hasRecruitmentBoilerplate = (value: string): boolean =>
   ) ||
   /\bwelcome to (?:the )?.{0,80}\bwebsite\b/i.test(value);
 
+const hasConsentBannerBoilerplate = (value: string): boolean =>
+  (/\bcookies?\b/i.test(value) &&
+    /\b(?:consent|experience|traffic|preferences|opt[- ]?out|third[- ]party|privacy|personali[sz]e|accept|browsing|settings|policy)\b/i.test(
+      value,
+    )) ||
+  /\bby (?:continuing to use|using) (?:this|our) (?:site|website)\b/i.test(value) ||
+  /\bwe use cookies\b/i.test(value) ||
+  /\bprivacy policy\b/i.test(value);
+
 const hasMalformedGeneratedText = (value: string): boolean =>
   /\bstudies\s+attack\b/i.test(value) ||
   /\b[a-z]\.\s*\),/i.test(value) ||
@@ -160,7 +170,8 @@ const hasResearchDescriptionVerb = (value: string): boolean =>
   );
 
 const hasResearchFocusPhrase = (value: string): boolean =>
-  hasResearchDescriptionVerb(value) ||
+  !hasConsentBannerBoilerplate(value) &&
+  (hasResearchDescriptionVerb(value) ||
   /\bwe\s+(?:study|investigate|examine|explore|develop|use|employ|analyze|analyse|model|measure|research|aim\s+to|seek\s+to|want\s+to\s+understand|work\s+(?:on|towards))\b/i.test(value) ||
   /\bour\s+(?:research|work|lab|group|goal|mission)\b.{0,80}\b(?:is\s+to|focuses|centers?|revolves|examines|explores|investigates|aims?|seeks?|develops?|studies|understand)\b/i.test(value) ||
   /\bI\s+study\b/i.test(value) ||
@@ -186,7 +197,7 @@ const hasResearchFocusPhrase = (value: string): boolean =>
   /\bhas\s+written\s+or\s+edited\b.+?\barticles\s+on\b/i.test(value) ||
   /\bexpertise\s+lies\s+in\b/i.test(value) ||
   /\bworking\s+to\s+expand\b.+?\bclinical\s+trials\b/i.test(value) ||
-  /\bprimary\s+areas?\s+of\s+interest\b.+?\bteaching\s+and\s+research\b.+?:/i.test(value);
+  /\bprimary\s+areas?\s+of\s+interest\b.+?\bteaching\s+and\s+research\b.+?:/i.test(value));
 
 const isIdentityOnlyLabLead = (value: string): boolean =>
   /\b(?:lab|laboratory|center|centre|program|initiative)\s+is\s+(?:an?\s+)?(?:scientific\s+)?research\s+(?:group|center|centre|program|initiative|home)\b/i.test(
@@ -415,6 +426,7 @@ export function fullDescriptionQuality(value: unknown): FieldQuality {
   }
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && hasConsentBannerBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (
     text &&
@@ -499,6 +511,7 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && hasConsentBannerBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (
     text &&

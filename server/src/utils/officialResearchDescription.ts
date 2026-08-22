@@ -35,6 +35,21 @@ const CONTENT_BLOCK_SELECTORS = [
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
+function truncateToBoundary(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  const slice = value.slice(0, maxLength);
+  const lastSentenceEnd = Math.max(
+    slice.lastIndexOf('. '),
+    slice.lastIndexOf('! '),
+    slice.lastIndexOf('? '),
+  );
+  if (lastSentenceEnd >= maxLength / 2) {
+    return slice.slice(0, lastSentenceEnd + 1).trim();
+  }
+  const lastSpace = slice.lastIndexOf(' ');
+  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).trim();
+}
+
 const sentenceCount = (value: string): number =>
   value.split(/[.!?](?:\s|$)/u).filter((part) => part.trim().length > 0).length;
 
@@ -83,12 +98,14 @@ export function collectVisibleDescriptionCandidates(html: string): string[] {
           .map((p) => clean($(p).text()))
           .filter((text) => text.length >= 40);
         if (paragraphs.length > 0) {
-          candidates.push(paragraphs.join(' ').slice(0, MAX_CANDIDATE_LENGTH));
-          candidates.push(...paragraphs.map((text) => text.slice(0, MAX_CANDIDATE_LENGTH)));
+          candidates.push(truncateToBoundary(paragraphs.join(' '), MAX_CANDIDATE_LENGTH));
+          candidates.push(
+            ...paragraphs.map((text) => truncateToBoundary(text, MAX_CANDIDATE_LENGTH)),
+          );
         }
         const blockText = clean($(el).text());
         if (blockText && sentenceCount(blockText) >= 2) {
-          candidates.push(blockText.slice(0, MAX_CANDIDATE_LENGTH));
+          candidates.push(truncateToBoundary(blockText, MAX_CANDIDATE_LENGTH));
         }
       });
   }
@@ -97,7 +114,7 @@ export function collectVisibleDescriptionCandidates(html: string): string[] {
     .toArray()
     .forEach((p) => {
       const text = clean($(p).text());
-      if (text.length >= 40) candidates.push(text.slice(0, MAX_CANDIDATE_LENGTH));
+      if (text.length >= 40) candidates.push(truncateToBoundary(text, MAX_CANDIDATE_LENGTH));
     });
 
   return candidates.filter(Boolean);
