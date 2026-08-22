@@ -295,16 +295,9 @@ describe('findUserForPi', () => {
     });
   });
 
-  it('falls back to first-initial match only when the source first name is an initial', async () => {
-    const um = mockUserModel([
-      { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
-      { _id: 'u2', fname: 'John', lname: 'Arnsten', netid: 'ja1' },
-    ]);
-    expect(await findUserForPi('A Arnsten', um)).toEqual({
-      _id: 'u1',
-      netid: 'ax1',
-      researchHomeEligible: true,
-    });
+  it('does not attach on a bare source initial, even to a lone same-initial candidate (issue #562)', async () => {
+    const um = mockUserModel([{ _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' }]);
+    expect(await findUserForPi('A Arnsten', um)).toBeNull();
   });
 
   it('does not match full first names to different same-initial candidates', async () => {
@@ -347,12 +340,40 @@ describe('findUserForPi', () => {
     });
   });
 
-  it('returns null when ambiguity remains after first-initial fallback', async () => {
+  it('returns null when a full given name prefixes no unique candidate', async () => {
     const um = mockUserModel([
       { _id: 'u1', fname: 'Amelia', lname: 'Arnsten', netid: 'ax1' },
       { _id: 'u2', fname: 'Anne', lname: 'Arnsten', netid: 'an1' },
     ]);
     expect(await findUserForPi('Amy Arnsten', um)).toBeNull();
+  });
+
+  // Issue #562: "Schwartz Lab" (medicine.yale.edu/lab/schwartz) attached the
+  // wrong same-surname faculty. A surname-only name, or a surname whose given
+  // name differs, must fail closed; only first+last (or netid / profile URL)
+  // agreement may attach. Synthetic identifiers - no real Yale netids.
+  describe('surname precision (issue #562)', () => {
+    it('does not attach a surname-only PI name to a lone same-surname candidate', async () => {
+      const um = mockUserModel([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' }]);
+      expect(await findUserForPi('Schwartz', um)).toBeNull();
+    });
+
+    it('does not attach when the real PI (Martin) is absent and only a namesake (Michael) exists', async () => {
+      const um = mockUserModel([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' }]);
+      expect(await findUserForPi('Martin Schwartz', um)).toBeNull();
+    });
+
+    it('attaches only when first and last name both agree', async () => {
+      const um = mockUserModel([
+        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' },
+        { _id: 'sc2', fname: 'Martin', lname: 'Schwartz', netid: 'zz02' },
+      ]);
+      expect(await findUserForPi('Martin Schwartz', um)).toEqual({
+        _id: 'sc2',
+        netid: 'zz02',
+        researchHomeEligible: true,
+      });
+    });
   });
 
   it('returns null for an empty PI name', async () => {
@@ -427,13 +448,10 @@ describe('findUserForPi recall', () => {
     });
   });
 
-  it('resolves a surname-only lab name when exactly one faculty carries the surname', async () => {
+  it('fails closed on a surname-only lab name even when one faculty carries the surname (issue #562)', async () => {
     const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Berg', netid: 'rb1' }]);
-    expect(await findUserForPi('Berg', um)).toEqual({
-      _id: 'u1',
-      netid: 'rb1',
-      researchHomeEligible: true,
-    });
+    expect(await resolveUserForPi('Berg', um)).toEqual({ status: 'ambiguous' });
+    expect(await findUserForPi('Berg', um)).toBeNull();
   });
 
   it('fails closed on a surname-only name shared by several faculty', async () => {

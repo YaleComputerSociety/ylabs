@@ -197,15 +197,17 @@ export function surnamesCompatible(
   return isSuffix(sourceCore, candidateCore) || isSuffix(candidateCore, sourceCore);
 }
 
-export type SurnameOnlyMatch = 'matched' | 'ambiguous' | 'absent';
+export type SurnameOnlyMatch = 'ambiguous' | 'absent';
 
 /**
  * The give-up rule for a PI name that carries no usable given name (a lab named
- * only after a surname, e.g. "Berg Lab"). A surname alone may only resolve when
- * exactly one surname-compatible faculty candidate exists; a shared surname
- * fails closed to ambiguous rather than mis-linking one of several people.
+ * only after a surname, e.g. "Berg Lab"). A surname alone can NEVER attach a PI:
+ * even a lone surname-compatible faculty candidate might be a namesake rather
+ * than the real lead (issue #562, "Schwartz Lab" attaching Michael Schwartz when
+ * the real PI is Martin Schwartz). Resolution requires agreement on more than the
+ * surname, so this always fails closed - 'ambiguous' when any candidate carries
+ * the surname, 'absent' when none does. Callers never treat either as a match.
  */
 export function surnameOnlyMatch(surnameCompatibleCandidateCount: number): SurnameOnlyMatch {
-  if (surnameCompatibleCandidateCount === 1) return 'matched';
-  return surnameCompatibleCandidateCount > 1 ? 'ambiguous' : 'absent';
+  return surnameCompatibleCandidateCount > 0 ? 'ambiguous' : 'absent';
 }

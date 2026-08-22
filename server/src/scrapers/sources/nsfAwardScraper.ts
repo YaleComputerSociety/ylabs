@@ -372,12 +372,11 @@ export async function resolveUserForPi(
     if (matches.length > 1) return { status: 'ambiguous' };
   }
 
-  // pass 2: surname + given-name prefix. Only fall back to a bare initial
-  // when the source itself only provided an initial; otherwise same-initial
-  // matches are too broad (for example Leying Guan vs Lawrence Guan).
-  if (first) {
-    const isInitialOnly = firstToken.length === 1;
-    const initRe = new RegExp(`^${escapeRe(isInitialOnly ? firstToken : first)}`, 'i');
+  // pass 2: surname + given-name prefix. A given-name prefix is a genuine
+  // first-name match; a bare source initial is not, so an initial-only source
+  // name never binds to a same-initial namesake and fails closed (issue #562).
+  if (firstToken.length > 1) {
+    const initRe = new RegExp(`^${escapeRe(first)}`, 'i');
     const rows = await finder({
       lname: lnameRe,
       fname: initRe,

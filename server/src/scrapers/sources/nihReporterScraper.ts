@@ -302,10 +302,7 @@ export async function resolveUserForPi(
   if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
   const candidates = fetched.filter((c) => surnamesCompatible(last, c.lname));
   if (!first) {
-    const status = surnameOnlyMatch(candidates.length);
-    return status === 'matched'
-      ? { status: 'matched', user: userPiMatchResult(candidates[0]) }
-      : { status };
+    return { status: surnameOnlyMatch(candidates.length) };
   }
   const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
   // Exact or canonical-nickname first name match wins.
@@ -319,18 +316,18 @@ export async function resolveUserForPi(
   }
   if (exact.length > 1) return { status: 'ambiguous' };
 
-  // Fall back to a given-name prefix. Only use a bare first initial when the
-  // source itself only provided an initial; otherwise same-initial matches are
-  // too broad for grant identity linkage.
-  const isInitialOnly = firstToken.length === 1;
-  const prefix = (isInitialOnly ? firstToken : first).toLowerCase();
-  const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
-  if (byPrefix.length === 1) {
-    return { status: 'matched', user: userPiMatchResult(byPrefix[0]) };
+  // A given-name prefix is a genuine first-name match; a bare source initial is
+  // not, so an initial-only source name never binds to a same-initial namesake
+  // and fails closed instead (issue #562).
+  if (firstToken.length > 1) {
+    const prefix = first.toLowerCase();
+    const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
+    if (byPrefix.length === 1) {
+      return { status: 'matched', user: userPiMatchResult(byPrefix[0]) };
+    }
+    if (byPrefix.length > 1) return { status: 'ambiguous' };
   }
-  return byPrefix.length > 1 || candidates.length > 0
-    ? { status: 'ambiguous' }
-    : { status: 'absent' };
+  return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
 }
 
 function userPiMatchResult(candidate: any): {
