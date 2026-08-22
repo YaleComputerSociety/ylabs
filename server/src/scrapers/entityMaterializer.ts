@@ -23,6 +23,7 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { isSelfReferentialUrl } from '../utils/urlSafety';
 import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
@@ -362,7 +363,9 @@ export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
 
 export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
-  return value.filter((url) => !isResearchEntityContentPageSourceUrl(url));
+  return value.filter(
+    (url) => !isResearchEntityContentPageSourceUrl(url) && !isSelfReferentialUrl(url),
+  );
 }
 
 export function deriveResearchEntityWebsiteUrl(

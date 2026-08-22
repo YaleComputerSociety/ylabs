@@ -81,3 +81,27 @@ export function publicHttpUrl(value: unknown): string | undefined {
   if (!isPublicHttpUrl(value)) return undefined;
   return new URL((value as string).trim()).toString();
 }
+
+export const SELF_REFERENTIAL_HOSTNAMES = new Set([
+  'yalelabs.io',
+  'www.yalelabs.io',
+  'yalelabs.onrender.com',
+  'ylabs-gr4v.onrender.com',
+]);
+
+export function isSelfReferentialHostname(hostname: string): boolean {
+  return SELF_REFERENTIAL_HOSTNAMES.has(
+    stripIpv6Brackets(hostname).toLowerCase().replace(/\.$/, ''),
+  );
+}
+
+export function isSelfReferentialUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_PUBLIC_HTTP_URL_LENGTH) return false;
+  try {
+    return isSelfReferentialHostname(new URL(trimmed).hostname);
+  } catch {
+    return false;
+  }
+}

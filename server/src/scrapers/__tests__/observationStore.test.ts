@@ -314,6 +314,78 @@ describe('appendObservations', () => {
     });
   });
 
+  it('rejects observations sourced from our own site so it never becomes provenance', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:name' },
+    ] as any);
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({
+      modifiedCount: 0,
+    } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'qin-yan-lab',
+          field: 'name',
+          value: 'Qin Yan Lab',
+          sourceUrl: 'https://medicine.yale.edu/lab/qin-yan/',
+        },
+        {
+          entityType: 'researchEntity',
+          entityKey: 'qin-yan-lab',
+          field: 'displayName',
+          value: 'Qin Yan Lab',
+          sourceUrl: 'https://yalelabs.io/api/research',
+        },
+      ],
+      {
+        scrapeRunId: 'run-3',
+        sourceId: 'source-1',
+        sourceName: 'ysm-a-to-z',
+        sourceWeight: 0.9,
+        dryRun: false,
+      },
+    );
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const insertedDocs = insertMany.mock.calls[0][0] as any[];
+    expect(insertedDocs).toHaveLength(1);
+    expect(insertedDocs[0]).toMatchObject({
+      field: 'name',
+      sourceUrl: 'https://medicine.yale.edu/lab/qin-yan/',
+    });
+    expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
+  });
+
+  it('skips the whole batch when every observation is sourced from our own site', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite');
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'qin-yan-lab',
+          field: 'name',
+          value: 'Qin Yan Lab',
+          sourceUrl: 'https://www.yalelabs.io/research/qin-yan-lab',
+        },
+      ],
+      {
+        scrapeRunId: 'run-4',
+        sourceId: 'source-1',
+        sourceName: 'ysm-a-to-z',
+        sourceWeight: 0.9,
+        dryRun: false,
+      },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(bulkWrite).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
   it('does not supersede anything during dry runs', async () => {
     const insertMany = vi.spyOn(Observation, 'insertMany');
     const bulkWrite = vi.spyOn(Observation, 'bulkWrite');
