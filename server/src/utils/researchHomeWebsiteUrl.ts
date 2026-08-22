@@ -49,10 +49,25 @@ const PEOPLE_INDEX_FILE_PATH = /\/people\.(?:html?|aspx|php)(?:\/|$)/i;
 
 const MEMBERS_ROOT_PATH = /\/members\/$/i;
 
+const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
+
+const DIRECTORY_NUMERIC_ID_SUBPATH =
+  /\/(?:people|person|faculty|faculty-directory|directory)\/\d+(?:\/|$)/i;
+
+export function isDirectoryLoaderUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const pathname = url.pathname.toLowerCase();
+  return (
+    DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) || DIRECTORY_NUMERIC_ID_SUBPATH.test(pathname)
+  );
+}
+
 export function isListingOrIndexUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   if (PAGINATED_LISTING_QUERY.test(url.search)) return true;
+  if (isDirectoryLoaderUrl(value)) return true;
   const pathname = (url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`).toLowerCase();
   return (
     INDEX_LISTING_PATH.test(pathname) ||

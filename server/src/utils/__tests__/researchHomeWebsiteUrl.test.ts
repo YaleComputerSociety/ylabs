@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
@@ -28,7 +29,52 @@ describe('isProfileOrPeopleDirectoryPath', () => {
   });
 });
 
+describe('isDirectoryLoaderUrl', () => {
+  it('rejects directory AJAX/loader endpoints (#549)', () => {
+    expect(
+      isDirectoryLoaderUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/load_faculty/172',
+      ),
+    ).toBe(true);
+    expect(isDirectoryLoaderUrl('https://example.edu/directory/load_person/9001')).toBe(true);
+    expect(isDirectoryLoaderUrl('https://example.edu/people/load_more/40')).toBe(true);
+    expect(isDirectoryLoaderUrl('https://engineering.example.edu/faculty-directory/172')).toBe(
+      true,
+    );
+  });
+
+  it('keeps a named person profile subpath (fail-safe, #549)', () => {
+    expect(
+      isDirectoryLoaderUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/shruti-puri',
+      ),
+    ).toBe(false);
+    expect(isDirectoryLoaderUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
+    expect(isDirectoryLoaderUrl('https://example-computing-lab.example.org/')).toBe(false);
+    expect(isDirectoryLoaderUrl(undefined)).toBe(false);
+  });
+});
+
 describe('isDisallowedResearchEntitySourceUrl', () => {
+  it('rejects directory AJAX/loader endpoints as sources (#549)', () => {
+    expect(
+      isDisallowedResearchEntitySourceUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/load_faculty/172',
+      ),
+    ).toBe(true);
+    expect(
+      isDisallowedResearchEntitySourceUrl('https://example.edu/directory/load_person/9001'),
+    ).toBe(true);
+  });
+
+  it('keeps a named faculty-directory profile as an allowed source (#549)', () => {
+    expect(
+      isDisallowedResearchEntitySourceUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/shruti-puri',
+      ),
+    ).toBe(false);
+  });
+
   it('rejects our own site and A-Z/lab-website index pages as sources', () => {
     expect(isDisallowedResearchEntitySourceUrl('https://yalelabs.io/api/research')).toBe(true);
     expect(isDisallowedResearchEntitySourceUrl('https://www.yalelabs.io/research/qin-yan')).toBe(
@@ -85,8 +131,22 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://physics.example.edu/people/faculty-directory')).toBe(true);
   });
 
+  it('flags directory AJAX/loader endpoints (#549)', () => {
+    expect(
+      isListingOrIndexUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/load_faculty/172',
+      ),
+    ).toBe(true);
+    expect(isListingOrIndexUrl('https://example.edu/directory/load_person/9001')).toBe(true);
+  });
+
   it('does not flag real lab, center, or person pages', () => {
     expect(isListingOrIndexUrl('https://example-computing-lab.example.org/')).toBe(false);
+    expect(
+      isListingOrIndexUrl(
+        'https://engineering.example.edu/research-and-faculty/faculty-directory/shruti-puri',
+      ),
+    ).toBe(false);
     expect(isListingOrIndexUrl('https://centers.example.edu/genomics/')).toBe(false);
     expect(isListingOrIndexUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
     expect(isListingOrIndexUrl('https://economics.example.edu/people/jordan-example')).toBe(false);
