@@ -14,7 +14,7 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`server/src/models/researchGroup.ts`](../server/src/models/researchGroup.ts)
 - [`server/src/models/signal.ts`](../server/src/models/signal.ts)
 - [`server/src/models/adminGrant.ts`](../server/src/models/adminGrant.ts)
-- [`server/src/models/researchGroupMember.ts`](../server/src/models/researchGroupMember.ts)
+- [`server/src/models/roleAssignment.ts`](../server/src/models/roleAssignment.ts)
 - [`server/src/models/observation.ts`](../server/src/models/observation.ts)
 - [`server/src/models/source.ts`](../server/src/models/source.ts)
 - [`server/src/scrapers/entityMaterializer.ts`](../server/src/scrapers/entityMaterializer.ts)
