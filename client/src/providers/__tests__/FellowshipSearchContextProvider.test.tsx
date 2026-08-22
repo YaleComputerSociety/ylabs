@@ -108,8 +108,9 @@ describe('FellowshipSearchContextProvider program routes', () => {
       const pageMatch = url.match(/[?&]page=(\d+)/);
       const requestedPage = pageMatch ? Number(pageMatch[1]) : 1;
       const start = (requestedPage - 1) * pageSize;
-      const results = Array.from({ length: Math.max(0, Math.min(pageSize, total - start)) }, (_, i) =>
-        makeRecord(start + i),
+      const results = Array.from(
+        { length: Math.max(0, Math.min(pageSize, total - start)) },
+        (_, i) => makeRecord(start + i),
       );
       return Promise.resolve({ data: { results, total } });
     });
