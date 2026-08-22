@@ -43,6 +43,7 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import { givenNameVariants, surnameFetchRegex } from '../utils/piNameMatch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -332,10 +333,12 @@ export async function resolveUserForPi(
   if (!last) return { status: 'absent' };
 
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const lnameRe = new RegExp(`^${escapeRe(last)}$`, 'i');
+  const lnameRe = surnameFetchRegex(last);
+  if (!lnameRe) return { status: 'absent' };
   const userTypeFilter = { $in: ['professor', 'faculty', 'admin'] };
+  const firstToken = first ? first.split(/\s+/)[0]?.replace(/\./g, '') || first : '';
 
-  // pass 1: exact lname + fname
+  // pass 1: surname + exact fname
   if (first) {
     const fnameRe = new RegExp(`^${escapeRe(first)}$`, 'i');
     const matches = await finder({
@@ -348,11 +351,10 @@ export async function resolveUserForPi(
     if (matches.length > 1) return { status: 'ambiguous' };
   }
 
-  // pass 2: exact lname + given-name prefix. Only fall back to a bare initial
+  // pass 2: surname + given-name prefix. Only fall back to a bare initial
   // when the source itself only provided an initial; otherwise same-initial
   // matches are too broad (for example Leying Guan vs Lawrence Guan).
   if (first) {
-    const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
     const isInitialOnly = firstToken.length === 1;
     const initRe = new RegExp(`^${escapeRe(isInitialOnly ? firstToken : first)}`, 'i');
     const matches = await finder({
@@ -362,6 +364,23 @@ export async function resolveUserForPi(
     });
     if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     if (matches.length > 1) return { status: 'ambiguous' };
+  }
+
+  // pass 3: canonical nickname / formal-name variants of the given name (source
+  // "Bob" resolving to a stored "Robert"). Runs only when the name has variants
+  // beyond itself, so a name with no nickname mapping never adds a query.
+  if (firstToken) {
+    const variants = givenNameVariants(firstToken).filter((v) => v !== firstToken.toLowerCase());
+    if (variants.length > 0) {
+      const variantRe = new RegExp(`^(?:${variants.map(escapeRe).join('|')})$`, 'i');
+      const matches = await finder({
+        lname: lnameRe,
+        fname: variantRe,
+        userType: userTypeFilter,
+      });
+      if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
+      if (matches.length > 1) return { status: 'ambiguous' };
+    }
   }
   return { status: 'absent' };
 }

@@ -361,6 +361,76 @@ describe('findUserForPi', () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveUserForPi recall gaps: nickname + particle/compound surname (#485)
+// ---------------------------------------------------------------------------
+
+function fakeUserFinder(users: Array<{ _id: string; fname: string; lname: string }>) {
+  return async (q: Record<string, unknown>) => {
+    const lnameRe = q.lname as RegExp;
+    const fnameRe = q.fname as RegExp | undefined;
+    return users.filter(
+      (u) => lnameRe.test(u.lname) && (!fnameRe || fnameRe.test(u.fname)),
+    );
+  };
+}
+
+describe('resolveUserForPi recall', () => {
+  it('resolves a nickname to its formal-name profile (Bob -> Robert)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'Miller' }]);
+    const id = await findUserForPi({ firstName: 'Bob', lastName: 'Miller' }, finder as any);
+    expect(id).toBe('u1');
+  });
+
+  it('resolves a source surname that dropped its particle (Berg -> van der Berg)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg' }]);
+    const id = await findUserForPi({ firstName: 'Robert', lastName: 'Berg' }, finder as any);
+    expect(id).toBe('u1');
+  });
+
+  it('resolves a compound surname from its trailing part (Colwell -> Watkins-Colwell)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'James', lname: 'Watkins-Colwell' }]);
+    const id = await findUserForPi({ firstName: 'James', lastName: 'Colwell' }, finder as any);
+    expect(id).toBe('u1');
+  });
+
+  it('does NOT match a different person who merely shares a surname', async () => {
+    const finder = fakeUserFinder([
+      { _id: 'u1', fname: 'John', lname: 'Smith' },
+      { _id: 'u2', fname: 'Jane', lname: 'Smith' },
+    ]);
+    expect(await findUserForPi({ firstName: 'John', lastName: 'Smith' }, finder as any)).toBe('u1');
+    expect(await findUserForPi({ firstName: 'Jane', lastName: 'Smith' }, finder as any)).toBe('u2');
+    expect(
+      await findUserForPi({ firstName: 'Brian', lastName: 'Smith' }, finder as any),
+    ).toBeNull();
+  });
+
+  it('fails closed when a broadened surname pulls in two distinct people', async () => {
+    const finder = fakeUserFinder([
+      { _id: 'u1', fname: 'Robert', lname: 'van der Berg' },
+      { _id: 'u2', fname: 'Robert', lname: 'Berg' },
+    ]);
+    const result = await resolveUserForPi({ firstName: 'Robert', lastName: 'Berg' }, finder as any);
+    expect(result).toEqual({ status: 'ambiguous' });
+  });
+
+  it('fails closed when a nickname pass matches two distinct people', async () => {
+    const finder = fakeUserFinder([
+      { _id: 'u1', fname: 'Robert', lname: 'Miller' },
+      { _id: 'u2', fname: 'Robert', lname: 'Miller' },
+    ]);
+    const result = await resolveUserForPi({ firstName: 'Bob', lastName: 'Miller' }, finder as any);
+    expect(result).toEqual({ status: 'ambiguous' });
+  });
+
+  it('does NOT treat an ambiguous same-initial name as a nickname (Amy != Amelia)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Amelia', lname: 'Arnsten' }]);
+    const id = await findUserForPi({ firstName: 'Amy', lastName: 'Arnsten' }, finder as any);
+    expect(id).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Full run() — paginated, with mocked NSF API + User finder
 // ---------------------------------------------------------------------------
 

@@ -363,6 +363,56 @@ describe('findUserForPi', () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveUserForPi recall gaps: nickname + particle/compound surname (#485)
+// ---------------------------------------------------------------------------
+
+describe('findUserForPi recall', () => {
+  it('resolves a nickname to its formal-name profile (Bob -> Robert)', async () => {
+    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Miller', netid: 'rm1' }]);
+    expect(await findUserForPi('Bob Miller', um)).toEqual({
+      _id: 'u1',
+      netid: 'rm1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('resolves a source surname that dropped its particle (Berg -> van der Berg)', async () => {
+    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg', netid: 'rb1' }]);
+    expect(await findUserForPi('Robert Berg', um)).toEqual({
+      _id: 'u1',
+      netid: 'rb1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('rejects a near-miss surname that is not the same family name (Berg != Berger)', async () => {
+    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Berger', netid: 'rb2' }]);
+    expect(await findUserForPi('Robert Berg', um)).toBeNull();
+  });
+
+  it('fails closed when two distinct people share a compatible surname', async () => {
+    const um = mockUserModel([
+      { _id: 'u1', fname: 'Robert', lname: 'van der Berg', netid: 'rb1' },
+      { _id: 'u2', fname: 'Robert', lname: 'Berg', netid: 'rb3' },
+    ]);
+    expect(await resolveUserForPi('Robert Berg', um)).toEqual({ status: 'ambiguous' });
+  });
+
+  it('fails closed when a nickname matches two distinct people', async () => {
+    const um = mockUserModel([
+      { _id: 'u1', fname: 'Robert', lname: 'Miller', netid: 'rm1' },
+      { _id: 'u2', fname: 'Robert', lname: 'Miller', netid: 'rm2' },
+    ]);
+    expect(await resolveUserForPi('Bob Miller', um)).toEqual({ status: 'ambiguous' });
+  });
+
+  it('does not auto-resolve a goes-by-a-different-given-name profile without corroboration', async () => {
+    const um = mockUserModel([{ _id: 'u1', fname: 'Carla', lname: 'Staver', netid: 'cs1' }]);
+    expect(await findUserForPi('Ann Carla Staver', um)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // piGrantsToObservations
 // ---------------------------------------------------------------------------
 
