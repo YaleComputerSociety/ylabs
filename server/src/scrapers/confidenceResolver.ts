@@ -55,6 +55,7 @@ const PROSE_COMPLETENESS_FIELDS = new Set([
 // so an authoritative lab-microsite description is never displaced by a fresher
 // roster one-liner; they still win when they are the only available source.
 const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
+const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
 const PROSE_EXTENSION_BONUS = 1.25;
 
 function serializeValue(value: unknown): string {
@@ -131,7 +132,7 @@ function preferExtractedProseGroups<T extends { sources: Set<string> }>(
   field: string,
   groups: T[],
 ): T[] {
-  if (!PROSE_COMPLETENESS_FIELDS.has(field)) return groups;
+  if (!SYNTHESIZED_SOURCE_DEMOTION_FIELDS.has(field)) return groups;
   const extracted = groups.filter((group) => !isSynthesizedProseGroup(group));
   return extracted.length > 0 ? extracted : groups;
 }

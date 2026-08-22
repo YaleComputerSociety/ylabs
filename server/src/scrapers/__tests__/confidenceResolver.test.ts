@@ -77,6 +77,33 @@ describe('resolveField', () => {
     expect(r?.contributingSources).toEqual(['lab-microsite-description-llm']);
   });
 
+  it('keeps a fresh roster-sourced bio competing on weight against a stale extracted bio', () => {
+    const r = resolveField(
+      'bio',
+      [
+        {
+          field: 'bio',
+          value:
+            'Extracted from the faculty profile page: studies the electronic properties of quantum materials with a focus on nematic order and superconductivity.',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.7,
+          observedAt: D('2026-08-20'),
+        },
+        {
+          field: 'bio',
+          value:
+            'Stale bio captured long ago from a backfill pass describing broadly similar but outdated interests in condensed matter systems.',
+          sourceName: 'official-profile-pi-backfill',
+          confidence: 0.85,
+          observedAt: D('2025-08-20'),
+        },
+      ],
+      { now: D('2026-08-22') },
+    );
+    expect(r?.value).toContain('quantum materials');
+    expect(r?.contributingSources).toEqual(['dept-faculty-roster']);
+  });
+
   it('flags a conflict when two values are close in weight', () => {
     const r = resolveField(
       'title',

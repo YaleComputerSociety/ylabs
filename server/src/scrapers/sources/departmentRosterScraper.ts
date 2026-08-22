@@ -1300,11 +1300,15 @@ function entryToUserObservations(
   if (entry.labUrl) obs.push({ ...profileBase, field: 'website', value: entry.labUrl });
   if (entry.orcid) obs.push({ ...profileBase, field: 'orcid', value: entry.orcid });
   if (entry.bio) obs.push({ ...profileBase, field: 'bio', value: entry.bio });
-  if (entry.researchInterests && entry.researchInterests.length > 0) {
-    obs.push({ ...profileBase, field: 'researchInterests', value: entry.researchInterests });
+  const researchInterests = (entry.researchInterests || []).filter(
+    (topic) => !isTopicLabelChrome(topic),
+  );
+  if (researchInterests.length > 0) {
+    obs.push({ ...profileBase, field: 'researchInterests', value: researchInterests });
   }
-  if (entry.topics && entry.topics.length > 0) {
-    obs.push({ ...profileBase, field: 'topics', value: entry.topics });
+  const topics = (entry.topics || []).filter((topic) => !isTopicLabelChrome(topic));
+  if (topics.length > 0) {
+    obs.push({ ...profileBase, field: 'topics', value: topics });
   }
   if (entry.scholarCandidateProfileUrls && entry.scholarCandidateProfileUrls.length > 0) {
     obs.push({
