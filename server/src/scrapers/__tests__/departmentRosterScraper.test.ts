@@ -1147,6 +1147,46 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('drops section-header chrome from roster topics and ranks the one-liner below extracted descriptions', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Sawyer Roster',
+        email: 'sawyer.roster@yale.edu',
+        labUrl: 'https://campuspress.yale.edu/sawyerlab/',
+        topics: ['Condensed Matter Physics', 'Research Areas:', 'Research Interests'],
+        researchInterests: ['Condensed Matter Physics', 'Research Areas:', 'Research Interests'],
+      },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/physics',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual([
+      'Condensed Matter Physics',
+    ]);
+    const fullDescription = entityObs.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toBe('Studies condensed matter physics.');
+    expect(fullDescription?.value).not.toContain('research areas');
+    expect(fullDescription?.value).not.toContain(':');
+    expect(fullDescription?.confidenceOverride).toBe(0.5);
+
+    getSpy.mockRestore();
+  });
+
   it('honors the limit option across departments', async () => {
     const manyEntries = (count: number): FacultyEntry[] =>
       Array.from({ length: count }, (_v, i) => ({ name: `Person ${i}` }));

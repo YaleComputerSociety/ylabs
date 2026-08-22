@@ -48,6 +48,14 @@ const PROSE_COMPLETENESS_FIELDS = new Set([
   'fullDescription',
   'researchInterestSummary',
 ]);
+
+// Sources whose description prose is keyword-synthesized from directory listings
+// rather than extracted from the entity's own page. For prose fields these rank
+// strictly below any genuinely extracted description regardless of recency decay,
+// so an authoritative lab-microsite description is never displaced by a fresher
+// roster one-liner; they still win when they are the only available source.
+const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
+const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
 const PROSE_EXTENSION_BONUS = 1.25;
 
 function serializeValue(value: unknown): string {
@@ -112,6 +120,23 @@ function applyProseCompletenessBonus(
   }
 }
 
+function isSynthesizedProseGroup(group: { sources: Set<string> }): boolean {
+  if (group.sources.size === 0) return false;
+  for (const source of group.sources) {
+    if (!SYNTHESIZED_DESCRIPTION_SOURCES.has(source)) return false;
+  }
+  return true;
+}
+
+function preferExtractedProseGroups<T extends { sources: Set<string> }>(
+  field: string,
+  groups: T[],
+): T[] {
+  if (!SYNTHESIZED_SOURCE_DEMOTION_FIELDS.has(field)) return groups;
+  const extracted = groups.filter((group) => !isSynthesizedProseGroup(group));
+  return extracted.length > 0 ? extracted : groups;
+}
+
 export function resolveField(
   field: string,
   observations: ResolverObservation[],
@@ -158,7 +183,8 @@ export function resolveField(
   }
   applyProseCompletenessBonus(field, groups.values());
 
-  const ranked = Array.from(groups.values()).sort((a, b) => b.weight - a.weight);
+  const rankable = preferExtractedProseGroups(field, Array.from(groups.values()));
+  const ranked = rankable.sort((a, b) => b.weight - a.weight);
   const winner = ranked[0];
   const runnerUp = ranked[1];
 
