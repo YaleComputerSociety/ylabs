@@ -286,13 +286,16 @@ describe('findUserForPi', () => {
     expect(
       await resolveUserForPi(
         { firstName: 'Parker', lastName: 'Grant' },
-        vi.fn().mockResolvedValue([{ _id: 'a' }, { _id: 'b' }]),
+        vi.fn().mockResolvedValue([
+          { _id: 'a', fname: 'Parker', lname: 'Grant' },
+          { _id: 'b', fname: 'Parker', lname: 'Grant' },
+        ]),
       ),
     ).toEqual({ status: 'ambiguous' });
   });
 
   it('returns the matched user id on exact lname+fname', async () => {
-    const finder = vi.fn(async () => [{ _id: 'user-1' }]);
+    const finder = vi.fn(async () => [{ _id: 'user-1', fname: 'Parker', lname: 'Grant' }]);
     const id = await findUserForPi({ firstName: 'Parker', lastName: 'Grant' }, finder as any);
     expect(id).toBe('user-1');
     expect(finder).toHaveBeenCalledTimes(1);
@@ -302,7 +305,7 @@ describe('findUserForPi', () => {
     const finder = vi
       .fn()
       .mockResolvedValueOnce([]) // exact miss
-      .mockResolvedValueOnce([{ _id: 'user-2' }]); // prefix hit
+      .mockResolvedValueOnce([{ _id: 'user-2', fname: 'Patricia', lname: 'Grant' }]); // prefix hit
     const id = await findUserForPi({ firstName: 'Pat', lastName: 'Grant' }, finder as any);
     expect(id).toBe('user-2');
     expect(finder).toHaveBeenCalledTimes(2);
@@ -333,7 +336,7 @@ describe('findUserForPi', () => {
     const finder = vi
       .fn()
       .mockResolvedValueOnce([]) // exact miss
-      .mockResolvedValueOnce([{ _id: 'user-3' }]); // initial hit
+      .mockResolvedValueOnce([{ _id: 'user-3', fname: 'Parker', lname: 'Grant' }]); // initial hit
     const id = await findUserForPi({ firstName: 'P.', lastName: 'Grant' }, finder as any);
 
     expect(id).toBe('user-3');
@@ -345,7 +348,10 @@ describe('findUserForPi', () => {
   });
 
   it('returns null on ambiguous exact match (multiple)', async () => {
-    const finder = vi.fn(async () => [{ _id: 'a' }, { _id: 'b' }]);
+    const finder = vi.fn(async () => [
+      { _id: 'a', fname: 'John', lname: 'Smith' },
+      { _id: 'b', fname: 'John', lname: 'Smith' },
+    ]);
     const id = await findUserForPi({ firstName: 'John', lastName: 'Smith' }, finder as any);
     expect(id).toBeNull();
     // does NOT fall through to initial when exact is ambiguous
@@ -421,6 +427,15 @@ describe('resolveUserForPi recall', () => {
     ]);
     const result = await resolveUserForPi({ firstName: 'Bob', lastName: 'Miller' }, finder as any);
     expect(result).toEqual({ status: 'ambiguous' });
+  });
+
+  it('does NOT match distinct particle sequences sharing a trailing token (von Berg != van der Berg)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg' }]);
+    const result = await resolveUserForPi(
+      { firstName: 'Robert', lastName: 'von Berg' },
+      finder as any,
+    );
+    expect(result).toEqual({ status: 'absent' });
   });
 
   it('does NOT treat an ambiguous same-initial name as a nickname (Amy != Amelia)', async () => {
@@ -553,7 +568,7 @@ describe('NsfAwardScraper.run', () => {
   it('skips emitting User observations and uses user-id slug when PI matches a Yale User', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
     // First call (exact lname+fname) returns one match.
-    const userFinder = vi.fn(async () => [{ _id: 'user-holland' }]);
+    const userFinder = vi.fn(async () => [{ _id: 'user-holland', fname: 'Parker', lname: 'Grant' }]);
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
@@ -579,7 +594,9 @@ describe('NsfAwardScraper.run', () => {
 
   it('targets one resolved canonical home and preserves its identity fields', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
-    const userFinder = vi.fn(async () => [{ _id: '507f1f77bcf86cd799439011' }]);
+    const userFinder = vi.fn(async () => [
+      { _id: '507f1f77bcf86cd799439011', fname: 'Parker', lname: 'Grant' },
+    ]);
     const researchHomeResolver = vi.fn().mockResolvedValue({
       status: 'canonical',
       slug: 'dept-chem-parker-grant',
@@ -617,8 +634,8 @@ describe('NsfAwardScraper.run', () => {
       .fn()
       .mockResolvedValueOnce([]) // (a)
       .mockResolvedValueOnce([]) // (b)
-      .mockResolvedValueOnce([{ _id: 'user-rajit' }]) // (c)
-      .mockResolvedValueOnce([{ _id: 'user-hitten' }]) // (d)
+      .mockResolvedValueOnce([{ _id: 'user-rajit', fname: 'Rowan', lname: 'Circuit' }]) // (c)
+      .mockResolvedValueOnce([{ _id: 'user-hitten', fname: 'Harper', lname: 'Signal' }]) // (d)
       .mockResolvedValueOnce([]) // (e)
       .mockResolvedValueOnce([]); // (f)
 
