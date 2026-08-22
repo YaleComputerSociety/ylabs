@@ -349,8 +349,9 @@ describe('appendObservations', () => {
     );
 
     expect(insertMany).toHaveBeenCalledTimes(1);
-    expect(insertMany.mock.calls[0][0]).toHaveLength(1);
-    expect(insertMany.mock.calls[0][0][0]).toMatchObject({
+    const insertedDocs = insertMany.mock.calls[0][0] as any[];
+    expect(insertedDocs).toHaveLength(1);
+    expect(insertedDocs[0]).toMatchObject({
       field: 'name',
       sourceUrl: 'https://medicine.yale.edu/lab/qin-yan/',
     });
