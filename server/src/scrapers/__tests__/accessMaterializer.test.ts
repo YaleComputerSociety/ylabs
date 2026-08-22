@@ -470,4 +470,14 @@ describe('deriveIdentifiedLeadWaysIn', () => {
     const result = deriveIdentifiedLeadWaysIn({ ...baseInput, supportingObservations: [] });
     expect(result.accessSignals).toHaveLength(0);
   });
+
+  it('still requires an official non-grant page to emit REACH_OUT_PLAUSIBLE (creation criteria unchanged, #530)', () => {
+    expect(deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: '' }).accessSignals).toHaveLength(
+      0,
+    );
+    expect(
+      deriveIdentifiedLeadWaysIn({ ...baseInput, officialUrl: 'ftp://chemistry.yale.edu/lab' })
+        .accessSignals,
+    ).toHaveLength(0);
+  });
 });

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   bulkWrite: vi.fn(),
   aggregate: vi.fn(),
   distinct: vi.fn(),
+  signalFind: vi.fn(),
   roster: vi.fn(),
   queueBulkWrite: vi.fn(),
   queueFind: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock('../../models/signal', async (importOriginal) => ({
   Signal: {
     aggregate: mocks.aggregate,
     distinct: mocks.distinct,
+    find: mocks.signalFind,
   },
 }));
 
@@ -66,6 +68,10 @@ describe('runStudentVisibilityGate apply guard', () => {
   beforeEach(() => {
     mocks.aggregate.mockResolvedValue([]);
     mocks.distinct.mockResolvedValue([]);
+    mocks.signalFind.mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    });
     mocks.roster.mockResolvedValue(new Map());
     mocks.bulkWrite.mockResolvedValue(undefined);
     mocks.queueBulkWrite.mockResolvedValue(undefined);

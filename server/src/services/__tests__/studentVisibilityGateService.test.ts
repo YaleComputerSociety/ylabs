@@ -20,11 +20,13 @@ import {
   isStudentVisibilityGatePlanMateriallyChanged,
   listVisibilityReleaseQueue,
   normalizeStudentVisibilityGateObjectId,
+  reachOutPlausibleSignalCreditsActionEvidence,
   researchEntityGateProjection,
   runStudentVisibilityGateForPlans,
   selectExactUrlDuplicateRiskEntityIds,
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
+import { computeResearchEntityStudentVisibility } from '../studentVisibilityTier';
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -581,5 +583,103 @@ describe('evaluateStudentVisibilityGateLeadResolution', () => {
     expect(result.resolvedLeadEntityCount).toBe(30);
     expect(result.zeroLeadEntityCount).toBe(1);
     expect(result.safe).toBe(true);
+  });
+});
+
+describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
+  const officialPageEntity = {
+    websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
+    sourceUrls: [],
+  };
+  const validReachOutSignal = {
+    type: 'REACH_OUT_PLAUSIBLE',
+    archived: false,
+    source: { url: '', evidenceIds: ['64f000000000000000000abc'], name: 'dept-faculty-roster' },
+  };
+
+  it('counts a validly-persisted REACH_OUT_PLAUSIBLE that has no http source.url', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: validReachOutSignal,
+        entity: officialPageEntity,
+      }),
+    ).toBe(true);
+  });
+
+  it('promotes a lead-attached, source-backed home whose only blocker is missing_action_evidence', () => {
+    const entity = {
+      entityType: 'LAB',
+      name: 'Doe Lab',
+      websiteUrl: 'https://chemistry.yale.edu/profile/ab123',
+      fullDescription:
+        'The Doe Lab studies catalytic reaction mechanisms with an official source-backed research description that is long enough to pass the source-backed description quality bar for this gate.',
+      shortDescription: 'Catalysis research in the Doe Lab at Yale.',
+      descriptionSource: 'official-scrape',
+    };
+    const leadMembers = [{ role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } }];
+
+    const blocked = computeResearchEntityStudentVisibility({ entity, leadMembers, accessSignalCount: 0 });
+    expect(blocked.reasons).toContain('missing_action_evidence');
+    expect(blocked.tier).not.toBe('student_ready');
+
+    const credited = reachOutPlausibleSignalCreditsActionEvidence({
+      signal: validReachOutSignal,
+      entity,
+    })
+      ? 1
+      : 0;
+    const promoted = computeResearchEntityStudentVisibility({
+      entity,
+      leadMembers,
+      accessSignalCount: credited,
+    });
+    expect(credited).toBe(1);
+    expect(promoted.reasons).not.toContain('missing_action_evidence');
+    expect(promoted.reasons).toContain('concrete_next_step');
+  });
+
+  it('keeps weaker or unbacked signals blocked (fail-safe)', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: { ...validReachOutSignal, type: 'NOT_CURRENTLY_AVAILABLE' },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: { ...validReachOutSignal, source: { url: '', evidenceIds: [], name: '' } },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: { ...validReachOutSignal, archived: true },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: validReachOutSignal,
+        entity: { websiteUrl: 'https://reporter.nih.gov/project-details/1', sourceUrls: [] },
+      }),
+    ).toBe(false);
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: validReachOutSignal,
+        entity: { websiteUrl: '', sourceUrls: [] },
+      }),
+    ).toBe(false);
+  });
+
+  it('does not double-count a REACH_OUT_PLAUSIBLE that already carries an http source.url', () => {
+    expect(
+      reachOutPlausibleSignalCreditsActionEvidence({
+        signal: {
+          ...validReachOutSignal,
+          source: { ...validReachOutSignal.source, url: 'https://chemistry.yale.edu/profile/ab123' },
+        },
+        entity: officialPageEntity,
+      }),
+    ).toBe(false);
   });
 });
