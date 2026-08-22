@@ -128,11 +128,11 @@ They should not create a research-paper section, display metrics, or replace the
 ## CTA Vocabulary
 
 Reaching out is constant and primary: always offer a way to contact the research home, never gating outreach.
-Because student-facing PI emails are redacted by design, the primary path is to open the official profile, or search the Yale Directory when no profile link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
+Because student-facing PI emails are redacted by design, the primary path is to open the official profile, then an available official page from the entity's own classified sources, and only search the Yale Directory as a last resort when no official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
 The contact prompt is never conditioned on access evidence, route, or computed confidence, and never gates outreach.
 Other CTA options surface alongside it when the supporting evidence exists:
 
-- Reach out (open official profile, search Yale Directory, or email when a non-redacted address exists)
+- Reach out (open official profile, open an official page from the entity's sources, search Yale Directory as a last resort, or email when a non-redacted address exists)
 - Apply
 - View official profile
 - View Google Scholar
@@ -149,7 +149,7 @@ Other CTA options surface alongside it when the supporting evidence exists:
 
 Exploratory planning should be specific and evidence-based.
 The site never blocks or discourages outreach; richer source-backed signals instead make each student's outreach more specific and targeted, which reduces low-quality mass outreach rather than encouraging it.
-yLabs should not imply it has verified an official outreach channel, but it should always make reaching out easy, primarily by opening the official profile or Yale Directory, alongside official applications, official profiles, public source routes, and saved planning.
+yLabs should not imply it has verified an official outreach channel, but it should always make reaching out easy, primarily by opening the official profile or another official source page, with the Yale Directory as a last resort, alongside official applications, official profiles, public source routes, and saved planning.
 
 Student-facing labels should use warmer language than internal model names:
 
