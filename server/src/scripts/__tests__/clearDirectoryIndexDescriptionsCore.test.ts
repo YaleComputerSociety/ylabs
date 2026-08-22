@@ -76,6 +76,21 @@ describe('planDirectoryIndexCleanup', () => {
     expect(plan.set.shortDescription).toBe('Studies asthma.');
   });
 
+  it('only re-derives the chrome field and preserves a genuine full description', () => {
+    const plan = planDirectoryIndexCleanup(
+      {
+        id: '1',
+        fullDescription: 'Studies chromatin dynamics and nuclear envelope assembly.',
+        shortDescription: AZ_BOILERPLATE,
+      },
+      { fullDescription: 'Studies airway inflammation in asthma.', shortDescription: 'Studies asthma.' },
+    );
+    expect(plan.descriptionAction).toBe('re-derived');
+    expect(plan.reDerivedDescription).toBe(true);
+    expect(plan.set).not.toHaveProperty('fullDescription');
+    expect(plan.set.shortDescription).toBe('Studies asthma.');
+  });
+
   it('clears the boilerplate when no re-derived description exists', () => {
     const plan = planDirectoryIndexCleanup(
       { id: '1', fullDescription: AZ_BOILERPLATE, shortDescription: AZ_BOILERPLATE },

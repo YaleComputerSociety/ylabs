@@ -46,6 +46,7 @@ import {
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  assessDirectoryIndexDescription,
   planDirectoryIndexCleanup,
   filterCleanupPlanByManualLocks,
   type DirectoryIndexCleanupAction,
@@ -243,8 +244,7 @@ export async function runClearDirectoryIndexDescriptions(options: {
       shortDescription: doc.shortDescription,
       researchAreas: doc.researchAreas,
     };
-    const hasChromeDescription =
-      planDirectoryIndexCleanup(entityInput, null).descriptionAction !== 'unchanged';
+    const hasChromeDescription = assessDirectoryIndexDescription(entityInput).hasChromeDescription;
 
     const reDerived = hasChromeDescription
       ? await reDeriveDescriptionFromOfficialSource(doc, fetchPage, log)
