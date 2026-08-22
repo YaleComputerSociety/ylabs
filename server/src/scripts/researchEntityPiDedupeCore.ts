@@ -469,9 +469,7 @@ function bestDescriptionCarry(
   return carry;
 }
 
-function entityPersonIdSets(
-  rows: ResearchEntityPiDedupeRow[],
-): Map<string, Set<string>> {
+function entityPersonIdSets(rows: ResearchEntityPiDedupeRow[]): Map<string, Set<string>> {
   const byEntity = new Map<string, Set<string>>();
   for (const row of rows) {
     for (const entity of row.entities) {
@@ -497,9 +495,7 @@ export function buildSharedPersonIdResearchEntityDedupePlan(
 ): ResearchEntityPiDedupeGroup[] {
   const sharedEntityIds = multiPersonEntityIds(rows);
   return rows.flatMap((row) => {
-    const entities = row.entities.filter(
-      (entity) => entity.id && !sharedEntityIds.has(entity.id),
-    );
+    const entities = row.entities.filter((entity) => entity.id && !sharedEntityIds.has(entity.id));
     if (entities.length <= 1) return [];
     const group = buildGroupFromCluster(row, entities);
     if (!group) return [];

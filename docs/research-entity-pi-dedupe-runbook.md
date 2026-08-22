@@ -30,6 +30,7 @@ Narrowing modes let an operator review one risk class at a time:
 - `--reviewed-profile-area-only` limits the plan to profile-area shells that have a concrete same-PI home.
 - `--funding-only` limits the plan to funding-only shells that merge into a stronger Yale-backed entity.
 - `--official-lab-url-only` groups entities that share an exact `https://medicine.yale.edu/lab/<slug>` URL, without requiring PI membership.
+- `--shared-person-id` keys on the canonical person id across any PI `RoleAssignment` state, including historical or unknown, and treats each person's entities as one cluster, so a professor minted as several differently-named entities merges regardless of name; it also carries the fullest description across the group and reports a same-name/different-person quarantine so distinct people who happen to share a lab name are surfaced and never merged.
 - `--slug=<slug>` restricts the plan to a single canonical or duplicate slug.
 
 Canonical selection is scored, not arbitrary: Yale-backed, described, and richer entities win over funding-only, empty, or shell rows.
