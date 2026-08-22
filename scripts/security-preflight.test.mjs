@@ -997,7 +997,7 @@ test('public favorite and save flows avoid raw Axios console errors', () => {
     '../client/src/hooks/useFavorites.ts',
     '../client/src/pages/home.tsx',
     '../client/src/pages/fellowships.tsx',
-    '../client/src/components/accounts/FavoritesManager.tsx',
+    '../client/src/components/accounts/ProgramWatch.tsx',
   ];
 
   for (const file of files) {
@@ -6431,10 +6431,6 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
   const googleOAuthCallbackDistSource = fs.existsSync(googleOAuthCallbackDistUrl)
     ? fs.readFileSync(googleOAuthCallbackDistUrl, 'utf8')
     : null;
-  const favoritesManagerSource = fs.readFileSync(
-    new URL('../client/src/components/accounts/FavoritesManager.tsx', import.meta.url),
-    'utf8',
-  );
   const acceptedInputsSource = fs.readFileSync(
     new URL('../server/src/acceptedInputs/fellowshipInputs.ts', import.meta.url),
     'utf8',
@@ -6524,7 +6520,6 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
   assert.match(googleSheetsSource, /safeSheetCell\(cell\)/);
   assert.match(googleSheetsSource, /stringValue:\s*safeSheetCell\(h\)/);
   assert.match(googleSheetsSource, /stringValue:\s*safeSheetCell\(cell\)/);
-  assert.match(favoritesManagerSource, /safeSpreadsheetCell\(cell\)/);
   assert.match(acceptedInputsSource, /safeSpreadsheetCell\(value\)/);
   assert.match(acceptedInputsCoreSource, /safeSpreadsheetCell\(value\)/);
   const researchPlanServiceSource = fs.readFileSync(
@@ -6579,10 +6574,6 @@ test('account tracking local storage hydration is bounded and normalized', () =>
     new URL('../client/src/reducers/accountTrackingReducer.ts', import.meta.url),
     'utf8',
   );
-  const favoritesManagerSource = fs.readFileSync(
-    new URL('../client/src/components/accounts/FavoritesManager.tsx', import.meta.url),
-    'utf8',
-  );
   const debounceStorageSource = fs.readFileSync(
     new URL('../client/src/hooks/useDebouncedLocalStorage.ts', import.meta.url),
     'utf8',
@@ -6621,23 +6612,6 @@ test('account tracking local storage hydration is bounded and normalized', () =>
   assert.match(source, /PRIVATE_TRACKING_STORAGE_KEYS\.has\(key\)/);
   assert.match(source, /serialized\.length > MAX_TRACKING_STORAGE_VALUE_LENGTH/);
   assert.match(source, /storage\.setItem\(fullKey, serialized\)/);
-  assert.match(favoritesManagerSource, /normalizeAccountTrackingStorageOwner\(user\?\.netId\)/);
-  assert.match(favoritesManagerSource, /hydratedTrackingOwner/);
-  assert.match(favoritesManagerSource, /setHydratedTrackingOwner\(trackingStorageOwner\)/);
-  assert.match(favoritesManagerSource, /hydratedTrackingOwner !== trackingStorageOwner/);
-  assert.match(
-    favoritesManagerSource,
-    /loadAccountTrackingFromStorage\(localStorage, trackingStorageOwner\)/,
-  );
-  assert.match(
-    favoritesManagerSource,
-    /persistAccountTrackingToStorage\([\s\S]*?'fellowship-stages'[\s\S]*?trackingStorageOwner[\s\S]*?\)/,
-  );
-  assert.match(
-    favoritesManagerSource,
-    /persistAccountTrackingToStorage\([\s\S]*?'fellowship-notes'[\s\S]*?trackingStorageOwner[\s\S]*?\)/,
-  );
-  assert.doesNotMatch(favoritesManagerSource, /localStorage\.setItem\('yale-research-fellowship/);
   assert.match(debounceStorageSource, /MAX_DEBOUNCED_STORAGE_KEY_LENGTH = 120/);
   assert.match(debounceStorageSource, /MAX_DEBOUNCED_STORAGE_VALUE_LENGTH = 100_000/);
   assert.match(debounceStorageSource, /safeKey\.length > MAX_DEBOUNCED_STORAGE_KEY_LENGTH/);
