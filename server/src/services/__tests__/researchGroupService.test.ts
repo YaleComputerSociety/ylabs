@@ -396,9 +396,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][1]).toHaveProperty('attributesToSearchOn');
     expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('attributesToSearchOn');
     expect(result.degraded).toBe(true);
-    expect(result.researchEntities).toEqual([
-      expect.objectContaining({ slug: 'actual-ai-lab' }),
-    ]);
+    expect(result.researchEntities).toEqual([expect.objectContaining({ slug: 'actual-ai-lab' })]);
   });
 
   it('strips professor noise while preserving faculty surname searches', async () => {
