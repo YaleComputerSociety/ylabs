@@ -60,6 +60,32 @@ export const formatShortFellowshipDate = (
   return date.toLocaleDateString('en-US', SHORT_DATE_OPTIONS);
 };
 
+const ROLLING_APPLICATION_RE =
+  /\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bas\s+applications?\s+are\s+received\b|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i;
+
+type FellowshipApplicationTextFields = Partial<
+  Pick<
+    Fellowship,
+    'title' | 'competitionType' | 'summary' | 'description' | 'applicationInformation' | 'additionalInformation'
+  >
+>;
+
+export const hasRollingApplicationWindow = (
+  fellowship: FellowshipApplicationTextFields,
+): boolean => {
+  const text = [
+    fellowship.title,
+    fellowship.competitionType,
+    fellowship.summary,
+    fellowship.description,
+    fellowship.applicationInformation,
+    fellowship.additionalInformation,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return ROLLING_APPLICATION_RE.test(text);
+};
+
 export const getFellowshipApplicationStatus = (
   fellowship: Pick<
     Fellowship,
@@ -72,15 +98,17 @@ export const getFellowshipApplicationStatus = (
     | 'purpose'
     | 'globalRegions'
     | 'citizenshipStatus'
-  >,
+  > &
+    FellowshipApplicationTextFields,
   now = new Date(),
 ): FellowshipApplicationStatus => {
   const openDate = parseDate(fellowship.applicationOpenDate);
   const deadline = parseDate(fellowship.deadline);
   const deadlinePassed = deadline ? deadline.getTime() < now.getTime() : false;
   const notOpenYet = openDate ? openDate.getTime() > now.getTime() : false;
+  const rollingApplications = hasRollingApplicationWindow(fellowship);
   const isApplicationWindowOpen =
-    fellowship.isAcceptingApplications && !deadlinePassed && !notOpenYet;
+    !deadlinePassed && !notOpenYet && (Boolean(deadline) || rollingApplications);
   const daysUntilDeadline = deadline
     ? Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     : null;
@@ -123,26 +151,33 @@ export const getFellowshipApplicationStatus = (
     };
   }
 
-  if (!fellowship.isAcceptingApplications) {
+  if (!deadline) {
+    if (rollingApplications) {
+      return {
+        ...base,
+        kind: 'open',
+        label: 'Accepting applications',
+        detail: 'Applications are accepted on a rolling basis',
+        isCurrentlyRelevant: true,
+        isApplicationWindowOpen,
+      };
+    }
+    if (fellowship.isAcceptingApplications) {
+      return {
+        ...base,
+        kind: 'unknown',
+        label: 'Timing not confirmed',
+        detail: 'Applications may be open, but no deadline is listed',
+        isCurrentlyRelevant: true,
+        isApplicationWindowOpen,
+      };
+    }
     return {
       ...base,
       kind: 'closed',
       label: 'Not accepting applications',
-      detail: deadline
-        ? `Next deadline listed as ${formatShortFellowshipDate(fellowship.deadline)}`
-        : 'Application timing has not been announced',
+      detail: 'Application timing has not been announced',
       isCurrentlyRelevant: false,
-      isApplicationWindowOpen,
-    };
-  }
-
-  if (!deadline) {
-    return {
-      ...base,
-      kind: 'unknown',
-      label: 'Timing not confirmed',
-      detail: 'Applications may be open, but no deadline is listed',
-      isCurrentlyRelevant: true,
       isApplicationWindowOpen,
     };
   }

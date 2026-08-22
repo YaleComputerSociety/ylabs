@@ -109,17 +109,17 @@ describe('fellowshipStatus', () => {
     expect(status.isApplicationWindowOpen).toBe(false);
   });
 
-  it('flags accepting opportunities with unknown deadlines for admin review', () => {
+  it('flags accepting opportunities with unknown deadlines for admin review without opening a window', () => {
     const status = getFellowshipApplicationStatus(makeFellowship({ deadline: null }), NOW);
 
     expect(status.kind).toBe('unknown');
     expect(status.label).toBe('Timing not confirmed');
     expect(status.needsDateReview).toBe(true);
     expect(status.isCurrentlyRelevant).toBe(true);
-    expect(status.isApplicationWindowOpen).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(false);
   });
 
-  it('keeps not-accepting opportunities without future open dates closed', () => {
+  it('surfaces a future-deadline window even when the stored accepting flag is false', () => {
     const status = getFellowshipApplicationStatus(
       makeFellowship({
         isAcceptingApplications: false,
@@ -129,9 +129,40 @@ describe('fellowshipStatus', () => {
       NOW,
     );
 
-    expect(status.kind).toBe('closed');
-    expect(status.label).toBe('Not accepting applications');
-    expect(status.isCurrentlyRelevant).toBe(false);
+    expect(status.kind).toBe('closingSoon');
+    expect(status.isCurrentlyRelevant).toBe(true);
+    expect(status.isApplicationWindowOpen).toBe(true);
+  });
+
+  it('treats a rolling application program with no deadline as open', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({
+        isAcceptingApplications: false,
+        deadline: null,
+        applicationInformation: 'We review applications as we receive them on a rolling basis.',
+      }),
+      NOW,
+    );
+
+    expect(status.kind).toBe('open');
+    expect(status.label).toBe('Accepting applications');
+    expect(status.isApplicationWindowOpen).toBe(true);
+  });
+
+  it('keeps closed opportunities without a window closed regardless of the stored flag', () => {
+    const status = getFellowshipApplicationStatus(
+      makeFellowship({
+        isAcceptingApplications: true,
+        applicationOpenDate: null,
+        deadline: null,
+        applicationInformation: '',
+        summary: '',
+        description: '',
+      }),
+      NOW,
+    );
+
+    expect(status.kind).toBe('unknown');
     expect(status.isApplicationWindowOpen).toBe(false);
   });
 
