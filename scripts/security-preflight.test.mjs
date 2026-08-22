@@ -4504,7 +4504,7 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
   assert.match(source, /console\.error\(`\$\{label\} failed:`, sanitizeLogValue\(error\)\)/);
   assert.match(
     source,
-    /type FavoriteObjectIdArrayField =[\s\S]*'favListings'[\s\S]*'favFellowships'[\s\S]*'favPathways'[\s\S]*'savedResearchEntities'/,
+    /type FavoriteObjectIdArrayField =[\s\S]*'favListings'[\s\S]*'favFellowships'[\s\S]*'favPathways'/,
   );
   assert.match(source, /const addFavoriteObjectIdIfMissing = async \(/);
   assert.match(
@@ -4718,7 +4718,7 @@ test('favorite analytics do not persist hidden ids from mutation requests', () =
 
 test('saved research-plan exports redact system-derived direct contact details', () => {
   const source = fs.readFileSync(
-    new URL('../server/src/services/userService.ts', import.meta.url),
+    new URL('../server/src/services/researchPlanService.ts', import.meta.url),
     'utf8',
   );
 
@@ -4730,14 +4730,10 @@ test('saved research-plan exports redact system-derived direct contact details',
   assert.match(source, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
   assert.match(
     source,
-    /const exportChecklistForSpreadsheet = \(\s*checklist: Record<string, boolean>,?\s*\): Record<string, boolean> =>/,
+    /name:\s*exportTextWithoutDirectContact\(entity\.displayName \|\| entity\.name\)/,
   );
-  assert.match(source, /name:\s*exportTextWithoutDirectContact\(/);
-  assert.match(
-    source,
-    /checklist:\s*exportChecklistForSpreadsheet\(plan\.checklist as Record<string, boolean>\)/,
-  );
-  assert.match(source, /privateNote: exportUserTextForSpreadsheet\(plan\.note\)/);
+  assert.match(source, /label:\s*exportUserTextForSpreadsheet\(item\.label\)/);
+  assert.match(source, /privateNote: exportUserTextForSpreadsheet\(view\.privateNotes\)/);
   assert.doesNotMatch(source, /title:\s*pathway\.studentFacingLabel/);
   assert.doesNotMatch(
     source,
@@ -6556,19 +6552,19 @@ test('spreadsheet exports neutralize formula-like cell values', () => {
   assert.match(favoritesManagerSource, /safeSpreadsheetCell\(cell\)/);
   assert.match(acceptedInputsSource, /safeSpreadsheetCell\(value\)/);
   assert.match(acceptedInputsCoreSource, /safeSpreadsheetCell\(value\)/);
-  const userServiceSource = fs.readFileSync(
-    new URL('../server/src/services/userService.ts', import.meta.url),
+  const researchPlanServiceSource = fs.readFileSync(
+    new URL('../server/src/services/researchPlanService.ts', import.meta.url),
     'utf8',
   );
   assert.match(
-    userServiceSource,
+    researchPlanServiceSource,
     /import \{ safeSpreadsheetCell \} from '\.\.\/utils\/spreadsheetSafety'/,
   );
   assert.match(
-    userServiceSource,
+    researchPlanServiceSource,
     /safeSpreadsheetCell\(redactDirectContactInfo\(String\(value \|\| ''\)\)\)/,
   );
-  assert.match(userServiceSource, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
+  assert.match(researchPlanServiceSource, /safeSpreadsheetCell\(String\(value \|\| ''\)\)/);
 });
 
 test('user account routes set full private no-store response headers', () => {
