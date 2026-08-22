@@ -306,6 +306,113 @@ describe('selectBackfillWebsiteUrl', () => {
   });
 });
 
+describe('prefers a real lab site over a directory/profile stub (#537)', () => {
+  it('re-picks a Google Sites lab site over a faculty-directory stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl:
+          'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+        sourceUrls: [
+          'https://www.nsf.gov/awardsearch/showAward?AWD_ID=1',
+          'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
+          'https://sites.google.com/view/example-lab',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://sites.google.com/view/example-lab/' });
+  });
+
+  it('re-picks a Google Sites lab site over a /profile/ stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://math.example.edu/profile/jordan-example/',
+        sourceUrls: [
+          'https://math.example.edu/profile/jordan-example/',
+          'https://sites.google.com/view/jordan-example',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://sites.google.com/view/jordan-example/' });
+  });
+
+  it('re-picks a domain-scoped Google Sites lab site over a /people/ stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: [
+          'https://economics.example.edu/people/jordan-example',
+          'https://sites.google.com/yale.edu/jordan-example/home',
+        ],
+      }),
+    ).toEqual({
+      action: 'set',
+      websiteUrl: 'https://sites.google.com/yale.edu/jordan-example/home/',
+    });
+  });
+
+  it('re-picks a custom Yale lab subdomain over a /people/ stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://quantuminstitute.example.edu/people/jordan-example',
+        sourceUrls: [
+          'https://quantuminstitute.example.edu/people/jordan-example',
+          'https://example-lab.yale.edu/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-lab.yale.edu/' });
+  });
+
+  it('re-picks a github.io lab site over a /people/ stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://quantuminstitute.example.edu/people/jordan-example',
+        sourceUrls: [
+          'https://quantuminstitute.example.edu/people/jordan-example',
+          'https://jordan-example.github.io/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://jordan-example.github.io/' });
+  });
+
+  it('re-picks a campuspress lab site over a faculty-directory stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://engineering.example.edu/directory/faculty/jordan-example/',
+        sourceUrls: ['https://campuspress.yale.edu/example-lab/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://campuspress.yale.edu/example-lab/' });
+  });
+
+  it('re-picks an external personal lab domain over a /profile/ stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://som.example.edu/profile/jordan-example/',
+        sourceUrls: ['https://example-computing-lab.example.org/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
+  });
+
+  it('re-picks a specific lab path over a /faculty/ stub', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.example.edu/faculty/jordan-example/',
+        sourceUrls: ['https://medicine.example.edu/lab/example/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://medicine.example.edu/lab/example/' });
+  });
+
+  it('keeps a lone directory/profile stub when no better lab site exists', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://math.example.edu/profile/jordan-example/',
+        sourceUrls: [
+          'https://math.example.edu/profile/jordan-example/',
+          'https://reporter.nih.gov/project-details/1',
+          'https://sites.google.com/',
+        ],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+});
+
 describe('parseResearchEntityWebsiteUrlBackfillArgs', () => {
   it('defaults to dry-run with no explicit limit', () => {
     const options = parseResearchEntityWebsiteUrlBackfillArgs([]);

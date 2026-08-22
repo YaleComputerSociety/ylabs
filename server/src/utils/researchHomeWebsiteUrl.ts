@@ -136,6 +136,17 @@ export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
   return Boolean(prefix && !prefix.includes('.') && !genericYaleWebsiteSubdomains.has(prefix));
 }
 
+const GOOGLE_SITES_NAMED_PATH = /^\/(?:view|site)\/[^/]+/i;
+
+const GOOGLE_SITES_DOMAIN_SCOPED_PATH = /^\/[a-z0-9-]+(?:\.[a-z0-9-]+)+\/[^/]+/i;
+
+export function isGoogleSitesResearchHome(url: URL): boolean {
+  if (url.hostname !== 'sites.google.com') return false;
+  return (
+    GOOGLE_SITES_NAMED_PATH.test(url.pathname) || GOOGLE_SITES_DOMAIN_SCOPED_PATH.test(url.pathname)
+  );
+}
+
 export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
   const raw = textValue(value);
   if (!raw) return '';
@@ -148,7 +159,8 @@ export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
     if (!/^https?:$/i.test(url.protocol)) return '';
     if (/\.(?:pdf|docx?|pptx?|xlsx?)$/i.test(url.pathname)) return '';
     if (/\/profile\//i.test(url.pathname)) return '';
-    if (['epilepsy.yale.edu', 'sites.google.com'].includes(url.hostname)) return '';
+    if (url.hostname === 'epilepsy.yale.edu') return '';
+    if (url.hostname === 'sites.google.com' && !isGoogleSitesResearchHome(url)) return '';
     if (['alexandercoppock.com', 'www.alexandercoppock.com'].includes(url.hostname)) return '';
     if (
       url.hostname === 'www.yale.edu' &&
