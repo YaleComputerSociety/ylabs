@@ -129,9 +129,7 @@ export function isListingOrIndexUrl(value: unknown): boolean {
 
 export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
   return (
-    isSelfReferentialUrl(value) ||
-    isListingOrIndexUrl(value) ||
-    isBoilerplatePlatformHostUrl(value)
+    isSelfReferentialUrl(value) || isListingOrIndexUrl(value) || isBoilerplatePlatformHostUrl(value)
   );
 }
 

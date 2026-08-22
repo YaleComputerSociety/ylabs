@@ -159,9 +159,7 @@ describe('yaleResearchOfficialScraper', () => {
       'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
     );
 
-    expect(entities.map((entity) => entity.url)).toEqual([
-      'https://research.yale.edu/cores/acem',
-    ]);
+    expect(entities.map((entity) => entity.url)).toEqual(['https://research.yale.edu/cores/acem']);
     expect(entities.map((entity) => entity.name)).not.toEqual(
       expect.arrayContaining(['Cores Pages FAQ', 'Shared Resource']),
     );
@@ -193,7 +191,11 @@ describe('yaleResearchOfficialScraper', () => {
       }),
     ).toBe(false);
     expect(
-      isMintableResearchYaleEntity({ ...realCore, name: 'FAQ', url: 'https://research.yale.edu/faq' }),
+      isMintableResearchYaleEntity({
+        ...realCore,
+        name: 'FAQ',
+        url: 'https://research.yale.edu/faq',
+      }),
     ).toBe(false);
   });
 

@@ -82,9 +82,7 @@ describe('LabHeader', () => {
 
   it('still renders a named per-person platform subdomain as the website CTA (#556)', () => {
     const { container } = render(
-      <LabHeader
-        group={{ ...baseGroup, websiteUrl: 'https://rjohnwilliams.wordpress.com/' }}
-      />,
+      <LabHeader group={{ ...baseGroup, websiteUrl: 'https://rjohnwilliams.wordpress.com/' }} />,
     );
     const websiteLink = container.querySelector('a[href*="rjohnwilliams.wordpress.com"]');
     expect(websiteLink).not.toBeNull();
@@ -93,7 +91,9 @@ describe('LabHeader', () => {
 
   it('never renders a section-index root as the website CTA (#569)', () => {
     const { container } = render(
-      <LabHeader group={{ ...baseGroup, websiteUrl: 'https://environment.yale.edu/research/centers' }} />,
+      <LabHeader
+        group={{ ...baseGroup, websiteUrl: 'https://environment.yale.edu/research/centers' }}
+      />,
     );
     expect(container.querySelector('a[href*="research/centers"]')).toBeNull();
     expect(container.textContent).not.toContain('Visit lab website');

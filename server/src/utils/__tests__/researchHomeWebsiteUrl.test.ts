@@ -108,9 +108,7 @@ describe('isDisallowedResearchEntitySourceUrl', () => {
   });
 
   it('keeps a named per-person WordPress site as an allowed source (#556)', () => {
-    expect(
-      isDisallowedResearchEntitySourceUrl('https://rjohnwilliams.wordpress.com/'),
-    ).toBe(false);
+    expect(isDisallowedResearchEntitySourceUrl('https://rjohnwilliams.wordpress.com/')).toBe(false);
   });
 });
 
@@ -120,11 +118,15 @@ describe('isFacetedOrSectionIndexUrl', () => {
       isFacetedOrSectionIndexUrl('https://research.example.edu/cores?f%5B0%5D=result_type%3A1'),
     ).toBe(true);
     expect(isFacetedOrSectionIndexUrl('https://research.example.edu/cores')).toBe(true);
-    expect(isFacetedOrSectionIndexUrl('https://research.example.edu/centers-institutes')).toBe(true);
+    expect(isFacetedOrSectionIndexUrl('https://research.example.edu/centers-institutes')).toBe(
+      true,
+    );
     expect(isFacetedOrSectionIndexUrl('https://environment.example.edu/research/centers')).toBe(
       true,
     );
-    expect(isFacetedOrSectionIndexUrl('https://jackson.example.edu/centers-initiatives')).toBe(true);
+    expect(isFacetedOrSectionIndexUrl('https://jackson.example.edu/centers-initiatives')).toBe(
+      true,
+    );
   });
 
   it('does not flag specific center/core child pages', () => {
@@ -132,7 +134,9 @@ describe('isFacetedOrSectionIndexUrl', () => {
       false,
     );
     expect(
-      isFacetedOrSectionIndexUrl('https://jackson.example.edu/centers-initiatives/kerry-initiative'),
+      isFacetedOrSectionIndexUrl(
+        'https://jackson.example.edu/centers-initiatives/kerry-initiative',
+      ),
     ).toBe(false);
     expect(isFacetedOrSectionIndexUrl('https://example-lab.example.org/')).toBe(false);
     expect(isFacetedOrSectionIndexUrl(undefined)).toBe(false);
@@ -342,17 +346,19 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
 
   it('rejects faceted and multi-host section-index-root source URLs (#569)', () => {
     expect(
-      sourceUrlToResearchHomeWebsiteUrl('https://research.example.edu/cores?f%5B0%5D=result_type%3A1'),
+      sourceUrlToResearchHomeWebsiteUrl(
+        'https://research.example.edu/cores?f%5B0%5D=result_type%3A1',
+      ),
     ).toBe('');
-    expect(sourceUrlToResearchHomeWebsiteUrl('https://research.example.edu/centers-institutes')).toBe(
-      '',
-    );
-    expect(sourceUrlToResearchHomeWebsiteUrl('https://environment.example.edu/research/centers')).toBe(
-      '',
-    );
-    expect(sourceUrlToResearchHomeWebsiteUrl('https://jackson.example.edu/centers-initiatives')).toBe(
-      '',
-    );
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://research.example.edu/centers-institutes'),
+    ).toBe('');
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://environment.example.edu/research/centers'),
+    ).toBe('');
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://jackson.example.edu/centers-initiatives'),
+    ).toBe('');
   });
 
   it('rejects generic CMS/platform boilerplate hosts (#572)', () => {
