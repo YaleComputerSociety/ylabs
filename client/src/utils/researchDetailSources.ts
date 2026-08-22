@@ -20,17 +20,37 @@ interface DetailSourceUndergraduateLogistics {
   }>;
 }
 
+export interface DetailSourceLinkHealth {
+  url?: string;
+  healthStatus?: string;
+  httpStatusCode?: number;
+}
+
 export interface BuildResearchDetailSourcesInput {
   group?: DetailSourceGroup | null;
   accessSignals?: DetailSourceSignal[];
   undergraduateLogistics?: DetailSourceUndergraduateLogistics;
+  sourceLinkHealth?: DetailSourceLinkHealth[];
 }
 
 export interface ResearchDetailSource {
   url: string;
   label: string;
   contexts: string[];
+  healthStatus?: string;
+  httpStatusCode?: number;
+  isLikelyUnavailable: boolean;
 }
+
+export const isLikelyUnavailableSourceLink = (
+  health: { healthStatus?: string; httpStatusCode?: number } | undefined,
+): boolean => {
+  if (!health) return false;
+  return (
+    health.healthStatus === 'UNAVAILABLE' ||
+    (typeof health.httpStatusCode === 'number' && health.httpStatusCode >= 400)
+  );
+};
 
 export const normalizeSourceUrl = (url?: string | null): string | null => {
   const safe = safeHttpUrl(url);
@@ -172,8 +192,19 @@ export const buildResearchDetailSources = ({
   group,
   accessSignals = [],
   undergraduateLogistics,
+  sourceLinkHealth = [],
 }: BuildResearchDetailSourcesInput): ResearchDetailSource[] => {
   const sources = new Map<string, ResearchDetailSource>();
+  const healthByKey = new Map<string, { healthStatus?: string; httpStatusCode?: number }>();
+
+  sourceLinkHealth.forEach((entry) => {
+    const key = sourceLedgerKey(entry.url);
+    if (!key) return;
+    healthByKey.set(key, {
+      healthStatus: entry.healthStatus,
+      httpStatusCode: entry.httpStatusCode,
+    });
+  });
 
   const addSource = (url: string | undefined, context: string) => {
     const normalized = normalizeSourceUrl(url);
@@ -193,10 +224,16 @@ export const buildResearchDetailSources = ({
       return;
     }
 
+    const health = healthByKey.get(key);
     sources.set(key, {
       url: normalized,
       label: context === 'Profile website' ? 'Research website' : sourceLabelForUrl(normalized),
       contexts: [context],
+      ...(health?.healthStatus ? { healthStatus: health.healthStatus } : {}),
+      ...(typeof health?.httpStatusCode === 'number'
+        ? { httpStatusCode: health.httpStatusCode }
+        : {}),
+      isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
     });
   };
 
@@ -215,5 +252,7 @@ export const buildResearchDetailSources = ({
     );
   });
 
-  return Array.from(sources.values());
+  return Array.from(sources.values()).sort(
+    (left, right) => Number(left.isLikelyUnavailable) - Number(right.isLikelyUnavailable),
+  );
 };

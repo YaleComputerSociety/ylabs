@@ -92,6 +92,7 @@
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
     "research-homes:backfill-center-directors": "tsx src/scripts/backfillCenterDirectors.ts",
+    "research-homes:backfill-source-link-health": "tsx src/scripts/backfillSourceLinkHealth.ts",
     "profiles:backfill-bios-from-official-urls": "tsx src/scripts/backfillProfileBiosFromOfficialUrls.ts",
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",

@@ -2020,6 +2020,29 @@ const publicAccessSignalForResearchDetail = (signal: any) => ({
   observedAt: signal.observedAt,
 });
 
+const publicSourceLinkHealth = (value: unknown): Array<{
+  url: string;
+  healthStatus: string;
+  httpStatusCode?: number;
+}> => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const url = publicHttpUrl((entry as { url?: unknown })?.url);
+    const healthStatus = (entry as { healthStatus?: unknown })?.healthStatus;
+    if (!url || typeof healthStatus !== 'string') return [];
+    const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
+    return [
+      {
+        url,
+        healthStatus,
+        ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
+          ? { httpStatusCode }
+          : {}),
+      },
+    ];
+  });
+};
+
 const publicResearchDetailGroup = (group: any) => {
   const {
     contactEmail: _contactEmail,
@@ -2029,9 +2052,13 @@ const publicResearchDetailGroup = (group: any) => {
     email: _email,
     phone: _phone,
     rosterEnrichment: _rosterEnrichment,
+    sourceLinkHealth: rawSourceLinkHealth,
     ...publicGroup
   } = group || {};
-  return publicGroup;
+  return {
+    ...publicGroup,
+    sourceLinkHealth: publicSourceLinkHealth(rawSourceLinkHealth),
+  };
 };
 
 export const MAX_RESEARCH_DETAIL_SLUG_LENGTH = 160;
