@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getResearchGroupDetail: vi.fn(),
   hasAdminAuthorityForUser: vi.fn(),
   searchResearchGroupsViaMeili: vi.fn(),
+  resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -14,6 +15,7 @@ vi.mock('../../services/researchGroupService', () => ({
     return /^[a-z0-9][a-z0-9_-]{0,159}$/i.test(trimmed) ? trimmed : undefined;
   },
   searchResearchGroupsViaMeili: mocks.searchResearchGroupsViaMeili,
+  resolveArchivedResearchEntityCanonicalSlug: mocks.resolveArchivedResearchEntityCanonicalSlug,
 }));
 
 vi.mock('../../services/adminGrantService', () => ({
@@ -26,6 +28,7 @@ describe('researchGroupController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
+    mocks.resolveArchivedResearchEntityCanonicalSlug.mockResolvedValue(null);
   });
 
   it('does not leak internal service errors from public research detail failures', async () => {
