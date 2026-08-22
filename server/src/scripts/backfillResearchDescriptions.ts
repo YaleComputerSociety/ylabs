@@ -1128,6 +1128,9 @@ export async function runCardSynthesisBackfill(options: {
 
 async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
   const apply = !options.dryRun;
+  if (apply && !options.explicitLimit) {
+    throw new Error('Card-synthesis apply requires an explicit --limit to bound generation.');
+  }
   if (apply && !options.confirmCardSynthesis) {
     throw new Error('Card-synthesis apply requires --confirm-card-synthesis.');
   }

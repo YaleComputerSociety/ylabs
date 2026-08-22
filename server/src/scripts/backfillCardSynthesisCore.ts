@@ -2,6 +2,7 @@ import {
   deriveShortDescriptionFromFullDescription,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
+import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 
 export const CARD_BLOCKER_REASON = 'missing_card_description';
@@ -60,29 +61,20 @@ export async function planCardBackfillRow(
     };
   }
 
-  const derived = deriveShortDescriptionFromFullDescription(full);
-  if (derived && shortDescriptionQuality(derived, full).isUseful) {
-    return {
-      ...base,
-      action: 'card-derived',
-      proposedShort: derived,
-      gainedCard: true,
-      wouldPromote: onlyCardBlocker(entity.visibilityReasons),
-    };
+  const card = await resolveGroundedCardDescription({ fullDescription: full, synthesize });
+  if (!card || !shortDescriptionQuality(card, full).isUseful) {
+    return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
 
-  const synthesized = await synthesize(full);
-  if (synthesized && shortDescriptionQuality(synthesized, full).isUseful) {
-    return {
-      ...base,
-      action: 'card-synthesized',
-      proposedShort: synthesized,
-      gainedCard: true,
-      wouldPromote: onlyCardBlocker(entity.visibilityReasons),
-    };
-  }
-
-  return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
+  const action: CardBackfillAction =
+    card === deriveShortDescriptionFromFullDescription(full) ? 'card-derived' : 'card-synthesized';
+  return {
+    ...base,
+    action,
+    proposedShort: card,
+    gainedCard: true,
+    wouldPromote: onlyCardBlocker(entity.visibilityReasons),
+  };
 }
 
 export interface CardBackfillSummary {
