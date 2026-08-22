@@ -496,7 +496,6 @@ export function centerToGroupObservations(
     { ...base, field: 'kind', value: config.kind },
     { ...base, field: 'websiteUrl', value: config.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl] },
-    { ...base, field: 'openness', value: 'open' },
   ];
   if (config.schoolName) {
     obs.push({ ...base, field: 'school', value: config.schoolName });
@@ -631,7 +630,6 @@ export function childCenterToObservations(
     { ...base, field: 'kind', value: child.kind },
     { ...base, field: 'websiteUrl', value: child.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, child.url] },
-    { ...base, field: 'openness', value: 'open' },
   ];
   if (parentConfig.schoolName) {
     obs.push({ ...base, field: 'school', value: parentConfig.schoolName });

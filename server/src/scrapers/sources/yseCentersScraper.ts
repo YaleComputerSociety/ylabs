@@ -152,7 +152,6 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
     { ...base, field: 'school', value: 'Yale School of the Environment' },
     { ...base, field: 'websiteUrl', value: entity.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, entity.url] },
-    { ...base, field: 'openness', value: 'open' },
   ];
 }
 

@@ -212,8 +212,8 @@ describe('entityToObservations', () => {
       'school',
       'websiteUrl',
       'sourceUrls',
-      'openness',
     ]);
+    expect(obs.find((o) => o.field === 'openness')).toBeUndefined();
     expect(obs.every((o) => o.entityKey === 'yse-industrial-ecology')).toBe(true);
     expect(obs.every((o) => o.entityType === 'researchEntity')).toBe(true);
     const schoolObs = obs.find((o) => o.field === 'school');

@@ -478,7 +478,6 @@ export function labToObservations(lab: RawLab, sourceUrl: string): ObservationIn
     { ...base, field: 'school', value: 'Yale School of Medicine' },
     { ...base, field: 'websiteUrl', value: lab.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, lab.url] },
-    { ...base, field: 'openness', value: 'open' },
   ];
 }
 

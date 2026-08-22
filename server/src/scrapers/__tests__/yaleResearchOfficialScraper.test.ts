@@ -166,6 +166,27 @@ describe('yaleResearchOfficialScraper', () => {
     );
   });
 
+  it('emits fullDescription without a duplicate shortDescription copy', () => {
+    const observations = entityToObservations(
+      {
+        name: 'Yale Institute for Foundations of Data Science',
+        url: 'https://fds.yale.edu/',
+        slug: 'research-yale-yale-institute-for-foundations-of-data-science',
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+        description: 'The institute integrates faculty from across campus to apply data science.',
+        sourceCategory: 'centers-institutes',
+      },
+      'https://research.yale.edu/centers-institutes',
+    );
+
+    const fullDescription = observations.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toBe(
+      'The institute integrates faculty from across campus to apply data science.',
+    );
+    expect(observations.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
   it('classifies and slugifies official Yale research entities', () => {
     expect(inferResearchYaleKind('Microbial Sciences Institute')).toMatchObject({
       kind: 'institute',

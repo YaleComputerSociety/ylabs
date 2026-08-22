@@ -201,10 +201,7 @@ export function entityToObservations(
   ];
 
   if (entity.description) {
-    observations.push(
-      { ...base, field: 'fullDescription', value: entity.description },
-      { ...base, field: 'shortDescription', value: entity.description },
-    );
+    observations.push({ ...base, field: 'fullDescription', value: entity.description });
   }
   if (entity.researchAreas && entity.researchAreas.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: entity.researchAreas });

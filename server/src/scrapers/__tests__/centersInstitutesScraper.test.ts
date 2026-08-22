@@ -380,10 +380,10 @@ describe('centerToGroupObservations', () => {
         'kind',
         'websiteUrl',
         'sourceUrls',
-        'openness',
         'departments',
       ]),
     );
+    expect(observations.find((o) => o.field === 'openness')).toBeUndefined();
     expect(observations.find((o) => o.field === 'kind')!.value).toBe('institute');
     // affiliatedNames is a dead field — never emitted (member rows carry roster identity).
     expect(observations.find((o) => o.field === 'affiliatedNames')).toBeUndefined();
@@ -526,6 +526,7 @@ describe('childCenterToObservations', () => {
     );
     expect(obs[0].entityKey).toBe('center-jackson-centers-schmidt-program-on-ai');
     expect(obs.find((o) => o.field === 'kind')!.value).toBe('program');
+    expect(obs.find((o) => o.field === 'openness')).toBeUndefined();
   });
 });
 
