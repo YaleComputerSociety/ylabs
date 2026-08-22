@@ -422,7 +422,7 @@ All mount under `/api`.
 | `/listings`       | Legacy authenticated reads, outreach, claims, and view tracking; authoring is retired    | Authenticated                                          |
 | `/fellowships`    | Compatibility alias around program/fellowship storage during migration                    | Varies                                                 |
 | `/users`          | User CRUD                                                                                 | Yes                                                    |
-| `/profiles`       | Faculty profiles                                                                          | Varies                                                 |
+| `/profiles`       | Public faculty profile reads (admin curation lives under `/admin/profiles/:netid`)        | Authenticated                                          |
 | `/analytics`      | Analytics dashboard + research event writes                                               | Admin for dashboard, authenticated for research writes |
 | `/config`         | Departments + research areas                                                              | No                                                     |
 | `/research-areas` | Research area CRUD                                                                        | Admin for writes                                       |
