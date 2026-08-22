@@ -42,6 +42,45 @@ describe('undergraduateLogisticsService public projection', () => {
     expect(JSON.stringify(result)).not.toContain('private-observation-id');
   });
 
+  it('withholds a claim whose only evidence is our own site or an index page', () => {
+    const result = toPublicUndergraduateLogistics(
+      [
+        {
+          type: 'COMPENSATION',
+          status: 'KNOWN',
+          value: { modes: ['STIPEND'] },
+          source: {
+            url: 'https://yalelabs.io/api/research',
+            excerpt: 'The program provides a stipend.',
+          },
+          observedAt: '2026-07-01T00:00:00.000Z',
+          expiresAt: '2027-07-01T00:00:00.000Z',
+        } as any,
+        {
+          type: 'CURRENT_AVAILABILITY',
+          status: 'KNOWN',
+          value: { status: 'OPEN' },
+          source: {
+            url: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/',
+            excerpt: 'Applications are currently open.',
+          },
+          observedAt: '2026-07-01T00:00:00.000Z',
+          expiresAt: '2027-07-01T00:00:00.000Z',
+        } as any,
+      ],
+      NOW,
+    );
+
+    expect(result.claims.find((claim) => claim.claimType === 'COMPENSATION')).toEqual({
+      claimType: 'COMPENSATION',
+      state: 'unknown',
+    });
+    expect(result.claims.find((claim) => claim.claimType === 'CURRENT_AVAILABILITY')).toEqual({
+      claimType: 'CURRENT_AVAILABILITY',
+      state: 'unknown',
+    });
+  });
+
   it('turns expired known claims into a withheld stale state at read time', () => {
     const result = toPublicUndergraduateLogistics(
       [

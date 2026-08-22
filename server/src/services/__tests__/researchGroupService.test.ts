@@ -1274,6 +1274,56 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.researchEntity).not.toHaveProperty('rosterEnrichment');
   });
 
+  it('filters our own site and index-page URLs out of the public detail sources', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'qin-yan',
+        name: 'Qin Yan Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        websiteUrl: 'https://medicine.yale.edu/lab/yan/',
+        sourceUrls: [
+          'https://medicine.yale.edu/about/a-to-z-index/lab-websites/',
+          'https://medicine.yale.edu/lab/yan/',
+          'https://yalelabs.io/api/research',
+          'https://medicine.yale.edu/profile/qin-yan/',
+        ],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.accessSignalFind.mockReturnValue(
+      sortLeanResult([
+        {
+          _id: '67d8928150621bcef434a1da',
+          researchEntityId: entityId,
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.6,
+          source: {
+            name: 'YSM A-to-Z',
+            url: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+            excerpt: 'Reach out to the lab.',
+          },
+          observedAt: new Date('2026-01-02T00:00:00.000Z'),
+          archived: false,
+          review: { status: 'unreviewed' },
+        },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('qin-yan');
+
+    expect(detail?.researchEntity.sourceUrls).toEqual([
+      'https://medicine.yale.edu/lab/yan/',
+      'https://medicine.yale.edu/profile/qin-yan/',
+    ]);
+    expect(detail?.accessSignals[0].signalType).toBe('REACH_OUT_PLAUSIBLE');
+    expect(detail?.accessSignals[0].sourceUrl).toBeUndefined();
+  });
+
   it('allowlists public member user fields in public detail payloads', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     const entityObjectId = new mongoose.Types.ObjectId(entityId);

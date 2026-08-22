@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isDisallowedResearchEntitySourceUrl,
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
@@ -24,6 +25,32 @@ describe('isProfileOrPeopleDirectoryPath', () => {
     expect(isProfileOrPeopleDirectoryPath('/research/')).toBe(false);
     expect(isProfileOrPeopleDirectoryPath('/genomics/')).toBe(false);
     expect(isProfileOrPeopleDirectoryPath('/labs/molecular-biology/')).toBe(false);
+  });
+});
+
+describe('isDisallowedResearchEntitySourceUrl', () => {
+  it('rejects our own site and A-Z/lab-website index pages as sources', () => {
+    expect(isDisallowedResearchEntitySourceUrl('https://yalelabs.io/api/research')).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://www.yalelabs.io/research/qin-yan')).toBe(
+      true,
+    );
+    expect(
+      isDisallowedResearchEntitySourceUrl(
+        'https://medicine.yale.edu/about/a-to-z-index/lab-websites/',
+      ),
+    ).toBe(true);
+    expect(
+      isDisallowedResearchEntitySourceUrl(
+        'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a real per-lab research home as an allowed source', () => {
+    expect(isDisallowedResearchEntitySourceUrl('https://medicine.yale.edu/lab/yan/')).toBe(false);
+    expect(isDisallowedResearchEntitySourceUrl('https://medicine.yale.edu/profile/qin-yan/')).toBe(
+      false,
+    );
   });
 });
 
@@ -63,9 +90,9 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://centers.example.edu/genomics/')).toBe(false);
     expect(isListingOrIndexUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
     expect(isListingOrIndexUrl('https://economics.example.edu/people/jordan-example')).toBe(false);
-    expect(isListingOrIndexUrl('https://english.example.edu/people/professors-emeritus/j-doe')).toBe(
-      false,
-    );
+    expect(
+      isListingOrIndexUrl('https://english.example.edu/people/professors-emeritus/j-doe'),
+    ).toBe(false);
     expect(isListingOrIndexUrl('mailto:someone@example.org')).toBe(false);
     expect(isListingOrIndexUrl(undefined)).toBe(false);
   });
