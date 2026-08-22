@@ -48,6 +48,7 @@ const SYNTHETIC_YALE_TOKENS = new Set([
   'catalyst',
   'collab',
   'contact',
+  'coordinator',
   'curie',
   'dana',
   'deb',
