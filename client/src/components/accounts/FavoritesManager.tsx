@@ -1,8 +1,8 @@
 /**
  * Account dashboard section for saved programs.
  *
- * Legacy listing favorites are no longer a student/faculty-facing surface.
- * Program favorites keep their tracking, export, and detail modal behavior.
+ * Legacy listing favorites are no longer a surfaced concept. Program favorites
+ * keep their tracking, export, and detail modal behavior, shared by every account.
  */
 import { useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -28,7 +28,6 @@ import { openSafeUrlInNewTab } from '../../utils/url';
 import UserContext from '../../contexts/UserContext';
 
 interface FavoritesManagerProps {
-  variant?: 'student' | 'professor';
   onSummaryChange?: (summary: {
     count: number;
     nextDeadlineLabel?: string;
@@ -100,10 +99,9 @@ export const savedProgramDeadlineSummary = (
   };
 };
 
-const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesManagerProps) => {
+const FavoritesManager = ({ onSummaryChange }: FavoritesManagerProps) => {
   const { user } = useContext(UserContext);
   const trackingStorageOwner = normalizeAccountTrackingStorageOwner(user?.netId);
-  const isProfessorVariant = variant === 'professor';
   const [favState, favDispatch] = useReducer(favoritesReducer, undefined, () =>
     createInitialFavoritesState(),
   );
@@ -366,31 +364,23 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
       return;
     }
 
-    const headers = isProfessorVariant
-      ? ['Program Name', 'Deadline', 'Award Amount', 'Status', 'Application Link', 'Contact']
-      : [
-          'Program Name',
-          'Deadline',
-          'Award Amount',
-          'Status',
-          'Applied',
-          'Notes',
-          'Application Link',
-          'Contact',
-        ];
+    const headers = [
+      'Program Name',
+      'Deadline',
+      'Award Amount',
+      'Status',
+      'Applied',
+      'Notes',
+      'Application Link',
+      'Contact',
+    ];
     const rows = favFellowships.map((fellowship) => [
       fellowship.title,
       fellowship.deadline ? new Date(fellowship.deadline).toLocaleDateString() : 'No deadline',
       fellowship.awardAmount || '',
       fellowship.isAcceptingApplications ? 'Accepting' : 'Closed',
-      ...(isProfessorVariant
-        ? []
-        : [
-            (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-              ? 'Applied'
-              : 'Not Applied',
-            fellowshipNotes[fellowship.id] || '',
-          ]),
+      (fellowshipStage[fellowship.id] || 'not_applied') === 'applied' ? 'Applied' : 'Not Applied',
+      fellowshipNotes[fellowship.id] || '',
       fellowship.applicationLink || '',
       fellowship.contactEmail || fellowship.contactName || '',
     ]);
@@ -414,31 +404,23 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
       return;
     }
 
-    const headers = isProfessorVariant
-      ? ['Program Name', 'Deadline', 'Award Amount', 'Status', 'Application Link', 'Contact']
-      : [
-          'Program Name',
-          'Deadline',
-          'Award Amount',
-          'Status',
-          'Applied',
-          'Notes',
-          'Application Link',
-          'Contact',
-        ];
+    const headers = [
+      'Program Name',
+      'Deadline',
+      'Award Amount',
+      'Status',
+      'Applied',
+      'Notes',
+      'Application Link',
+      'Contact',
+    ];
     const rows = favFellowships.map((fellowship) => [
       fellowship.title,
       fellowship.deadline ? new Date(fellowship.deadline).toLocaleDateString() : 'No deadline',
       fellowship.awardAmount || '',
       fellowship.isAcceptingApplications ? 'Accepting' : 'Closed',
-      ...(isProfessorVariant
-        ? []
-        : [
-            (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-              ? 'Applied'
-              : 'Not Applied',
-            fellowshipNotes[fellowship.id] || '',
-          ]),
+      (fellowshipStage[fellowship.id] || 'not_applied') === 'applied' ? 'Applied' : 'Not Applied',
+      fellowshipNotes[fellowship.id] || '',
       fellowship.applicationLink || '',
       fellowship.contactEmail || fellowship.contactName || '',
     ]);
@@ -468,25 +450,12 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
 
   return (
     <>
-      <div
-        className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${
-          isProfessorVariant ? 'mb-4' : 'mb-2'
-        }`}
-      >
+      <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">
-            {isProfessorVariant ? 'Funding & program references' : 'Program watchlist'}
-          </h2>
-          {isProfessorVariant ? (
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              Save programs students may ask about. This is optional reference material, not an
-              application tracker.
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-gray-500">
-              Saved programs stay here as supporting deadlines and funding leads.
-            </p>
-          )}
+          <h2 className="text-2xl font-bold text-gray-800">Program watchlist</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Saved programs stay here as supporting deadlines and funding leads.
+          </p>
         </div>
         {favFellowships.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -543,85 +512,83 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                     onOpenModal={() => openFellowshipModal(fellowship)}
                   />
                 </div>
-                {!isProfessorVariant && (
-                  <div className="flex flex-row gap-1 sm:flex-col sm:justify-center">
-                    <button
-                      onClick={() =>
-                        handleFellowshipStageChange(
-                          fellowship.id,
-                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                            ? 'not_applied'
-                            : 'applied',
-                        )
-                      }
-                      aria-label={
+                <div className="flex flex-row gap-1 sm:flex-col sm:justify-center">
+                  <button
+                    onClick={() =>
+                      handleFellowshipStageChange(
+                        fellowship.id,
                         (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                          ? 'Mark as not applied'
-                          : 'Mark as applied'
-                      }
-                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
+                          ? 'not_applied'
+                          : 'applied',
+                      )
+                    }
+                    aria-label={
+                      (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                        ? 'Mark as not applied'
+                        : 'Mark as applied'
+                    }
+                    className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
+                      (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                        ? 'bg-green-50 border-green-300 text-green-600'
+                        : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
+                    }`}
+                    title={
+                      (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
+                        ? 'Mark as not applied'
+                        : 'Mark as applied'
+                    }
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill={
                         (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                          ? 'bg-green-50 border-green-300 text-green-600'
-                          : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
-                      }`}
-                      title={
-                        (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                          ? 'Mark as not applied'
-                          : 'Mark as applied'
+                          ? 'currentColor'
+                          : 'none'
                       }
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill={
-                          (fellowshipStage[fellowship.id] || 'not_applied') === 'applied'
-                            ? 'currentColor'
-                            : 'none'
-                        }
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() =>
-                        trackingDispatch({
-                          type: 'TOGGLE_EDITING_FELLOWSHIP_NOTE',
-                          fellowshipId: fellowship.id,
-                        })
-                      }
-                      aria-label="Add note"
-                      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
-                        fellowshipNotes[fellowship.id]
-                          ? 'bg-yellow-50 border-yellow-300 text-yellow-600'
-                          : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
-                      }`}
-                      title="Add note"
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() =>
+                      trackingDispatch({
+                        type: 'TOGGLE_EDITING_FELLOWSHIP_NOTE',
+                        fellowshipId: fellowship.id,
+                      })
+                    }
+                    aria-label="Add note"
+                    className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${
+                      fellowshipNotes[fellowship.id]
+                        ? 'bg-yellow-50 border-yellow-300 text-yellow-600'
+                        : 'border-[var(--yr-line)] text-gray-400 hover:text-gray-600 hover:border-[var(--yr-line-strong)]'
+                    }`}
+                    title="Add note"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                </div>
               </div>
-              {!isProfessorVariant && editingFellowshipNoteId === fellowship.id && (
+              {editingFellowshipNoteId === fellowship.id && (
                 <div className="mt-1">
                   <textarea
                     aria-label={`Note for ${fellowship.title}`}
@@ -657,15 +624,12 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                   </p>
                 </div>
               )}
-              {!isProfessorVariant &&
-                editingFellowshipNoteId !== fellowship.id &&
+              {editingFellowshipNoteId !== fellowship.id &&
                 saveStatuses[fellowship.id] &&
                 saveStatuses[fellowship.id] !== 'idle' && (
                   <p
                     className={`mt-1 text-xs ${
-                      saveStatuses[fellowship.id] === 'error'
-                        ? 'text-red-700'
-                        : 'text-gray-500'
+                      saveStatuses[fellowship.id] === 'error' ? 'text-red-700' : 'text-gray-500'
                     }`}
                     role={saveStatuses[fellowship.id] === 'error' ? 'alert' : 'status'}
                     aria-live="polite"
@@ -677,13 +641,11 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
                         : 'Not saved. Check your connection or sign in again, then retry.'}
                   </p>
                 )}
-              {!isProfessorVariant &&
-                fellowshipNotes[fellowship.id] &&
-                editingFellowshipNoteId !== fellowship.id && (
-                  <p className="text-xs text-gray-500 mt-0.5 ml-1 italic truncate">
-                    Note: {fellowshipNotes[fellowship.id]}
-                  </p>
-                )}
+              {fellowshipNotes[fellowship.id] && editingFellowshipNoteId !== fellowship.id && (
+                <p className="text-xs text-gray-500 mt-0.5 ml-1 italic truncate">
+                  Note: {fellowshipNotes[fellowship.id]}
+                </p>
+              )}
             </li>
           ))}
         </ul>
@@ -691,9 +653,8 @@ const FavoritesManager = ({ variant = 'student', onSummaryChange }: FavoritesMan
         <div className="rounded-md border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-gray-950">No saved programs yet</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-gray-600">
-            {isProfessorVariant
-              ? 'Save fellowships or structured programs here when they are useful context for students who ask about funding routes.'
-              : 'When a program or fellowship looks like a possible fit, save it here to track deadlines, notes, and application status.'}
+            When a program or fellowship looks like a possible fit, save it here to track deadlines,
+            notes, and application status.
           </p>
           <Link
             to="/programs"

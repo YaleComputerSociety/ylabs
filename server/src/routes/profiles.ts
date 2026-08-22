@@ -1,18 +1,15 @@
 /**
- * Express routes for faculty profile viewing and self-editing.
+ * Express routes for public faculty profile viewing.
  */
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { isAuthenticated, isProfessor, validateNetid } from '../middleware/index';
+import { isAuthenticated, validateNetid } from '../middleware/index';
 import {
   getProfile,
   getProfileListings,
   getProfileCourses,
-  updateProfile,
-  verifyProfile,
 } from '../controllers/profileController';
 import { AnalyticsEventType } from '../models/index';
 import { logResearchEventOnSuccess } from '../services/researchAnalytics';
-import { writeLimit } from '../middleware/rateLimiters';
 
 const router = Router();
 
@@ -36,8 +33,5 @@ router.get(
 );
 router.get('/:netid/listings', isAuthenticated, validateNetid('netid'), getProfileListings);
 router.get('/:netid/courses', isAuthenticated, validateNetid('netid'), getProfileCourses);
-
-router.put('/me', writeLimit, isAuthenticated, isProfessor, updateProfile);
-router.put('/me/verify', writeLimit, isAuthenticated, isProfessor, verifyProfile);
 
 export default router;

@@ -12,74 +12,78 @@ type PlanningSummary = {
   nextDeadlineDate?: string;
 };
 
-let savedResearchEntityIds: string[] = ['entity-1', 'entity-2'];
+let savedResearchCount = 2;
 let savedProgramSummary: PlanningSummary = { count: 1 };
 
-vi.mock('../../hooks/useFavorites', () => ({
-  default: () => ({
-    favIds: savedResearchEntityIds,
-    setFavorite: vi.fn(),
-    toggleFavorite: vi.fn(),
-    reloadFavorites: vi.fn(),
-  }),
-}));
+vi.mock('../../components/accounts/SavedResearchPlans', () => {
+  const MockSavedResearchPlans = ({
+    onCountChange,
+  }: {
+    onCountChange?: (count: number) => void;
+  }) => {
+    useEffect(() => {
+      onCountChange?.(savedResearchCount);
+    }, [onCountChange]);
+    return <section>Saved research plans</section>;
+  };
 
-vi.mock('../../components/accounts/ProfileEditor', () => ({
-  default: () => <section>Profile editor</section>,
-}));
+  return { default: MockSavedResearchPlans };
+});
 
 vi.mock('../../components/accounts/FavoritesManager', () => {
   const MockFavoritesManager = ({
     onSummaryChange,
-    variant = 'student',
   }: {
     onSummaryChange?: (summary: {
       count: number;
       nextDeadlineLabel?: string;
       nextDeadlineDate?: string;
     }) => void;
-    variant?: 'student' | 'professor';
   }) => {
     useEffect(() => {
       onSummaryChange?.(savedProgramSummary);
     }, [onSummaryChange]);
-    return <section>Favorites manager: {variant}</section>;
+    return <section>Favorites manager</section>;
   };
 
   return { default: MockFavoritesManager };
 });
 
+const renderAccount = (userType: string) =>
+  render(
+    <MemoryRouter>
+      <UserContext.Provider
+        value={{
+          isLoading: false,
+          isAuthenticated: true,
+          user: {
+            netId: 'user1',
+            userType,
+            userConfirmed: true,
+          } as any,
+          checkContext: vi.fn(),
+        }}
+      >
+        <Account />
+      </UserContext.Provider>
+    </MemoryRouter>,
+  );
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  savedResearchEntityIds = ['entity-1', 'entity-2'];
+  savedResearchCount = 2;
   savedProgramSummary = { count: 1 };
 });
 
 describe('Account page', () => {
   it('renders a compact student command center without duplicate launch CTAs', () => {
-    render(
-      <MemoryRouter>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: true,
-            user: {
-              netId: 'student1',
-              userType: 'student',
-              userConfirmed: true,
-            } as any,
-            checkContext: vi.fn(),
-          }}
-        >
-          <Account />
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
+    renderAccount('student');
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 saved program/)).toBeTruthy();
+    expect(screen.getByText('Saved research plans')).toBeTruthy();
     expect(screen.queryByText('Your plan')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan your next research move' })).toBeNull();
     expect(screen.getAllByRole('link', { name: 'Find more research homes' })).toHaveLength(1);
@@ -94,82 +98,24 @@ describe('Account page', () => {
       nextDeadlineLabel: 'Summer Research Grant: Due Jun 30, 2099',
     };
 
-    render(
-      <MemoryRouter>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: true,
-            user: {
-              netId: 'student1',
-              userType: 'student',
-              userConfirmed: true,
-            } as any,
-            checkContext: vi.fn(),
-          }}
-        >
-          <Account />
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
+    renderAccount('student');
 
     expect(screen.getByText('Summer Research Grant: Due Jun 30, 2099')).toBeTruthy();
   });
 
-  it('does not expose legacy listing management in the professor dashboard', () => {
-    render(
-      <MemoryRouter>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: true,
-            user: {
-              netId: 'prof1',
-              userType: 'professor',
-              userConfirmed: true,
-            } as any,
-            checkContext: vi.fn(),
-          }}
-        >
-          <Account />
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
+  it('shows every account the same read-only dashboard with no faculty edit surface', () => {
+    renderAccount('professor');
 
-    expect(screen.getByText('Profile editor')).toBeTruthy();
-    expect(screen.queryByText('Your Posted Roles')).toBeNull();
-  });
-
-  it('renders a faculty-centered dashboard for professors', () => {
-    render(
-      <MemoryRouter>
-        <UserContext.Provider
-          value={{
-            isLoading: false,
-            isAuthenticated: true,
-            user: {
-              netId: 'prof1',
-              userType: 'professor',
-              userConfirmed: true,
-            } as any,
-            checkContext: vi.fn(),
-          }}
-        >
-          <Account />
-        </UserContext.Provider>
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByText('Faculty profile center')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
+    expect(screen.getByText('Saved research plans')).toBeTruthy();
+    expect(screen.getByText('Favorites manager')).toBeTruthy();
+    expect(screen.getByText(/2 research plans/)).toBeTruthy();
+    expect(screen.queryByText('Profile editor')).toBeNull();
+    expect(screen.queryByText('Faculty profile center')).toBeNull();
     expect(
-      screen.getByRole('heading', { name: 'Manage your public research profile' }),
-    ).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'View public profile' }).getAttribute('href')).toBe(
-      '/profile/prof1',
-    );
-    expect(screen.getByText('Favorites manager: professor')).toBeTruthy();
-    expect(screen.queryByText('Faculty opportunity manager')).toBeNull();
-    expect(screen.queryByText('Your plan')).toBeNull();
-    expect(screen.queryByText(/research plans/)).toBeNull();
+      screen.queryByRole('heading', { name: 'Manage your public research profile' }),
+    ).toBeNull();
+    expect(screen.queryByRole('link', { name: 'View public profile' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Faculty Profile Preview' })).toBeNull();
   });
 });

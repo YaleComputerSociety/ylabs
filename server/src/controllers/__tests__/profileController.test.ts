@@ -2,24 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listingFind: vi.fn(),
-  userFindOne: vi.fn(),
-  userFindOneAndUpdate: vi.fn(),
   getProfileByNetid: vi.fn(),
-  updateOwnProfile: vi.fn(),
-  cascadeDepartmentsToListings: vi.fn(),
 }));
 
 vi.mock('../../db/connections', () => ({
   getListingModel: () => ({
     find: mocks.listingFind,
   }),
-}));
-
-vi.mock('../../models/user', () => ({
-  User: {
-    findOne: mocks.userFindOne,
-    findOneAndUpdate: mocks.userFindOneAndUpdate,
-  },
 }));
 
 vi.mock('../../services/profileService', async () => {
@@ -29,21 +18,10 @@ vi.mock('../../services/profileService', async () => {
   return {
     ...actual,
     getProfileByNetid: mocks.getProfileByNetid,
-    updateOwnProfile: mocks.updateOwnProfile,
-    cascadeDepartmentsToListings: mocks.cascadeDepartmentsToListings,
   };
 });
 
-vi.mock('../../services/courseTableService', () => ({
-  fetchCourseTableData: vi.fn(),
-}));
-
-import {
-  getProfile,
-  getProfileListings,
-  updateProfile,
-  verifyProfile,
-} from '../profileController';
+import { getProfile, getProfileListings } from '../profileController';
 
 describe('profileController', () => {
   beforeEach(() => {
@@ -149,7 +127,9 @@ describe('profileController', () => {
       research_interest_summary:
         'The Owner group studies adaptive optics and wavefront control for ground-based telescopes.',
       research_interests: ['Adaptive Optics', 'Wavefront Control'],
-      researchEntities: [{ slug: 'owner-lab', name: 'Owner Lab', researchAreas: ['Adaptive Optics'] }],
+      researchEntities: [
+        { slug: 'owner-lab', name: 'Owner Lab', researchAreas: ['Adaptive Optics'] },
+      ],
     };
     mocks.getProfileByNetid.mockResolvedValue(normalized);
 
@@ -168,101 +148,5 @@ describe('profileController', () => {
     );
     expect(payload.research_interests).toEqual(['Adaptive Optics', 'Wavefront Control']);
     expect(payload.researchEntities).toHaveLength(1);
-  });
-
-  it('does not expose internal user maintenance fields after profile updates', async () => {
-    mocks.updateOwnProfile.mockResolvedValue({
-      _id: 'user-1',
-      netid: 'owner123',
-      fname: 'Owner',
-      lname: 'Professor',
-      email: 'owner123@yale.edu',
-      userType: 'professor',
-      userConfirmed: true,
-      profileVerified: true,
-      bio: 'Updated public bio.',
-      googleScholarId: 'private-scholar-id',
-      savedPathwayPlans: { pathway: { note: 'private note' } },
-      confidenceByField: { bio: 0.75 },
-      manuallyLockedFields: ['email'],
-      lastActive: new Date('2026-01-01T00:00:00.000Z'),
-      archived: false,
-    });
-
-    const req = {
-      user: { netId: 'owner123' },
-      body: { bio: 'Updated public bio.' },
-    } as any;
-    const res = {
-      json: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    } as any;
-
-    await updateProfile(req, res);
-
-    const payload = res.json.mock.calls[0][0].profile;
-    expect(payload).toMatchObject({
-      netid: 'owner123',
-      fname: 'Owner',
-      lname: 'Professor',
-      bio: 'Updated public bio.',
-    });
-    expect(payload).not.toHaveProperty('googleScholarId');
-    expect(payload).not.toHaveProperty('savedPathwayPlans');
-    expect(payload).not.toHaveProperty('confidenceByField');
-    expect(payload).not.toHaveProperty('manuallyLockedFields');
-    expect(payload).not.toHaveProperty('lastActive');
-    expect(payload).not.toHaveProperty('archived');
-  });
-
-  it('does not leak internal service errors from profile update failures', async () => {
-    mocks.updateOwnProfile.mockRejectedValue(
-      new Error('mongodb://user:pass@example.invalid profile update failed'),
-    );
-
-    const req = {
-      user: { netId: 'owner123' },
-      body: { bio: 'Updated public bio.' },
-    } as any;
-    const res = {
-      json: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    } as any;
-
-    await updateProfile(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to update profile' });
-    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
-  });
-
-  it('does not leak internal service errors from profile verification failures', async () => {
-    mocks.userFindOne.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        netid: 'owner123',
-        userType: 'professor',
-        primaryDepartment: 'Computer Science',
-        researchInterests: ['systems'],
-        bio: 'Systems research.',
-        imageUrl: 'https://faculty.yale.edu/profile.jpg',
-      }),
-    });
-    mocks.userFindOneAndUpdate.mockReturnValue({
-      lean: vi
-        .fn()
-        .mockRejectedValue(new Error('mongodb://user:pass@example.invalid verify failed')),
-    });
-
-    const req = { user: { netId: 'owner123' } } as any;
-    const res = {
-      json: vi.fn(),
-      status: vi.fn().mockReturnThis(),
-    } as any;
-
-    await verifyProfile(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Failed to verify profile' });
-    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
   });
 });

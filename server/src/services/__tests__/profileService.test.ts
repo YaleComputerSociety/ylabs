@@ -18,7 +18,6 @@ import {
   normalizePublicProfile,
   orderProfileScholarlyLinks,
   scholarlyLinkToPublicLink,
-  updateOwnProfile,
 } from '../profileService';
 
 afterEach(() => {
@@ -32,7 +31,8 @@ describe('profileService profile shaping', () => {
       netid: 'abc123',
       fname: 'Ada',
       lname: 'Lovelace',
-      imageUrl: 'https://cs.yale.edu/sites/default/files/styles/people_thumbnail/public/pictures/ada.jpg',
+      imageUrl:
+        'https://cs.yale.edu/sites/default/files/styles/people_thumbnail/public/pictures/ada.jpg',
       primaryDepartment: 'Computer Science',
       secondaryDepartments: ['Statistics and Data Science'],
       physicalLocation: '17 Hillhouse',
@@ -134,8 +134,7 @@ describe('profileService profile shaping', () => {
       netid: 'fixture101',
       fname: 'Avery Cardio',
       lname: 'Cardio',
-      bio:
-        'Dr. Cardio studies mechanisms that promote arrhythmias and develops translational cardiovascular imaging approaches.',
+      bio: 'Dr. Cardio studies mechanisms that promote arrhythmias and develops translational cardiovascular imaging approaches.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/avery-cardio/',
       },
@@ -328,8 +327,7 @@ describe('profileService profile shaping', () => {
         profileUrls: {
           departmental: 'https://physics.yale.edu/people/casey-quantum',
         },
-        bio:
-          'One of the grand challenges of materials research is the ability to engineer and tune quantum degrees of freedom. Our group uses and develops first principles quantum physics methods.',
+        bio: 'One of the grand challenges of materials research is the ability to engineer and tune quantum degrees of freedom. Our group uses and develops first principles quantum physics methods.',
         researchInterests: ['Condensed Matter Physics', 'Quantum Physics'],
       },
       {
@@ -380,7 +378,8 @@ describe('profileService profile shaping', () => {
             kind: 'lab',
             entityType: 'LAB',
             shortDescription: 'Studies computing history. Questions: hidden@example.edu',
-            fullDescription: 'The lab studies computing history. Call 203-432-1234 before applying.',
+            fullDescription:
+              'The lab studies computing history. Call 203-432-1234 before applying.',
             websiteUrl: 'javascript:alert(document.cookie)',
             website: 'https://ada-lab.example.test',
             sourceUrls: [
@@ -431,8 +430,7 @@ describe('profileService profile shaping', () => {
           {
             slug: 'morgan-vector-research',
             name: 'Morgan Vector Faculty Research',
-            shortDescription:
-              'Studies synthetic policy and Research Areas: synthetic policy.',
+            shortDescription: 'Studies synthetic policy and Research Areas: synthetic policy.',
             fullDescription:
               'Morgan Vector is affiliated with the Example Center and the Program in Synthetic Studies.',
             researchAreas: ['Synthetic Policy'],
@@ -466,8 +464,7 @@ describe('profileService profile shaping', () => {
             name: 'Legacy Gauge Lab',
             shortDescription:
               'Studies archival evidence and computational methods for public systems.',
-            description:
-              'Stale pre-cutover blurb that must not reach the public payload.',
+            description: 'Stale pre-cutover blurb that must not reach the public payload.',
             researchAreas: ['Public Systems'],
           },
         ],
@@ -475,9 +472,7 @@ describe('profileService profile shaping', () => {
     );
 
     expect(profile.researchEntities[0]).not.toHaveProperty('description');
-    expect(JSON.stringify(profile.researchEntities)).not.toContain(
-      'Stale pre-cutover blurb',
-    );
+    expect(JSON.stringify(profile.researchEntities)).not.toContain('Stale pre-cutover blurb');
   });
 
   it('keeps direct research-home summaries on public profile cards', () => {
@@ -504,10 +499,8 @@ describe('profileService profile shaping', () => {
     );
 
     expect(profile.researchEntities[0]).toMatchObject({
-      shortDescription:
-        'Studies archival evidence and computational methods for public systems.',
-      fullDescription:
-        'The lab develops mixed-method approaches for evaluating public systems.',
+      shortDescription: 'Studies archival evidence and computational methods for public systems.',
+      fullDescription: 'The lab develops mixed-method approaches for evaluating public systems.',
     });
     expect(profile.researchEntities[0]).not.toHaveProperty('description');
   });
@@ -517,8 +510,7 @@ describe('profileService profile shaping', () => {
       netid: 'jpd62',
       fname: 'Joao P.',
       lname: 'De Aquino',
-      bio:
-        'Dr. De Aquino combines behavioral pharmacology and clinical trial methods to develop novel therapeutics for pain and addiction.',
+      bio: 'Dr. De Aquino combines behavioral pharmacology and clinical trial methods to develop novel therapeutics for pain and addiction.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/joao-deaquinolima/',
       },
@@ -534,8 +526,7 @@ describe('profileService profile shaping', () => {
       netid: 'av123',
       fname: 'Avery Middle',
       lname: 'River Stone',
-      bio:
-        'Avery Stone studies clinical imaging methods and develops translational models for patient care.',
+      bio: 'Avery Stone studies clinical imaging methods and develops translational models for patient care.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/avery-stone/',
       },
@@ -551,8 +542,7 @@ describe('profileService profile shaping', () => {
       netid: 'lc2364',
       fname: 'Lorraine',
       lname: 'Colón-Cartagena',
-      bio:
-        'Dr. Colón-Cartagena studies the behavior and histologic features of tumors of the breast.',
+      bio: 'Dr. Colón-Cartagena studies the behavior and histologic features of tumors of the breast.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/l-cartagena/',
       },
@@ -585,8 +575,7 @@ describe('profileService profile shaping', () => {
       netid: 'jac52',
       fname: 'Jessica',
       lname: 'Cardin',
-      bio:
-        'The cortex is made up of interconnected networks containing many classes of neurons whose roles in normal brain activity and disease are poorly understood.',
+      bio: 'The cortex is made up of interconnected networks containing many classes of neurons whose roles in normal brain activity and disease are poorly understood.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/jess-cardin/',
       },
@@ -602,8 +591,7 @@ describe('profileService profile shaping', () => {
       netid: 'eje7',
       fname: 'E. Jennifer',
       lname: 'Edelman',
-      bio:
-        'E. Jennifer Edelman studies addiction medicine, HIV care, and interventions for patients with complex medical and behavioral health needs.',
+      bio: 'E. Jennifer Edelman studies addiction medicine, HIV care, and interventions for patients with complex medical and behavioral health needs.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/eva-edelman/',
       },
@@ -621,8 +609,7 @@ describe('profileService profile shaping', () => {
       netid: 'jk882',
       fname: 'Jonathan',
       lname: 'Koff',
-      bio:
-        'Dr. Koff received his undergraduate degree from Hamilton College and his medical degree from Case Western Reserve University.',
+      bio: 'Dr. Koff received his undergraduate degree from Hamilton College and his medical degree from Case Western Reserve University.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/jon-koff/',
       },
@@ -725,8 +712,7 @@ describe('profileService profile shaping', () => {
       fname: 'Samah',
       lname: 'Fodeh-Jarad',
       displayName: 'Samah Fodeh-Jarad',
-      bio:
-        'Samah Fodeh-Jarad, PhD, studies biomedical informatics, clinical decision support, and equitable emergency medicine data systems.',
+      bio: 'Samah Fodeh-Jarad, PhD, studies biomedical informatics, clinical decision support, and equitable emergency medicine data systems.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/samah-fodeh/',
       },
@@ -744,8 +730,7 @@ describe('profileService profile shaping', () => {
       netid: 'lf457',
       fname: 'Francis',
       lname: 'Lee',
-      bio:
-        'Francis Y. Lee, MD, PhD, conducts extensive research into fracture healing and bone metastasis.',
+      bio: 'Francis Y. Lee, MD, PhD, conducts extensive research into fracture healing and bone metastasis.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/faith-lee/',
         orcid: 'https://orcid.org/0000-0003-2275-2441',
@@ -767,8 +752,7 @@ describe('profileService profile shaping', () => {
       fname: 'Zeynep Erson',
       lname: 'Omay',
       displayName: 'Zeynep Erson Omay',
-      bio:
-        'Dr. Erson Omay is an Assistant Professor of Neurosurgery and Biomedical Informatics and Data Science. Her research uses computational genomics to understand brain tumors.',
+      bio: 'Dr. Erson Omay is an Assistant Professor of Neurosurgery and Biomedical Informatics and Data Science. Her research uses computational genomics to understand brain tumors.',
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/zeynep-erson/',
       },
@@ -786,8 +770,7 @@ describe('profileService profile shaping', () => {
       netid: 'fixture',
       fname: 'Mary Jane',
       lname: 'Taylor',
-      bio:
-        'Dr. Sarah Taylor studies music history and performance practice at another Yale department.',
+      bio: 'Dr. Sarah Taylor studies music history and performance practice at another Yale department.',
       profileUrls: {
         music: 'https://music.yale.edu/people/sarah-taylor',
       },
@@ -835,8 +818,7 @@ describe('profileService profile shaping', () => {
       netid: 'snt26',
       fname: 'Sarah',
       lname: 'Taylor',
-      bio:
-        'Stephen Taylor, an accomplished solo, chamber, and orchestral musician, is one of the most sought-after oboists in the country.',
+      bio: 'Stephen Taylor, an accomplished solo, chamber, and orchestral musician, is one of the most sought-after oboists in the country.',
       profileUrls: {
         music: 'https://music.yale.edu/people/stephen-taylor',
       },
@@ -852,8 +834,7 @@ describe('profileService profile shaping', () => {
       netid: 'bfg2',
       fname: 'Beverly',
       lname: 'Gage',
-      bio:
-        'Bio: Beverly Gage is the John Lewis Gaddis Professor of History. Her courses focus on twentieth-century United States history and political culture.',
+      bio: 'Bio: Beverly Gage is the John Lewis Gaddis Professor of History. Her courses focus on twentieth-century United States history and political culture.',
       profileUrls: {
         departmental: 'https://history.yale.edu/people/beverly-gage/',
       },
@@ -958,8 +939,7 @@ describe('profileService profile shaping', () => {
       netid: 'example',
       fname: 'Example',
       lname: 'Professor',
-      bio:
-        'Example Professor studies pancreatic cancer risk prediction and develops clinical screening methods for early detection. Last Updated on December 01, 2024.',
+      bio: 'Example Professor studies pancreatic cancer risk prediction and develops clinical screening methods for early detection. Last Updated on December 01, 2024.',
     });
 
     expect(profile.bio).toBe(
@@ -970,8 +950,7 @@ describe('profileService profile shaping', () => {
   it('strips official profile CTA and glued update chrome from narrative bios', () => {
     expect(
       cleanPublicProfileBio({
-        bio:
-          'Nicholas Blondin treats benign and malignant brain tumors. Watch a video with Dr. Nicholas Blondin>> Dr. Blondin’s clinical expertise is in treating brain and spine metastasis.',
+        bio: 'Nicholas Blondin treats benign and malignant brain tumors. Watch a video with Dr. Nicholas Blondin>> Dr. Blondin’s clinical expertise is in treating brain and spine metastasis.',
       }),
     ).toBe(
       'Nicholas Blondin treats benign and malignant brain tumors. Dr. Blondin’s clinical expertise is in treating brain and spine metastasis.',
@@ -979,8 +958,7 @@ describe('profileService profile shaping', () => {
 
     expect(
       cleanPublicProfileBio({
-        bio:
-          'Pamela Kunz is an international leader in clinical research for patients with GI malignancies. Learn more about Dr. Kunz >>',
+        bio: 'Pamela Kunz is an international leader in clinical research for patients with GI malignancies. Learn more about Dr. Kunz >>',
       }),
     ).toBe(
       'Pamela Kunz is an international leader in clinical research for patients with GI malignancies.',
@@ -988,8 +966,7 @@ describe('profileService profile shaping', () => {
 
     expect(
       cleanPublicProfileBio({
-        bio:
-          'Stuart Seropian studies methods to improve transplantation outcomes through novel anti-cancer agents and methods of treating graft versus host diseaseLast Updated on December 01, 2024.',
+        bio: 'Stuart Seropian studies methods to improve transplantation outcomes through novel anti-cancer agents and methods of treating graft versus host diseaseLast Updated on December 01, 2024.',
       }),
     ).toBe(
       'Stuart Seropian studies methods to improve transplantation outcomes through novel anti-cancer agents and methods of treating graft versus host disease.',
@@ -1000,8 +977,7 @@ describe('profileService profile shaping', () => {
     const rawProfile = {
       fname: 'Sam',
       lname: 'Raskin',
-      bio:
-        'Research Areas\n\nAlgebra\nLanglands duality\nGeometric representation theory\nAlgebraic geometry\nHomotopy theory',
+      bio: 'Research Areas\n\nAlgebra\nLanglands duality\nGeometric representation theory\nAlgebraic geometry\nHomotopy theory',
       profileUrls: {
         official: 'https://math.yale.edu/profile/sam-raskin/',
       },
@@ -1032,8 +1008,7 @@ describe('profileService profile shaping', () => {
       netid: 'mv123',
       fname: 'Morgan',
       lname: 'Vector',
-      bio:
-        "Morgan Vector's official Yale profile lists research interests in Data Systems, Public Health, and Example Methods, based on Yale's official profile data.",
+      bio: "Morgan Vector's official Yale profile lists research interests in Data Systems, Public Health, and Example Methods, based on Yale's official profile data.",
       profileUrls: {
         medicine: 'https://medicine.yale.edu/profile/morgan-vector/',
       },
@@ -1104,8 +1079,7 @@ describe('profileService profile shaping', () => {
       netid: 'jls289',
       fname: 'Jesse',
       lname: 'Fixture',
-      bio:
-        'Associate Professor of Public Health (Health Policy); Associate Professor in the History of Medicine',
+      bio: 'Associate Professor of Public Health (Health Policy); Associate Professor in the History of Medicine',
       profileUrls: {
         official: 'https://ysph.yale.edu/profile/jesse-fixture/',
       },
@@ -1180,10 +1154,7 @@ describe('profileService profile shaping', () => {
       profileUrls: {
         statistics_data_science: 'https://statistics.yale.edu/profile/lu-lu',
       },
-      topics: [
-        'Legume Nitrogen Fixing Symbiosis',
-        'Genetic and Environmental Crop Studies',
-      ],
+      topics: ['Legume Nitrogen Fixing Symbiosis', 'Genetic and Environmental Crop Studies'],
       openAlexId: 'https://openalex.org/A5103032289',
       hIndex: 2,
       researchInterests: [],
@@ -1336,8 +1307,7 @@ describe('profileService profile shaping', () => {
       lname: 'Stone',
       title:
         'Deputy Director, Yale Quantum Institute & Carl A. Morse Professor of Applied Physics and Physics',
-      bio:
-        'Biographical Sketch: Responsibilities: Deputy Director, Yale Quantum Institute Carl A. Morse Professor of Applied Physics and Professor of Physics',
+      bio: 'Biographical Sketch: Responsibilities: Deputy Director, Yale Quantum Institute Carl A. Morse Professor of Applied Physics and Professor of Physics',
       profileUrls: {
         departmental: 'https://physics.yale.edu/people/douglas-stone',
       },
@@ -1352,8 +1322,7 @@ describe('profileService profile shaping', () => {
       netid: 'fixture',
       fname: 'Fixture',
       lname: 'Faculty',
-      bio:
-        'Biographical Sketch: Studies quantum transport, mesoscopic electron physics, and wave chaos.',
+      bio: 'Biographical Sketch: Studies quantum transport, mesoscopic electron physics, and wave chaos.',
       researchInterests: ['Quantum Physics'],
     });
 
@@ -1756,8 +1725,7 @@ describe('profileService profile shaping', () => {
     const link = scholarlyLinkToPublicLink({
       _id: 'official-anchor',
       title: 'Learning and Verifying Quantified Boolean Queries by Example',
-      url:
-        'https://engineering.yale.edu/research-and-faculty/faculty-directory/abraham-silberschatz#publication-learning-and-verifying-quantified-boolean-queries-by-example',
+      url: 'https://engineering.yale.edu/research-and-faculty/faculty-directory/abraham-silberschatz#publication-learning-and-verifying-quantified-boolean-queries-by-example',
       sourceUrl:
         'https://engineering.yale.edu/research-and-faculty/faculty-directory/abraham-silberschatz',
       destinationKind: 'OTHER',
@@ -1869,7 +1837,8 @@ describe('profileService profile shaping', () => {
   it('excludes supplemental figure records from public research paper activity', () => {
     const link = scholarlyLinkToPublicLink({
       _id: 'figure-1',
-      title: 'Figure S1 from ASCL1 Drives Tolerance to Osimertinib in <i>EGFR</i> Mutant Literatureng Cancer',
+      title:
+        'Figure S1 from ASCL1 Drives Tolerance to Osimertinib in <i>EGFR</i> Mutant Literatureng Cancer',
       url: 'https://doi.org/10.1158/0008-5472.25785287',
       destinationKind: 'DOI',
       displaySource: 'DOI',
@@ -1877,7 +1846,9 @@ describe('profileService profile shaping', () => {
       year: 2025,
     });
 
-    expect(link.title).toBe('Figure S1 from ASCL1 Drives Tolerance to Osimertinib in EGFR Mutant Literatureng Cancer');
+    expect(link.title).toBe(
+      'Figure S1 from ASCL1 Drives Tolerance to Osimertinib in EGFR Mutant Literatureng Cancer',
+    );
     expect(isPublicResearchPaperLink(link)).toBe(false);
   });
 
@@ -1949,7 +1920,6 @@ describe('profileService profile shaping', () => {
     expect(isPublicResearchPaperLink(doiLink)).toBe(true);
     expect(isPublicResearchPaperLink(freeTextLink)).toBe(true);
   });
-
 });
 
 describe('profileService admin profile update persistence', () => {
@@ -1967,7 +1937,10 @@ describe('profileService admin profile update persistence', () => {
     await adminUpdateProfile('ada123', {
       bio: `Reach me at hidden@example.edu or 203-432-1234. ${'x'.repeat(20_000)}`,
       primaryDepartment: 'Computer Science',
-      secondaryDepartments: Array.from({ length: 200 }, (_, index) => `Dept ${index} dept${index}@example.edu`),
+      secondaryDepartments: Array.from(
+        { length: 200 },
+        (_, index) => `Dept ${index} dept${index}@example.edu`,
+      ),
       researchInterests: ['Machine learning admin@example.edu', { nested: true }],
       topics: ['Systems 203-432-1234'],
       website: 'javascript:alert(document.cookie)',
@@ -2014,14 +1987,24 @@ describe('profileService admin profile update persistence', () => {
   });
 
   it('accepts every userType the AdminProfileEditModal dropdown actually offers', async () => {
-    for (const userType of ['admin', 'professor', 'faculty', 'undergraduate', 'graduate', 'unknown']) {
+    for (const userType of [
+      'admin',
+      'professor',
+      'faculty',
+      'undergraduate',
+      'graduate',
+      'unknown',
+    ]) {
       userModelMock.findOneAndUpdate.mockReturnValue({
         lean: vi.fn().mockResolvedValue({ netid: 'u123' }),
       });
 
       await adminUpdateProfile('u123', { userType });
 
-      const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<string, unknown>;
+      const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<
+        string,
+        unknown
+      >;
       expect(update.userType).toBe(userType);
     }
   });
@@ -2035,188 +2018,5 @@ describe('profileService admin profile update persistence', () => {
 
     const update = userModelMock.findOneAndUpdate.mock.calls.at(-1)![1] as Record<string, unknown>;
     expect(update).not.toHaveProperty('userType');
-  });
-});
-
-describe('updateOwnProfile', () => {
-  it('rejects an unsafe self-edit image URL instead of silently dropping it', async () => {
-    const callsBefore = userModelMock.findOneAndUpdate.mock.calls.length;
-    await expect(updateOwnProfile('prof123', {
-      bio: 'I study secure systems.',
-      website: 'javascript:alert(document.cookie)',
-      imageUrl: 'data:text/html,<script>alert(1)</script>',
-      profileUrls: {
-        yale: 'https://faculty.example.test/profile',
-        mail: 'mailto:prof123@yale.edu',
-        script: 'javascript:alert(document.cookie)',
-      },
-    })).rejects.toThrow('Profile image URL must be a public HTTPS URL');
-    expect(userModelMock.findOneAndUpdate.mock.calls).toHaveLength(callsBefore);
-  });
-
-  it('sanitizes admin profile URL fields before persisting a faculty profile', async () => {
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        netid: 'prof123',
-        website: 'https://faculty.example.test/',
-        profileUrls: { yale: 'https://faculty.example.test/profile' },
-      }),
-    });
-
-    await adminUpdateProfile('prof123', {
-      title: 'Professor of Security',
-      website: 'javascript:alert(document.cookie)',
-      imageUrl: 'https://user:pass@example.yale.edu/profile.jpg',
-      profileUrls: {
-        yale: 'https://faculty.example.test/profile',
-        mail: 'mailto:prof123@yale.edu',
-        script: 'javascript:alert(document.cookie)',
-      },
-    });
-
-    expect(userModelMock.findOneAndUpdate).toHaveBeenCalledWith(
-      { netid: 'prof123' },
-      {
-        title: 'Professor of Security',
-        profileUrls: {
-          yale: 'https://faculty.example.test/profile',
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    );
-  });
-
-  it('bounds self-editable profile payload size before persisting a faculty profile', async () => {
-    userModelMock.findOne.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        netid: 'prof123',
-        primaryDepartment: 'Computer Science',
-        secondaryDepartments: [],
-      }),
-    });
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        netid: 'prof123',
-      }),
-    });
-
-    const profileUrls: Record<string, unknown> = Object.fromEntries(
-      Array.from({ length: 20 }, (_, index) => [
-        `url${index}`,
-        `https://faculty.example.test/profile/${index}`,
-      ]),
-    );
-    Object.defineProperty(profileUrls, 'late', {
-      get: () => {
-        throw new Error('profile URL sanitizer read past the self-edit URL cap');
-      },
-      enumerable: true,
-    });
-
-    const secondaryDepartments = Array.from(
-      { length: 50 },
-      (_, index) => ` Department ${index} `,
-    );
-    Object.defineProperty(secondaryDepartments, '50', {
-      get: () => {
-        throw new Error('profile array sanitizer read past the self-edit array cap');
-      },
-      enumerable: true,
-    });
-
-    const researchInterests = Array.from({ length: 50 }, (_, index) =>
-      index === 0 ? 'x'.repeat(500) : ` Interest ${index} `,
-    );
-    Object.defineProperty(researchInterests, '50', {
-      get: () => {
-        throw new Error('profile interest sanitizer read past the self-edit array cap');
-      },
-      enumerable: true,
-    });
-
-    await updateOwnProfile('prof123', {
-      bio: 'a'.repeat(6000),
-      primaryDepartment: '  Computer Science  ',
-      secondaryDepartments,
-      researchInterests,
-      topics: Array.from({ length: 80 }, (_, index) => ` Topic ${index} `),
-      profileUrls,
-    });
-
-    const persisted = userModelMock.findOneAndUpdate.mock.calls.at(-1)?.[1];
-    expect(persisted.bio).toHaveLength(2000);
-    expect(persisted.primaryDepartment).toBe('Computer Science');
-    expect(persisted.secondaryDepartments).toHaveLength(50);
-    expect(persisted.secondaryDepartments[0]).toBe('Department 0');
-    expect(persisted.researchInterests).toHaveLength(50);
-    expect(persisted.researchInterests[0]).toHaveLength(120);
-    expect(persisted.topics).toHaveLength(50);
-    expect(Object.keys(persisted.profileUrls)).toHaveLength(20);
-    expect(Object.keys(persisted.profileUrls).every((key) => key.length <= 80)).toBe(true);
-    expect(persisted.departments).toHaveLength(51);
-  });
-
-  it('persists all editable fields and requests verification once when completion transitions', async () => {
-    userModelMock.findOne.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ netid: 'prof123', profileVerified: false }),
-    });
-    userModelMock.findOneAndUpdate
-      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue({ netid: 'prof123' }) })
-      .mockReturnValueOnce({
-        lean: vi.fn().mockResolvedValue({
-          netid: 'prof123',
-          profileVerificationRequestedAt: new Date(),
-        }),
-      });
-
-    await updateOwnProfile('prof123', {
-      bio: 'Secure systems research.',
-      primaryDepartment: 'Computer Science',
-      secondaryDepartments: ['Statistics and Data Science'],
-      researchInterests: ['Security'],
-      imageUrl: 'https://faculty.yale.edu/profile.jpg',
-    });
-
-    const update = userModelMock.findOneAndUpdate.mock.calls.at(-2)![1];
-    expect(update).toMatchObject({
-      bio: 'Secure systems research.',
-      primaryDepartment: 'Computer Science',
-      secondaryDepartments: ['Statistics and Data Science'],
-      researchInterests: ['Security'],
-      imageUrl: 'https://faculty.yale.edu/profile.jpg',
-    });
-    expect(update).not.toHaveProperty('profileVerificationRequestedAt');
-    expect(userModelMock.findOneAndUpdate.mock.lastCall![0]).toMatchObject({
-      netid: 'prof123',
-      profileVerified: { $ne: true },
-      profileVerificationRequestedAt: { $exists: false },
-    });
-  });
-
-  it('does not replace an existing verification request timestamp on repeated saves', async () => {
-    const requestedAt = new Date('2026-07-01T12:00:00.000Z');
-    userModelMock.findOne.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({
-        netid: 'prof123',
-        profileVerified: false,
-        profileVerificationRequestedAt: requestedAt,
-        primaryDepartment: 'Computer Science',
-        researchInterests: ['Security'],
-        bio: 'Existing bio',
-        imageUrl: 'https://faculty.yale.edu/profile.jpg',
-      }),
-    });
-    userModelMock.findOneAndUpdate.mockReturnValue({
-      lean: vi.fn().mockResolvedValue({ netid: 'prof123' }),
-    });
-
-    await updateOwnProfile('prof123', { bio: 'Updated bio' });
-
-    expect(userModelMock.findOneAndUpdate.mock.lastCall![1]).not.toHaveProperty(
-      'profileVerificationRequestedAt',
-    );
   });
 });
