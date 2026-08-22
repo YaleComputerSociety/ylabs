@@ -428,6 +428,45 @@ describe('resolveUserForPi recall', () => {
     expect(result).toEqual({ status: 'ambiguous' });
   });
 
+  it('resolves when surname particles were mis-parsed into the given field (Frank van den Bosch)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Frank', lname: 'van den Bosch' }]);
+    const id = await findUserForPi(
+      { firstName: 'Frank van den', lastName: 'Bosch' },
+      finder as any,
+    );
+    expect(id).toBe('u1');
+  });
+
+  it('resolves when a compound surname part was mis-parsed into the given field', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Oswald', lname: 'Chinchilla Delgado' }]);
+    const id = await findUserForPi(
+      { firstName: 'Oswald Chinchilla', lastName: 'Delgado' },
+      finder as any,
+    );
+    expect(id).toBe('u1');
+  });
+
+  it('resolves when the source carries an extra middle token the profile lacks (Laura R Vieira)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Laura', lname: 'Alencar' }]);
+    const id = await findUserForPi(
+      { firstName: 'Laura R Vieira de', lastName: 'Alencar' },
+      finder as any,
+    );
+    expect(id).toBe('u1');
+  });
+
+  it('does NOT match a sole surname candidate whose leading given token differs (Charles != Patrick)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Patrick', lname: 'Lusk' }]);
+    const id = await findUserForPi({ firstName: 'Charles', lastName: 'Lusk' }, finder as any);
+    expect(id).toBeNull();
+  });
+
+  it('does NOT auto-resolve a goes-by-a-different-given-name profile (Ann Carla -> Carla)', async () => {
+    const finder = fakeUserFinder([{ _id: 'u1', fname: 'Carla', lname: 'Staver' }]);
+    const id = await findUserForPi({ firstName: 'Ann Carla', lastName: 'Staver' }, finder as any);
+    expect(id).toBeNull();
+  });
+
   it('does NOT match distinct particle sequences sharing a trailing token (von Berg != van der Berg)', async () => {
     const finder = fakeUserFinder([{ _id: 'u1', fname: 'Robert', lname: 'van der Berg' }]);
     const result = await resolveUserForPi(

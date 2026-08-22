@@ -78,7 +78,8 @@ const NICKNAME_GROUPS: string[][] = [
   ['katherine', 'kate', 'katie', 'kathy', 'katy'],
   ['catherine', 'cathy', 'cath', 'katie'],
   ['margaret', 'maggie', 'meg', 'peggy', 'marge'],
-  ['jennifer', 'jen', 'jenny'],
+  ['jennifer', 'jen', 'jenn', 'jenny'],
+  ['candace', 'candice', 'candie', 'candy'],
   ['deborah', 'deb', 'debbie'],
   ['susan', 'sue', 'susie'],
   ['rebecca', 'becky', 'becca'],
@@ -194,4 +195,17 @@ export function surnamesCompatible(
   }
 
   return isSuffix(sourceCore, candidateCore) || isSuffix(candidateCore, sourceCore);
+}
+
+export type SurnameOnlyMatch = 'matched' | 'ambiguous' | 'absent';
+
+/**
+ * The give-up rule for a PI name that carries no usable given name (a lab named
+ * only after a surname, e.g. "Berg Lab"). A surname alone may only resolve when
+ * exactly one surname-compatible faculty candidate exists; a shared surname
+ * fails closed to ambiguous rather than mis-linking one of several people.
+ */
+export function surnameOnlyMatch(surnameCompatibleCandidateCount: number): SurnameOnlyMatch {
+  if (surnameCompatibleCandidateCount === 1) return 'matched';
+  return surnameCompatibleCandidateCount > 1 ? 'ambiguous' : 'absent';
 }

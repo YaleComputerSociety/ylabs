@@ -5,6 +5,7 @@ import {
   surnameCoreKey,
   surnameFetchRegex,
   surnamesCompatible,
+  surnameOnlyMatch,
 } from '../piNameMatch';
 
 describe('givenNamesEquivalent', () => {
@@ -17,6 +18,13 @@ describe('givenNamesEquivalent', () => {
     expect(givenNamesEquivalent('Robert', 'Bob')).toBe(true);
     expect(givenNamesEquivalent('Bill', 'William')).toBe(true);
     expect(givenNamesEquivalent('Jim', 'James')).toBe(true);
+  });
+
+  it('treats additional canonical diminutives as equivalent', () => {
+    expect(givenNamesEquivalent('Jenn', 'Jennifer')).toBe(true);
+    expect(givenNamesEquivalent('Jennifer', 'Jenn')).toBe(true);
+    expect(givenNamesEquivalent('Candie', 'Candice')).toBe(true);
+    expect(givenNamesEquivalent('Candace', 'Candie')).toBe(true);
   });
 
   it('does not equate distinct given names that merely share an initial', () => {
@@ -119,5 +127,20 @@ describe('surnamesCompatible', () => {
   it('returns false on blank input', () => {
     expect(surnamesCompatible('', 'Smith')).toBe(false);
     expect(surnamesCompatible('Smith', '')).toBe(false);
+  });
+});
+
+describe('surnameOnlyMatch', () => {
+  it('resolves a surname-only name only when exactly one candidate exists', () => {
+    expect(surnameOnlyMatch(1)).toBe('matched');
+  });
+
+  it('fails closed to ambiguous when a surname is shared by several faculty', () => {
+    expect(surnameOnlyMatch(2)).toBe('ambiguous');
+    expect(surnameOnlyMatch(5)).toBe('ambiguous');
+  });
+
+  it('is absent when no faculty carries the surname', () => {
+    expect(surnameOnlyMatch(0)).toBe('absent');
   });
 });
