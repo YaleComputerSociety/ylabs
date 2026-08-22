@@ -86,7 +86,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
     await waitFor(() => {
       expect(screen.getByTestId('program-kind-count').textContent).toBe('1');
       expect(mockedAxios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/programs/search?query=&page=1&pageSize=500'),
+        expect.stringContaining('/programs/search?query=&page=1&pageSize=100'),
       );
     });
   });

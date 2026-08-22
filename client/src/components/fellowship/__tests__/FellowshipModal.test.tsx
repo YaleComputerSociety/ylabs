@@ -254,6 +254,7 @@ describe('FellowshipModal', () => {
     });
 
     expect(screen.queryByText('Eligibility requirements have not been specified.')).toBeNull();
-    expect(screen.getByText('See the eligibility filters above for requirements.')).toBeTruthy();
+    const regionDetailLabel = screen.getByText('Regions:');
+    expect(regionDetailLabel.parentElement).toHaveTextContent('Regions: Africa');
   });
 });
