@@ -39,6 +39,11 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
               <div>
                 <p data-testid="program-kind-count">{context.filterOptions.programKind.length}</p>
                 <p data-testid="journey-summary">{JSON.stringify(context.journeySummary)}</p>
+                <p data-testid="fellowship-count">{context.fellowships.length}</p>
+                <p data-testid="fellowship-titles">
+                  {context.fellowships.map((fellowship) => fellowship.title).join('|')}
+                </p>
+                <p data-testid="search-exhausted">{String(context.searchExhausted)}</p>
                 <button
                   type="button"
                   onClick={() => context.setSelectedProgramKind(['STRUCTURED_PROGRAM'])}
@@ -131,6 +136,56 @@ describe('FellowshipSearchContextProvider program routes', () => {
     expect(mockedAxios.get).toHaveBeenCalledWith(
       expect.stringContaining('/programs/search?query=&page=2&pageSize=100'),
     );
+  });
+
+  it('loads the full result set into context on first paint so an apply-now program on a later page is not gated behind pagination', async () => {
+    const total = 133;
+    const pageSize = 100;
+    const openDeadline = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    const makeRecord = (index: number) =>
+      index === total - 1
+        ? {
+            _id: 'open-late',
+            title: 'Open Late Program',
+            isAcceptingApplications: true,
+            deadline: openDeadline,
+          }
+        : {
+            _id: `program-${index}`,
+            title: `Program ${index}`,
+            isAcceptingApplications: false,
+          };
+
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/filters') {
+        return Promise.resolve({ data: {} });
+      }
+      const pageMatch = url.match(/[?&]page=(\d+)/);
+      const requestedPage = pageMatch ? Number(pageMatch[1]) : 1;
+      const start = (requestedPage - 1) * pageSize;
+      const results = Array.from(
+        { length: Math.max(0, Math.min(pageSize, total - start)) },
+        (_, i) => makeRecord(start + i),
+      );
+      return Promise.resolve({ data: { results, total } });
+    });
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('fellowship-count').textContent).toBe(String(total));
+    });
+
+    expect(screen.getByTestId('fellowship-titles').textContent).toContain('Open Late Program');
+    expect(screen.getByTestId('search-exhausted').textContent).toBe('true');
+    expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
+      applyNow: 1,
+      openingSoon: 0,
+      structured: 0,
+      fundingAfterMentor: 0,
+      nextCycle: 0,
+      archive: total - 1,
+    });
   });
 
   it('sends admin-only student visibility params when the admin filter is selected', async () => {
