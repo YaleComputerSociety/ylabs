@@ -121,6 +121,12 @@ export const labelizeResearchDetailValue = (value?: string): string =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
+const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
+
+const DEPARTMENT_FACULTY_ROSTER_PATH = /^\/people\/faculty(?:-|\/|$)/i;
+
+const FACULTY_DIRECTORY_ROOT_PATH = /^\/research-and-faculty\/faculty-directory$/i;
+
 export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
@@ -129,13 +135,12 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '');
     const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+    if (!host.endsWith('yale.edu')) return false;
 
     return (
-      host.endsWith('yale.edu') &&
-      (/^\/people\/faculty(?:-|\/|$)/.test(path) ||
-        /^\/academic-study\/departments\/[^/]+\/faculty\/load_faculty(?:\/|$)/.test(path) ||
-        (host === 'engineering.yale.edu' &&
-          /^\/research-and-faculty\/faculty-directory\/[^/]+$/.test(path)))
+      DIRECTORY_LOADER_SEGMENT_PATH.test(path) ||
+      DEPARTMENT_FACULTY_ROSTER_PATH.test(path) ||
+      FACULTY_DIRECTORY_ROOT_PATH.test(path)
     );
   } catch {
     return false;

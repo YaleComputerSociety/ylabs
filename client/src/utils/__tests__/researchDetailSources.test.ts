@@ -132,28 +132,41 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual(['https://research-home.example.test']);
   });
 
-  it('never surfaces forbidden Engineering faculty-directory profile pages as detail sources', () => {
-    const forbiddenProfileUrl =
+  it('surfaces named Engineering faculty-directory person profiles as detail sources', () => {
+    const namedProfileUrl =
       'https://engineering.yale.edu/research-and-faculty/faculty-directory/example-person';
 
     const sources = buildResearchDetailSources({
       group: {
         websiteUrl: 'https://research-home.example.test/',
-        sourceUrls: [forbiddenProfileUrl, 'https://research-home.example.test/'],
+        sourceUrls: [namedProfileUrl, 'https://research-home.example.test/'],
       },
       accessSignals: [
         {
           signalType: 'REACH_OUT_PLAUSIBLE',
-          sourceUrl: forbiddenProfileUrl,
+          sourceUrl: namedProfileUrl,
         },
       ],
     });
 
-    expect(sources.map((source) => source.url)).toEqual(['https://research-home.example.test']);
-    expect(sources[0].contexts).toHaveLength(2);
-    expect(sources[0].contexts).toEqual(
-      expect.arrayContaining(['Profile website', 'Profile source']),
+    expect(sources.map((source) => source.url)).toEqual(
+      expect.arrayContaining([namedProfileUrl, 'https://research-home.example.test']),
     );
+  });
+
+  it('never surfaces the Engineering faculty-directory root or loader endpoints as detail sources', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://research-home.example.test/',
+        sourceUrls: [
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory',
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/load_faculty/172',
+          'https://research-home.example.test/',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual(['https://research-home.example.test']);
   });
 
   it('preserves the query string so award links keep their identifier', () => {
