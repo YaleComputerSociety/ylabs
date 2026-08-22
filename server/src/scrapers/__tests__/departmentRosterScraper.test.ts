@@ -1150,9 +1150,9 @@ describe('DepartmentRosterScraper.run', () => {
   it('drops section-header chrome from roster topics and ranks the one-liner below extracted descriptions', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
-        name: 'Eduardo Sample',
-        email: 'eduardo.sample@yale.edu',
-        labUrl: 'https://campuspress.yale.edu/sampleneto/',
+        name: 'Sawyer Roster',
+        email: 'sawyer.roster@yale.edu',
+        labUrl: 'https://campuspress.yale.edu/sawyerlab/',
         topics: ['Condensed Matter Physics', 'Research Areas:', 'Research Interests'],
         researchInterests: ['Condensed Matter Physics', 'Research Areas:', 'Research Interests'],
       },
