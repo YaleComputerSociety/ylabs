@@ -205,7 +205,7 @@ describe('buildPiUserLookupQuery', () => {
   it('allows a unique exact name from an official lab profile to resolve an unclassified user', () => {
     const query = buildPiUserLookupQuery(
       { firstName: 'Jeffrey', lastName: 'Townsend' },
-      { allowUnknownExactName: true, allowSurnameFallback: false },
+      { allowUnknownExactName: true },
     );
 
     expect(query).not.toHaveProperty('userType');
@@ -220,21 +220,8 @@ describe('buildPiUserLookupQuery', () => {
   });
 });
 
-describe('findPiUserId surname-only safeguard', () => {
-  it('rejects a surname-only match when the sole faculty candidate is outside a medicine department', async () => {
-    mockUserFindResult([
-      {
-        _id: 'engineering-dixit',
-        fname: 'Purushottam',
-        lname: 'Dixit',
-        primaryDepartment: 'Biomedical Engineering',
-      },
-    ]);
-
-    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
-  });
-
-  it('resolves a surname-only match when the sole faculty candidate is in a medicine department', async () => {
+describe('findPiUserId surname-only safeguard (issue #562)', () => {
+  it('never attaches on a surname alone, even to a lone medicine-department candidate', async () => {
     mockUserFindResult([
       {
         _id: 'medicine-dixit',
@@ -244,16 +231,24 @@ describe('findPiUserId surname-only safeguard', () => {
       },
     ]);
 
-    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBe('medicine-dixit');
+    expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
   });
 
-  it('rejects a surname-only match when more than one candidate shares the surname', async () => {
+  it('never attaches on a surname alone when several faculty share the surname', async () => {
     mockUserFindResult([
       { _id: 'a', fname: 'Vishwa', lname: 'Dixit', primaryDepartment: 'Comparative Medicine' },
       { _id: 'b', fname: 'Purushottam', lname: 'Dixit', primaryDepartment: 'Internal Medicine' },
     ]);
 
     expect(await findPiUserId({ firstName: '', lastName: 'Dixit' })).toBeNull();
+  });
+
+  it('does not attach a surname-only lab name to a lone same-surname faculty (Schwartz)', async () => {
+    mockUserFindResult([
+      { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', primaryDepartment: 'Internal Medicine' },
+    ]);
+
+    expect(await findPiUserId(inferPiNameFromLabName('Schwartz Lab'))).toBeNull();
   });
 
   it('resolves a unique exact full-name match regardless of department', async () => {
@@ -264,9 +259,22 @@ describe('findPiUserId surname-only safeguard', () => {
     expect(
       await findPiUserId(
         { firstName: 'Jeffrey', lastName: 'Townsend' },
-        { allowUnknownExactName: true, allowSurnameFallback: false },
+        { allowUnknownExactName: true },
       ),
     ).toBe('townsend');
+  });
+
+  it('attaches only when a full first and last name both agree (Martin vs Michael Schwartz)', async () => {
+    mockUserFindResult([
+      { _id: 'sc2', fname: 'Martin', lname: 'Schwartz', primaryDepartment: 'Internal Medicine' },
+    ]);
+
+    expect(
+      await findPiUserId(
+        { firstName: 'Martin', lastName: 'Schwartz' },
+        { allowUnknownExactName: true },
+      ),
+    ).toBe('sc2');
   });
 });
 

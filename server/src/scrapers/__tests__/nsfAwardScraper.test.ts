@@ -333,19 +333,15 @@ describe('findUserForPi', () => {
     );
   });
 
-  it('uses first-initial fallback only when the source first name is an initial', async () => {
+  it('does not attach on a bare source initial, even to a lone same-initial candidate (issue #562)', async () => {
     const finder = vi
       .fn()
-      .mockResolvedValueOnce([]) // exact miss
-      .mockResolvedValueOnce([{ _id: 'user-3', fname: 'Parker', lname: 'Grant' }]); // initial hit
+      .mockResolvedValueOnce([]) // exact ^P$ miss
+      .mockResolvedValueOnce([{ _id: 'user-3', fname: 'Parker', lname: 'Grant' }]); // never reached
     const id = await findUserForPi({ firstName: 'P.', lastName: 'Grant' }, finder as any);
 
-    expect(id).toBe('user-3');
-    expect(finder).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        fname: /^P/i,
-      }),
-    );
+    expect(id).toBeNull();
+    expect(finder).toHaveBeenCalledTimes(1);
   });
 
   it('returns null on ambiguous exact match (multiple)', async () => {
@@ -494,6 +490,32 @@ describe('resolveUserForPi recall', () => {
       finder as any,
     );
     expect(result).toEqual({ status: 'ambiguous' });
+  });
+
+  // Issue #562: "Schwartz Lab" (medicine.yale.edu/lab/schwartz) attached the
+  // wrong same-surname faculty. Surname-only, or a differing given name, must
+  // fail closed; only first+last agreement may attach. Synthetic ids only.
+  describe('surname precision (issue #562)', () => {
+    it('does not attach a surname-only PI name to a lone same-surname candidate', async () => {
+      const finder = fakeUserFinder([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz' }]);
+      const result = await resolveUserForPi({ firstName: '', lastName: 'Schwartz' }, finder as any);
+      expect(result).toEqual({ status: 'absent' });
+    });
+
+    it('does not attach when the real PI (Martin) is absent and only a namesake (Michael) exists', async () => {
+      const finder = fakeUserFinder([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz' }]);
+      const id = await findUserForPi({ firstName: 'Martin', lastName: 'Schwartz' }, finder as any);
+      expect(id).toBeNull();
+    });
+
+    it('attaches only when first and last name both agree', async () => {
+      const finder = fakeUserFinder([
+        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz' },
+        { _id: 'sc2', fname: 'Martin', lname: 'Schwartz' },
+      ]);
+      const id = await findUserForPi({ firstName: 'Martin', lastName: 'Schwartz' }, finder as any);
+      expect(id).toBe('sc2');
+    });
   });
 });
 

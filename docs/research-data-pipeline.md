@@ -127,10 +127,10 @@ Use the returned repair lanes and commands as the fix plan, then re-run the visi
 YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into canonical PI `RoleAssignment` rows so public detail pages and visibility computation share the same lead evidence.
 
 Grant-source PI matching must remain conservative because award APIs are funding evidence, not official Yale profile identity evidence.
-NSF PI matching requires exact last name plus an exact match on the leading given-name token, then exact last name plus first-name prefix; it may use a bare first-initial fallback only when the source itself provides only an initial.
+NSF PI matching requires exact last name plus an exact match on the leading given-name token, then exact last name plus first-name prefix; a bare source initial never binds to a same-initial namesake and fails closed instead (issue #562).
 Matching the leading token rather than the whole given string recovers a surname particle or compound-surname part that `splitName` mis-parsed into the given field (`Frank van den Bosch`, `Oswaldo Chinchilla Mazariegos`), but it still fails closed on a differing leading token (`Charles` vs `Patrick`) or a goes-by-a-different-given-name profile (`Ann Carla` to `Carla` stays closed).
 Do not match a full source given name to a different Yale first name by initial alone, such as `Leying Guan` to `Lawrence Guan`.
-NIH PI matching applies the same leading-given-token rule and additionally resolves a lab named only after a surname (`Arnsten Lab` to `Arnsten`) only when exactly one surname-compatible Yale faculty exists, failing closed to ambiguity when a common surname matches several and to absence when none match.
+NIH PI matching applies the same leading-given-token rule; a lab named only after a surname (`Arnsten Lab`) never attaches a PI on the surname alone, because a shared surname can identify the wrong person, so it fails closed to ambiguity whenever any surname-compatible Yale faculty exists and to absence when none match (issue #562).
 
 The shared canonical-home resolver distinguishes a safe absence of memberships from one canonical official home and ambiguous or ineligible memberships.
 Grant scrapers create a synthetic shell only for the safe-absence case and emit no research-home observations for ambiguity, archived or grant-only candidates, or other ineligible memberships.

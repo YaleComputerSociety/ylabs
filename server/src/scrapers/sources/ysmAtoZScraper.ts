@@ -6,9 +6,10 @@
  *
  * The page is a single HTML table with ~266 rows, each `<tr>` containing a lab name
  * (link) and the lab website URL. The scraper prefers a person explicitly named on
- * the official lab homepage or Research Faculty page. Surname-only inference from
- * the lab name is a final fallback because common surnames can identify the wrong
- * Yale faculty member.
+ * the official lab homepage or Research Faculty page. A PI is only attached when a
+ * full first and last name resolves to a unique Yale faculty member; a surname
+ * alone never attaches, because a common surname can identify the wrong person
+ * (issue #562).
  *
  * Each row produces ResearchGroup observations keyed by slug (derived from the URL or
  * from the lab name). The slug is the unique identifier `EntityMaterializer` uses to
@@ -421,10 +422,7 @@ function parseLabs(html: string): RawLab[] {
 
 interface PiUserLookupOptions {
   allowUnknownExactName?: boolean;
-  allowSurnameFallback?: boolean;
 }
-
-const MEDICINE_DEPARTMENT_PATTERN = /medicine|health|nursing|public health/i;
 
 export function buildPiUserLookupQuery(
   nameHint: PiNameHint,
@@ -450,23 +448,17 @@ export async function findPiUserId(
   options: PiUserLookupOptions = {},
 ): Promise<string | null> {
   if (!nameHint?.lastName) return null;
-  const hasExactFirstName = nameHint.firstName.trim().length > 0;
+  // Issue #562: a PI may never be attached on a surname alone. A lone
+  // same-surname faculty member is often a namesake rather than the lead (the
+  // "Schwartz Lab" that attached Michael Schwartz when the real PI is Martin
+  // Schwartz), so a name hint that carries no given name fails closed.
+  if (nameHint.firstName.trim().length === 0) return null;
   const query = buildPiUserLookupQuery(nameHint, options);
   const matches = await User.find(query, { _id: 1, fname: 1, lname: 1, primaryDepartment: 1 })
     .limit(5)
     .lean();
-  if (matches.length === 0 && hasExactFirstName && options.allowSurnameFallback !== false) {
-    return findPiUserId({ firstName: '', lastName: nameHint.lastName });
-  }
   if (matches.length !== 1) return null;
-  const match: any = matches[0];
-  if (
-    !hasExactFirstName &&
-    !MEDICINE_DEPARTMENT_PATTERN.test(String(match.primaryDepartment || ''))
-  ) {
-    return null;
-  }
-  return serializedDocumentId(match._id) || null;
+  return serializedDocumentId(matches[0]._id) || null;
 }
 
 export function labToObservations(lab: RawLab, sourceUrl: string): ObservationInput[] {
@@ -696,7 +688,6 @@ export class YsmAtoZScraper implements IScraper {
         );
         piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''), {
           allowUnknownExactName: true,
-          allowSurnameFallback: false,
         });
         if (piUserId)
           piSourceUrl = researchFacultyProfile?.profileUrl || researchFacultyUrl || piSourceUrl;
@@ -706,7 +697,6 @@ export class YsmAtoZScraper implements IScraper {
         observations.push(...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url));
         piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''), {
           allowUnknownExactName: true,
-          allowSurnameFallback: false,
         });
         if (piUserId) piSourceUrl = contactWidgetProfile?.profileUrl || lab.url;
       }

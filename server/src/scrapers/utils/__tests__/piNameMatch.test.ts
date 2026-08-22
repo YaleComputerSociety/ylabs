@@ -131,8 +131,8 @@ describe('surnamesCompatible', () => {
 });
 
 describe('surnameOnlyMatch', () => {
-  it('resolves a surname-only name only when exactly one candidate exists', () => {
-    expect(surnameOnlyMatch(1)).toBe('matched');
+  it('never resolves a surname-only name, even to a lone candidate (issue #562)', () => {
+    expect(surnameOnlyMatch(1)).toBe('ambiguous');
   });
 
   it('fails closed to ambiguous when a surname is shared by several faculty', () => {
