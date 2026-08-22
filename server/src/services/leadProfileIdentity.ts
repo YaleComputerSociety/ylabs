@@ -112,7 +112,115 @@ const safeProfileUrlObject = (value: unknown): Record<string, string> => {
 export interface LeadProfileIdentityLead {
   user?: Record<string, any> | null;
   row?: Record<string, any> | null;
+  name?: unknown;
+  netid?: unknown;
 }
+
+const PERSON_PROFILE_PATH_SEGMENTS = [
+  'profile',
+  'profiles',
+  'people',
+  'person',
+  'faculty',
+  'faculty-directory',
+];
+
+const normalizeIdentityToken = (value: unknown): string =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+
+const nameTokensFrom = (value: unknown): string[] =>
+  String(value ?? '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 2);
+
+interface LeadDirectoryIdentity {
+  netid: string;
+  nameTokens: Set<string>;
+  profileSlugs: Set<string>;
+}
+
+const GROUP_LIKE_SLUG_TOKENS = new Set([
+  'lab',
+  'labs',
+  'laboratory',
+  'group',
+  'center',
+  'centre',
+  'institute',
+  'program',
+  'programme',
+  'core',
+  'consortium',
+  'initiative',
+  'project',
+]);
+
+const isGroupLikeProfileSlug = (slug: string): boolean =>
+  slug
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .some((token) => GROUP_LIKE_SLUG_TOKENS.has(token));
+
+const personProfileSlugFromDestination = (destination: string): string => {
+  const segments = destination.split('/').filter(Boolean);
+  for (let index = segments.length - 2; index >= 1; index -= 1) {
+    if (PERSON_PROFILE_PATH_SEGMENTS.includes(segments[index]) && segments[index + 1]) {
+      const slug = segments[index + 1];
+      return isGroupLikeProfileSlug(slug) ? '' : slug;
+    }
+  }
+  return '';
+};
+
+const leadOfficialProfileSlugs = (lead: LeadProfileIdentityLead): string[] => {
+  const profileUrls = safeProfileUrlObject(lead.user?.profileUrls || lead.user?.profile_urls);
+  return [
+    ...Object.values(profileUrls),
+    lead.user?.websiteUrl,
+    lead.user?.website,
+    lead.row?.sourceUrl,
+  ]
+    .filter(isLikelyOfficialPersonProfileUrl)
+    .map((url) => personProfileSlugFromDestination(normalizeOfficialProfileDestination(String(url))))
+    .filter(Boolean)
+    .map((slug) => normalizeIdentityToken(slug));
+};
+
+const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirectoryIdentity => {
+  const user = (lead.user && typeof lead.user === 'object' ? lead.user : {}) as Record<string, any>;
+  const row = (lead.row && typeof lead.row === 'object' ? lead.row : {}) as Record<string, any>;
+  const netid = normalizeIdentityToken(user.netid ?? user.netId ?? lead.netid);
+  const nameSource =
+    user.displayName ||
+    [user.fname, user.lname].filter(Boolean).join(' ') ||
+    user.name ||
+    lead.name ||
+    row.name ||
+    '';
+  return {
+    netid,
+    nameTokens: new Set(nameTokensFrom(nameSource)),
+    profileSlugs: new Set(leadOfficialProfileSlugs(lead)),
+  };
+};
+
+const hasResolvableLeadIdentity = (identity: LeadDirectoryIdentity): boolean =>
+  Boolean(identity.netid) || identity.nameTokens.size > 0 || identity.profileSlugs.size > 0;
+
+const profileSlugCorroboratesLead = (slug: string, identity: LeadDirectoryIdentity): boolean => {
+  const normalizedSlug = normalizeIdentityToken(slug);
+  if (identity.netid && normalizedSlug === identity.netid) return true;
+  if (identity.profileSlugs.has(normalizedSlug)) return true;
+  // A lead's own official profile page is authoritative: when we have one, a
+  // different person page under the entity is a conflict even if it shares a
+  // surname (vishwa-dixit vs purushottam-dixit). Only fall back to the softer
+  // name-token overlap when the lead offers no profile page to compare against.
+  if (identity.profileSlugs.size > 0) return false;
+  return nameTokensFrom(slug).some((token) => identity.nameTokens.has(token));
+};
 
 export const resolveLeadOfficialProfileUrl = (lead: LeadProfileIdentityLead): string => {
   const profileUrls = safeProfileUrlObject(lead.user?.profileUrls || lead.user?.profile_urls);
@@ -164,11 +272,16 @@ export const entityOfficialPersonProfileDestinations = (entity: Record<string, a
 
 /**
  * A person-derived entity is one whose own identity links (name/site/sources)
- * are an official person profile. When such an entity carries a lead whose own
- * official profile does not match that person, the entity's whole identity is
- * contaminated by a lead dispute and it must drop out of student discovery
- * (repair queue), not merely hide the PI card behind the detail "under review"
- * box. Absent any lead profile evidence we do not assume a conflict.
+ * are an official person profile. Its identity is contested when its official
+ * person-profile home resolves to a different person than the lead we attached.
+ * We corroborate the entity's profile-home person against each lead by that
+ * lead's own official profile-page person, netid, or name tokens - so the same
+ * person on two hosts (e.g. chem vs medicine `/profile/james-mayer`) is not a
+ * conflict, while `/profile/mog8` under a `mjg24` "Mark Graham" lead is (issue
+ * #468: name-only matching stitched a foreign Yale profile onto a same-named
+ * PI). A contested entity must drop out of student discovery (repair queue),
+ * not merely hide the PI card behind the detail "under review" box. Absent any
+ * lead identity at all we do not assume a conflict.
  */
 export function detectProfileIdentityRisk({
   entity,
@@ -179,16 +292,20 @@ export function detectProfileIdentityRisk({
 }): boolean {
   const entityDestinations = entityOfficialPersonProfileDestinations(entity);
   if (entityDestinations.size === 0) return false;
+  if (leadMembers.length === 0) return false;
 
-  const leadsWithOfficialProfile = leadMembers.filter((member) =>
-    Boolean(resolveLeadOfficialProfileUrl(member)),
-  );
-  if (leadsWithOfficialProfile.length === 0) return false;
+  const entityPersonSlugs = [...entityDestinations]
+    .map(personProfileSlugFromDestination)
+    .filter(Boolean);
+  if (entityPersonSlugs.length === 0) return false;
 
-  const matchingLeads = leadsWithOfficialProfile.filter((member) =>
-    entityDestinations.has(
-      normalizeOfficialProfileDestination(resolveLeadOfficialProfileUrl(member)),
-    ),
+  const leadIdentities = leadMembers
+    .map(resolveLeadDirectoryIdentity)
+    .filter(hasResolvableLeadIdentity);
+  if (leadIdentities.length === 0) return false;
+
+  const corroborated = entityPersonSlugs.some((slug) =>
+    leadIdentities.some((identity) => profileSlugCorroboratesLead(slug, identity)),
   );
-  return matchingLeads.length === 0;
+  return !corroborated;
 }

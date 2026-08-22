@@ -88,6 +88,7 @@ interface OfficialProfileIdentityOptions {
     fname?: string;
     lname?: string;
     email?: string;
+    netid?: string;
   }>;
 }
 
@@ -465,6 +466,27 @@ function profileSlug(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+export function netidStyleProfileSlug(value: unknown): string {
+  const slug = profileSlug(value).toLowerCase();
+  if (!slug || slug.includes('-')) return '';
+  return /^[a-z][a-z0-9]{0,15}$/.test(slug) ? slug : '';
+}
+
+export function expectedNetidsForOfficialProfile(
+  entity: Record<string, any>,
+  expectedPeople: OfficialProfileIdentityOptions['expectedPeople'],
+): string[] {
+  const people = (expectedPeople || []).length > 0 ? expectedPeople || [] : entityExpectedPeople(entity);
+  return uniqueStrings(
+    [
+      textValue(entity.netid),
+      ...people.map((person) => textValue((person as Record<string, any>).netid)),
+    ]
+      .map((value) => value.toLowerCase())
+      .filter(Boolean),
+  );
 }
 
 function sameOfficialProfilePerson(left: string, right: string): boolean {
@@ -1557,6 +1579,18 @@ export function extractOfficialProfileIdentity(
   );
   if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
     return null;
+  // A same-name different-person profile passes the name check above, so when
+  // the profile URL carries a netid-style slug it must equal a netid we expect
+  // for this person. This rejects name-only collisions such as attaching the
+  // medicine netid `mog8` profile to the EEB `mjg24` "Mark Graham" (issue #468).
+  const profileNetidSlug =
+    netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
+  if (profileNetidSlug) {
+    const expectedNetids = expectedNetidsForOfficialProfile(entity, options.expectedPeople);
+    if (expectedNetids.length > 0 && !expectedNetids.includes(profileNetidSlug)) {
+      return null;
+    }
+  }
 
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
@@ -2310,6 +2344,7 @@ async function annotateEntitiesWithLeadUsers(
       name: user?.name || user?.displayName || entry.name,
       displayName: user?.displayName || user?.name || entry.name,
       email: user?.email || entry.email,
+      netid: textValue(user?.netid) || textValue(entry.netid),
     };
     const entityId = idValue(entry.researchEntityId);
     leadUsersByEntity.set(entityId, [...(leadUsersByEntity.get(entityId) || []), lead]);
@@ -2491,6 +2526,7 @@ async function selectResearchHomeProfileTargets(
         fname: user?.fname || split.first,
         lname: user?.lname || split.last,
         email: user?.email || entry.email,
+        netid: textValue(user?.netid) || textValue(entry.netid),
       },
     ]);
   }

@@ -91,11 +91,83 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(false);
   });
 
-  it('does not flag without any lead profile evidence', () => {
+  it('does not flag when the lead directory name corroborates the profile home', () => {
     expect(
       detectProfileIdentityRisk({
         entity: personDerivedEntity,
         leadMembers: [{ user: { fname: 'Jane', lname: 'Doe' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('flags when the profile home is a different person than a lead with no profile URL', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://medicine.yale.edu/profile/mog8/',
+          sourceUrls: ['https://medicine.yale.edu/profile/mog8/'],
+        },
+        leadMembers: [{ user: { netid: 'mjg24', fname: 'Mark', lname: 'Graham' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('corroborates a netid-slug profile home against the lead netid', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://medicine.yale.edu/profile/mjg24/',
+          sourceUrls: ['https://medicine.yale.edu/profile/mjg24/'],
+        },
+        leadMembers: [{ user: { netid: 'mjg24', fname: 'Mark', lname: 'Graham' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not flag when the lead official profile is the same person on a different host', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://medicine.yale.edu/profile/james-mayer/',
+          sourceUrls: ['https://medicine.yale.edu/profile/james-mayer/'],
+        },
+        leadMembers: [
+          {
+            name: 'James Mayer',
+            user: {
+              netid: 'jmm362',
+              profileUrls: { official: 'https://chem.yale.edu/profile/james-mayer' },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not treat a lab landing page under /people/ as a contested person profile', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/',
+        },
+        leadMembers: [
+          {
+            name: 'Sviatoslav Bagriantsev',
+            user: {
+              netid: 'sb864',
+              profileUrls: { official: 'https://medicine.yale.edu/profile/sviatoslav-bagriantsev/' },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not flag without any resolvable lead identity', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: personDerivedEntity,
+        leadMembers: [{ user: {} }],
       }),
     ).toBe(false);
   });
