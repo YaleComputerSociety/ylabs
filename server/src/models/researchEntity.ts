@@ -13,8 +13,35 @@ import {
   type ResearchEntityType,
 } from './researchAccessTypes';
 import { studentVisibilityFields } from './studentVisibility';
+import { sourceLinkHealthStatuses } from '../services/sourceLinkHealth';
 
 export const researchEntitySchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
+
+const sourceLinkHealthSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+    },
+    healthStatus: {
+      type: String,
+      enum: [...sourceLinkHealthStatuses],
+      default: 'UNKNOWN',
+      required: true,
+    },
+    httpStatusCode: {
+      type: Number,
+      min: 100,
+      max: 599,
+      required: false,
+    },
+    checkedAt: {
+      type: Date,
+      required: false,
+    },
+  },
+  { _id: false },
+);
 
 const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
   {
@@ -257,6 +284,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     sourceUrls: {
       type: [String],
+      default: [],
+    },
+    sourceLinkHealth: {
+      type: [sourceLinkHealthSchema],
       default: [],
     },
     confidenceByField: {

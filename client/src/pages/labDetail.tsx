@@ -594,7 +594,14 @@ const SourcesSection = ({ sources }: { sources: ResearchDetailSource[] }) => {
             <article key={source.url} className="px-4 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">{source.label}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-gray-900">{source.label}</p>
+                    {source.isLikelyUnavailable && (
+                      <span className="inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-500">
+                        may be unavailable
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 break-all text-xs text-gray-600">{sourceHost(source.url)}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {source.contexts.map((context) => (
@@ -733,6 +740,7 @@ const LabDetail = () => {
     group,
     accessSignals,
     undergraduateLogistics,
+    sourceLinkHealth: group.sourceLinkHealth,
   });
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);

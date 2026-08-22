@@ -105,6 +105,12 @@ export interface RecentGrant {
   role?: 'pi' | 'copi';
 }
 
+export interface ResearchEntitySourceLinkHealth {
+  url: string;
+  healthStatus?: string;
+  httpStatusCode?: number;
+}
+
 export interface ResearchGroup {
   _id: string;
   // Meilisearch hits return `id` rather than `_id`. The search endpoint also
@@ -148,6 +154,7 @@ export interface ResearchGroup {
   contactName?: string;
   contactRole?: string;
   sourceUrls: string[];
+  sourceLinkHealth?: ResearchEntitySourceLinkHealth[];
   confidenceByField?: Record<string, number>;
   /**
    * Names of fields the PI / admin has manually set; the materializer never

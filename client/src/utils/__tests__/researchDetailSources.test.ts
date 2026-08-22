@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildResearchDetailSources } from '../researchDetailSources';
+import {
+  buildResearchDetailSources,
+  isLikelyUnavailableSourceLink,
+} from '../researchDetailSources';
 
 describe('buildResearchDetailSources', () => {
   it('deduplicates repeated evidence URLs into one source row', () => {
@@ -317,5 +320,112 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(1);
     expect(sources[0].contexts).toEqual(['Profile website', 'Compensation logistics evidence']);
     expect(JSON.stringify(sources)).not.toContain('private.example.test');
+  });
+
+  it('defaults every source to available when no liveness signal is joined', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://lab.example.test/',
+        sourceUrls: ['https://program.example.test/apply'],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      'https://lab.example.test',
+      'https://program.example.test/apply',
+    ]);
+    expect(sources.every((source) => source.isLikelyUnavailable === false)).toBe(true);
+  });
+
+  it('sorts an UNAVAILABLE link last and marks it while preserving the healthy order', () => {
+    const deadUrl = 'https://dead.example.test/lab';
+    const liveUrl = 'https://live.example.test/lab';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: deadUrl,
+        sourceUrls: [liveUrl],
+      },
+      sourceLinkHealth: [
+        { url: deadUrl, healthStatus: 'UNAVAILABLE' },
+        { url: liveUrl, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([liveUrl, deadUrl]);
+    expect(sources[0].isLikelyUnavailable).toBe(false);
+    expect(sources[1].isLikelyUnavailable).toBe(true);
+    expect(sources[1].healthStatus).toBe('UNAVAILABLE');
+  });
+
+  it('treats a clearly-dead http status at or above 400 as likely unavailable', () => {
+    const notFoundUrl = 'https://gone.example.test/lab';
+    const okUrl = 'https://ok.example.test/lab';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: notFoundUrl,
+        sourceUrls: [okUrl],
+      },
+      sourceLinkHealth: [
+        { url: notFoundUrl, healthStatus: 'UNKNOWN', httpStatusCode: 404 },
+        { url: okUrl, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([okUrl, notFoundUrl]);
+    expect(sources[1].isLikelyUnavailable).toBe(true);
+    expect(sources[1].httpStatusCode).toBe(404);
+  });
+
+  it('keeps REDIRECTED and UNKNOWN links in their original order without a marker', () => {
+    const redirectUrl = 'https://redirect.example.test/lab';
+    const unknownUrl = 'https://unknown.example.test/lab';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: redirectUrl,
+        sourceUrls: [unknownUrl],
+      },
+      sourceLinkHealth: [
+        { url: redirectUrl, healthStatus: 'REDIRECTED', httpStatusCode: 302 },
+        { url: unknownUrl, healthStatus: 'UNKNOWN' },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([redirectUrl, unknownUrl]);
+    expect(sources.every((source) => source.isLikelyUnavailable === false)).toBe(true);
+  });
+
+  it('matches liveness to sources across scheme, www, and trailing-slash differences', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://lab.example.test/research',
+        sourceUrls: [],
+      },
+      sourceLinkHealth: [
+        { url: 'http://www.lab.example.test/research/', healthStatus: 'UNAVAILABLE' },
+      ],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].isLikelyUnavailable).toBe(true);
+  });
+});
+
+describe('isLikelyUnavailableSourceLink', () => {
+  it('flags UNAVAILABLE health or any status at or above 400', () => {
+    expect(isLikelyUnavailableSourceLink({ healthStatus: 'UNAVAILABLE' })).toBe(true);
+    expect(isLikelyUnavailableSourceLink({ httpStatusCode: 500 })).toBe(true);
+  });
+
+  it('does not flag healthy, redirected, unknown, or missing health', () => {
+    expect(isLikelyUnavailableSourceLink({ healthStatus: 'HEALTHY', httpStatusCode: 200 })).toBe(
+      false,
+    );
+    expect(isLikelyUnavailableSourceLink({ healthStatus: 'REDIRECTED', httpStatusCode: 302 })).toBe(
+      false,
+    );
+    expect(isLikelyUnavailableSourceLink(undefined)).toBe(false);
   });
 });
