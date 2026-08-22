@@ -35,7 +35,10 @@ const parseArgs = (argv: string[]): CliOptions => ({
   confirm: argv.includes('--confirm-dedupe'),
 });
 
-const normalizeKey = (value: unknown): string => String(value || '').trim().toLowerCase();
+const normalizeKey = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
 
 const isGenericSearchLanding = (applicationLink: string): boolean =>
   /\/search\.aspx(?:$|[?#])/i.test(applicationLink) || /\/search\/?$/i.test(applicationLink);

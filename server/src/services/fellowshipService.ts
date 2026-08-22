@@ -795,9 +795,7 @@ export const searchFellowships = async (params: {
     fellowships: (includeNonPublic
       ? fellowships
       : fellowships.map((fellowship) => publicFellowshipForStudent(fellowship))
-    ).map(
-      (fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) }),
-    ),
+    ).map((fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) })),
     total,
     page,
     pageSize,
