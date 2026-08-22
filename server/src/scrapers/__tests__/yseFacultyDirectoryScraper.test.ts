@@ -27,7 +27,7 @@ const DIRECTORY_HTML = `
   </li>
   <li>
     <article class="profile__item">
-      <div class="profile__segment--name"><h2><a href="https://environment.yale.edu/directory/faculty/alex-meadow">Alex Meadow</a></h2></div>
+      <div class="profile__segment--name"><h2><a href="https://environment.yale.edu/directory/faculty/avery-sloan">Avery Sloan</a></h2></div>
     </article>
   </li>
   <li>
@@ -58,7 +58,7 @@ const PROFILE_WITH_LAB = `
     <aside>
       <div class="profile__info">
         <div class="eyebrow">Contact</div>
-        <p><a href="mailto:admissions.yse@yale.edu">admissions.yse@yale.edu</a></p>
+        <p><a href="mailto:contact.faculty@yale.edu">contact.faculty@yale.edu</a></p>
         <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
       </div>
       <div class="profile__info">
@@ -106,12 +106,12 @@ const PROFILE_NO_LAB = `
 <html><body>
 <main class="main-content">
   <section class="profile flexhero">
-    <h1>Alex Meadow</h1>
+    <h1>Avery Sloan</h1>
     <div class="intro-text profile__position"><p><span class="semijoin">Assistant Professor of Environmental Policy</span></p></div>
     <aside>
       <div class="profile__info">
         <div class="eyebrow">Contact</div>
-        <p><a href="mailto:alex.meadow@yale.edu">alex.meadow@yale.edu</a></p>
+        <p><a href="mailto:avery.sloan@yale.edu">avery.sloan@yale.edu</a></p>
       </div>
       <div class="profile__info">
         <div class="eyebrow">Areas of Expertise</div>
@@ -132,7 +132,7 @@ const PROFILE_NO_LAB = `
   <div class="grid-container">
     <div class="cell medium-8">
       <div class="wysiwyg">
-        <p>Assistant Professor Meadow analyzes environmental policy design and the governance of shared natural resources.</p>
+        <p>Assistant Professor Sloan analyzes environmental policy design and the governance of shared natural resources.</p>
       </div>
     </div>
   </div>
@@ -146,9 +146,9 @@ const RIVERS: RawYseFaculty = {
   slug: 'jordan-rivers',
 };
 const MEADOW: RawYseFaculty = {
-  name: 'Alex Meadow',
-  profileUrl: 'https://environment.yale.edu/directory/faculty/alex-meadow',
-  slug: 'alex-meadow',
+  name: 'Avery Sloan',
+  profileUrl: 'https://environment.yale.edu/directory/faculty/avery-sloan',
+  slug: 'avery-sloan',
 };
 
 function makeContext(options: Partial<ScraperContext['options']> = {}) {
@@ -171,9 +171,9 @@ function makeContext(options: Partial<ScraperContext['options']> = {}) {
 describe('parseDirectory', () => {
   it('extracts individual faculty profiles, ignoring the root, staff, and duplicates', () => {
     const roster = parseDirectory(DIRECTORY_HTML, DIRECTORY_URL);
-    expect(roster.map((r) => r.slug)).toEqual(['jordan-rivers', 'alex-meadow']);
+    expect(roster.map((r) => r.slug)).toEqual(['jordan-rivers', 'avery-sloan']);
     expect(roster.find((r) => r.slug === 'jordan-rivers')?.profileUrl).toBe(RIVERS.profileUrl);
-    expect(roster.find((r) => r.slug === 'alex-meadow')?.profileUrl).toBe(MEADOW.profileUrl);
+    expect(roster.find((r) => r.slug === 'avery-sloan')?.profileUrl).toBe(MEADOW.profileUrl);
   });
 
   it('never surfaces the directory root or staff pages as faculty', () => {
@@ -198,7 +198,7 @@ describe('extractProfile', () => {
 
   it('ignores departmental admin emails and keeps the person-specific email', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
-    expect(profile.email).not.toBe('admissions.yse@yale.edu');
+    expect(profile.email).not.toBe('contact.faculty@yale.edu');
   });
 
   it('does not adopt an affiliated named center as the faculty lab site', () => {
@@ -266,7 +266,7 @@ describe('facultyToResearchEntityObservations', () => {
 
   it('seeds a FACULTY_RESEARCH_AREA home from the profile page with no websiteUrl', () => {
     const profile = extractProfile(PROFILE_NO_LAB, MEADOW);
-    const obs = facultyToResearchEntityObservations(profile, 'netid:alex.meadow');
+    const obs = facultyToResearchEntityObservations(profile, 'netid:avery.sloan');
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('FACULTY_RESEARCH_AREA');
     expect(byField.kind).toBe('individual');
@@ -279,7 +279,7 @@ describe('facultyToResearchEntityObservations', () => {
     const bare = extractProfile(PROFILE_NO_LAB, MEADOW);
     const obs = facultyToResearchEntityObservations(
       { ...bare, researchAreas: [], labUrl: undefined },
-      'netid:alex.meadow',
+      'netid:avery.sloan',
     );
     expect(obs).toEqual([]);
   });
@@ -320,7 +320,7 @@ describe('YseFacultyDirectoryScraper.run', () => {
 
     const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
     const slugs = entityObs.filter((o) => o.field === 'slug').map((o) => o.value);
-    expect(slugs).toEqual(['yse-faculty-jordan-rivers', 'yse-faculty-alex-meadow']);
+    expect(slugs).toEqual(['yse-faculty-jordan-rivers', 'yse-faculty-avery-sloan']);
 
     const everySource = emitted.map((o) => o.sourceUrl).filter(Boolean);
     expect(everySource).not.toContain(DIRECTORY_URL);
