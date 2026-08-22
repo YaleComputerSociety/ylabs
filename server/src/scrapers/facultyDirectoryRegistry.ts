@@ -158,7 +158,8 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     status: 'gap',
     studentImpactTier: 2,
     approxFacultyCount: 38,
-    notes: 'Undergraduate-research page is covered by department-undergrad-research; the roster is not.',
+    notes:
+      'Undergraduate-research page is covered by department-undergrad-research; the roster is not.',
   },
   {
     url: 'https://mbb.yale.edu/people/faculty',
@@ -247,7 +248,8 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     status: 'gap',
     studentImpactTier: 3,
     approxFacultyCount: 95,
-    notes: 'Members overlap heavily with YSM/FAS department faculty; expect dedup against existing entities.',
+    notes:
+      'Members overlap heavily with YSM/FAS department faculty; expect dedup against existing entities.',
   },
   {
     url: 'https://medicine.yale.edu/yigh/faculty-support-initiative/affiliated-faculty/',
@@ -417,7 +419,8 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     studentImpactTier: 5,
     coveredBy: ['dept-faculty-roster'],
     approxFacultyCount: 18,
-    notes: 'FAS Music department (yalemusic.yale.edu); distinct from the School of Music (music.yale.edu).',
+    notes:
+      'FAS Music department (yalemusic.yale.edu); distinct from the School of Music (music.yale.edu).',
   },
   {
     url: 'https://eall.yale.edu/people/professors',
@@ -638,7 +641,8 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     status: 'gap',
     studentImpactTier: 6,
     approxFacultyCount: 50,
-    notes: 'School of Music (music.yale.edu); distinct from the FAS Music department (yalemusic.yale.edu).',
+    notes:
+      'School of Music (music.yale.edu); distinct from the FAS Music department (yalemusic.yale.edu).',
   },
   {
     url: 'https://www.drama.yale.edu/about-us/who-we-are',
