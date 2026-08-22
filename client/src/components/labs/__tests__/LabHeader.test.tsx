@@ -43,7 +43,9 @@ describe('LabHeader', () => {
 
   it('renders displayName in the H1 when it differs from name', () => {
     const { container } = render(
-      <LabHeader group={{ ...baseGroup, displayName: 'Grace Hopper Center for Advanced Computing' }} />,
+      <LabHeader
+        group={{ ...baseGroup, displayName: 'Grace Hopper Center for Advanced Computing' }}
+      />,
     );
     const h1 = container.querySelector('h1');
     expect(h1?.textContent).toBe('Grace Hopper Center for Advanced Computing');
