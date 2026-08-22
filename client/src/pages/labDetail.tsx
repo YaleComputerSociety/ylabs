@@ -796,8 +796,7 @@ const LabDetail = () => {
   });
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
-  const officialWebsiteUrl =
-    group.leadIdentityStatus !== 'under_review' && group.websiteUrl ? group.websiteUrl : undefined;
+  const officialWebsiteUrl = group.websiteUrl ? group.websiteUrl : undefined;
   const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const singlePrincipalInvestigator =

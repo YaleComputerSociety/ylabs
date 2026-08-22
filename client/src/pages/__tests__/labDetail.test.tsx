@@ -300,6 +300,31 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
   });
 
+  it('points an under-review entity to its official website instead of a Yale Directory dead end', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        leadIdentityStatus: 'under_review',
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText(/Visit the official website to find contact details/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+      RESEARCH_WEBSITE_URL,
+    );
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+    expect(screen.queryByText(/does not have a direct link/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
+  });
+
   it('lets students save an indexed pathway as a research plan from the profile summary', async () => {
     mockedAxios.put.mockResolvedValue({ data: {} });
 
