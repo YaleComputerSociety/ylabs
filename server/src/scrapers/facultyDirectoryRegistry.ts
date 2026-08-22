@@ -59,10 +59,10 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     rendering: 'static',
     status: 'partial',
     studentImpactTier: 1,
-    coveredBy: ['yale-directory', 'ysm-atoz-index'],
+    coveredBy: ['ysm-atoz-index'],
     approxFacultyCount: 4000,
     notes:
-      'YSM faculty identity/appointments are covered school-wide via the Yalies API (yale-directory) and YSM labs via the A-Z lab index (ysm-atoz-index). There is no scraper that walks the YSM faculty directory per-faculty for profile enrichment / lab-website discovery.',
+      'Partially covered via the A-Z lab index (ysm-atoz-index), which ingests YSM lab research homes. The Yalies API is a school-wide faculty-identity source that is not specific to this directory, so it is not counted as coverage here. There is no scraper that walks the YSM faculty directory per-faculty for profile enrichment / lab-website discovery.',
   },
   {
     url: 'https://engineering.yale.edu/research-and-faculty/faculty-directory',
@@ -278,10 +278,9 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     rendering: 'static',
     status: 'gap',
     studentImpactTier: 4,
-    coveredBy: ['yale-directory'],
     approxFacultyCount: 300,
     notes:
-      'Identity partially covered via Yalies; no roster/lab-discovery scraper. Per-department slugs exist under /school-of-public-health-faculty/<dept>/.',
+      'Faculty identity is available school-wide via the Yalies API, but that is not directory-specific coverage; no roster/lab-discovery scraper walks this directory. Per-department slugs exist under /school-of-public-health-faculty/<dept>/.',
   },
   {
     url: 'https://nursing.yale.edu/faculty-research/faculty-directory',
