@@ -135,6 +135,42 @@ const curatedSchools: CuratedSchool[] = [
   },
 ];
 
+/**
+ * Extra aliases for raw org-unit strings observed in scraped
+ * `research_entities.departments` that carry a Yale HR org-code prefix or an
+ * all-caps variant, keyed by the canonical school/department name they belong
+ * to. Kept here (not in the shared department ground truth) so growing facet
+ * coverage never perturbs the department taxonomy used by other surfaces.
+ */
+const orgUnitAliasOverlay: Record<string, string[]> = {
+  'Cellular & Molecular Physiology': ['Physiology'],
+  'Therapeutic Radiology': ['RADIATION-DIAGNOSTIC/ONCOLOGY'],
+  'Biomedical Engineering': ['EASBME BME Faculty'],
+  'Chemical Engineering': ['EASCEE CEE Faculty'],
+  'Mechanical Engineering': ['EASMEC MechE Faculty'],
+  "Women's, Gender, and Sexuality Studies": ['FASGSS Womens,Gender and Sexuality Studies'],
+  Humanities: ['FASHUM Humanities Studies'],
+  Linguistics: ['FASLIN Linguistics-Research Unit'],
+  'Yale Institute of Sacred Music': ['ISM Institute of Sacred Music'],
+};
+
+function mergeOverlayAliases(rows: OrgUnitSeedRow[], schoolKeys: Set<string>): void {
+  for (const row of rows) {
+    const extra = orgUnitAliasOverlay[row.name];
+    if (!extra) continue;
+    const nameKey = orgUnitMatchKey(row.name);
+    const existingKeys = new Set(row.aliases.map((alias) => orgUnitMatchKey(alias)));
+    const isSchool = row.kind === 'SCHOOL' || row.kind === 'DIVISION';
+    for (const alias of uniqueByKey(extra)) {
+      const key = orgUnitMatchKey(alias);
+      if (!key || key === nameKey || existingKeys.has(key)) continue;
+      if (!isSchool && schoolKeys.has(key)) continue;
+      row.aliases.push(alias);
+      existingKeys.add(key);
+    }
+  }
+}
+
 function uniqueByKey(values: Iterable<string>): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -199,7 +235,9 @@ export function buildOrgUnitSeedRows(): OrgUnitSeedRow[] {
     });
   }
 
-  return [...schoolRows, ...departmentRows];
+  const allRows = [...schoolRows, ...departmentRows];
+  mergeOverlayAliases(allRows, schoolKeys);
+  return allRows;
 }
 
 export function validateOrgUnitRows(rows: OrgUnitSeedRow[]): string[] {

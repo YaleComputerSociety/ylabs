@@ -9,7 +9,11 @@ export interface OrgUnitCanonical {
 
 export interface OrgUnitCanonicalizer {
   canonicalizeSchool(raw: unknown): { value: string; matched: boolean };
-  canonicalizeDepartments(raw: unknown): { values: string[]; unmatched: string[] };
+  canonicalizeDepartments(raw: unknown): {
+    values: string[];
+    unmatched: string[];
+    dropped: string[];
+  };
   /** Canonical school name a canonical department belongs to, or null. */
   schoolForDepartment(canonicalDepartmentName: string): string | null;
 }
@@ -41,6 +45,65 @@ export function orgUnitMatchKey(raw: unknown): string {
   key = key.replace(/^(?:department|dept)-/, '');
   key = key.replace(/-(?:department|dept)$/, '');
   return key;
+}
+
+const LEADING_ORG_CODE_PATTERN = /^([A-Z][A-Z0-9]{1,6})\s+(?=.*[a-z])(.+)$/;
+
+/**
+ * Strips a leading Yale HR/directory org code (an opaque all-caps token such as
+ * "PRVAIT" or "EASBME") from a scraped org-unit string, leaving the human name.
+ * The lowercase lookahead guards fully-uppercase names ("SOCIAL SCIENCES") from
+ * having a leading word mistaken for a code.
+ */
+export function denoiseOrgUnitValue(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  const match = trimmed.match(LEADING_ORG_CODE_PATTERN);
+  if (!match) return trimmed;
+  const remainder = match[2].trim();
+  return remainder.length >= 3 ? remainder : trimmed;
+}
+
+/**
+ * Administrative / non-research org units that reach `research_entities.departments`
+ * as raw HR-directory strings and must never surface as a student-facing department
+ * facet value. Matched by normalized key so raw casing and the org-code prefix both
+ * resolve; dropping fails closed - only these explicitly reviewed units are removed.
+ */
+export const ADMINISTRATIVE_ORG_UNIT_VALUES = [
+  'Administration',
+  'None',
+  'Social Sciences',
+  'Veterinary Sciences',
+  'DIVFIN Divinity General',
+  'DRAADM Business Office',
+  'ENVACC Research',
+  'ENVOTH Other Units',
+  'FAS Other FAS and Academic Departments',
+  'FASFDA FAS Dean Administration',
+  'GRA Graduate School',
+  'ISMADM Finance and Administration',
+  'PRV Provost Administration',
+  'PRVADM Provost Admin',
+  'PRVAIT Henry Koerner Center for Emeritus Faculty Dept',
+  'PRVAIT Institution for Social and Policy Studies (ISPS)',
+  'YCO Yale College Operating Units',
+  'YCORCH Jonathan Edwards Head of College',
+] as const;
+
+const ADMINISTRATIVE_ORG_UNIT_KEYS = new Set(
+  ADMINISTRATIVE_ORG_UNIT_VALUES.map((value) => orgUnitMatchKey(value)).filter(Boolean),
+);
+
+export function isDroppedAdministrativeOrgUnit(raw: unknown): boolean {
+  const key = orgUnitMatchKey(raw);
+  if (key && ADMINISTRATIVE_ORG_UNIT_KEYS.has(key)) return true;
+  const denoised = denoiseOrgUnitValue(raw);
+  if (typeof raw === 'string' && denoised && denoised !== raw.trim()) {
+    const denoisedKey = orgUnitMatchKey(denoised);
+    if (denoisedKey && ADMINISTRATIVE_ORG_UNIT_KEYS.has(denoisedKey)) return true;
+  }
+  return false;
 }
 
 /**
@@ -105,19 +168,32 @@ export function createOrgUnitCanonicalizer(
     canonicalizeDepartments(raw) {
       const values: string[] = [];
       const unmatched: string[] = [];
+      const dropped: string[] = [];
       const seen = new Set<string>();
       for (const entry of toRawList(raw)) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
-        const hit = resolveOrgUnitCanonical(index, trimmed, DEPARTMENT_KINDS);
-        const canonical = hit ? hit.name : trimmed;
-        if (!hit) unmatched.push(trimmed);
+        if (isDroppedAdministrativeOrgUnit(trimmed)) {
+          dropped.push(trimmed);
+          continue;
+        }
+        let hit = resolveOrgUnitCanonical(index, trimmed, DEPARTMENT_KINDS);
+        let fallback = trimmed;
+        if (!hit) {
+          const denoised = denoiseOrgUnitValue(trimmed);
+          if (denoised && denoised !== trimmed) {
+            hit = resolveOrgUnitCanonical(index, denoised, DEPARTMENT_KINDS);
+            fallback = denoised;
+          }
+        }
+        const canonical = hit ? hit.name : fallback;
+        if (!hit) unmatched.push(canonical);
         const dedupeKey = canonical.toLocaleLowerCase();
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         values.push(canonical);
       }
-      return { values, unmatched };
+      return { values, unmatched, dropped };
     },
   };
 }
@@ -207,9 +283,18 @@ const asStringList = (value: unknown): string[] =>
 export async function applyResearchEntityOrgUnitCanonicalization(
   set: Record<string, unknown>,
   existing?: Record<string, unknown> | null,
-): Promise<{ unmatchedSchool?: string; unmatchedDepartments: string[] }> {
-  const result: { unmatchedSchool?: string; unmatchedDepartments: string[] } = {
+): Promise<{
+  unmatchedSchool?: string;
+  unmatchedDepartments: string[];
+  droppedDepartments: string[];
+}> {
+  const result: {
+    unmatchedSchool?: string;
+    unmatchedDepartments: string[];
+    droppedDepartments: string[];
+  } = {
     unmatchedDepartments: [],
+    droppedDepartments: [],
   };
   const hasSchool = Object.prototype.hasOwnProperty.call(set, 'school');
   const hasDepartments = Object.prototype.hasOwnProperty.call(set, 'departments');
@@ -226,6 +311,7 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       const canonical = canonicalizer.canonicalizeDepartments(set.departments);
       set.departments = canonical.values;
       result.unmatchedDepartments = canonical.unmatched;
+      result.droppedDepartments = canonical.dropped;
     }
 
     const effectiveSchool = hasSchool ? set.school : existing?.school;

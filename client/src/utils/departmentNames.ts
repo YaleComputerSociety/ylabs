@@ -2,7 +2,7 @@
  * Department name parsing and abbreviation utilities.
  */
 
-const PREFIXED_DEPARTMENT_PATTERN = /^([A-Za-z&/]+)\s*-\s*(.+)$/;
+const PREFIXED_DEPARTMENT_PATTERN = /^([A-Za-z&/]+)\s+-\s+(.+)$/;
 
 export interface DepartmentNameRecord {
   abbreviation?: string;

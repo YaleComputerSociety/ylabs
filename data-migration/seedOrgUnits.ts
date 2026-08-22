@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { OrgUnit } from '../server/src/models/orgUnit';
 import {
   buildOrgUnitResolverIndex,
+  isDroppedAdministrativeOrgUnit,
   resolveOrgUnitCanonical,
 } from '../server/src/scrapers/orgUnitCanonicalization';
 import {
@@ -219,7 +220,11 @@ async function auditUnresolvedOrgUnitStrings(
   for (const source of sources) {
     const values = await distinctStrings(source.collection, source.field);
     const kinds = source.kind === 'school' ? (['SCHOOL', 'DIVISION'] as const) : (['DEPARTMENT', 'DIVISION', 'OFFICE'] as const);
-    const unresolved = values.filter((value) => !resolveOrgUnitCanonical(index, value, [...kinds]));
+    const unresolved = values.filter(
+      (value) =>
+        !resolveOrgUnitCanonical(index, value, [...kinds]) &&
+        !(source.kind === 'department' && isDroppedAdministrativeOrgUnit(value)),
+    );
     totalUnresolved += unresolved.length;
     summaries.push({
       label: source.label,
