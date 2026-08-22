@@ -156,14 +156,14 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
     });
     await waitForAuditCount(3);
 
-    const byActor = await (await fetch(`${baseUrl}/audit-events?actor=operator2`)).json();
+    const byActor = (await (await fetch(`${baseUrl}/audit-events?actor=operator2`)).json()) as any;
     expect(byActor.total).toBe(1);
     expect(byActor.events[0]).toMatchObject({
       action: 'admin_grant.revoke',
       actorNetid: 'operator2',
     });
 
-    const byAction = await (await fetch(`${baseUrl}/audit-events?action=admin_grant.grant`)).json();
+    const byAction = (await (await fetch(`${baseUrl}/audit-events?action=admin_grant.grant`)).json()) as any;
     expect(byAction.total).toBe(2);
     expect(byAction.events.every((event: any) => event.action === 'admin_grant.grant')).toBe(true);
   });
@@ -188,8 +188,8 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
     });
     await waitForAuditCount(3);
 
-    const page1 = await (await fetch(`${baseUrl}/audit-events?page=1&pageSize=2`)).json();
-    const page2 = await (await fetch(`${baseUrl}/audit-events?page=2&pageSize=2`)).json();
+    const page1 = (await (await fetch(`${baseUrl}/audit-events?page=1&pageSize=2`)).json()) as any;
+    const page2 = (await (await fetch(`${baseUrl}/audit-events?page=2&pageSize=2`)).json()) as any;
     expect(page1.total).toBe(3);
     expect(page1.totalPages).toBe(2);
     expect(page1.events).toHaveLength(2);
