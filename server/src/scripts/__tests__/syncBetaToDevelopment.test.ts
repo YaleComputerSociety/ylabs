@@ -194,7 +194,6 @@ describe('Beta to Development sync guards', () => {
     expect(names).toEqual(
       expect.arrayContaining([
         'research_entities',
-        'research_entity_members',
         'research_entity_relationships',
         'faculty_members',
         'signals',

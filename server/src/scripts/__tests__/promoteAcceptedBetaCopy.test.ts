@@ -230,7 +230,7 @@ describe('promote accepted Beta copy guards', () => {
       },
     ], [
       {
-        collection: 'research_entity_members',
+        collection: 'research_scholarly_links',
         field: 'userId',
         count: 2,
       },

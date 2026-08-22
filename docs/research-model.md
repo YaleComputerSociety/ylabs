@@ -28,15 +28,13 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 
 Public API migration note: `/api/research` is canonical. The hard-pivot migration copies `research_groups` into `research_entities` with stable ids, backfills `researchEntityId`, removes `/api/research-groups` plus `/labs` route compatibility from runtime routing, and supports canonical-only verification after the old source collection is dropped.
 
-Dependent physical membership data also uses a canonical name after migration:
-`research_entity_members`. The old `research_group_members` collection can be
-dropped after its data is copied and verified. Empty historical stats and
-paper-entity link collections were removed from the runtime model to avoid
-treating unused collections as launch evidence.
+Roster membership is the canonical `RoleAssignment` model in the `role_assignments` collection, keyed by `personId` (a `Researcher`) and a polymorphic `target` (`{ kind: 'RESEARCH_ENTITY', id }`).
+The legacy `research_entity_members` collection (and its predecessor `research_group_members`) has been retired and dropped; no runtime path reads or writes it.
+Empty historical stats and paper-entity link collections were likewise removed from the runtime model to avoid treating unused collections as launch evidence.
 
-Current non-lead roster membership uses stable source identity fields on `research_entity_members`, including `identityKey`, role-specific `membershipKey`, source provenance, evidence status, and freshness expiry.
-Official roster snapshots update current rows idempotently and archive disappeared rows with `endedAt` instead of deleting provenance.
-Each entity retains the exact member keys, source URL, observation time, and freshness boundary of its last successful current or partial roster snapshot so a failed refresh can provide bounded grace without reviving older membership.
+Current roster membership is materialized from `Observation` rows into `RoleAssignment` by the canonical membership materializer, carrying source provenance (`rosterProvenance`), review status, confidence, and lifecycle `state`.
+Official roster snapshots update current assignments idempotently and archive disappeared roles with `endedAt`/`state` instead of deleting provenance.
+Each entity retains the source URL, observation time, and freshness boundary of its last successful current or partial roster snapshot so a failed refresh can provide bounded grace without reviving older membership.
 An unresolved name, ambiguous profile identity, stale source, missing explicitly current section, or failed optional fetch remains hidden and reviewable rather than becoming current membership.
 
 Umbrella affiliations use `research_entity_relationships` with
