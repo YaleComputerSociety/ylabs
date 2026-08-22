@@ -41,6 +41,22 @@ describe('LabHeader', () => {
     expect(container.textContent).toContain('Watson Center, Room 200');
   });
 
+  it('renders displayName in the H1 when it differs from name', () => {
+    const { container } = render(
+      <LabHeader
+        group={{ ...baseGroup, displayName: 'Grace Hopper Center for Advanced Computing' }}
+      />,
+    );
+    const h1 = container.querySelector('h1');
+    expect(h1?.textContent).toBe('Grace Hopper Center for Advanced Computing');
+  });
+
+  it('falls back to name in the H1 when displayName is empty', () => {
+    const { container } = render(<LabHeader group={{ ...baseGroup, displayName: '' }} />);
+    const h1 = container.querySelector('h1');
+    expect(h1?.textContent).toBe('Lovelace Computational Lab');
+  });
+
   it('renders all departments and a website link with the correct href', () => {
     const { container } = render(<LabHeader group={baseGroup} />);
     expect(container.textContent).toContain('Computer Science');

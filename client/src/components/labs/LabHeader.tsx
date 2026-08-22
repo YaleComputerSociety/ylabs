@@ -12,6 +12,7 @@ import { ensureHttpPrefix } from '../../utils/url';
 import {
   entityKindLabel,
   isFacultyResearchEntity as isFacultyResearchEntityCopy,
+  researchEntityDisplayName,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
 
@@ -69,7 +70,9 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="yr-kicker mb-2">Research profile</p>
-          <h1 className="text-3xl font-semibold leading-tight text-slate-950">{group.name}</h1>
+          <h1 className="text-3xl font-semibold leading-tight text-slate-950">
+            {researchEntityDisplayName(group)}
+          </h1>
           {group.location && (
             <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
               <svg

@@ -1532,3 +1532,37 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open official route' })).toBeNull();
   });
 });
+
+describe('LabDetail display name unification', () => {
+  const RICHER_DISPLAY_NAME = 'Grace Hopper Center for Advanced Computing';
+
+  it('renders displayName in both the H1 and the document title when it differs from name', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        name: 'hopper computing lab',
+        displayName: RICHER_DISPLAY_NAME,
+      },
+    } as LabDetailPayload);
+
+    const heading = await screen.findByRole('heading', { level: 1 });
+    expect(heading.textContent).toBe(RICHER_DISPLAY_NAME);
+    await waitFor(() => expect(document.title).toContain(RICHER_DISPLAY_NAME));
+  });
+
+  it('falls back to name in both the H1 and the document title when displayName is empty', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        name: 'Fallback Research Home',
+        displayName: '',
+      },
+    } as LabDetailPayload);
+
+    const heading = await screen.findByRole('heading', { level: 1 });
+    expect(heading.textContent).toBe('Fallback Research Home');
+    await waitFor(() => expect(document.title).toContain('Fallback Research Home'));
+  });
+});

@@ -44,6 +44,9 @@ export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null)
         entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 
+export const researchEntityDisplayName = (entity?: ResearchEntityCopyInput | null): string =>
+  String(entity?.displayName || entity?.name || '');
+
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isFacultyResearchEntity(entity)) return 'Faculty Research';
   return KIND_LABELS[entity?.kind || ''] || 'Research Home';
