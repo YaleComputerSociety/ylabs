@@ -225,6 +225,19 @@ describe('buildResearchDetailSources', () => {
     expect(sources).toHaveLength(0);
   });
 
+  it('labels the kept NSF award page as NSF Award Search rather than a bare host', () => {
+    const awardPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [awardPage],
+      },
+    });
+
+    expect(sources.map((source) => source.label)).toEqual(['NSF Award Search']);
+  });
+
   it('dedupes known logistics evidence into the official source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
