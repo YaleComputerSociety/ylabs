@@ -11,7 +11,7 @@ This document still describes current runtime shapes such as `ResearchEntity`, `
 The current codebase still has some legacy-named files and client components, but
 runtime research data is canonical `ResearchEntity` data. Related files include:
 
-- [`server/src/models/researchGroup.ts`](../server/src/models/researchGroup.ts)
+- [`server/src/models/researchEntity.ts`](../server/src/models/researchEntity.ts)
 - [`server/src/models/signal.ts`](../server/src/models/signal.ts)
 - [`server/src/models/adminGrant.ts`](../server/src/models/adminGrant.ts)
 - [`server/src/models/roleAssignment.ts`](../server/src/models/roleAssignment.ts)
@@ -24,7 +24,8 @@ runtime research data is canonical `ResearchEntity` data. Related files include:
 - [`client/src/pages/research.tsx`](../client/src/pages/research.tsx)
 - [`client/src/pages/labDetail.tsx`](../client/src/pages/labDetail.tsx)
 
-`ResearchEntity` is now the canonical runtime model and uses the `research_entities` collection. `server/src/models/researchGroup.ts` retains a reusable legacy-shaped schema for the canonical model, but no runtime `ResearchGroup` model should register `research_groups`.
+`ResearchEntity` is now the canonical runtime model and uses the `research_entities` collection.
+The legacy `ResearchGroup` model and its `research_groups` collection have been removed; no runtime code should register `research_groups`.
 
 Public API migration note: `/api/research` is canonical. The hard-pivot migration copies `research_groups` into `research_entities` with stable ids, backfills `researchEntityId`, removes `/api/research-groups` plus `/labs` route compatibility from runtime routing, and supports canonical-only verification after the old source collection is dropped.
 
