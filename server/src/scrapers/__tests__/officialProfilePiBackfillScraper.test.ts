@@ -1670,6 +1670,7 @@ describe('officialProfilePiBackfillScraper', () => {
         ],
       }),
     ).toEqual([
+      'https://sites.google.com/site/costasmeghir/home/',
       'https://campuspress.yale.edu/rjohnwilliams/',
       'http://www.yale.edu/pollard_lab/',
       'http://www.yale.edu/errington/',

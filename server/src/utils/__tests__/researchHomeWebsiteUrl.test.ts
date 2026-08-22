@@ -140,6 +140,23 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
     );
   });
 
+  it('accepts a named Google Sites lab site (#537)', () => {
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://sites.google.com/view/example-lab')).toBe(
+      'https://sites.google.com/view/example-lab/',
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://sites.google.com/site/examplelab/home')).toBe(
+      'https://sites.google.com/site/examplelab/home/',
+    );
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://sites.google.com/yale.edu/jordan-example/home'),
+    ).toBe('https://sites.google.com/yale.edu/jordan-example/home/');
+  });
+
+  it('still rejects a bare Google Sites host with no named site (#537)', () => {
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://sites.google.com/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://sites.google.com/view')).toBe('');
+  });
+
   it('rejects directory, index, and paginated listing source URLs', () => {
     expect(
       sourceUrlToResearchHomeWebsiteUrl(
