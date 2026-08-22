@@ -137,9 +137,10 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   {
     collection: 'research_entity_members',
     model: 'ResearchGroupMember',
-    group: 'dual-truth',
+    group: 'legacy-residue',
     phase: 2,
-    target: 'RoleAssignment (one entity id, one person id)',
+    target: 'RoleAssignment (retired and dropped in #521; roster is served entirely by role_assignments)',
+    expectPresent: false,
   },
   {
     collection: 'research_entities',
@@ -190,6 +191,14 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'canonical-domain',
     phase: 4,
     target: 'Signal (folded into the type-based signals collection as logistics types)',
+  },
+  {
+    collection: 'signals',
+    model: 'Signal',
+    group: 'canonical-domain',
+    phase: 4,
+    target:
+      'Signal (canonical type-based access/logistics facts; consolidates AccessSignal and UndergraduateLogisticsClaim)',
   },
   {
     collection: 'admin_grants',
@@ -396,6 +405,20 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'operational',
     phase: 0,
     target: 'Environment-local readiness state for the admin access-review projection',
+  },
+  {
+    collection: 'admin_audit_events',
+    model: 'AdminAuditEvent',
+    group: 'operational',
+    phase: null,
+    target: 'Append-only admin audit log (operational; not a research-model migration target)',
+  },
+  {
+    collection: 'observation_reference_repair_audits',
+    model: 'ObservationReferenceRepairAudit',
+    group: 'operational',
+    phase: null,
+    target: 'Append-only observation-reference repair audit trail (operational; not a migration target)',
   },
   // Expected already retired by the earlier hard-pivot; presence is residue.
   {
