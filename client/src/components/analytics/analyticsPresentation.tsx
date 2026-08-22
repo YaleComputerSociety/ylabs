@@ -98,7 +98,7 @@ export const formatOpenness = (status?: string): string => {
     likely: 'Likely accepting',
     none: 'No access evidence',
   };
-  return status ? statusMap[status] || status : 'No access evidence';
+  return status ? statusMap[status] || status : 'Acceptance not computed';
 };
 
 export const formatNumber = (value?: number | null, digits = 0): string => {
