@@ -70,6 +70,14 @@ describe('stripResearchAreaSourceChrome', () => {
     expect(stripResearchAreaSourceChrome(42)).toEqual([]);
     expect(stripResearchAreaSourceChrome('  ')).toEqual([]);
   });
+
+  it('does not corrupt a hyphen-number topic glued to widget chrome into a dangling hyphen (#487)', () => {
+    const recovered = stripResearchAreaSourceChrome(
+      'SARS-CoV-23 YSM ResearchersView 5 Related PublicationsImmunology',
+    );
+    expect(recovered).not.toContain('SARS-CoV-');
+    expect(recovered).toEqual(['SARS-CoV-23', 'Immunology']);
+  });
 });
 
 describe('canonicalizeResearchAreas', () => {

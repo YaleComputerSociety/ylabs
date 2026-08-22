@@ -270,7 +270,7 @@ function toRawList(raw: unknown): string[] {
 }
 
 const YSM_RESEARCHER_CHROME_BLOCK =
-  /\s*\d*\s*YSM\s+Researchers?\s*View\s*\d*\s*Related\s+Publications?/gi;
+  /\s*YSM\s+Researchers?\s*View\s*\d*\s*Related\s+Publications?/gi;
 
 function hasYsmResearcherChrome(value: string): boolean {
   return new RegExp(YSM_RESEARCHER_CHROME_BLOCK.source, 'i').test(value);

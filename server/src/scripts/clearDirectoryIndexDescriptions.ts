@@ -244,9 +244,9 @@ export async function runClearDirectoryIndexDescriptions(options: {
       shortDescription: doc.shortDescription,
       researchAreas: doc.researchAreas,
     };
-    const hasChromeDescription = assessDirectoryIndexDescription(entityInput).hasChromeDescription;
+    const { fullIsChrome } = assessDirectoryIndexDescription(entityInput);
 
-    const reDerived = hasChromeDescription
+    const reDerived = fullIsChrome
       ? await reDeriveDescriptionFromOfficialSource(doc, fetchPage, log)
       : null;
 
@@ -279,11 +279,17 @@ export async function runClearDirectoryIndexDescriptions(options: {
     }
 
     if (!options.dryRun) {
-      if (filtered.reDerivedDescription && reDerived && source) {
+      const writtenFullDescription =
+        typeof filtered.set.fullDescription === 'string' ? filtered.set.fullDescription : undefined;
+      if (filtered.reDerivedDescription && writtenFullDescription && reDerived && source) {
+        const writtenShortDescription =
+          typeof filtered.set.shortDescription === 'string'
+            ? filtered.set.shortDescription
+            : reDerived.shortDescription;
         const observations = descriptionExtractionToObservations(
           {
-            fullDescription: reDerived.fullDescription,
-            shortDescription: reDerived.shortDescription,
+            fullDescription: writtenFullDescription,
+            shortDescription: writtenShortDescription,
             topics: [],
             methods: [],
           },

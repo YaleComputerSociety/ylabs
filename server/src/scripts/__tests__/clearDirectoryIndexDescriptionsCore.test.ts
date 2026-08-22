@@ -76,7 +76,7 @@ describe('planDirectoryIndexCleanup', () => {
     expect(plan.set.shortDescription).toBe('Studies asthma.');
   });
 
-  it('only re-derives the chrome field and preserves a genuine full description', () => {
+  it('clears a chrome short description and preserves a genuine full description without re-deriving', () => {
     const plan = planDirectoryIndexCleanup(
       {
         id: '1',
@@ -85,10 +85,11 @@ describe('planDirectoryIndexCleanup', () => {
       },
       { fullDescription: 'Studies airway inflammation in asthma.', shortDescription: 'Studies asthma.' },
     );
-    expect(plan.descriptionAction).toBe('re-derived');
-    expect(plan.reDerivedDescription).toBe(true);
+    expect(plan.descriptionAction).toBe('cleared');
+    expect(plan.clearedDescription).toBe(true);
+    expect(plan.reDerivedDescription).toBe(false);
     expect(plan.set).not.toHaveProperty('fullDescription');
-    expect(plan.set.shortDescription).toBe('Studies asthma.');
+    expect(plan.set.shortDescription).toBe('');
   });
 
   it('clears the boilerplate when no re-derived description exists', () => {
