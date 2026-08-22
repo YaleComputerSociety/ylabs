@@ -198,6 +198,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'ysm-mesh-keyword',
+    displayName: 'YSM research-by-keyword (MeSH) directory',
+    description:
+      'Yale School of Medicine research-by-keyword (MeSH) and department indexes as crawl seeds for YSM faculty individual profile pages, from which governed MeSH research areas are attached to existing YSM research entities. Each faculty individual profile is the cited source; listing/facet pages are never recorded as a source.',
+    baseUrl: 'https://medicine.yale.edu/research/research-by-keyword/',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
+  },
+  {
     name: 'yse-centers-index',
     displayName: 'YSE Centers Index',
     description: 'Yale School of the Environment centers and programs index.',
