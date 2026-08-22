@@ -58,7 +58,23 @@ vi.mock('../../components/shared/BrowseGrid', () => ({
 }));
 
 vi.mock('../../components/fellowship/FellowshipModal', () => ({
-  default: () => null,
+  default: ({
+    fellowship,
+    isOpen,
+    onClose,
+  }: {
+    fellowship: Fellowship;
+    isOpen: boolean;
+    onClose: () => void;
+  }) =>
+    isOpen ? (
+      <div role="dialog" aria-label={fellowship.title}>
+        <span>{fellowship.title}</span>
+        <button type="button" aria-label="Close" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/admin/AdminFellowshipEditModal', () => ({
@@ -138,8 +154,11 @@ const baseFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
 const renderPage = (
   fellowships: Fellowship[],
   overrides: Partial<FellowshipSearchContextType> = {},
+  initialEntries: string[] = ['/programs'],
 ) => {
-  mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
+  if (!mockedAxios.get.getMockImplementation()) {
+    mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
+  }
 
   const value: FellowshipSearchContextType = {
     queryString: '',
@@ -201,7 +220,7 @@ const renderPage = (
   };
 
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -313,6 +332,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mockedAxios.get.mockReset();
   localStorage.clear();
 });
 
@@ -710,5 +730,31 @@ describe('Programs page', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Save program open' }));
 
     expect(screen.queryByText('Program saved')).toBeNull();
+  });
+
+  it('opens a deep-linked program once and keeps it closed after dismissal', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/programs/f1') {
+        return Promise.resolve({
+          data: { program: baseFellowship({ id: 'f1', title: 'Deep Linked Program' }) },
+        });
+      }
+      return Promise.resolve({ data: { watchedProgramIds: [] } });
+    });
+
+    renderPage([], {}, ['/programs?program=f1']);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Deep Linked Program' });
+    expect(within(dialog).getByText('Deep Linked Program')).toBeTruthy();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Deep Linked Program' })).toBeNull(),
+    );
+    expect(screen.queryByRole('dialog', { name: 'Deep Linked Program' })).toBeNull();
+
+    const detailFetches = mockedAxios.get.mock.calls.filter((call) => call[0] === '/programs/f1');
+    expect(detailFetches).toHaveLength(1);
   });
 });
