@@ -23,7 +23,6 @@ const SOURCE_KEY = 'ysm-mesh-keyword';
 const YSM_ORG_ID = '113592';
 const YSM_HOST = 'medicine.yale.edu';
 const KEYWORD_INDEX_URL = 'https://medicine.yale.edu/research/research-by-keyword/';
-const DEPT_INDEX_URL = 'https://medicine.yale.edu/research/researchbydept/';
 const RESULTS_PAGE_SSR_SIZE = 20;
 const MAX_AREAS_PER_ENTITY = 24;
 const MAX_CANDIDATE_SCAN = 1000;
