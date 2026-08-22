@@ -616,9 +616,15 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
       shortDescription: 'Catalysis research in the Doe Lab at Yale.',
       descriptionSource: 'official-scrape',
     };
-    const leadMembers = [{ role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } }];
+    const leadMembers = [
+      { role: 'pi', userId: '64f000000000000000000010', user: { fname: 'Jane', lname: 'Doe' } },
+    ];
 
-    const blocked = computeResearchEntityStudentVisibility({ entity, leadMembers, accessSignalCount: 0 });
+    const blocked = computeResearchEntityStudentVisibility({
+      entity,
+      leadMembers,
+      accessSignalCount: 0,
+    });
     expect(blocked.reasons).toContain('missing_action_evidence');
     expect(blocked.tier).not.toBe('student_ready');
 
@@ -676,7 +682,10 @@ describe('reachOutPlausibleSignalCreditsActionEvidence (#530)', () => {
       reachOutPlausibleSignalCreditsActionEvidence({
         signal: {
           ...validReachOutSignal,
-          source: { ...validReachOutSignal.source, url: 'https://chemistry.yale.edu/profile/ab123' },
+          source: {
+            ...validReachOutSignal.source,
+            url: 'https://chemistry.yale.edu/profile/ab123',
+          },
         },
         entity: officialPageEntity,
       }),
