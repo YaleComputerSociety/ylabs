@@ -28,7 +28,11 @@ import type { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer'
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
-import { getProgramJourneyStatus, type ProgramJourneyCategory } from '../utils/programJourney';
+import {
+  getProgramJourneyStatus,
+  type ProgramJourneyCategory,
+  type ProgramJourneySummary,
+} from '../utils/programJourney';
 
 const FIRST_PROGRAM_SAVE_KEY = 'yale-research.firstSave.program.v1';
 
@@ -102,60 +106,21 @@ const QuickFilterEmptyState = ({
   );
 };
 
-const StatusSummary = ({
-  openCount,
-  closingSoonCount,
-  nextCycleCount,
-  closedCount,
-}: {
-  openCount: number;
-  closingSoonCount: number;
-  nextCycleCount: number;
-  closedCount: number;
-}) => {
-  const items = [
-    {
-      label: 'Open now',
-      value: openCount + closingSoonCount,
-      detail: 'Current application windows',
-      className: 'yr-pill-green',
-    },
-    {
-      label: 'Closing soon',
-      value: closingSoonCount,
-      detail: 'Deadlines within 30 days',
-      className: 'yr-pill-gold',
-    },
-    {
-      label: 'Likely next cycle',
-      value: nextCycleCount,
-      detail: 'Past official cycles worth tracking',
-      className: 'yr-pill-blue',
-    },
-    {
-      label: 'Planning archive',
-      value: closedCount,
-      detail: 'Inactive or lower-confidence records',
-      className: '',
-    },
-  ];
-
-  return (
-    <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-2 lg:grid-cols-4">
-      {items.map((item) => (
-        <div key={item.label} className={`bg-[var(--yr-panel)] px-4 py-3 ${item.className}`}>
-          <dt className="yr-kicker text-[0.68rem]">{item.label}</dt>
-          <dd className="mt-2 flex min-h-[3rem] items-end justify-between gap-3">
-            <span className="text-2xl font-semibold text-slate-950">{item.value}</span>
-            <span className="max-w-[8rem] text-right text-xs font-medium leading-tight text-slate-600">
-              {item.detail}
-            </span>
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-};
+const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
+  <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
+    {journeySections.map((section) => (
+      <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
+        <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
+        <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
+          <span className="text-2xl font-semibold text-slate-950">{summary[section.key]}</span>
+          <span className="text-xs font-medium leading-tight text-slate-600">
+            {section.tileDetail}
+          </span>
+        </dd>
+      </div>
+    ))}
+  </dl>
+);
 
 const fellowshipQuickFilters: QuickFilterDef[] = [
   { label: 'Open Only', value: 'open' },
@@ -176,40 +141,61 @@ const journeySections: Array<{
   key: ProgramJourneyCategory;
   title: string;
   description: string;
+  tileLabel: string;
+  tileDetail: string;
+  tileClassName: string;
 }> = [
   {
     key: 'applyNow',
     title: 'Apply Now',
     description: 'Current program, internship, project, and fellowship application windows.',
+    tileLabel: 'Apply now',
+    tileDetail: 'Open application windows',
+    tileClassName: 'yr-pill-green',
   },
   {
     key: 'openingSoon',
     title: 'Opening Soon',
     description: 'Programs and fellowships with announced future application opening dates.',
+    tileLabel: 'Opening soon',
+    tileDetail: 'Announced future openings',
+    tileClassName: 'yr-pill-blue',
   },
   {
     key: 'structured',
     title: 'Structured Research Programs',
     description:
       'Programs, internships, RA routes, and mentor-matching experiences that organize research participation.',
+    tileLabel: 'Structured programs',
+    tileDetail: 'Programs, internships, RA routes',
+    tileClassName: '',
   },
   {
     key: 'fundingAfterMentor',
     title: 'Funding After You Have a Mentor',
     description:
       'Funding records that usually require a research home, adviser, proposal, or lab fit first.',
+    tileLabel: 'Funding after mentor',
+    tileDetail: 'Need a mentor or plan first',
+    tileClassName: '',
   },
   {
     key: 'nextCycle',
     title: 'Plan Next Cycle',
     description:
       'Official past cycles that look recurring. Track these while preparing eligibility and mentor fit.',
+    tileLabel: 'Plan next cycle',
+    tileDetail: 'Recurring past cycles to track',
+    tileClassName: '',
   },
   {
     key: 'archive',
     title: 'Archive / Review',
     description:
       'Retained records that need eligibility review or should not be treated as active undergraduate options.',
+    tileLabel: 'Archive / review',
+    tileDetail: 'Needs review; not active',
+    tileClassName: '',
   },
 ];
 
@@ -284,7 +270,7 @@ const Fellowships = () => {
     setPage,
     searchExhausted,
     total,
-    cycleSummary,
+    journeySummary,
     setFilterBarHeight,
   } = useContext(FellowshipSearchContext);
 
@@ -614,6 +600,8 @@ const Fellowships = () => {
     0,
   );
   const resultCounterCount = quickFilter ? activeResultCount : total;
+  const sectionCount = (key: ProgramJourneyCategory): number =>
+    quickFilter ? journeyItems[key].length : journeySummary[key];
   const showQuickFilterEmptyState =
     !isLoading &&
     searchExhausted &&
@@ -692,12 +680,7 @@ const Fellowships = () => {
           </div>
 
           <div className="mt-5">
-            <StatusSummary
-              openCount={cycleSummary.open}
-              closingSoonCount={cycleSummary.closingSoon}
-              nextCycleCount={cycleSummary.nextCycle}
-              closedCount={cycleSummary.closed}
-            />
+            <StatusSummary summary={journeySummary} />
           </div>
         </div>
 
@@ -829,7 +812,7 @@ const Fellowships = () => {
                     <div key={section.key}>
                       <SectionHeader
                         title={section.title}
-                        count={journeyItems[section.key].length}
+                        count={sectionCount(section.key)}
                         description={section.description}
                       />
                       <BrowseGrid
