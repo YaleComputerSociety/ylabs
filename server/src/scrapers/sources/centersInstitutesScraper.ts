@@ -36,7 +36,6 @@ const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
 
-
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
 
@@ -229,8 +228,8 @@ export const viewsFieldNameExtractor: CenterExtractor = (html, ctx) => {
       link.closest('.views-row').length > 0
         ? link.closest('.views-row')
         : link.closest('td').length > 0
-        ? link.closest('td')
-        : link.closest('tr');
+          ? link.closest('td')
+          : link.closest('tr');
     const title =
       row.find('.views-field-field-title .field-content').first().text().trim() || undefined;
     members.push({ name, profileUrl, title, role: inferRole(title) });
@@ -257,7 +256,8 @@ export const ispsExtractor: CenterExtractor = (html, ctx) => {
     if (!name) return;
     const href = link.attr('href') || '';
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
-    const title = row.find('.field-name-field-team-member-creds').first().text().trim() || undefined;
+    const title =
+      row.find('.field-name-field-team-member-creds').first().text().trim() || undefined;
     members.push({ name, profileUrl, title, role: inferRole(title) });
   });
   return { members };
@@ -486,9 +486,8 @@ export function centerToGroupObservations(
   const base = { entityType: 'researchEntity' as const, entityKey, sourceUrl };
 
   // Aggregate departments from member titles when none were declared in config.
-  const declaredDepts = config.departments && config.departments.length > 0
-    ? config.departments
-    : [];
+  const declaredDepts =
+    config.departments && config.departments.length > 0 ? config.departments : [];
 
   const obs: ObservationInput[] = [
     { ...base, field: 'slug', value: entityKey },
@@ -496,7 +495,6 @@ export function centerToGroupObservations(
     { ...base, field: 'kind', value: config.kind },
     { ...base, field: 'websiteUrl', value: config.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl] },
-    { ...base, field: 'openness', value: 'open' },
   ];
   if (config.schoolName) {
     obs.push({ ...base, field: 'school', value: config.schoolName });
@@ -631,7 +629,6 @@ export function childCenterToObservations(
     { ...base, field: 'kind', value: child.kind },
     { ...base, field: 'websiteUrl', value: child.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl, child.url] },
-    { ...base, field: 'openness', value: 'open' },
   ];
   if (parentConfig.schoolName) {
     obs.push({ ...base, field: 'school', value: parentConfig.schoolName });
@@ -698,7 +695,9 @@ export class CentersInstitutesScraper implements IScraper {
         try {
           html = await fetchHtml(pageUrl, ctx.options.useCache, this.name);
         } catch (err: any) {
-          ctx.log(`[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`);
+          ctx.log(
+            `[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`,
+          );
           fetchFailed = true;
           break;
         }
@@ -707,7 +706,9 @@ export class CentersInstitutesScraper implements IScraper {
         try {
           result = config.extractor(html, { pageUrl });
         } catch (err: any) {
-          ctx.log(`[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`);
+          ctx.log(
+            `[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`,
+          );
           break;
         }
         if (
@@ -731,11 +732,7 @@ export class CentersInstitutesScraper implements IScraper {
       const sourceUrl = firstPageUrl || config.url;
 
       // Parent ResearchGroup observation
-      const { observations: groupObs } = centerToGroupObservations(
-        config,
-        allMembers,
-        sourceUrl,
-      );
+      const { observations: groupObs } = centerToGroupObservations(config, allMembers, sourceUrl);
       await ctx.emit(groupObs);
       totalObs += groupObs.length;
 

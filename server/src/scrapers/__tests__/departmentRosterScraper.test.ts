@@ -1142,9 +1142,7 @@ describe('DepartmentRosterScraper.run', () => {
     expect(entityObs.find((o) => o.field === 'fullDescription')?.value).toBe(
       'Studies condensed matter physics, including coherent control of light transport and absorption, and random lasers.',
     );
-    expect(entityObs.find((o) => o.field === 'shortDescription')?.value).toBe(
-      'Studies condensed matter physics, including coherent control of light transport and absorption, and random lasers.',
-    );
+    expect(entityObs.find((o) => o.field === 'shortDescription')).toBeUndefined();
 
     getSpy.mockRestore();
   });

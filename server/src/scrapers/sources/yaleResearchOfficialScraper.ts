@@ -62,7 +62,9 @@ export const DEFAULT_YALE_RESEARCH_DIRECTORY_CONFIGS: YaleResearchDirectoryConfi
 ];
 
 function cleanText(value: string | undefined | null): string {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
@@ -83,9 +85,10 @@ export function slugifyResearchYaleEntity(name: string): string {
   return `research-yale-${slugify(name)}`.slice(0, 100);
 }
 
-export function inferResearchYaleKind(
-  name: string,
-): { kind: YaleResearchKind; entityType: ResearchEntityType } {
+export function inferResearchYaleKind(name: string): {
+  kind: YaleResearchKind;
+  entityType: ResearchEntityType;
+} {
   if (/\b(?:lab|laboratory)\b/i.test(name)) return { kind: 'lab', entityType: 'LAB' };
   if (/\binstitute\b/i.test(name)) return { kind: 'institute', entityType: 'INSTITUTE' };
   if (/\b(?:center|centre|core|facility)\b/i.test(name)) {
@@ -201,10 +204,7 @@ export function entityToObservations(
   ];
 
   if (entity.description) {
-    observations.push(
-      { ...base, field: 'fullDescription', value: entity.description },
-      { ...base, field: 'shortDescription', value: entity.description },
-    );
+    observations.push({ ...base, field: 'fullDescription', value: entity.description });
   }
   if (entity.researchAreas && entity.researchAreas.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: entity.researchAreas });
@@ -306,10 +306,14 @@ export class YaleResearchOfficialScraper implements IScraper {
         }
       }
 
-      summaries.push(`${config.key}=${configEntities} (${pagesFetched} page${pagesFetched === 1 ? '' : 's'})`);
+      summaries.push(
+        `${config.key}=${configEntities} (${pagesFetched} page${pagesFetched === 1 ? '' : 's'})`,
+      );
     }
 
-    ctx.log(`Emitted ${totalObservations} observations across ${totalEntities} research.yale.edu entities`);
+    ctx.log(
+      `Emitted ${totalObservations} observations across ${totalEntities} research.yale.edu entities`,
+    );
 
     return {
       observationCount: totalObservations,

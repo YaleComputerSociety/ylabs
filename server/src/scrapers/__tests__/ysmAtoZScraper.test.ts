@@ -282,6 +282,7 @@ describe('labToObservations', () => {
     );
 
     expect(obs.map((o) => o.field)).not.toContain('acceptingUndergrads');
+    expect(obs.map((o) => o.field)).not.toContain('openness');
   });
 });
 

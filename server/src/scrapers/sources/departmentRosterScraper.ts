@@ -1336,10 +1336,12 @@ function entryToResearchEntityObservations(
     observations.push({ ...base, field: 'researchAreas', value: topics });
     const description = rosterTopicDescription(topics);
     if (description) {
-      observations.push(
-        { ...base, field: 'fullDescription', value: description, confidenceOverride: 0.76 },
-        { ...base, field: 'shortDescription', value: description, confidenceOverride: 0.76 },
-      );
+      observations.push({
+        ...base,
+        field: 'fullDescription',
+        value: description,
+        confidenceOverride: 0.76,
+      });
     }
   }
 
