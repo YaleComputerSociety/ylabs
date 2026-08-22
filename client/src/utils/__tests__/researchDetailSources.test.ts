@@ -194,6 +194,37 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([firstUrl, secondUrl]);
   });
 
+  it('hides raw funding-data API endpoints while keeping the specific award page', () => {
+    const apiEndpoint = 'https://api.nsf.gov/services/v1/awards.json';
+    const awardPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [awardPage],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          sourceUrl: apiEndpoint,
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([awardPage]);
+  });
+
+  it('drops a raw RePORTER API endpoint from the source ledger', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: ['https://api.reporter.nih.gov/v2/projects/search'],
+      },
+    });
+
+    expect(sources).toHaveLength(0);
+  });
+
   it('dedupes known logistics evidence into the official source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
