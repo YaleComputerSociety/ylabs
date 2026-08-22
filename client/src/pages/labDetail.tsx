@@ -40,7 +40,11 @@ import {
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
 import { formatTitleCaseLabel } from '../utils/displayText';
-import { computeAcceptanceVerdict, EvidenceItem } from '../utils/undergradAcceptance';
+import {
+  computeAcceptanceVerdict,
+  EvidenceItem,
+  REACH_OUT_PLAUSIBLE_LABEL,
+} from '../utils/undergradAcceptance';
 import {
   decisionHeadingLabel,
   isFacultyResearchEntity,
@@ -59,6 +63,7 @@ import { captureClientError } from '../utils/errorTracking';
 import { UndergraduateLogisticsSection } from '../components/research/UndergraduateLogisticsSection';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
+const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">{children}</h2>
@@ -247,7 +252,7 @@ const ResearchPlanSaveButton = ({
         {isSaved ? 'Saved to Dashboard' : 'Save research plan'}
       </span>
       <span className="mt-0.5 block text-xs leading-relaxed text-gray-600">
-        Track notes and funding matches
+        Keep private notes and reach out later
       </span>
     </span>
     <span className="sr-only" role="status">
@@ -420,10 +425,12 @@ const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
 const DecisionSummary = ({
   group,
   profileUrl,
+  websiteUrl,
   principalInvestigator,
 }: {
   group: any;
   profileUrl?: string;
+  websiteUrl?: string;
   principalInvestigator?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
@@ -447,7 +454,6 @@ const DecisionSummary = ({
   const { evidence } = computeAcceptanceVerdict(group);
   const grantSummary = formatGrantSummary(group);
   const pastAdvisees = formatPastAdvisees(group);
-  const hasEvidenceDetail = evidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
     principalInvestigator?.user?.displayName?.trim() ||
@@ -455,6 +461,22 @@ const DecisionSummary = ({
       .filter(Boolean)
       .join(' ')
       .trim();
+  const piAffiliation = [
+    (
+      principalInvestigator?.user?.primaryDepartment ||
+      principalInvestigator?.user?.primary_department ||
+      ''
+    ).trim(),
+    (group.school || '').trim(),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const hasActionablePath = Boolean(piEmail) || Boolean(profileUrl) || Boolean(websiteUrl);
+  const visibleEvidence = hasActionablePath
+    ? evidence
+    : evidence.filter((item) => item.label !== REACH_OUT_PLAUSIBLE_LABEL);
+  const hasEvidenceDetail =
+    visibleEvidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
   return (
     <section className="rounded-lg border border-blue-100 bg-[var(--yr-panel)] p-4 shadow-sm sm:p-5">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_16rem] md:gap-5">
@@ -508,9 +530,9 @@ const DecisionSummary = ({
               <p className="text-xs font-semibold uppercase tracking-wider text-gray-600">
                 Evidence
               </p>
-              {evidence.length > 0 && (
+              {visibleEvidence.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {evidence.slice(0, 4).map((item, i) => (
+                  {visibleEvidence.slice(0, 4).map((item, i) => (
                     <EvidenceChip key={`${item.kind}-${i}`} item={item} />
                   ))}
                 </div>
@@ -536,35 +558,65 @@ const DecisionSummary = ({
               How to get involved
             </p>
             <p className="mt-1 text-sm leading-relaxed text-gray-800">
-              Undergraduate research almost always starts with an email. Reach out to introduce
-              yourself and ask about getting involved.
+              {piEmail
+                ? 'Undergraduate research almost always starts with an email. Reach out to introduce yourself and ask about getting involved.'
+                : profileUrl
+                  ? 'Undergraduate research almost always starts by reaching out. Open the official profile to find contact details and introduce yourself.'
+                  : websiteUrl
+                    ? 'Undergraduate research almost always starts by reaching out. Visit the official website to find contact details and introduce yourself.'
+                    : 'Undergraduate research almost always starts by reaching out.'}
             </p>
-            <div className="mt-3 flex flex-col gap-2">
-              {piEmail && (
+            {piEmail || profileUrl ? (
+              <div className="mt-3 flex flex-col gap-2">
+                {piEmail && (
+                  <a
+                    href={`mailto:${piEmail}?subject=${encodeURIComponent(
+                      'Interest in undergraduate research',
+                    )}`}
+                    className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                  >
+                    {piName ? `Email ${piName}` : 'Email the PI'}
+                  </a>
+                )}
+                {profileUrl && (
+                  <a
+                    href={profileUrl}
+                    target="_blank"
+                    rel={EXTERNAL_LINK_REL}
+                    className={
+                      piEmail
+                        ? 'inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50'
+                        : 'inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200'
+                    }
+                  >
+                    Open official profile
+                  </a>
+                )}
+              </div>
+            ) : websiteUrl ? null : (
+              <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
+                <p className="text-sm leading-relaxed text-gray-800">
+                  {piName
+                    ? `Yale Research does not have a direct link for ${piName}${
+                        piAffiliation ? ` (${piAffiliation})` : ''
+                      } yet.`
+                    : 'Yale Research does not have a direct link for this research home yet.'}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-gray-600">
+                  {piName
+                    ? 'Look them up in the Yale Directory to find their contact details, then email to introduce yourself.'
+                    : 'Search the Yale Directory and official Yale department pages to find a contact, then email to introduce yourself.'}
+                </p>
                 <a
-                  href={`mailto:${piEmail}?subject=${encodeURIComponent(
-                    'Interest in undergraduate research',
-                  )}`}
-                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-                >
-                  {piName ? `Email ${piName}` : 'Email the PI'}
-                </a>
-              )}
-              {profileUrl && (
-                <a
-                  href={profileUrl}
+                  href={YALE_DIRECTORY_URL}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
-                  className={
-                    piEmail
-                      ? 'inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50'
-                      : 'inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200'
-                  }
+                  className="mt-3 inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                 >
-                  Open official profile
+                  Search the Yale Directory
                 </a>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -744,6 +796,8 @@ const LabDetail = () => {
   });
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
+  const officialWebsiteUrl =
+    group.leadIdentityStatus !== 'under_review' && group.websiteUrl ? group.websiteUrl : undefined;
   const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const singlePrincipalInvestigator =
@@ -843,6 +897,7 @@ const LabDetail = () => {
           <DecisionSummary
             group={group}
             profileUrl={decisionProfileUrl}
+            websiteUrl={officialWebsiteUrl}
             principalInvestigator={singlePrincipalInvestigator}
           />
 

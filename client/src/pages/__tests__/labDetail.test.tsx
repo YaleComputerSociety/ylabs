@@ -213,15 +213,17 @@ describe('LabDetail page', () => {
     expect(JSON.stringify(actionEvent)).not.toContain(JOIN_PAGE_URL);
   });
 
-  it('shows the constant contact prompt and profile link when no pathways or contact routes exist', async () => {
+  it('guides students to the official profile without promising an unavailable email', async () => {
     renderLabDetail();
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByText('How to get involved')).toBeTruthy();
     expect(
-      screen.getByText(/Undergraduate research almost always starts with an email\./),
+      screen.getByText(/Undergraduate research almost always starts by reaching out\./),
     ).toBeTruthy();
+    expect(screen.getByText(/Open the official profile to find contact details/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
       OFFICIAL_PROFILE_URL,
     );
@@ -230,6 +232,72 @@ describe('LabDetail page', () => {
     expect(screen.queryByText(/No verified contact route is available yet/)).toBeNull();
     expect(screen.queryByText('Ways In')).toBeNull();
     expect(screen.queryByText('Evidence')).toBeNull();
+  });
+
+  it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.7,
+          signalTypes: ['REACH_OUT_PLAUSIBLE'],
+          bestNextStep: 'Reach out to the PI.',
+          evidence: [{ signalType: 'REACH_OUT_PLAUSIBLE', confidence: 'MEDIUM' }],
+        },
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('How to get involved')).toBeTruthy();
+    expect(screen.getByText(/does not have a direct link for Jordan Researcher/)).toBeTruthy();
+    expect(screen.getByText(/Look them up in the Yale Directory/)).toBeTruthy();
+    const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
+    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Visit official website' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
+    expect(screen.queryByText('Reach-out plausible')).toBeNull();
+  });
+
+  it('points to the official website instead of a dead end when there is no profile or email', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL],
+      },
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText(/Visit the official website to find contact details/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
+      RESEARCH_WEBSITE_URL,
+    );
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
   });
 
   it('lets students save an indexed pathway as a research plan from the profile summary', async () => {

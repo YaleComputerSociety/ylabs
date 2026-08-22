@@ -12,8 +12,7 @@ const copy = {
   },
   researchPlan: {
     title: 'Research plan saved',
-    body:
-      'Use your Dashboard to add notes, compare funding matches, and keep the next step visible.',
+    body: 'Open it from your Dashboard to email its PI and keep private notes as you plan.',
   },
 };
 

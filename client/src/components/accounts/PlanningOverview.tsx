@@ -9,6 +9,17 @@ interface PlanningOverviewProps {
 const pluralize = (count: number, singular: string, plural: string): string =>
   `${count} ${count === 1 ? singular : plural}`;
 
+const nextUpLabel = (
+  savedResearchCount: number,
+  savedFellowshipCount: number,
+  nextDeadlineLabel?: string,
+): string => {
+  if (nextDeadlineLabel) return nextDeadlineLabel;
+  if (savedResearchCount > 0) return 'Reach out to a saved research home';
+  if (savedFellowshipCount > 0) return 'Review a program you are watching';
+  return 'Save a research home to start planning';
+};
+
 const PlanningOverview = ({
   savedResearchCount,
   savedFellowshipCount,
@@ -36,10 +47,11 @@ const PlanningOverview = ({
     <div className="mt-4 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Next up</p>
       <p className="mt-1 text-sm font-semibold text-gray-950">
-        {nextDeadlineLabel || 'No deadline yet'}
+        {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>
       <p className="mt-1 text-sm text-gray-600">
-        Use saved plan details when you need notes, checklist steps, sources, or funding matches.
+        Open a saved research home to email its PI and keep private notes. Watch programs to track
+        their deadlines.
       </p>
     </div>
   </section>
