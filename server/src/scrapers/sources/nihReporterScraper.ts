@@ -39,6 +39,7 @@ import {
   givenNamesEquivalent,
   surnameFetchRegex,
   surnamesCompatible,
+  SURNAME_FETCH_LIMIT,
 } from '../utils/piNameMatch';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
@@ -291,8 +292,9 @@ export async function resolveUserForPi(
       },
       { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1, title: 1 },
     )
-    .limit(10)
+    .limit(SURNAME_FETCH_LIMIT)
     .lean();
+  if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
   const candidates = fetched.filter((c) => surnamesCompatible(last, c.lname));
   if (!first) return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
   const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;

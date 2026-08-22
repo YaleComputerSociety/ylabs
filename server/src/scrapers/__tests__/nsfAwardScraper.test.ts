@@ -23,6 +23,7 @@ import {
   sortGrantsByRecency,
   type NsfAward,
 } from '../sources/nsfAwardScraper';
+import { SURNAME_FETCH_LIMIT } from '../utils/piNameMatch';
 import type { ObservationInput, ScraperContext } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -442,6 +443,20 @@ describe('resolveUserForPi recall', () => {
     const finder = fakeUserFinder([{ _id: 'u1', fname: 'Amelia', lname: 'Arnsten' }]);
     const id = await findUserForPi({ firstName: 'Amy', lastName: 'Arnsten' }, finder as any);
     expect(id).toBeNull();
+  });
+
+  it('fails closed when the surname fetch window is truncated at the cap', async () => {
+    const rows = Array.from({ length: SURNAME_FETCH_LIMIT }, (_v, i) => ({
+      _id: `u${i}`,
+      fname: 'Parker',
+      lname: 'Grant',
+    }));
+    const finder = vi.fn(async () => rows);
+    const result = await resolveUserForPi(
+      { firstName: 'Parker', lastName: 'Grant' },
+      finder as any,
+    );
+    expect(result).toEqual({ status: 'ambiguous' });
   });
 });
 

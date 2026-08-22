@@ -22,6 +22,7 @@ import {
   resolveUserForPi,
   type NihGrant,
 } from '../sources/nihReporterScraper';
+import { SURNAME_FETCH_LIMIT } from '../utils/piNameMatch';
 import type { ScraperContext, ObservationInput } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -409,6 +410,18 @@ describe('findUserForPi recall', () => {
   it('does not auto-resolve a goes-by-a-different-given-name profile without corroboration', async () => {
     const um = mockUserModel([{ _id: 'u1', fname: 'Carla', lname: 'Staver', netid: 'cs1' }]);
     expect(await findUserForPi('Ann Carla Staver', um)).toBeNull();
+  });
+
+  it('fails closed when the surname fetch window is truncated at the cap', async () => {
+    const rows = Array.from({ length: SURNAME_FETCH_LIMIT }, (_v, i) => ({
+      _id: `u${i}`,
+      fname: i === 0 ? 'David' : `Other${i}`,
+      lname: 'Lee',
+      netid: `dl${i}`,
+    }));
+    expect(await resolveUserForPi('David Lee', mockUserModel(rows))).toEqual({
+      status: 'ambiguous',
+    });
   });
 });
 

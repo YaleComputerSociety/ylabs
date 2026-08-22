@@ -43,7 +43,12 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import { givenNameVariants, surnameFetchRegex, surnamesCompatible } from '../utils/piNameMatch';
+import {
+  givenNameVariants,
+  surnameFetchRegex,
+  surnamesCompatible,
+  SURNAME_FETCH_LIMIT,
+} from '../utils/piNameMatch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -351,13 +356,13 @@ export async function resolveUserForPi(
   // pass 1: surname + exact fname
   if (first) {
     const fnameRe = new RegExp(`^${escapeRe(first)}$`, 'i');
-    const matches = compatible(
-      await finder({
-        lname: lnameRe,
-        fname: fnameRe,
-        userType: userTypeFilter,
-      }),
-    );
+    const rows = await finder({
+      lname: lnameRe,
+      fname: fnameRe,
+      userType: userTypeFilter,
+    });
+    if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+    const matches = compatible(rows);
     if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     // multiple exact matches → ambiguous, give up (don't fall through to initial)
     if (matches.length > 1) return { status: 'ambiguous' };
@@ -369,13 +374,13 @@ export async function resolveUserForPi(
   if (first) {
     const isInitialOnly = firstToken.length === 1;
     const initRe = new RegExp(`^${escapeRe(isInitialOnly ? firstToken : first)}`, 'i');
-    const matches = compatible(
-      await finder({
-        lname: lnameRe,
-        fname: initRe,
-        userType: userTypeFilter,
-      }),
-    );
+    const rows = await finder({
+      lname: lnameRe,
+      fname: initRe,
+      userType: userTypeFilter,
+    });
+    if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+    const matches = compatible(rows);
     if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     if (matches.length > 1) return { status: 'ambiguous' };
   }
@@ -387,13 +392,13 @@ export async function resolveUserForPi(
     const variants = givenNameVariants(firstToken).filter((v) => v !== firstToken.toLowerCase());
     if (variants.length > 0) {
       const variantRe = new RegExp(`^(?:${variants.map(escapeRe).join('|')})$`, 'i');
-      const matches = compatible(
-        await finder({
-          lname: lnameRe,
-          fname: variantRe,
-          userType: userTypeFilter,
-        }),
-      );
+      const rows = await finder({
+        lname: lnameRe,
+        fname: variantRe,
+        userType: userTypeFilter,
+      });
+      if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+      const matches = compatible(rows);
       if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
       if (matches.length > 1) return { status: 'ambiguous' };
     }
@@ -402,7 +407,7 @@ export async function resolveUserForPi(
 }
 
 async function defaultUserFinder(q: Record<string, unknown>): Promise<PiUserRow[]> {
-  return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(5).lean();
+  return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(SURNAME_FETCH_LIMIT).lean();
 }
 
 // ---------------------------------------------------------------------------

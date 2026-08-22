@@ -166,6 +166,8 @@ export function surnameCoreKey(surname: string | undefined | null): string {
   return core.at(-1) || '';
 }
 
+export const SURNAME_FETCH_LIMIT = 200;
+
 export function surnameFetchRegex(surname: string | undefined | null): RegExp | null {
   const key = surnameCoreKey(surname);
   if (!key) return null;
