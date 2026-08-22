@@ -51,6 +51,32 @@ describe('resolveField', () => {
     expect(r?.value).toBe('Smith Lab');
   });
 
+  it('ranks an authoritative lab-microsite description above a fresher roster one-liner', () => {
+    const r = resolveField(
+      'fullDescription',
+      [
+        {
+          field: 'fullDescription',
+          value: 'Studies condensed matter physics.',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.5,
+          observedAt: D('2026-08-20'),
+        },
+        {
+          field: 'fullDescription',
+          value:
+            'The da Silva Neto research group investigates the electronic properties of quantum materials, including nematic order, superconductivity, magnetism, and charge order.',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.82,
+          observedAt: D('2026-05-17'),
+        },
+      ],
+      { now: D('2026-08-22') },
+    );
+    expect(r?.value).toContain('quantum materials');
+    expect(r?.contributingSources).toEqual(['lab-microsite-description-llm']);
+  });
+
   it('flags a conflict when two values are close in weight', () => {
     const r = resolveField(
       'title',

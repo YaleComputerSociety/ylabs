@@ -55,6 +55,10 @@ import {
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_DEPT = 20; // safety cap on pagination crawl
+// Roster descriptions are keyword-synthesized directory one-liners, so they must
+// rank below any genuinely extracted research-home description (lab-microsite full
+// page 0.82, profile-page 0.55) during field resolution and only win as a fallback.
+const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
 
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
@@ -748,13 +752,40 @@ function elementTextWithChildSeparators($: cheerio.CheerioAPI, el: AnyNode): str
   return parts.length > 0 ? parts.join('; ') : cleanText($(el).text());
 }
 
+const topicLabelChromePhrases = new Set([
+  'research area',
+  'research areas',
+  'research interest',
+  'research interests',
+  'field of interest',
+  'fields of interest',
+  'field of study',
+  'fields of study',
+  'area of interest',
+  'areas of interest',
+]);
+
+const topicLabelPrefixPattern =
+  /^(?:research\s+areas?|research\s+interests?|fields?\s+of\s+(?:study|interest)|areas?\s+of\s+interest)\s*:\s*/i;
+
+function stripTopicLabelPrefix(value: string): string {
+  return cleanText(value).replace(topicLabelPrefixPattern, '');
+}
+
+function isTopicLabelChrome(value: string): boolean {
+  const cleaned = cleanText(value);
+  if (!cleaned) return true;
+  if (/:$/.test(cleaned)) return true;
+  return topicLabelChromePhrases.has(cleaned.replace(/[:\s]+$/g, '').toLowerCase());
+}
+
 function splitTopicText(value: string | undefined | null): string[] {
   const cleaned = String(value || '').trim();
   if (!cleaned) return [];
   const parts = cleaned
     .split(/[,;|•\n\r]+/)
-    .map((part) => cleanText(part))
-    .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part));
+    .map((part) => stripTopicLabelPrefix(part))
+    .filter((part) => part.length > 1 && !/^[-–—]+$/.test(part) && !isTopicLabelChrome(part));
   return uniqueStrings(parts);
 }
 
@@ -777,7 +808,7 @@ function lowerTopicPhrase(value: string): string {
 
 function rosterTopicDescription(topics: string[] = []): string {
   const usefulTopics = uniqueStrings(topics)
-    .filter((topic) => !nonResearchTopicLabels.has(topic.toLowerCase()))
+    .filter((topic) => !nonResearchTopicLabels.has(topic.toLowerCase()) && !isTopicLabelChrome(topic))
     .slice(0, 5);
   if (usefulTopics.length === 0) return '';
 
@@ -1331,7 +1362,9 @@ function entryToResearchEntityObservations(
     },
   ];
 
-  const topics = uniqueStrings([...(entry.researchInterests || []), ...(entry.topics || [])]);
+  const topics = uniqueStrings([...(entry.researchInterests || []), ...(entry.topics || [])]).filter(
+    (topic) => !isTopicLabelChrome(topic),
+  );
   if (topics.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: topics });
     const description = rosterTopicDescription(topics);
@@ -1340,7 +1373,7 @@ function entryToResearchEntityObservations(
         ...base,
         field: 'fullDescription',
         value: description,
-        confidenceOverride: 0.76,
+        confidenceOverride: ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE,
       });
     }
   }
