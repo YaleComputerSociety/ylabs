@@ -129,7 +129,7 @@ describe('program search service', () => {
       sortOrder: 1,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1, _id: 1 });
   });
 
   it('keeps allowed program search sort fields before building Mongo sort objects', async () => {
@@ -140,7 +140,7 @@ describe('program search service', () => {
       sortOrder: 1,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: 1, _id: 1 });
   });
 
   it('normalizes unsafe program search sort directions before building Mongo sort objects', async () => {
@@ -151,7 +151,7 @@ describe('program search service', () => {
       sortOrder: Number.NaN,
     });
 
-    expect(chain.sort).toHaveBeenCalledWith({ deadline: -1 });
+    expect(chain.sort).toHaveBeenCalledWith({ deadline: -1, _id: 1 });
   });
 
   it('does not stringify arbitrary program ids before detail lookup', async () => {
