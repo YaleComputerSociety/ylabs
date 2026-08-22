@@ -64,9 +64,9 @@ describe('isPersonProfileOrDirectoryUrl', () => {
         'https://engineering.example.edu/research-and-faculty/faculty-directory/jordan-example/',
       ),
     ).toBe(true);
-    expect(isPersonProfileOrDirectoryUrl('https://medicine.example.edu/profile/jordan-example/')).toBe(
-      true,
-    );
+    expect(
+      isPersonProfileOrDirectoryUrl('https://medicine.example.edu/profile/jordan-example/'),
+    ).toBe(true);
     expect(isPersonProfileOrDirectoryUrl('https://physics.example.edu/people/jordan-example')).toBe(
       true,
     );
@@ -114,7 +114,9 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
         'https://psychology.example.edu/diversity/research-opportunities-undergraduates',
       ),
     ).toBe('');
-    expect(sourceUrlToResearchHomeWebsiteUrl('https://news.example.edu/story/2026/award/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://news.example.edu/story/2026/award/')).toBe(
+      '',
+    );
   });
 
   it('rejects grant and identifier hosts', () => {
@@ -126,7 +128,9 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
 
   it('rejects directory, index, and paginated listing source URLs', () => {
     expect(
-      sourceUrlToResearchHomeWebsiteUrl('https://medicine.example.edu/about/a-to-z-index/lab-websites'),
+      sourceUrlToResearchHomeWebsiteUrl(
+        'https://medicine.example.edu/about/a-to-z-index/lab-websites',
+      ),
     ).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://physics.example.edu/people?page=8')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://physics.example.edu/mcdb/faculty/')).toBe('');

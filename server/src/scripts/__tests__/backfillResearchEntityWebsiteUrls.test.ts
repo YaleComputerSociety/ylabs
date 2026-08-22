@@ -58,10 +58,12 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isPromotableWebsiteUrl('https://medicine.example.edu/profile/jordan-example/')).toBe(
       false,
     );
-    expect(isPromotableWebsiteUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
-    expect(isProfilePageWebsiteUrl('https://labs.example.edu/directory/faculty/jordan-example/')).toBe(
-      true,
+    expect(isPromotableWebsiteUrl('https://physics.example.edu/people/jordan-example/')).toBe(
+      false,
     );
+    expect(
+      isProfilePageWebsiteUrl('https://labs.example.edu/directory/faculty/jordan-example/'),
+    ).toBe(true);
     expect(isProfilePageWebsiteUrl('https://lab.example.org/')).toBe(false);
   });
 
