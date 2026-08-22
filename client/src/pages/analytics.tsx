@@ -648,8 +648,7 @@ const Analytics = () => {
 
   const adminAccessHistory = adminAccess.history || [];
 
-  const userActivityPageStart =
-    userActivity.total === 0 ? 0 : userActivity.offset + 1;
+  const userActivityPageStart = userActivity.total === 0 ? 0 : userActivity.offset + 1;
   const userActivityPageEnd = userActivity.offset + userActivity.users.length;
   const userActivityHasPrev = userActivity.offset > 0;
   const userActivityHasNext = userActivityPageEnd < userActivity.total;
@@ -1210,7 +1209,9 @@ const Analytics = () => {
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b bg-gray-50">
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">When</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                      When
+                    </th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
                       Actor
                     </th>
@@ -1239,7 +1240,9 @@ const Analytics = () => {
                           {formatDateTime(event.timestamp)}
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900">{event.actorNetid}</td>
-                        <td className="px-4 py-3 text-gray-700">{auditActionLabel(event.action)}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {auditActionLabel(event.action)}
+                        </td>
                         <td className="px-4 py-3 text-sm text-gray-600">
                           {event.targetType ? (
                             <>
@@ -1261,9 +1264,7 @@ const Analytics = () => {
                             </span>
                           )}
                           {event.summary?.fields && event.summary.fields.length > 0 && (
-                            <span className="text-gray-500">
-                              {event.summary.fields.join(', ')}
-                            </span>
+                            <span className="text-gray-500">{event.summary.fields.join(', ')}</span>
                           )}
                           {event.summary?.note && (
                             <p className="mt-1 italic text-gray-600">{event.summary.note}</p>
@@ -1285,7 +1286,8 @@ const Analytics = () => {
 
           <div className="mt-3 flex flex-col gap-2 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
             <span>
-              Page {auditEvents.page} of {auditEvents.totalPages} - {auditEvents.total} total actions
+              Page {auditEvents.page} of {auditEvents.totalPages} - {auditEvents.total} total
+              actions
             </span>
             <div className="flex gap-2">
               <button
@@ -1298,9 +1300,7 @@ const Analytics = () => {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  setAuditPage((page) => Math.min(auditEvents.totalPages, page + 1))
-                }
+                onClick={() => setAuditPage((page) => Math.min(auditEvents.totalPages, page + 1))}
                 disabled={isAuditLoading || auditEvents.page >= auditEvents.totalPages}
                 className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -2174,9 +2174,7 @@ const Analytics = () => {
                     <button
                       type="button"
                       onClick={() =>
-                        setUserActivityOffset((offset) =>
-                          Math.max(0, offset - userActivityLimit),
-                        )
+                        setUserActivityOffset((offset) => Math.max(0, offset - userActivityLimit))
                       }
                       disabled={isUserActivityLoading || !userActivityHasPrev}
                       className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2185,9 +2183,7 @@ const Analytics = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        setUserActivityOffset((offset) => offset + userActivityLimit)
-                      }
+                      onClick={() => setUserActivityOffset((offset) => offset + userActivityLimit)}
                       disabled={isUserActivityLoading || !userActivityHasNext}
                       className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line-strong)] px-3 py-2 text-gray-700 transition-colors hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
                     >

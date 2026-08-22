@@ -90,9 +90,7 @@ const normalizeSummary = (summary?: AdminAuditSummary): AdminAuditSummary | unde
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 };
 
-export const recordAdminAuditEvent = async (
-  input: RecordAdminAuditEventInput,
-): Promise<void> => {
+export const recordAdminAuditEvent = async (input: RecordAdminAuditEventInput): Promise<void> => {
   try {
     const actorNetid = normalizeNetid(input.actorNetid);
     const action = boundedString(input.action, MAX_AUDIT_ACTION_LENGTH).toLowerCase();
@@ -107,8 +105,7 @@ export const recordAdminAuditEvent = async (
       targetType: boundedString(input.targetType, MAX_AUDIT_TARGET_TYPE_LENGTH) || undefined,
       targetId: boundedString(input.targetId, MAX_AUDIT_TARGET_ID_LENGTH) || undefined,
       summary: normalizeSummary(input.summary),
-      metadata:
-        input.metadata && typeof input.metadata === 'object' ? input.metadata : undefined,
+      metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : undefined,
       timestamp: new Date(),
     });
   } catch (error) {
@@ -124,9 +121,9 @@ export const adminAuditEventDto = (event: any): AdminAuditEventDto => ({
   targetId: typeof event?.targetId === 'string' ? event.targetId : '',
   summary:
     event?.summary && typeof event.summary === 'object'
-      ? normalizeSummary(event.summary as AdminAuditSummary) ?? null
+      ? (normalizeSummary(event.summary as AdminAuditSummary) ?? null)
       : null,
-  timestamp: event?.timestamp instanceof Date ? event.timestamp : event?.timestamp ?? null,
+  timestamp: event?.timestamp instanceof Date ? event.timestamp : (event?.timestamp ?? null),
 });
 
 const clampAuditPagination = (

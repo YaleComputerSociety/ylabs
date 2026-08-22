@@ -115,9 +115,7 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
 
 const AUDIT_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export const resolveAdminAuditContext = (
-  req: Request,
-): AdminAuditRouteDescriptor | undefined => {
+export const resolveAdminAuditContext = (req: Request): AdminAuditRouteDescriptor | undefined => {
   const routePath = (req.route as { path?: string } | undefined)?.path;
   if (!routePath) return undefined;
   return ADMIN_AUDIT_ROUTES[`${req.method} ${routePath}`];
@@ -153,11 +151,7 @@ const buildAuditSummary = (req: Request): AdminAuditSummary => {
   return summary;
 };
 
-export const adminAuditMutationLogger = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void => {
+export const adminAuditMutationLogger = (req: Request, res: Response, next: NextFunction): void => {
   if (!AUDIT_METHODS.has(req.method)) {
     next();
     return;
