@@ -121,6 +121,9 @@ describe('isFacetedOrSectionIndexUrl', () => {
     expect(isFacetedOrSectionIndexUrl('https://research.example.edu/centers-institutes')).toBe(
       true,
     );
+    expect(isFacetedOrSectionIndexUrl('https://research.example.edu/centers-institutes/')).toBe(
+      true,
+    );
     expect(isFacetedOrSectionIndexUrl('https://environment.example.edu/research/centers')).toBe(
       true,
     );
@@ -227,6 +230,29 @@ describe('isListingOrIndexUrl', () => {
     ).toBe(false);
     expect(
       isListingOrIndexUrl('https://jackson.example.edu/centers-initiatives/kerry-initiative'),
+    ).toBe(false);
+  });
+
+  it('flags /directory faculty-roster roots across hosts (#569)', () => {
+    expect(isListingOrIndexUrl('https://isps.example.edu/team/directory/faculty-fellows')).toBe(
+      true,
+    );
+    expect(isListingOrIndexUrl('https://isps.example.edu/team/directory/faculty-fellows/')).toBe(
+      true,
+    );
+    expect(isListingOrIndexUrl('https://environment.example.edu/directory/faculty')).toBe(true);
+    expect(isListingOrIndexUrl('https://centers.example.edu/directory/staff/')).toBe(true);
+  });
+
+  it('keeps a named per-person /directory/faculty profile (#556)', () => {
+    expect(
+      isListingOrIndexUrl('https://environment.example.edu/directory/faculty/jordan-example'),
+    ).toBe(false);
+    expect(
+      isListingOrIndexUrl('https://environment.example.edu/directory/faculty/jordan-example/'),
+    ).toBe(false);
+    expect(
+      isListingOrIndexUrl('https://isps.example.edu/team/directory/faculty-fellows/jordan-example'),
     ).toBe(false);
   });
 
