@@ -463,11 +463,8 @@ export function parseDeadlineToUtcEndOfDay(
   if (numeric) {
     const numericMonth = Number(numeric[1]) - 1;
     const numericDay = Number(numeric[2]);
-    const numericYear =
-      numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
-    const numericDate = new Date(
-      Date.UTC(numericYear, numericMonth, numericDay, 23, 59, 59, 999),
-    );
+    const numericYear = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
+    const numericDate = new Date(Date.UTC(numericYear, numericMonth, numericDay, 23, 59, 59, 999));
     if (
       numericDate.getUTCFullYear() === numericYear &&
       numericDate.getUTCMonth() === numericMonth &&

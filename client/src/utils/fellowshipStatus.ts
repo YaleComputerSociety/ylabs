@@ -66,7 +66,12 @@ const ROLLING_APPLICATION_RE =
 type FellowshipApplicationTextFields = Partial<
   Pick<
     Fellowship,
-    'title' | 'competitionType' | 'summary' | 'description' | 'applicationInformation' | 'additionalInformation'
+    | 'title'
+    | 'competitionType'
+    | 'summary'
+    | 'description'
+    | 'applicationInformation'
+    | 'additionalInformation'
   >
 >;
 

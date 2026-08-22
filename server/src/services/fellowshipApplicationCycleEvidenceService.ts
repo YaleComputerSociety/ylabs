@@ -116,7 +116,9 @@ export function buildFellowshipApplicationCycleEvidence(
         .map((link: any) => cleanHttpUrl(link?.url))
         .filter(Boolean)
     : [];
-  const sourceUrls = Array.from(new Set([applicationLink, ...linkUrls].filter(Boolean))) as string[];
+  const sourceUrls = Array.from(
+    new Set([applicationLink, ...linkUrls].filter(Boolean)),
+  ) as string[];
   const sourceBacked = sourceUrls.length > 0;
   const applicationHasOpened = dateStatus(
     fellowship.applicationOpenDate,
@@ -140,10 +142,7 @@ export function buildFellowshipApplicationCycleEvidence(
   const supportsFellowshipFundedProject = sourceBacked && projectLike;
   const supportsFellowshipCompatible = sourceBacked && (projectLike || fellowshipLike);
   const nextCycleSignal =
-    sourceBacked &&
-    !activeCycle &&
-    supportsFellowshipCompatible &&
-    looksRecurring(fellowshipText);
+    sourceBacked && !activeCycle && supportsFellowshipCompatible && looksRecurring(fellowshipText);
 
   return {
     sourceUrls,
