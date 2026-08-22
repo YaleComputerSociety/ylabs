@@ -7,6 +7,7 @@ import {
   betaToDevelopmentCollectionNames,
   buildBetaToDevelopmentSummary,
   parseBetaToDevelopmentOptions,
+  referencedFacultyUserIds,
   replaceMongoDatabaseName,
   sanitizeDevelopmentUser,
   unclassifiedBetaCollectionNames,
@@ -194,7 +195,6 @@ describe('Beta to Development sync guards', () => {
     expect(names).toEqual(
       expect.arrayContaining([
         'research_entities',
-        'research_entity_members',
         'research_entity_relationships',
         'faculty_members',
         'signals',
@@ -218,9 +218,39 @@ describe('Beta to Development sync guards', () => {
         'papers',
         'paper_authors',
         'paper_entity_links',
+        'research_entity_members',
       ]),
     );
+    expect(betaToDevelopmentCollectionNames()).not.toContain('research_entity_members');
     expect(betaToDevelopmentCollectionNames(false)).not.toContain('observations');
+  });
+
+  it('resolves faculty users to preserve solely from faculty_members without touching the retired member roster', async () => {
+    const facultyUserId = new ObjectId('507f1f77bcf86cd799439011');
+    const memberOnlyUserId = new ObjectId('507f1f77bcf86cd799439012');
+    const queriedCollections: string[] = [];
+    const distinctById: Record<string, ObjectId[]> = {
+      faculty_members: [facultyUserId],
+      research_entity_members: [memberOnlyUserId],
+    };
+    const betaDb = {
+      listCollections: (filter: { name?: string } = {}) => ({
+        hasNext: async () => filter.name !== undefined && filter.name in distinctById,
+      }),
+      collection: (name: string) => ({
+        distinct: async (field: string) => {
+          queriedCollections.push(`${name}.${field}`);
+          return distinctById[name] ?? [];
+        },
+      }),
+    } as unknown as Db;
+
+    const resolved = await referencedFacultyUserIds(betaDb);
+
+    expect(resolved.map((id) => id.toHexString())).toEqual([facultyUserId.toHexString()]);
+    expect(queriedCollections).toContain('faculty_members.userId');
+    expect(queriedCollections).not.toContain('research_entity_members.userId');
+    expect(resolved.map((id) => id.toHexString())).not.toContain(memberOnlyUserId.toHexString());
   });
 
   it('removes account activity and student fields from copied faculty users', () => {

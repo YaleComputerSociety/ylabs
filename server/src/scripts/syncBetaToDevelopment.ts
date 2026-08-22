@@ -35,21 +35,9 @@ export interface SyncCollection {
 
 const BATCH_SIZE = 1000;
 const LOCAL_MONGO_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
-const FACULTY_MEMBER_ROLES = [
-  'pi',
-  'co-pi',
-  'director',
-  'co-director',
-  'core-faculty',
-  'affiliated',
-  'postdoc',
-  'staff',
-  'affiliate',
-];
 
 const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
-  { name: 'research_entity_members', category: 'research-discovery' },
   { name: 'research_entity_relationships', category: 'research-discovery' },
   { name: 'faculty_members', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
@@ -329,15 +317,8 @@ async function distinctObjectIds(
 }
 
 export async function referencedFacultyUserIds(betaDb: Db): Promise<ObjectId[]> {
-  const [memberUserIds, facultyUserIds] = await Promise.all([
-    distinctObjectIds(betaDb, 'research_entity_members', 'userId', {
-      role: { $in: FACULTY_MEMBER_ROLES },
-    }),
-    distinctObjectIds(betaDb, 'faculty_members', 'userId'),
-  ]);
-  return [
-    ...new Map([...memberUserIds, ...facultyUserIds].map((id) => [id.toHexString(), id])).values(),
-  ];
+  const facultyUserIds = await distinctObjectIds(betaDb, 'faculty_members', 'userId');
+  return [...new Map(facultyUserIds.map((id) => [id.toHexString(), id])).values()];
 }
 
 export function collectionsForOptions(

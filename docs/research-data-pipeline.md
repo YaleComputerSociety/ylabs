@@ -123,7 +123,7 @@ It fails launch if visible records are not launch-grade.
 The report keeps its violation sample bounded to 50 rows and lists current public visibility violations before ordinary held rows so every exposed invalid record remains actionable when the held backlog is larger than the sample.
 Use the returned repair lanes and commands as the fix plan, then re-run the visibility gate and contract audit.
 
-YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into `research_entity_members` PI rows so public detail pages and visibility computation share the same lead evidence.
+YSM A-to-Z lab records use full-name PI inference when the lab name includes first-name context, such as `Ya-Chi Ho Lab`. The entity materializer converts accepted `inferredPiUserId` observations into canonical PI `RoleAssignment` rows so public detail pages and visibility computation share the same lead evidence.
 
 Grant-source PI matching must remain conservative because award APIs are funding evidence, not official Yale profile identity evidence. NSF PI matching requires exact last name plus exact first name, then exact last name plus first-name prefix; it may use a bare first-initial fallback only when the source itself provides only an initial. Do not match a full source given name to a different Yale first name by initial alone, such as `Leying Guan` to `Lawrence Guan`.
 
