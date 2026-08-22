@@ -48,6 +48,12 @@ export interface SameNameDifferentPersonQuarantine {
   entities: Array<{ id: string; slug?: string; personId: string }>;
 }
 
+export interface MultiPersonEntityQuarantine {
+  id: string;
+  slug?: string;
+  personIds: string[];
+}
+
 export interface OfficialLabUrlDedupeRow {
   url: string;
   entities: ResearchEntityPiDedupeRow['entities'];
@@ -463,11 +469,37 @@ function bestDescriptionCarry(
   return carry;
 }
 
+function entityPersonIdSets(
+  rows: ResearchEntityPiDedupeRow[],
+): Map<string, Set<string>> {
+  const byEntity = new Map<string, Set<string>>();
+  for (const row of rows) {
+    for (const entity of row.entities) {
+      if (!entity.id) continue;
+      const persons = byEntity.get(entity.id) || new Set<string>();
+      persons.add(row.userId);
+      byEntity.set(entity.id, persons);
+    }
+  }
+  return byEntity;
+}
+
+function multiPersonEntityIds(rows: ResearchEntityPiDedupeRow[]): Set<string> {
+  const ids = new Set<string>();
+  for (const [entityId, persons] of entityPersonIdSets(rows)) {
+    if (persons.size > 1) ids.add(entityId);
+  }
+  return ids;
+}
+
 export function buildSharedPersonIdResearchEntityDedupePlan(
   rows: ResearchEntityPiDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
+  const sharedEntityIds = multiPersonEntityIds(rows);
   return rows.flatMap((row) => {
-    const entities = row.entities.filter((entity) => entity.id);
+    const entities = row.entities.filter(
+      (entity) => entity.id && !sharedEntityIds.has(entity.id),
+    );
     if (entities.length <= 1) return [];
     const group = buildGroupFromCluster(row, entities);
     if (!group) return [];
@@ -475,6 +507,25 @@ export function buildSharedPersonIdResearchEntityDedupePlan(
     const descriptionCarry = canonical ? bestDescriptionCarry(canonical, entities) : {};
     return [{ ...group, ...descriptionCarry, dedupeCategory: 'shared_person_id' as const }];
   });
+}
+
+export function buildMultiPersonEntityQuarantine(
+  rows: ResearchEntityPiDedupeRow[],
+): MultiPersonEntityQuarantine[] {
+  const slugByEntity = new Map<string, string | undefined>();
+  for (const row of rows) {
+    for (const entity of row.entities) {
+      if (!entity.id) continue;
+      if (!slugByEntity.has(entity.id)) slugByEntity.set(entity.id, entity.slug);
+    }
+  }
+  return Array.from(entityPersonIdSets(rows).entries())
+    .filter(([, persons]) => persons.size > 1)
+    .map(([id, persons]) => ({
+      id,
+      slug: slugByEntity.get(id),
+      personIds: Array.from(persons),
+    }));
 }
 
 export function buildSameNameDifferentPersonQuarantine(

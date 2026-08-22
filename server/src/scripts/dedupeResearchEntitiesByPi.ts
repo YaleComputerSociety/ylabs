@@ -8,9 +8,11 @@ import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
   buildOfficialLabUrlResearchEntityDedupePlan,
+  buildMultiPersonEntityQuarantine,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type ResearchEntityPiDedupeRow,
   type SameNameDifferentPersonQuarantine,
@@ -1744,6 +1746,9 @@ async function main() {
   const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
     ? buildSameNameDifferentPersonQuarantine(piRows)
     : [];
+  const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
+    ? buildMultiPersonEntityQuarantine(piRows)
+    : [];
   const allPlan = dedupePlannedGroups(
     officialLabUrlOnly
       ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
@@ -1851,6 +1856,8 @@ async function main() {
     plannedDuplicateCurrentMembers,
     sameNameDifferentPersonQuarantine,
     quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
+    multiPersonEntityQuarantine,
+    quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),

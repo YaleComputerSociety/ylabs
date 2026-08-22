@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import {
   buildFundingResearchEntityDedupePlan,
+  buildMultiPersonEntityQuarantine,
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
@@ -1660,6 +1661,109 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
       },
     ];
     expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
+  });
+
+  it('excludes a co-PI entity claimed by two persons from every merge group', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    const allEntityIds = plan.flatMap((group) => [
+      group.canonicalEntityId,
+      ...group.duplicateEntityIds,
+    ]);
+    expect(allEntityIds).not.toContain('shared-shell');
+    expect(plan).toEqual([]);
+  });
+
+  it('still merges a single-person two-entity row when no entity is shared', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+          { id: 'a-second', slug: 'nih-pi-a', name: 'Person A Grant' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].userId).toBe('person-a');
+    expect([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds].sort()).toEqual([
+      'a-home',
+      'a-second',
+    ]);
+    expect(plan[0].duplicateEntityIds).not.toContain('shared-shell');
+  });
+});
+
+describe('buildMultiPersonEntityQuarantine', () => {
+  it('reports each entity linked to more than one person with its distinct personIds', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const quarantine = buildMultiPersonEntityQuarantine(rows);
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0].id).toBe('shared-shell');
+    expect(quarantine[0].slug).toBe('nsf-pi-shared');
+    expect(new Set(quarantine[0].personIds)).toEqual(new Set(['person-a', 'person-b']));
+  });
+
+  it('does not flag entities that belong to a single person', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+          { id: 'a-second', slug: 'nih-pi-a', name: 'Person A Grant' },
+        ],
+      },
+    ];
+    expect(buildMultiPersonEntityQuarantine(rows)).toEqual([]);
   });
 });
 
