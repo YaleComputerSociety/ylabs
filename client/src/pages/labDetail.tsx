@@ -49,6 +49,7 @@ import {
   decisionHeadingLabel,
   isFacultyResearchEntity,
   relationshipTypeLabel,
+  researchEntityDisplayName,
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
@@ -702,9 +703,7 @@ const LabDetail = () => {
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
     useFavorites('researchPlans');
   const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
-  useDocumentTitle(
-    documentTitleGroup?.displayName || documentTitleGroup?.name || 'Research profile',
-  );
+  useDocumentTitle(researchEntityDisplayName(documentTitleGroup) || 'Research profile');
 
   useEffect(() => {
     if (!slug) return;
