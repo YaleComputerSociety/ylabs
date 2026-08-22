@@ -12,7 +12,7 @@ const copy = {
   },
   researchPlan: {
     title: 'Research plan saved',
-    body: 'Open it from your Dashboard to email its PI and keep private notes as you plan.',
+    body: 'Open it from your Dashboard to find its official profile and reach out, and keep private notes as you plan.',
   },
 };
 
