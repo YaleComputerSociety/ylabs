@@ -2020,7 +2020,9 @@ const publicAccessSignalForResearchDetail = (signal: any) => ({
   observedAt: signal.observedAt,
 });
 
-const publicSourceLinkHealth = (value: unknown): Array<{
+const publicSourceLinkHealth = (
+  value: unknown,
+): Array<{
   url: string;
   healthStatus: string;
   httpStatusCode?: number;

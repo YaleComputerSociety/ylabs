@@ -7,10 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import {
-  checkSourceLinkHealth,
-  type SourceLinkHealth,
-} from '../services/sourceLinkHealth';
+import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { collectSourceLinkHealthCandidates } from './backfillSourceLinkHealthCore';
@@ -27,9 +24,7 @@ export interface SourceLinkHealthBackfillOptions {
   output?: string;
 }
 
-export function parseSourceLinkHealthBackfillArgs(
-  argv: string[],
-): SourceLinkHealthBackfillOptions {
+export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHealthBackfillOptions {
   const options: SourceLinkHealthBackfillOptions = {
     dryRun: true,
     limit: 0,
