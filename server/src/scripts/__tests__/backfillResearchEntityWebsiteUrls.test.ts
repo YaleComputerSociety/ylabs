@@ -145,6 +145,42 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
       }),
     ).toEqual({ action: 'keep' });
   });
+
+  it('clears a people-roster (members) listing websiteUrl when no research home exists (#518)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://quantuminstitute.example.edu/people/members',
+        sourceUrls: ['https://quantuminstitute.example.edu/people/members'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('corrects a people-index subpage to the lab home when one exists in evidence (#518)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.example.edu/lab/simons/people/index.aspx',
+        sourceUrls: ['https://medicine.example.edu/lab/simons/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://medicine.example.edu/lab/simons/' });
+  });
+
+  it('clears a bare people-index (people.html) listing websiteUrl when no home exists (#518)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://qbio.example.edu/people.html',
+        sourceUrls: ['https://qbio.example.edu/people.html'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a single-person /people/ profile page as a PI fallback (#518)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://economics.example.edu/people/jordan-example',
+        sourceUrls: ['https://economics.example.edu/people/jordan-example'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
 });
 
 describe('selectBackfillWebsiteUrl', () => {

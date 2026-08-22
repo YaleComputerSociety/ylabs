@@ -3,6 +3,7 @@ import {
   fullDescriptionQuality,
   type DescriptionQualityFlag,
 } from './researchEntityDescriptionQuality';
+import { isDirectoryIndexChromeText } from './researchEntityDescriptionText';
 
 export type DescriptionEntityKind = 'organization' | 'person';
 
@@ -23,7 +24,11 @@ function isDownstreamUsefulDescription(text: string): boolean {
 }
 
 function describesResearchHome(text: string): boolean {
-  return isDownstreamUsefulDescription(text) && describesResearchFocus(text);
+  return (
+    !isDirectoryIndexChromeText(text) &&
+    isDownstreamUsefulDescription(text) &&
+    describesResearchFocus(text)
+  );
 }
 
 function isPersonCentricLead(text: string): boolean {

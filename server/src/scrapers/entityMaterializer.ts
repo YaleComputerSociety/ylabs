@@ -13,6 +13,7 @@ import { ResearchEntityRelationship } from '../models/researchEntityRelationship
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
+import { normalizeResearchEntityNameDashes } from '../utils/researchEntityNameNormalization';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
@@ -218,6 +219,13 @@ function materializedFieldValue(
     typeof value === 'string'
   ) {
     return redactDirectContactInfo(value);
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    (field === 'name' || field === 'displayName') &&
+    typeof value === 'string'
+  ) {
+    return normalizeResearchEntityNameDashes(value);
   }
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);

@@ -6,23 +6,16 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { normalizeResearchEntityNameDashes } from '../utils/researchEntityNameNormalization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import {
-  resolveBackfillWebsiteUrl,
-  type WebsiteUrlBackfillCandidateEntity,
-} from './backfillResearchEntityWebsiteUrlsCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-export const PROFILE_PAGE_WEBSITE_URL_PATTERN =
-  /(\/profile\/|\/people\/|\/person\/|\/faculty\/|\/faculty-directory\/|\/directory\/faculty\/|\/who-we-are\/faculty\/)/i;
+export const NAME_DASH_PATTERN = /[‒–—―−]/;
 
-export const LISTING_PAGE_WEBSITE_URL_PATTERN =
-  /(a-to-z-index|a-z-index|lab-websites|[?&]page=\d|\/people(\/faculty)?\/?($|\?)|\/people\.(html?|aspx|php)|\/members\/?($|\?)|\/faculty\/?($|\?)|\/(faculty-directory|directory)\/?($|\?))/i;
-
-export interface ResearchEntityWebsiteUrlBackfillOptions {
+export interface ResearchEntityNameDashBackfillOptions {
   dryRun: boolean;
   limit: number;
   explicitLimit: boolean;
@@ -30,10 +23,19 @@ export interface ResearchEntityWebsiteUrlBackfillOptions {
   output?: string;
 }
 
-export function parseResearchEntityWebsiteUrlBackfillArgs(
+function parsePositiveInt(value: string | undefined): number {
+  if (!value || value.startsWith('--') || !/^[1-9]\d*$/.test(value)) {
+    throw new Error('--limit must be a positive integer');
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be a positive integer');
+  return parsed;
+}
+
+export function parseResearchEntityNameDashBackfillArgs(
   argv: string[],
-): ResearchEntityWebsiteUrlBackfillOptions {
-  const options: ResearchEntityWebsiteUrlBackfillOptions = {
+): ResearchEntityNameDashBackfillOptions {
+  const options: ResearchEntityNameDashBackfillOptions = {
     dryRun: true,
     limit: 0,
     explicitLimit: false,
@@ -44,7 +46,7 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     if (arg === '--') continue;
     if (arg === '--apply' || arg === '--mode=apply') options.dryRun = false;
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
-    else if (arg === '--confirm-research-entity-website-urls') options.confirm = true;
+    else if (arg === '--confirm-name-dashes') options.confirm = true;
     else if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInt(arg.slice('--limit='.length));
       options.explicitLimit = true;
@@ -58,106 +60,83 @@ export function parseResearchEntityWebsiteUrlBackfillArgs(
     } else if (arg.startsWith('--output=')) {
       options.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
     } else {
-      throw new Error(`Unknown backfill:research-entity-website-urls argument: ${arg}`);
+      throw new Error(`Unknown backfill:research-entity-name-dashes argument: ${arg}`);
     }
   }
   return options;
 }
 
-function parsePositiveInt(value: string | undefined): number {
-  if (!value || value.startsWith('--') || !/^[1-9]\d*$/.test(value)) {
-    throw new Error('--limit must be a positive integer');
-  }
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be a positive integer');
-  return parsed;
-}
-
-export function assertResearchEntityWebsiteUrlApplyAllowed(
-  options: Pick<ResearchEntityWebsiteUrlBackfillOptions, 'dryRun' | 'confirm' | 'explicitLimit'>,
+export function assertResearchEntityNameDashApplyAllowed(
+  options: Pick<ResearchEntityNameDashBackfillOptions, 'dryRun' | 'confirm' | 'explicitLimit'>,
 ): void {
   const apply = !options.dryRun;
   if (apply && !options.confirm) {
-    throw new Error('Apply mode requires --confirm-research-entity-website-urls.');
+    throw new Error('Apply mode requires --confirm-name-dashes.');
   }
   if (apply && !options.explicitLimit) {
     throw new Error('Apply mode requires an explicit --limit.');
   }
 }
 
-export interface ResearchEntityWebsiteUrlBackfillResult {
+export interface ResearchEntityNameDashBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
-  resolved: number;
-  cleared: number;
   updated: number;
-  unresolved: number;
   errors: number;
-  samples: Array<{ slug: string; from: string; websiteUrl: string; action: 'set' | 'clear' }>;
+  samples: Array<{
+    slug: string;
+    field: 'name' | 'displayName';
+    from: string;
+    to: string;
+  }>;
 }
 
-export async function runResearchEntityWebsiteUrlBackfill(options: {
+export async function runResearchEntityNameDashBackfill(options: {
   dryRun: boolean;
   limit?: number;
-}): Promise<ResearchEntityWebsiteUrlBackfillResult> {
+}): Promise<ResearchEntityNameDashBackfillResult> {
   const entities = await ResearchEntity.find(
-    {
-      archived: { $ne: true },
-      $or: [
-        { websiteUrl: { $exists: false } },
-        { websiteUrl: { $in: ['', null] } },
-        { websiteUrl: { $not: /^https?:\/\//i } },
-        { websiteUrl: PROFILE_PAGE_WEBSITE_URL_PATTERN },
-        { websiteUrl: LISTING_PAGE_WEBSITE_URL_PATTERN },
-      ],
-    },
-    { _id: 1, slug: 1, name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
+    { $or: [{ name: NAME_DASH_PATTERN }, { displayName: NAME_DASH_PATTERN }] },
+    { _id: 1, slug: 1, name: 1, displayName: 1 },
   ).lean();
 
-  const result: ResearchEntityWebsiteUrlBackfillResult = {
+  const result: ResearchEntityNameDashBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: 0,
-    resolved: 0,
-    cleared: 0,
     updated: 0,
-    unresolved: 0,
     errors: 0,
     samples: [],
   };
 
-  for (const entity of entities as Array<
-    Record<string, unknown> & WebsiteUrlBackfillCandidateEntity
-  >) {
+  for (const entity of entities as Array<Record<string, unknown>>) {
     if (options.limit && result.scanned >= options.limit) break;
     result.scanned += 1;
     try {
-      const resolution = resolveBackfillWebsiteUrl(entity);
-      if (resolution.action === 'keep') {
-        result.unresolved += 1;
-        continue;
+      const update: Record<string, string> = {};
+      for (const field of ['name', 'displayName'] as const) {
+        const current = entity[field];
+        if (typeof current !== 'string') continue;
+        const normalized = normalizeResearchEntityNameDashes(current);
+        if (normalized === current) continue;
+        update[field] = normalized;
+        if (result.samples.length < 25) {
+          result.samples.push({
+            slug: String(entity.slug ?? ''),
+            field,
+            from: current,
+            to: normalized,
+          });
+        }
       }
-      const nextWebsiteUrl = resolution.action === 'set' ? resolution.websiteUrl : '';
-      if (resolution.action === 'set') result.resolved += 1;
-      else result.cleared += 1;
-      if (result.samples.length < 25) {
-        result.samples.push({
-          slug: String(entity.slug ?? ''),
-          from: String(entity.websiteUrl ?? ''),
-          websiteUrl: nextWebsiteUrl,
-          action: resolution.action,
-        });
-      }
+      if (Object.keys(update).length === 0) continue;
       if (!options.dryRun) {
-        await ResearchEntity.updateOne(
-          { _id: entity._id },
-          { $set: { websiteUrl: nextWebsiteUrl } },
-        );
+        await ResearchEntity.updateOne({ _id: entity._id }, { $set: update });
       }
       result.updated += 1;
     } catch (error) {
       result.errors += 1;
       console.error(
-        `research-entity website-url backfill failed for ${String(entity.slug ?? entity._id)}:`,
+        `research-entity name-dash backfill failed for ${String(entity.slug ?? entity._id)}:`,
         sanitizeLogValue(error),
       );
     }
@@ -166,13 +145,13 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
 }
 
 async function main(): Promise<void> {
-  const options = parseResearchEntityWebsiteUrlBackfillArgs(process.argv.slice(2));
-  assertResearchEntityWebsiteUrlApplyAllowed(options);
+  const options = parseResearchEntityNameDashBackfillArgs(process.argv.slice(2));
+  assertResearchEntityNameDashApplyAllowed(options);
   const apply = !options.dryRun;
 
   const guard = assertScriptApplyAllowed({
     apply,
-    scriptName: 'backfill:research-entity-website-urls',
+    scriptName: 'backfill:research-entity-name-dashes',
     mongoUrl: process.env.MONGODBURL,
   });
   console.log(
@@ -181,7 +160,7 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const result = await runResearchEntityWebsiteUrlBackfill({
+    const result = await runResearchEntityNameDashBackfill({
       dryRun: options.dryRun,
       limit: options.explicitLimit ? options.limit : undefined,
     });
@@ -196,7 +175,7 @@ async function main(): Promise<void> {
       const safeOutput = resolveSafeJsonReportOutputPath(options.output);
       fs.mkdirSync(path.dirname(safeOutput), { recursive: true });
       fs.writeFileSync(safeOutput, `${JSON.stringify(payload, null, 2)}\n`);
-      console.log(`Saved research-entity website-url backfill report to ${safeOutput}`);
+      console.log(`Saved research-entity name-dash backfill report to ${safeOutput}`);
     }
     console.log(JSON.stringify(result, null, 2));
   } finally {

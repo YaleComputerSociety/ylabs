@@ -78,4 +78,13 @@ describe('selectResearchHomeDescription', () => {
       LAB_RESEARCH_BLOCK,
     );
   });
+
+  it('never selects A-Z directory-index boilerplate as a description (#517)', () => {
+    const A_TO_Z_INDEX_BLOCK =
+      'This A–Z index lists Yale School of Medicine lab websites in one place, making it easy to find a specific lab, research group, or program site. Browse alphabetically or use your browser search to quickly locate a lab by name.';
+    expect(selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK], { kind: 'organization' })).toBeNull();
+    expect(selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK, LAB_RESEARCH_BLOCK])).toBe(
+      LAB_RESEARCH_BLOCK,
+    );
+  });
 });

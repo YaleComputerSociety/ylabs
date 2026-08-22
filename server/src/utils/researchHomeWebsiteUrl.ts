@@ -39,12 +39,27 @@ const INDEX_LISTING_PATH = /\/(?:a-to-z-index|a-z-index|az-index|lab-websites)\/
 
 const DIRECTORY_ROOT_PATH = /\/(?:people|faculty|faculty-directory|directory)\/$/i;
 
+const PEOPLE_ROSTER_PATH = /\/people\/(?:members|faculty-directory|faculty|directory)\/$/i;
+
+const PEOPLE_INDEX_PATH = /\/people\/index(?:\.[a-z0-9]+)?\/$/i;
+
+const PEOPLE_INDEX_FILE_PATH = /\/people\.(?:html?|aspx|php)(?:\/|$)/i;
+
+const MEMBERS_ROOT_PATH = /\/members\/$/i;
+
 export function isListingOrIndexUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   if (PAGINATED_LISTING_QUERY.test(url.search)) return true;
   const pathname = (url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`).toLowerCase();
-  return INDEX_LISTING_PATH.test(pathname) || DIRECTORY_ROOT_PATH.test(pathname);
+  return (
+    INDEX_LISTING_PATH.test(pathname) ||
+    DIRECTORY_ROOT_PATH.test(pathname) ||
+    PEOPLE_ROSTER_PATH.test(pathname) ||
+    PEOPLE_INDEX_PATH.test(pathname) ||
+    PEOPLE_INDEX_FILE_PATH.test(pathname) ||
+    MEMBERS_ROOT_PATH.test(pathname)
+  );
 }
 
 export const genericYaleWebsiteSubdomains = new Set([
