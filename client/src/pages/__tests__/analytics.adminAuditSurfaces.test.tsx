@@ -322,7 +322,11 @@ describe('Analytics admin audit + grant history + user pagination surfaces', () 
     render(<Analytics />);
 
     const historyHeading = await screen.findByRole('heading', { name: 'Admin access history' });
-    const historyList = historyHeading.parentElement?.querySelector('ol') as HTMLElement;
+    const historyList = await waitFor(() => {
+      const list = historyHeading.parentElement?.querySelector('ol');
+      if (!list) throw new Error('history list not rendered yet');
+      return list as HTMLElement;
+    });
     const items = within(historyList).getAllByRole('listitem');
 
     expect(items).toHaveLength(3);
