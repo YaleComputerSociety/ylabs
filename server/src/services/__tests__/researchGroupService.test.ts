@@ -2234,8 +2234,15 @@ describe('resolveArchivedResearchEntityCanonicalSlug', () => {
   it('resolves an archived slug to the visible canonical entity slug', async () => {
     const canonicalGroupId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne
-      .mockReturnValueOnce(leanResult({ canonicalGroupId }))
-      .mockReturnValueOnce(leanResult({ slug: 'named-lab' }));
+      .mockReturnValueOnce(leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId }))
+      .mockReturnValueOnce(
+        leanResult({
+          _id: canonicalGroupId,
+          slug: 'named-lab',
+          archived: false,
+          studentVisibilityTier: 'student_ready',
+        }),
+      );
 
     await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBe(
       'named-lab',
@@ -2248,10 +2255,85 @@ describe('resolveArchivedResearchEntityCanonicalSlug', () => {
     await expect(resolveArchivedResearchEntityCanonicalSlug('active-lab')).resolves.toBeNull();
   });
 
-  it('returns null when the canonical target is not publicly visible', async () => {
+  it('returns null when the single-hop canonical target is not publicly visible', async () => {
     mocks.researchEntityFindOne
-      .mockReturnValueOnce(leanResult({ canonicalGroupId: new mongoose.Types.ObjectId() }))
-      .mockReturnValueOnce(leanResult(null));
+      .mockReturnValueOnce(
+        leanResult({
+          _id: new mongoose.Types.ObjectId(),
+          canonicalGroupId: new mongoose.Types.ObjectId(),
+        }),
+      )
+      .mockReturnValueOnce(
+        leanResult({
+          _id: new mongoose.Types.ObjectId(),
+          slug: 'suppressed-shell',
+          archived: true,
+          studentVisibilityTier: 'suppressed',
+        }),
+      );
+
+    await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBeNull();
+  });
+
+  it('chains A -> B(archived) -> C(live) and resolves to C', async () => {
+    const bId = new mongoose.Types.ObjectId();
+    const cId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne
+      .mockReturnValueOnce(leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId: bId }))
+      .mockReturnValueOnce(
+        leanResult({
+          _id: bId,
+          slug: 'nsf-pi-shell-mid',
+          archived: true,
+          studentVisibilityTier: 'suppressed',
+          canonicalGroupId: cId,
+        }),
+      )
+      .mockReturnValueOnce(
+        leanResult({
+          _id: cId,
+          slug: 'dept-cs-live-lab',
+          archived: false,
+          studentVisibilityTier: 'student_ready',
+        }),
+      );
+
+    await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBe(
+      'dept-cs-live-lab',
+    );
+  });
+
+  it('returns null when the chain terminates at no live public target', async () => {
+    const bId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne
+      .mockReturnValueOnce(leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId: bId }))
+      .mockReturnValueOnce(
+        leanResult({
+          _id: bId,
+          slug: 'nsf-pi-shell-mid',
+          archived: true,
+          studentVisibilityTier: 'suppressed',
+          canonicalGroupId: null,
+        }),
+      );
+
+    await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBeNull();
+  });
+
+  it('terminates safely on a cycle A -> B -> A', async () => {
+    const aId = new mongoose.Types.ObjectId();
+    const bId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne
+      .mockReturnValueOnce(leanResult({ _id: aId, canonicalGroupId: bId }))
+      .mockReturnValueOnce(
+        leanResult({
+          _id: bId,
+          slug: 'nsf-pi-shell-mid',
+          archived: true,
+          studentVisibilityTier: 'suppressed',
+          canonicalGroupId: aId,
+        }),
+      );
 
     await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBeNull();
   });
