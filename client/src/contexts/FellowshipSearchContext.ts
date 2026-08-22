@@ -4,10 +4,7 @@
 import { createContext } from 'react';
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
 import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
-import {
-  ProgramJourneySummary,
-  emptyProgramJourneySummary,
-} from '../utils/programJourney';
+import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
 
 export interface FellowshipSearchContextType {
   queryString: string;

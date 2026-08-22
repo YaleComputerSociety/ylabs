@@ -5,10 +5,7 @@
  * state transitions are testable without mounting the provider.
  */
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
-import {
-  ProgramJourneySummary,
-  emptyProgramJourneySummary,
-} from '../utils/programJourney';
+import { ProgramJourneySummary, emptyProgramJourneySummary } from '../utils/programJourney';
 
 export type FellowshipQuickFilter =
   | 'open'

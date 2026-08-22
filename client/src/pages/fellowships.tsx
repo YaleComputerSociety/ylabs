@@ -109,10 +109,7 @@ const QuickFilterEmptyState = ({
 const StatusSummary = ({ summary }: { summary: ProgramJourneySummary }) => (
   <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-[var(--yr-line)] bg-[var(--yr-line)] sm:grid-cols-3 lg:grid-cols-6">
     {journeySections.map((section) => (
-      <div
-        key={section.key}
-        className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}
-      >
+      <div key={section.key} className={`bg-[var(--yr-panel)] px-4 py-3 ${section.tileClassName}`}>
         <dt className="yr-kicker text-[0.68rem]">{section.tileLabel}</dt>
         <dd className="mt-2 flex min-h-[3rem] flex-col justify-end gap-1">
           <span className="text-2xl font-semibold text-slate-950">{summary[section.key]}</span>
