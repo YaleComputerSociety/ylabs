@@ -51,7 +51,42 @@ const MEMBERS_ROOT_PATH = /\/members\/$/i;
 
 const DRUPAL_FACET_QUERY = /[?&]f(?:\[|%5b)\d+(?:\]|%5d)=/i;
 
-const SECTION_INDEX_ROOT_PATH = /^\/(?:cores|centers-institutes)$/i;
+const SECTION_INDEX_ROOT_PATH =
+  /^\/(?:cores|centers|centers-institutes|centers-initiatives|research\/centers)$/i;
+
+const BOILERPLATE_PLATFORM_HOSTS = new Set([
+  'wordpress.org',
+  'www.wordpress.org',
+  'wordpress.com',
+  'www.wordpress.com',
+  'wp.com',
+  'www.wp.com',
+  'w.org',
+  'automattic.com',
+  'www.automattic.com',
+  'jetpack.com',
+  'www.jetpack.com',
+  'gravatar.com',
+  'www.gravatar.com',
+  'drupal.org',
+  'www.drupal.org',
+  'joomla.org',
+  'www.joomla.org',
+  'squarespace.com',
+  'www.squarespace.com',
+  'wix.com',
+  'www.wix.com',
+  'weebly.com',
+  'www.weebly.com',
+  'godaddy.com',
+  'www.godaddy.com',
+]);
+
+export function isBoilerplatePlatformHostUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return BOILERPLATE_PLATFORM_HOSTS.has(url.hostname.toLowerCase());
+}
 
 const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
 
@@ -93,7 +128,11 @@ export function isListingOrIndexUrl(value: unknown): boolean {
 }
 
 export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
-  return isSelfReferentialUrl(value) || isListingOrIndexUrl(value);
+  return (
+    isSelfReferentialUrl(value) ||
+    isListingOrIndexUrl(value) ||
+    isBoilerplatePlatformHostUrl(value)
+  );
 }
 
 export const genericYaleWebsiteSubdomains = new Set([
@@ -179,6 +218,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
   const raw = textValue(value);
   if (!raw) return '';
   if (isListingOrIndexUrl(raw)) return '';
+  if (isBoilerplatePlatformHostUrl(raw)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';

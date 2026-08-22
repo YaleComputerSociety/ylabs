@@ -1,4 +1,5 @@
 import {
+  isBoilerplatePlatformHostUrl,
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -62,13 +63,18 @@ export function isListingPageWebsiteUrl(value: unknown): boolean {
   return isListingOrIndexUrl(value);
 }
 
+export function isBoilerplateHostWebsiteUrl(value: unknown): boolean {
+  return isBoilerplatePlatformHostUrl(value);
+}
+
 export function isPromotableWebsiteUrl(value: unknown): boolean {
   return (
     isPublicHttpUrl(value) &&
     !isGrantOrIdentifierUrl(value) &&
     !isContentPageUrl(value) &&
     !isProfilePageWebsiteUrl(value) &&
-    !isListingPageWebsiteUrl(value)
+    !isListingPageWebsiteUrl(value) &&
+    !isBoilerplateHostWebsiteUrl(value)
   );
 }
 
@@ -93,16 +99,18 @@ export type WebsiteUrlBackfillResolution =
 /**
  * Deterministic, evidence-first resolution of a website URL from the entity's
  * materialized evidence. Grant/identifier hosts, article/news content pages, Yale
- * profile / faculty-directory / people-directory pages, and directory/index/roster
- * listing pages (A-Z index, `?page=N` paginated listings, bare `/people`,
- * `/people/faculty`, `/faculty` roots) are never promoted, so a listing or profile
- * page can never beat a real lab site. An entity whose existing `websiteUrl` is a
- * listing/index page (including `/people/members`, `/people/index`, and other
- * people-roster/index subpages) is corrected to a genuine research home / lab site
- * when one exists in its evidence, and otherwise cleared (fail closed to no website
- * rather than a directory index). A single-person profile-page `websiteUrl` is
- * corrected to a research home when one exists and otherwise kept as a PI fallback.
- * Any other usable `websiteUrl` is kept.
+ * profile / faculty-directory / people-directory pages, directory/index/roster
+ * listing pages (A-Z index, `?page=N` paginated listings, faceted/section-index
+ * roots, bare `/people`, `/people/faculty`, `/faculty` roots), and generic
+ * CMS/platform boilerplate hosts (e.g. `wordpress.org` "Powered by" footer links)
+ * are never promoted, so a listing, profile, or boilerplate page can never beat a
+ * real lab site. An entity whose existing `websiteUrl` is a listing/index page
+ * (including `/people/members`, `/people/index`, and other people-roster/index
+ * subpages) or a boilerplate platform host is corrected to a genuine research home /
+ * lab site when one exists in its evidence, and otherwise cleared (fail closed to no
+ * website rather than an off-site or directory-index link). A single-person
+ * profile-page `websiteUrl` is corrected to a research home when one exists and
+ * otherwise kept as a PI fallback. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
  * then ordered `sourceUrls`) is used.
  */
@@ -115,6 +123,10 @@ export function resolveBackfillWebsiteUrl(
   ];
   if (hasUsableWebsiteUrl(entity)) {
     if (isListingPageWebsiteUrl(entity.websiteUrl)) {
+      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
+    }
+    if (isBoilerplateHostWebsiteUrl(entity.websiteUrl)) {
       const researchHome = selectResearchHomeWebsiteUrl(candidates);
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }

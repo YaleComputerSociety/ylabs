@@ -5,6 +5,7 @@ import {
   YaleResearchOfficialScraper,
   entityToObservations,
   inferResearchYaleKind,
+  isMintableResearchYaleEntity,
   parseResearchYaleCenters,
   parseResearchYaleCoreFacilities,
   slugifyResearchYaleEntity,
@@ -58,6 +59,23 @@ const CORES_HTML = `
   <article class="card">
     <h2><a href="/cores/aidc">Advanced Instrumentation Development Center (AIDC)</a></h2>
     <p>Our mission stands at the nexus between hardware, computing, and data science.</p>
+  </article>
+</main>
+`;
+
+const CORES_WITH_TEMPLATE_PAGES_HTML = `
+<main>
+  <article class="card">
+    <h2><a href="/cores/acem">Aberration-Corrected Electron Microscopy (ACEM) Core</a></h2>
+    <p>Our core's focus is cutting-edge and high-throughput capability in electron microscopy techniques.</p>
+  </article>
+  <article class="card">
+    <h2><a href="/cores/pages/faq">Cores Pages FAQ</a></h2>
+    <p>Frequently asked questions about using Yale cores.</p>
+  </article>
+  <article class="card">
+    <h2><a href="/cores/shared-resource">Shared Resource</a></h2>
+    <p>Lorem ipsum.</p>
   </article>
 </main>
 `;
@@ -135,6 +153,50 @@ describe('yaleResearchOfficialScraper', () => {
     ]);
   });
 
+  it('does not mint template, FAQ, or placeholder pages as core entities', () => {
+    const entities = parseResearchYaleCoreFacilities(
+      CORES_WITH_TEMPLATE_PAGES_HTML,
+      'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+    );
+
+    expect(entities.map((entity) => entity.url)).toEqual([
+      'https://research.yale.edu/cores/acem',
+    ]);
+    expect(entities.map((entity) => entity.name)).not.toEqual(
+      expect.arrayContaining(['Cores Pages FAQ', 'Shared Resource']),
+    );
+  });
+
+  it('classifies mintable vs non-research template entities', () => {
+    const realCore = {
+      name: 'Advanced Instrumentation Development Center (AIDC)',
+      url: 'https://research.yale.edu/cores/aidc',
+      slug: 'research-yale-advanced-instrumentation-development-center-aidc',
+      kind: 'center' as const,
+      entityType: 'CENTER' as const,
+      sourceCategory: 'core-facility' as const,
+    };
+    expect(isMintableResearchYaleEntity(realCore)).toBe(true);
+    expect(
+      isMintableResearchYaleEntity({
+        ...realCore,
+        name: 'Cores Pages FAQ',
+        url: 'https://research.yale.edu/cores/pages/faq',
+      }),
+    ).toBe(false);
+    expect(
+      isMintableResearchYaleEntity({
+        ...realCore,
+        name: 'Shared Resource',
+        url: 'https://research.yale.edu/cores/shared-resource',
+        description: 'Lorem ipsum.',
+      }),
+    ).toBe(false);
+    expect(
+      isMintableResearchYaleEntity({ ...realCore, name: 'FAQ', url: 'https://research.yale.edu/faq' }),
+    ).toBe(false);
+  });
+
   it('emits discovery-only observations without undergraduate access or contact routes', () => {
     const [entity] = parseResearchYaleCoreFacilities(
       CORES_HTML,
@@ -151,7 +213,7 @@ describe('yaleResearchOfficialScraper', () => {
         expect.objectContaining({ field: 'websiteUrl', value: entity.url }),
         expect.objectContaining({
           field: 'sourceUrls',
-          value: ['https://research.yale.edu/cores?f%5B0%5D=result_type%3A1', entity.url],
+          value: [entity.url],
         }),
       ]),
     );

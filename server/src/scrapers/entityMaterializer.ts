@@ -24,7 +24,11 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
-import { isDirectoryLoaderUrl, isFacetedOrSectionIndexUrl } from '../utils/researchHomeWebsiteUrl';
+import {
+  isBoilerplatePlatformHostUrl,
+  isDirectoryLoaderUrl,
+  isFacetedOrSectionIndexUrl,
+} from '../utils/researchHomeWebsiteUrl';
 import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
@@ -369,7 +373,8 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknow
       !isResearchEntityContentPageSourceUrl(url) &&
       !isSelfReferentialUrl(url) &&
       !isDirectoryLoaderUrl(url) &&
-      !isFacetedOrSectionIndexUrl(url),
+      !isFacetedOrSectionIndexUrl(url) &&
+      !isBoilerplatePlatformHostUrl(url),
   );
 }
 

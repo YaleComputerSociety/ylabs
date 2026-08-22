@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isBoilerplateHostWebsiteUrl,
   isContentPageUrl,
   isGrantOrIdentifierUrl,
   isListingPageWebsiteUrl,
@@ -86,6 +87,14 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isPromotableWebsiteUrl('https://physics.yale.edu/people?page=8')).toBe(false);
     expect(isPromotableWebsiteUrl('https://physics.yale.edu/mcdb/faculty/')).toBe(false);
   });
+
+  it('flags generic CMS/platform boilerplate hosts and never promotes them (#572)', () => {
+    expect(isBoilerplateHostWebsiteUrl('http://wordpress.org/')).toBe(true);
+    expect(isBoilerplateHostWebsiteUrl('https://www.squarespace.com/')).toBe(true);
+    expect(isBoilerplateHostWebsiteUrl('https://rjohnwilliams.wordpress.com/')).toBe(false);
+    expect(isPromotableWebsiteUrl('http://wordpress.org/')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://rjohnwilliams.wordpress.com/')).toBe(true);
+  });
 });
 
 describe('resolveBackfillWebsiteUrl listing handling', () => {
@@ -114,6 +123,24 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
         sourceUrls: [],
       }),
     ).toEqual({ action: 'clear' });
+  });
+
+  it('clears a boilerplate-host websiteUrl when no research home is available (#572)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'http://wordpress.org/',
+        sourceUrls: ['http://wordpress.org/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks a real research home over a boilerplate-host websiteUrl (#572)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'http://wordpress.org/',
+        sourceUrls: ['https://example-computing-lab.example.org/'],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
   });
 
   it('re-picks a real research home over a listing websiteUrl when one exists in evidence', () => {

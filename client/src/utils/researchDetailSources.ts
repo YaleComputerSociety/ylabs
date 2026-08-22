@@ -163,7 +163,8 @@ export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
 
 const DRUPAL_FACET_QUERY = /[?&]f(?:\[|%5b)\d+(?:\]|%5d)=/i;
 
-const SECTION_INDEX_ROOT_PATH = /^\/(?:cores|centers-institutes)$/i;
+const SECTION_INDEX_ROOT_PATH =
+  /^\/(?:cores|centers|centers-institutes|centers-initiatives|research\/centers)$/i;
 
 export const isFacetedOrSectionIndexSourceUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
@@ -173,6 +174,34 @@ export const isFacetedOrSectionIndexSourceUrl = (url?: string | null): boolean =
     const parsed = new URL(normalized);
     const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
     return DRUPAL_FACET_QUERY.test(parsed.search) || SECTION_INDEX_ROOT_PATH.test(path);
+  } catch {
+    return false;
+  }
+};
+
+const BOILERPLATE_PLATFORM_HOSTS = new Set([
+  'wordpress.org',
+  'wordpress.com',
+  'wp.com',
+  'w.org',
+  'automattic.com',
+  'jetpack.com',
+  'gravatar.com',
+  'drupal.org',
+  'joomla.org',
+  'squarespace.com',
+  'wix.com',
+  'weebly.com',
+  'godaddy.com',
+]);
+
+export const isBoilerplatePlatformSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
+    return BOILERPLATE_PLATFORM_HOSTS.has(host);
   } catch {
     return false;
   }
@@ -233,6 +262,7 @@ export const buildResearchDetailSources = ({
     if (!normalized) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
     if (isFacetedOrSectionIndexSourceUrl(normalized)) return;
+    if (isBoilerplatePlatformSourceUrl(normalized)) return;
     if (isRawDataApiSourceUrl(normalized)) return;
 
     const key = sourceLedgerKey(normalized);

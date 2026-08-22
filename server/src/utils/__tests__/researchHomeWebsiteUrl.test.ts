@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
+  isFacetedOrSectionIndexUrl,
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
@@ -92,11 +94,67 @@ describe('isDisallowedResearchEntitySourceUrl', () => {
     ).toBe(true);
   });
 
+  it('rejects generic CMS/platform boilerplate hosts as sources (#572)', () => {
+    expect(isDisallowedResearchEntitySourceUrl('http://wordpress.org/')).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://www.wordpress.com')).toBe(true);
+    expect(isDisallowedResearchEntitySourceUrl('https://squarespace.com/')).toBe(true);
+  });
+
   it('keeps a real per-lab research home as an allowed source', () => {
     expect(isDisallowedResearchEntitySourceUrl('https://medicine.yale.edu/lab/yan/')).toBe(false);
     expect(isDisallowedResearchEntitySourceUrl('https://medicine.yale.edu/profile/qin-yan/')).toBe(
       false,
     );
+  });
+
+  it('keeps a named per-person WordPress site as an allowed source (#556)', () => {
+    expect(
+      isDisallowedResearchEntitySourceUrl('https://rjohnwilliams.wordpress.com/'),
+    ).toBe(false);
+  });
+});
+
+describe('isFacetedOrSectionIndexUrl', () => {
+  it('flags faceted directory queries and section-index roots on multiple hosts (#560, #569)', () => {
+    expect(
+      isFacetedOrSectionIndexUrl('https://research.example.edu/cores?f%5B0%5D=result_type%3A1'),
+    ).toBe(true);
+    expect(isFacetedOrSectionIndexUrl('https://research.example.edu/cores')).toBe(true);
+    expect(isFacetedOrSectionIndexUrl('https://research.example.edu/centers-institutes')).toBe(true);
+    expect(isFacetedOrSectionIndexUrl('https://environment.example.edu/research/centers')).toBe(
+      true,
+    );
+    expect(isFacetedOrSectionIndexUrl('https://jackson.example.edu/centers-initiatives')).toBe(true);
+  });
+
+  it('does not flag specific center/core child pages', () => {
+    expect(isFacetedOrSectionIndexUrl('https://research.example.edu/cores/keck-microarray')).toBe(
+      false,
+    );
+    expect(
+      isFacetedOrSectionIndexUrl('https://jackson.example.edu/centers-initiatives/kerry-initiative'),
+    ).toBe(false);
+    expect(isFacetedOrSectionIndexUrl('https://example-lab.example.org/')).toBe(false);
+    expect(isFacetedOrSectionIndexUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isBoilerplatePlatformHostUrl', () => {
+  it('flags generic CMS/platform vendor hosts (#572)', () => {
+    expect(isBoilerplatePlatformHostUrl('http://wordpress.org/')).toBe(true);
+    expect(isBoilerplatePlatformHostUrl('https://www.wordpress.org/support/')).toBe(true);
+    expect(isBoilerplatePlatformHostUrl('https://wordpress.com')).toBe(true);
+    expect(isBoilerplatePlatformHostUrl('https://drupal.org/')).toBe(true);
+    expect(isBoilerplatePlatformHostUrl('https://www.squarespace.com/')).toBe(true);
+    expect(isBoilerplatePlatformHostUrl('https://wix.com/')).toBe(true);
+  });
+
+  it('keeps named per-person subdomains and real research hosts (#556)', () => {
+    expect(isBoilerplatePlatformHostUrl('https://rjohnwilliams.wordpress.com/')).toBe(false);
+    expect(isBoilerplatePlatformHostUrl('https://campuspress.yale.edu/rjohnwilliams/')).toBe(false);
+    expect(isBoilerplatePlatformHostUrl('https://example-lab.example.edu/')).toBe(false);
+    expect(isBoilerplatePlatformHostUrl('mailto:someone@example.org')).toBe(false);
+    expect(isBoilerplatePlatformHostUrl(undefined)).toBe(false);
   });
 });
 
@@ -149,11 +207,23 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://research.example.edu/centers-institutes')).toBe(true);
   });
 
-  it('does not flag core or center detail child pages (#560)', () => {
+  it('flags section-index roots across multiple hosts (#569)', () => {
+    expect(isListingOrIndexUrl('https://environment.example.edu/research/centers')).toBe(true);
+    expect(isListingOrIndexUrl('https://jackson.example.edu/centers-initiatives/')).toBe(true);
+    expect(isListingOrIndexUrl('https://centers.example.edu/centers')).toBe(true);
+  });
+
+  it('does not flag core or center detail child pages (#560, #569)', () => {
     expect(isListingOrIndexUrl('https://research.example.edu/cores/keck-microarray')).toBe(false);
     expect(isListingOrIndexUrl('https://research.example.edu/centers-institutes/wu-tsai')).toBe(
       false,
     );
+    expect(
+      isListingOrIndexUrl('https://environment.example.edu/research/centers/energy-center'),
+    ).toBe(false);
+    expect(
+      isListingOrIndexUrl('https://jackson.example.edu/centers-initiatives/kerry-initiative'),
+    ).toBe(false);
   });
 
   it('does not flag real lab, center, or person pages', () => {
@@ -268,5 +338,26 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
     ).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://physics.example.edu/people?page=8')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://physics.example.edu/mcdb/faculty/')).toBe('');
+  });
+
+  it('rejects faceted and multi-host section-index-root source URLs (#569)', () => {
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://research.example.edu/cores?f%5B0%5D=result_type%3A1'),
+    ).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://research.example.edu/centers-institutes')).toBe(
+      '',
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://environment.example.edu/research/centers')).toBe(
+      '',
+    );
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://jackson.example.edu/centers-initiatives')).toBe(
+      '',
+    );
+  });
+
+  it('rejects generic CMS/platform boilerplate hosts (#572)', () => {
+    expect(sourceUrlToResearchHomeWebsiteUrl('http://wordpress.org/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://www.wordpress.com/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://squarespace.com/')).toBe('');
   });
 });
