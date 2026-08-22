@@ -717,6 +717,13 @@ const LabDetail = () => {
       .get(`/research/${slug}`, { signal: controller.signal })
       .then((res) => {
         if (requestId !== requestIdRef.current || controller.signal.aborted) return;
+        const finalUrl: string = res.request?.responseURL || '';
+        const canonicalMatch = finalUrl.match(/\/research\/([^/?#]+)(?:[/?#]|$)/i);
+        const canonicalSlug = canonicalMatch ? decodeURIComponent(canonicalMatch[1]) : '';
+        if (canonicalSlug && canonicalSlug.toLowerCase() !== slug.toLowerCase()) {
+          navigate(`/research/${safeRouteSegment(canonicalSlug)}`, { replace: true });
+          return;
+        }
         dispatch({
           type: 'FETCH_SUCCESS',
           payload: normalizeResearchEntityDetailPayload(res.data),
@@ -733,7 +740,7 @@ const LabDetail = () => {
     return () => {
       fetchAbortRef.current?.abort();
     };
-  }, [slug]);
+  }, [slug, navigate]);
 
   useEffect(() => {
     const entity = payload?.researchEntity || payload?.group;

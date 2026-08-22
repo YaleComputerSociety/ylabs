@@ -2157,6 +2157,33 @@ export async function recordResearchEntityOutreach(
   return { recorded: true, routeUrl };
 }
 
+export async function resolveArchivedResearchEntityCanonicalSlug(
+  slug: string,
+): Promise<string | null> {
+  const normalizedSlug = normalizeResearchDetailSlug(slug);
+  if (!normalizedSlug) return null;
+
+  const archivedEntity = (await ResearchEntity.findOne({
+    slug: normalizedSlug,
+    archived: true,
+    canonicalGroupId: { $ne: null },
+  })
+    .select('canonicalGroupId')
+    .lean()) as { canonicalGroupId?: mongoose.Types.ObjectId } | null;
+  if (!archivedEntity?.canonicalGroupId) return null;
+
+  const canonicalEntity = (await ResearchEntity.findOne({
+    _id: archivedEntity.canonicalGroupId,
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select('slug')
+    .lean()) as { slug?: string } | null;
+  const canonicalSlug = canonicalEntity?.slug ? String(canonicalEntity.slug) : '';
+  if (!canonicalSlug || canonicalSlug === normalizedSlug) return null;
+  return canonicalSlug;
+}
+
 export async function getResearchGroupDetail(slug: string): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;

@@ -10,6 +10,7 @@ import {
   getResearchGroupDetail,
   normalizeResearchDetailSlug,
   recordResearchEntityOutreach,
+  resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
@@ -218,6 +219,10 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
 
     const detail = await getResearchGroupDetail(slug);
     if (!detail) {
+      const canonicalSlug = await resolveArchivedResearchEntityCanonicalSlug(slug);
+      if (canonicalSlug) {
+        return response.redirect(302, `${request.baseUrl}/${encodeURIComponent(canonicalSlug)}`);
+      }
       throw new NotFoundError(`Research entity not found with slug: ${slug}`);
     }
 
