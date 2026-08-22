@@ -4,24 +4,13 @@
 import { Request, Response } from 'express';
 import { User } from '../models/user';
 import { getListingModel } from '../db/connections';
-import {
-  getProfileByNetid,
-  normalizePublicProfile,
-  updateOwnProfile,
-  cascadeDepartmentsToListings,
-} from '../services/profileService';
+import { getProfileByNetid } from '../services/profileService';
 import { fetchCourseTableData } from '../services/courseTableService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 const MAX_PUBLIC_PROFILE_URLS = 20;
-
-const addIfDefined = (target: Record<string, any>, key: string, value: any) => {
-  if (value !== undefined && value !== null && value !== '') {
-    target[key] = value;
-  }
-};
 
 const publicHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -38,16 +27,17 @@ const publicHttpUrl = (value: unknown): string | undefined => {
 
 const publicHttpUrls = (values: unknown): string[] =>
   Array.isArray(values)
-    ? values.slice(0, MAX_PUBLIC_PROFILE_URLS).map(publicHttpUrl).filter((value): value is string => Boolean(value))
+    ? values
+        .slice(0, MAX_PUBLIC_PROFILE_URLS)
+        .map(publicHttpUrl)
+        .filter((value): value is string => Boolean(value))
     : [];
 
 const publicProfileListingText = (value: unknown): string | undefined =>
   typeof value === 'string' ? redactDirectContactInfo(value) : undefined;
 
 const publicProfileListingTextArray = (values: unknown): string[] =>
-  Array.isArray(values)
-    ? values.flatMap((value) => publicProfileListingText(value) ?? [])
-    : [];
+  Array.isArray(values) ? values.flatMap((value) => publicProfileListingText(value) ?? []) : [];
 
 const publicProfileListing = (listing: any) => ({
   _id: listing._id,
@@ -63,14 +53,6 @@ const publicProfileListing = (listing: any) => ({
   compensationType: publicProfileListingText(listing.compensationType),
   expiresAt: listing.expiresAt,
 });
-
-const sendProfileMutationError = (res: Response, error: any, fallbackMessage: string) => {
-  if (error?.name === 'ValidationError') {
-    return res.status(400).json({ error: 'Validation error' });
-  }
-
-  return res.status(500).json({ error: fallbackMessage });
-};
 
 /**
  * GET /profiles/:netid — public profile (any authenticated user)
@@ -144,76 +126,5 @@ export const getProfileCourses = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Profile: Error fetching courses:', sanitizeLogValue(error));
     res.json({ courses: [], available: false });
-  }
-};
-
-/**
- * PUT /profiles/me — update own profile (professor only)
- */
-export const updateProfile = async (req: Request, res: Response) => {
-  try {
-    const currentUser = req.user as { netId: string };
-    const updated = await updateOwnProfile(currentUser.netId, req.body);
-
-    if (!updated) {
-      return res.status(404).json({ error: 'Profile not found' });
-    }
-
-    if (req.body.primaryDepartment !== undefined || req.body.secondaryDepartments !== undefined) {
-      await cascadeDepartmentsToListings(currentUser.netId);
-    }
-
-    res.json({ profile: normalizePublicProfile(updated as any) });
-  } catch (error: any) {
-    console.error('Profile: Error updating profile:', sanitizeLogValue(error));
-    sendProfileMutationError(res, error, 'Failed to update profile');
-  }
-};
-
-/**
- * PUT /profiles/me/verify — request admin verification for a complete profile.
- * Kept as a compatibility endpoint; profile saves request automatically.
- */
-export const verifyProfile = async (req: Request, res: Response) => {
-  try {
-    const currentUser = req.user as { netId: string };
-
-    const existing = await User.findOne({ netid: currentUser.netId }).lean();
-    if (!existing) {
-      return res.status(404).json({ error: 'Profile not found' });
-    }
-
-    const profile = existing as any;
-    if (profile.userType !== 'professor' && profile.userType !== 'faculty') {
-      return res
-        .status(403)
-        .json({ error: 'Only faculty accounts can request profile verification.' });
-    }
-    if (!profile.primaryDepartment?.trim()) {
-      return res.status(400).json({ error: 'Primary department is required for verification.' });
-    }
-    if (!profile.researchInterests?.length) {
-      return res
-        .status(400)
-        .json({ error: 'At least one research interest is required for verification.' });
-    }
-    if (!profile.bio?.trim() || !profile.imageUrl?.trim()) {
-      return res.status(400).json({ error: 'Bio and profile image are required for verification.' });
-    }
-
-    const user = await User.findOneAndUpdate(
-      {
-        netid: currentUser.netId,
-        profileVerified: { $ne: true },
-        profileVerificationRequestedAt: { $exists: false },
-      },
-      { $set: { profileVerificationRequestedAt: new Date() } },
-      { new: true },
-    ).lean();
-
-    res.json({ profile: normalizePublicProfile((user || existing) as any) });
-  } catch (error: any) {
-    console.error('Profile: Error verifying profile:', sanitizeLogValue(error));
-    sendProfileMutationError(res, error, 'Failed to verify profile');
   }
 };

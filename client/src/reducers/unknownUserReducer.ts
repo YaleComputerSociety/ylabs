@@ -7,9 +7,7 @@
  *   3. Per-field validation errors
  *
  * Keeping them together lets the component drive everything from a single
- * useReducer while transitions stay pure and unit-testable. Modeled on
- * profileEditorReducer.ts so the combobox patterns stay consistent across
- * pages.
+ * useReducer while transitions stay pure and unit-testable.
  */
 
 export interface UnknownUserErrors {
@@ -42,7 +40,10 @@ export type UnknownUserAction =
   | { type: 'CLOSE_DROPDOWN' }
   | { type: 'SELECT_USER_TYPE'; payload: string }
   | { type: 'SET_FOCUSED_INDEX'; payload: number | ((prev: number) => number) }
-  | { type: 'SET_ERRORS'; payload: UnknownUserErrors | ((prev: UnknownUserErrors) => UnknownUserErrors) }
+  | {
+      type: 'SET_ERRORS';
+      payload: UnknownUserErrors | ((prev: UnknownUserErrors) => UnknownUserErrors);
+    }
   | { type: 'SUBMIT_START' }
   | { type: 'SUBMIT_ERROR'; payload: string }
   | { type: 'SUBMIT_SUCCESS' };

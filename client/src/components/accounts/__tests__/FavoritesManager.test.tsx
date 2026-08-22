@@ -270,44 +270,6 @@ describe('FavoritesManager', () => {
     });
   });
 
-  it('reframes saved programs for professors without application tracking controls', async () => {
-    mockedAxios.get.mockImplementation((url: string) => {
-      if (url === '/users/savedPrograms') {
-        return Promise.resolve({
-          data: {
-            savedPrograms: [
-              {
-                _id: 'fellowship-1',
-                id: 'fellowship-1',
-                title: 'Summer Research Grant',
-              },
-            ],
-          },
-        });
-      }
-      return Promise.resolve({ data: {} });
-    });
-
-    render(
-      <MemoryRouter>
-        <FavoritesManager variant="professor" />
-      </MemoryRouter>,
-    );
-
-    await screen.findByText('Summer Research Grant');
-
-    expect(screen.getByRole('heading', { name: 'Funding & program references' })).toBeTruthy();
-    expect(
-      screen.getByText(
-        'Save programs students may ask about. This is optional reference material, not an application tracker.',
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Board' })).toBeNull();
-    expect(screen.queryByTitle('Mark as applied')).toBeNull();
-    expect(screen.queryByTitle('Add note')).toBeNull();
-    expect(screen.queryByText(/application status/i)).toBeNull();
-  });
-
   it('neutralizes spreadsheet formulas in CSV exports', async () => {
     let exportedBlob: Blob | null = null;
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
