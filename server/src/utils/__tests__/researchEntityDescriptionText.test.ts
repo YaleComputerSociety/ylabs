@@ -76,6 +76,14 @@ describe('publicResearchEntityDescriptionText', () => {
     ).toBe('');
   });
 
+  it('suppresses A-Z directory-index boilerplate that leaked into a stored description (#535)', () => {
+    expect(
+      publicResearchEntityDescriptionText(
+        'This A–Z index lists Yale School of Medicine lab websites in one place, making it easy to find a specific lab, research group, or program site.',
+      ),
+    ).toBe('');
+  });
+
   it('keeps complete research descriptions with abbreviations', () => {
     expect(
       publicResearchEntityDescriptionText(

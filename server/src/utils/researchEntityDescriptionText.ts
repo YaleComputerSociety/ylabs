@@ -221,6 +221,7 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
     isRoleOnlyTitleFragment(cleaned) ||
     isSyntheticResearchHomeMetadataDescription(cleaned) ||
     isBrokenResearchEntityDescriptionFragment(cleaned) ||
+    isDirectoryIndexChromeText(cleaned) ||
     isResearchEntitySourceChromeText(cleaned)
   ) {
     return '';

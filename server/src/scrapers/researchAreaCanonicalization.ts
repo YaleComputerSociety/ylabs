@@ -269,6 +269,37 @@ function toRawList(raw: unknown): string[] {
   return [];
 }
 
+const YSM_RESEARCHER_CHROME_BLOCK =
+  /\s*\d*\s*YSM\s+Researchers?\s*View\s*\d*\s*Related\s+Publications?/gi;
+
+function hasYsmResearcherChrome(value: string): boolean {
+  return new RegExp(YSM_RESEARCHER_CHROME_BLOCK.source, 'i').test(value);
+}
+
+/**
+ * A single scraped area value can glue several real topics to Yale School of
+ * Medicine profile widget chrome ("<Topic><researcherCount> YSM Researchers View
+ * <pubCount> Related Publications<NextTopic>..."). Split on the repeating chrome
+ * block to recover each topic, drop a researcher-count run left glued to a topic
+ * name, and discard segments that are pure chrome, so a corrupted glued value
+ * yields clean topic strings instead of a chrome fragment (issue #487).
+ */
+export function stripResearchAreaSourceChrome(raw: unknown): string[] {
+  if (typeof raw !== 'string') return [];
+  const value = raw.replace(/\s+/g, ' ').trim();
+  if (!value) return [];
+  if (!hasYsmResearcherChrome(value)) return [value];
+  return value
+    .split(YSM_RESEARCHER_CHROME_BLOCK)
+    .map((segment) => segment.replace(/\s+/g, ' ').trim())
+    .map((segment) => segment.replace(/(?<=\p{L})\d{1,4}$/u, '').trim())
+    .filter(Boolean);
+}
+
+function expandRawResearchAreaEntries(raw: unknown): string[] {
+  return toRawList(raw).flatMap((entry) => stripResearchAreaSourceChrome(entry));
+}
+
 export function createResearchAreaCanonicalizer(
   index: ResearchAreaResolverIndex,
 ): ResearchAreaCanonicalizer {
@@ -284,7 +315,7 @@ export function createResearchAreaCanonicalizer(
       const unmatched: string[] = [];
       const dropped: string[] = [];
       const seen = new Set<string>();
-      for (const entry of toRawList(raw)) {
+      for (const entry of expandRawResearchAreaEntries(raw)) {
         const trimmed = entry.trim();
         if (!trimmed) continue;
         if (isResearchAreaLabelLeakage(trimmed)) {
@@ -304,7 +335,7 @@ export function createResearchAreaCanonicalizer(
     matchCanonicalResearchAreas(raw) {
       const values: string[] = [];
       const seen = new Set<string>();
-      for (const entry of toRawList(raw)) {
+      for (const entry of expandRawResearchAreaEntries(raw)) {
         if (isResearchAreaLabelLeakage(entry)) continue;
         const hit = resolveExact(entry);
         if (!hit) continue;
