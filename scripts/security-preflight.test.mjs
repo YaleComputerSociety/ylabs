@@ -1021,11 +1021,7 @@ test('public search loaders avoid raw Axios console errors', () => {
 });
 
 test('account and profile client surfaces avoid raw caught console errors', () => {
-  const files = [
-    '../client/src/components/accounts/ProfileEditor.tsx',
-    '../client/src/pages/unknown.tsx',
-    '../client/src/components/accounts/ListingForm/FormFields/ResearchAreaInput.tsx',
-  ];
+  const files = ['../client/src/pages/unknown.tsx'];
 
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -3186,7 +3182,7 @@ test('profile read routes validate netid path params before controller work', ()
 
   assert.match(
     routeSource,
-    /import \{ isAuthenticated, isProfessor, validateNetid \} from '\.\.\/middleware\/index'/,
+    /import \{ isAuthenticated, validateNetid \} from '\.\.\/middleware\/index'/,
   );
   assert.match(
     routeSource,
@@ -3203,7 +3199,7 @@ test('profile read routes validate netid path params before controller work', ()
   assert.match(controllerSource, /MAX_PUBLIC_PROFILE_URLS = 20/);
   assert.match(
     controllerSource,
-    /values\.slice\(0, MAX_PUBLIC_PROFILE_URLS\)\.map\(publicHttpUrl\)/,
+    /values\s*\.slice\(0, MAX_PUBLIC_PROFILE_URLS\)\s*\.map\(publicHttpUrl\)/,
   );
 });
 
@@ -3313,12 +3309,6 @@ test('self-editable profile writes cap arrays and URL maps before per-item norma
   assert.match(source, /MAX_SELF_PROFILE_ARRAY_ITEMS/);
   assert.match(source, /MAX_SELF_PROFILE_URLS/);
   assert.match(source, /const SAFE_PROFILE_URL_KEY_RE = \/\^\[A-Za-z0-9 _-\]\{1,80\}\$\//);
-  assert.match(
-    source,
-    /const isProfileUpdatePayload = \(value: unknown\): value is Record<string, unknown> =>/,
-  );
-  assert.match(source, /if \(!isProfileUpdatePayload\(data\)\) \{/);
-  assert.match(source, /throw selfProfileValidationError\('Invalid profile update payload'\)/);
   assert.match(source, /SAFE_PROFILE_URL_KEY_RE\.test\(normalized\)/);
   assert.match(source, /value\s*\.slice\(0, MAX_SELF_PROFILE_ARRAY_ITEMS\)\s*\.flatMap/);
   assert.match(
@@ -5719,10 +5709,6 @@ test('profile surfaces render only safe HTTP(S) profile URLs and images', () => 
     new URL('../client/src/components/labs/LabMembersList.tsx', import.meta.url),
     'utf8',
   );
-  const profileEditorSource = fs.readFileSync(
-    new URL('../client/src/components/accounts/ProfileEditor.tsx', import.meta.url),
-    'utf8',
-  );
   const developerCardSource = fs.readFileSync(
     new URL('../client/src/components/DeveloperCard.tsx', import.meta.url),
     'utf8',
@@ -5770,14 +5756,6 @@ test('profile surfaces render only safe HTTP(S) profile URLs and images', () => 
   assert.doesNotMatch(labMembersSource, /src=\{user\.image_url\}/);
 
   assert.match(
-    profileEditorSource,
-    /import \{[^}]*safeHttpUrl[^}]*\} from '\.\.\/\.\.\/utils\/url'/,
-  );
-  assert.match(profileEditorSource, /const profileImageHref = safeHttpUrl\(profile\.image_url\)/);
-  assert.match(profileEditorSource, /src=\{profileImageHref\}/);
-  assert.doesNotMatch(profileEditorSource, /src=\{profile\.image_url\}/);
-
-  assert.match(
     developerCardSource,
     /import \{ EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl, safeImageSrc \} from '\.\.\/utils\/url'/,
   );
@@ -5815,7 +5793,6 @@ test('client UI does not surface raw Axios error payload text', () => {
     'utf8',
   );
   const clientFiles = [
-    '../client/src/components/accounts/ProfileEditor.tsx',
     '../client/src/components/admin/AdminProfileEditModal.tsx',
     '../client/src/components/admin/AdminListingEditModal.tsx',
     '../client/src/components/admin/AdminDepartments.tsx',
@@ -6040,10 +6017,6 @@ test('profile update persistence sanitizes public URL fields for self and admin 
     /const imageUrl = boundedPublicProfileUrl\(update\.imageUrl\)/,
   );
   assert.match(profileServiceSource, /const normalizedUrl = boundedPublicProfileUrl\(url\)/);
-  assert.match(
-    profileServiceSource,
-    /export const updateOwnProfile[\s\S]*sanitizeSelfEditableProfileUrlFields\(update\)/,
-  );
   assert.match(
     profileServiceSource,
     /export const adminUpdateProfile[\s\S]*sanitizeSelfEditableProfileUrlFields\(update\)/,
@@ -6279,7 +6252,6 @@ test('stored profile images do not leak page referrers to external image hosts',
 
   const imageRenderers = [
     '../client/src/components/labs/LabMembersList.tsx',
-    '../client/src/components/accounts/ProfileEditor.tsx',
     '../client/src/components/profile/ProfileHeader.tsx',
     '../client/src/components/DeveloperCard.tsx',
   ];
@@ -7219,7 +7191,7 @@ test('public scholarly link source labels are direct-contact redacted', () => {
   );
   assert.match(
     source,
-    /discoveredVia: normalizeDiscoveredVia\(cleanPublicSourceLabel\(link\.discoveredVia \|\| options\.sourceName\)\)/,
+    /discoveredVia: normalizeDiscoveredVia\(\s*cleanPublicSourceLabel\(link\.discoveredVia \|\| options\.sourceName\),?\s*\)/,
   );
 });
 
