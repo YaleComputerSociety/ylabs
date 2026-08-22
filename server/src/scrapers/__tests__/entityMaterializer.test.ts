@@ -298,6 +298,17 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toEqual(['https://medicine.yale.edu/lab/qin-yan/']);
   });
 
+  it('drops Drupal facet and section-index root URLs from materialized source URLs (#560)', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+        'https://research.yale.edu/cores',
+        'https://research.yale.edu/centers-institutes',
+        'https://research.yale.edu/cores/keck-microarray',
+      ]),
+    ).toEqual(['https://research.yale.edu/cores/keck-microarray']);
+  });
+
   it('ignores official-profile bio observations that are address or page chrome', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {

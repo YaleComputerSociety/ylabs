@@ -169,6 +169,24 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual(['https://research-home.example.test']);
   });
 
+  it('never surfaces research.yale.edu Drupal facet or section-index root URLs as detail sources', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://research.yale.edu/cores/keck-microarray',
+        sourceUrls: [
+          'https://research.yale.edu/cores?f%5B0%5D=result_type%3A1',
+          'https://research.yale.edu/cores',
+          'https://research.yale.edu/centers-institutes',
+          'https://research.yale.edu/cores/keck-microarray',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      'https://research.yale.edu/cores/keck-microarray',
+    ]);
+  });
+
   it('preserves the query string so award links keep their identifier', () => {
     const awardUrl = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
 

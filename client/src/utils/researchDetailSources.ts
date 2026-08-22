@@ -161,6 +161,23 @@ export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+const DRUPAL_FACET_QUERY = /[?&]f(?:\[|%5b)\d+(?:\]|%5d)=/i;
+
+const SECTION_INDEX_ROOT_PATH = /^\/(?:cores|centers-institutes)$/i;
+
+export const isFacetedOrSectionIndexSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+    return DRUPAL_FACET_QUERY.test(parsed.search) || SECTION_INDEX_ROOT_PATH.test(path);
+  } catch {
+    return false;
+  }
+};
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
@@ -215,6 +232,7 @@ export const buildResearchDetailSources = ({
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
+    if (isFacetedOrSectionIndexSourceUrl(normalized)) return;
     if (isRawDataApiSourceUrl(normalized)) return;
 
     const key = sourceLedgerKey(normalized);

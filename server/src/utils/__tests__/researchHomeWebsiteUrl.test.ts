@@ -140,6 +140,22 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://example.edu/directory/load_person/9001')).toBe(true);
   });
 
+  it('flags Drupal facet URLs and section-index roots (#560)', () => {
+    expect(isListingOrIndexUrl('https://research.example.edu/cores?f%5B0%5D=result_type%3A1')).toBe(
+      true,
+    );
+    expect(isListingOrIndexUrl('https://research.example.edu/cores?f[0]=result_type:1')).toBe(true);
+    expect(isListingOrIndexUrl('https://research.example.edu/cores')).toBe(true);
+    expect(isListingOrIndexUrl('https://research.example.edu/centers-institutes')).toBe(true);
+  });
+
+  it('does not flag core or center detail child pages (#560)', () => {
+    expect(isListingOrIndexUrl('https://research.example.edu/cores/keck-microarray')).toBe(false);
+    expect(isListingOrIndexUrl('https://research.example.edu/centers-institutes/wu-tsai')).toBe(
+      false,
+    );
+  });
+
   it('does not flag real lab, center, or person pages', () => {
     expect(isListingOrIndexUrl('https://example-computing-lab.example.org/')).toBe(false);
     expect(
