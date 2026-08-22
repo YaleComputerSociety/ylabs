@@ -284,6 +284,7 @@ const Fellowships = () => {
     setPage,
     searchExhausted,
     total,
+    cycleSummary,
     setFilterBarHeight,
   } = useContext(FellowshipSearchContext);
 
@@ -452,7 +453,7 @@ const Fellowships = () => {
     };
   });
 
-  const { closingSoon, open, nextCycle, closed, journeyGroups } = useMemo(() => {
+  const { closingSoon, open, journeyGroups } = useMemo(() => {
     const now = new Date();
     const cycleGroups = {
       closingSoon: [] as Fellowship[],
@@ -690,10 +691,10 @@ const Fellowships = () => {
 
           <div className="mt-5">
             <StatusSummary
-              openCount={open.length}
-              closingSoonCount={closingSoon.length}
-              nextCycleCount={nextCycle.length}
-              closedCount={closed.length}
+              openCount={cycleSummary.open}
+              closingSoonCount={cycleSummary.closingSoon}
+              nextCycleCount={cycleSummary.nextCycle}
+              closedCount={cycleSummary.closed}
             />
           </div>
         </div>

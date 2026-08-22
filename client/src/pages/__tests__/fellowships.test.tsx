@@ -176,6 +176,7 @@ const renderPage = (
     setPage: vi.fn(),
     pageSize: 500,
     total: fellowships.length,
+    cycleSummary: { open: 0, closingSoon: 0, nextCycle: 0, closed: 0 },
     filterOptions: {
       programCategory: [],
       programKind: [],
@@ -277,6 +278,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 setPage: vi.fn(),
                 pageSize: 500,
                 total: fellowships.length,
+                cycleSummary: { open: 0, closingSoon: 0, nextCycle: 0, closed: 0 },
                 filterOptions: {
                   programCategory: ['FELLOWSHIP', 'SUMMER_RESEARCH_PROGRAM'],
                   programKind: ['FELLOWSHIP_FUNDING', 'STRUCTURED_PROGRAM'],
@@ -354,6 +356,31 @@ describe('Programs page', () => {
     expect(screen.getByText('Planning archive')).toBeTruthy();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
+  });
+
+  it('shows full-set cycle summary counts in the stat tiles rather than the loaded page count', async () => {
+    renderPage(
+      [
+        baseFellowship({
+          id: 'solo',
+          title: 'Solo Loaded Program',
+          isAcceptingApplications: false,
+          deadline: isoDaysFromNow(-10),
+        }),
+      ],
+      {
+        total: 133,
+        cycleSummary: { open: 20, closingSoon: 7, nextCycle: 133, closed: 44 },
+      },
+    );
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedProgramIds');
+    });
+
+    expect(screen.getByText('27')).toBeTruthy();
+    expect(screen.getByText('133')).toBeTruthy();
+    expect(screen.getByText('44')).toBeTruthy();
   });
 
   it('renders program controls on the page and wires filter selection to program context', async () => {

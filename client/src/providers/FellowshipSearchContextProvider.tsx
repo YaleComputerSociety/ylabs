@@ -13,10 +13,13 @@ import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
+import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
   FellowshipQuickFilter,
+  emptyFellowshipCycleSummary,
+  FellowshipCycleSummary,
 } from '../reducers/fellowshipSearchReducer';
 
 interface FellowshipSearchContextProviderProps {
@@ -63,6 +66,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     isLoading,
     searchExhausted,
     total,
+    cycleSummary,
     page,
     filterOptions,
     quickFilter,
@@ -220,12 +224,12 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       });
   }, [isActive, authReady]);
 
-  const handleSearch = useCallback(
-    (searchPage: number) => {
+  const buildSearchUrl = useCallback(
+    (searchPage: number, searchPageSize: number) => {
       const f = filtersRef.current;
       const formattedQuery = f.queryString.trim();
 
-      let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${pageSize}`;
+      let url = `/programs/search?query=${encodeURIComponent(formattedQuery)}&page=${searchPage}&pageSize=${searchPageSize}`;
 
       if (f.sortBy !== 'default') {
         url += `&sortBy=${f.sortBy}&sortOrder=${f.sortOrder}`;
@@ -271,6 +275,61 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         }
       }
 
+      return url;
+    },
+    [isAdmin],
+  );
+
+  const summaryRequestIdRef = useRef(0);
+
+  const loadCycleSummary = useCallback(() => {
+    const requestId = summaryRequestIdRef.current + 1;
+    summaryRequestIdRef.current = requestId;
+
+    const accumulate = async () => {
+      const collected: Fellowship[] = [];
+      let currentPage = 1;
+      let reportedTotal = Infinity;
+
+      while (collected.length < reportedTotal) {
+        const response = await axios.get(buildSearchUrl(currentPage, pageSize));
+        const pageResults: Fellowship[] = (response.data.results || []).map((elem: any) =>
+          createFellowship(elem),
+        );
+        collected.push(...pageResults);
+        reportedTotal =
+          typeof response.data.total === 'number' ? response.data.total : collected.length;
+        if (pageResults.length < pageSize || collected.length >= reportedTotal) break;
+        currentPage += 1;
+      }
+
+      return collected;
+    };
+
+    accumulate()
+      .then((collected) => {
+        if (summaryRequestIdRef.current !== requestId) return;
+        const now = new Date();
+        const summary: FellowshipCycleSummary = { ...emptyFellowshipCycleSummary };
+        for (const fellowship of collected) {
+          const category = getFellowshipCycleStatus(fellowship, now).category;
+          if (category === 'open') summary.open += 1;
+          else if (category === 'closingSoon') summary.closingSoon += 1;
+          else if (category === 'nextCycle') summary.nextCycle += 1;
+          else if (category === 'closed') summary.closed += 1;
+        }
+        dispatch({ type: 'SET_CYCLE_SUMMARY', payload: summary });
+      })
+      .catch(() => {
+        if (summaryRequestIdRef.current !== requestId) return;
+        console.error('Error loading program cycle summary.');
+      });
+  }, [buildSearchUrl, pageSize]);
+
+  const handleSearch = useCallback(
+    (searchPage: number) => {
+      const url = buildSearchUrl(searchPage, pageSize);
+
       dispatch({ type: 'SEARCH_REQUEST' });
 
       axios
@@ -301,23 +360,27 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
           dispatch({ type: 'SEARCH_FAILURE' });
         });
     },
-    [isAdmin, pageSize],
+    [buildSearchUrl, pageSize],
   );
 
-  const refreshFellowships = useCallback(() => {
+  const runFirstPageSearch = useCallback(() => {
     dispatch({ type: 'SET_PAGE', payload: 1 });
     handleSearch(1);
-  }, [handleSearch]);
+    loadCycleSummary();
+  }, [handleSearch, loadCycleSummary]);
+
+  const refreshFellowships = useCallback(() => {
+    runFirstPageSearch();
+  }, [runFirstPageSearch]);
 
   useEffect(() => {
     if (!isActive) return;
     if (!authReady) return;
     if (filterOptionsLoaded && !initialSearchDone) {
-      dispatch({ type: 'SET_PAGE', payload: 1 });
-      handleSearch(1);
+      runFirstPageSearch();
       dispatch({ type: 'MARK_INITIAL_SEARCH_DONE' });
     }
-  }, [filterOptionsLoaded, initialSearchDone, handleSearch, isActive, authReady]);
+  }, [filterOptionsLoaded, initialSearchDone, runFirstPageSearch, isActive, authReady]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -325,8 +388,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
     const debounceTimeout = setTimeout(() => {
       if (queryStringLoaded) {
-        dispatch({ type: 'SET_PAGE', payload: 1 });
-        handleSearch(1);
+        runFirstPageSearch();
       }
       dispatch({ type: 'MARK_QUERY_STRING_LOADED' });
     }, 500);
@@ -334,15 +396,14 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     return () => {
       clearTimeout(debounceTimeout);
     };
-  }, [queryString, queryStringLoaded, filterOptionsLoaded, isActive, handleSearch]);
+  }, [queryString, queryStringLoaded, filterOptionsLoaded, isActive, runFirstPageSearch]);
 
   useEffect(() => {
     if (!isActive) return;
     if (!filterOptionsLoaded) return;
 
     if (filtersLoaded) {
-      dispatch({ type: 'SET_PAGE', payload: 1 });
-      handleSearch(1);
+      runFirstPageSearch();
     }
     dispatch({ type: 'MARK_FILTERS_LOADED' });
   }, [
@@ -362,7 +423,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     filterOptionsLoaded,
     isActive,
     filtersLoaded,
-    handleSearch,
+    runFirstPageSearch,
   ]);
 
   useEffect(() => {
@@ -412,6 +473,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setPage,
         pageSize,
         total,
+        cycleSummary,
         filterOptions,
         sortableKeys,
         refreshFellowships,
