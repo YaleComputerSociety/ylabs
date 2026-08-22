@@ -238,6 +238,39 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.label)).toEqual(['NSF Award Search']);
   });
 
+  it('collapses www and bare-host variants of one page into a single source row', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://lab.example.yale.edu/research',
+        sourceUrls: ['https://www.lab.example.yale.edu/research/'],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          sourceUrl: 'https://www.lab.example.yale.edu/research',
+        },
+      ],
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe('https://lab.example.yale.edu/research');
+    expect(sources[0].contexts).toEqual(
+      expect.arrayContaining(['Profile website', 'Profile source', 'Reach Out Plausible evidence']),
+    );
+  });
+
+  it('collapses http and https variants of one page and prefers the https link', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: ['http://lab.example.yale.edu/join', 'https://lab.example.yale.edu/join'],
+      },
+    });
+
+    expect(sources).toHaveLength(1);
+    expect(sources[0].url).toBe('https://lab.example.yale.edu/join');
+  });
+
   it('dedupes known logistics evidence into the official source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
