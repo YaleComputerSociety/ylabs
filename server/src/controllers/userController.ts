@@ -26,6 +26,12 @@ import {
   updateSavedResearchEntityPlan as updateSavedResearchEntityPlanService,
   deleteSavedResearchEntityPlan as deleteSavedResearchEntityPlanService,
   exportSavedResearchEntities as exportSavedResearchEntitiesService,
+  getWatchedPrograms as getWatchedProgramsService,
+  getWatchedProgramIds as getWatchedProgramIdsService,
+  getWatchedProgramPlans as getWatchedProgramPlansService,
+  addWatchedPrograms as addWatchedProgramsService,
+  removeWatchedPrograms as removeWatchedProgramsService,
+  updateWatchedProgramPlan as updateWatchedProgramPlanService,
 } from '../services/researchPlanService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -714,6 +720,98 @@ export const deleteSavedResearchEntityPlan = async (request: Request, response: 
   } catch (error) {
     console.error('Saved research entity plan delete failed:', sanitizeLogValue(error));
     sendPrivateAccountError(response, error, 'Failed to delete saved research entity plan');
+  }
+};
+
+export const getWatchedProgramIds = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    response.status(200).json({
+      watchedProgramIds: await getWatchedProgramIdsService(currentUser.netId),
+    });
+  } catch (error) {
+    console.error('Watched program id fetch failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to fetch watched program ids');
+  }
+};
+
+export const getWatchedPrograms = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const programs = await getWatchedProgramsService(currentUser.netId);
+    response.status(200).json({ watchedPrograms: programs.map(publicProgramForReader) });
+  } catch (error) {
+    console.error('Watched program fetch failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to fetch watched programs');
+  }
+};
+
+export const addWatchedPrograms = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const values = request.body?.data?.watchedPrograms;
+    if (!values) {
+      const error: any = new Error('No watchedPrograms provided');
+      error.status = 400;
+      throw error;
+    }
+    const ids = await addWatchedProgramsService(
+      currentUser.netId,
+      Array.isArray(values) ? values : [values],
+    );
+    response.status(200).json({ watchedProgramIds: ids });
+  } catch (error) {
+    console.error('Watched program mutation failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to watch programs');
+  }
+};
+
+export const removeWatchedPrograms = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const values = request.body?.watchedPrograms;
+    if (!values) {
+      const error: any = new Error('No watchedPrograms provided');
+      error.status = 400;
+      throw error;
+    }
+    const ids = await removeWatchedProgramsService(
+      currentUser.netId,
+      Array.isArray(values) ? values : [values],
+    );
+    response.status(200).json({ watchedProgramIds: ids });
+  } catch (error) {
+    console.error('Watched program removal failed:', sanitizeLogValue(error));
+    sendAccountMutationError(response, error, 'Failed to unwatch programs');
+  }
+};
+
+export const getWatchedProgramPlans = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({
+      watchedProgramPlans: await getWatchedProgramPlansService(currentUser.netId),
+    });
+  } catch (error) {
+    console.error('Watched program plan fetch failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to fetch watched program plans');
+  }
+};
+
+export const updateWatchedProgramPlan = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const plans = await updateWatchedProgramPlanService(
+      currentUser.netId,
+      request.params.programId,
+      request.body?.data?.plan || request.body?.plan || {},
+    );
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({ watchedProgramPlans: plans });
+  } catch (error) {
+    console.error('Watched program plan update failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to update watched program plan');
   }
 };
 

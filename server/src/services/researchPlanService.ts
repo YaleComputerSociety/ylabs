@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { ResearchEntity, ResearchPlan } from '../models/index';
+import { readPrograms } from './programService';
 import {
   MAX_RESEARCH_PLAN_CHECKLIST_ITEMS,
   MAX_RESEARCH_PLAN_DEADLINES,
@@ -15,6 +16,7 @@ import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
 import { resolveAccountIdByNetid } from './accountService';
 
 const RESEARCH_ENTITY_TARGET_KIND = 'RESEARCH_ENTITY' as const;
+const PROGRAM_TARGET_KIND = 'PROGRAM' as const;
 const MAX_ACCOUNT_MUTATION_IDS = 100;
 export const MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH = 300;
 const OBJECT_ID_HEX_PATTERN = /^[a-f0-9]{24}$/i;
@@ -495,6 +497,163 @@ export const deleteSavedResearchEntityPlan = async (
     { runValidators: true },
   );
   return getSavedResearchEntityPlans(netid);
+};
+
+const resolveWatchedProgramObjectIds = async (
+  values: unknown[],
+): Promise<mongoose.Types.ObjectId[]> => {
+  if (!Array.isArray(values)) {
+    throw badRequestError('Invalid watchedPrograms ids');
+  }
+  if (values.length > MAX_ACCOUNT_MUTATION_IDS) {
+    throw badRequestError('Too many watchedPrograms ids');
+  }
+  const seen = new Set<string>();
+  const deduped: mongoose.Types.ObjectId[] = [];
+  for (const value of values) {
+    const id = normalizeObjectIdString(value, 'watchedPrograms');
+    if (seen.has(id)) continue;
+    seen.add(id);
+    deduped.push(new mongoose.Types.ObjectId(id));
+  }
+  return deduped;
+};
+
+interface LoadedWatchedPrograms {
+  accountId: mongoose.Types.ObjectId;
+  programs: Record<string, any>[];
+  plansByProgramId: Map<string, Record<string, unknown>>;
+}
+
+const loadVisibleWatchedPrograms = async (
+  netid: any,
+  { withDetail }: { withDetail: boolean },
+): Promise<LoadedWatchedPrograms> => {
+  const accountId = await resolveAccountIdByNetid(netid);
+  const query = ResearchPlan.find({
+    accountId,
+    'target.kind': PROGRAM_TARGET_KIND,
+    archived: { $ne: true },
+  }).sort({ updatedAt: -1 });
+  if (withDetail) query.select('+privateNotes +checklist +deadlines');
+  const plans = await query.lean();
+
+  const planByProgram = new Map<string, Record<string, unknown>>();
+  for (const plan of plans as Array<Record<string, any>>) {
+    const programId = String(plan.target?.id ?? '').toLowerCase();
+    if (programId && !planByProgram.has(programId)) {
+      planByProgram.set(programId, plan);
+    }
+  }
+
+  const orderedIds = Array.from(planByProgram.keys());
+  const visiblePrograms = await readPrograms(orderedIds);
+  const visibleById = new Map(
+    (visiblePrograms as Array<Record<string, any>>).map((program) => [
+      String(program._id).toLowerCase(),
+      program,
+    ]),
+  );
+  const orderedVisible = orderedIds
+    .map((id) => visibleById.get(id))
+    .filter((program): program is Record<string, any> => Boolean(program));
+
+  const plansByProgramId = new Map<string, Record<string, unknown>>();
+  for (const program of orderedVisible) {
+    const programId = String(program._id).toLowerCase();
+    const plan = planByProgram.get(programId);
+    if (plan) plansByProgramId.set(programId, plan);
+  }
+
+  return { accountId, programs: orderedVisible, plansByProgramId };
+};
+
+export const getWatchedPrograms = async (netid: any): Promise<Record<string, any>[]> => {
+  const { programs } = await loadVisibleWatchedPrograms(netid, { withDetail: false });
+  return programs;
+};
+
+export const getWatchedProgramIds = async (netid: any): Promise<string[]> => {
+  const { programs } = await loadVisibleWatchedPrograms(netid, { withDetail: false });
+  return programs.map((program) => String(program._id));
+};
+
+export const getWatchedProgramPlans = async (
+  netid: any,
+): Promise<Record<string, ResearchPlanView>> => {
+  const { plansByProgramId } = await loadVisibleWatchedPrograms(netid, { withDetail: true });
+  const result: Record<string, ResearchPlanView> = {};
+  for (const [programId, plan] of plansByProgramId) {
+    result[programId] = researchPlanViewFromDoc(plan);
+  }
+  return result;
+};
+
+export const addWatchedPrograms = async (netid: any, values: unknown[]): Promise<string[]> => {
+  const accountId = await resolveAccountIdByNetid(netid);
+  const ids = await resolveWatchedProgramObjectIds(values);
+  const visiblePrograms = await readPrograms(ids);
+  for (const program of visiblePrograms as Array<Record<string, any>>) {
+    const targetId = new mongoose.Types.ObjectId(String(program._id));
+    await ResearchPlan.updateOne(
+      { accountId, 'target.kind': PROGRAM_TARGET_KIND, 'target.id': targetId },
+      {
+        $set: { archived: false },
+        $setOnInsert: {
+          accountId,
+          target: { kind: PROGRAM_TARGET_KIND, id: targetId },
+          stage: 'SAVED',
+        },
+      },
+      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    );
+  }
+  return getWatchedProgramIds(netid);
+};
+
+export const removeWatchedPrograms = async (netid: any, values: unknown[]): Promise<string[]> => {
+  const accountId = await resolveAccountIdByNetid(netid);
+  const ids = await resolveWatchedProgramObjectIds(values);
+  if (ids.length) {
+    await ResearchPlan.updateMany(
+      {
+        accountId,
+        'target.kind': PROGRAM_TARGET_KIND,
+        'target.id': { $in: ids },
+      },
+      { $set: { archived: true } },
+      { runValidators: true },
+    );
+  }
+  return getWatchedProgramIds(netid);
+};
+
+export const updateWatchedProgramPlan = async (
+  netid: any,
+  programId: string,
+  plan: ResearchPlanInput,
+): Promise<Record<string, ResearchPlanView>> => {
+  const accountId = await resolveAccountIdByNetid(netid);
+  const targetId = new mongoose.Types.ObjectId(normalizeObjectIdString(programId, 'program'));
+  const update = normalizeResearchPlanUpdate(plan);
+  const filter = {
+    accountId,
+    'target.kind': PROGRAM_TARGET_KIND,
+    'target.id': targetId,
+    archived: { $ne: true },
+  };
+  if (Object.keys(update).length === 0) {
+    const existing = await ResearchPlan.exists(filter);
+    if (!existing) {
+      throw new NotFoundError('Watched program not found');
+    }
+    return getWatchedProgramPlans(netid);
+  }
+  const result = await ResearchPlan.updateOne(filter, { $set: update }, { runValidators: true });
+  if (!result.matchedCount) {
+    throw new NotFoundError('Watched program not found');
+  }
+  return getWatchedProgramPlans(netid);
 };
 
 export const exportSavedResearchEntities = async (

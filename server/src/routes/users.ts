@@ -282,6 +282,19 @@ router.delete(
   userController.removeFavFellowships,
 );
 
+router.get('/watchedProgramIds', isAuthenticated, userController.getWatchedProgramIds);
+router.get('/watchedPrograms', isAuthenticated, userController.getWatchedPrograms);
+router.put('/watchedPrograms', writeLimit, isAuthenticated, userController.addWatchedPrograms);
+router.delete('/watchedPrograms', writeLimit, isAuthenticated, userController.removeWatchedPrograms);
+router.get('/watchedProgramPlans', isAuthenticated, userController.getWatchedProgramPlans);
+router.put(
+  '/watchedProgramPlans/:programId',
+  writeLimit,
+  isAuthenticated,
+  validateObjectId('programId'),
+  userController.updateWatchedProgramPlan,
+);
+
 router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
 router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);
 router.put(

@@ -310,12 +310,12 @@ const Fellowships = () => {
 
   const reloadFavorites = async () => {
     axios
-      .get('/users/savedProgramIds')
+      .get('/users/watchedProgramIds')
       .then((response) => {
-        dispatch({ type: 'SET_FAVORITES', ids: response.data.savedProgramIds || [] });
+        dispatch({ type: 'SET_FAVORITES', ids: response.data.watchedProgramIds || [] });
       })
       .catch(() => {
-        console.error("Error fetching user's saved programs.");
+        console.error("Error fetching user's watched programs.");
         dispatch({ type: 'SET_FAVORITES', ids: [] });
       });
   };
@@ -563,17 +563,19 @@ const Fellowships = () => {
         localStorage.setItem(FIRST_PROGRAM_SAVE_KEY, 'true');
         setShowFirstSaveCallout(true);
       }
-      axios.put('/users/savedPrograms', { data: { savedPrograms: [fellowshipId] } }).catch(() => {
-        dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
-        console.error('Error saving program.');
-      });
+      axios
+        .put('/users/watchedPrograms', { data: { watchedPrograms: [fellowshipId] } })
+        .catch(() => {
+          dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
+          console.error('Error watching program.');
+        });
     } else {
       dispatch({ type: 'SET_FAVORITES', ids: prevFavIds.filter((id) => id !== fellowshipId) });
       axios
-        .delete('/users/savedPrograms', { data: { savedPrograms: [fellowshipId] } })
+        .delete('/users/watchedPrograms', { data: { watchedPrograms: [fellowshipId] } })
         .catch(() => {
           dispatch({ type: 'SET_FAVORITES', ids: prevFavIds });
-          console.error('Error removing saved program.');
+          console.error('Error unwatching program.');
         });
     }
   };

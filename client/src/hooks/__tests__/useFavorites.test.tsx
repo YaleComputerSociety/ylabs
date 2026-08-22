@@ -64,6 +64,20 @@ describe('useFavorites', () => {
     });
   });
 
+  it('uses watched program endpoints for canonical program watching', async () => {
+    mockedAxios.get.mockResolvedValueOnce({ data: { watchedProgramIds: ['program-1'] } });
+
+    const { result } = renderHook(() => useFavorites('watchedPrograms'));
+
+    await waitFor(() => {
+      expect(result.current.favIds).toEqual(['program-1']);
+    });
+
+    expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds', {
+      withCredentials: true,
+    });
+  });
+
   it('uses saved research plan endpoints for canonical research plan favorites', async () => {
     mockedAxios.get.mockResolvedValueOnce({ data: { savedResearchEntityIds: ['entity-1'] } });
 

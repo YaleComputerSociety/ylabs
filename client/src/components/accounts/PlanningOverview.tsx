@@ -23,7 +23,7 @@ const PlanningOverview = ({
         <h1 className="mt-1 text-2xl font-semibold text-gray-950">Dashboard</h1>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">
           {pluralize(savedResearchCount, 'research plan', 'research plans')} ·{' '}
-          {pluralize(savedFellowshipCount, 'saved program', 'saved programs')}
+          {pluralize(savedFellowshipCount, 'watched program', 'watched programs')}
         </p>
       </div>
       <Link

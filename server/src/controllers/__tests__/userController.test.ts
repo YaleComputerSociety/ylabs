@@ -36,6 +36,12 @@ const mocks = vi.hoisted(() => ({
   updateSavedResearchEntityPlan: vi.fn(),
   deleteSavedResearchEntityPlan: vi.fn(),
   exportSavedResearchEntities: vi.fn(),
+  getWatchedPrograms: vi.fn(),
+  getWatchedProgramIds: vi.fn(),
+  getWatchedProgramPlans: vi.fn(),
+  addWatchedPrograms: vi.fn(),
+  removeWatchedPrograms: vi.fn(),
+  updateWatchedProgramPlan: vi.fn(),
 }));
 
 vi.mock('../../services/listingService', () => ({
@@ -70,6 +76,12 @@ vi.mock('../../services/researchPlanService', () => ({
   updateSavedResearchEntityPlan: mocks.updateSavedResearchEntityPlan,
   deleteSavedResearchEntityPlan: mocks.deleteSavedResearchEntityPlan,
   exportSavedResearchEntities: mocks.exportSavedResearchEntities,
+  getWatchedPrograms: mocks.getWatchedPrograms,
+  getWatchedProgramIds: mocks.getWatchedProgramIds,
+  getWatchedProgramPlans: mocks.getWatchedProgramPlans,
+  addWatchedPrograms: mocks.addWatchedPrograms,
+  removeWatchedPrograms: mocks.removeWatchedPrograms,
+  updateWatchedProgramPlan: mocks.updateWatchedProgramPlan,
 }));
 
 import {
@@ -93,6 +105,9 @@ import {
   removeSavedResearchEntities,
   updateCurrentUser,
   updateSavedResearchEntityPlan,
+  getWatchedPrograms,
+  addWatchedPrograms,
+  removeWatchedPrograms,
 } from '../userController';
 
 const privateProgram = {
@@ -585,6 +600,84 @@ describe('userController', () => {
     expect(body.user).not.toHaveProperty('lastLoginAt');
     expect(body.user).not.toHaveProperty('archived');
     expect(body.user).not.toHaveProperty('dedupedIntoUserId');
+  });
+
+  it('allowlists watched program payloads for authenticated account readers', async () => {
+    mocks.getWatchedPrograms.mockResolvedValue([privateProgram]);
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+    } as any;
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as any;
+
+    await getWatchedPrograms(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const body = res.json.mock.calls[0][0];
+    expectPublicProgram(body.watchedPrograms[0]);
+  });
+
+  it('returns canonical watched program ids when watching a program', async () => {
+    mocks.addWatchedPrograms.mockResolvedValue(['64a000000000000000000010']);
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      body: { data: { watchedPrograms: ['64a000000000000000000010'] } },
+    } as any;
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as any;
+
+    await addWatchedPrograms(req, res);
+
+    expect(mocks.addWatchedPrograms).toHaveBeenCalledWith('student123', [
+      '64a000000000000000000010',
+    ]);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0]).toEqual({
+      watchedProgramIds: ['64a000000000000000000010'],
+    });
+  });
+
+  it('returns canonical watched program ids when unwatching a program', async () => {
+    mocks.removeWatchedPrograms.mockResolvedValue([]);
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+      body: { watchedPrograms: ['64a000000000000000000010'] },
+    } as any;
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    } as any;
+
+    await removeWatchedPrograms(req, res);
+
+    expect(mocks.removeWatchedPrograms).toHaveBeenCalledWith('student123', [
+      '64a000000000000000000010',
+    ]);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json.mock.calls[0][0]).toEqual({ watchedProgramIds: [] });
+  });
+
+  it('does not leak internal service errors when fetching watched programs fails', async () => {
+    mocks.getWatchedPrograms.mockRejectedValue(
+      new Error('mongodb://user:pass@example.invalid leaked'),
+    );
+
+    const req = {
+      user: { netId: 'student123', userType: 'undergraduate', userConfirmed: true },
+    } as any;
+    const res = privateResponseDouble();
+
+    await getWatchedPrograms(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to fetch watched programs' });
   });
 
   it('does not leak internal service errors when saving programs fails', async () => {

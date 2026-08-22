@@ -138,7 +138,7 @@ const renderPage = (
   fellowships: Fellowship[],
   overrides: Partial<FellowshipSearchContextType> = {},
 ) => {
-  mockedAxios.get.mockResolvedValue({ data: { savedProgramIds: [] } });
+  mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
 
   const value: FellowshipSearchContextType = {
     queryString: '',
@@ -220,7 +220,7 @@ const renderPage = (
 };
 
 const renderStatefulPage = (fellowships: Fellowship[]) => {
-  mockedAxios.get.mockResolvedValue({ data: { savedProgramIds: [] } });
+  mockedAxios.get.mockResolvedValue({ data: { watchedProgramIds: [] } });
 
   const Harness = () => {
     const [sortBy, setSortBy] = useState('default');
@@ -343,7 +343,7 @@ describe('Programs page', () => {
     ]);
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
     });
 
     expect(screen.getByRole('heading', { name: 'Programs & Fellowships' })).toBeTruthy();
@@ -627,8 +627,8 @@ describe('Programs page', () => {
     expect(screen.getByRole('link', { name: 'Open Dashboard' }).getAttribute('href')).toBe(
       '/account',
     );
-    expect(mockedAxios.put).toHaveBeenCalledWith('/users/savedPrograms', {
-      data: { savedPrograms: ['open'] },
+    expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedPrograms', {
+      data: { watchedPrograms: ['open'] },
     });
   });
 

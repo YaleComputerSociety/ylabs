@@ -10,7 +10,7 @@ import {
   trackResearchEvent,
 } from '../utils/researchAnalytics';
 
-type FavoritesKind = 'listings' | 'programs' | 'researchPlans';
+type FavoritesKind = 'listings' | 'programs' | 'researchPlans' | 'watchedPrograms';
 
 interface Endpoints {
   load: string;
@@ -43,6 +43,14 @@ const ENDPOINTS: Record<FavoritesKind, Endpoints> = {
     responseKey: 'savedResearchEntityIds',
     collectionPath: '/users/savedResearchEntities',
     payloadKey: 'savedResearchEntities',
+    warnOnLoadError: false,
+    warnOnMutationError: true,
+  },
+  watchedPrograms: {
+    load: '/users/watchedProgramIds',
+    responseKey: 'watchedProgramIds',
+    collectionPath: '/users/watchedPrograms',
+    payloadKey: 'watchedPrograms',
     warnOnLoadError: false,
     warnOnMutationError: true,
   },
@@ -93,6 +101,15 @@ export const useFavorites = (kind: FavoritesKind) => {
             entityType: 'research_entity',
             entityId: id,
             payload: { operation: favorite ? 'save' : 'remove', surface: 'profile' },
+            dedupeKey: createResearchAnalyticsInteractionId('save'),
+          });
+        }
+        if (kind === 'watchedPrograms') {
+          void trackResearchEvent({
+            eventType: 'research_save',
+            entityType: 'fellowship',
+            entityId: id,
+            payload: { operation: favorite ? 'save' : 'remove', surface: 'saved_plans' },
             dedupeKey: createResearchAnalyticsInteractionId('save'),
           });
         }
