@@ -2279,7 +2279,9 @@ describe('resolveArchivedResearchEntityCanonicalSlug', () => {
     const bId = new mongoose.Types.ObjectId();
     const cId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne
-      .mockReturnValueOnce(leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId: bId }))
+      .mockReturnValueOnce(
+        leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId: bId }),
+      )
       .mockReturnValueOnce(
         leanResult({
           _id: bId,
@@ -2306,7 +2308,9 @@ describe('resolveArchivedResearchEntityCanonicalSlug', () => {
   it('returns null when the chain terminates at no live public target', async () => {
     const bId = new mongoose.Types.ObjectId();
     mocks.researchEntityFindOne
-      .mockReturnValueOnce(leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId: bId }))
+      .mockReturnValueOnce(
+        leanResult({ _id: new mongoose.Types.ObjectId(), canonicalGroupId: bId }),
+      )
       .mockReturnValueOnce(
         leanResult({
           _id: bId,
