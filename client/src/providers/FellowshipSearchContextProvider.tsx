@@ -28,7 +28,7 @@ const FELLOWSHIP_SORTABLE_KEYS = ['default', 'deadline', 'title'];
 const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> = ({
   children,
 }) => {
-  const pageSize = 500;
+  const pageSize = 100;
   const sortableKeys = FELLOWSHIP_SORTABLE_KEYS;
 
   const location = useLocation();

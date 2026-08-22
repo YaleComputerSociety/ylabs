@@ -7,7 +7,11 @@ import { Fellowship } from '../../types/types';
 import FellowshipSearchContext from '../../contexts/FellowshipSearchContext';
 import { safeHttpUrl, safeMailtoHref } from '../../utils/url';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
-import { formatFellowshipDate, getFellowshipApplicationStatus } from '../../utils/fellowshipStatus';
+import {
+  formatFellowshipDate,
+  getFellowshipApplicationStatus,
+  getStructuredEligibilityDetails,
+} from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -184,6 +188,7 @@ const FellowshipModal = ({
   if (!isOpen || !fellowship) return null;
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
+  const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
 
   const handleFilterClick = (
     filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
@@ -810,11 +815,20 @@ const FellowshipModal = ({
                     <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
                       Eligibility Requirements
                     </h3>
-                    <p className="text-sm text-gray-700 leading-relaxed">
-                      {applicationStatus.needsEligibilityReview
-                        ? 'Eligibility requirements have not been specified.'
-                        : 'See the eligibility filters above for requirements.'}
-                    </p>
+                    {structuredEligibilityDetails.length > 0 ? (
+                      <dl className="space-y-1.5">
+                        {structuredEligibilityDetails.map((detail) => (
+                          <div key={detail.label} className="text-sm leading-relaxed">
+                            <dt className="inline font-semibold text-gray-600">{detail.label}: </dt>
+                            <dd className="inline text-gray-700">{detail.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        Eligibility requirements have not been specified.
+                      </p>
+                    )}
                   </section>
                 )}
 

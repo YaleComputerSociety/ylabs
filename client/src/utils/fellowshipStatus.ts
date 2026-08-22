@@ -168,6 +168,52 @@ export const getFellowshipApplicationStatus = (
   };
 };
 
+export interface EligibilityDetail {
+  label: string;
+  value: string;
+}
+
+export const getStructuredEligibilityDetails = (
+  fellowship: Pick<
+    Fellowship,
+    | 'undergraduateOnly'
+    | 'yaleCollegeOnly'
+    | 'yearOfStudy'
+    | 'termOfAward'
+    | 'citizenshipStatus'
+    | 'globalRegions'
+    | 'purpose'
+  >,
+): EligibilityDetail[] => {
+  const details: EligibilityDetail[] = [];
+
+  if (fellowship.undergraduateOnly === true) {
+    details.push({ label: 'Level', value: 'Undergraduates only' });
+  } else if (fellowship.undergraduateOnly === false) {
+    details.push({ label: 'Level', value: 'Open beyond undergraduates' });
+  }
+  if (fellowship.yaleCollegeOnly === true) {
+    details.push({ label: 'School', value: 'Yale College students only' });
+  }
+  if ((fellowship.yearOfStudy?.length || 0) > 0) {
+    details.push({ label: 'Year of study', value: fellowship.yearOfStudy.join(', ') });
+  }
+  if ((fellowship.termOfAward?.length || 0) > 0) {
+    details.push({ label: 'Term', value: fellowship.termOfAward.join(', ') });
+  }
+  if ((fellowship.citizenshipStatus?.length || 0) > 0) {
+    details.push({ label: 'Citizenship', value: fellowship.citizenshipStatus.join(', ') });
+  }
+  if ((fellowship.globalRegions?.length || 0) > 0) {
+    details.push({ label: 'Regions', value: fellowship.globalRegions.join(', ') });
+  }
+  if ((fellowship.purpose?.length || 0) > 0) {
+    details.push({ label: 'Purpose', value: fellowship.purpose.join(', ') });
+  }
+
+  return details;
+};
+
 export const getEligibilitySummary = (fellowship: Fellowship): string => {
   const pieces = [
     ...(fellowship.yearOfStudy || []),

@@ -224,11 +224,14 @@ export function fellowshipSearchReducer(
 
     case 'SEARCH_SUCCESS': {
       const { fellowships, total, pageSize, append } = action.payload;
+      const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
+      const nextTotal = total !== undefined ? total : nextFellowships.length;
       return {
         ...state,
-        fellowships: append ? [...state.fellowships, ...fellowships] : fellowships,
-        total: total !== undefined ? total : fellowships.length,
-        searchExhausted: fellowships.length < pageSize,
+        fellowships: nextFellowships,
+        total: nextTotal,
+        searchExhausted:
+          total !== undefined ? nextFellowships.length >= total : fellowships.length < pageSize,
         isLoading: false,
       };
     }

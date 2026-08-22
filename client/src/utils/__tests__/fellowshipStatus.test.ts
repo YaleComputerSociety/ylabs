@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { Fellowship } from '../../types/types';
-import { getEligibilitySummary, getFellowshipApplicationStatus } from '../fellowshipStatus';
+import {
+  getEligibilitySummary,
+  getFellowshipApplicationStatus,
+  getStructuredEligibilityDetails,
+} from '../fellowshipStatus';
 
 const NOW = new Date('2026-04-01T12:00:00.000Z');
 
@@ -174,5 +178,42 @@ describe('fellowshipStatus', () => {
 
     expect(status.needsEligibilityReview).toBe(false);
     expect(getEligibilitySummary(fellowship)).toBe('Africa');
+  });
+});
+
+describe('getStructuredEligibilityDetails', () => {
+  it('builds readable requirement lines from structured facets when the eligibility string is empty', () => {
+    const fellowship = makeFellowship({
+      eligibility: '',
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+      yearOfStudy: ['Sophomore', 'Junior'],
+      termOfAward: ['Summer'],
+      citizenshipStatus: ['U.S. citizens are eligible'],
+      globalRegions: [],
+      purpose: [],
+    });
+    const details = getStructuredEligibilityDetails(fellowship);
+    expect(details).toEqual([
+      { label: 'Level', value: 'Undergraduates only' },
+      { label: 'School', value: 'Yale College students only' },
+      { label: 'Year of study', value: 'Sophomore, Junior' },
+      { label: 'Term', value: 'Summer' },
+      { label: 'Citizenship', value: 'U.S. citizens are eligible' },
+    ]);
+  });
+
+  it('returns no lines when no structured eligibility facets are present', () => {
+    const fellowship = makeFellowship({
+      eligibility: '',
+      undergraduateOnly: null,
+      yaleCollegeOnly: null,
+      yearOfStudy: [],
+      termOfAward: [],
+      citizenshipStatus: [],
+      globalRegions: [],
+      purpose: [],
+    });
+    expect(getStructuredEligibilityDetails(fellowship)).toEqual([]);
   });
 });
