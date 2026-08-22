@@ -23,11 +23,13 @@ describe('PlanningOverview Next up card', () => {
   it('describes only features the Dashboard actually offers', () => {
     renderOverview({ savedResearchCount: 3, savedFellowshipCount: 2 });
 
-    const detail = screen.getByText(/Open a saved research home to email its PI/);
+    const detail = screen.getByText(/Open a saved research home to find its official profile/);
+    expect(detail.textContent).toContain('reach out');
     expect(detail.textContent).toContain('keep private notes');
     expect(detail.textContent).toContain('Watch programs to track');
     expect(screen.queryByText(/checklist steps/i)).toBeNull();
     expect(screen.queryByText(/funding matches/i)).toBeNull();
+    expect(screen.queryByText(/email/i)).toBeNull();
   });
 
   it('keeps an upcoming program deadline as the primary Next up cue', () => {

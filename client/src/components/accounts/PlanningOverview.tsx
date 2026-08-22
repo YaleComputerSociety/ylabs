@@ -50,8 +50,8 @@ const PlanningOverview = ({
         {nextUpLabel(savedResearchCount, savedFellowshipCount, nextDeadlineLabel)}
       </p>
       <p className="mt-1 text-sm text-gray-600">
-        Open a saved research home to email its PI and keep private notes. Watch programs to track
-        their deadlines.
+        Open a saved research home to find its official profile and reach out, and keep private
+        notes. Watch programs to track their deadlines.
       </p>
     </div>
   </section>
