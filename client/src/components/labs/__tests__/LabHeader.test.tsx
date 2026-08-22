@@ -72,6 +72,33 @@ describe('LabHeader', () => {
     expect(container.textContent).not.toContain('Visit lab website');
   });
 
+  it('never renders a boilerplate platform host as the website CTA (#572)', () => {
+    const { container } = render(
+      <LabHeader group={{ ...baseGroup, websiteUrl: 'http://wordpress.org/' }} />,
+    );
+    expect(container.querySelector('a[href*="wordpress.org"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  it('still renders a named per-person platform subdomain as the website CTA (#556)', () => {
+    const { container } = render(
+      <LabHeader
+        group={{ ...baseGroup, websiteUrl: 'https://rjohnwilliams.wordpress.com/' }}
+      />,
+    );
+    const websiteLink = container.querySelector('a[href*="rjohnwilliams.wordpress.com"]');
+    expect(websiteLink).not.toBeNull();
+    expect(websiteLink?.textContent).toContain('Visit lab website');
+  });
+
+  it('never renders a section-index root as the website CTA (#569)', () => {
+    const { container } = render(
+      <LabHeader group={{ ...baseGroup, websiteUrl: 'https://environment.yale.edu/research/centers' }} />,
+    );
+    expect(container.querySelector('a[href*="research/centers"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
   it('uses research website wording for faculty research profiles', () => {
     const { container } = render(
       <LabHeader

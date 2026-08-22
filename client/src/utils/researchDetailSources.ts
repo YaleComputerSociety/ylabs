@@ -207,6 +207,9 @@ export const isBoilerplatePlatformSourceUrl = (url?: string | null): boolean => 
   }
 };
 
+export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean =>
+  isFacetedOrSectionIndexSourceUrl(url) || isBoilerplatePlatformSourceUrl(url);
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
