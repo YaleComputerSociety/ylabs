@@ -19,7 +19,7 @@ vi.mock('../../models/index', () => ({
   User: {},
 }));
 
-import { resolveSavedResearchEntityObjectIds } from '../userService';
+import { resolveSavedResearchEntityObjectIds } from '../researchPlanService';
 
 const HEX_A = '64a000000000000000000030';
 const HEX_B = '64a000000000000000000031';

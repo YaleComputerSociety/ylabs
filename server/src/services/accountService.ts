@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Account } from '../models/account';
 
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
@@ -43,6 +44,29 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   if (!normalizedNetid) return null;
   const account = await Account.findOne({ netid: normalizedNetid }).lean();
   return account ? toAccountView(account) : null;
+};
+
+export const resolveAccountIdByNetid = async (
+  netid: unknown,
+): Promise<mongoose.Types.ObjectId> => {
+  const normalizedNetid = normalizeNetid(netid);
+  if (!normalizedNetid) {
+    const error: any = new Error('Invalid account netid');
+    error.status = 400;
+    throw error;
+  }
+  const account = await Account.findOneAndUpdate(
+    { netid: normalizedNetid },
+    {
+      $setOnInsert: {
+        netid: normalizedNetid,
+        email: placeholderEmail(normalizedNetid),
+        status: 'ACTIVE',
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true },
+  ).lean();
+  return new mongoose.Types.ObjectId(String((account as { _id: unknown })._id));
 };
 
 export const recordAccountLogin = async (
