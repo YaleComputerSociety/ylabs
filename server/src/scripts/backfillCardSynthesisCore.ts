@@ -4,6 +4,7 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { resolveGroundedCardDescription } from '../utils/groundedCardSynthesis';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
+import { isBlockingVisibilityReason } from '../services/studentVisibilityGateService';
 
 export const CARD_BLOCKER_REASON = 'missing_card_description';
 
@@ -35,9 +36,9 @@ export interface CardBackfillRow {
 
 export type CardSynthesizeFn = (fullDescription: string) => Promise<string>;
 
-const onlyCardBlocker = (reasons?: string[]): boolean => {
-  const distinct = new Set((reasons || []).filter(Boolean));
-  return distinct.size === 1 && distinct.has(CARD_BLOCKER_REASON);
+const cardIsSoleBlocker = (reasons?: string[]): boolean => {
+  const blockers = new Set((reasons || []).filter(isBlockingVisibilityReason));
+  return blockers.size === 1 && blockers.has(CARD_BLOCKER_REASON);
 };
 
 export async function planCardBackfillRow(
@@ -73,7 +74,7 @@ export async function planCardBackfillRow(
     action,
     proposedShort: card,
     gainedCard: true,
-    wouldPromote: onlyCardBlocker(entity.visibilityReasons),
+    wouldPromote: cardIsSoleBlocker(entity.visibilityReasons),
   };
 }
 

@@ -75,6 +75,25 @@ describe('planCardBackfillRow', () => {
     expect(row.wouldPromote).toBe(true);
   });
 
+  it('counts a promotion when evidence reasons accompany the sole card blocker', async () => {
+    const synthesize = vi.fn(async () => GROUNDED_CARD);
+    const row = await planCardBackfillRow(
+      {
+        id: '000000000000000000000007',
+        fullDescription: RICH_FIRST_PERSON_FULL,
+        visibilityReasons: [
+          'concrete_next_step',
+          'missing_card_description',
+          'source_backed_description',
+        ],
+      },
+      synthesize,
+    );
+    expect(row.action).toBe('card-synthesized');
+    expect(row.gainedCard).toBe(true);
+    expect(row.wouldPromote).toBe(true);
+  });
+
   it('does not count a promotion when other blockers remain', async () => {
     const synthesize = vi.fn(async () => GROUNDED_CARD);
     const row = await planCardBackfillRow(
