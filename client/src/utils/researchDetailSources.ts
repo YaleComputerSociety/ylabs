@@ -40,7 +40,10 @@ export const normalizeSourceUrl = (url?: string | null): string | null => {
     const parsed = new URL(safe);
     parsed.hash = '';
     parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
-    return parsed.toString().replace(/\/$/, '');
+    const query = parsed.search;
+    parsed.search = '';
+    const base = parsed.toString().replace(/\/$/, '');
+    return `${base}${query}`;
   } catch {
     return null;
   }

@@ -180,6 +180,20 @@ describe('buildResearchDetailSources', () => {
     expect(sources.map((source) => source.url)).toEqual([firstAward, secondAward]);
   });
 
+  it('preserves a trailing slash inside a query value and keeps such links distinct', () => {
+    const firstUrl = 'https://redirect.example.test/go?next=https://x.example.test/path/';
+    const secondUrl = 'https://redirect.example.test/go?next=https://x.example.test/other/';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [firstUrl, secondUrl],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([firstUrl, secondUrl]);
+  });
+
   it('dedupes known logistics evidence into the official source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
