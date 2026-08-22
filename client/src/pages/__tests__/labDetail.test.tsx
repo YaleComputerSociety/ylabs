@@ -402,6 +402,68 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
+  it('does not surface a contested lead profile page as the official CTA when the lead identity is under review', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        leadIdentityStatus: 'under_review',
+        websiteUrl: '',
+        sourceUrls: [OFFICIAL_PROFILE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
+    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+  });
+
+  it('still surfaces a non-profile official page as the CTA when the lead identity is under review', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        leadIdentityStatus: 'under_review',
+        websiteUrl: '',
+        sourceUrls: [JOIN_PAGE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'Open the official page' }).getAttribute('href')).toBe(
+      JOIN_PAGE_URL,
+    );
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
   it('points to the official website instead of a dead end when there is no profile or email', async () => {
     renderLabDetail({
       ...basePayload,

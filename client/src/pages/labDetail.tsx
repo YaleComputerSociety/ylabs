@@ -291,6 +291,7 @@ const resolveDecisionProfileUrl = (
 const resolveOutreachOfficialSource = (
   sources: ResearchDetailSource[],
   claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
 ): ResearchDetailSource | undefined => {
   const claimedDestinations = new Set(
     claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
@@ -298,6 +299,7 @@ const resolveOutreachOfficialSource = (
   return sources.find((source) => {
     if (source.isLikelyUnavailable) return false;
     if (!safeHttpUrl(source.url)) return false;
+    if (leadIdentityUnderReview && isProfileLikeWebsiteUrl(source.url)) return false;
     const destination = normalizeActionDestination(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);
   });
@@ -827,12 +829,13 @@ const LabDetail = () => {
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
   const officialWebsiteUrl = group.websiteUrl ? group.websiteUrl : undefined;
-  const outreachOfficialSource = resolveOutreachOfficialSource(sources, [
-    decisionProfileUrl,
-    officialWebsiteUrl,
-  ]);
-  const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
+  const outreachOfficialSource = resolveOutreachOfficialSource(
+    sources,
+    [decisionProfileUrl, officialWebsiteUrl],
+    leadIdentityUnderReview,
+  );
+  const principalInvestigators = dedupeLeadMembers(members);
   const singlePrincipalInvestigator =
     !leadIdentityUnderReview && principalInvestigators.length === 1
       ? principalInvestigators[0]
