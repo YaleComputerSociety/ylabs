@@ -1913,6 +1913,34 @@ describe('Research page', () => {
     });
   });
 
+  it('anchors the search-result count to the true total while more homes load', async () => {
+    mockSearchResponses((url, body) => {
+      if (body.q === 'ai') {
+        if (url === '/research/search') {
+          return researchSearchResponse([researchEntity], { estimatedTotalHits: 81 });
+        }
+        if (url === '/pathways/search') {
+          return { data: { hits: [], estimatedTotalHits: 0, page: 1, pageSize: 12 } };
+        }
+        return unexpectedSearchEndpoint(url);
+      }
+      return url === '/research/search' ? researchSearchResponse() : unexpectedSearchEndpoint(url);
+    });
+
+    renderResearch();
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'ai' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await screen.findByText("Showing research matches for 'ai'");
+
+    await waitFor(() => {
+      expect(screen.getByRole('status').textContent).toContain('Showing 1 of 81 research homes');
+    });
+  });
+
   it('does not surface the low-signal evidence-limited label on research-home cards', async () => {
     mockSearchResponses((url) =>
       url === '/research/search'

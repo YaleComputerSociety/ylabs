@@ -10,6 +10,8 @@ export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
 
 export const RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS = 100000;
 
+export const RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET = 10000;
+
 const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   searchableAttributes: [
     'name',
@@ -58,6 +60,9 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   pagination: {
     maxTotalHits: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   },
+  faceting: {
+    maxValuesPerFacet: RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET,
+  },
 };
 
 export interface ResearchEntitySearchIndexRebuildOptions {
@@ -105,6 +110,9 @@ export function getResearchEntitySearchIndexSettings() {
     ),
     pagination: {
       maxTotalHits: RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.pagination.maxTotalHits,
+    },
+    faceting: {
+      maxValuesPerFacet: RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.faceting.maxValuesPerFacet,
     },
   };
 }
