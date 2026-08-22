@@ -2,7 +2,7 @@
  * Programs & Fellowships browse page with search, local quick filters,
  * application-cycle empty states, and grid/list view.
  */
-import { useReducer, useEffect, useContext, useMemo, useState } from 'react';
+import { useReducer, useEffect, useContext, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import FellowshipModal from '../components/fellowship/FellowshipModal';
 import AdminFellowshipEditModal from '../components/admin/AdminFellowshipEditModal';
@@ -234,6 +234,7 @@ const sortFellowshipsForDisplay = (
 const Fellowships = () => {
   useDocumentTitle('Programs & Fellowships');
   const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandledRef = useRef(false);
   const {
     queryString,
     fellowships,
@@ -311,26 +312,27 @@ const Fellowships = () => {
   }, []);
 
   useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+    deepLinkHandledRef.current = true;
     const fellowshipId = searchParams.get('program') || searchParams.get('fellowship');
-    if (fellowshipId && !isModalOpen && !selectedFellowship) {
-      axios
-        .get(`/programs/${fellowshipId}`)
-        .then((response) => {
-          const program = response.data?.program || response.data?.fellowship;
-          if (program) {
-            dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
-          }
-        })
-        .catch(() => {
-          console.error('Error fetching direct fellowship link.');
-          setSearchParams((params) => {
-            params.delete('program');
-            params.delete('fellowship');
-            return params;
-          });
+    if (!fellowshipId) return;
+    axios
+      .get(`/programs/${fellowshipId}`)
+      .then((response) => {
+        const program = response.data?.program || response.data?.fellowship;
+        if (program) {
+          dispatch({ type: 'OPEN_DETAIL_MODAL', item: program });
+        }
+      })
+      .catch(() => {
+        console.error('Error fetching direct fellowship link.');
+        setSearchParams((params) => {
+          params.delete('program');
+          params.delete('fellowship');
+          return params;
         });
-    }
-  }, [searchParams, isModalOpen, selectedFellowship, setSearchParams]);
+      });
+  }, [searchParams, setSearchParams]);
 
   const fellowshipFilterTabs: FilterTabConfig[] = [
     {

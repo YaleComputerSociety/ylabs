@@ -138,7 +138,7 @@ describe('FellowshipModal', () => {
     fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(lastAction);
 
-    fireEvent.keyDown(dialog, { key: 'Escape' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
     rerender(
       <MemoryRouter>
