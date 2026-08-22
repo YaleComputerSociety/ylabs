@@ -39,9 +39,11 @@ export const normalizeSourceUrl = (url?: string | null): string | null => {
   try {
     const parsed = new URL(safe);
     parsed.hash = '';
-    parsed.search = '';
     parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
-    return parsed.toString().replace(/\/$/, '');
+    const query = parsed.search;
+    parsed.search = '';
+    const base = parsed.toString().replace(/\/$/, '');
+    return `${base}${query}`;
   } catch {
     return null;
   }
@@ -100,6 +102,20 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
   }
 };
 
+const RAW_DATA_API_HOSTS = new Set(['api.nsf.gov', 'api.reporter.nih.gov']);
+
+export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
+    return RAW_DATA_API_HOSTS.has(host);
+  } catch {
+    return false;
+  }
+};
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
@@ -140,6 +156,7 @@ export const buildResearchDetailSources = ({
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
+    if (isRawDataApiSourceUrl(normalized)) return;
 
     const existing = sources.get(normalized);
     if (existing) {

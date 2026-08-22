@@ -153,6 +153,78 @@ describe('buildResearchDetailSources', () => {
     );
   });
 
+  it('preserves the query string so award links keep their identifier', () => {
+    const awardUrl = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [awardUrl],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([awardUrl]);
+  });
+
+  it('keeps distinct award identifiers on separate source rows', () => {
+    const firstAward = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
+    const secondAward = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2521471';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [firstAward, secondAward],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([firstAward, secondAward]);
+  });
+
+  it('preserves a trailing slash inside a query value and keeps such links distinct', () => {
+    const firstUrl = 'https://redirect.example.test/go?next=https://x.example.test/path/';
+    const secondUrl = 'https://redirect.example.test/go?next=https://x.example.test/other/';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [firstUrl, secondUrl],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([firstUrl, secondUrl]);
+  });
+
+  it('hides raw funding-data API endpoints while keeping the specific award page', () => {
+    const apiEndpoint = 'https://api.nsf.gov/services/v1/awards.json';
+    const awardPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: [awardPage],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          sourceUrl: apiEndpoint,
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([awardPage]);
+  });
+
+  it('drops a raw RePORTER API endpoint from the source ledger', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: '',
+        sourceUrls: ['https://api.reporter.nih.gov/v2/projects/search'],
+      },
+    });
+
+    expect(sources).toHaveLength(0);
+  });
+
   it('dedupes known logistics evidence into the official source ledger', () => {
     const sources = buildResearchDetailSources({
       group: {
