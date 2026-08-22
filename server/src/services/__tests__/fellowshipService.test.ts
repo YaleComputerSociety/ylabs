@@ -10,7 +10,11 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   Fellowship: fellowshipModelMock,
 }));
 
-import { publicFellowshipForStudent, readFellowships, updateFellowship } from '../fellowshipService';
+import {
+  publicFellowshipForStudent,
+  readFellowships,
+  updateFellowship,
+} from '../fellowshipService';
 
 describe('fellowship public serializer', () => {
   it('sanitizes service-level public URL, contact, and prep-step fields', () => {
@@ -202,7 +206,10 @@ describe('fellowship public serializer', () => {
       toObject: () => ({ _id: '67d8928150621bcef434a1d5', title: 'Updated program' }),
     });
 
-    const prepSteps = Array.from({ length: 50 }, (_, index) => `Email prep${index}@yale.edu or call 203-555-7777.`);
+    const prepSteps = Array.from(
+      { length: 50 },
+      (_, index) => `Email prep${index}@yale.edu or call 203-555-7777.`,
+    );
     Object.defineProperty(prepSteps, '50', {
       get: () => {
         throw new Error('fellowship update sanitizer read past the prep-step cap');
@@ -243,7 +250,9 @@ describe('fellowship public serializer', () => {
     expect(update.summary).not.toContain('203-555-1212');
     expect(update.prepSteps).toHaveLength(50);
     expect(JSON.stringify(update.prepSteps)).not.toContain('@yale.edu');
-    expect(update.links).toEqual([{ label: 'Email [email redacted]', url: 'https://example.yale.edu/program' }]);
+    expect(update.links).toEqual([
+      { label: 'Email [email redacted]', url: 'https://example.yale.edu/program' },
+    ]);
     expect(update).not.toHaveProperty('applicationLink');
     expect(update.sourceUrl).toBe('https://example.yale.edu/source');
     expect(update.hoursPerWeek).toBe(12);
