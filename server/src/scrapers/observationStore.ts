@@ -8,6 +8,7 @@
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { isSelfReferentialUrl } from '../utils/urlSafety';
 import type { ObservationInput } from './types';
 
 interface AppendContext {
@@ -24,7 +25,13 @@ export async function appendObservations(
 ): Promise<{ inserted: number; skipped: number; superseded: number }> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
 
-  const docs = inputs.map((obs) => ({
+  const rejectedSelfReferential = inputs.filter((obs) => isSelfReferentialUrl(obs.sourceUrl));
+  const acceptedInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
+  if (acceptedInputs.length === 0) {
+    return { inserted: 0, skipped: rejectedSelfReferential.length, superseded: 0 };
+  }
+
+  const docs = acceptedInputs.map((obs) => ({
     entityType: obs.entityType,
     entityId: obs.entityId || undefined,
     entityKey: obs.entityKey || undefined,
@@ -48,7 +55,7 @@ export async function appendObservations(
   }));
 
   if (ctx.dryRun) {
-    return { inserted: 0, skipped: docs.length, superseded: 0 };
+    return { inserted: 0, skipped: docs.length + rejectedSelfReferential.length, superseded: 0 };
   }
 
   const result = await Observation.insertMany(docs, { ordered: false });
@@ -88,7 +95,7 @@ export async function appendObservations(
       ? (await Observation.bulkWrite(supersedeOps, { ordered: false })).modifiedCount || 0
       : 0;
 
-  return { inserted: result.length, skipped: 0, superseded };
+  return { inserted: result.length, skipped: rejectedSelfReferential.length, superseded };
 }
 
 /**

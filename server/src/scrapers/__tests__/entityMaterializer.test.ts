@@ -288,6 +288,16 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe('https://example.yale.edu/news');
   });
 
+  it('drops self-referential Yale Research URLs from materialized source URLs', () => {
+    expect(
+      sanitizeResearchEntitySourceUrlsForMaterialization([
+        'https://medicine.yale.edu/lab/qin-yan/',
+        'https://yalelabs.io/api/research',
+        'https://www.yalelabs.io/research/qin-yan-lab',
+      ]),
+    ).toEqual(['https://medicine.yale.edu/lab/qin-yan/']);
+  });
+
   it('ignores official-profile bio observations that are address or page chrome', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {

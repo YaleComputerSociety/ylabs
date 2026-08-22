@@ -82,6 +82,27 @@ describe('buildResearchDetailSources', () => {
     ]);
   });
 
+  it('never surfaces our own site as a source, only the real external source', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://medicine.yale.edu/lab/qin-yan/',
+        sourceUrls: [
+          'https://medicine.yale.edu/lab/qin-yan/',
+          'https://yalelabs.io/api/research',
+          'https://www.yalelabs.io/research/qin-yan-lab',
+        ],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          sourceUrl: 'https://yalelabs.io/api/research',
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual(['https://medicine.yale.edu/lab/qin-yan']);
+  });
+
   it('renders decoded PDF source labels instead of URL-encoded page headings', () => {
     const sources = buildResearchDetailSources({
       group: {
