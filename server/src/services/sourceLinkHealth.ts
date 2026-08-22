@@ -75,7 +75,7 @@ export async function probeSourceLink(url: string): Promise<SourceLinkProbeResul
 
   try {
     let response = await request('HEAD');
-    if (response.status === 405 || response.status === 403) {
+    if (response.status >= 400) {
       response = await request('GET');
       if (response.data && typeof response.data.destroy === 'function') {
         response.data.destroy();
