@@ -288,6 +288,21 @@ const resolveDecisionProfileUrl = (
   return undefined;
 };
 
+const resolveOutreachOfficialSource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+): ResearchDetailSource | undefined => {
+  const claimedDestinations = new Set(
+    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
+  );
+  return sources.find((source) => {
+    if (source.isLikelyUnavailable) return false;
+    if (!safeHttpUrl(source.url)) return false;
+    const destination = normalizeActionDestination(source.url);
+    return Boolean(destination) && !claimedDestinations.has(destination);
+  });
+};
+
 const memberDisplayName = (member: LabMember): string =>
   member.user.displayName ||
   [member.user.fname, member.user.lname].filter(Boolean).join(' ') ||
@@ -427,11 +442,13 @@ const DecisionSummary = ({
   group,
   profileUrl,
   websiteUrl,
+  officialSource,
   principalInvestigator,
 }: {
   group: any;
   profileUrl?: string;
   websiteUrl?: string;
+  officialSource?: ResearchDetailSource;
   principalInvestigator?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
@@ -472,7 +489,8 @@ const DecisionSummary = ({
   ]
     .filter(Boolean)
     .join(' · ');
-  const hasActionablePath = Boolean(piEmail) || Boolean(profileUrl) || Boolean(websiteUrl);
+  const hasActionablePath =
+    Boolean(piEmail) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const visibleEvidence = hasActionablePath
     ? evidence
     : evidence.filter((item) => item.label !== REACH_OUT_PLAUSIBLE_LABEL);
@@ -565,7 +583,9 @@ const DecisionSummary = ({
                   ? 'Undergraduate research almost always starts by reaching out. Open the official profile to find contact details and introduce yourself.'
                   : websiteUrl
                     ? 'Undergraduate research almost always starts by reaching out. Visit the official website to find contact details and introduce yourself.'
-                    : 'Undergraduate research almost always starts by reaching out.'}
+                    : officialSource
+                      ? 'Undergraduate research almost always starts by reaching out. Open the official page to find contact details and introduce yourself.'
+                      : 'Undergraduate research almost always starts by reaching out.'}
             </p>
             {piEmail || profileUrl ? (
               <div className="mt-3 flex flex-col gap-2">
@@ -594,7 +614,18 @@ const DecisionSummary = ({
                   </a>
                 )}
               </div>
-            ) : websiteUrl ? null : (
+            ) : websiteUrl ? null : officialSource ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={officialSource.url}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  Open the official page
+                </a>
+              </div>
+            ) : (
               <div className="mt-3 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3">
                 <p className="text-sm leading-relaxed text-gray-800">
                   {piName
@@ -796,6 +827,10 @@ const LabDetail = () => {
   const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
   const officialWebsiteUrl = group.websiteUrl ? group.websiteUrl : undefined;
+  const outreachOfficialSource = resolveOutreachOfficialSource(sources, [
+    decisionProfileUrl,
+    officialWebsiteUrl,
+  ]);
   const principalInvestigators = dedupeLeadMembers(members);
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const singlePrincipalInvestigator =
@@ -896,6 +931,7 @@ const LabDetail = () => {
             group={group}
             profileUrl={decisionProfileUrl}
             websiteUrl={officialWebsiteUrl}
+            officialSource={outreachOfficialSource}
             principalInvestigator={singlePrincipalInvestigator}
           />
 
