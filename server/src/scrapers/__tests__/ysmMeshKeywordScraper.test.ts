@@ -18,6 +18,7 @@ import {
   buildResearchAreaResolverIndex,
   createResearchAreaCanonicalizer,
 } from '../researchAreaCanonicalization';
+import { buildEntityWorkPlan } from '../workPlanner';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const KEYWORD_INDEX_HTML = `
@@ -173,9 +174,9 @@ describe('parseYsmMeshKeywordIndex', () => {
 describe('parseYsmResultsPageFaculty', () => {
   it('collects faculty profile refs from the embedded listing JSON, deduped by profile URL', () => {
     const html = resultsPageHtml([
-      { name: 'Riverstone, Marlow, MD', url: '/profile/marlow-riverstone/' },
+      { name: 'Marlow Riverstone, MD', url: '/profile/marlow-riverstone/' },
       { name: 'Duplicate Row', url: '/profile/marlow-riverstone/' },
-      { name: 'Quill, Aster, PhD', url: 'https://medicine.yale.edu/profile/aster-quill/' },
+      { name: 'Aster Quill, PhD', url: 'https://medicine.yale.edu/profile/aster-quill/' },
       { name: 'No URL', url: '' },
     ]);
     const faculty = parseYsmResultsPageFaculty(html);
@@ -329,8 +330,9 @@ describe('candidateEntityFromDoc', () => {
 });
 
 describe('facultyNameMatchKey', () => {
-  it('normalizes a display name by dropping credentials and suffixes', () => {
-    expect(facultyNameMatchKey('Riverstone, Marlow, MD, PhD')).toBe('riverstone');
+  it('slugifies the whole name after dropping credentials, never reducing to a surname', () => {
+    expect(facultyNameMatchKey('Riverstone, Marlow, MD, PhD')).toBe('riverstone-marlow');
+    expect(facultyNameMatchKey('Marlow Riverstone, MD')).toBe('marlow-riverstone');
     expect(facultyNameMatchKey('Marlow Riverstone')).toBe('marlow-riverstone');
   });
 });
@@ -440,5 +442,89 @@ describe('YsmMeshKeywordScraper.run', () => {
     await scraper.run(ctx);
     expect(fetchCalls).toBe(0);
     expect(emitted).toEqual([]);
+  });
+
+  it('skips an entity whose researchAreas field is manually locked', async () => {
+    let fetchCalls = 0;
+    const scraper = new YsmMeshKeywordScraper({
+      directoryLoader: async () => emptyDirectory,
+      entityFinder: async () => [
+        candidateEntityFromDoc({
+          _id: 'entity-1',
+          slug: 'ysm-riverstone',
+          displayName: 'Riverstone Lab',
+          contactName: 'Marlow Riverstone',
+          sourceUrls: [profileUrl],
+          manuallyLockedFields: ['researchAreas'],
+        }),
+      ],
+      leadProfileUrlLoader: async () => [],
+      fetchPage: async (url) => {
+        fetchCalls += 1;
+        return { url, html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms'] }) };
+      },
+      workPlanLoader: async (candidate, policy) =>
+        buildEntityWorkPlan({
+          entityType: policy.entityType,
+          entityId: 'entity-1',
+          entityKey: candidate.slug,
+          sourceName: policy.sourceName,
+          targetFields: policy.targetFields,
+          manuallyLockedFields: candidate.manuallyLockedFields,
+          freshnessWindowMs: policy.freshnessWindowMs,
+          observations: [],
+        }),
+    });
+    const { ctx, emitted } = makeContext({ ignoreWorkPlanner: false });
+    const result = await scraper.run(ctx);
+    expect(fetchCalls).toBe(0);
+    expect(emitted).toEqual([]);
+    expect(result.entitiesObserved).toBe(0);
+  });
+
+  it('does not build the directory when every candidate resolves via a direct profile URL', async () => {
+    let directoryCalls = 0;
+    const scraper = new YsmMeshKeywordScraper({
+      directoryLoader: async () => {
+        directoryCalls += 1;
+        return emptyDirectory;
+      },
+      entityFinder: async () => [entity],
+      leadProfileUrlLoader: async () => [],
+      fetchPage: async (url) => ({
+        url,
+        html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms'] }),
+      }),
+    });
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    expect(directoryCalls).toBe(0);
+    expect(emitted).toHaveLength(1);
+  });
+
+  it('builds the directory once when candidates fall through to the name-match fallback', async () => {
+    let directoryCalls = 0;
+    const directory: YsmFacultyDirectory = {
+      keywords: [{ meshId: '101', term: 'Neoplasms' }],
+      profileUrlByNameKey: new Map([[facultyNameMatchKey('Marlow Riverstone'), profileUrl]]),
+    };
+    const scraper = new YsmMeshKeywordScraper({
+      directoryLoader: async () => {
+        directoryCalls += 1;
+        return directory;
+      },
+      entityFinder: async () => [
+        { ...entity, profileUrls: [] },
+        { ...entity, _id: 'entity-2', slug: 'ysm-quill', name: 'Quill Lab', contactName: 'Aster Quill', profileUrls: [] },
+      ],
+      leadProfileUrlLoader: async () => [],
+      fetchPage: async (url) => ({
+        url,
+        html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms'] }),
+      }),
+    });
+    const { ctx } = makeContext();
+    await scraper.run(ctx);
+    expect(directoryCalls).toBe(1);
   });
 });

@@ -52,6 +52,7 @@ export interface YsmMeshCandidateEntity {
   name: string;
   contactName?: string;
   profileUrls: string[];
+  manuallyLockedFields?: string[];
 }
 
 export interface YsmMeshCandidateEntityDoc {
@@ -209,7 +210,7 @@ function profileSlugFromUrl(url: string): string {
 }
 
 export function facultyNameMatchKey(value: unknown): string {
-  const cleaned = textValue(value).split(',')[0] || '';
+  const cleaned = textValue(value);
   const withoutSuffix = cleaned.replace(/\b(?:jr|sr|ii|iii|iv|md|phd|mbchb|mph|ms|msc|dphil)\b/gi, '');
   return slugify(withoutSuffix);
 }
@@ -320,6 +321,7 @@ export function candidateEntityFromDoc(doc: YsmMeshCandidateEntityDoc): YsmMeshC
     name: textValue(doc.displayName || doc.name || doc.slug || idValue(doc._id)),
     contactName: textValue(doc.contactName),
     profileUrls,
+    manuallyLockedFields: doc.manuallyLockedFields || [],
   };
 }
 
@@ -418,8 +420,12 @@ async function defaultEntityFinder(
       { slug: /^ysm-/i },
     ],
   };
+  const emptyAreasFilter =
+    !only.length && !options.exhaustive
+      ? { $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }] }
+      : {};
   const query = ResearchEntity.find(
-    { $and: [{ archived: { $ne: true } }, ysmFilter, identityFilter] },
+    { $and: [{ archived: { $ne: true } }, ysmFilter, emptyAreasFilter, identityFilter] },
     {
       _id: 1,
       slug: 1,
@@ -470,6 +476,7 @@ async function defaultWorkPlanLoader(
     entityKey: entity.slug,
     sourceName: policy.sourceName,
     targetFields: policy.targetFields,
+    manuallyLockedFields: entity.manuallyLockedFields,
     freshnessWindowMs: policy.freshnessWindowMs,
     now: new Date(),
   });
@@ -496,21 +503,32 @@ export class YsmMeshKeywordScraper implements IScraper {
 
   private async resolveProfileUrls(
     entity: YsmMeshCandidateEntity,
-    directory: YsmFacultyDirectory,
+    loadDirectory: () => Promise<YsmFacultyDirectory>,
   ): Promise<string[]> {
     const direct = entity.profileUrls.filter(isYsmProfileUrl);
     if (direct.length) return direct;
     const leadUrls = (await this.leadProfileUrlLoader(entity)).filter(isYsmProfileUrl);
     if (leadUrls.length) return leadUrls;
     const nameKey = facultyNameMatchKey(entity.contactName || entity.name);
-    const matched = nameKey ? directory.profileUrlByNameKey.get(nameKey) : '';
+    if (!nameKey) return [];
+    const directory = await loadDirectory();
+    const matched = directory.profileUrlByNameKey.get(nameKey);
     return matched ? [matched] : [];
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const only = uniqueStrings(ctx.options.only || []);
-    const directory = await this.directoryLoader(ctx);
     const candidates = await this.entityFinder({ only, exhaustive: ctx.options.exhaustive });
+
+    let directory: YsmFacultyDirectory | null = null;
+    let keywordsEnumerated = 0;
+    const loadDirectory = async (): Promise<YsmFacultyDirectory> => {
+      if (!directory) {
+        directory = await this.directoryLoader(ctx);
+        keywordsEnumerated = directory.keywords.length;
+      }
+      return directory;
+    };
 
     let observationCount = 0;
     let entitiesObserved = 0;
@@ -532,7 +550,7 @@ export class YsmMeshKeywordScraper implements IScraper {
           if (!plan.shouldFetch) continue;
         }
 
-        const profileUrls = await this.resolveProfileUrls(entity, directory);
+        const profileUrls = await this.resolveProfileUrls(entity, loadDirectory);
         if (!profileUrls.length) continue;
         profilesResolved += 1;
 
@@ -570,7 +588,7 @@ export class YsmMeshKeywordScraper implements IScraper {
       notes:
         `Attached governed MeSH research areas to ${entitiesObserved} YSM entities ` +
         `(${profilesResolved} resolved to an individual profile of ${candidates.length} scanned; ` +
-        `${directory.keywords.length} MeSH keywords enumerated).`,
+        `${keywordsEnumerated} MeSH keywords enumerated).`,
       metrics: { workPlanner: workPlannerMetrics },
     };
   }
