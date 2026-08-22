@@ -1,0 +1,119 @@
+import {
+  deriveShortDescriptionFromFullDescription,
+  shortDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
+import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
+
+export const CARD_BLOCKER_REASON = 'missing_card_description';
+
+export interface CardBackfillEntity {
+  id: string;
+  slug?: string;
+  entityType?: string;
+  shortDescription?: unknown;
+  fullDescription?: unknown;
+  visibilityReasons?: string[];
+}
+
+export type CardBackfillAction =
+  | 'short-ok'
+  | 'not-genuine-full'
+  | 'card-derived'
+  | 'card-synthesized'
+  | 'no-card';
+
+export interface CardBackfillRow {
+  id: string;
+  slug?: string;
+  entityType?: string;
+  action: CardBackfillAction;
+  proposedShort: string | null;
+  gainedCard: boolean;
+  wouldPromote: boolean;
+}
+
+export type CardSynthesizeFn = (fullDescription: string) => Promise<string>;
+
+const onlyCardBlocker = (reasons?: string[]): boolean => {
+  const distinct = new Set((reasons || []).filter(Boolean));
+  return distinct.size === 1 && distinct.has(CARD_BLOCKER_REASON);
+};
+
+export async function planCardBackfillRow(
+  entity: CardBackfillEntity,
+  synthesize: CardSynthesizeFn,
+): Promise<CardBackfillRow> {
+  const full = sanitizeDescriptionText(entity.fullDescription).text;
+  const short = sanitizeDescriptionText(entity.shortDescription).text;
+  const base = { id: entity.id, slug: entity.slug, entityType: entity.entityType };
+
+  if (short && shortDescriptionQuality(short, full).isUseful) {
+    return { ...base, action: 'short-ok', proposedShort: null, gainedCard: false, wouldPromote: false };
+  }
+  if (classifyFullDescription(full) !== 'genuine') {
+    return {
+      ...base,
+      action: 'not-genuine-full',
+      proposedShort: null,
+      gainedCard: false,
+      wouldPromote: false,
+    };
+  }
+
+  const derived = deriveShortDescriptionFromFullDescription(full);
+  if (derived && shortDescriptionQuality(derived, full).isUseful) {
+    return {
+      ...base,
+      action: 'card-derived',
+      proposedShort: derived,
+      gainedCard: true,
+      wouldPromote: onlyCardBlocker(entity.visibilityReasons),
+    };
+  }
+
+  const synthesized = await synthesize(full);
+  if (synthesized && shortDescriptionQuality(synthesized, full).isUseful) {
+    return {
+      ...base,
+      action: 'card-synthesized',
+      proposedShort: synthesized,
+      gainedCard: true,
+      wouldPromote: onlyCardBlocker(entity.visibilityReasons),
+    };
+  }
+
+  return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
+}
+
+export interface CardBackfillSummary {
+  total: number;
+  actions: Record<CardBackfillAction, number>;
+  cardsGained: number;
+  cardsDerived: number;
+  cardsSynthesized: number;
+  wouldPromote: number;
+}
+
+const emptyActionCounts = (): Record<CardBackfillAction, number> => ({
+  'short-ok': 0,
+  'not-genuine-full': 0,
+  'card-derived': 0,
+  'card-synthesized': 0,
+  'no-card': 0,
+});
+
+export function summarizeCardBackfill(rows: CardBackfillRow[]): CardBackfillSummary {
+  const actions = emptyActionCounts();
+  let cardsGained = 0;
+  let cardsDerived = 0;
+  let cardsSynthesized = 0;
+  let wouldPromote = 0;
+  for (const row of rows) {
+    actions[row.action] += 1;
+    if (row.gainedCard) cardsGained += 1;
+    if (row.action === 'card-derived') cardsDerived += 1;
+    if (row.action === 'card-synthesized') cardsSynthesized += 1;
+    if (row.wouldPromote) wouldPromote += 1;
+  }
+  return { total: rows.length, actions, cardsGained, cardsDerived, cardsSynthesized, wouldPromote };
+}

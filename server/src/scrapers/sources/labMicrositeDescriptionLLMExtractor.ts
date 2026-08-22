@@ -28,6 +28,12 @@ import {
   extractOfficialResearchDescription,
   isDescriptionGroundedInSource,
 } from '../../utils/officialResearchDescription';
+import {
+  CARD_SYNTHESIS_MODEL,
+  defaultCardSynthesisLLM,
+  synthesizeGroundedCardDescription,
+  type CardSynthesisLLMFn,
+} from '../../utils/groundedCardSynthesis';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -102,10 +108,12 @@ export type DescriptionWorkPlanLoaderFn = (
 export interface LabMicrositeDescriptionLLMExtractorDeps {
   fetchPage?: FetchDescriptionPageFn;
   callLLM?: CallDescriptionLLMFn;
+  callCardLLM?: CardSynthesisLLMFn;
   workPlanLoader?: DescriptionWorkPlanLoaderFn;
   labFinder?: (options?: { only?: string[] }) => Promise<CandidateDescriptionLab[]>;
   apiKey?: string;
   model?: string;
+  cardModel?: string;
 }
 
 const textValue = (value: unknown): string =>
@@ -535,6 +543,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
 
   private readonly fetchPage: FetchDescriptionPageFn;
   private readonly callLLM: CallDescriptionLLMFn;
+  private readonly callCardLLM: CardSynthesisLLMFn;
   private readonly workPlanLoader: DescriptionWorkPlanLoaderFn;
   private readonly labFinder: (options?: {
     only?: string[];
@@ -542,14 +551,50 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
   }) => Promise<CandidateDescriptionLab[]>;
   private readonly apiKey?: string;
   private readonly model: string;
+  private readonly cardModel: string;
 
   constructor(deps: LabMicrositeDescriptionLLMExtractorDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.callLLM = deps.callLLM || defaultCallLLM;
+    this.callCardLLM = deps.callCardLLM || defaultCardSynthesisLLM;
     this.workPlanLoader = deps.workPlanLoader || defaultWorkPlanLoader;
     this.labFinder = deps.labFinder || defaultLabFinder;
     this.apiKey = deps.apiKey || process.env.OPENAI_API_KEY;
     this.model = deps.model || DEFAULT_MODEL;
+    this.cardModel = deps.cardModel || CARD_SYNTHESIS_MODEL;
+  }
+
+  private async withSynthesizedCard(
+    observations: ObservationInput[],
+  ): Promise<ObservationInput[]> {
+    const hasCard = observations.some(
+      (observation) => observation.field === 'shortDescription' && textValue(observation.value),
+    );
+    if (hasCard) return observations;
+    const fullObservation = observations.find(
+      (observation) => observation.field === 'fullDescription',
+    );
+    const fullDescription = textValue(fullObservation?.value);
+    if (!fullObservation || !fullDescription || !this.apiKey) return observations;
+    const apiKey = this.apiKey;
+    const card = await synthesizeGroundedCardDescription({
+      fullDescription,
+      callLLM: (llmInput) =>
+        this.callCardLLM({ ...llmInput, apiKey, model: this.cardModel }),
+    });
+    if (!card) return observations;
+    return [
+      ...observations,
+      {
+        entityType: fullObservation.entityType,
+        entityId: fullObservation.entityId,
+        entityKey: fullObservation.entityKey,
+        sourceUrl: fullObservation.sourceUrl,
+        confidenceOverride: fullObservation.confidenceOverride,
+        field: 'shortDescription',
+        value: card,
+      },
+    ];
   }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -662,8 +707,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
             },
           );
           if (deterministicObservations.length) {
-            await ctx.emit(deterministicObservations);
-            observationCount += deterministicObservations.length;
+            const withCard = await this.withSynthesizedCard(deterministicObservations);
+            await ctx.emit(withCard);
+            observationCount += withCard.length;
             entitiesObserved += 1;
             continue;
           }
@@ -689,8 +735,9 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         );
         if (!observations.length) continue;
 
-        await ctx.emit(observations);
-        observationCount += observations.length;
+        const withCard = await this.withSynthesizedCard(observations);
+        await ctx.emit(withCard);
+        observationCount += withCard.length;
         entitiesObserved += 1;
       } catch (error) {
         const message = sanitizeLogValue(error);
