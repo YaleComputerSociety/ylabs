@@ -168,6 +168,60 @@ describe('LabDetail page', () => {
     expect(qualifiedActionEvents).toHaveLength(0);
   });
 
+  it('flags an unavailable source link and sorts it last from the serialized researchEntity payload', async () => {
+    const UNHEALTHY_PRIMARY_SITE = 'https://solomonlab.example.test/lab';
+    const HEALTHY_PUBLICATIONS_PAGE = 'https://solomonlab.example.test/lab/publications';
+    const payload = {
+      ...basePayload,
+      group: undefined as unknown as LabDetailPayload['group'],
+      researchEntity: {
+        _id: 'entity-source-health',
+        slug: DEFAULT_SLUG,
+        name: DEFAULT_ENTITY_NAME,
+        kind: 'lab',
+        entityType: 'RESEARCH_GROUP',
+        websiteUrl: UNHEALTHY_PRIMARY_SITE,
+        departments: ['School of Medicine'],
+        researchAreas: ['Immunobiology'],
+        typicalUndergradRoles: [],
+        prerequisiteCourses: [],
+        creditOptions: [],
+        fundingPrograms: [],
+        sourceUrls: [UNHEALTHY_PRIMARY_SITE, HEALTHY_PUBLICATIONS_PAGE],
+        sourceLinkHealth: [
+          { url: UNHEALTHY_PRIMARY_SITE, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+          { url: HEALTHY_PUBLICATIONS_PAGE, healthStatus: 'OK', httpStatusCode: 200 },
+        ],
+      },
+    } as unknown as LabDetailPayload;
+
+    renderLabDetail(payload);
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const markers = screen.getAllByText('may be unavailable');
+    expect(markers).toHaveLength(1);
+
+    const unavailableArticle = markers[0].closest('article');
+    expect(unavailableArticle).not.toBeNull();
+    const unavailableOpenLink = within(unavailableArticle as HTMLElement).getByRole('link', {
+      name: 'Open source',
+    });
+    expect(unavailableOpenLink.getAttribute('href')).toBe(UNHEALTHY_PRIMARY_SITE);
+
+    const openLinks = screen
+      .getAllByRole('link', { name: 'Open source' })
+      .map((link) => link.getAttribute('href'));
+    expect(openLinks.indexOf(HEALTHY_PUBLICATIONS_PAGE)).toBeLessThan(
+      openLinks.indexOf(UNHEALTHY_PRIMARY_SITE),
+    );
+
+    const healthyArticle = screen
+      .getAllByRole('link', { name: 'Open source' })
+      .find((link) => link.getAttribute('href') === HEALTHY_PUBLICATIONS_PAGE)
+      ?.closest('article');
+    expect(within(healthyArticle as HTMLElement).queryByText('may be unavailable')).toBeNull();
+  });
+
   it('emits the server-owned category for a matching qualified route without its URL', async () => {
     mockedAxios.post.mockResolvedValue({ status: 202 });
     renderLabDetail({
