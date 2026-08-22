@@ -8,9 +8,14 @@ import { RoleAssignment } from '../models/roleAssignment';
 import {
   buildFundingResearchEntityDedupePlan,
   buildOfficialLabUrlResearchEntityDedupePlan,
+  buildMultiPersonEntityQuarantine,
   buildResearchEntityPiDedupePlan,
+  buildSameNameDifferentPersonQuarantine,
+  buildSharedPersonIdResearchEntityDedupePlan,
+  type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type ResearchEntityPiDedupeRow,
+  type SameNameDifferentPersonQuarantine,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
 } from './researchEntityPiDedupeCore';
@@ -43,6 +48,8 @@ export interface ResearchEntityDedupeMergeGroup {
   mergedSourceUrls: string[];
   canonicalName?: string;
   canonicalWebsiteUrl?: string;
+  canonicalFullDescription?: string;
+  canonicalShortDescription?: string;
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
@@ -58,6 +65,7 @@ export interface ResearchEntityPiDedupeArgs {
   fullPlan: boolean;
   officialLabUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
+  sharedPersonId: boolean;
   limit: number;
   limitProvided: boolean;
   maxApply: number;
@@ -132,6 +140,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     fullPlan: false,
     officialLabUrlOnly: false,
     reviewedProfileAreaOnly: false,
+    sharedPersonId: false,
     limit: 10000,
     limitProvided: false,
     maxApply: 10,
@@ -174,6 +183,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--reviewed-profile-area-only') {
       args.reviewedProfileAreaOnly = true;
+      continue;
+    }
+    if (arg === '--shared-person-id') {
+      args.sharedPersonId = true;
       continue;
     }
     if (arg === '--allow-empty-decisions') {
@@ -1517,6 +1530,10 @@ export async function applyResearchEntityDedupeMergeGroup(
     canonicalIdentitySet.displayName = carriedName;
   }
   if (carriedWebsiteUrl) canonicalIdentitySet.websiteUrl = carriedWebsiteUrl;
+  const carriedFullDescription = String(group.canonicalFullDescription || '').trim();
+  const carriedShortDescription = String(group.canonicalShortDescription || '').trim();
+  if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
+  if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
 
   const canonicalUpdate = await ResearchEntity.updateOne(
     { _id: canonicalId, archived: { $ne: true } },
@@ -1695,6 +1712,7 @@ async function main() {
     maxApply,
     slug,
     reviewedProfileAreaOnly,
+    sharedPersonId,
     acceptedDecisions,
     allowEmptyDecisions,
     decisionTemplateOutput,
@@ -1718,17 +1736,27 @@ async function main() {
     : [];
   const piRows: ResearchEntityPiDedupeRow[] = officialLabUrlOnly
     ? []
-    : await loadCandidateRows(limit, {
-        includeNameOnly: !deleteDuplicates,
-        includeRetiredPiLinks: deleteDuplicates,
-      });
+    : sharedPersonId
+      ? await loadSamePiCandidateRows(limit, { includeRetiredMembers: true })
+      : await loadCandidateRows(limit, {
+          includeNameOnly: !deleteDuplicates,
+          includeRetiredPiLinks: deleteDuplicates,
+        });
   const rows = officialLabUrlOnly ? officialLabUrlRows : piRows;
+  const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
+    ? buildSameNameDifferentPersonQuarantine(piRows)
+    : [];
+  const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
+    ? buildMultiPersonEntityQuarantine(piRows)
+    : [];
   const allPlan = dedupePlannedGroups(
     officialLabUrlOnly
       ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : fundingOnly
-        ? buildFundingResearchEntityDedupePlan(piRows)
-        : buildResearchEntityPiDedupePlan(piRows),
+      : sharedPersonId
+        ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+        : fundingOnly
+          ? buildFundingResearchEntityDedupePlan(piRows)
+          : buildResearchEntityPiDedupePlan(piRows),
   );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
@@ -1816,6 +1844,7 @@ async function main() {
     duplicateDisposition: deleteDuplicates ? 'delete' : 'archive',
     fundingOnly,
     officialLabUrlOnly,
+    sharedPersonId,
     candidateGroups: rows.length,
     filteredBySlug: slug || null,
     reviewedProfileAreaOnly,
@@ -1825,6 +1854,10 @@ async function main() {
     plannedDuplicateEntities,
     duplicateCurrentMemberGroups: duplicateCurrentMembers.length,
     plannedDuplicateCurrentMembers,
+    sameNameDifferentPersonQuarantine,
+    quarantinedSameNameGroups: sameNameDifferentPersonQuarantine.length,
+    multiPersonEntityQuarantine,
+    quarantinedMultiPersonEntities: multiPersonEntityQuarantine.length,
     reviewBreakdown: buildResearchEntityPiDedupeReviewBreakdown(plan),
     plan: fullPlan ? plan : plan.slice(0, 25),
     currentMemberPlan: duplicateCurrentMembers.slice(0, 25),

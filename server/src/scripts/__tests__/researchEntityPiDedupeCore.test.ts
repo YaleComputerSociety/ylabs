@@ -5,8 +5,11 @@ import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import {
   buildFundingResearchEntityDedupePlan,
+  buildMultiPersonEntityQuarantine,
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
+  buildSameNameDifferentPersonQuarantine,
+  buildSharedPersonIdResearchEntityDedupePlan,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -775,6 +778,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -788,6 +792,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -807,6 +812,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       reviewedProfileAreaOnly: true,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -820,6 +826,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: true,
       officialLabUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 10000,
       limitProvided: false,
       maxApply: 10,
@@ -1342,6 +1349,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       reviewedProfileAreaOnly: false,
+      sharedPersonId: false,
       limit: 50,
       limitProvided: true,
       maxApply: 10,
@@ -1575,5 +1583,224 @@ describe('shouldRetireDuplicateCurrentMembersForDedupeRun', () => {
   it('skips global current-member retirement in funding-only cleanup mode', () => {
     expect(shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly: true })).toBe(false);
     expect(shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly: false })).toBe(true);
+  });
+});
+
+describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
+  it('merges same-person entities regardless of differing names and picks the human-readable canonical', () => {
+    const rows = [
+      {
+        userId: 'person-1',
+        normalizedName: 'same-pi:person-1',
+        piFirstName: 'Sparkle',
+        piLastName: 'Malone',
+        entities: [
+          {
+            id: 'shell',
+            slug: 'nsf-pi-abc123',
+            name: 'Malone Disturbance Ecology Lab',
+            websiteUrl: 'https://www.malonelab.org/',
+            fullDescription: 'A'.repeat(528),
+            sourceUrls: ['https://www.malonelab.org/'],
+          },
+          {
+            id: 'named',
+            slug: 'yse-faculty-sparkle-malone',
+            name: 'Sparkle Malone Research',
+            websiteUrl: 'https://malonelab.org/',
+            fullDescription: 'B'.repeat(278),
+            sourceUrls: ['https://malonelab.org/'],
+          },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    const group = plan[0];
+    expect(group.canonicalEntityId).toBe('named');
+    expect(group.canonicalSlug).toBe('yse-faculty-sparkle-malone');
+    expect(group.duplicateEntityIds).toEqual(['shell']);
+    expect(group.dedupeCategory).toBe('shared_person_id');
+    expect(group.canonicalFullDescription).toBe('A'.repeat(528));
+  });
+
+  it('does not carry a description when the canonical already has the fullest one', () => {
+    const rows = [
+      {
+        userId: 'person-2',
+        normalizedName: 'same-pi:person-2',
+        entities: [
+          {
+            id: 'rich',
+            slug: 'ysm-crair',
+            name: 'Crair Laboratory',
+            fullDescription: 'A'.repeat(900),
+          },
+          {
+            id: 'thin',
+            slug: 'nih-pi-michael-crair',
+            name: 'The Crair Laboratory',
+            fullDescription: 'B'.repeat(200),
+          },
+        ],
+      },
+    ];
+
+    const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(group.canonicalEntityId).toBe('rich');
+    expect(group.canonicalFullDescription).toBeUndefined();
+  });
+
+  it('produces no group for a lone-entity person row', () => {
+    const rows = [
+      {
+        userId: 'person-3',
+        normalizedName: 'same-pi:person-3',
+        entities: [{ id: 'solo', slug: 'ysm-solo', name: 'Solo Lab' }],
+      },
+    ];
+    expect(buildSharedPersonIdResearchEntityDedupePlan(rows)).toEqual([]);
+  });
+
+  it('excludes a co-PI entity claimed by two persons from every merge group', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    const allEntityIds = plan.flatMap((group) => [
+      group.canonicalEntityId,
+      ...group.duplicateEntityIds,
+    ]);
+    expect(allEntityIds).not.toContain('shared-shell');
+    expect(plan).toEqual([]);
+  });
+
+  it('still merges a single-person two-entity row when no entity is shared', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+          { id: 'a-second', slug: 'nih-pi-a', name: 'Person A Grant' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const plan = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].userId).toBe('person-a');
+    expect([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds].sort()).toEqual([
+      'a-home',
+      'a-second',
+    ]);
+    expect(plan[0].duplicateEntityIds).not.toContain('shared-shell');
+  });
+});
+
+describe('buildMultiPersonEntityQuarantine', () => {
+  it('reports each entity linked to more than one person with its distinct personIds', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+        ],
+      },
+      {
+        userId: 'person-b',
+        normalizedName: 'same-pi:person-b',
+        entities: [
+          { id: 'shared-shell', slug: 'nsf-pi-shared', name: 'Shared Grant Shell' },
+          { id: 'b-home', slug: 'ysm-b-home', name: 'Person B Lab' },
+        ],
+      },
+    ];
+
+    const quarantine = buildMultiPersonEntityQuarantine(rows);
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0].id).toBe('shared-shell');
+    expect(quarantine[0].slug).toBe('nsf-pi-shared');
+    expect(new Set(quarantine[0].personIds)).toEqual(new Set(['person-a', 'person-b']));
+  });
+
+  it('does not flag entities that belong to a single person', () => {
+    const rows = [
+      {
+        userId: 'person-a',
+        normalizedName: 'same-pi:person-a',
+        entities: [
+          { id: 'a-home', slug: 'ysm-a-home', name: 'Person A Lab' },
+          { id: 'a-second', slug: 'nih-pi-a', name: 'Person A Grant' },
+        ],
+      },
+    ];
+    expect(buildMultiPersonEntityQuarantine(rows)).toEqual([]);
+  });
+});
+
+describe('buildSameNameDifferentPersonQuarantine', () => {
+  it('flags same-normalized-name entities that belong to different persons', () => {
+    const rows = [
+      {
+        userId: 'person-jun',
+        normalizedName: 'same-pi:person-jun',
+        entities: [{ id: 'jun', slug: 'ysm-jun-liu', name: 'The Liu Lab' }],
+      },
+      {
+        userId: 'person-qiao',
+        normalizedName: 'same-pi:person-qiao',
+        entities: [{ id: 'qiao', slug: 'nih-pi-qiao-liu', name: 'The Liu Lab' }],
+      },
+    ];
+
+    const quarantine = buildSameNameDifferentPersonQuarantine(rows);
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0].normalizedName).toBe('the liu lab');
+    expect(new Set(quarantine[0].entities.map((entity) => entity.personId))).toEqual(
+      new Set(['person-jun', 'person-qiao']),
+    );
+  });
+
+  it('does not flag same-name entities that belong to the same person', () => {
+    const rows = [
+      {
+        userId: 'person-one',
+        normalizedName: 'same-pi:person-one',
+        entities: [
+          { id: 'a', slug: 'dept-seas-diana-qiu', name: 'Diana Qiu Research' },
+          { id: 'b', slug: 'dept-physics-diana-qiu', name: 'Diana Qiu Research' },
+        ],
+      },
+    ];
+    expect(buildSameNameDifferentPersonQuarantine(rows)).toEqual([]);
   });
 });
