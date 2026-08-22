@@ -405,6 +405,19 @@ export function computeResearchEntityStudentVisibility({
       reasons: Array.from(new Set([...result.reasons, 'missing_lead'])),
     };
   }
+  // A contested-identity entity mixes different people's identities, so it can
+  // never be published to students, even by an explicit operator override: we
+  // cannot vouch for whose lab it is until the identity conflict is resolved.
+  if (
+    profileIdentityRisk &&
+    (result.tier === 'student_ready' || result.tier === 'limited_but_safe')
+  ) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'profile_identity_risk'])),
+    };
+  }
   return result;
 }
 

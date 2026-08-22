@@ -1695,6 +1695,32 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
   });
 
+  it('rejects a same-name profile whose netid-style slug differs from the expected lead netid', () => {
+    const netidProfileUrl = 'https://medicine.yale.edu/profile/jf990/';
+    const netidProfileHtml = profileHtml.replace(profileUrl, netidProfileUrl);
+
+    expect(
+      extractOfficialProfileIdentity(netidProfileHtml, netidProfileUrl, {
+        name: 'Jules Fixture Lab',
+        slug: 'nsf-pi-000000000000000000000000',
+        leadUsers: [{ fname: 'Jules', lname: 'Fixture', netid: 'jxf27' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts a netid-style profile slug that matches the expected lead netid', () => {
+    const netidProfileUrl = 'https://medicine.yale.edu/profile/jxf27/';
+    const netidProfileHtml = profileHtml.replace(profileUrl, netidProfileUrl);
+
+    const identity = extractOfficialProfileIdentity(netidProfileHtml, netidProfileUrl, {
+      name: 'Jules Fixture Lab',
+      slug: 'nsf-pi-000000000000000000000000',
+      leadUsers: [{ fname: 'Jules', lname: 'Fixture', netid: 'jxf27' }],
+    });
+
+    expect(identity).toMatchObject({ displayName: 'Jules Fixture' });
+  });
+
   it('accepts canonicalized department person pages when both URLs match the entity person', () => {
     const identity = extractOfficialProfileIdentity(
       departmentPersonPageHtml,
