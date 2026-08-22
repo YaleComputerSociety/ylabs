@@ -5,6 +5,7 @@ import {
 } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 
 export type PublicUndergraduateLogisticsClaimState =
   | 'known'
@@ -111,7 +112,8 @@ const validDate = (value: unknown): Date | undefined => {
 const safeSourceUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   try {
-    return isPublicHttpUrl(value) ? value : undefined;
+    if (!isPublicHttpUrl(value) || isDisallowedResearchEntitySourceUrl(value)) return undefined;
+    return value;
   } catch {
     return undefined;
   }

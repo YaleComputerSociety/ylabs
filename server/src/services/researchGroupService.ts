@@ -35,6 +35,7 @@ import { StudentTracking } from '../models/studentTracking';
 import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import {
   detectProfileIdentityRisk,
   entityOfficialPersonProfileDestinations,
@@ -2011,12 +2012,18 @@ const publicListingForResearchDetail = (listing: any) => ({
   expiresAt: listing.expiresAt,
 });
 
+const publicResearchDetailSourceUrl = (value: unknown): string | undefined => {
+  const url = publicHttpUrl(value);
+  if (!url || isDisallowedResearchEntitySourceUrl(url)) return undefined;
+  return url;
+};
+
 const publicAccessSignalForResearchDetail = (signal: any) => ({
   signalType: signal.type,
   confidence: signal.confidence,
   confidenceScore: signal.confidenceScore,
   excerpt: publicString(signal.source?.excerpt),
-  sourceUrl: publicHttpUrl(signal.source?.url),
+  sourceUrl: publicResearchDetailSourceUrl(signal.source?.url),
   observedAt: signal.observedAt,
 });
 
@@ -2057,6 +2064,11 @@ const publicResearchDetailGroup = (group: any) => {
     sourceLinkHealth: rawSourceLinkHealth,
     ...publicGroup
   } = group || {};
+  if (Array.isArray(publicGroup.sourceUrls)) {
+    publicGroup.sourceUrls = publicGroup.sourceUrls.filter(
+      (url: unknown) => !isDisallowedResearchEntitySourceUrl(url),
+    );
+  }
   return {
     ...publicGroup,
     sourceLinkHealth: publicSourceLinkHealth(rawSourceLinkHealth),

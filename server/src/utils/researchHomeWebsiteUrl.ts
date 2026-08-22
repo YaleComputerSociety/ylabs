@@ -1,3 +1,5 @@
+import { isSelfReferentialUrl } from './urlSafety';
+
 const URL_MAXLENGTH = 2048;
 
 const textValue = (value: unknown): string =>
@@ -60,6 +62,10 @@ export function isListingOrIndexUrl(value: unknown): boolean {
     PEOPLE_INDEX_FILE_PATH.test(pathname) ||
     MEMBERS_ROOT_PATH.test(pathname)
   );
+}
+
+export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
+  return isSelfReferentialUrl(value) || isListingOrIndexUrl(value);
 }
 
 export const genericYaleWebsiteSubdomains = new Set([

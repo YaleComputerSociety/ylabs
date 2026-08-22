@@ -156,24 +156,6 @@ export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
   }
 };
 
-const SELF_REFERENTIAL_HOSTS = new Set([
-  'yalelabs.io',
-  'yalelabs.onrender.com',
-  'ylabs-gr4v.onrender.com',
-]);
-
-export const isSelfReferentialSourceUrl = (url?: string | null): boolean => {
-  const normalized = normalizeSourceUrl(url);
-  if (!normalized) return false;
-
-  try {
-    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
-    return SELF_REFERENTIAL_HOSTS.has(host);
-  } catch {
-    return false;
-  }
-};
-
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
@@ -227,7 +209,6 @@ export const buildResearchDetailSources = ({
   const addSource = (url: string | undefined, context: string) => {
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
-    if (isSelfReferentialSourceUrl(normalized)) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
     if (isRawDataApiSourceUrl(normalized)) return;
 
