@@ -105,7 +105,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'RoleAssignment',
     group: 'canonical-domain',
     phase: 1,
-    target: 'Removed - roster embedded on ResearchEntity.members',
+    target:
+      'RoleAssignment (canonical first-class roster: dated person <-> entity role edges; replaces the retired research_entity_members)',
   },
   {
     collection: 'org_units',
