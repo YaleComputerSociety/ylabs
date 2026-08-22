@@ -56,7 +56,11 @@ describe('backfillResearchEntityCanonicalOverridesCore', () => {
 
   it('locks an already-correct field without emitting a redundant value change', () => {
     const plan = planCanonicalOverride(
-      { ...malone, name: 'Malone Disturbance Ecology Lab', displayName: 'Malone Disturbance Ecology Lab' },
+      {
+        ...malone,
+        name: 'Malone Disturbance Ecology Lab',
+        displayName: 'Malone Disturbance Ecology Lab',
+      },
       { slug: malone.slug, name: 'Malone Disturbance Ecology Lab' },
     );
 
@@ -93,7 +97,9 @@ describe('backfillResearchEntityCanonicalOverridesCore', () => {
       { ...malone, manuallyLockedFields: ['researchAreas'] },
       { slug: malone.slug, website: 'https://www.malonelab.org/' },
     );
-    expect(plan.lockedFields).toEqual(expect.arrayContaining(['researchAreas', 'website', 'websiteUrl']));
+    expect(plan.lockedFields).toEqual(
+      expect.arrayContaining(['researchAreas', 'website', 'websiteUrl']),
+    );
   });
 
   it('rejects entries without an identifier or overridable field', () => {

@@ -126,12 +126,22 @@ async function main() {
   for (const entry of entries) {
     const validationError = validateCanonicalOverrideEntry(entry);
     if (validationError) {
-      report.push({ slug: entry.slug, recordId: entry.recordId, status: 'invalid_entry', reason: validationError });
+      report.push({
+        slug: entry.slug,
+        recordId: entry.recordId,
+        status: 'invalid_entry',
+        reason: validationError,
+      });
       continue;
     }
     const filter = entityFilter(entry);
     if (!filter) {
-      report.push({ slug: entry.slug, recordId: entry.recordId, status: 'invalid_entry', reason: 'unresolvable identifier' });
+      report.push({
+        slug: entry.slug,
+        recordId: entry.recordId,
+        status: 'invalid_entry',
+        reason: 'unresolvable identifier',
+      });
       continue;
     }
     const entity: any = await ResearchEntity.findOne(filter)
@@ -147,7 +157,13 @@ async function main() {
     const plan = planCanonicalOverride(entity, entry);
     const recordId = String(entity._id);
     if (!planHasChanges(plan)) {
-      report.push({ slug: entity.slug, recordId, status: 'noop', confidence: entry.confidence, note: entry.note });
+      report.push({
+        slug: entity.slug,
+        recordId,
+        status: 'noop',
+        confidence: entry.confidence,
+        note: entry.note,
+      });
       continue;
     }
     plannedUpdates.push({ recordId, set: plan.set });
@@ -212,7 +228,10 @@ const isDirectRun = process.argv[1]
 if (isDirectRun) {
   main()
     .catch((error) => {
-      console.error('Failed to backfill research entity canonical overrides:', sanitizeLogValue(error));
+      console.error(
+        'Failed to backfill research entity canonical overrides:',
+        sanitizeLogValue(error),
+      );
       process.exitCode = 1;
     })
     .finally(async () => {

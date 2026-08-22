@@ -52,7 +52,9 @@ export function isHttpUrl(value: unknown): boolean {
 }
 
 function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function uniqueStrings(values: string[]): string[] {
