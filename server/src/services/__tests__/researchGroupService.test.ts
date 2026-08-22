@@ -110,6 +110,7 @@ import {
   buildResearchActivityLinkPayload,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
+  dropUncorroboratedPhantomLeads,
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
   normalizeResearchSearchQuery,
@@ -1477,6 +1478,88 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('netid');
   });
 
+  it('suppresses a surname-colliding uncorroborated phantom co-PI when a corroborated PI exists', async () => {
+    const entityObjectId = new mongoose.Types.ObjectId('67d8928150621bcef434a1d5');
+    const corroboratedPersonId = new mongoose.Types.ObjectId();
+    const phantomPersonId = new mongoose.Types.ObjectId();
+    const corroboratedAccountId = new mongoose.Types.ObjectId();
+    const phantomAccountId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'ysm-schwartz',
+        name: 'Schwartz Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: ['https://medicine.yale.edu/profile/martin-schwartz/'],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: corroboratedPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.86,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+        },
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: phantomPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: corroboratedPersonId,
+          displayName: 'Martin Schwartz',
+          accountId: corroboratedAccountId,
+          profileLinks: [
+            {
+              kind: 'YALE_OFFICIAL',
+              purpose: 'PRIMARY_IDENTITY',
+              url: 'https://medicine.yale.edu/profile/martin-schwartz/',
+              verifiedAt: new Date(),
+              healthStatus: 'HEALTHY',
+            },
+          ],
+        },
+        {
+          _id: phantomPersonId,
+          displayName: 'Michael Schwartz',
+          accountId: phantomAccountId,
+          profileLinks: [],
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([
+        { _id: corroboratedAccountId, netid: 'ms3001', email: 'martin.schwartz@example.edu' },
+        { _id: phantomAccountId, netid: 'ms3002', email: 'michael.schwartz@example.edu' },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('ysm-schwartz');
+
+    const leadNames = (detail?.members ?? [])
+      .filter((member) => member.role === 'pi')
+      .map((member) => `${member.user.fname} ${member.user.lname}`);
+    expect(leadNames).toEqual(['Martin Schwartz']);
+    expect(leadNames).not.toContain('Michael Schwartz');
+  });
+
   it('derives PI identity review from raw records before public member replacement', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     const entityObjectId = new mongoose.Types.ObjectId(entityId);
@@ -2073,5 +2156,75 @@ describe('dedupeSameNameLeadMembers', () => {
     ];
 
     expect(dedupeSameNameLeadMembers(members, {})).toEqual([members[0]]);
+  });
+});
+
+describe('dropUncorroboratedPhantomLeads', () => {
+  it('drops a zero-confidence unreviewed same-surname phantom PI when a corroborated PI exists', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'phantom', fname: 'Michael', lname: 'Schwartz' },
+      },
+      {
+        role: 'pi',
+        row: { confidence: 0.86, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Martin', lname: 'Schwartz' },
+      },
+      {
+        role: 'director',
+        row: { confidence: 1, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Martin', lname: 'Schwartz' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual([members[1], members[2]]);
+  });
+
+  it('keeps a solo zero-confidence inferred PI when no corroborated lead exists', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'only', fname: 'Solo', lname: 'Lead' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
+  });
+
+  it('keeps a zero-confidence lead that carries evidence', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0.9, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Real', lname: 'Lead' },
+      },
+      {
+        role: 'co-pi',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED', evidenceStatus: 'SNAPSHOT_BACKED' },
+        user: { _id: 'evidenced', fname: 'Evidenced', lname: 'CoLead' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
+  });
+
+  it('does not touch non-lead members', () => {
+    const members = [
+      {
+        role: 'pi',
+        row: { confidence: 0.8, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'real', fname: 'Real', lname: 'Lead' },
+      },
+      {
+        role: 'core-faculty',
+        row: { confidence: 0, reviewStatus: 'UNREVIEWED' },
+        user: { _id: 'member', fname: 'Team', lname: 'Member' },
+      },
+    ];
+
+    expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
   });
 });
