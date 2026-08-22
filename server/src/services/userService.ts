@@ -1,8 +1,7 @@
 /**
  * Service layer for user account CRUD and favorites management.
  */
-import { ResearchEntity, User } from '../models/index';
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { User } from '../models/index';
 import { NotFoundError } from '../utils/errors';
 import {
   readListing,
@@ -19,9 +18,7 @@ import {
 } from './fellowshipService';
 import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
 
 const PLANNING_INTENTS = new Set(['thesis', 'outreach', 'credit', 'funding', 'apply', 'later']);
 const PLANNING_STAGES = new Set(['saved', 'researching', 'ready', 'acted', 'archived']);
@@ -36,17 +33,12 @@ const MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS = 100;
 const MAX_USER_UPDATE_VALUE_DEPTH = 20;
 const MAX_USER_UPDATE_VALUE_ARRAY_ITEMS = 200;
 const MAX_USER_UPDATE_VALUE_OBJECT_KEYS = 200;
-export const MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH = 300;
 export const MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000;
 export const MAX_SAVED_PROGRAM_NOTE_LENGTH = 2000;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
 const USER_UPDATE_OPERATORS = new Set(['$set', '$unset', '$addToSet']);
 const USER_UPDATE_PATH_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
-type FavoriteObjectIdArrayField =
-  | 'favListings'
-  | 'favFellowships'
-  | 'favPathways'
-  | 'savedResearchEntities';
+type FavoriteObjectIdArrayField = 'favListings' | 'favFellowships' | 'favPathways';
 
 export interface SavedProgramTrackingInput {
   note?: unknown;
@@ -122,11 +114,6 @@ export interface SavedPathwayChecklistHistoryInput {
   intent?: string;
   label?: string;
   completedAt?: string;
-}
-
-export interface SavedPathwayPlansExportOptions {
-  includePrivateNotes?: boolean;
-  exportedAt?: Date;
 }
 
 const sanitizeSavedPathwayChecklistKey = (key: unknown): string | undefined => {
@@ -241,19 +228,6 @@ export function sanitizeSavedPathwayPlansForResponse(
   }
   return sanitized;
 }
-
-const exportTextWithoutDirectContact = (value: unknown): string =>
-  safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
-
-const exportUserTextForSpreadsheet = (value: unknown): string =>
-  safeSpreadsheetCell(String(value || ''));
-
-const exportChecklistForSpreadsheet = (
-  checklist: Record<string, boolean>,
-): Record<string, boolean> =>
-  Object.fromEntries(
-    Object.entries(checklist).map(([key, value]) => [exportUserTextForSpreadsheet(key), value]),
-  );
 
 const badRequestError = (message: string) => {
   const error: any = new Error(message);
@@ -882,265 +856,4 @@ export const updateSavedProgramTracking = async (
     programKey
   ];
   throw error;
-};
-
-export interface SavedResearchEntitySummary {
-  _id: string;
-  slug: string;
-  name: string;
-  displayName?: string;
-  kind: string;
-  entityType?: string;
-  departments: string[];
-  school?: string;
-  shortDescription?: string;
-  description?: string;
-}
-
-export const boundSavedResearchEntitySummaryText = (
-  value: unknown,
-  maxLength: number,
-): string | undefined => {
-  if (typeof value !== 'string' || !value) return undefined;
-  return value.slice(0, maxLength);
-};
-
-const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription';
-
-const sanitizeEntityPlanMap = (value: unknown): Record<string, Required<SavedPathwayPlanInput>> => {
-  if (!isPlainRecord(value)) return {};
-  const result: Record<string, Required<SavedPathwayPlanInput>> = {};
-  for (const [id, plan] of Object.entries(value).slice(0, MAX_ACCOUNT_MUTATION_IDS)) {
-    try {
-      const key = normalizeObjectIdStringForUserMutation(id, 'researchEntity');
-      result[key] = sanitizeSavedPathwayPlanForStorage(plan);
-    } catch {
-      continue;
-    }
-  }
-  return result;
-};
-
-const visibleSavedResearchEntities = async (
-  ids: Array<string | mongoose.Types.ObjectId>,
-): Promise<SavedResearchEntitySummary[]> => {
-  const normalized = normalizeObjectIdsForUserMutation(ids, 'savedResearchEntities');
-  if (!normalized.length) return [];
-  const entities = await ResearchEntity.find({
-    _id: { $in: normalized },
-    archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-  })
-    .select(savedResearchEntityProjection)
-    .lean();
-  const byId = new Map(entities.map((entity: any) => [String(entity._id), entity]));
-  return normalized.flatMap((id) => {
-    const entity: any = byId.get(String(id));
-    if (!entity) return [];
-    const shortDescription = boundSavedResearchEntitySummaryText(
-      entity.shortDescription,
-      MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
-    );
-    return [
-      {
-        _id: String(entity._id),
-        slug: String(entity.slug || ''),
-        name: String(entity.name || entity.displayName || 'Research profile'),
-        ...(entity.displayName ? { displayName: String(entity.displayName) } : {}),
-        kind: String(entity.kind || 'group'),
-        ...(entity.entityType ? { entityType: String(entity.entityType) } : {}),
-        departments: Array.isArray(entity.departments)
-          ? entity.departments.slice(0, 20).map(String)
-          : [],
-        ...(entity.school ? { school: String(entity.school) } : {}),
-        ...(shortDescription ? { shortDescription } : {}),
-      },
-    ];
-  });
-};
-
-/** Loads the saved research entities for a user, pruning any that are no longer visible. */
-export const migrateSavedResearchEntitiesForUser = async (id: any) => {
-  const user = await readUser(id);
-  const existingIds = storedObjectIdStringsForUserMutation(
-    user.savedResearchEntities || [],
-    'savedResearchEntities',
-  );
-  const entityPlans = sanitizeEntityPlanMap(user.savedResearchEntityPlans);
-  const visible = await visibleSavedResearchEntities(existingIds);
-  const visibleIds = visible.map((entity) => entity._id);
-  const visibleSet = new Set(visibleIds);
-  const prunedPlans = Object.fromEntries(
-    Object.entries(entityPlans).filter(([entityId]) => visibleSet.has(entityId)),
-  );
-  const hiddenIds = existingIds.filter((entityId) => !visibleSet.has(entityId));
-  if (hiddenIds.length) {
-    await User.findOneAndUpdate(
-      userLookupFilterForMutation(id),
-      {
-        $pull: {
-          savedResearchEntities: {
-            $in: hiddenIds.map((entityId) => new mongoose.Types.ObjectId(entityId)),
-          },
-        },
-        $unset: Object.fromEntries(
-          hiddenIds.map((entityId) => [`savedResearchEntityPlans.${entityId}`, '']),
-        ),
-      },
-      { new: true, runValidators: true },
-    );
-  }
-  return { entities: visible, plans: prunedPlans };
-};
-
-export const getSavedResearchEntities = async (id: any) =>
-  (await migrateSavedResearchEntitiesForUser(id)).entities;
-
-export const getSavedResearchEntityIds = async (id: any) =>
-  (await migrateSavedResearchEntitiesForUser(id)).entities.map((entity) => entity._id);
-
-export const getSavedResearchEntityPlans = async (id: any) =>
-  (await migrateSavedResearchEntitiesForUser(id)).plans;
-
-export const getSavedResearchEntitySlugs = async (id: any): Promise<string[]> =>
-  (await migrateSavedResearchEntitiesForUser(id)).entities.flatMap((entity) =>
-    entity.slug ? [entity.slug] : [],
-  );
-
-const OBJECT_ID_HEX_PATTERN = /^[a-f0-9]{24}$/i;
-const RESEARCH_ENTITY_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,159}$/i;
-
-export const resolveSavedResearchEntityObjectIds = async (
-  values: unknown[],
-): Promise<mongoose.Types.ObjectId[]> => {
-  if (!Array.isArray(values)) {
-    throw badRequestError('Invalid savedResearchEntities ids');
-  }
-  if (values.length > MAX_ACCOUNT_MUTATION_IDS) {
-    throw badRequestError('Too many savedResearchEntities ids');
-  }
-
-  const objectIds: mongoose.Types.ObjectId[] = [];
-  const slugs: string[] = [];
-  for (const value of values) {
-    if (value instanceof mongoose.Types.ObjectId) {
-      objectIds.push(value);
-      continue;
-    }
-    const text = typeof value === 'string' ? value.trim() : '';
-    if (OBJECT_ID_HEX_PATTERN.test(text)) {
-      objectIds.push(new mongoose.Types.ObjectId(text.toLowerCase()));
-    } else if (RESEARCH_ENTITY_SLUG_PATTERN.test(text)) {
-      slugs.push(text);
-    } else {
-      throw badRequestError('Invalid savedResearchEntities id');
-    }
-  }
-
-  if (slugs.length) {
-    const entities = await ResearchEntity.find({
-      slug: { $in: slugs },
-      archived: { $ne: true },
-      studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-    })
-      .select('_id')
-      .lean();
-    for (const entity of entities as Array<{ _id: mongoose.Types.ObjectId }>) {
-      objectIds.push(new mongoose.Types.ObjectId(entity._id));
-    }
-  }
-
-  const seen = new Set<string>();
-  const deduped: mongoose.Types.ObjectId[] = [];
-  for (const objectId of objectIds) {
-    const key = objectId.toHexString().toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(objectId);
-  }
-  return deduped;
-};
-
-export const addSavedResearchEntities = async (id: any, values: unknown[]) => {
-  const ids = await resolveSavedResearchEntityObjectIds(values);
-  const visible = await visibleSavedResearchEntities(ids);
-  for (const entity of visible) {
-    await addFavoriteObjectIdIfMissing(
-      id,
-      'savedResearchEntities',
-      new mongoose.Types.ObjectId(entity._id),
-    );
-  }
-  return getSavedResearchEntitySlugs(id);
-};
-
-export const removeSavedResearchEntities = async (id: any, values: unknown[]) => {
-  await migrateSavedResearchEntitiesForUser(id);
-  const ids = await resolveSavedResearchEntityObjectIds(values);
-  const unset = Object.fromEntries(
-    ids.map((entityId) => [`savedResearchEntityPlans.${entityId}`, '']),
-  );
-  const user = await User.findOneAndUpdate(
-    userLookupFilterForMutation(id),
-    { $pull: { savedResearchEntities: { $in: ids } }, ...(ids.length ? { $unset: unset } : {}) },
-    { new: true, runValidators: true },
-  );
-  if (!user) throw new NotFoundError('User not found');
-  return getSavedResearchEntitySlugs(id);
-};
-
-export const updateSavedResearchEntityPlan = async (
-  id: any,
-  entityId: string,
-  plan: SavedPathwayPlanInput,
-) => {
-  const key = normalizeObjectIdStringForUserMutation(entityId, 'researchEntity');
-  const savedIds = new Set(await getSavedResearchEntityIds(id));
-  if (!savedIds.has(key)) throw new NotFoundError('Saved research entity not found');
-  const user = await updateUser(id, {
-    $set: { [`savedResearchEntityPlans.${key}`]: sanitizeSavedPathwayPlanForStorage(plan) },
-  });
-  return sanitizeEntityPlanMap(user.savedResearchEntityPlans);
-};
-
-export const deleteSavedResearchEntityPlan = async (id: any, entityId: string) => {
-  await migrateSavedResearchEntitiesForUser(id);
-  const key = normalizeObjectIdStringForUserMutation(entityId, 'researchEntity');
-  const user = await updateUser(id, { $unset: { [`savedResearchEntityPlans.${key}`]: '' } });
-  return sanitizeEntityPlanMap(user.savedResearchEntityPlans);
-};
-
-export const exportSavedResearchEntities = async (
-  id: any,
-  options: SavedPathwayPlansExportOptions = {},
-) => {
-  const { entities, plans } = await migrateSavedResearchEntitiesForUser(id);
-  const includePrivateNotes = options.includePrivateNotes === true;
-  return {
-    schemaVersion: 2 as const,
-    exportedAt: (options.exportedAt || new Date()).toISOString(),
-    itemCount: entities.length,
-    privacy: {
-      includesPrivateNotes: includePrivateNotes,
-      includesContactRoutes: false as const,
-      includesNonPublicContactEmails: false as const,
-    },
-    items: entities.map((entity) => {
-      const plan = plans[entity._id] || sanitizeSavedPathwayPlanForStorage({});
-      return {
-        researchEntity: {
-          id: entity._id,
-          slug: entity.slug,
-          name: exportTextWithoutDirectContact(entity.displayName || entity.name),
-        },
-        intent: plan.intent,
-        stage: plan.stage,
-        checklist: exportChecklistForSpreadsheet(plan.checklist as Record<string, boolean>),
-        ...(includePrivateNotes && plan.note
-          ? { privateNote: exportUserTextForSpreadsheet(plan.note) }
-          : {}),
-      };
-    }),
-  };
 };

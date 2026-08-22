@@ -3,8 +3,6 @@ import mongoose from 'mongoose';
 import {
   MAX_SAVED_PATHWAY_NOTE_LENGTH,
   MAX_SAVED_PROGRAM_NOTE_LENGTH,
-  MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
-  boundSavedResearchEntitySummaryText,
   buildCaseInsensitiveNetidFilter,
   normalizeObjectIdStringForUserMutation,
   normalizeObjectIdsForUserMutation,
@@ -276,16 +274,5 @@ describe('normalizeObjectIdsForUserMutation', () => {
     } catch (error: any) {
       expect(error.status).toBe(400);
     }
-  });
-});
-
-describe('boundSavedResearchEntitySummaryText', () => {
-  it('bounds both saved-entity summary description variants', () => {
-    expect(
-      boundSavedResearchEntitySummaryText(
-        's'.repeat(MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH + 1),
-        MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
-      ),
-    ).toHaveLength(MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH);
   });
 });

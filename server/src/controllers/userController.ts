@@ -16,6 +16,8 @@ import {
   normalizeObjectIdsForUserMutation,
   getSavedProgramTracking as getSavedProgramTrackingService,
   updateSavedProgramTracking as updateSavedProgramTrackingService,
+} from '../services/userService';
+import {
   getSavedResearchEntities as getSavedResearchEntitiesService,
   getSavedResearchEntitySlugs as getSavedResearchEntitySlugsService,
   getSavedResearchEntityPlans as getSavedResearchEntityPlansService,
@@ -24,7 +26,7 @@ import {
   updateSavedResearchEntityPlan as updateSavedResearchEntityPlanService,
   deleteSavedResearchEntityPlan as deleteSavedResearchEntityPlanService,
   exportSavedResearchEntities as exportSavedResearchEntitiesService,
-} from '../services/userService';
+} from '../services/researchPlanService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';

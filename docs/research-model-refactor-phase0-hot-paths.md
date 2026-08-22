@@ -25,6 +25,10 @@ Phase 0 still needs live `getIndexes()`, Meilisearch settings, and query-plan ev
 The first-class `research_plans` schema exists, but none of the account-planning endpoints traced here reads or writes it.
 Phase 0 must therefore treat the embedded `users` planning fields as the current runtime owner until a later vertical cutover changes the endpoints.
 
+> Superseded after `b016ad44`: the account-planning cutover has since landed.
+> The saved-research routes now read and write the canonical `research_plans` collection through `researchPlanService`, resolving `accountId` from the authenticated netid, and the embedded `users.savedResearchEntities` and `users.savedResearchEntityPlans` fields are retained only for a pending dry-run-first backfill.
+> See [Saved Research Entities](./research-model.md#saved-research-entities) for the current runtime contract; the account-planning sections below record the pre-cutover `b016ad44` state.
+
 ## `/research`
 
 ### Read path

@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     });
   }),
   getSavedResearchEntities: vi.fn(),
+  getSavedResearchEntitySlugs: vi.fn(),
   getSavedResearchEntityPlans: vi.fn(),
   addSavedResearchEntities: vi.fn(),
   removeSavedResearchEntities: vi.fn(),
@@ -58,7 +59,11 @@ vi.mock('../../services/userService', () => ({
   addFavFellowships: mocks.addFavFellowships,
   deleteFavFellowships: mocks.deleteFavFellowships,
   normalizeObjectIdsForUserMutation: mocks.normalizeObjectIdsForUserMutation,
+}));
+
+vi.mock('../../services/researchPlanService', () => ({
   getSavedResearchEntities: mocks.getSavedResearchEntities,
+  getSavedResearchEntitySlugs: mocks.getSavedResearchEntitySlugs,
   getSavedResearchEntityPlans: mocks.getSavedResearchEntityPlans,
   addSavedResearchEntities: mocks.addSavedResearchEntities,
   removeSavedResearchEntities: mocks.removeSavedResearchEntities,
