@@ -354,12 +354,16 @@ describe('findUserForPi', () => {
   // agreement may attach. Synthetic identifiers - no real Yale netids.
   describe('surname precision (issue #562)', () => {
     it('does not attach a surname-only PI name to a lone same-surname candidate', async () => {
-      const um = mockUserModel([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' }]);
+      const um = mockUserModel([
+        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' },
+      ]);
       expect(await findUserForPi('Schwartz', um)).toBeNull();
     });
 
     it('does not attach when the real PI (Martin) is absent and only a namesake (Michael) exists', async () => {
-      const um = mockUserModel([{ _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' }]);
+      const um = mockUserModel([
+        { _id: 'sc1', fname: 'Michael', lname: 'Schwartz', netid: 'zz01' },
+      ]);
       expect(await findUserForPi('Martin Schwartz', um)).toBeNull();
     });
 
