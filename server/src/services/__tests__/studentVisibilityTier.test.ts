@@ -779,12 +779,12 @@ describe('computeResearchEntityStudentVisibility', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'nsf-pi-6990e3ff500496cc8ac60925',
-        name: 'Mark Graham Lab',
+        name: 'Casey Harper Lab',
         slug: 'nsf-pi-6990e3ff500496cc8ac60925',
         kind: 'lab',
         entityType: 'LAB',
-        websiteUrl: 'https://medicine.yale.edu/profile/mog8/',
-        sourceUrls: ['https://medicine.yale.edu/profile/mog8/'],
+        websiteUrl: 'https://medicine.yale.edu/profile/qz990/',
+        sourceUrls: ['https://medicine.yale.edu/profile/qz990/'],
         shortDescription:
           'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
         fullDescription:
@@ -793,7 +793,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         studentVisibilityOverrideTier: 'student_ready',
       },
       leadMembers: [
-        { role: 'pi', userId: 'mjg24', user: { netid: 'mjg24', fname: 'Mark', lname: 'Graham' } },
+        { role: 'pi', userId: 'ch51', user: { netid: 'ch51', fname: 'Casey', lname: 'Harper' } },
       ],
       accessSignalCount: 1,
       actionablePathwayCount: 1,

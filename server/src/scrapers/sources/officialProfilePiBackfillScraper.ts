@@ -1582,8 +1582,8 @@ export function extractOfficialProfileIdentity(
     return null;
   // A same-name different-person profile passes the name check above, so when
   // the profile URL carries a netid-style slug it must equal a netid we expect
-  // for this person. This rejects name-only collisions such as attaching the
-  // medicine netid `mog8` profile to the EEB `mjg24` "Mark Graham" (issue #468).
+  // for this person. This rejects name-only collisions such as attaching a
+  // `/profile/qz990` page to a different `ch51` lead who shares a name (issue #468).
   const profileNetidSlug = netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
   if (profileNetidSlug) {
     const expectedNetids = expectedNetidsForOfficialProfile(entity, options.expectedPeople);

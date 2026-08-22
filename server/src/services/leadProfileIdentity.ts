@@ -218,7 +218,7 @@ const profileSlugCorroboratesLead = (slug: string, identity: LeadDirectoryIdenti
   if (identity.profileSlugs.has(normalizedSlug)) return true;
   // A lead's own official profile page is authoritative: when we have one, a
   // different person page under the entity is a conflict even if it shares a
-  // surname (vishwa-dixit vs purushottam-dixit). Only fall back to the softer
+  // surname with a different person. Only fall back to the softer
   // name-token overlap when the lead offers no profile page to compare against.
   if (identity.profileSlugs.size > 0) return false;
   return nameTokensFrom(slug).some((token) => identity.nameTokens.has(token));
@@ -278,8 +278,8 @@ export const entityOfficialPersonProfileDestinations = (entity: Record<string, a
  * person-profile home resolves to a different person than the lead we attached.
  * We corroborate the entity's profile-home person against each lead by that
  * lead's own official profile-page person, netid, or name tokens - so the same
- * person on two hosts (e.g. chem vs medicine `/profile/james-mayer`) is not a
- * conflict, while `/profile/mog8` under a `mjg24` "Mark Graham" lead is (issue
+ * person on two hosts (e.g. chem vs medicine `/profile/drew-fixture`) is not a
+ * conflict, while `/profile/qz990` under a `ch51` lead is (issue
  * #468: name-only matching stitched a foreign Yale profile onto a same-named
  * PI). A contested entity must drop out of student discovery (repair queue),
  * not merely hide the PI card behind the detail "under review" box. Absent any
