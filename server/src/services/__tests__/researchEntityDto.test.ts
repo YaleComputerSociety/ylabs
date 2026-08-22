@@ -302,16 +302,36 @@ describe('researchEntityDto', () => {
       name: 'Source Link Health Lab',
       sourceUrls: ['https://example.yale.edu/lab/synthetic-lab'],
       sourceLinkHealth: [
-        { url: 'https://example.yale.edu/lab/synthetic-lab', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
-        { url: 'https://example.yale.edu/lab/synthetic-lab/publications', healthStatus: 'OK', httpStatusCode: 200 },
-        { url: 'javascript:alert(document.cookie)', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+        {
+          url: 'https://example.yale.edu/lab/synthetic-lab',
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+        },
+        {
+          url: 'https://example.yale.edu/lab/synthetic-lab/publications',
+          healthStatus: 'OK',
+          httpStatusCode: 200,
+        },
+        {
+          url: 'javascript:alert(document.cookie)',
+          healthStatus: 'UNAVAILABLE',
+          httpStatusCode: 404,
+        },
         { url: 'https://example.yale.edu/lab/missing-status' },
       ],
     });
 
     expect(dto.sourceLinkHealth).toEqual([
-      { url: 'https://example.yale.edu/lab/synthetic-lab', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
-      { url: 'https://example.yale.edu/lab/synthetic-lab/publications', healthStatus: 'OK', httpStatusCode: 200 },
+      {
+        url: 'https://example.yale.edu/lab/synthetic-lab',
+        healthStatus: 'UNAVAILABLE',
+        httpStatusCode: 404,
+      },
+      {
+        url: 'https://example.yale.edu/lab/synthetic-lab/publications',
+        healthStatus: 'OK',
+        httpStatusCode: 200,
+      },
     ]);
   });
 
