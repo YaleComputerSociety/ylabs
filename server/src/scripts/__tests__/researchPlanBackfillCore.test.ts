@@ -49,8 +49,14 @@ describe('mapLegacyPlan', () => {
       { label: 'Read papers', completed: true, completedAt: OBSERVED_AT },
       { label: 'Email PI', completed: false },
     ]);
-    expect(fields.deadlines).toEqual([{ label: 'Target deadline', dueAt: '2026-03-01T00:00:00.000Z' }]);
-    expect(droppedLegacyFields.sort()).toEqual(['checklistHistory', 'followUpIntervalDays', 'intent']);
+    expect(fields.deadlines).toEqual([
+      { label: 'Target deadline', dueAt: '2026-03-01T00:00:00.000Z' },
+    ]);
+    expect(droppedLegacyFields.sort()).toEqual([
+      'checklistHistory',
+      'followUpIntervalDays',
+      'intent',
+    ]);
   });
 
   it('produces canonical defaults for an empty legacy plan', () => {
@@ -143,7 +149,12 @@ describe('planResearchPlanBackfill', () => {
 
   it('ignores users with no saved entities and no plans', () => {
     const users: BackfillUserInput[] = [
-      { netid: 'empty', accountId: ACCOUNT_A, savedResearchEntities: [], savedResearchEntityPlans: {} },
+      {
+        netid: 'empty',
+        accountId: ACCOUNT_A,
+        savedResearchEntities: [],
+        savedResearchEntityPlans: {},
+      },
     ];
 
     const plan = planResearchPlanBackfill(users, new Set(), { observedAt: OBSERVED_AT });

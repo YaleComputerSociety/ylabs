@@ -167,7 +167,7 @@ Legacy active listings may still appear inside public research detail payloads f
 ## Saved Research Entities
 
 Student workflow depth starts with saved research profiles.
-User accounts store `savedResearchEntities` as references to first-class `ResearchEntity` records, so a student can save a research home even when it has no access evidence.
+Saved planning is stored in the account-owned, private-by-default `ResearchPlan` collection, keyed on `accountId` plus target `ResearchEntity`, so a student can save a research home even when it has no access evidence.
 The `/account` planning workspace hydrates bounded entity summaries and treats access evidence as optional enrichment.
 
 Current behavior:
@@ -182,7 +182,9 @@ Current behavior:
 - Saved profile cards link back to `/research/:slug` rather than introducing a separate planning-detail route.
 
 The `favPathways` saving feature was removed (issue #363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.
-The `User.favPathways` and `User.savedPathwayPlans` schema fields are intentionally left in place so the legacy data survives a later human-gated migration, but no reader consumes them: `migrateSavedResearchEntitiesForUser` is now prune-only, hydrating and pruning `savedResearchEntities` plus `savedResearchEntityPlans` against current visibility without importing legacy pathway saves.
+The `User.favPathways` and `User.savedPathwayPlans` schema fields are intentionally left in place so the legacy data survives a later human-gated migration, but no reader consumes them.
+The embedded `User.savedResearchEntities` and `User.savedResearchEntityPlans` fields are likewise retained only for a pending dry-run-first backfill onto `ResearchPlan`.
+The saved-research routes read and write the canonical `ResearchPlan` collection through `researchPlanService`, so nothing consumes the embedded planning fields at runtime.
 
 Keep saved-entity planning separate from the legacy listing favorites.
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
@@ -369,10 +371,10 @@ Use the exact environment workflow and rollback guidance in the [`Canonical Mong
 
 ### Phase 1 evidence and planning schema foundation
 
-The versioned `ResearchPlan`, `SourceDocument`, `EvidenceClaim`, and `ReviewDecision` schemas establish storage contracts without adding runtime routes, scraper writers, materializers, Meilisearch documents, or migrations.
+The versioned `SourceDocument`, `EvidenceClaim`, and `ReviewDecision` schemas establish storage contracts without adding runtime routes, scraper writers, materializers, Meilisearch documents, or migrations.
 The existing `Source` and `StudentEngagementEvent` models remain the canonical source registry and analytics event model.
 
-`ResearchPlan` is account-owned and private by default.
+`ResearchPlan` is account-owned and private by default, and now backs the saved-research routes at runtime through `researchPlanService` (see [Saved Research Entities](#saved-research-entities)) rather than the embedded `User` planning fields.
 Notes, checklists, and deadlines are excluded from normal queries, and each export category requires an explicit opt-in preference.
 
 `SourceDocument` stores a source-scoped normalized document key, a content hash, bounded metadata, and an optional protected snapshot pointer.

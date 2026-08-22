@@ -46,9 +46,7 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   return account ? toAccountView(account) : null;
 };
 
-export const resolveAccountIdByNetid = async (
-  netid: unknown,
-): Promise<mongoose.Types.ObjectId> => {
+export const resolveAccountIdByNetid = async (netid: unknown): Promise<mongoose.Types.ObjectId> => {
   const normalizedNetid = normalizeNetid(netid);
   if (!normalizedNetid) {
     const error: any = new Error('Invalid account netid');
@@ -69,9 +67,7 @@ export const resolveAccountIdByNetid = async (
   return new mongoose.Types.ObjectId(String((account as { _id: unknown })._id));
 };
 
-export const recordAccountLogin = async (
-  input: AccountLoginInput,
-): Promise<AccountRecordView> => {
+export const recordAccountLogin = async (input: AccountLoginInput): Promise<AccountRecordView> => {
   const normalizedNetid = normalizeNetid(input.netid);
   if (!normalizedNetid) {
     throw new Error('Invalid authentication principal');

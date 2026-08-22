@@ -207,7 +207,10 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
   const now = new Date();
   const update: Record<string, unknown> = {};
 
-  if (typeof input.stage === 'string' && researchPlanStageSet.has(input.stage as ResearchPlanStage)) {
+  if (
+    typeof input.stage === 'string' &&
+    researchPlanStageSet.has(input.stage as ResearchPlanStage)
+  ) {
     update.stage = input.stage;
   }
 
@@ -235,7 +238,9 @@ const visibleSavedResearchEntities = async (
   ids: Array<string | mongoose.Types.ObjectId>,
 ): Promise<SavedResearchEntitySummary[]> => {
   if (!ids.length) return [];
-  const objectIds = ids.map((id) => new mongoose.Types.ObjectId(normalizeObjectIdString(id, 'savedResearchEntities')));
+  const objectIds = ids.map(
+    (id) => new mongoose.Types.ObjectId(normalizeObjectIdString(id, 'savedResearchEntities')),
+  );
   const entities = await ResearchEntity.find({
     _id: { $in: objectIds },
     archived: { $ne: true },

@@ -166,9 +166,7 @@ export const planResearchPlanBackfill = (
 
   for (const user of users) {
     const savedIds = Array.isArray(user.savedResearchEntities)
-      ? user.savedResearchEntities
-          .map(normalizeEntityId)
-          .filter((id): id is string => Boolean(id))
+      ? user.savedResearchEntities.map(normalizeEntityId).filter((id): id is string => Boolean(id))
       : [];
     const dedupedSavedIds = Array.from(new Set(savedIds));
     const planMap = isPlainRecord(user.savedResearchEntityPlans)
