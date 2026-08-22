@@ -34,6 +34,7 @@ import {
   buildResearchDetailSources,
   isDepartmentRosterProvenanceUrl,
   isRawDataApiSourceUrl,
+  isSuppressedResearchWebsiteCtaUrl,
   normalizeActionDestination,
   normalizeSourceUrl,
   ResearchDetailSource,
@@ -833,9 +834,13 @@ const LabDetail = () => {
     undergraduateLogistics,
     sourceLinkHealth: group.sourceLinkHealth,
   });
-  const fallbackSourceUrl = group.websiteUrl || sources[0]?.url;
+  const primaryWebsiteUrl =
+    group.websiteUrl && !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl)
+      ? group.websiteUrl
+      : undefined;
+  const fallbackSourceUrl = primaryWebsiteUrl || sources[0]?.url;
   const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
-  const officialWebsiteUrl = group.websiteUrl ? group.websiteUrl : undefined;
+  const officialWebsiteUrl = primaryWebsiteUrl;
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const outreachOfficialSource = resolveOutreachOfficialSource(
     sources,

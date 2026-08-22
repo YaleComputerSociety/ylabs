@@ -9,6 +9,7 @@ import { getUniqueDepartmentLabels } from '../../utils/departmentNames';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { useConfig } from '../../hooks/useConfig';
 import { ensureHttpPrefix } from '../../utils/url';
+import { isSuppressedResearchWebsiteCtaUrl } from '../../utils/researchDetailSources';
 import {
   entityKindLabel,
   isFacultyResearchEntity as isFacultyResearchEntityCopy,
@@ -39,7 +40,10 @@ const normalizeActionUrl = (url?: string | null): string => {
 
 const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) => {
   const { departments } = useConfig();
-  const websiteHref = group.websiteUrl ? ensureHttpPrefix(group.websiteUrl) : '';
+  const websiteHref =
+    group.websiteUrl && !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl)
+      ? ensureHttpPrefix(group.websiteUrl)
+      : '';
   const websiteDedupeKey = normalizeActionUrl(websiteHref);
   const hideWebsiteHref =
     Boolean(websiteDedupeKey) &&

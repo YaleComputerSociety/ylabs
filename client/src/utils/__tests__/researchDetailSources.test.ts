@@ -187,6 +187,36 @@ describe('buildResearchDetailSources', () => {
     ]);
   });
 
+  it('never surfaces multi-host section-index roots as detail sources (#569)', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://jackson.yale.edu/centers-initiatives/kerry-initiative',
+        sourceUrls: [
+          'https://environment.yale.edu/research/centers',
+          'https://jackson.yale.edu/centers-initiatives',
+          'https://jackson.yale.edu/centers-initiatives/kerry-initiative',
+        ],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      'https://jackson.yale.edu/centers-initiatives/kerry-initiative',
+    ]);
+  });
+
+  it('never surfaces generic CMS/platform boilerplate hosts as detail sources (#572)', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'http://wordpress.org/',
+        sourceUrls: ['http://wordpress.org/', 'https://example-computing-lab.example.org/'],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      'https://example-computing-lab.example.org',
+    ]);
+  });
+
   it('preserves the query string so award links keep their identifier', () => {
     const awardUrl = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171';
 
