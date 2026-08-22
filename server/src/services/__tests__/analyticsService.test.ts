@@ -502,6 +502,35 @@ describe('getUserAnalytics', () => {
 
     expect(mocks.analyticsAggregate).not.toHaveBeenCalled();
   });
+
+  it('threads a skip stage into the users facet when an offset is provided', async () => {
+    mocks.analyticsAggregate.mockResolvedValue([{ users: [], total: 275 }]);
+
+    const result = await getUserAnalytics({ limit: 25, offset: 50 });
+
+    expect(result.offset).toBe(50);
+    expect(result.total).toBe(275);
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+    const facetStage = pipeline.find((stage: any) => stage.$facet);
+    expect(facetStage.$facet.users).toEqual([{ $skip: 50 }, { $limit: 25 }]);
+  });
+
+  it('omits the skip stage on the first page', async () => {
+    mocks.analyticsAggregate.mockResolvedValue([{ users: [], total: 0 }]);
+
+    const result = await getUserAnalytics({ limit: 25 });
+
+    expect(result.offset).toBe(0);
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+    const facetStage = pipeline.find((stage: any) => stage.$facet);
+    expect(facetStage.$facet.users).toEqual([{ $limit: 25 }]);
+  });
+
+  it('rejects a negative offset before building the aggregation pipeline', async () => {
+    await expect(getUserAnalytics({ offset: -1 })).rejects.toThrow('Invalid offset');
+
+    expect(mocks.analyticsAggregate).not.toHaveBeenCalled();
+  });
 });
 
 describe('getUserAnalyticsDrilldown', () => {

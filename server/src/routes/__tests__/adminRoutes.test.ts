@@ -9,6 +9,12 @@ const mocks = vi.hoisted(() => ({
   userFind: vi.fn(),
   fellowshipFind: vi.fn(),
   listAccessReviewEntities: vi.fn(),
+  listAdminAuditEvents: vi.fn(),
+}));
+
+vi.mock('../../services/adminAuditService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/adminAuditService')>()),
+  listAdminAuditEvents: mocks.listAdminAuditEvents,
 }));
 
 vi.mock('../../services/adminGrantService', async (importOriginal) => ({
@@ -161,6 +167,52 @@ describe('admin routes', () => {
   it('exposes admin grant management routes for the analytics admin access section', () => {
     expect(routeByPath('/admin-grants')).toBeTruthy();
     expect(routeByPath('/admin-grants/:netid/revoke')).toBeTruthy();
+  });
+
+  it('records admin mutations through the audit logger middleware', () => {
+    expect(middlewareNames()).toContain('adminAuditMutationLogger');
+  });
+
+  it('exposes a filterable admin audit log route', async () => {
+    mocks.listAdminAuditEvents.mockResolvedValue({
+      events: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    });
+
+    expect(routeByPath('/audit-events')).toBeTruthy();
+
+    const res = await invokeRouteHandler(
+      '/audit-events',
+      {
+        query: { actor: 'admin1', action: 'listing.update', targetType: 'listing', page: '2' },
+        params: {},
+      },
+      'get',
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(mocks.listAdminAuditEvents).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actor: 'admin1',
+        action: 'listing.update',
+        targetType: 'listing',
+      }),
+    );
+  });
+
+  it('does not leak internal messages from audit log failures', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.listAdminAuditEvents.mockRejectedValue(
+      new Error('mongodb://user:pass@example.invalid audit failed'),
+    );
+
+    const res = await invokeRouteHandler('/audit-events', { query: {}, params: {} }, 'get');
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toEqual({ error: 'Failed to fetch admin audit events' });
   });
 
   it('does not leak internal messages from admin grant failures', async () => {

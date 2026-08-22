@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdminGrant } from '../../models/adminGrant';
+import { User } from '../../models/user';
 import {
   MAX_ADMIN_GRANT_NOTE_LENGTH,
   allowsLegacyAdminUserType,
   grantAdminAccess,
   hasActiveAdminGrant,
+  listAdminGrants,
   revokeAdminAccess,
 } from '../adminGrantService';
 
@@ -99,5 +101,59 @@ describe('admin grant note persistence', () => {
       }),
     ).rejects.toThrow();
     expect(findOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('listAdminGrants history timeline', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('aggregates grant/revoke history across all grants newest-first', async () => {
+    const activeChain: any = {
+      sort: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([{ netid: 'admin2', status: 'active' }]),
+    };
+    const allHistoryChain: any = {
+      lean: vi.fn().mockResolvedValue([
+        {
+          netid: 'ADMIN2',
+          history: [
+            { action: 'granted', actorNetid: 'root1', note: 'onboarded', at: '2026-01-01' },
+          ],
+        },
+        {
+          netid: 'admin3',
+          history: [
+            { action: 'granted', actorNetid: 'root1', note: 'temp', at: '2026-02-01' },
+            { action: 'revoked', actorNetid: 'root1', note: 'off-boarded', at: '2026-03-01' },
+          ],
+        },
+      ]),
+    };
+    vi.spyOn(AdminGrant, 'find')
+      .mockReturnValueOnce(activeChain)
+      .mockReturnValueOnce(allHistoryChain);
+
+    const userSummaryChain: any = {
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    };
+    const legacyChain: any = {
+      select: vi.fn().mockReturnThis(),
+      sort: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    };
+    vi.spyOn(User, 'find').mockReturnValueOnce(userSummaryChain).mockReturnValueOnce(legacyChain);
+
+    const result = await listAdminGrants();
+
+    expect(result.history).toHaveLength(3);
+    expect(result.history[0]).toMatchObject({
+      action: 'revoked',
+      subjectNetid: 'admin3',
+      note: 'off-boarded',
+    });
+    expect(result.history[2]).toMatchObject({ action: 'granted', subjectNetid: 'admin2' });
   });
 });

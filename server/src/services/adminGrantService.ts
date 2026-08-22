@@ -11,11 +11,22 @@ export const MAX_ADMIN_GRANT_NOTE_LENGTH = 512;
 export class AdminGrantValidationError extends Error {}
 export class AdminGrantConflictError extends Error {}
 
+export interface AdminGrantHistoryEntry {
+  action: 'granted' | 'revoked';
+  actorNetid: string;
+  note: string;
+  at: Date;
+  subjectNetid: string;
+}
+
 export interface AdminGrantResponse {
   activeCount: number;
   grants: any[];
   legacyAdminsWithoutGrant: any[];
+  history: AdminGrantHistoryEntry[];
 }
+
+const MAX_ADMIN_GRANT_HISTORY_ENTRIES = 200;
 
 const normalizeNetid = (netid: unknown) =>
   typeof netid === 'string' ? netid.trim().toLowerCase() : '';
@@ -68,6 +79,20 @@ export const listAdminGrants = async (): Promise<AdminGrantResponse> => {
     .sort({ netid: 1 })
     .lean();
 
+  const allGrantHistory = await AdminGrant.find({}, { netid: 1, history: 1 }).lean();
+  const history: AdminGrantHistoryEntry[] = allGrantHistory
+    .flatMap((grant: any) =>
+      (Array.isArray(grant.history) ? grant.history : []).map((entry: any) => ({
+        action: entry.action,
+        actorNetid: entry.actorNetid,
+        note: entry.note,
+        at: entry.at,
+        subjectNetid: normalizeNetid(grant.netid),
+      })),
+    )
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, MAX_ADMIN_GRANT_HISTORY_ENTRIES);
+
   return {
     activeCount: grants.length,
     grants: grants.map((grant: any) => ({
@@ -75,6 +100,7 @@ export const listAdminGrants = async (): Promise<AdminGrantResponse> => {
       user: usersByNetid.get(normalizeNetid(grant.netid)),
     })),
     legacyAdminsWithoutGrant,
+    history,
   };
 };
 

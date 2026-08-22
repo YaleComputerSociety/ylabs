@@ -259,6 +259,29 @@ describe('analytics routes', () => {
     expect(mocks.getUserAnalytics).not.toHaveBeenCalled();
   });
 
+  it('forwards a valid numeric offset for user activity pagination', async () => {
+    mocks.getUserAnalytics.mockResolvedValue({ users: [], total: 0, limit: 25, offset: 50 });
+
+    const res = await invokeRouteHandler('/users', {
+      query: { offset: '50', limit: '25' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mocks.getUserAnalytics).toHaveBeenCalledWith(
+      expect.objectContaining({ offset: 50, limit: 25 }),
+    );
+  });
+
+  it('rejects a negative offset before dispatching aggregation', async () => {
+    const res = await invokeRouteHandler('/users', {
+      query: { offset: '-5' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: 'Invalid analytics request' });
+    expect(mocks.getUserAnalytics).not.toHaveBeenCalled();
+  });
+
   it('does not leak internal messages from user analytics drilldown failures', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getUserAnalyticsDrilldown.mockRejectedValue(

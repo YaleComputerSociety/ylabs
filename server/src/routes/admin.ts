@@ -47,6 +47,8 @@ import {
   revokeAdminAccess,
 } from '../services/adminGrantService';
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
+import { listAdminAuditEvents } from '../services/adminAuditService';
+import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
 import { listVisibilityReleaseQueue } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -64,6 +66,7 @@ function setPrivateAdminCacheHeaders(_req: Request, res: Response, next: () => v
 }
 
 router.use(setPrivateAdminCacheHeaders, isAuthenticated, isAdmin);
+router.use(adminAuditMutationLogger);
 
 export const MAX_ADMIN_URL_CHECK_URLS = 25;
 export const MAX_ADMIN_URL_CHECK_URL_LENGTH = 2048;
@@ -578,6 +581,32 @@ router.post(
   },
 );
 
+const MAX_ADMIN_AUDIT_FILTER_LENGTH = 128;
+
+const adminAuditFilter = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().slice(0, MAX_ADMIN_AUDIT_FILTER_LENGTH);
+  return trimmed || undefined;
+};
+
+router.get('/audit-events', async (req: Request, res: Response) => {
+  try {
+    res.json(
+      await listAdminAuditEvents({
+        actor: adminAuditFilter(req.query.actor),
+        action: adminAuditFilter(req.query.action),
+        targetType: adminAuditFilter(req.query.targetType),
+        targetId: adminAuditFilter(req.query.targetId),
+        page: req.query.page,
+        pageSize: req.query.pageSize,
+      }),
+    );
+  } catch (error) {
+    console.error('Admin: Error fetching audit events:', sanitizeLogValue(error));
+    res.status(500).json({ error: 'Failed to fetch admin audit events' });
+  }
+});
+
 router.get('/operator-board', async (_req: Request, res: Response) => {
   try {
     res.json(await buildAdminOperatorBoard());
@@ -687,7 +716,12 @@ router.put(
 
 router.get('/listing-claims', listAdminListingClaimRequests);
 router.get('/listing-claims/:id', validateObjectId('id'), getAdminListingClaimRequest);
-router.put('/listing-claims/:id', writeLimit, validateObjectId('id'), reviewAdminListingClaimRequest);
+router.put(
+  '/listing-claims/:id',
+  writeLimit,
+  validateObjectId('id'),
+  reviewAdminListingClaimRequest,
+);
 
 router.get('/listings', async (req: Request, res: Response) => {
   try {
@@ -871,44 +905,54 @@ router.get('/listings', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/listings/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const safeId = normalizeAdminObjectId(req.params.id);
-    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    const currentUser = req.user as { netId?: string };
-    const { data, resetCreatedAt } = req.body;
+router.put(
+  '/listings/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const safeId = normalizeAdminObjectId(req.params.id);
+      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+      const currentUser = req.user as { netId?: string };
+      const { data, resetCreatedAt } = req.body;
 
-    let listing = await updateListing(safeId, currentUser.netId as string, data, true);
+      let listing = await updateListing(safeId, currentUser.netId as string, data, true);
 
-    if (resetCreatedAt && listing) {
-      const originalDate = new Date(listing.createdAt);
-      const newCreatedAt = new Date(2025, originalDate.getMonth(), originalDate.getDate());
+      if (resetCreatedAt && listing) {
+        const originalDate = new Date(listing.createdAt);
+        const newCreatedAt = new Date(2025, originalDate.getMonth(), originalDate.getDate());
 
-      await getListingModel().collection.updateOne(
-        { _id: new mongoose.Types.ObjectId(safeId) },
-        { $set: { createdAt: newCreatedAt } },
-      );
-      listing = await getListingModel().findById(safeId).lean();
+        await getListingModel().collection.updateOne(
+          { _id: new mongoose.Types.ObjectId(safeId) },
+          { $set: { createdAt: newCreatedAt } },
+        );
+        listing = await getListingModel().findById(safeId).lean();
+      }
+
+      res.json({ listing: adminListingDto(listing) });
+    } catch (error) {
+      console.error('Admin: Error updating listing:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
     }
+  },
+);
 
-    res.json({ listing: adminListingDto(listing) });
-  } catch (error) {
-    console.error('Admin: Error updating listing:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
-
-router.delete('/listings/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const safeId = normalizeAdminObjectId(req.params.id);
-    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    await deleteListing(safeId);
-    res.json({ message: 'Listing deleted' });
-  } catch (error) {
-    console.error('Admin: Error deleting listing:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+router.delete(
+  '/listings/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const safeId = normalizeAdminObjectId(req.params.id);
+      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+      await deleteListing(safeId);
+      res.json({ message: 'Listing deleted' });
+    } catch (error) {
+      console.error('Admin: Error deleting listing:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
+    }
+  },
+);
 
 router.get('/research-areas', async (_req: Request, res: Response) => {
   try {
@@ -920,44 +964,49 @@ router.get('/research-areas', async (_req: Request, res: Response) => {
   }
 });
 
-router.put('/research-areas/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const safeId = normalizeAdminObjectId(req.params.id);
-    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    const { name, field } = req.body;
-    const update: any = {};
+router.put(
+  '/research-areas/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const safeId = normalizeAdminObjectId(req.params.id);
+      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+      const { name, field } = req.body;
+      const update: any = {};
 
-    if (name !== undefined) {
-      update.name = normalizeAdminTaxonomyLabel(
-        name,
-        'research area name',
-        MAX_RESEARCH_AREA_NAME_LENGTH,
-      );
-    }
-    if (field !== undefined) {
-      if (!Object.values(ResearchField).includes(field)) {
-        return res.status(400).json({ error: 'Invalid field value' });
+      if (name !== undefined) {
+        update.name = normalizeAdminTaxonomyLabel(
+          name,
+          'research area name',
+          MAX_RESEARCH_AREA_NAME_LENGTH,
+        );
       }
-      update.field = field;
-      update.colorKey = fieldColorKeys[field as ResearchField] || 'gray';
+      if (field !== undefined) {
+        if (!Object.values(ResearchField).includes(field)) {
+          return res.status(400).json({ error: 'Invalid field value' });
+        }
+        update.field = field;
+        update.colorKey = fieldColorKeys[field as ResearchField] || 'gray';
+      }
+
+      const area = await ResearchArea.findByIdAndUpdate(safeId, update, {
+        new: true,
+        runValidators: true,
+      });
+
+      if (!area) {
+        return res.status(404).json({ error: 'Research area not found' });
+      }
+
+      invalidateConfigCache();
+      res.json({ researchArea: adminResearchAreaDto(area) });
+    } catch (error) {
+      console.error('Admin: Error updating research area:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
     }
-
-    const area = await ResearchArea.findByIdAndUpdate(safeId, update, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!area) {
-      return res.status(404).json({ error: 'Research area not found' });
-    }
-
-    invalidateConfigCache();
-    res.json({ researchArea: adminResearchAreaDto(area) });
-  } catch (error) {
-    console.error('Admin: Error updating research area:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+  },
+);
 
 router.delete(
   '/research-areas/:id',
@@ -1036,66 +1085,76 @@ router.post('/departments', writeLimit, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/departments/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const safeId = normalizeAdminObjectId(req.params.id);
-    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    const { abbreviation, name, displayName, categories, primaryCategory, isActive } = req.body;
-    const update: any = {};
+router.put(
+  '/departments/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const safeId = normalizeAdminObjectId(req.params.id);
+      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+      const { abbreviation, name, displayName, categories, primaryCategory, isActive } = req.body;
+      const update: any = {};
 
-    if (abbreviation !== undefined) {
-      update.abbreviation = normalizeAdminTaxonomyLabel(
-        abbreviation,
-        'department abbreviation',
-        MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
-      );
+      if (abbreviation !== undefined) {
+        update.abbreviation = normalizeAdminTaxonomyLabel(
+          abbreviation,
+          'department abbreviation',
+          MAX_ADMIN_DEPARTMENT_ABBREVIATION_LENGTH,
+        );
+      }
+      if (name !== undefined) update.name = normalizeAdminTaxonomyLabel(name, 'department name');
+      if (displayName !== undefined) {
+        update.displayName = normalizeAdminTaxonomyLabel(displayName, 'department display name');
+      }
+      if (categories !== undefined)
+        update.categories = normalizeAdminDepartmentCategories(categories);
+      if (primaryCategory !== undefined) {
+        const normalizedPrimaryCategory = normalizeAdminDepartmentCategory(primaryCategory);
+        update.primaryCategory = normalizedPrimaryCategory;
+        update.colorKey = categoryColorKeys[normalizedPrimaryCategory] ?? 0;
+      }
+      if (isActive !== undefined) update.isActive = isActive === true;
+
+      const dept = await Department.findByIdAndUpdate(safeId, update, {
+        new: true,
+        runValidators: true,
+      });
+
+      if (!dept) {
+        return res.status(404).json({ error: 'Department not found' });
+      }
+
+      invalidateConfigCache();
+      res.json({ department: adminDepartmentDto(dept) });
+    } catch (error) {
+      console.error('Admin: Error updating department:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
     }
-    if (name !== undefined) update.name = normalizeAdminTaxonomyLabel(name, 'department name');
-    if (displayName !== undefined) {
-      update.displayName = normalizeAdminTaxonomyLabel(displayName, 'department display name');
+  },
+);
+
+router.delete(
+  '/departments/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const safeId = normalizeAdminObjectId(req.params.id);
+      if (!safeId) return res.status(400).json({ error: 'Invalid id' });
+      const dept = await Department.findByIdAndDelete(safeId);
+      if (!dept) {
+        return res.status(404).json({ error: 'Department not found' });
+      }
+
+      invalidateConfigCache();
+      res.json({ message: 'Department deleted' });
+    } catch (error) {
+      console.error('Admin: Error deleting department:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
     }
-    if (categories !== undefined)
-      update.categories = normalizeAdminDepartmentCategories(categories);
-    if (primaryCategory !== undefined) {
-      const normalizedPrimaryCategory = normalizeAdminDepartmentCategory(primaryCategory);
-      update.primaryCategory = normalizedPrimaryCategory;
-      update.colorKey = categoryColorKeys[normalizedPrimaryCategory] ?? 0;
-    }
-    if (isActive !== undefined) update.isActive = isActive === true;
-
-    const dept = await Department.findByIdAndUpdate(safeId, update, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!dept) {
-      return res.status(404).json({ error: 'Department not found' });
-    }
-
-    invalidateConfigCache();
-    res.json({ department: adminDepartmentDto(dept) });
-  } catch (error) {
-    console.error('Admin: Error updating department:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
-
-router.delete('/departments/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const safeId = normalizeAdminObjectId(req.params.id);
-    if (!safeId) return res.status(400).json({ error: 'Invalid id' });
-    const dept = await Department.findByIdAndDelete(safeId);
-    if (!dept) {
-      return res.status(404).json({ error: 'Department not found' });
-    }
-
-    invalidateConfigCache();
-    res.json({ message: 'Department deleted' });
-  } catch (error) {
-    console.error('Admin: Error deleting department:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+  },
+);
 
 const requestHead = (parsed: URL): Promise<{ status: number; reachable: boolean }> =>
   new Promise((resolve, reject) => {
@@ -1315,29 +1374,34 @@ router.get('/profiles/:netid', validateNetid('netid'), async (req: Request, res:
   }
 });
 
-router.put('/profiles/:netid', writeLimit, validateNetid('netid'), async (req: Request, res: Response) => {
-  try {
-    const data = req.body?.data;
-    if (!data || typeof data !== 'object') {
-      return res.status(400).json({ error: 'Missing data payload' });
+router.put(
+  '/profiles/:netid',
+  writeLimit,
+  validateNetid('netid'),
+  async (req: Request, res: Response) => {
+    try {
+      const data = req.body?.data;
+      if (!data || typeof data !== 'object') {
+        return res.status(400).json({ error: 'Missing data payload' });
+      }
+
+      const profile = await adminUpdateProfile(req.params.netid, data);
+
+      if (!profile) {
+        return res.status(404).json({ error: 'Profile not found' });
+      }
+
+      if (data.primaryDepartment !== undefined || data.secondaryDepartments !== undefined) {
+        await cascadeDepartmentsToListings(req.params.netid);
+      }
+
+      res.json({ profile: adminProfileDto(profile) });
+    } catch (error: any) {
+      console.error('Admin: Error updating profile:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
     }
-
-    const profile = await adminUpdateProfile(req.params.netid, data);
-
-    if (!profile) {
-      return res.status(404).json({ error: 'Profile not found' });
-    }
-
-    if (data.primaryDepartment !== undefined || data.secondaryDepartments !== undefined) {
-      await cascadeDepartmentsToListings(req.params.netid);
-    }
-
-    res.json({ profile: adminProfileDto(profile) });
-  } catch (error: any) {
-    console.error('Admin: Error updating profile:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+  },
+);
 
 router.get('/fellowships', async (req: Request, res: Response) => {
   try {
@@ -1404,15 +1468,20 @@ router.get('/fellowships', async (req: Request, res: Response) => {
   }
 });
 
-router.put('/fellowships/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    const fellowship = await updateFellowship(req.params.id, req.body.data);
-    res.json({ fellowship: adminFellowshipDto(fellowship) });
-  } catch (error) {
-    console.error('Admin: Error updating fellowship:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+router.put(
+  '/fellowships/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      const fellowship = await updateFellowship(req.params.id, req.body.data);
+      res.json({ fellowship: adminFellowshipDto(fellowship) });
+    } catch (error) {
+      console.error('Admin: Error updating fellowship:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
+    }
+  },
+);
 
 router.put(
   '/fellowships/:id/archive',
@@ -1444,14 +1513,19 @@ router.put(
   },
 );
 
-router.delete('/fellowships/:id', writeLimit, validateObjectId('id'), async (req: Request, res: Response) => {
-  try {
-    await deleteFellowship(req.params.id);
-    res.json({ message: 'Fellowship deleted' });
-  } catch (error) {
-    console.error('Admin: Error deleting fellowship:', sanitizeLogValue(error));
-    res.status(400).json({ error: 'Request failed' });
-  }
-});
+router.delete(
+  '/fellowships/:id',
+  writeLimit,
+  validateObjectId('id'),
+  async (req: Request, res: Response) => {
+    try {
+      await deleteFellowship(req.params.id);
+      res.json({ message: 'Fellowship deleted' });
+    } catch (error) {
+      console.error('Admin: Error deleting fellowship:', sanitizeLogValue(error));
+      res.status(400).json({ error: 'Request failed' });
+    }
+  },
+);
 
 export default router;

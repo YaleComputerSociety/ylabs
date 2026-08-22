@@ -131,6 +131,7 @@ export interface AnalyticsUsersQuery {
   sort?: AnalyticsUserSort;
   direction?: AnalyticsSortDirection;
   limit?: number;
+  offset?: number;
 }
 
 export interface AnalyticsUserDrilldownQuery {
@@ -170,6 +171,7 @@ export interface AnalyticsUsersResult {
   users: AnalyticsUserSummary[];
   total: number;
   limit: number;
+  offset: number;
 }
 
 export interface AnalyticsUserTypeCount {
@@ -482,6 +484,21 @@ const clampLimit = (value: unknown, defaultValue: number, maxValue: number): num
   return Math.min(Math.floor(parsed), maxValue);
 };
 
+const MAX_USER_ANALYTICS_OFFSET = 100_000;
+
+const clampOffset = (value: unknown): number => {
+  if (value === undefined || value === null || value === '') {
+    return 0;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error('Invalid offset');
+  }
+
+  return Math.min(Math.floor(parsed), MAX_USER_ANALYTICS_OFFSET);
+};
+
 const validateRangeDate = (value: Date | undefined, field: 'start' | 'end'): Date | undefined => {
   if (value === undefined) {
     return undefined;
@@ -535,6 +552,7 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
+  const offset = clampOffset(query.offset);
   const search = validateUserAnalyticsSearch(query.search);
   const sort = query.sort && USER_ANALYTICS_SORTS.has(query.sort) ? query.sort : 'lastActive';
   const direction = query.direction === 'asc' ? 1 : -1;
@@ -651,7 +669,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
     },
     {
       $facet: {
-        users: [{ $limit: limit }],
+        users: offset > 0 ? [{ $skip: offset }, { $limit: limit }] : [{ $limit: limit }],
         total: [{ $count: 'count' }],
       },
     },
@@ -670,14 +688,16 @@ export const getUserAnalytics = async (
   query: AnalyticsUsersQuery = {},
 ): Promise<AnalyticsUsersResult> => {
   const limit = clampLimit(query.limit, 50, 200);
+  const offset = clampOffset(query.offset);
   const [result] = await AnalyticsEvent.aggregate(
-    userSummaryPipeline(undefined, { ...query, limit }),
+    userSummaryPipeline(undefined, { ...query, limit, offset }),
   );
 
   return {
     users: result?.users ?? [],
     total: result?.total ?? 0,
     limit,
+    offset,
   };
 };
 
