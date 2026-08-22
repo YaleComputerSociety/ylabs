@@ -35,6 +35,7 @@ import {
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isConcreteResearchHomeEntity } from '../utils/profileAreaDuplicateRisk';
 import { officialProfileUrlFromRosterEntry } from './leadProfileIdentity';
+import { officialNonGrantSourceUrl } from '../scrapers/accessMaterializer';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -371,6 +372,37 @@ const increment = (counts: Record<string, number>, key: string) => {
 
 const countByEntityId = (rows: Array<{ _id: unknown; count: number }>) =>
   new Map(rows.map((row) => [studentVisibilityGateDocumentId(row._id), row.count]));
+
+const REACH_OUT_PLAUSIBLE_SIGNAL_TYPE = 'REACH_OUT_PLAUSIBLE';
+
+const hasHttpSourceUrl = (value: unknown): boolean =>
+  typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+
+export interface ReachOutPlausibleGateSignal {
+  type?: unknown;
+  archived?: unknown;
+  source?: { url?: unknown; evidenceIds?: unknown; name?: unknown } | null;
+}
+
+// A REACH_OUT_PLAUSIBLE signal is a derived exploratory ways-in, so it inherently
+// carries no external http `source.url`; requiring one hides an already-earned
+// signal from the action-evidence gate. It still counts only when it is backed by
+// a supporting source observation and the entity itself carries an official
+// non-grant page, so no weaker or unbacked signal can pass. Signals that already
+// carry an http `source.url` are counted by the primary aggregation and excluded
+// here to avoid double counting.
+export function reachOutPlausibleSignalCreditsActionEvidence(input: {
+  signal: ReachOutPlausibleGateSignal;
+  entity: { websiteUrl?: unknown; website?: unknown; sourceUrls?: unknown };
+}): boolean {
+  const { signal, entity } = input;
+  if (signal.archived === true) return false;
+  if (signal.type !== REACH_OUT_PLAUSIBLE_SIGNAL_TYPE) return false;
+  if (hasHttpSourceUrl(signal.source?.url)) return false;
+  const evidenceIds = Array.isArray(signal.source?.evidenceIds) ? signal.source?.evidenceIds : [];
+  if (evidenceIds.length === 0) return false;
+  return Boolean(officialNonGrantSourceUrl(entity));
+}
 
 const profileAreaDuplicateCounterpartEntityTypes = new Set([
   'LAB',
@@ -887,7 +919,7 @@ async function planResearchEntityGateUpdates(
     : entities;
   const entityIds = entities.map((entity: any) => entity._id);
 
-  const [rosterByEntityId, accessRows] = await Promise.all([
+  const [rosterByEntityId, accessRows, reachOutPlausibleWithoutHttpSource] = await Promise.all([
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -906,6 +938,14 @@ async function planResearchEntityGateUpdates(
         },
       },
     ]),
+    Signal.find({
+      researchEntityId: { $in: entityIds },
+      type: REACH_OUT_PLAUSIBLE_SIGNAL_TYPE,
+      archived: false,
+      'source.url': { $not: /^https?:\/\//i },
+    })
+      .select('researchEntityId type archived source.url source.evidenceIds source.name')
+      .lean(),
   ]);
 
   const leadRows = Array.from(rosterByEntityId.values())
@@ -975,6 +1015,20 @@ async function planResearchEntityGateUpdates(
   const entityById = new Map(
     (entities as any[]).map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
   );
+
+  for (const signal of reachOutPlausibleWithoutHttpSource as any[]) {
+    const entityId = studentVisibilityGateDocumentId(signal.researchEntityId);
+    const entity = entityById.get(entityId);
+    if (!entity) continue;
+    if (!reachOutPlausibleSignalCreditsActionEvidence({ signal, entity })) continue;
+    accessCounts.set(entityId, (accessCounts.get(entityId) || 0) + 1);
+    const sourceName = typeof signal.source?.name === 'string' ? signal.source.name.trim() : '';
+    sourceNamesByEntityId.set(
+      entityId,
+      uniqueStrings([...(sourceNamesByEntityId.get(entityId) || []), sourceName]),
+    );
+  }
+
   const samePiDuplicateRiskEntityIds = selectSamePiDuplicateRiskEntityIds([
     ...buildSamePiVisibilityDedupeRows({
       entities: entities as any[],
