@@ -776,6 +776,7 @@ export const searchFellowships = async (params: {
   }
   sortOptions[publicFellowshipSortField(sortBy, includeNonPublic)] =
     publicFellowshipSortOrder(sortOrder);
+  sortOptions._id = 1;
 
   const skip = (page - 1) * pageSize;
 

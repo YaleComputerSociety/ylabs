@@ -617,11 +617,24 @@ const Fellowships = () => {
     activeResultCount === 0 &&
     (quickFilter === 'open' || quickFilter === 'closingSoon') &&
     fellowships.length > 0;
+  const hasActiveStructuredFilter =
+    selectedProgramCategory.length > 0 ||
+    selectedProgramKind.length > 0 ||
+    selectedEntryMode.length > 0 ||
+    selectedStudentFacingCategory.length > 0 ||
+    selectedYearOfStudy.length > 0 ||
+    selectedTermOfAward.length > 0 ||
+    selectedPurpose.length > 0 ||
+    selectedSubjects.length > 0 ||
+    selectedRegions.length > 0 ||
+    selectedCitizenship.length > 0 ||
+    selectedStudentVisibilityTier.length > 0;
   const showNoLiveWindowsNotice =
     !isLoading &&
     searchExhausted &&
     !quickFilter &&
     !queryString.trim() &&
+    !hasActiveStructuredFilter &&
     fellowships.length > 0 &&
     open.length === 0 &&
     closingSoon.length === 0;
