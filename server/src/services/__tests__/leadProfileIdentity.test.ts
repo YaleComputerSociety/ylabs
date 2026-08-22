@@ -104,10 +104,10 @@ describe('detectProfileIdentityRisk', () => {
     expect(
       detectProfileIdentityRisk({
         entity: {
-          websiteUrl: 'https://medicine.yale.edu/profile/mog8/',
-          sourceUrls: ['https://medicine.yale.edu/profile/mog8/'],
+          websiteUrl: 'https://medicine.yale.edu/profile/qz990/',
+          sourceUrls: ['https://medicine.yale.edu/profile/qz990/'],
         },
-        leadMembers: [{ user: { netid: 'mjg24', fname: 'Mark', lname: 'Graham' } }],
+        leadMembers: [{ user: { netid: 'ch51', fname: 'Casey', lname: 'Harper' } }],
       }),
     ).toBe(true);
   });
@@ -116,10 +116,10 @@ describe('detectProfileIdentityRisk', () => {
     expect(
       detectProfileIdentityRisk({
         entity: {
-          websiteUrl: 'https://medicine.yale.edu/profile/mjg24/',
-          sourceUrls: ['https://medicine.yale.edu/profile/mjg24/'],
+          websiteUrl: 'https://medicine.yale.edu/profile/ch51/',
+          sourceUrls: ['https://medicine.yale.edu/profile/ch51/'],
         },
-        leadMembers: [{ user: { netid: 'mjg24', fname: 'Mark', lname: 'Graham' } }],
+        leadMembers: [{ user: { netid: 'ch51', fname: 'Casey', lname: 'Harper' } }],
       }),
     ).toBe(false);
   });
@@ -128,15 +128,15 @@ describe('detectProfileIdentityRisk', () => {
     expect(
       detectProfileIdentityRisk({
         entity: {
-          websiteUrl: 'https://medicine.yale.edu/profile/james-mayer/',
-          sourceUrls: ['https://medicine.yale.edu/profile/james-mayer/'],
+          websiteUrl: 'https://medicine.yale.edu/profile/drew-fixture/',
+          sourceUrls: ['https://medicine.yale.edu/profile/drew-fixture/'],
         },
         leadMembers: [
           {
-            name: 'James Mayer',
+            name: 'Drew Fixture',
             user: {
-              netid: 'jm472',
-              profileUrls: { official: 'https://chem.yale.edu/profile/james-mayer' },
+              netid: 'df42',
+              profileUrls: { official: 'https://chem.yale.edu/profile/drew-fixture' },
             },
           },
         ],
@@ -148,15 +148,15 @@ describe('detectProfileIdentityRisk', () => {
     expect(
       detectProfileIdentityRisk({
         entity: {
-          websiteUrl: 'https://campuspress.yale.edu/squirrel/people/the-bagriantsev-lab/',
+          websiteUrl: 'https://campuspress.yale.edu/hive/people/the-avery-lab/',
         },
         leadMembers: [
           {
-            name: 'Sviatoslav Bagriantsev',
+            name: 'Avery Lane',
             user: {
-              netid: 'sb864',
+              netid: 'al88',
               profileUrls: {
-                official: 'https://medicine.yale.edu/profile/sviatoslav-bagriantsev/',
+                official: 'https://medicine.yale.edu/profile/avery-lane/',
               },
             },
           },
