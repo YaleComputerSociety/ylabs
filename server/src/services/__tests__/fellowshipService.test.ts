@@ -65,6 +65,44 @@ describe('fellowship public serializer', () => {
     expect(JSON.stringify(payload)).not.toContain('203-555');
   });
 
+  it('clears isAcceptingApplications when the deadline has already passed', () => {
+    const now = new Date('2026-08-22T00:00:00.000Z');
+    const payload = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1d5',
+        title: 'Past-deadline program',
+        isAcceptingApplications: true,
+        deadline: new Date('2026-03-24T00:00:00.000Z'),
+      },
+      now,
+    );
+    expect(payload.isAcceptingApplications).toBe(false);
+  });
+
+  it('keeps isAcceptingApplications when the deadline is in the future or absent', () => {
+    const now = new Date('2026-08-22T00:00:00.000Z');
+    const futureDeadline = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1d6',
+        title: 'Future-deadline program',
+        isAcceptingApplications: true,
+        deadline: new Date('2026-12-20T00:00:00.000Z'),
+      },
+      now,
+    );
+    expect(futureDeadline.isAcceptingApplications).toBe(true);
+
+    const noDeadline = publicFellowshipForStudent(
+      {
+        _id: '67d8928150621bcef434a1d7',
+        title: 'Rolling program',
+        isAcceptingApplications: true,
+      },
+      now,
+    );
+    expect(noDeadline.isAcceptingApplications).toBe(true);
+  });
+
   it('bounds public fellowship serializer arrays and skips polluted values', () => {
     const links = Array.from({ length: 50 }, (_, index) => ({
       label: `Program ${index}`,

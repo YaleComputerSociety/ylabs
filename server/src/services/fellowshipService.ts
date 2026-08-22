@@ -283,7 +283,13 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
   return value;
 };
 
-export const publicFellowshipForStudent = (fellowship: any) => {
+const deadlineIsPast = (value: unknown, now: Date): boolean => {
+  if (!value) return false;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return !Number.isNaN(date.getTime()) && date.getTime() < now.getTime();
+};
+
+export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date()) => {
   if (!fellowship || typeof fellowship !== 'object') return fellowship;
 
   const publicFellowship: Record<string, any> = {};
@@ -292,6 +298,14 @@ export const publicFellowshipForStudent = (fellowship: any) => {
       publicFellowship[field] = publicFellowshipField(field, fellowship[field]);
     }
   }
+
+  if (
+    publicFellowship.isAcceptingApplications === true &&
+    deadlineIsPast(publicFellowship.deadline, now)
+  ) {
+    publicFellowship.isAcceptingApplications = false;
+  }
+
   return publicFellowship;
 };
 
@@ -334,7 +348,9 @@ export const readFellowships = async (ids: any[], options: FellowshipReadOptions
     ...publicFellowshipFilter(options),
   });
   const rawFellowships = fellowships.map((fellowship: any) => fellowship.toObject());
-  return options.includeNonPublic ? rawFellowships : rawFellowships.map(publicFellowshipForStudent);
+  return options.includeNonPublic
+    ? rawFellowships
+    : rawFellowships.map((fellowship) => publicFellowshipForStudent(fellowship));
 };
 
 export const readAllFellowships = async () => {
@@ -775,7 +791,10 @@ export const searchFellowships = async (params: {
   ]);
 
   return {
-    fellowships: (includeNonPublic ? fellowships : fellowships.map(publicFellowshipForStudent)).map(
+    fellowships: (includeNonPublic
+      ? fellowships
+      : fellowships.map((fellowship) => publicFellowshipForStudent(fellowship))
+    ).map(
       (fellowship) => ({ ...fellowship, inferredSubjects: inferProgramSubjects(fellowship) }),
     ),
     total,

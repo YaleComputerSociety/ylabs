@@ -617,6 +617,14 @@ const Fellowships = () => {
     activeResultCount === 0 &&
     (quickFilter === 'open' || quickFilter === 'closingSoon') &&
     fellowships.length > 0;
+  const showNoLiveWindowsNotice =
+    !isLoading &&
+    searchExhausted &&
+    !quickFilter &&
+    !queryString.trim() &&
+    fellowships.length > 0 &&
+    open.length === 0 &&
+    closingSoon.length === 0;
 
   const sentinelRef = useInfiniteScroll({
     searchExhausted,
@@ -787,6 +795,19 @@ const Fellowships = () => {
               />
             ) : (
               <>
+                {showNoLiveWindowsNotice && (
+                  <div className="mb-6 rounded-md border border-blue-100 bg-[var(--yr-blue-soft)] px-5 py-4">
+                    <h2 className="text-base font-semibold text-blue-950">
+                      No programs are currently accepting applications
+                    </h2>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-blue-900">
+                      Every tracked program and fellowship has closed its most recent application
+                      window. Use the recurring records below to plan for the next cycle: review
+                      eligibility, line up a mentor, and prepare materials now so you are ready when
+                      applications reopen.
+                    </p>
+                  </div>
+                )}
                 {journeySections.map((section) =>
                   showSection(section.key) && journeyItems[section.key].length > 0 ? (
                     <div key={section.key}>
