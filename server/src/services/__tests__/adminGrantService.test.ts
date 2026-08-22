@@ -144,9 +144,7 @@ describe('listAdminGrants history timeline', () => {
       sort: vi.fn().mockReturnThis(),
       lean: vi.fn().mockResolvedValue([]),
     };
-    vi.spyOn(User, 'find')
-      .mockReturnValueOnce(userSummaryChain)
-      .mockReturnValueOnce(legacyChain);
+    vi.spyOn(User, 'find').mockReturnValueOnce(userSummaryChain).mockReturnValueOnce(legacyChain);
 
     const result = await listAdminGrants();
 

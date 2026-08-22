@@ -390,8 +390,9 @@ describe('Analytics admin audit + grant history + user pagination surfaces', () 
       .getByRole('heading', { name: 'Admin Action Audit Log' })
       .closest('section') as HTMLElement;
     await waitFor(() => {
-      expect(within(auditSection.querySelector('table') as HTMLElement).getByText('Admin revoked'))
-        .toBeTruthy();
+      expect(
+        within(auditSection.querySelector('table') as HTMLElement).getByText('Admin revoked'),
+      ).toBeTruthy();
     });
     const historyBlock = screen
       .getByRole('heading', { name: 'Admin access history' })

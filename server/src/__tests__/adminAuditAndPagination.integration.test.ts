@@ -158,11 +158,12 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
 
     const byActor = await (await fetch(`${baseUrl}/audit-events?actor=operator2`)).json();
     expect(byActor.total).toBe(1);
-    expect(byActor.events[0]).toMatchObject({ action: 'admin_grant.revoke', actorNetid: 'operator2' });
+    expect(byActor.events[0]).toMatchObject({
+      action: 'admin_grant.revoke',
+      actorNetid: 'operator2',
+    });
 
-    const byAction = await (
-      await fetch(`${baseUrl}/audit-events?action=admin_grant.grant`)
-    ).json();
+    const byAction = await (await fetch(`${baseUrl}/audit-events?action=admin_grant.grant`)).json();
     expect(byAction.total).toBe(2);
     expect(byAction.events.every((event: any) => event.action === 'admin_grant.grant')).toBe(true);
   });
@@ -206,11 +207,13 @@ describe('Admin audit log, grant timeline, and user pagination (integration)', (
 
     expect(activeCount).toBe(1);
     expect(history).toHaveLength(3);
-    expect(history.map((entry) => ({ action: entry.action, subject: entry.subjectNetid }))).toEqual([
-      { action: 'revoked', subject: 'subjecta' },
-      { action: 'granted', subject: 'subjectb' },
-      { action: 'granted', subject: 'subjecta' },
-    ]);
+    expect(history.map((entry) => ({ action: entry.action, subject: entry.subjectNetid }))).toEqual(
+      [
+        { action: 'revoked', subject: 'subjecta' },
+        { action: 'granted', subject: 'subjectb' },
+        { action: 'granted', subject: 'subjecta' },
+      ],
+    );
     const timestamps = history.map((entry) => new Date(entry.at).getTime());
     expect(timestamps[0]).toBeGreaterThanOrEqual(timestamps[1]);
     expect(timestamps[1]).toBeGreaterThanOrEqual(timestamps[2]);
