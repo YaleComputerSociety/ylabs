@@ -322,7 +322,7 @@ describe('extractLabHomepageDescription', () => {
     expect(extractLabHomepageDescription(html)).toEqual({
       description: officialDescription,
       shortDescription:
-        'Specifically, we are interested in how chronic viral infection disrupts host homeostasis and causes chronic diseases, including chronic inflammation and cancer.',
+        'Investigates viral pathogenesis in the context of genomics, pathophysiology, immunology, and treatment, using advanced molecular biology, genomics, immunology, single-cell multi-omics, spatial transcriptomics, bioinformatics tools on clinical samples and animal models.',
     });
   });
 

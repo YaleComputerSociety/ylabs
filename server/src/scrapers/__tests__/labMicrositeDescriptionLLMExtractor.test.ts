@@ -3,6 +3,7 @@ import {
   LabMicrositeDescriptionLLMExtractor,
   candidateDescriptionLabsFromDocs,
   descriptionExtractionToObservations,
+  groundDescriptionExtraction,
   normalizeDescriptionLlmObjectId,
   type DescriptionExtraction,
 } from '../sources/labMicrositeDescriptionLLMExtractor';
@@ -245,7 +246,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     const result = await scraper.run(ctx);
 
-    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 1, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenNthCalledWith(1, 'https://statml.yale.edu/');
     expect(fetchPage).toHaveBeenNthCalledWith(
       2,
@@ -386,7 +387,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
     expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
     expect(fetchPage).toHaveBeenCalledTimes(2);
-    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(callLLM).not.toHaveBeenCalled();
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ entityId: 'reachable-1', field: 'fullDescription' }),
@@ -397,6 +398,7 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
 
   it('emits source-backed full and short description observations without access claims', async () => {
     const { ctx, emitted } = makeContext();
+    const callLLM = vi.fn();
     const scraper = new LabMicrositeDescriptionLLMExtractor({
       apiKey: 'test-key',
       labFinder: async () => [
@@ -412,19 +414,13 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         url: 'https://medicine.yale.edu/lab/example/',
         html: '<main><h1>Example Lab</h1><p>The Example Lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.</p></main>',
       }),
-      callLLM: vi.fn().mockResolvedValue({
-        fullDescription:
-          'The Example Lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.',
-        shortDescription:
-          'Studies immune mechanisms, tumor biology, translational biomarkers, and computational treatment response methods.',
-        topics: ['tumor biology'],
-        methods: ['computational methods'],
-      } satisfies DescriptionExtraction),
+      callLLM,
     });
 
     const result = await scraper.run(ctx);
 
-    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
+    expect(callLLM).not.toHaveBeenCalled();
     expect(emitted).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -432,14 +428,63 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
           entityId: 'entity-1',
           field: 'fullDescription',
           sourceUrl: 'https://medicine.yale.edu/lab/example/',
+          value:
+            'The Example Lab studies immune mechanisms, tumor biology, translational biomarkers, and computational methods for understanding treatment response.',
         }),
         expect.objectContaining({ field: 'shortDescription' }),
-        expect.objectContaining({ field: 'researchAreas', value: ['tumor biology'] }),
-        expect.objectContaining({ field: 'methods', value: ['computational methods'] }),
       ]),
     );
     expect(emitted.map((obs) => obs.field)).not.toContain('acceptingUndergrads');
     expect(emitted.map((obs) => obs.field)).not.toContain('joinPageUrl');
+  });
+
+  it('blanks LLM description fields that are not grounded verbatim in the page text', () => {
+    const pageText =
+      'The Ground Lab studies neural circuits underlying decision making using electrophysiology and computational modeling.';
+    const grounded = groundDescriptionExtraction(
+      {
+        fullDescription:
+          'The Ground Lab studies neural circuits underlying decision making using electrophysiology and computational modeling.',
+        shortDescription: 'This lab pioneers world-changing breakthroughs in every field.',
+        topics: [],
+        methods: [],
+      },
+      pageText,
+    );
+    expect(grounded.fullDescription).toContain('neural circuits underlying decision making');
+    expect(grounded.shortDescription).toBe('');
+  });
+
+  it('emits nothing when deterministic extraction fails and the LLM output is ungrounded', async () => {
+    const { ctx, emitted } = makeContext();
+    const callLLM = vi.fn().mockResolvedValue({
+      fullDescription: 'This lab studies quantum gravity and interstellar travel.',
+      shortDescription: 'Pioneering quantum gravity.',
+      topics: [],
+      methods: [],
+    } satisfies DescriptionExtraction);
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'hallucination-1',
+          slug: 'weather-lab',
+          name: 'Weather Lab',
+          websiteUrl: 'https://medicine.yale.edu/lab/weather/',
+        },
+      ],
+      fetchPage: vi.fn().mockResolvedValue({
+        url: 'https://medicine.yale.edu/lab/weather/',
+        html: '<main><div>Random community bulletin about the weekly farmers market schedule and parking information for visitors and their families.</div></main>',
+      }),
+      callLLM,
+    });
+
+    const result = await scraper.run(ctx);
+
+    expect(callLLM).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+    expect(emitted).toEqual([]);
   });
 
   it('normalizes known acronym splits in emitted descriptions', () => {

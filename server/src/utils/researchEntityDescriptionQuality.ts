@@ -161,6 +161,8 @@ const hasResearchDescriptionVerb = (value: string): boolean =>
 
 const hasResearchFocusPhrase = (value: string): boolean =>
   hasResearchDescriptionVerb(value) ||
+  /\bwe\s+(?:study|investigate|examine|explore|develop|use|employ|analyze|analyse|model|measure|research|aim\s+to|seek\s+to|want\s+to\s+understand|work\s+(?:on|towards))\b/i.test(value) ||
+  /\bour\s+(?:research|work|lab|group|goal|mission)\b.{0,80}\b(?:is\s+to|focuses|centers?|revolves|examines|explores|investigates|aims?|seeks?|develops?|studies|understand)\b/i.test(value) ||
   /\bI\s+study\b/i.test(value) ||
   /\b(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/i.test(value) ||
   /\binterested\s+in\b/i.test(value) ||

@@ -24,6 +24,10 @@ import {
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import type { DescriptionEntityKind } from '../../utils/researchHomeDescriptionSelection';
+import {
+  extractOfficialResearchDescription,
+  isDescriptionGroundedInSource,
+} from '../../utils/officialResearchDescription';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -326,6 +330,19 @@ function usefulLabName(value: unknown): string {
   return text;
 }
 
+export function groundDescriptionExtraction(
+  extraction: DescriptionExtraction,
+  pageText: string,
+): DescriptionExtraction {
+  const groundedFull = isDescriptionGroundedInSource(extraction.fullDescription, pageText)
+    ? extraction.fullDescription
+    : '';
+  const groundedShort = isDescriptionGroundedInSource(extraction.shortDescription, pageText)
+    ? extraction.shortDescription
+    : '';
+  return { ...extraction, fullDescription: groundedFull, shortDescription: groundedShort };
+}
+
 export function descriptionExtractionToObservations(
   extraction: DescriptionExtraction,
   context: { entityId?: string; entityKey?: string; sourceUrl: string },
@@ -401,7 +418,7 @@ async function defaultCallLLM(input: {
         {
           role: 'system',
           content:
-            'Extract conservative source-backed research-home description fields from official Yale lab/profile/center page text. Do not extract access, contact, openings, or application claims.',
+            'You are an extractor, not a writer. Copy the research home\'s own description verbatim from the provided page text. Never paraphrase, summarize, translate, combine sentences, or invent wording. Every returned description must be an exact, contiguous substring of the page text. If the page contains no such description, return an empty string for that field. Do not extract access, contact, openings, or application claims.',
         },
         {
           role: 'user',
@@ -409,6 +426,8 @@ async function defaultCallLLM(input: {
             `Lab: ${safeLabName}`,
             `Source URL: ${safeSourceUrl}`,
             'Return JSON with fullDescription, shortDescription, topics, methods, name.',
+            'fullDescription: copy the page\'s own overview/about/mission prose describing what this research home studies, verbatim (one or more consecutive sentences, exactly as written). shortDescription: copy a single verbatim sentence that best summarizes the work, or an empty string.',
+            'topics and methods: only terms that appear verbatim on the page.',
             'For name, return the research home\'s own proper or branded name exactly as it appears prominently on the page (for example "The Efficient Computing Lab (ECL)"). If the page only identifies it by the principal investigator\'s personal name, or no clear proper name is stated, return an empty string.',
             safePageText,
           ].join('\n\n'),
@@ -614,40 +633,39 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
         // script-tag JSON payload that extractLabHomepageDescription() parses.
         // Use it before the LLM: cheaper, and it recovers descriptions the
         // plain-text path misses.
-        let embeddedHostname = '';
-        try {
-          embeddedHostname = new URL(page.url).hostname;
-        } catch {
-          embeddedHostname = '';
-        }
-        if (/(^|\.)yale\.edu$/i.test(embeddedHostname)) {
-          const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
-            entityType: lab.entityType,
-            kind: lab.kind,
-          })
-            ? 'person'
-            : 'organization';
-          const embedded = extractLabHomepageDescription(page.html, { kind });
-          if (embedded?.description) {
-            const embeddedObservations = descriptionExtractionToObservations(
-              {
-                fullDescription: embedded.description,
-                shortDescription: embedded.shortDescription || '',
-                topics: [],
-                methods: [],
-              },
-              {
-                entityId: serializedDocumentId(lab._id),
-                entityKey: lab.slug,
-                sourceUrl: page.url,
-              },
-            );
-            if (embeddedObservations.length) {
-              await ctx.emit(embeddedObservations);
-              observationCount += embeddedObservations.length;
-              entitiesObserved += 1;
-              continue;
+        const kind: DescriptionEntityKind = isFacultyResearchTextEntity({
+          entityType: lab.entityType,
+          kind: lab.kind,
+        })
+          ? 'person'
+          : 'organization';
+
+        const embedded = extractLabHomepageDescription(page.html, { kind });
+        const officialProse = embedded?.description
+          ? {
+              fullDescription: embedded.description,
+              shortDescription: embedded.shortDescription || '',
             }
+          : extractOfficialResearchDescription(page.html, { kind });
+        if (officialProse?.fullDescription) {
+          const deterministicObservations = descriptionExtractionToObservations(
+            {
+              fullDescription: officialProse.fullDescription,
+              shortDescription: officialProse.shortDescription || '',
+              topics: [],
+              methods: [],
+            },
+            {
+              entityId: serializedDocumentId(lab._id),
+              entityKey: lab.slug,
+              sourceUrl: page.url,
+            },
+          );
+          if (deterministicObservations.length) {
+            await ctx.emit(deterministicObservations);
+            observationCount += deterministicObservations.length;
+            entitiesObserved += 1;
+            continue;
           }
         }
 
@@ -661,11 +679,14 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           sourceUrl: page.url,
           pageText,
         });
-        const observations = descriptionExtractionToObservations(extraction, {
-          entityId: serializedDocumentId(lab._id),
-          entityKey: lab.slug,
-          sourceUrl: page.url,
-        });
+        const observations = descriptionExtractionToObservations(
+          groundDescriptionExtraction(extraction, pageText),
+          {
+            entityId: serializedDocumentId(lab._id),
+            entityKey: lab.slug,
+            sourceUrl: page.url,
+          },
+        );
         if (!observations.length) continue;
 
         await ctx.emit(observations);
