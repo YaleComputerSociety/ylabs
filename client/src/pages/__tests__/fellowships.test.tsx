@@ -375,7 +375,7 @@ describe('Programs page', () => {
     );
 
     await waitFor(() => {
-      expect(mockedAxios.get).toHaveBeenCalledWith('/users/savedProgramIds');
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
     });
 
     expect(screen.getByText('27')).toBeTruthy();

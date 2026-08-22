@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 const fellowshipModelMock = vi.hoisted(() => ({
   findByIdAndUpdate: vi.fn(),
+  find: vi.fn(),
 }));
 
 vi.mock('../../models/fellowship', async (importOriginal) => ({
@@ -9,7 +10,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   Fellowship: fellowshipModelMock,
 }));
 
-import { publicFellowshipForStudent, updateFellowship } from '../fellowshipService';
+import { publicFellowshipForStudent, readFellowships, updateFellowship } from '../fellowshipService';
 
 describe('fellowship public serializer', () => {
   it('sanitizes service-level public URL, contact, and prep-step fields', () => {
@@ -253,5 +254,31 @@ describe('fellowship public serializer', () => {
     expect(update.archived).toBe(true);
     expect(update).not.toHaveProperty('audited');
     expect(update).not.toHaveProperty('raw');
+  });
+});
+
+describe('readFellowships id-limit handling', () => {
+  const makeIds = (count: number) =>
+    Array.from({ length: count }, (_, index) => index.toString(16).padStart(24, '0'));
+
+  const lastQueryIds = () => {
+    const query = fellowshipModelMock.find.mock.lastCall![0] as { _id: { $in: string[] } };
+    return query._id.$in;
+  };
+
+  it('caps the id query at 100 for untrusted callers', async () => {
+    fellowshipModelMock.find.mockResolvedValueOnce([]);
+
+    await readFellowships(makeIds(150));
+
+    expect(lastQueryIds()).toHaveLength(100);
+  });
+
+  it('reads every id when a trusted caller skips the id limit', async () => {
+    fellowshipModelMock.find.mockResolvedValueOnce([]);
+
+    await readFellowships(makeIds(150), { skipIdLimit: true });
+
+    expect(lastQueryIds()).toHaveLength(150);
   });
 });

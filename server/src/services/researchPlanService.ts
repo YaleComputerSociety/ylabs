@@ -547,7 +547,7 @@ const loadVisibleWatchedPrograms = async (
   }
 
   const orderedIds = Array.from(planByProgram.keys());
-  const visiblePrograms = await readPrograms(orderedIds);
+  const visiblePrograms = await readPrograms(orderedIds, { skipIdLimit: true });
   const visibleById = new Map(
     (visiblePrograms as Array<Record<string, any>>).map((program) => [
       String(program._id).toLowerCase(),
