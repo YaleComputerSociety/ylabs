@@ -56,7 +56,8 @@ Scrapers emit append-only `Observation` rows; materializers derive first-class a
 | `centersInstitutesScraper.ts`            | Yale centers and institutes index                                                                                                     |
 | `departmentRosterScraper.ts`             | Department faculty roster pages                                                                                                       |
 | `ysmAtoZScraper.ts`                      | Yale School of Medicine A-Z index                                                                                                     |
-| `yseCentersScraper.ts`                   | Yale School of Engineering centers                                                                                                    |
+| `yseCentersScraper.ts`                   | Yale School of the Environment centers, programs, and initiatives                                                                     |
+| `yseFacultyDirectoryScraper.ts`          | Yale School of the Environment faculty: crawls the faculty directory as a seed roster, then cites each individual profile page for identity, research home (FACULTY_RESEARCH_AREA, or LAB when the profile links its own site), research areas, and official profile prose |
 | `departmentUndergradResearchScraper.ts`  | Department-level undergrad research opportunity/program pages                                                                         |
 | `undergradFellowshipRecipientScraper.ts` | Undergrad fellowship recipient lists                                                                                                  |
 | `labMicrositeUndergradLLMExtractor.ts`   | LLM extraction of undergrad-access signals and claim-specific logistics from lab microsites                                           |

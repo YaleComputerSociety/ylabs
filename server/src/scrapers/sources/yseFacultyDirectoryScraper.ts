@@ -18,8 +18,8 @@
  * A profile with research areas seeds a FACULTY_RESEARCH_AREA research home even
  * when the faculty has no lab microsite; a profile that links its own lab/personal
  * research site seeds a LAB home with that site as the websiteUrl. Contact is
- * fail-closed: emails are used only to derive a stable netid identity and are
- * redacted from public payloads at read time.
+ * fail-closed: emails derive stable Researcher identity and key the lead PI to
+ * the canonical Yale User, and are redacted from public payloads at read time.
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -248,10 +248,7 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   return orcid;
 }
 
-export function extractProfile(
-  html: string,
-  faculty: RawYseFaculty,
-): YseFacultyProfile {
+export function extractProfile(html: string, faculty: RawYseFaculty): YseFacultyProfile {
   const $ = cheerio.load(html);
   const name = normalizeName($('h1').first().text()) || faculty.name;
 
@@ -270,7 +267,10 @@ export function extractProfile(
   if (contact) {
     contact.find('a[href^="mailto:"]').each((_i, a) => {
       if (email) return;
-      const candidate = ($(a).attr('href') || '').replace(/^mailto:/i, '').trim().toLowerCase();
+      const candidate = ($(a).attr('href') || '')
+        .replace(/^mailto:/i, '')
+        .trim()
+        .toLowerCase();
       if (isLikelyPersonSpecificYaleEmail(candidate, name)) email = candidate;
     });
   }
