@@ -136,6 +136,9 @@ export const sourceLabelForUrl = (url: string): string => {
     if (host === 'wti.yale.edu' && path.includes('/initiatives/undergraduate')) {
       return 'Undergraduate initiatives page';
     }
+    if (host === 'nsf.gov' && path.startsWith('/awardsearch')) {
+      return 'NSF Award Search';
+    }
     if (host.endsWith('yale.edu')) {
       return titleFromPath(parsed.pathname);
     }
