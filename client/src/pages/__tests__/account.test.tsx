@@ -12,17 +12,23 @@ type PlanningSummary = {
   nextDeadlineDate?: string;
 };
 
-let savedResearchEntityIds: string[] = ['entity-1', 'entity-2'];
+let savedResearchCount = 2;
 let savedProgramSummary: PlanningSummary = { count: 1 };
 
-vi.mock('../../hooks/useFavorites', () => ({
-  default: () => ({
-    favIds: savedResearchEntityIds,
-    setFavorite: vi.fn(),
-    toggleFavorite: vi.fn(),
-    reloadFavorites: vi.fn(),
-  }),
-}));
+vi.mock('../../components/accounts/SavedResearchPlans', () => {
+  const MockSavedResearchPlans = ({
+    onCountChange,
+  }: {
+    onCountChange?: (count: number) => void;
+  }) => {
+    useEffect(() => {
+      onCountChange?.(savedResearchCount);
+    }, [onCountChange]);
+    return <section>Saved research plans</section>;
+  };
+
+  return { default: MockSavedResearchPlans };
+});
 
 vi.mock('../../components/accounts/FavoritesManager', () => {
   const MockFavoritesManager = ({
@@ -66,7 +72,7 @@ const renderAccount = (userType: string) =>
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  savedResearchEntityIds = ['entity-1', 'entity-2'];
+  savedResearchCount = 2;
   savedProgramSummary = { count: 1 };
 });
 
@@ -77,6 +83,7 @@ describe('Account page', () => {
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 saved program/)).toBeTruthy();
+    expect(screen.getByText('Saved research plans')).toBeTruthy();
     expect(screen.queryByText('Your plan')).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan your next research move' })).toBeNull();
     expect(screen.getAllByRole('link', { name: 'Find more research homes' })).toHaveLength(1);
@@ -100,6 +107,7 @@ describe('Account page', () => {
     renderAccount('professor');
 
     expect(screen.getByRole('heading', { name: 'Dashboard' })).toBeTruthy();
+    expect(screen.getByText('Saved research plans')).toBeTruthy();
     expect(screen.getByText('Favorites manager')).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.queryByText('Profile editor')).toBeNull();
