@@ -295,6 +295,55 @@ describe('researchEntityDto', () => {
     expect(detail.members).toEqual([]);
   });
 
+  it('ships sourceLinkHealth to the public DTO with unhealthy links preserved', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-source-link-health',
+      slug: 'source-link-health-lab',
+      name: 'Source Link Health Lab',
+      sourceUrls: ['https://example.yale.edu/lab/synthetic-lab'],
+      sourceLinkHealth: [
+        { url: 'https://example.yale.edu/lab/synthetic-lab', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+        { url: 'https://example.yale.edu/lab/synthetic-lab/publications', healthStatus: 'OK', httpStatusCode: 200 },
+        { url: 'javascript:alert(document.cookie)', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+        { url: 'https://example.yale.edu/lab/missing-status' },
+      ],
+    });
+
+    expect(dto.sourceLinkHealth).toEqual([
+      { url: 'https://example.yale.edu/lab/synthetic-lab', healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+      { url: 'https://example.yale.edu/lab/synthetic-lab/publications', healthStatus: 'OK', httpStatusCode: 200 },
+    ]);
+  });
+
+  it('surfaces sourceLinkHealth on the detail researchEntity payload the client consumes', () => {
+    const detail = addResearchEntityDetailAlias({
+      group: {
+        _id: 'entity-detail-health',
+        slug: 'detail-health-lab',
+        name: 'Detail Health Lab',
+        kind: 'lab',
+        websiteUrl: 'https://example.yale.edu/lab/detail-health',
+        sourceUrls: ['https://example.yale.edu/lab/detail-health'],
+        sourceLinkHealth: [
+          {
+            url: 'https://example.yale.edu/lab/detail-health',
+            healthStatus: 'UNAVAILABLE',
+            httpStatusCode: 404,
+          },
+        ],
+      },
+      members: [],
+    });
+
+    expect(detail).not.toHaveProperty('group');
+    const health = detail.researchEntity.sourceLinkHealth;
+    expect(health).toBeDefined();
+    const unavailable = (health || []).find(
+      (entry) => entry.url === 'https://example.yale.edu/lab/detail-health',
+    );
+    expect(unavailable).toMatchObject({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+  });
+
   it('exposes only safe public lead identity fields', () => {
     const dto = toPublicResearchEntityDto({
       slug: 'lead-review-lab',

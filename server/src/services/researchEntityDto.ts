@@ -7,6 +7,12 @@ const MAX_PUBLIC_RESEARCH_ENTITY_URLS = 50;
 const MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS = 100;
 const MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH = 5000;
 
+export interface PublicResearchEntitySourceLinkHealth {
+  url: string;
+  healthStatus: string;
+  httpStatusCode?: number;
+}
+
 export interface PublicResearchEntityDto extends Record<string, unknown> {
   _id: string;
   id: string;
@@ -19,6 +25,7 @@ export interface PublicResearchEntityDto extends Record<string, unknown> {
   departments: string[];
   researchAreas: string[];
   sourceUrls: string[];
+  sourceLinkHealth?: PublicResearchEntitySourceLinkHealth[];
 }
 
 export interface PublicResearchEntitySummaryDto {
@@ -73,6 +80,25 @@ function publicHttpUrlArray(value: unknown): string[] {
   return value
     .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS)
     .flatMap((item) => publicHttpUrl(item) ?? []);
+}
+
+function publicSourceLinkHealthArray(value: unknown): PublicResearchEntitySourceLinkHealth[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_PUBLIC_RESEARCH_ENTITY_URLS).flatMap((entry) => {
+    const url = publicHttpUrl((entry as { url?: unknown })?.url);
+    const healthStatus = (entry as { healthStatus?: unknown })?.healthStatus;
+    if (!url || typeof healthStatus !== 'string') return [];
+    const httpStatusCode = (entry as { httpStatusCode?: unknown })?.httpStatusCode;
+    return [
+      {
+        url,
+        healthStatus,
+        ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
+          ? { httpStatusCode }
+          : {}),
+      },
+    ];
+  });
 }
 
 const PREFIXED_DEPARTMENT_PATTERN = /^([A-Za-z&/]+)\s*-\s*(.+)$/;
@@ -219,6 +245,10 @@ export function toPublicResearchEntityDto(
       }
       dto[field] = publicTextValue(group[field]);
     }
+  }
+
+  if (group.sourceLinkHealth !== undefined) {
+    dto.sourceLinkHealth = publicSourceLinkHealthArray(group.sourceLinkHealth);
   }
 
   if (group.leadIdentityStatus === 'verified' || group.leadIdentityStatus === 'under_review') {
