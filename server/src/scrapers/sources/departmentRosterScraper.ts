@@ -808,7 +808,9 @@ function lowerTopicPhrase(value: string): string {
 
 function rosterTopicDescription(topics: string[] = []): string {
   const usefulTopics = uniqueStrings(topics)
-    .filter((topic) => !nonResearchTopicLabels.has(topic.toLowerCase()) && !isTopicLabelChrome(topic))
+    .filter(
+      (topic) => !nonResearchTopicLabels.has(topic.toLowerCase()) && !isTopicLabelChrome(topic),
+    )
     .slice(0, 5);
   if (usefulTopics.length === 0) return '';
 
@@ -1366,9 +1368,10 @@ function entryToResearchEntityObservations(
     },
   ];
 
-  const topics = uniqueStrings([...(entry.researchInterests || []), ...(entry.topics || [])]).filter(
-    (topic) => !isTopicLabelChrome(topic),
-  );
+  const topics = uniqueStrings([
+    ...(entry.researchInterests || []),
+    ...(entry.topics || []),
+  ]).filter((topic) => !isTopicLabelChrome(topic));
   if (topics.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: topics });
     const description = rosterTopicDescription(topics);
