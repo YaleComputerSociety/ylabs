@@ -206,6 +206,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
+    name: 'yse-faculty-directory',
+    displayName: 'YSE Faculty Directory',
+    description:
+      'Yale School of the Environment faculty directory and individual faculty profile pages for researcher identity, research homes, research areas, and official profile prose.',
+    baseUrl: 'https://environment.yale.edu/directory/faculty',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
     name: 'yale-research-official',
     displayName: 'Yale Research official directories',
     description:

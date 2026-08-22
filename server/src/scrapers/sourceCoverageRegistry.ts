@@ -225,6 +225,15 @@ export const sourceCoverageRegistry = {
     defaultConfidence: 'HIGH',
     notes: 'YSE center/program index for discovery; should not imply undergraduate access alone.',
   },
+  'yse-faculty-directory': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'TOPICS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale School of the Environment faculty directory and individual profile pages for faculty identity, research homes, research areas, and official profile prose. Each faculty individual profile is the cited source; the directory root is a crawl seed only and is never recorded as a source. Discovery-only; must not imply undergraduate access without a more explicit source.',
+  },
   'centers-institutes-index': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

@@ -128,7 +128,7 @@ Use `--skip-meili`, `--skip-source-metadata`, or `--skip-readiness` only for a t
 
 Then run accepted sources in rollout order:
 
-1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
+1. Entity discovery: `ysm-atoz-index`, `yse-centers-index`, `yse-faculty-directory`, `centers-institutes-index`, selected `dept-faculty-roster` departments.
 2. Profile metadata: `yale-directory`.
 3. Enrichment: `nih-reporter` and `nsf-award-search`.
 4. Access evidence: bounded `lab-microsite-undergrad-llm` source lists.
@@ -447,6 +447,7 @@ Suggested starting cadence:
 | ---------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `ysm-atoz-index`                   | weekly                               | Entity discovery only.                                                                               |
 | `yse-centers-index`                | weekly                               | Entity discovery only.                                                                               |
+| `yse-faculty-directory`            | weekly                               | Faculty directory seed plus individual profile pages; profile pages are the cited source.            |
 | `centers-institutes-index`         | weekly or biweekly                   | Broad member extraction; stagger separately.                                                         |
 | `official-research-home-roster`    | weekly after audit                   | Disabled by default; data operations owns refresh and sampled precision review.                      |
 | `dept-faculty-roster`              | weekly by department group           | Use source-specific `--only`/config where available.                                                 |

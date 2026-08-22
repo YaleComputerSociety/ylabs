@@ -5,6 +5,7 @@
 import { ScraperOrchestrator } from './orchestrator';
 import { YsmAtoZScraper } from './sources/ysmAtoZScraper';
 import { YseCentersScraper } from './sources/yseCentersScraper';
+import { YseFacultyDirectoryScraper } from './sources/yseFacultyDirectoryScraper';
 import { YaleResearchOfficialScraper } from './sources/yaleResearchOfficialScraper';
 import { YaleDirectoryScraper } from './sources/yaleDirectoryScraper';
 import { DepartmentRosterScraper } from './sources/departmentRosterScraper';
@@ -31,6 +32,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   // profile identity links are kept on Researcher. See issues #207 and #260.
   o.register(new YsmAtoZScraper());
   o.register(new YseCentersScraper());
+  o.register(new YseFacultyDirectoryScraper());
   o.register(new YaleResearchOfficialScraper());
   o.register(new YaleDirectoryScraper());
   o.register(new DepartmentRosterScraper());
