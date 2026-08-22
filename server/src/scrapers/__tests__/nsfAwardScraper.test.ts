@@ -375,9 +375,7 @@ function fakeUserFinder(users: Array<{ _id: string; fname: string; lname: string
   return async (q: Record<string, unknown>) => {
     const lnameRe = q.lname as RegExp;
     const fnameRe = q.fname as RegExp | undefined;
-    return users.filter(
-      (u) => lnameRe.test(u.lname) && (!fnameRe || fnameRe.test(u.fname)),
-    );
+    return users.filter((u) => lnameRe.test(u.lname) && (!fnameRe || fnameRe.test(u.fname)));
   };
 }
 
@@ -583,7 +581,9 @@ describe('NsfAwardScraper.run', () => {
   it('skips emitting User observations and uses user-id slug when PI matches a Yale User', async () => {
     const fetchPage = vi.fn().mockResolvedValueOnce({ awards: [GRANT_AWARD] });
     // First call (exact lname+fname) returns one match.
-    const userFinder = vi.fn(async () => [{ _id: 'user-holland', fname: 'Parker', lname: 'Grant' }]);
+    const userFinder = vi.fn(async () => [
+      { _id: 'user-holland', fname: 'Parker', lname: 'Grant' },
+    ]);
 
     const scraper = new NsfAwardScraper({
       fetchPage: fetchPage as any,
