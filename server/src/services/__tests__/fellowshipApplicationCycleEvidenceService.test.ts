@@ -99,6 +99,39 @@ describe('fellowshipApplicationCycleEvidenceService', () => {
     });
   });
 
+  it('derives an active cycle from a future deadline even when the stored accepting flag is false', () => {
+    const evidence = buildFellowshipApplicationCycleEvidence(
+      {
+        title: 'Summer Research Fellowship',
+        applicationLink: 'https://example.edu/apply',
+        deadline: '2026-09-11T00:00:00.000Z',
+        isAcceptingApplications: false,
+      },
+      now,
+    );
+
+    expect(evidence).toMatchObject({
+      activeCycle: true,
+      nextCycleSignal: false,
+      deadlineHasNotPassed: true,
+    });
+  });
+
+  it('derives an active cycle from rolling application language with no deadline', () => {
+    const evidence = buildFellowshipApplicationCycleEvidence(
+      {
+        title: 'Research Internship Program',
+        applicationInformation: 'We review applications as we receive them on a rolling basis.',
+        applicationLink: 'https://example.edu/apply',
+        isAcceptingApplications: false,
+      },
+      now,
+    );
+
+    expect(evidence.activeCycle).toBe(true);
+    expect(evidence.nextCycleSignal).toBe(false);
+  });
+
   it('redacts contact email from public evidence payloads', () => {
     const evidence = buildFellowshipApplicationCycleEvidence(
       {

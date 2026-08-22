@@ -786,6 +786,52 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(parseDeadlineToUtcEndOfDay('Deadline: February 30, 2026')).toBeUndefined();
   });
 
+  it('parses numeric MM/DD/YY and MM/DD/YYYY deadlines', () => {
+    expect(parseDeadlineToUtcEndOfDay('Application Deadline 09/11/26')).toEqual(
+      new Date('2026-09-11T23:59:59.999Z'),
+    );
+    expect(parseDeadlineToUtcEndOfDay('Deadline 3/4/2026')).toEqual(
+      new Date('2026-03-04T23:59:59.999Z'),
+    );
+    expect(parseDeadlineToUtcEndOfDay('Applications due 13/40/26')).toBeUndefined();
+  });
+
+  it('captures a numeric deadline near a deadline label and marks it accepting when in the future', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <p>
+            <a href="https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program">Research Internship Program</a>
+            Application Deadline 09/11/26
+          </p>
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-08-22T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.deadline).toEqual(new Date('2026-09-11T23:59:59.999Z'));
+    expect(candidates[0]?.isAcceptingApplications).toBe(true);
+  });
+
+  it('marks a rolling-application program accepting even without a deadline', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <p>
+            <a href="https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program">Research Internship Program</a>
+            Applications are reviewed on a rolling basis as we receive them.
+          </p>
+        </main>
+      `,
+      fundingPageUrl,
+      new Date('2026-08-22T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.deadline).toBeUndefined();
+    expect(candidates[0]?.isAcceptingApplications).toBe(true);
+  });
+
   it('emits one source-backed observation group per candidate', () => {
     const observations = candidateToObservations({
       sourceKey: 'yale-college-fellowships-office:fixture-family-research-fellowship',

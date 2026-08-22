@@ -387,7 +387,7 @@ function extractEmail(text: string): string | undefined {
 }
 
 function hasExplicitActiveApplicationLanguage(text: string): boolean {
-  return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b/i.test(
+  return /\bapplications?\s+(are\s+)?(now\s+)?open\b|\bcurrently accepting applications\b|\brolling\b|\breview(?:ed|ing)?\s+applications?\s+as\s+(?:we|they)\s+(?:are\s+)?receiv|\bapplications?\s+(?:are\s+)?accepted\s+(?:on\s+a\s+)?(?:rolling|continuous|year[-\s]?round)\b|\bno\s+(?:fixed|set)\s+deadline\b/i.test(
     text,
   );
 }
@@ -402,10 +402,9 @@ function nearestDateTextForLabel(
   if (!label || label.index === undefined) return '';
 
   const monthPattern = Object.keys(MONTHS).join('|');
-  const datePattern = new RegExp(
-    `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`,
-    'gi',
-  );
+  const namedDate = `(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?[,]?\\s*(?:${monthPattern})\\s+\\d{1,2}(?!\\d)(?:,\\s*\\d{4})?`;
+  const numericDate = String.raw`\d{1,2}\/\d{1,2}\/\d{2,4}`;
+  const datePattern = new RegExp(`(?:${namedDate}|${numericDate})`, 'gi');
   const before = normalized.slice(Math.max(0, label.index - 100), label.index);
   const datesBefore = Array.from(before.matchAll(datePattern));
   const after = normalized.slice(
@@ -437,7 +436,7 @@ function nearestDateTextForLabel(
 function bestDeadlineText(text: string): string {
   return nearestDateTextForLabel(
     text,
-    /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b/i,
+    /\bdeadline\s+for\s+submission\b|\b(?:application\s+)?deadline\b|\bapplications?\s+due\b|\b(?:apply|submit(?:\s+your\s+application)?|due)\s+by\b/i,
     'after',
   );
 }
@@ -460,6 +459,20 @@ export function parseDeadlineToUtcEndOfDay(
   referenceDate: Date = new Date(),
 ): Date | undefined {
   const normalized = normalizeWhitespace(text);
+  const numeric = normalized.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
+  if (numeric) {
+    const numericMonth = Number(numeric[1]) - 1;
+    const numericDay = Number(numeric[2]);
+    const numericYear = numeric[3].length === 2 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
+    const numericDate = new Date(Date.UTC(numericYear, numericMonth, numericDay, 23, 59, 59, 999));
+    if (
+      numericDate.getUTCFullYear() === numericYear &&
+      numericDate.getUTCMonth() === numericMonth &&
+      numericDate.getUTCDate() === numericDay
+    ) {
+      return numericDate;
+    }
+  }
   const monthPattern = Object.keys(MONTHS).join('|');
   const match = normalized.match(
     new RegExp(
