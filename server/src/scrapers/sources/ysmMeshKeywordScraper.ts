@@ -211,7 +211,10 @@ function profileSlugFromUrl(url: string): string {
 
 export function facultyNameMatchKey(value: unknown): string {
   const cleaned = textValue(value);
-  const withoutSuffix = cleaned.replace(/\b(?:jr|sr|ii|iii|iv|md|phd|mbchb|mph|ms|msc|dphil)\b/gi, '');
+  const withoutSuffix = cleaned.replace(
+    /\b(?:jr|sr|ii|iii|iv|md|phd|mbchb|mph|ms|msc|dphil)\b/gi,
+    '',
+  );
   return slugify(withoutSuffix);
 }
 
@@ -260,7 +263,10 @@ export function parseYsmResultsPageFaculty(html: string): YsmFacultyRef[] {
   return Array.from(byUrl.values());
 }
 
-export function parseYsmProfileResearch(html: string, profileUrl: string): YsmProfileResearch | null {
+export function parseYsmProfileResearch(
+  html: string,
+  profileUrl: string,
+): YsmProfileResearch | null {
   const pageData = parsePageData(html);
   const profileDetails = mainComponents(pageData).find(
     (component) => component?.key === 'ProfileDetails',
@@ -312,9 +318,11 @@ function hasEmptyResearchAreas(value: unknown): boolean {
 }
 
 export function candidateEntityFromDoc(doc: YsmMeshCandidateEntityDoc): YsmMeshCandidateEntity {
-  const profileUrls = uniqueStrings([doc.websiteUrl, doc.website, ...(doc.sourceUrls || [])]).filter(
-    isYsmProfileUrl,
-  );
+  const profileUrls = uniqueStrings([
+    doc.websiteUrl,
+    doc.website,
+    ...(doc.sourceUrls || []),
+  ]).filter(isYsmProfileUrl);
   return {
     _id: doc._id,
     slug: doc.slug,
@@ -371,7 +379,9 @@ async function defaultDirectoryLoader(
     try {
       page = await fetchCachedPage(fetchPage, resultsPageUrl(keyword.meshId), ctx.options.useCache);
     } catch (error) {
-      ctx.log(`[directory] mesh ${keyword.meshId} results fetch failed: ${sanitizeLogValue(error)}`);
+      ctx.log(
+        `[directory] mesh ${keyword.meshId} results fetch failed: ${sanitizeLogValue(error)}`,
+      );
       continue;
     }
     if (!page?.html) continue;
@@ -560,7 +570,9 @@ export class YsmMeshKeywordScraper implements IScraper {
           try {
             page = await fetchCachedPage(this.fetchPage, profileUrl, ctx.options.useCache);
           } catch (error) {
-            ctx.log(`[${entity.slug || 'entity'}] profile fetch failed: ${sanitizeLogValue(error)}`);
+            ctx.log(
+              `[${entity.slug || 'entity'}] profile fetch failed: ${sanitizeLogValue(error)}`,
+            );
             continue;
           }
           if (!page?.html) continue;
@@ -578,7 +590,9 @@ export class YsmMeshKeywordScraper implements IScraper {
         observationCount += observations.length;
         entitiesObserved += 1;
       } catch (error) {
-        ctx.log(`[${entity.slug || 'entity'}] skipping MeSH area extraction: ${sanitizeLogValue(error)}`);
+        ctx.log(
+          `[${entity.slug || 'entity'}] skipping MeSH area extraction: ${sanitizeLogValue(error)}`,
+        );
       }
     }
 

@@ -132,16 +132,18 @@ describe('URL hygiene guards', () => {
   it('accepts an individual profile URL and rejects facet/listing URLs', () => {
     expect(isYsmProfileUrl('https://medicine.yale.edu/profile/test-faculty/')).toBe(true);
     expect(isYsmProfileUrl('https://medicine.yale.edu/profile/test-faculty')).toBe(true);
-    expect(isYsmProfileUrl('https://medicine.yale.edu/research-profiles/?orgId=113592&meshId=101')).toBe(
-      false,
-    );
+    expect(
+      isYsmProfileUrl('https://medicine.yale.edu/research-profiles/?orgId=113592&meshId=101'),
+    ).toBe(false);
     expect(isYsmProfileUrl('https://example.edu/profile/test-faculty/')).toBe(false);
     expect(isYsmProfileUrl('https://medicine.yale.edu/profile/test?tab=x')).toBe(false);
   });
 
   it('flags the keyword index, dept index, and every meshId/orgId facet page as a listing', () => {
     expect(
-      isYsmListingOrFacetUrl('https://medicine.yale.edu/research-profiles/?orgId=113592&meshId=101'),
+      isYsmListingOrFacetUrl(
+        'https://medicine.yale.edu/research-profiles/?orgId=113592&meshId=101',
+      ),
     ).toBe(true);
     expect(isYsmListingOrFacetUrl('https://medicine.yale.edu/research/research-by-keyword/')).toBe(
       true,
@@ -154,9 +156,9 @@ describe('URL hygiene guards', () => {
     expect(normalizeYsmProfileUrl('/profile/Test-Faculty/')).toBe(
       'https://medicine.yale.edu/profile/test-faculty/',
     );
-    expect(
-      normalizeYsmProfileUrl('https://medicine.yale.edu/profile/test-faculty/?foo=bar'),
-    ).toBe('https://medicine.yale.edu/profile/test-faculty/');
+    expect(normalizeYsmProfileUrl('https://medicine.yale.edu/profile/test-faculty/?foo=bar')).toBe(
+      'https://medicine.yale.edu/profile/test-faculty/',
+    );
     expect(normalizeYsmProfileUrl('/research-profiles/?orgId=113592&meshId=101')).toBe('');
   });
 });
@@ -279,10 +281,7 @@ describe('ysmMeshResearchAreaObservations', () => {
 
   it('emits nothing without an entity identifier or with no MeSH terms', () => {
     expect(
-      ysmMeshResearchAreaObservations(
-        { profileUrl, fullName: 'X', meshTerms: ['Neoplasms'] },
-        {},
-      ),
+      ysmMeshResearchAreaObservations({ profileUrl, fullName: 'X', meshTerms: ['Neoplasms'] }, {}),
     ).toEqual([]);
     expect(
       ysmMeshResearchAreaObservations(
@@ -295,7 +294,10 @@ describe('ysmMeshResearchAreaObservations', () => {
 
 describe('MeSH -> governed TaxonomyTerm mapping', () => {
   const canonicalizer = createResearchAreaCanonicalizer(
-    buildResearchAreaResolverIndex([{ name: 'Neoplasms', aliases: ['Cancer'] }, { name: 'Immunology' }]),
+    buildResearchAreaResolverIndex([
+      { name: 'Neoplasms', aliases: ['Cancer'] },
+      { name: 'Immunology' },
+    ]),
   );
 
   it('maps a MeSH term to an approved TaxonomyTerm and leaves an unapproved term as an UNREVIEWED-pending raw value', () => {
@@ -357,7 +359,10 @@ describe('YsmMeshKeywordScraper.run', () => {
         fetched.push(url);
         return {
           url,
-          html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms', 'Biliary Tract'] }),
+          html: profilePageHtml({
+            fullName: 'Marlow Riverstone',
+            meshKeywords: ['Neoplasms', 'Biliary Tract'],
+          }),
         } satisfies FetchedYsmPage;
       },
     });
@@ -461,7 +466,10 @@ describe('YsmMeshKeywordScraper.run', () => {
       leadProfileUrlLoader: async () => [],
       fetchPage: async (url) => {
         fetchCalls += 1;
-        return { url, html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms'] }) };
+        return {
+          url,
+          html: profilePageHtml({ fullName: 'Marlow Riverstone', meshKeywords: ['Neoplasms'] }),
+        };
       },
       workPlanLoader: async (candidate, policy) =>
         buildEntityWorkPlan({
@@ -515,7 +523,14 @@ describe('YsmMeshKeywordScraper.run', () => {
       },
       entityFinder: async () => [
         { ...entity, profileUrls: [] },
-        { ...entity, _id: 'entity-2', slug: 'ysm-quill', name: 'Quill Lab', contactName: 'Aster Quill', profileUrls: [] },
+        {
+          ...entity,
+          _id: 'entity-2',
+          slug: 'ysm-quill',
+          name: 'Quill Lab',
+          contactName: 'Aster Quill',
+          profileUrls: [],
+        },
       ],
       leadProfileUrlLoader: async () => [],
       fetchPage: async (url) => ({
