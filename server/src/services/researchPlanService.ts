@@ -441,16 +441,20 @@ export const updateSavedResearchEntityPlan = async (
   const accountId = await resolveAccountIdByNetid(netid);
   const targetId = new mongoose.Types.ObjectId(normalizeObjectIdString(entityId, 'researchEntity'));
   const update = normalizeResearchPlanUpdate(plan);
-  const result = await ResearchPlan.updateOne(
-    {
-      accountId,
-      'target.kind': RESEARCH_ENTITY_TARGET_KIND,
-      'target.id': targetId,
-      archived: { $ne: true },
-    },
-    { $set: update },
-    { runValidators: true },
-  );
+  const filter = {
+    accountId,
+    'target.kind': RESEARCH_ENTITY_TARGET_KIND,
+    'target.id': targetId,
+    archived: { $ne: true },
+  };
+  if (Object.keys(update).length === 0) {
+    const existing = await ResearchPlan.exists(filter);
+    if (!existing) {
+      throw new NotFoundError('Saved research entity not found');
+    }
+    return getSavedResearchEntityPlans(netid);
+  }
+  const result = await ResearchPlan.updateOne(filter, { $set: update }, { runValidators: true });
   if (!result.matchedCount) {
     throw new NotFoundError('Saved research entity not found');
   }

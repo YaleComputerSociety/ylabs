@@ -155,8 +155,23 @@ async function run(): Promise<void> {
       }
     }
 
-    const processedNetids = new Set(users.filter((user) => user.accountId).map((user) => user.netid));
-    for (const netid of processedNetids) {
+    const pendingRowCountByNetid = new Map<string, number>();
+    for (const row of plan.rows) {
+      pendingRowCountByNetid.set(row.netid, (pendingRowCountByNetid.get(row.netid) ?? 0) + 1);
+    }
+    const insertedRowCountByNetid = new Map<string, number>();
+    for (const row of rowsToInsert) {
+      insertedRowCountByNetid.set(row.netid, (insertedRowCountByNetid.get(row.netid) ?? 0) + 1);
+    }
+
+    const completedNetids = users
+      .filter((user) => user.accountId)
+      .map((user) => user.netid)
+      .filter(
+        (netid) =>
+          (pendingRowCountByNetid.get(netid) ?? 0) === (insertedRowCountByNetid.get(netid) ?? 0),
+      );
+    for (const netid of new Set(completedNetids)) {
       const conflicts = plan.conflictsByNetid[netid];
       const update: Record<string, unknown> = {
         $set: { savedResearchEntityMigrationCompleted: true },
