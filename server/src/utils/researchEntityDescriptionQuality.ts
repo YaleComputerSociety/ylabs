@@ -21,6 +21,7 @@ export type DescriptionQualityFlag =
   | 'incomplete-sentence'
   | 'duplicated-fragment'
   | 'recruitment-boilerplate'
+  | 'consent-boilerplate'
   | 'source-news-fragment'
   | 'paper-fragment'
   | 'same-as-full'
@@ -94,6 +95,27 @@ const hasRecruitmentBoilerplate = (value: string): boolean =>
   ) ||
   /\bwelcome to (?:the )?.{0,80}\bwebsite\b/i.test(value);
 
+const isConsentBoilerplateSentence = (sentence: string): boolean =>
+  /\bwe use cookies\b/i.test(sentence) ||
+  (/\bcookies?\b/i.test(sentence) &&
+    /\b(?:consent|experience|site traffic|traffic|preferences|opt[- ]?out|third[- ]party|personali[sz]e|tracking|analytics|browsing|settings)\b/i.test(
+      sentence,
+    )) ||
+  /\bby (?:continuing to use|using) (?:this|our) (?:site|website)\b/i.test(sentence) ||
+  /\bwe (?:use|collect|process)\b[^.!?]{0,60}\b(?:your (?:personal )?data|analytics|tracking technologies|site traffic)\b/i.test(
+    sentence,
+  );
+
+const stripConsentBoilerplateSentences = (value: string): string =>
+  sentenceList(value)
+    .filter((sentence) => !isConsentBoilerplateSentence(sentence))
+    .join(' ')
+    .trim();
+
+const isDominatedByConsentBoilerplate = (value: string): boolean =>
+  sentenceList(value).some(isConsentBoilerplateSentence) &&
+  wordCount(stripConsentBoilerplateSentences(value)) < 12;
+
 const hasMalformedGeneratedText = (value: string): boolean =>
   /\bstudies\s+attack\b/i.test(value) ||
   /\b[a-z]\.\s*\),/i.test(value) ||
@@ -159,32 +181,39 @@ const hasResearchDescriptionVerb = (value: string): boolean =>
     value,
   );
 
-const hasResearchFocusPhrase = (value: string): boolean =>
-  hasResearchDescriptionVerb(value) ||
-  /\bI\s+study\b/i.test(value) ||
-  /\b(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/i.test(value) ||
-  /\binterested\s+in\b/i.test(value) ||
-  /\blab['’]s\s+mission\s+is\s+to\b/i.test(value) ||
-  /\bpursu(?:es|ing)\s+innovation\b/i.test(value) ||
-  /\bour\s+research\s+program\s+uses\b/i.test(value) ||
-  /\bour\s+lab\s+is\s+focused\s+on\b/i.test(value) ||
-  /\b(?:program|group|working\s+group)['’]?\s+aims?\s+to\b/i.test(value) ||
-  /\bmission\s+is\s+to\s+(?:serve|enhance|improve|advance|create|develop|support)\b/i.test(value) ||
-  /\b(?:my|his|her|their|our)\s+work\s+advances\b/i.test(value) ||
-  /\bresearch\s+focused\s+on\b/i.test(value) ||
-  /\bresearch\s+is\s+(?:primarily\s+)?focused\s+on\b/i.test(value) ||
-  /\bresearch\s+is\s+centered\s+on\b/i.test(value) ||
-  /\bresearch\s+aims?\s+at\s+understanding\b/i.test(value) ||
-  /\bclinical\s+research\s+includes\b/i.test(value) ||
-  /\bfocus\s+on\s+the\s+clinical\s+practice\s+and\s+research\s+related\s+to\b/i.test(value) ||
-  /\bresearch\s+interests?\s+include\b/i.test(value) ||
-  /\bresearch(?:\s+and\s+teaching)?\s+interests?\s+(?:include|are\s+in)\b/i.test(value) ||
-  /\bis\s+a\s+specialist\s+in\b/i.test(value) ||
-  /\bhas\s+written\s+about\b/i.test(value) ||
-  /\bhas\s+written\s+or\s+edited\b.+?\barticles\s+on\b/i.test(value) ||
-  /\bexpertise\s+lies\s+in\b/i.test(value) ||
-  /\bworking\s+to\s+expand\b.+?\bclinical\s+trials\b/i.test(value) ||
-  /\bprimary\s+areas?\s+of\s+interest\b.+?\bteaching\s+and\s+research\b.+?:/i.test(value);
+const hasResearchFocusPhrase = (rawValue: string): boolean => {
+  const value = stripConsentBoilerplateSentences(rawValue);
+  if (!value) return false;
+  return (
+    hasResearchDescriptionVerb(value) ||
+    /\bwe\s+(?:study|investigate|examine|explore|develop|use|employ|analyze|analyse|model|measure|research|aim\s+to|seek\s+to|want\s+to\s+understand|work\s+(?:on|towards))\b/i.test(value) ||
+    /\bour\s+(?:research|work|lab|group|goal|mission)\b.{0,80}\b(?:is\s+to|focuses|centers?|revolves|examines|explores|investigates|aims?|seeks?|develops?|studies|understand)\b/i.test(value) ||
+    /\bI\s+study\b/i.test(value) ||
+    /\b(?:research\s+and\s+teaching|teaching\s+and\s+research)\s+focus\s+on\b/i.test(value) ||
+    /\binterested\s+in\b/i.test(value) ||
+    /\blab['’]s\s+mission\s+is\s+to\b/i.test(value) ||
+    /\bpursu(?:es|ing)\s+innovation\b/i.test(value) ||
+    /\bour\s+research\s+program\s+uses\b/i.test(value) ||
+    /\bour\s+lab\s+is\s+focused\s+on\b/i.test(value) ||
+    /\b(?:program|group|working\s+group)['’]?\s+aims?\s+to\b/i.test(value) ||
+    /\bmission\s+is\s+to\s+(?:serve|enhance|improve|advance|create|develop|support)\b/i.test(value) ||
+    /\b(?:my|his|her|their|our)\s+work\s+advances\b/i.test(value) ||
+    /\bresearch\s+focused\s+on\b/i.test(value) ||
+    /\bresearch\s+is\s+(?:primarily\s+)?focused\s+on\b/i.test(value) ||
+    /\bresearch\s+is\s+centered\s+on\b/i.test(value) ||
+    /\bresearch\s+aims?\s+at\s+understanding\b/i.test(value) ||
+    /\bclinical\s+research\s+includes\b/i.test(value) ||
+    /\bfocus\s+on\s+the\s+clinical\s+practice\s+and\s+research\s+related\s+to\b/i.test(value) ||
+    /\bresearch\s+interests?\s+include\b/i.test(value) ||
+    /\bresearch(?:\s+and\s+teaching)?\s+interests?\s+(?:include|are\s+in)\b/i.test(value) ||
+    /\bis\s+a\s+specialist\s+in\b/i.test(value) ||
+    /\bhas\s+written\s+about\b/i.test(value) ||
+    /\bhas\s+written\s+or\s+edited\b.+?\barticles\s+on\b/i.test(value) ||
+    /\bexpertise\s+lies\s+in\b/i.test(value) ||
+    /\bworking\s+to\s+expand\b.+?\bclinical\s+trials\b/i.test(value) ||
+    /\bprimary\s+areas?\s+of\s+interest\b.+?\bteaching\s+and\s+research\b.+?:/i.test(value)
+  );
+};
 
 const isIdentityOnlyLabLead = (value: string): boolean =>
   /\b(?:lab|laboratory|center|centre|program|initiative)\s+is\s+(?:an?\s+)?(?:scientific\s+)?research\s+(?:group|center|centre|program|initiative|home)\b/i.test(
@@ -413,6 +442,7 @@ export function fullDescriptionQuality(value: unknown): FieldQuality {
   }
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (
     text &&
@@ -497,6 +527,7 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   if (text && hasBrokenTemplate(text)) flags.push('broken-template');
   if (text && hasDuplicatedLongFragment(text)) flags.push('duplicated-fragment');
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
+  if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
   if (
     text &&

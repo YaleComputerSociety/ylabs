@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
   shortDescriptionQuality,
@@ -23,6 +24,31 @@ describe('fullDescriptionQuality', () => {
 
     expect(quality.flags).toContain('recruitment-boilerplate');
     expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects cookie-consent boilerplate while accepting genuine first-person research prose', () => {
+    const cookieBanner =
+      'We use cookies and similar technologies to improve your experience, analyze site traffic, and personalize content. By continuing to use this site, you consent to our use of cookies in accordance with our privacy policy.';
+    const researchProse =
+      'We study how neural circuits encode memory across development. Our goal is to understand the molecular basis of learning so we can develop therapies for cognitive disorders.';
+
+    const cookieQuality = fullDescriptionQuality(cookieBanner);
+    expect(cookieQuality.flags).toContain('consent-boilerplate');
+    expect(cookieQuality.isUseful).toBe(false);
+    expect(describesResearchFocus(cookieBanner)).toBe(false);
+
+    expect(fullDescriptionQuality(researchProse).isUseful).toBe(true);
+    expect(describesResearchFocus(researchProse)).toBe(true);
+  });
+
+  it('keeps a substantial research description that merely ends with a Privacy Policy footer mention', () => {
+    const bioWithFooter =
+      'We study ecosystem function across space and time to better understand ecosystem condition, sustainability, and vulnerability to extremes. Our goal is to understand the processes that govern ecosystem health at large scales so that we can predict the impacts of climate change. Contact Webmaster Web Accessibility Privacy Policy.';
+
+    const quality = fullDescriptionQuality(bioWithFooter);
+    expect(quality.flags).not.toContain('consent-boilerplate');
+    expect(quality.isUseful).toBe(true);
+    expect(describesResearchFocus(bioWithFooter)).toBe(true);
   });
 
   it('derives card copy from numbered active areas of research instead of copying the first long sentence', () => {
