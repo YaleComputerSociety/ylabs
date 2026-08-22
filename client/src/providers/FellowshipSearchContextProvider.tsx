@@ -286,6 +286,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     const requestId = summaryRequestIdRef.current + 1;
     summaryRequestIdRef.current = requestId;
 
+    dispatch({ type: 'SET_CYCLE_SUMMARY', payload: { ...emptyFellowshipCycleSummary } });
+
     const accumulate = async () => {
       const collected: Fellowship[] = [];
       let currentPage = 1;
