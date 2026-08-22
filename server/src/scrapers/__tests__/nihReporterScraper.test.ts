@@ -412,6 +412,43 @@ describe('findUserForPi recall', () => {
     expect(await findUserForPi('Ann Carla Staver', um)).toBeNull();
   });
 
+  it('resolves an additional canonical diminutive (Jenn -> Jennifer, Candie -> Candice)', async () => {
+    const jenn = mockUserModel([{ _id: 'u1', fname: 'Jennifer', lname: 'Delgado', netid: 'jd1' }]);
+    expect(await findUserForPi('Jenn Delgado', jenn)).toEqual({
+      _id: 'u1',
+      netid: 'jd1',
+      researchHomeEligible: true,
+    });
+    const candie = mockUserModel([{ _id: 'u2', fname: 'Candice', lname: 'Fenwick', netid: 'cf1' }]);
+    expect(await findUserForPi('Candie Fenwick', candie)).toEqual({
+      _id: 'u2',
+      netid: 'cf1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('resolves a surname-only lab name when exactly one faculty carries the surname', async () => {
+    const um = mockUserModel([{ _id: 'u1', fname: 'Robert', lname: 'Berg', netid: 'rb1' }]);
+    expect(await findUserForPi('Berg', um)).toEqual({
+      _id: 'u1',
+      netid: 'rb1',
+      researchHomeEligible: true,
+    });
+  });
+
+  it('fails closed on a surname-only name shared by several faculty', async () => {
+    const um = mockUserModel([
+      { _id: 'u1', fname: 'Robert', lname: 'Berg' },
+      { _id: 'u2', fname: 'Alice', lname: 'van der Berg' },
+    ]);
+    expect(await resolveUserForPi('Berg', um)).toEqual({ status: 'ambiguous' });
+    expect(await findUserForPi('Berg', um)).toBeNull();
+  });
+
+  it('is absent for a surname-only name no faculty carries', async () => {
+    expect(await resolveUserForPi('Berg', mockUserModel([]))).toEqual({ status: 'absent' });
+  });
+
   it('fails closed when the surname fetch window is truncated at the cap', async () => {
     const rows = Array.from({ length: SURNAME_FETCH_LIMIT }, (_v, i) => ({
       _id: `u${i}`,

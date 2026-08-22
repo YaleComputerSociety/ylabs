@@ -353,9 +353,13 @@ export async function resolveUserForPi(
   const compatible = (rows: PiUserRow[]) =>
     rows.filter((r) => surnamesCompatible(last, String(r.lname ?? '')));
 
-  // pass 1: surname + exact fname
-  if (first) {
-    const fnameRe = new RegExp(`^${escapeRe(first)}$`, 'i');
+  // pass 1: surname + exact leading given token. Matching the first token
+  // rather than the whole given string recovers a source name whose surname
+  // particles or compound-surname parts were mis-parsed into the given field
+  // ("Frank van den Bosch", "Oswaldo Chinchilla Mazariegos"); the surname-
+  // compatibility filter and single-candidate requirement still gate the match.
+  if (firstToken) {
+    const fnameRe = new RegExp(`^${escapeRe(firstToken)}$`, 'i');
     const rows = await finder({
       lname: lnameRe,
       fname: fnameRe,

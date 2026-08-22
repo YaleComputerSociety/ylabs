@@ -39,6 +39,7 @@ import {
   givenNamesEquivalent,
   surnameFetchRegex,
   surnamesCompatible,
+  surnameOnlyMatch,
   SURNAME_FETCH_LIMIT,
 } from '../utils/piNameMatch';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
@@ -280,7 +281,11 @@ export async function resolveUserForPi(
   userModel: { find: typeof User.find } = User,
 ): Promise<NihPiUserResolution> {
   if (!canonicalName) return { status: 'absent' };
-  const { first, last } = splitName(canonicalName);
+  let { first, last } = splitName(canonicalName);
+  if (!last && first && !/\s/.test(first)) {
+    last = first;
+    first = '';
+  }
   if (!last) return { status: 'absent' };
   const surnameRe = surnameFetchRegex(last);
   if (!surnameRe) return { status: 'absent' };
@@ -296,7 +301,12 @@ export async function resolveUserForPi(
     .lean();
   if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
   const candidates = fetched.filter((c) => surnamesCompatible(last, c.lname));
-  if (!first) return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
+  if (!first) {
+    const status = surnameOnlyMatch(candidates.length);
+    return status === 'matched'
+      ? { status: 'matched', user: userPiMatchResult(candidates[0]) }
+      : { status };
+  }
   const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
   // Exact or canonical-nickname first name match wins.
   const exact = candidates.filter(
