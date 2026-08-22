@@ -174,7 +174,7 @@ function ownerDisplayName(owner: OwnerLike, kind: 'lab' | 'individual'): string 
   const surname = (owner.lname || '').trim();
   const fname = (owner.fname || '').trim();
   if (kind === 'individual') {
-    if (fname && surname) return `${fname} ${surname} — Research`;
+    if (fname && surname) return `${fname} ${surname} - Research`;
     if (surname) return `${surname} Research`;
     return owner.netid ? `${owner.netid} Research` : 'Research';
   }

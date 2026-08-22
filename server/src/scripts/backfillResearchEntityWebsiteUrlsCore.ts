@@ -97,10 +97,12 @@ export type WebsiteUrlBackfillResolution =
  * listing pages (A-Z index, `?page=N` paginated listings, bare `/people`,
  * `/people/faculty`, `/faculty` roots) are never promoted, so a listing or profile
  * page can never beat a real lab site. An entity whose existing `websiteUrl` is a
- * listing/index page is corrected to a genuine research home / lab site when one
- * exists in its evidence, and otherwise cleared (fail closed to no website rather
- * than a directory index). A profile-page `websiteUrl` is corrected to a research
- * home when one exists and otherwise kept. Any other usable `websiteUrl` is kept.
+ * listing/index page (including `/people/members`, `/people/index`, and other
+ * people-roster/index subpages) is corrected to a genuine research home / lab site
+ * when one exists in its evidence, and otherwise cleared (fail closed to no website
+ * rather than a directory index). A single-person profile-page `websiteUrl` is
+ * corrected to a research home when one exists and otherwise kept as a PI fallback.
+ * Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
  * then ordered `sourceUrls`) is used.
  */

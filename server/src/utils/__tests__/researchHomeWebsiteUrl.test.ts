@@ -48,10 +48,24 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://centers.example.edu/directory')).toBe(true);
   });
 
+  it('flags people-roster and people-index subpages (#518)', () => {
+    expect(isListingOrIndexUrl('https://quantuminstitute.example.edu/people/members')).toBe(true);
+    expect(isListingOrIndexUrl('https://medicine.example.edu/lab/simons/people/index.aspx')).toBe(
+      true,
+    );
+    expect(isListingOrIndexUrl('https://qbio.example.edu/people.html')).toBe(true);
+    expect(isListingOrIndexUrl('https://centers.example.edu/members/')).toBe(true);
+    expect(isListingOrIndexUrl('https://physics.example.edu/people/faculty-directory')).toBe(true);
+  });
+
   it('does not flag real lab, center, or person pages', () => {
     expect(isListingOrIndexUrl('https://example-computing-lab.example.org/')).toBe(false);
     expect(isListingOrIndexUrl('https://centers.example.edu/genomics/')).toBe(false);
     expect(isListingOrIndexUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
+    expect(isListingOrIndexUrl('https://economics.example.edu/people/jordan-example')).toBe(false);
+    expect(isListingOrIndexUrl('https://english.example.edu/people/professors-emeritus/j-doe')).toBe(
+      false,
+    );
     expect(isListingOrIndexUrl('mailto:someone@example.org')).toBe(false);
     expect(isListingOrIndexUrl(undefined)).toBe(false);
   });

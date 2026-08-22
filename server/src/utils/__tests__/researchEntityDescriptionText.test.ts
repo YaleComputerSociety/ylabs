@@ -1,10 +1,32 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isDirectoryIndexChromeText,
   publicResearchEntityDescriptionText,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
 } from '../researchEntityDescriptionText';
+
+describe('isDirectoryIndexChromeText', () => {
+  it('flags YSM A-Z lab-website index directory boilerplate (#517)', () => {
+    expect(
+      isDirectoryIndexChromeText(
+        'This A–Z index lists Yale School of Medicine lab websites in one place. Browse alphabetically or use your browser search.',
+      ),
+    ).toBe(true);
+    expect(
+      isDirectoryIndexChromeText('This A-Z index lists Yale School of Medicine lab websites.'),
+    ).toBe(true);
+  });
+
+  it('does not flag a real lab research description', () => {
+    expect(
+      isDirectoryIndexChromeText('Studies chromatin dynamics and nuclear envelope assembly.'),
+    ).toBe(false);
+    expect(isDirectoryIndexChromeText('')).toBe(false);
+    expect(isDirectoryIndexChromeText(undefined)).toBe(false);
+  });
+});
 
 describe('publicResearchEntityDescriptionText', () => {
   it('suppresses scraped sentence fragments that should not display as descriptions', () => {

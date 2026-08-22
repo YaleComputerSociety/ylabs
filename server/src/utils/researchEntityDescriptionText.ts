@@ -80,6 +80,18 @@ function compactText(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+const DIRECTORY_INDEX_CHROME_PATTERNS = [
+  /\bA[\s.–—-]?Z index\b.{0,160}\blab websites\b/i,
+  /\blab websites in one place\b/i,
+  /\bbrowse alphabetically\b/i,
+];
+
+export function isDirectoryIndexChromeText(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+  return DIRECTORY_INDEX_CHROME_PATTERNS.some((pattern) => pattern.test(cleaned));
+}
+
 export function isResearchEntitySourceChromeText(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
