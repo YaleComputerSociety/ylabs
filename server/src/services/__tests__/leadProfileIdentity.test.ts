@@ -135,7 +135,7 @@ describe('detectProfileIdentityRisk', () => {
           {
             name: 'James Mayer',
             user: {
-              netid: 'jmm362',
+              netid: 'jm472',
               profileUrls: { official: 'https://chem.yale.edu/profile/james-mayer' },
             },
           },
