@@ -268,7 +268,9 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                       }
                       aria-expanded={isEditing}
                       aria-label={
-                        isEditing ? `Hide note for ${program.title}` : `Add note for ${program.title}`
+                        isEditing
+                          ? `Hide note for ${program.title}`
+                          : `Add note for ${program.title}`
                       }
                       title={isEditing ? 'Hide note' : 'Add note'}
                       className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border p-2 transition-colors ${

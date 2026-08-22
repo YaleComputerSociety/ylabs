@@ -285,7 +285,12 @@ router.delete(
 router.get('/watchedProgramIds', isAuthenticated, userController.getWatchedProgramIds);
 router.get('/watchedPrograms', isAuthenticated, userController.getWatchedPrograms);
 router.put('/watchedPrograms', writeLimit, isAuthenticated, userController.addWatchedPrograms);
-router.delete('/watchedPrograms', writeLimit, isAuthenticated, userController.removeWatchedPrograms);
+router.delete(
+  '/watchedPrograms',
+  writeLimit,
+  isAuthenticated,
+  userController.removeWatchedPrograms,
+);
 router.get('/watchedProgramPlans', isAuthenticated, userController.getWatchedProgramPlans);
 router.put(
   '/watchedProgramPlans/:programId',

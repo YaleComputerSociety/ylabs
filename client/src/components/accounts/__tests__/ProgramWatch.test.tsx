@@ -130,9 +130,7 @@ describe('ProgramWatch', () => {
     );
 
     await screen.findByText('Summer Research Grant');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Mark Summer Research Grant as applied' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Summer Research Grant as applied' }));
 
     await waitFor(() =>
       expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p1', {
