@@ -3,6 +3,7 @@ import {
   assessDirectoryIndexDescription,
   cleanResearchAreaChrome,
   planDirectoryIndexCleanup,
+  filterCleanupPlanByManualLocks,
 } from '../clearDirectoryIndexDescriptionsCore';
 
 const AZ_BOILERPLATE =
@@ -106,5 +107,74 @@ describe('planDirectoryIndexCleanup', () => {
     );
     expect(plan.descriptionAction).toBe('unchanged');
     expect(Object.keys(plan.set)).toHaveLength(0);
+  });
+});
+
+describe('filterCleanupPlanByManualLocks', () => {
+  const clearedPlan = () =>
+    planDirectoryIndexCleanup(
+      {
+        id: '1',
+        fullDescription: AZ_BOILERPLATE,
+        shortDescription: AZ_BOILERPLATE,
+        researchAreas: ['Immunology9 YSM ResearchersView 12 Related Publications'],
+      },
+      null,
+    );
+
+  it('passes the whole plan through when nothing is locked', () => {
+    const filtered = filterCleanupPlanByManualLocks(clearedPlan(), []);
+    expect(filtered.hasWrites).toBe(true);
+    expect(filtered.set).toMatchObject({
+      fullDescription: '',
+      shortDescription: '',
+      researchAreas: ['Immunology'],
+    });
+    expect(filtered.clearedDescription).toBe(true);
+    expect(filtered.strippedResearchAreas).toBe(true);
+    expect(filtered.descriptionAction).toBe('cleared');
+  });
+
+  it('drops a single locked description field but keeps the rest', () => {
+    const filtered = filterCleanupPlanByManualLocks(clearedPlan(), ['fullDescription']);
+    expect(filtered.set).not.toHaveProperty('fullDescription');
+    expect(filtered.set.shortDescription).toBe('');
+    expect(filtered.set.researchAreas).toEqual(['Immunology']);
+    expect(filtered.clearedDescription).toBe(true);
+    expect(filtered.hasWrites).toBe(true);
+  });
+
+  it('does not count a re-derivation whose fullDescription is locked', () => {
+    const plan = planDirectoryIndexCleanup(
+      { id: '1', fullDescription: AZ_BOILERPLATE, shortDescription: AZ_BOILERPLATE },
+      { fullDescription: 'Studies airway inflammation in asthma.', shortDescription: 'Studies asthma.' },
+    );
+    const filtered = filterCleanupPlanByManualLocks(plan, ['fullDescription']);
+    expect(filtered.reDerivedDescription).toBe(false);
+    expect(filtered.set).not.toHaveProperty('fullDescription');
+    expect(filtered.set.shortDescription).toBe('Studies asthma.');
+    expect(filtered.descriptionAction).toBe('unchanged');
+  });
+
+  it('skips the entity entirely when every writable field is locked', () => {
+    const filtered = filterCleanupPlanByManualLocks(clearedPlan(), [
+      'fullDescription',
+      'shortDescription',
+      'researchAreas',
+    ]);
+    expect(filtered.hasWrites).toBe(false);
+    expect(filtered.set).toEqual({});
+    expect(filtered.clearedDescription).toBe(false);
+    expect(filtered.reDerivedDescription).toBe(false);
+    expect(filtered.strippedResearchAreas).toBe(false);
+    expect(filtered.descriptionAction).toBe('unchanged');
+  });
+
+  it('drops only the locked researchAreas write', () => {
+    const filtered = filterCleanupPlanByManualLocks(clearedPlan(), ['researchAreas']);
+    expect(filtered.set).not.toHaveProperty('researchAreas');
+    expect(filtered.strippedResearchAreas).toBe(false);
+    expect(filtered.set.fullDescription).toBe('');
+    expect(filtered.hasWrites).toBe(true);
   });
 });

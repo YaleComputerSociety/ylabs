@@ -47,6 +47,7 @@ import { runStudentVisibilityGate } from '../services/studentVisibilityGateServi
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   planDirectoryIndexCleanup,
+  filterCleanupPlanByManualLocks,
   type DirectoryIndexCleanupAction,
 } from './clearDirectoryIndexDescriptionsCore';
 
@@ -256,28 +257,29 @@ export async function runClearDirectoryIndexDescriptions(options: {
         : null,
     );
 
-    if (Object.keys(plan.set).length === 0) continue;
+    const filtered = filterCleanupPlanByManualLocks(plan, doc.manuallyLockedFields);
+    if (!filtered.hasWrites) continue;
 
-    if (plan.reDerivedDescription) result.descriptionsReDerived += 1;
-    if (plan.clearedDescription) result.descriptionsCleared += 1;
-    if (plan.strippedResearchAreas) result.researchAreasStripped += 1;
+    if (filtered.reDerivedDescription) result.descriptionsReDerived += 1;
+    if (filtered.clearedDescription) result.descriptionsCleared += 1;
+    if (filtered.strippedResearchAreas) result.researchAreasStripped += 1;
     result.entitiesChanged += 1;
     touchedIds.push(String(doc._id));
 
     if (result.samples.length < 25) {
       result.samples.push({
         slug: doc.slug,
-        descriptionAction: plan.descriptionAction,
-        strippedResearchAreas: plan.strippedResearchAreas,
+        descriptionAction: filtered.descriptionAction,
+        strippedResearchAreas: filtered.strippedResearchAreas,
         fullPreview:
-          typeof plan.set.fullDescription === 'string'
-            ? clip(plan.set.fullDescription)
+          typeof filtered.set.fullDescription === 'string'
+            ? clip(filtered.set.fullDescription)
             : undefined,
       });
     }
 
     if (!options.dryRun) {
-      if (plan.reDerivedDescription && reDerived && source) {
+      if (filtered.reDerivedDescription && reDerived && source) {
         const observations = descriptionExtractionToObservations(
           {
             fullDescription: reDerived.fullDescription,
@@ -301,7 +303,7 @@ export async function runClearDirectoryIndexDescriptions(options: {
           });
         }
       }
-      await ResearchEntity.updateOne({ _id: doc._id }, { $set: plan.set });
+      await ResearchEntity.updateOne({ _id: doc._id }, { $set: filtered.set });
     }
   }
 
