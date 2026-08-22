@@ -44,6 +44,8 @@ export interface AcceptanceVerdictResult {
   evidence: EvidenceItem[];
 }
 
+export const REACH_OUT_PLAUSIBLE_LABEL = 'Reach-out plausible';
+
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   POSTED_OPENING: 'Posted opening',
   RECURRING_PROGRAM: 'Recurring pathway',
@@ -53,7 +55,7 @@ const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   CURRENT_UNDERGRADS: 'Current undergrads',
   FACULTY_SUPERVISES_STUDENT_PROJECTS: 'Faculty supervises projects',
   FELLOWSHIP_COMPATIBLE: 'Fellowship-compatible',
-  REACH_OUT_PLAUSIBLE: 'Reach-out plausible',
+  REACH_OUT_PLAUSIBLE: REACH_OUT_PLAUSIBLE_LABEL,
   APPLICATION_FORM_EXISTS: 'Application form',
   CONTACT_INSTRUCTIONS_EXIST: 'Contact instructions',
   LAB_MANAGER_LISTED: 'Lab manager listed',
