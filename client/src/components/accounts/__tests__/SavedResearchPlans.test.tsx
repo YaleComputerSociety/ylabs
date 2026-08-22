@@ -78,6 +78,22 @@ describe('SavedResearchPlans', () => {
     await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(2));
   });
 
+  it('describes reaching out via the official profile without promising an email to the PI', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    const header = await screen.findByText(
+      /Open a saved research home to find its official profile and reach out/,
+    );
+    expect(header.textContent).toContain('keep private notes');
+    expect(header.textContent).not.toMatch(/email the PI/i);
+  });
+
   it('persists an edited note to the canonical research plan on blur', async () => {
     withSavedPlans();
     mockedAxios.put.mockResolvedValue({ data: { savedResearchEntityPlans: {} } });

@@ -148,8 +148,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
       <div className="mb-2">
         <h2 className="text-2xl font-bold text-gray-800">Saved research plans</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Open a saved research home to email the PI, keep private notes, or remove it from your
-          plans.
+          Open a saved research home to find its official profile and reach out, keep private notes,
+          or remove it from your plans.
         </p>
       </div>
 
