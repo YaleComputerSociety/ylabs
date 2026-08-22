@@ -61,6 +61,24 @@ describe('resolveOrgUnitCanonical over the full ground truth', () => {
   it('fails closed on an unknown unit', () => {
     expect(resolveOrgUnitCanonical(index, 'Department of Wizardry')).toBeNull();
   });
+
+  it('resolves HR-coded and all-caps facet variants through overlay aliases', () => {
+    expect(resolveOrgUnitCanonical(index, 'PHYSIOLOGY', ['DEPARTMENT'])?.name).toBe(
+      'Cellular & Molecular Physiology',
+    );
+    expect(resolveOrgUnitCanonical(index, 'RADIATION-DIAGNOSTIC/ONCOLOGY', ['DEPARTMENT'])?.name).toBe(
+      'Therapeutic Radiology',
+    );
+    expect(resolveOrgUnitCanonical(index, 'EASBME BME Faculty', ['DEPARTMENT'])?.name).toBe(
+      'Biomedical Engineering',
+    );
+    expect(resolveOrgUnitCanonical(index, 'FASGSS Womens,Gender and Sexuality Studies', ['DEPARTMENT'])?.name).toBe(
+      "Women's, Gender, and Sexuality Studies",
+    );
+    expect(resolveOrgUnitCanonical(index, 'ISM Institute of Sacred Music', ['SCHOOL', 'DIVISION'])?.name).toBe(
+      'Yale Institute of Sacred Music',
+    );
+  });
 });
 
 describe('validateOrgUnitRows', () => {

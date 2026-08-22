@@ -4,6 +4,8 @@ import {
   buildDepartmentToSchoolMap,
   buildOrgUnitResolverIndex,
   createOrgUnitCanonicalizer,
+  denoiseOrgUnitValue,
+  isDroppedAdministrativeOrgUnit,
   orgUnitMatchKey,
   resetOrgUnitCanonicalizerCache,
   resolveOrgUnitCanonical,
@@ -87,6 +89,57 @@ describe('createOrgUnitCanonicalizer', () => {
       'Underwater Basket Weaving',
     ]);
     expect(result.unmatched).toEqual(['Underwater Basket Weaving']);
+    expect(result.dropped).toEqual([]);
+  });
+
+  it('drops administrative org units from the department facet', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'NSCI',
+      'PRV Provost Administration',
+      'PRVAIT Institution for Social and Policy Studies (ISPS)',
+      'ADMINISTRATION',
+      'SOCIAL SCIENCES',
+    ]);
+    expect(result.values).toEqual(['Neuroscience']);
+    expect(result.dropped).toEqual([
+      'PRV Provost Administration',
+      'PRVAIT Institution for Social and Policy Studies (ISPS)',
+      'ADMINISTRATION',
+      'SOCIAL SCIENCES',
+    ]);
+  });
+
+  it('strips an HR org-code prefix from an unresolved department instead of showing raw', () => {
+    const result = canonicalizer.canonicalizeDepartments(['MEDCCC Medical Oncology']);
+    expect(result.values).toEqual(['Medical Oncology']);
+    expect(result.unmatched).toEqual(['Medical Oncology']);
+    expect(result.dropped).toEqual([]);
+  });
+});
+
+describe('denoiseOrgUnitValue', () => {
+  it('strips a leading all-caps org code when a human name follows', () => {
+    expect(denoiseOrgUnitValue('PRVAIT Henry Koerner Center')).toBe('Henry Koerner Center');
+    expect(denoiseOrgUnitValue('EASBME BME Faculty')).toBe('BME Faculty');
+  });
+
+  it('leaves fully upper-case names and plain hyphenated names untouched', () => {
+    expect(denoiseOrgUnitValue('SOCIAL SCIENCES')).toBe('SOCIAL SCIENCES');
+    expect(denoiseOrgUnitValue('VETERINARY SCIENCES')).toBe('VETERINARY SCIENCES');
+    expect(denoiseOrgUnitValue('RADIATION-DIAGNOSTIC/ONCOLOGY')).toBe(
+      'RADIATION-DIAGNOSTIC/ONCOLOGY',
+    );
+    expect(denoiseOrgUnitValue('PHYSIOLOGY')).toBe('PHYSIOLOGY');
+  });
+});
+
+describe('isDroppedAdministrativeOrgUnit', () => {
+  it('matches administrative units regardless of casing or code prefix', () => {
+    expect(isDroppedAdministrativeOrgUnit('PRV Provost Administration')).toBe(true);
+    expect(isDroppedAdministrativeOrgUnit('administration')).toBe(true);
+    expect(isDroppedAdministrativeOrgUnit('VETERINARY SCIENCES')).toBe(true);
+    expect(isDroppedAdministrativeOrgUnit('Neuroscience')).toBe(false);
+    expect(isDroppedAdministrativeOrgUnit('Cellular & Molecular Physiology')).toBe(false);
   });
 });
 

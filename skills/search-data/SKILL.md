@@ -49,6 +49,7 @@ Short-alias queries restrict `attributesToSearchOn` to topic fields that actuall
 | `yarn --cwd server model-refactor:inventory --environment <env>` | Inventory refactor-relevant MongoDB state without writes. |
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
+| `yarn --cwd server research-homes:backfill-org-units` | Re-canonicalize `school`/`departments[]` (drops administrative units, denoises HR-coded values); apply requires `--confirm-org-units`, then rebuild Meili. |
 
 ## Default `/research` ordering
 
