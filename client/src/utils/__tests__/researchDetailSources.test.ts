@@ -459,9 +459,9 @@ describe('isSuppressedResearchWebsiteCtaUrl', () => {
     expect(
       isSuppressedResearchWebsiteCtaUrl('https://isps.yale.edu/team/directory/faculty-fellows'),
     ).toBe(true);
-    expect(isSuppressedResearchWebsiteCtaUrl('https://environment.yale.edu/directory/faculty')).toBe(
-      true,
-    );
+    expect(
+      isSuppressedResearchWebsiteCtaUrl('https://environment.yale.edu/directory/faculty'),
+    ).toBe(true);
     expect(isSuppressedResearchWebsiteCtaUrl('https://research.yale.edu/centers-institutes/')).toBe(
       true,
     );
@@ -470,7 +470,9 @@ describe('isSuppressedResearchWebsiteCtaUrl', () => {
 
   it('keeps a named per-person directory profile as a website CTA (#556)', () => {
     expect(
-      isSuppressedResearchWebsiteCtaUrl('https://environment.yale.edu/directory/faculty/jordan-example'),
+      isSuppressedResearchWebsiteCtaUrl(
+        'https://environment.yale.edu/directory/faculty/jordan-example',
+      ),
     ).toBe(false);
     expect(isSuppressedResearchWebsiteCtaUrl('https://example-computing-lab.example.org/')).toBe(
       false,
