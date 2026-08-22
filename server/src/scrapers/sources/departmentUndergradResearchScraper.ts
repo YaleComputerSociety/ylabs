@@ -81,8 +81,8 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     url: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
     department: 'Molecular, Cellular and Developmental Biology',
     school: 'Yale Faculty of Arts and Sciences',
-    parser: 'structured-opportunity',
-    title: 'Pediatric Emergency Medicine Undergraduate Research Associate Program',
+    parser: 'general-guidance',
+    title: 'Molecular, Cellular and Developmental Biology Undergraduate Research',
   },
   {
     key: 'economics-tobin-ra',
@@ -257,15 +257,45 @@ const sentenceList = (text: string): string[] =>
     .filter(Boolean) || [];
 
 const sourceChromeTextPattern =
-  /\b(?:show all breadcrumbs|expand all|homeabout|home academics|calendar|applyprizes|recipient|copyright|privacy)\b/i;
+  /\b(?:show all breadcrumbs|expand all|homeabout|home academics|calendar|applyprizes|recipient|copyright|privacy|click here|learn more|read more|for more information|more information|apply now|back to top|sign up)\b/i;
 
 const undergradResearchGuidancePattern =
   /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b/i;
 
+const SECTION_HEADING_CHROME = [
+  'Undergraduate Research Opportunities',
+  'Undergraduate Research Opportunity',
+  'About the Undergraduate Program',
+  'Undergraduate Research',
+  'Research Opportunities',
+  'Undergraduate Programs',
+  'Undergraduate Program',
+  'Undergraduate Studies',
+  'Overview',
+  'Introduction',
+];
+
+const leadingSectionHeadingPattern = new RegExp(
+  `^(?:(?:${SECTION_HEADING_CHROME.join('|')})\\s+)+(?=[A-Z])`,
+);
+
+function stripInlineUrls(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\bwww\.\S+/gi, ' ')
+    .replace(/\b[a-z0-9][a-z0-9-]*\.(?:gle|com|edu|org|gov|io|net|us)\b\S*/gi, ' ');
+}
+
+function stripLeadingSectionHeadingChrome(sentence: string): string {
+  return normalizeText(sentence.replace(leadingSectionHeadingPattern, ''));
+}
+
 function usefulUndergradResearchSentences(text: string): string[] {
   const seen = new Set<string>();
   return sentenceList(text)
+    .map(stripLeadingSectionHeadingChrome)
     .filter((sentence) => sentence.length >= 40)
+    .filter((sentence) => /^[A-Z]/.test(sentence))
     .filter((sentence) => !sourceChromeTextPattern.test(sentence))
     .filter((sentence) => undergradResearchGuidancePattern.test(sentence))
     .filter((sentence) => {
@@ -281,16 +311,15 @@ function departmentGuidanceDescription(
   text: string,
 ): { fullDescription: string; shortDescription: string; evidenceQuote: string } {
   const sentences = usefulUndergradResearchSentences(text);
-  const sourceBackedBody = sentences.slice(0, 3).join(' ') || text;
+  const lead = `Supports undergraduate research in ${config.department}.`;
+  const sourceBackedBody = sentences.slice(0, 3).join(' ');
   return {
-    fullDescription: conciseText(
-      `Supports undergraduate research in ${config.department}. ${sourceBackedBody}`,
-    ),
+    fullDescription: conciseText(sourceBackedBody ? `${lead} ${sourceBackedBody}` : lead),
     shortDescription: conciseText(
       `Supports undergraduate research in ${config.department} through department guidance on finding faculty research opportunities.`,
       240,
     ),
-    evidenceQuote: conciseText(sentences.slice(0, 2).join(' ') || text),
+    evidenceQuote: conciseText(sentences.slice(0, 2).join(' ')),
   };
 }
 
@@ -331,7 +360,8 @@ function pageMainText($: cheerio.CheerioAPI): string {
     .toArray()
     .map((node) => normalizeText($(node).text()))
     .filter(Boolean);
-  return normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
+  const joined = normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
+  return normalizeText(stripInlineUrls(joined));
 }
 
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {
@@ -523,9 +553,17 @@ export function departmentUndergradResearchRecordsToObservations(
         value: { openToUndergrads: 'yes', evidenceSource: 'department_undergrad_research_page' },
         confidenceOverride: 0.8,
       },
-      { ...base, field: 'undergradEvidenceQuote', value: record.evidenceQuote, confidenceOverride: 0.8 },
       { ...base, field: 'acceptingUndergrads', value: true, confidenceOverride: 0.75 },
     ];
+
+    if (record.evidenceQuote) {
+      observations.push({
+        ...base,
+        field: 'undergradEvidenceQuote',
+        value: record.evidenceQuote,
+        confidenceOverride: 0.8,
+      });
+    }
 
     if (record.contactName) observations.push({ ...base, field: 'contactName', value: record.contactName });
     if (record.contactEmail) {
