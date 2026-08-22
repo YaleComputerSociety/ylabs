@@ -38,7 +38,14 @@ export interface ResearchEntityPiDedupeGroup {
   mergedSourceUrls: string[];
   canonicalName?: string;
   canonicalWebsiteUrl?: string;
-  dedupeCategory?: 'profile_area_shell_with_concrete_home';
+  canonicalFullDescription?: string;
+  canonicalShortDescription?: string;
+  dedupeCategory?: 'profile_area_shell_with_concrete_home' | 'shared_person_id';
+}
+
+export interface SameNameDifferentPersonQuarantine {
+  normalizedName: string;
+  entities: Array<{ id: string; slug?: string; personId: string }>;
 }
 
 export interface OfficialLabUrlDedupeRow {
@@ -426,6 +433,67 @@ export function selectSamePiDuplicateRiskEntityIds(rows: ResearchEntityPiDedupeR
   return new Set(
     buildResearchEntityPiDedupePlan(rows).flatMap((group) => group.duplicateEntityIds || []),
   );
+}
+
+function fullestText(
+  entities: ResearchEntityPiDedupeRow['entities'],
+  field: 'fullDescription' | 'shortDescription',
+): string {
+  return (
+    entities
+      .map((entity) => (entity[field] || '').trim())
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)[0] || ''
+  );
+}
+
+function bestDescriptionCarry(
+  canonical: ResearchEntityPiDedupeRow['entities'][number],
+  entities: ResearchEntityPiDedupeRow['entities'],
+): { canonicalFullDescription?: string; canonicalShortDescription?: string } {
+  const carry: { canonicalFullDescription?: string; canonicalShortDescription?: string } = {};
+  const canonicalFull = (canonical.fullDescription || '').trim();
+  const fullest = fullestText(entities, 'fullDescription');
+  if (fullest && fullest.length > canonicalFull.length) carry.canonicalFullDescription = fullest;
+  const canonicalShort = (canonical.shortDescription || '').trim();
+  const fullestShort = fullestText(entities, 'shortDescription');
+  if (fullestShort && fullestShort.length > canonicalShort.length) {
+    carry.canonicalShortDescription = fullestShort;
+  }
+  return carry;
+}
+
+export function buildSharedPersonIdResearchEntityDedupePlan(
+  rows: ResearchEntityPiDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  return rows.flatMap((row) => {
+    const entities = row.entities.filter((entity) => entity.id);
+    if (entities.length <= 1) return [];
+    const group = buildGroupFromCluster(row, entities);
+    if (!group) return [];
+    const canonical = entities.find((entity) => entity.id === group.canonicalEntityId);
+    const descriptionCarry = canonical ? bestDescriptionCarry(canonical, entities) : {};
+    return [{ ...group, ...descriptionCarry, dedupeCategory: 'shared_person_id' as const }];
+  });
+}
+
+export function buildSameNameDifferentPersonQuarantine(
+  rows: ResearchEntityPiDedupeRow[],
+): SameNameDifferentPersonQuarantine[] {
+  const byName = new Map<string, Array<{ id: string; slug?: string; personId: string }>>();
+  for (const row of rows) {
+    for (const entity of row.entities) {
+      if (!entity.id) continue;
+      const normalized = normalizedEntityName(entity.name);
+      if (!normalized) continue;
+      const list = byName.get(normalized) || [];
+      list.push({ id: entity.id, slug: entity.slug, personId: row.userId });
+      byName.set(normalized, list);
+    }
+  }
+  return Array.from(byName.entries())
+    .filter(([, list]) => new Set(list.map((item) => item.personId)).size > 1)
+    .map(([normalizedName, entities]) => ({ normalizedName, entities }));
 }
 
 function buildFundingGroupFromCluster(
