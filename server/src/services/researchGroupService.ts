@@ -544,6 +544,16 @@ const mongoVisibilityFilter = (
   return includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
 };
 
+const applyVisibilityScopeToFilters = (
+  filters: ResearchGroupFilterInput,
+  includeNonPublic?: boolean,
+): ResearchGroupFilterInput => {
+  if (includeNonPublic || filters.studentVisibilityTier?.length) {
+    return filters;
+  }
+  return { ...filters, studentVisibilityTier: [...publicStudentVisibilityTiers] };
+};
+
 const mongoFilterFromResearchFilters = (
   filters: ResearchGroupFilterInput,
   includeNonPublic?: boolean,
@@ -689,7 +699,9 @@ export async function searchResearchGroupsViaMeili(
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
   const offset = (safePage - 1) * safePageSize;
 
-  const filterString = buildResearchGroupFilterString(safeFilters);
+  const filterString = buildResearchGroupFilterString(
+    applyVisibilityScopeToFilters(safeFilters, safeOptions.includeNonPublic),
+  );
 
   const normalizedQuery = normalizeResearchSearchQuery(query);
   const trimmedQuery = normalizedQuery.query;
