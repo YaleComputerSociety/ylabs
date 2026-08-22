@@ -41,6 +41,16 @@ describe('fullDescriptionQuality', () => {
     expect(describesResearchFocus(researchProse)).toBe(true);
   });
 
+  it('keeps a substantial research description that merely ends with a Privacy Policy footer mention', () => {
+    const bioWithFooter =
+      'We study ecosystem function across space and time to better understand ecosystem condition, sustainability, and vulnerability to extremes. Our goal is to understand the processes that govern ecosystem health at large scales so that we can predict the impacts of climate change. Contact Webmaster Web Accessibility Privacy Policy.';
+
+    const quality = fullDescriptionQuality(bioWithFooter);
+    expect(quality.flags).not.toContain('consent-boilerplate');
+    expect(quality.isUseful).toBe(true);
+    expect(describesResearchFocus(bioWithFooter)).toBe(true);
+  });
+
   it('derives card copy from numbered active areas of research instead of copying the first long sentence', () => {
     const fullDescription =
       'Active areas of research 1- Bone marrow Stem Cell niches All blood cells develop from hematopoietic stem cells through complex developmental transitions. 2- Where and how B cell development occurs in vivo. 3- Chemoattractants, receptors, and B cell homeostasis.';
