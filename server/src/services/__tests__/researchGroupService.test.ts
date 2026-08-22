@@ -1478,6 +1478,88 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user).not.toHaveProperty('netid');
   });
 
+  it('suppresses a surname-colliding uncorroborated phantom co-PI when a corroborated PI exists', async () => {
+    const entityObjectId = new mongoose.Types.ObjectId('67d8928150621bcef434a1d5');
+    const corroboratedPersonId = new mongoose.Types.ObjectId();
+    const phantomPersonId = new mongoose.Types.ObjectId();
+    const corroboratedAccountId = new mongoose.Types.ObjectId();
+    const phantomAccountId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'ysm-schwartz',
+        name: 'Schwartz Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: ['https://medicine.yale.edu/profile/martin-schwartz/'],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: corroboratedPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.86,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+        },
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId: phantomPersonId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0,
+          reviewStatus: 'UNREVIEWED',
+          archived: false,
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: corroboratedPersonId,
+          displayName: 'Martin Schwartz',
+          accountId: corroboratedAccountId,
+          profileLinks: [
+            {
+              kind: 'YALE_OFFICIAL',
+              purpose: 'PRIMARY_IDENTITY',
+              url: 'https://medicine.yale.edu/profile/martin-schwartz/',
+              verifiedAt: new Date(),
+              healthStatus: 'HEALTHY',
+            },
+          ],
+        },
+        {
+          _id: phantomPersonId,
+          displayName: 'Michael Schwartz',
+          accountId: phantomAccountId,
+          profileLinks: [],
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([
+        { _id: corroboratedAccountId, netid: 'ms3001', email: 'martin.schwartz@example.edu' },
+        { _id: phantomAccountId, netid: 'ms3002', email: 'michael.schwartz@example.edu' },
+      ]),
+    );
+
+    const detail = await getResearchGroupDetail('ysm-schwartz');
+
+    const leadNames = (detail?.members ?? [])
+      .filter((member) => member.role === 'pi')
+      .map((member) => `${member.user.fname} ${member.user.lname}`);
+    expect(leadNames).toEqual(['Martin Schwartz']);
+    expect(leadNames).not.toContain('Michael Schwartz');
+  });
+
   it('derives PI identity review from raw records before public member replacement', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     const entityObjectId = new mongoose.Types.ObjectId(entityId);
