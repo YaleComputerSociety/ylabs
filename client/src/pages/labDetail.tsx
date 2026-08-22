@@ -740,7 +740,7 @@ const LabDetail = () => {
     return () => {
       fetchAbortRef.current?.abort();
     };
-  }, [slug]);
+  }, [slug, navigate]);
 
   useEffect(() => {
     const entity = payload?.researchEntity || payload?.group;

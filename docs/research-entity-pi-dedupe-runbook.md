@@ -42,9 +42,10 @@ A merge never discards evidence:
 
 - The canonical entity gains the union of duplicate `departments`, `researchAreas`, and `sourceUrls` through `$addToSet`.
 - Non-conflicting duplicate memberships are relinked to the canonical entity; a duplicate membership that would collide with an existing canonical membership is retired with `isCurrentMember: false` and an `endedAt` timestamp instead of being dropped.
-- Relationships, entry pathways, access signals, contact routes, posted opportunities, and scholarly links are relinked to the canonical entity, or archived when relinking would violate a unique key.
+- Relationships, entry pathways, access signals, contact routes, posted opportunities, scholarly links, and students' saved `ResearchPlan` targets are relinked to the canonical entity, or archived when relinking would violate a unique key (a saved plan already on the canonical target keeps its place and the redundant duplicate-targeted plan is archived rather than force-merged past the `(accountId, target.kind, target.id)` unique index).
 - When the canonical entity lacks a concrete website but a merged duplicate carries one, the canonical inherits that concrete `websiteUrl`, and if its own name is only a PI-derived `<PI> Lab` placeholder it also inherits the donor's real `name`/`displayName`; the `reviewBreakdown` reports these as `groupsCarryingCanonicalWebsite` and `groupsCarryingCanonicalName`.
 - After apply, the student visibility gate is recomputed for each affected canonical entity so reads never serve a stale tier.
+- Bookmarked or inbound requests to an archived duplicate's slug resolve the tombstone's `canonicalGroupId` to the visible canonical slug and `302` there instead of returning a `404`, so saved links to a merged-away duplicate still land on the surviving research home.
 
 ## Review and apply workflow
 
