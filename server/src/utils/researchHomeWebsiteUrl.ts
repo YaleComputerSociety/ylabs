@@ -137,8 +137,7 @@ const GOOGLE_SITES_DOMAIN_SCOPED_PATH = /^\/[a-z0-9-]+(?:\.[a-z0-9-]+)+\/[^/]+/i
 export function isGoogleSitesResearchHome(url: URL): boolean {
   if (url.hostname !== 'sites.google.com') return false;
   return (
-    GOOGLE_SITES_NAMED_PATH.test(url.pathname) ||
-    GOOGLE_SITES_DOMAIN_SCOPED_PATH.test(url.pathname)
+    GOOGLE_SITES_NAMED_PATH.test(url.pathname) || GOOGLE_SITES_DOMAIN_SCOPED_PATH.test(url.pathname)
   );
 }
 

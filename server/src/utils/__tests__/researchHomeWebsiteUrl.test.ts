@@ -63,9 +63,9 @@ describe('isListingOrIndexUrl', () => {
     expect(isListingOrIndexUrl('https://centers.example.edu/genomics/')).toBe(false);
     expect(isListingOrIndexUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
     expect(isListingOrIndexUrl('https://economics.example.edu/people/jordan-example')).toBe(false);
-    expect(isListingOrIndexUrl('https://english.example.edu/people/professors-emeritus/j-doe')).toBe(
-      false,
-    );
+    expect(
+      isListingOrIndexUrl('https://english.example.edu/people/professors-emeritus/j-doe'),
+    ).toBe(false);
     expect(isListingOrIndexUrl('mailto:someone@example.org')).toBe(false);
     expect(isListingOrIndexUrl(undefined)).toBe(false);
   });
