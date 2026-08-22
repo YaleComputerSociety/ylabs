@@ -35,9 +35,7 @@ const SYNTHETIC_YALE_TOKENS = new Set([
   'def',
   'ghi',
   'ada',
-  'admissions',
   'advisor',
-  'alex',
   'applicant',
   'ari',
   'astro',
@@ -81,7 +79,6 @@ const SYNTHETIC_YALE_TOKENS = new Set([
   'marie',
   'match',
   'material',
-  'meadow',
   'mika',
   'mismatch',
   'morgan',
@@ -128,7 +125,6 @@ const SYNTHETIC_YALE_TOKENS = new Set([
   'xen',
   'xylo',
   'yarden',
-  'yse',
   'ysm',
   'zuri',
 ]);
@@ -153,9 +149,7 @@ const testFiles = () =>
 
 const localPartIsSynthetic = (localPart: string) => {
   if (!SYNTHETIC_YALE_LOCAL_PART.test(localPart)) return false;
-  const tokens = localPart
-    .split(/[._%+-]/)
-    .filter(Boolean);
+  const tokens = localPart.split(/[._%+-]/).filter(Boolean);
   return tokens.some((token) => SYNTHETIC_YALE_TOKENS.has(token) || /^[a-z]*\d+$/.test(token));
 };
 
