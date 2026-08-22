@@ -774,6 +774,36 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('profile_identity_risk');
     expect(result.tier).toBe('student_ready');
   });
+
+  it('holds a contested person-derived entity for review even under a student-ready override (issue #468)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'nsf-pi-6990e3ff500496cc8ac60925',
+        name: 'Mark Graham Lab',
+        slug: 'nsf-pi-6990e3ff500496cc8ac60925',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/mog8/',
+        sourceUrls: ['https://medicine.yale.edu/profile/mog8/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'mjg24', user: { netid: 'mjg24', fname: 'Mark', lname: 'Graham' } },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('profile_identity_risk');
+    expect(result.reasons).toContain('operator_override');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {

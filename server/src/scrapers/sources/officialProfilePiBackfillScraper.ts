@@ -478,7 +478,8 @@ export function expectedNetidsForOfficialProfile(
   entity: Record<string, any>,
   expectedPeople: OfficialProfileIdentityOptions['expectedPeople'],
 ): string[] {
-  const people = (expectedPeople || []).length > 0 ? expectedPeople || [] : entityExpectedPeople(entity);
+  const people =
+    (expectedPeople || []).length > 0 ? expectedPeople || [] : entityExpectedPeople(entity);
   return uniqueStrings(
     [
       textValue(entity.netid),
@@ -1583,8 +1584,7 @@ export function extractOfficialProfileIdentity(
   // the profile URL carries a netid-style slug it must equal a netid we expect
   // for this person. This rejects name-only collisions such as attaching the
   // medicine netid `mog8` profile to the EEB `mjg24` "Mark Graham" (issue #468).
-  const profileNetidSlug =
-    netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
+  const profileNetidSlug = netidStyleProfileSlug(canonicalUrl) || netidStyleProfileSlug(fetchedUrl);
   if (profileNetidSlug) {
     const expectedNetids = expectedNetidsForOfficialProfile(entity, options.expectedPeople);
     if (expectedNetids.length > 0 && !expectedNetids.includes(profileNetidSlug)) {

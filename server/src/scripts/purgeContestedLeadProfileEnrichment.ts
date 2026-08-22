@@ -43,10 +43,7 @@ function parseArgs(argv: string[]): PurgeArgs {
 }
 
 const leadMembersFromRoster = (
-  roster: Awaited<ReturnType<typeof getResearchEntityRosterByEntityId>> extends Map<
-    string,
-    infer V
-  >
+  roster: Awaited<ReturnType<typeof getResearchEntityRosterByEntityId>> extends Map<string, infer V>
     ? V
     : never,
 ): Array<Record<string, any>> =>

@@ -155,7 +155,9 @@ describe('detectProfileIdentityRisk', () => {
             name: 'Sviatoslav Bagriantsev',
             user: {
               netid: 'sb864',
-              profileUrls: { official: 'https://medicine.yale.edu/profile/sviatoslav-bagriantsev/' },
+              profileUrls: {
+                official: 'https://medicine.yale.edu/profile/sviatoslav-bagriantsev/',
+              },
             },
           },
         ],

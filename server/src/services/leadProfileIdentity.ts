@@ -184,7 +184,9 @@ const leadOfficialProfileSlugs = (lead: LeadProfileIdentityLead): string[] => {
     lead.row?.sourceUrl,
   ]
     .filter(isLikelyOfficialPersonProfileUrl)
-    .map((url) => personProfileSlugFromDestination(normalizeOfficialProfileDestination(String(url))))
+    .map((url) =>
+      personProfileSlugFromDestination(normalizeOfficialProfileDestination(String(url))),
+    )
     .filter(Boolean)
     .map((slug) => normalizeIdentityToken(slug));
 };
