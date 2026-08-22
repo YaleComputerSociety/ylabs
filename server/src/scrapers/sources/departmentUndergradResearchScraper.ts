@@ -292,7 +292,7 @@ function stripLeadingSectionHeadingChrome(sentence: string): string {
 
 function usefulUndergradResearchSentences(text: string): string[] {
   const seen = new Set<string>();
-  return sentenceList(text)
+  return sentenceList(stripInlineUrls(text))
     .map(stripLeadingSectionHeadingChrome)
     .filter((sentence) => sentence.length >= 40)
     .filter((sentence) => /^[A-Z]/.test(sentence))
@@ -360,8 +360,7 @@ function pageMainText($: cheerio.CheerioAPI): string {
     .toArray()
     .map((node) => normalizeText($(node).text()))
     .filter(Boolean);
-  const joined = normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
-  return normalizeText(stripInlineUrls(joined));
+  return normalizeText((chunks.length > 0 ? chunks.join(' ') : root.text()) || '');
 }
 
 function departmentEntityKey(config: DepartmentUndergradResearchPageConfig): string {

@@ -47,6 +47,7 @@ const TOBIN_HTML = `
 <main>
   <h1>Tobin Undergraduate Research Assistantships</h1>
   <p>The Tobin Research Assistantship program places undergraduate students with faculty in the Economics department to support ongoing research projects.</p>
+  <p>Contact: coordinator@yale.edu</p>
   <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic">Apply here</a></p>
 </main>
 `;
@@ -315,9 +316,12 @@ describe('departmentUndergradResearchScraper', () => {
         entityType: 'PROGRAM',
         department: 'Economics',
         joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic',
+        contactEmail: 'coordinator@yale.edu',
+        contactRole: 'Program contact for undergraduate research',
       },
     ]);
     expect(records[0].description).toMatch(/^Supports undergraduate research in Economics\./);
+    expect(records[0].description).not.toContain('coordinator@');
   });
 
   it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
