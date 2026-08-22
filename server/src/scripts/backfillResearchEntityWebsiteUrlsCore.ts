@@ -1,4 +1,5 @@
 import {
+  isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
@@ -57,12 +58,17 @@ export function isProfilePageWebsiteUrl(value: unknown): boolean {
   return isPersonProfileOrDirectoryUrl(value);
 }
 
+export function isListingPageWebsiteUrl(value: unknown): boolean {
+  return isListingOrIndexUrl(value);
+}
+
 export function isPromotableWebsiteUrl(value: unknown): boolean {
   return (
     isPublicHttpUrl(value) &&
     !isGrantOrIdentifierUrl(value) &&
     !isContentPageUrl(value) &&
-    !isProfilePageWebsiteUrl(value)
+    !isProfilePageWebsiteUrl(value) &&
+    !isListingPageWebsiteUrl(value)
   );
 }
 
@@ -79,30 +85,51 @@ function selectResearchHomeWebsiteUrl(candidates: unknown[]): string | undefined
   return undefined;
 }
 
+export type WebsiteUrlBackfillResolution =
+  | { action: 'keep' }
+  | { action: 'set'; websiteUrl: string }
+  | { action: 'clear' };
+
 /**
- * Deterministic, evidence-first selection of a website URL already present in the
- * entity's materialized evidence. Grant/identifier hosts, article/news content
- * pages, and Yale profile / faculty-directory / people-directory pages are never
- * promoted, so a profile page can never beat a real lab site. An entity whose
- * existing `websiteUrl` is a profile page is corrected only to a genuine research
- * home / lab site (never to a directory or opportunities page) when one exists in
- * its evidence; any other usable `websiteUrl` is left untouched. When no usable
- * `websiteUrl` exists, the first promotable candidate (`website` then ordered
- * `sourceUrls`) is used.
+ * Deterministic, evidence-first resolution of a website URL from the entity's
+ * materialized evidence. Grant/identifier hosts, article/news content pages, Yale
+ * profile / faculty-directory / people-directory pages, and directory/index/roster
+ * listing pages (A-Z index, `?page=N` paginated listings, bare `/people`,
+ * `/people/faculty`, `/faculty` roots) are never promoted, so a listing or profile
+ * page can never beat a real lab site. An entity whose existing `websiteUrl` is a
+ * listing/index page is corrected to a genuine research home / lab site when one
+ * exists in its evidence, and otherwise cleared (fail closed to no website rather
+ * than a directory index). A profile-page `websiteUrl` is corrected to a research
+ * home when one exists and otherwise kept. Any other usable `websiteUrl` is kept.
+ * When no usable `websiteUrl` exists, the first promotable candidate (`website`
+ * then ordered `sourceUrls`) is used.
  */
-export function selectBackfillWebsiteUrl(
+export function resolveBackfillWebsiteUrl(
   entity: WebsiteUrlBackfillCandidateEntity,
-): string | undefined {
+): WebsiteUrlBackfillResolution {
   const candidates: unknown[] = [
     entity.website,
     ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
   ];
   if (hasUsableWebsiteUrl(entity)) {
-    if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
-      return selectResearchHomeWebsiteUrl(candidates);
+    if (isListingPageWebsiteUrl(entity.websiteUrl)) {
+      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
-    return undefined;
+    if (isProfilePageWebsiteUrl(entity.websiteUrl)) {
+      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'keep' };
+    }
+    return { action: 'keep' };
   }
   const promotable = candidates.find(isPromotableWebsiteUrl);
-  return promotable ? cleanString(promotable) : undefined;
+  const cleaned = promotable ? cleanString(promotable) : undefined;
+  return cleaned ? { action: 'set', websiteUrl: cleaned } : { action: 'keep' };
+}
+
+export function selectBackfillWebsiteUrl(
+  entity: WebsiteUrlBackfillCandidateEntity,
+): string | undefined {
+  const resolution = resolveBackfillWebsiteUrl(entity);
+  return resolution.action === 'set' ? resolution.websiteUrl : undefined;
 }

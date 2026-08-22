@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   isContentPageUrl,
   isGrantOrIdentifierUrl,
+  isListingPageWebsiteUrl,
   isProfilePageWebsiteUrl,
   isPromotableWebsiteUrl,
   isPublicHttpUrl,
+  resolveBackfillWebsiteUrl,
   selectBackfillWebsiteUrl,
 } from '../backfillResearchEntityWebsiteUrlsCore';
 import {
@@ -56,11 +58,92 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isPromotableWebsiteUrl('https://medicine.example.edu/profile/jordan-example/')).toBe(
       false,
     );
-    expect(isPromotableWebsiteUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
-    expect(isProfilePageWebsiteUrl('https://labs.example.edu/directory/faculty/jordan-example/')).toBe(
-      true,
+    expect(isPromotableWebsiteUrl('https://physics.example.edu/people/jordan-example/')).toBe(
+      false,
     );
+    expect(
+      isProfilePageWebsiteUrl('https://labs.example.edu/directory/faculty/jordan-example/'),
+    ).toBe(true);
     expect(isProfilePageWebsiteUrl('https://lab.example.org/')).toBe(false);
+  });
+
+  it('flags directory, index, and paginated listing pages', () => {
+    expect(
+      isListingPageWebsiteUrl('https://medicine.yale.edu/about/a-to-z-index/lab-websites'),
+    ).toBe(true);
+    expect(isListingPageWebsiteUrl('https://physics.yale.edu/people?page=8')).toBe(true);
+    expect(isListingPageWebsiteUrl('https://physics.yale.edu/people')).toBe(true);
+    expect(isListingPageWebsiteUrl('https://physics.yale.edu/people/faculty')).toBe(true);
+    expect(isListingPageWebsiteUrl('https://medicine.yale.edu/mcdb/faculty/')).toBe(true);
+    expect(isListingPageWebsiteUrl('https://example-computing-lab.example.org/')).toBe(false);
+    expect(isListingPageWebsiteUrl('https://physics.yale.edu/people/jordan-example/')).toBe(false);
+  });
+
+  it('never promotes directory, index, or paginated listing pages', () => {
+    expect(
+      isPromotableWebsiteUrl('https://medicine.yale.edu/about/a-to-z-index/lab-websites'),
+    ).toBe(false);
+    expect(isPromotableWebsiteUrl('https://physics.yale.edu/people?page=8')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://physics.yale.edu/mcdb/faculty/')).toBe(false);
+  });
+});
+
+describe('resolveBackfillWebsiteUrl listing handling', () => {
+  it('clears an A-Z-index listing websiteUrl when no research home is available', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites',
+        sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('clears a bare people-directory listing websiteUrl when no research home is available', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://mcdb.yale.edu/people',
+        sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('clears a paginated directory listing websiteUrl when no research home is available', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://mcdb.yale.edu/people?page=8',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks a real research home over a listing websiteUrl when one exists in evidence', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/jordan-example/',
+          'https://example-computing-lab.example.org/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
+  });
+
+  it('keeps a real lab-site websiteUrl untouched', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://example-computing-lab.example.org/',
+        sourceUrls: ['https://centers.example.edu/genomics/'],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
+  it('keeps a profile-page websiteUrl when no research home exists (unchanged behavior)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://medicine.example.edu/profile/jordan-example/',
+        sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+      }),
+    ).toEqual({ action: 'keep' });
   });
 });
 

@@ -29,7 +29,10 @@ import {
 import { mutateAndRefreshAdminAccessReviewProjection } from '../services/adminAccessReviewProjectionService';
 import { applyResearchEntityOrgUnitCanonicalization } from './orgUnitCanonicalization';
 import { applyResearchEntityResearchAreaCanonicalization } from './researchAreaCanonicalization';
-import { selectBackfillWebsiteUrl } from '../scripts/backfillResearchEntityWebsiteUrlsCore';
+import {
+  resolveBackfillWebsiteUrl,
+  type WebsiteUrlBackfillResolution,
+} from '../scripts/backfillResearchEntityWebsiteUrlsCore';
 import {
   archiveCanonicalRoleAssignmentsForPersons,
   archiveSupersededCanonicalRoleAssignments,
@@ -357,9 +360,9 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknow
 export function deriveResearchEntityWebsiteUrl(
   set: Record<string, unknown>,
   entityDoc?: Record<string, unknown> | null,
-): string | undefined {
+): WebsiteUrlBackfillResolution {
   const merged = (field: string): unknown => (field in set ? set[field] : entityDoc?.[field]);
-  return selectBackfillWebsiteUrl({
+  return resolveBackfillWebsiteUrl({
     websiteUrl: merged('websiteUrl'),
     website: merged('website'),
     sourceUrls: merged('sourceUrls'),
@@ -1989,9 +1992,12 @@ export async function materializeEntity(
     await applyResearchEntityOrgUnitCanonicalization(set, entityDoc);
     await applyResearchEntityResearchAreaCanonicalization(set);
     if (!manuallyLockedFields.includes('websiteUrl')) {
-      const derivedWebsiteUrl = deriveResearchEntityWebsiteUrl(set, entityDoc);
-      if (derivedWebsiteUrl) {
-        set.websiteUrl = derivedWebsiteUrl;
+      const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);
+      if (websiteResolution.action === 'set') {
+        set.websiteUrl = websiteResolution.websiteUrl;
+        fieldsWritten++;
+      } else if (websiteResolution.action === 'clear') {
+        set.websiteUrl = '';
         fieldsWritten++;
       }
     }

@@ -33,6 +33,20 @@ export function isPersonProfileOrDirectoryUrl(value: unknown): boolean {
   return isProfileOrPeopleDirectoryPath(pathname);
 }
 
+const PAGINATED_LISTING_QUERY = /(?:^|[?&])page=\d/i;
+
+const INDEX_LISTING_PATH = /\/(?:a-to-z-index|a-z-index|az-index|lab-websites)\//i;
+
+const DIRECTORY_ROOT_PATH = /\/(?:people|faculty|faculty-directory|directory)\/$/i;
+
+export function isListingOrIndexUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  if (PAGINATED_LISTING_QUERY.test(url.search)) return true;
+  const pathname = (url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`).toLowerCase();
+  return INDEX_LISTING_PATH.test(pathname) || DIRECTORY_ROOT_PATH.test(pathname);
+}
+
 export const genericYaleWebsiteSubdomains = new Set([
   'african',
   'americanstudies',
@@ -104,6 +118,7 @@ export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
 export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
   const raw = textValue(value);
   if (!raw) return '';
+  if (isListingOrIndexUrl(raw)) return '';
   try {
     const url = new URL(raw);
     url.hash = '';

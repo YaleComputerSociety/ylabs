@@ -718,7 +718,7 @@ describe('deriveResearchEntityWebsiteUrl', () => {
   it('derives websiteUrl from a promotable website when currently empty', () => {
     expect(
       deriveResearchEntityWebsiteUrl({ website: 'https://lab.yale.edu/' }, { websiteUrl: '' }),
-    ).toBe('https://lab.yale.edu/');
+    ).toEqual({ action: 'set', websiteUrl: 'https://lab.yale.edu/' });
   });
 
   it('falls back to the first promotable sourceUrl when website is absent', () => {
@@ -727,7 +727,7 @@ describe('deriveResearchEntityWebsiteUrl', () => {
         { sourceUrls: ['https://reporter.nih.gov/x', 'https://center.yale.edu/'] },
         { websiteUrl: '' },
       ),
-    ).toBe('https://center.yale.edu/');
+    ).toEqual({ action: 'set', websiteUrl: 'https://center.yale.edu/' });
   });
 
   it('never overwrites an already-usable websiteUrl on the existing entity', () => {
@@ -736,7 +736,7 @@ describe('deriveResearchEntityWebsiteUrl', () => {
         { website: 'https://other.yale.edu/' },
         { websiteUrl: 'https://existing.yale.edu/' },
       ),
-    ).toBeUndefined();
+    ).toEqual({ action: 'keep' });
   });
 
   it('never overwrites a websiteUrl freshly materialized in this pass', () => {
@@ -745,7 +745,7 @@ describe('deriveResearchEntityWebsiteUrl', () => {
         { websiteUrl: 'https://fresh.yale.edu/', website: 'https://other.yale.edu/' },
         null,
       ),
-    ).toBeUndefined();
+    ).toEqual({ action: 'keep' });
   });
 
   it('excludes grant and identifier hosts as promotable candidates', () => {
@@ -757,11 +757,35 @@ describe('deriveResearchEntityWebsiteUrl', () => {
         },
         { websiteUrl: '' },
       ),
-    ).toBeUndefined();
+    ).toEqual({ action: 'keep' });
   });
 
   it('leaves websiteUrl empty when no promotable evidence is present', () => {
-    expect(deriveResearchEntityWebsiteUrl({}, { websiteUrl: '' })).toBeUndefined();
+    expect(deriveResearchEntityWebsiteUrl({}, { websiteUrl: '' })).toEqual({ action: 'keep' });
+  });
+
+  it('clears an A-Z-index listing websiteUrl when no research home is available', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        {},
+        {
+          websiteUrl: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites',
+          sourceUrls: ['https://medicine.yale.edu/profile/jordan-example/'],
+        },
+      ),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks a real research home over a directory listing websiteUrl', () => {
+    expect(
+      deriveResearchEntityWebsiteUrl(
+        {},
+        {
+          websiteUrl: 'https://physics.yale.edu/people?page=8',
+          sourceUrls: ['https://example-computing-lab.example.org/'],
+        },
+      ),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
   });
 });
 
