@@ -130,7 +130,7 @@ export function isCustomYaleResearchHomeSubdomain(url: URL): boolean {
   return Boolean(prefix && !prefix.includes('.') && !genericYaleWebsiteSubdomains.has(prefix));
 }
 
-const GOOGLE_SITES_NAMED_PATH = /^\/(?:view|site|d)\/[^/]+/i;
+const GOOGLE_SITES_NAMED_PATH = /^\/(?:view|site)\/[^/]+/i;
 
 const GOOGLE_SITES_DOMAIN_SCOPED_PATH = /^\/[a-z0-9-]+(?:\.[a-z0-9-]+)+\/[^/]+/i;
 
