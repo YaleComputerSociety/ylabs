@@ -35,6 +35,12 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { slugify, splitName } from '../utils/scraperHelpers';
+import {
+  givenNamesEquivalent,
+  surnameFetchRegex,
+  surnamesCompatible,
+  SURNAME_FETCH_LIMIT,
+} from '../utils/piNameMatch';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
@@ -276,20 +282,28 @@ export async function resolveUserForPi(
   if (!canonicalName) return { status: 'absent' };
   const { first, last } = splitName(canonicalName);
   if (!last) return { status: 'absent' };
-  const lnameRe = new RegExp(`^${escapeRegex(last)}$`, 'i');
-  const candidates: any[] = await userModel
+  const surnameRe = surnameFetchRegex(last);
+  if (!surnameRe) return { status: 'absent' };
+  const fetched: any[] = await userModel
     .find(
       {
-        lname: lnameRe,
+        lname: surnameRe,
         userType: { $in: ['professor', 'faculty', 'admin'] },
       },
       { _id: 1, fname: 1, lname: 1, netid: 1, primaryDepartment: 1, title: 1 },
     )
-    .limit(10)
+    .limit(SURNAME_FETCH_LIMIT)
     .lean();
+  if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+  const candidates = fetched.filter((c) => surnamesCompatible(last, c.lname));
   if (!first) return candidates.length > 0 ? { status: 'ambiguous' } : { status: 'absent' };
-  // Exact first name match wins.
-  const exact = candidates.filter((c) => (c.fname || '').toLowerCase() === first.toLowerCase());
+  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
+  // Exact or canonical-nickname first name match wins.
+  const exact = candidates.filter(
+    (c) =>
+      (c.fname || '').toLowerCase() === first.toLowerCase() ||
+      givenNamesEquivalent(firstToken, c.fname || ''),
+  );
   if (exact.length === 1) {
     return { status: 'matched', user: userPiMatchResult(exact[0]) };
   }
@@ -298,7 +312,6 @@ export async function resolveUserForPi(
   // Fall back to a given-name prefix. Only use a bare first initial when the
   // source itself only provided an initial; otherwise same-initial matches are
   // too broad for grant identity linkage.
-  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
   const isInitialOnly = firstToken.length === 1;
   const prefix = (isInitialOnly ? firstToken : first).toLowerCase();
   const byPrefix = candidates.filter((c) => (c.fname || '').toLowerCase().startsWith(prefix));
@@ -329,10 +342,6 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
   if (/\bresearch affiliates?\b/.test(value)) return false;
   if (/\bassociate research scientist\b/.test(value)) return false;
   return true;
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

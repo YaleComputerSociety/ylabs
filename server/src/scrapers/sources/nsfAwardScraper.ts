@@ -43,6 +43,12 @@ import {
   type CanonicalResearchHomeResolution,
 } from '../canonicalResearchHomeResolver';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
+import {
+  givenNameVariants,
+  surnameFetchRegex,
+  surnamesCompatible,
+  SURNAME_FETCH_LIMIT,
+} from '../utils/piNameMatch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -310,9 +316,17 @@ export function piSlug(piUserId: string | null, firstName: string, lastName: str
  * Default depends on the live `User` model; tests can inject a custom finder
  * via the second argument.
  */
+export interface PiUserRow {
+  _id: unknown;
+  fname?: unknown;
+  lname?: unknown;
+}
+
+export type PiUserFinder = (q: Record<string, unknown>) => Promise<PiUserRow[]>;
+
 export async function findUserForPi(
   name: { firstName: string; lastName: string },
-  finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>> = defaultUserFinder,
+  finder: PiUserFinder = defaultUserFinder,
 ): Promise<string | null> {
   const result = await resolveUserForPi(name, finder);
   return result.status === 'matched' ? result.userId : null;
@@ -325,49 +339,75 @@ export type NsfPiUserResolution =
 
 export async function resolveUserForPi(
   pi: { firstName?: string; lastName?: string },
-  finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>> = defaultUserFinder,
+  finder: PiUserFinder = defaultUserFinder,
 ): Promise<NsfPiUserResolution> {
   const first = (pi.firstName || '').trim();
   const last = (pi.lastName || '').trim();
   if (!last) return { status: 'absent' };
 
   const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const lnameRe = new RegExp(`^${escapeRe(last)}$`, 'i');
+  const lnameRe = surnameFetchRegex(last);
+  if (!lnameRe) return { status: 'absent' };
   const userTypeFilter = { $in: ['professor', 'faculty', 'admin'] };
+  const firstToken = first ? first.split(/\s+/)[0]?.replace(/\./g, '') || first : '';
+  const compatible = (rows: PiUserRow[]) =>
+    rows.filter((r) => surnamesCompatible(last, String(r.lname ?? '')));
 
-  // pass 1: exact lname + fname
+  // pass 1: surname + exact fname
   if (first) {
     const fnameRe = new RegExp(`^${escapeRe(first)}$`, 'i');
-    const matches = await finder({
+    const rows = await finder({
       lname: lnameRe,
       fname: fnameRe,
       userType: userTypeFilter,
     });
+    if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+    const matches = compatible(rows);
     if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     // multiple exact matches → ambiguous, give up (don't fall through to initial)
     if (matches.length > 1) return { status: 'ambiguous' };
   }
 
-  // pass 2: exact lname + given-name prefix. Only fall back to a bare initial
+  // pass 2: surname + given-name prefix. Only fall back to a bare initial
   // when the source itself only provided an initial; otherwise same-initial
   // matches are too broad (for example Leying Guan vs Lawrence Guan).
   if (first) {
-    const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
     const isInitialOnly = firstToken.length === 1;
     const initRe = new RegExp(`^${escapeRe(isInitialOnly ? firstToken : first)}`, 'i');
-    const matches = await finder({
+    const rows = await finder({
       lname: lnameRe,
       fname: initRe,
       userType: userTypeFilter,
     });
+    if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+    const matches = compatible(rows);
     if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
     if (matches.length > 1) return { status: 'ambiguous' };
+  }
+
+  // pass 3: canonical nickname / formal-name variants of the given name (source
+  // "Bob" resolving to a stored "Robert"). Runs only when the name has variants
+  // beyond itself, so a name with no nickname mapping never adds a query.
+  if (firstToken) {
+    const variants = givenNameVariants(firstToken).filter((v) => v !== firstToken.toLowerCase());
+    if (variants.length > 0) {
+      const variantRe = new RegExp(`^(?:${variants.map(escapeRe).join('|')})$`, 'i');
+      const rows = await finder({
+        lname: lnameRe,
+        fname: variantRe,
+        userType: userTypeFilter,
+      });
+      if (rows.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
+      const matches = compatible(rows);
+      if (matches.length === 1) return { status: 'matched', userId: String(matches[0]._id) };
+      if (matches.length > 1) return { status: 'ambiguous' };
+    }
   }
   return { status: 'absent' };
 }
 
-async function defaultUserFinder(q: Record<string, unknown>): Promise<Array<{ _id: unknown }>> {
-  return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(5).lean();
+async function defaultUserFinder(q: Record<string, unknown>): Promise<PiUserRow[]> {
+  return User.find(q, { _id: 1, fname: 1, lname: 1 }).limit(SURNAME_FETCH_LIMIT).lean();
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +538,7 @@ async function buildCoPiObservations(
   group: PiAwardsGroup,
   researchGroupSlug: string,
   sourceUrl: string,
-  finder: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>>,
+  finder: PiUserFinder,
 ): Promise<ObservationInput[]> {
   const out: ObservationInput[] = [];
   const seenUserIds = new Set<string>();
@@ -537,7 +577,7 @@ async function buildCoPiObservations(
 
 export interface NsfAwardScraperDeps {
   /** Override the User-finder (used in tests to avoid hitting Mongo). */
-  userFinder?: (q: Record<string, unknown>) => Promise<Array<{ _id: unknown }>>;
+  userFinder?: PiUserFinder;
   /** Override the page fetcher (used in tests to avoid hitting NSF). */
   fetchPage?: typeof fetchPage;
   /** Override the lookback start date (default: today minus 5 years). */
