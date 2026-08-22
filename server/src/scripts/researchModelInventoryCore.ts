@@ -4,14 +4,16 @@
  * The runner (`researchModelInventory.ts`) gathers raw facts from MongoDB and
  * hands them to `buildResearchModelInventoryReport`, which classifies every
  * collection against the ratified target model in `docs/research-model-refactor.md`
- * (the single source of truth as of 2026-08-18: 7 live collections - Researcher,
- * Account, ResearchEntity, Signal, ResearchEntityRelationship, Observation, and
- * ResearchPlan). It flags legacy residue and retirement-field prevalence, and
+ * (the single source of truth as of 2026-08-18: 8 live collections - Researcher,
+ * Account, ResearchEntity, RoleAssignment, Signal, ResearchEntityRelationship,
+ * Observation, and ResearchPlan). It flags legacy residue and retirement-field prevalence, and
  * summarizes reference-integrity orphans. Keeping the shaping here means it can be
  * unit tested without a database, matching the other audit scripts in this folder.
  *
- * The ratified model removed RoleAssignment, EntryPathway, ContactRoute,
- * PostedOpportunity, and TaxonomyTerm, folded AccessSignal and
+ * The ratified model removed EntryPathway, ContactRoute,
+ * PostedOpportunity, and TaxonomyTerm, kept RoleAssignment as the canonical
+ * first-class roster (an earlier embed-on-ResearchEntity idea was rejected),
+ * folded AccessSignal and
  * UndergraduateLogisticsClaim into a type-based Signal, and froze the heavy
  * evidence claim-graph (EvidenceClaim, SourceDocument, ReviewDecision) as
  * unwired do-not-build-on contracts. The live evidence path is Observation ->
@@ -139,7 +141,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ResearchGroupMember',
     group: 'legacy-residue',
     phase: 2,
-    target: 'RoleAssignment (retired and dropped in #521; roster is served entirely by role_assignments)',
+    target:
+      'RoleAssignment (retired and dropped in #521; roster is served entirely by role_assignments)',
     expectPresent: false,
   },
   {
@@ -418,7 +421,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'ObservationReferenceRepairAudit',
     group: 'operational',
     phase: null,
-    target: 'Append-only observation-reference repair audit trail (operational; not a migration target)',
+    target:
+      'Append-only observation-reference repair audit trail (operational; not a migration target)',
   },
   // Expected already retired by the earlier hard-pivot; presence is residue.
   {
