@@ -300,6 +300,7 @@ export function computeResearchEntityStudentVisibility({
     openPostedOpportunityCount > 0 || accessSignalCount > 0 || actionablePathwayCount > 0;
   const requiresLead =
     !isProgramLikeResearchEntity(entity) && !isOrganizationalResearchEntity(entity);
+  const missingRequiredLead = requiresLead && quality.leadState !== 'lead_attached';
   const genericDirectoryShell =
     isGenericDirectoryOnlyProfileAreaShell(entity) &&
     quality.descriptionState === 'missing' &&
@@ -388,6 +389,20 @@ export function computeResearchEntityStudentVisibility({
       tier: result.computedTier,
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'public_description_invariant_failed'])),
+    };
+  }
+  // A lead-requiring entity with no attached PI can never be published to
+  // students, even by an explicit operator override: absent a verified lead we
+  // cannot vouch for the entity's identity, so it is held for review rather
+  // than trusted to a manual override.
+  if (
+    missingRequiredLead &&
+    (result.tier === 'student_ready' || result.tier === 'limited_but_safe')
+  ) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'missing_lead'])),
     };
   }
   return result;
