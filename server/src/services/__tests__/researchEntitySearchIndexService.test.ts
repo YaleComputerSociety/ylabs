@@ -13,6 +13,7 @@ import {
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
+  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   rebuildResearchEntitySearchIndex,
 } from '../researchEntitySearchIndexService';
 
@@ -174,6 +175,18 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
       expect.arrayContaining(['lastObservedAt', 'name', 'createdAt', 'updatedAt']),
+    );
+  });
+
+  it('raises the pagination ceiling above the Meili default so the full directory is reachable', () => {
+    const settings = getResearchEntitySearchIndexSettings();
+
+    expect(settings.pagination.maxTotalHits).toBe(RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS);
+    expect(settings.pagination.maxTotalHits).toBeGreaterThan(1000);
+
+    settings.pagination.maxTotalHits = 1;
+    expect(getResearchEntitySearchIndexSettings().pagination.maxTotalHits).toBe(
+      RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
     );
   });
 

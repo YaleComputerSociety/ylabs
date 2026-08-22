@@ -8,6 +8,8 @@ import { isPublicHttpUrl } from '../utils/urlSafety';
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
 export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
 
+export const RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS = 100000;
+
 const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   searchableAttributes: [
     'name',
@@ -52,6 +54,9 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     cv: ['computer vision', 'medical imaging', 'image analysis'],
     neuro: ['neuroscience', 'neurology', 'neural', 'brain'],
     psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
+  },
+  pagination: {
+    maxTotalHits: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
   },
 };
 
@@ -98,6 +103,9 @@ export function getResearchEntitySearchIndexSettings() {
         [...values],
       ]),
     ),
+    pagination: {
+      maxTotalHits: RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.pagination.maxTotalHits,
+    },
   };
 }
 

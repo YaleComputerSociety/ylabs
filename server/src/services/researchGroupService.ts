@@ -346,19 +346,83 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
   'an',
   'and',
+  'as',
+  'at',
+  'by',
+  'from',
   'for',
   'in',
+  'into',
   'of',
   'on',
+  'or',
   'the',
   'to',
   'with',
   'prof',
   'professor',
+  'professors',
   'lab',
   'labs',
   'laboratory',
+  'laboratories',
   'research',
+  'researcher',
+  'researchers',
+  'group',
+  'groups',
+  'where',
+  'what',
+  'which',
+  'who',
+  'whom',
+  'whose',
+  'when',
+  'why',
+  'how',
+  'can',
+  'could',
+  'would',
+  'should',
+  'do',
+  'does',
+  'did',
+  'is',
+  'are',
+  'am',
+  'be',
+  'been',
+  'being',
+  'i',
+  'me',
+  'my',
+  'we',
+  'us',
+  'our',
+  'you',
+  'your',
+  'study',
+  'studies',
+  'studying',
+  'studied',
+  'using',
+  'use',
+  'used',
+  'find',
+  'finding',
+  'looking',
+  'look',
+  'want',
+  'wanting',
+  'interested',
+  'join',
+  'joining',
+  'about',
+  'that',
+  'there',
+  'best',
+  'some',
+  'any',
 ]);
 
 const STUDENT_QUERY_ALIASES: Record<string, string[]> = {
@@ -370,12 +434,7 @@ const STUDENT_QUERY_ALIASES: Record<string, string[]> = {
   psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science', 'psych'],
 };
 
-const SHORT_ALIAS_QUERY_ATTRIBUTES = [
-  'studentSearchTerms',
-  'researchAreas',
-  'keywords',
-  'departments',
-];
+const SHORT_ALIAS_QUERY_ATTRIBUTES = ['studentSearchTerms', 'researchAreas', 'departments'];
 
 const boundedResearchSearchQuery = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -594,6 +653,27 @@ const isUnsortableAttributeError = (error: unknown): boolean => {
 };
 
 /**
+ * When Meilisearch rejects a query because `attributesToSearchOn` references an
+ * attribute missing from the running index's searchableAttributes (config
+ * drift), let the query recover by dropping the restriction and searching all
+ * attributes rather than falling all the way back to the slow Mongo path.
+ */
+const isInvalidSearchAttributesToSearchOnError = (error: unknown): boolean => {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+  const code = maybeError?.code || maybeError?.cause?.code;
+  const message = maybeError?.message || maybeError?.cause?.message || '';
+
+  return (
+    code === 'invalid_search_attributes_to_search_on' ||
+    /is not searchable|attributes to search on/i.test(message)
+  );
+};
+
+/**
  * Hybrid Meilisearch query for ResearchEntity. Mirrors the pattern used in
  * listingService — keyword-only when no query, hybrid (semanticRatio 0.8) when
  * a non-empty query is provided.
@@ -743,6 +823,12 @@ export async function searchResearchGroupsViaMeili(
             degraded = true;
             continue;
           }
+        }
+        if (params.attributesToSearchOn && isInvalidSearchAttributesToSearchOnError(error)) {
+          params = { ...params };
+          delete params.attributesToSearchOn;
+          degraded = true;
+          continue;
         }
         throw error;
       }

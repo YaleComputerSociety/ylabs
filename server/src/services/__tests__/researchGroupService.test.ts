@@ -203,6 +203,33 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('strips question and course-topic filler so the topical terms drive ranking', () => {
+    expect(normalizeResearchSearchQuery('labs studying black holes')).toMatchObject({
+      query: 'black holes',
+      tokens: ['black', 'holes'],
+      isShortAliasQuery: false,
+    });
+    expect(
+      normalizeResearchSearchQuery('where can I study machine learning for medicine'),
+    ).toMatchObject({
+      query: 'machine learning medicine',
+      tokens: ['machine', 'learning', 'medicine'],
+      isShortAliasQuery: false,
+    });
+    expect(normalizeResearchSearchQuery('how do neurons communicate')).toMatchObject({
+      query: 'neurons communicate',
+      tokens: ['neurons', 'communicate'],
+      isShortAliasQuery: false,
+    });
+  });
+
+  it('keeps an all-filler query non-empty by preserving its original tokens', () => {
+    expect(normalizeResearchSearchQuery('how do i')).toMatchObject({
+      query: 'how do i',
+      tokens: ['how', 'do', 'i'],
+    });
+  });
+
   it('normalizes research group ObjectIds without arbitrary object coercion', () => {
     const entityId = '67d8928150621bcef434a1d5';
 
@@ -309,7 +336,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).toHaveBeenCalledWith(
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
-        attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'keywords', 'departments'],
+        attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
         facets: ['schools', 'departments'],
       }),
     );
@@ -318,6 +345,42 @@ describe('searchResearchGroupsViaMeili', () => {
       school: { 'Yale College': 3 },
       departments: { 'Computer Science': 2 },
     });
+  });
+
+  it('recovers on Meili when attributesToSearchOn references a non-searchable attribute', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'invalid_search_attributes_to_search_on',
+        message: 'Attribute `keywords` is not searchable.',
+      })
+      .mockResolvedValueOnce({
+        hits: [{ id: entityId, slug: 'actual-ai-lab', name: 'Actual AI Lab' }],
+        estimatedTotalHits: 1,
+      });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'actual-ai-lab',
+          name: 'Actual AI Lab',
+          kind: 'lab',
+          departments: [],
+          researchAreas: ['Machine Learning'],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('attributesToSearchOn');
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('attributesToSearchOn');
+    expect(result.degraded).toBe(true);
+    expect(result.researchEntities).toEqual([
+      expect.objectContaining({ slug: 'actual-ai-lab' }),
+    ]);
   });
 
   it('strips professor noise while preserving faculty surname searches', async () => {
