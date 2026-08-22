@@ -11,10 +11,9 @@ describe('applyResearchEntityDedupeMergeGroup saved-plan relink', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-    await mongoose.connection.db!.collection('research_plans').createIndex(
-      { accountId: 1, 'target.kind': 1, 'target.id': 1 },
-      { unique: true },
-    );
+    await mongoose.connection
+      .db!.collection('research_plans')
+      .createIndex({ accountId: 1, 'target.kind': 1, 'target.id': 1 }, { unique: true });
   });
 
   afterAll(async () => {
