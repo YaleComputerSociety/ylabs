@@ -7,6 +7,7 @@ import {
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
   setResearchAreaCanonicalizerForTesting,
+  stripResearchAreaSourceChrome,
 } from '../researchAreaCanonicalization';
 
 const rows = [
@@ -36,7 +37,61 @@ describe('researchAreaMatchKey', () => {
   });
 });
 
+describe('stripResearchAreaSourceChrome', () => {
+  it('recovers multiple glued topics from YSM profile widget chrome (#487)', () => {
+    expect(
+      stripResearchAreaSourceChrome(
+        'Nuclear Envelope2 YSM ResearchersView 11 Related PublicationsCell Nucleus6 YSM ResearchersView 7 Related PublicationsChromatin7 YSM ResearchersView 6 Related PublicationsMechanotransduction',
+      ),
+    ).toEqual(['Nuclear Envelope', 'Cell Nucleus', 'Chromatin', 'Mechanotransduction']);
+  });
+
+  it('strips trailing chrome from a single topic', () => {
+    expect(
+      stripResearchAreaSourceChrome('Natural Language Processing9 YSM ResearchersView 121 Related Publications'),
+    ).toEqual(['Natural Language Processing']);
+    expect(
+      stripResearchAreaSourceChrome('Endometriosis4 YSM ResearchersView 123 Related Publications'),
+    ).toEqual(['Endometriosis']);
+  });
+
+  it('handles singular "Researcher" and missing counts', () => {
+    expect(
+      stripResearchAreaSourceChrome(
+        'SpectrinYSM ResearcherView 51 Related PublicationsComputer-Assisted InstructionYSM ResearcherView Related PublicationPathology43 YSM ResearchersView Related Publication',
+      ),
+    ).toEqual(['Spectrin', 'Computer-Assisted Instruction', 'Pathology']);
+  });
+
+  it('leaves a clean area untouched and never strips a legitimate trailing number', () => {
+    expect(stripResearchAreaSourceChrome('Immunology')).toEqual(['Immunology']);
+    expect(stripResearchAreaSourceChrome('Cell Biology')).toEqual(['Cell Biology']);
+    expect(stripResearchAreaSourceChrome('SARS-CoV-2')).toEqual(['SARS-CoV-2']);
+    expect(stripResearchAreaSourceChrome(42)).toEqual([]);
+    expect(stripResearchAreaSourceChrome('  ')).toEqual([]);
+  });
+
+  it('does not corrupt a hyphen-number topic glued to widget chrome into a dangling hyphen (#487)', () => {
+    const recovered = stripResearchAreaSourceChrome(
+      'SARS-CoV-23 YSM ResearchersView 5 Related PublicationsImmunology',
+    );
+    expect(recovered).not.toContain('SARS-CoV-');
+    expect(recovered).toEqual(['SARS-CoV-23', 'Immunology']);
+  });
+});
+
 describe('canonicalizeResearchAreas', () => {
+  it('splits glued page-chrome into recovered topics before matching (#487)', () => {
+    const specific = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([{ name: 'Natural Language Processing' }]),
+    );
+    const result = specific.canonicalizeResearchAreas([
+      'Natural Language Processing9 YSM ResearchersView 121 Related Publications',
+      'Internal Medicine',
+    ]);
+    expect(result.values).toEqual(['Natural Language Processing', 'Internal Medicine']);
+  });
+
   it('maps exact names and curated aliases to canonical values', () => {
     const result = canonicalizer.canonicalizeResearchAreas(['machine learning', 'AI', 'HCI']);
     expect(result.values).toEqual([
