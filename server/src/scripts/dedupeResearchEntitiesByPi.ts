@@ -733,6 +733,12 @@ const SCALAR_REFERENCE_SPECS: Array<{
   },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchEntity' } },
   { collection: 'observations', field: 'entityId', filter: { entityType: 'researchGroup' } },
+  {
+    collection: 'research_plans',
+    field: 'target.id',
+    filter: { 'target.kind': 'RESEARCH_ENTITY' },
+    archiveOnConflict: true,
+  },
 ];
 
 const ARRAY_REFERENCE_SPECS: Array<{

@@ -118,6 +118,7 @@ import {
   isFreshVerifiedOfficialRosterRow,
   publicRosterDisclosure,
   researchDetailLeadIdentity,
+  resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
 
@@ -2226,5 +2227,32 @@ describe('dropUncorroboratedPhantomLeads', () => {
     ];
 
     expect(dropUncorroboratedPhantomLeads(members)).toEqual(members);
+  });
+});
+
+describe('resolveArchivedResearchEntityCanonicalSlug', () => {
+  it('resolves an archived slug to the visible canonical entity slug', async () => {
+    const canonicalGroupId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne
+      .mockReturnValueOnce(leanResult({ canonicalGroupId }))
+      .mockReturnValueOnce(leanResult({ slug: 'named-lab' }));
+
+    await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBe(
+      'named-lab',
+    );
+  });
+
+  it('returns null when the slug has no archived tombstone', async () => {
+    mocks.researchEntityFindOne.mockReturnValueOnce(leanResult(null));
+
+    await expect(resolveArchivedResearchEntityCanonicalSlug('active-lab')).resolves.toBeNull();
+  });
+
+  it('returns null when the canonical target is not publicly visible', async () => {
+    mocks.researchEntityFindOne
+      .mockReturnValueOnce(leanResult({ canonicalGroupId: new mongoose.Types.ObjectId() }))
+      .mockReturnValueOnce(leanResult(null));
+
+    await expect(resolveArchivedResearchEntityCanonicalSlug('nsf-pi-shell')).resolves.toBeNull();
   });
 });

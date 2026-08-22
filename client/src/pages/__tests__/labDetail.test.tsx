@@ -139,6 +139,61 @@ describe('LabDetail page', () => {
     expect(profileOpenEvents).toHaveLength(1);
   });
 
+  it('redirects an archived slug to the canonical entity slug', async () => {
+    const OLD_SLUG = 'nsf-pi-archived-shell';
+    const CANONICAL_SLUG = 'named-canonical-lab';
+    const canonicalPayload: LabDetailPayload = {
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        _id: 'canonical-1',
+        slug: CANONICAL_SLUG,
+        name: 'Canonical Lab Name',
+      },
+    };
+    mockedAxios.post.mockResolvedValue({ status: 202 });
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url === `/research/${OLD_SLUG}`) {
+        return Promise.resolve({
+          data: canonicalPayload,
+          request: { responseURL: `http://localhost/api/research/${CANONICAL_SLUG}` },
+        });
+      }
+      if (url === `/research/${CANONICAL_SLUG}`) {
+        return Promise.resolve({
+          data: canonicalPayload,
+          request: { responseURL: `http://localhost/api/research/${CANONICAL_SLUG}` },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${OLD_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+            <Route path="/login" element={<div>Yale sign in</div>} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    await screen.findByText('Canonical Lab Name');
+    await waitFor(() =>
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        `/research/${CANONICAL_SLUG}`,
+        expect.anything(),
+      ),
+    );
+    expect(screen.queryByText('Research profile not found.')).toBeNull();
+  });
+
   it('keeps generic source review separate from a qualified action', async () => {
     mockedAxios.post.mockResolvedValue({ status: 202 });
     renderLabDetail();
