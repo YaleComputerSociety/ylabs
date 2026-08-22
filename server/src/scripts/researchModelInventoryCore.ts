@@ -4,14 +4,16 @@
  * The runner (`researchModelInventory.ts`) gathers raw facts from MongoDB and
  * hands them to `buildResearchModelInventoryReport`, which classifies every
  * collection against the ratified target model in `docs/research-model-refactor.md`
- * (the single source of truth as of 2026-08-18: 7 live collections - Researcher,
- * Account, ResearchEntity, Signal, ResearchEntityRelationship, Observation, and
- * ResearchPlan). It flags legacy residue and retirement-field prevalence, and
+ * (the single source of truth as of 2026-08-18: 8 live collections - Researcher,
+ * Account, ResearchEntity, RoleAssignment, Signal, ResearchEntityRelationship,
+ * Observation, and ResearchPlan). It flags legacy residue and retirement-field prevalence, and
  * summarizes reference-integrity orphans. Keeping the shaping here means it can be
  * unit tested without a database, matching the other audit scripts in this folder.
  *
- * The ratified model removed RoleAssignment, EntryPathway, ContactRoute,
- * PostedOpportunity, and TaxonomyTerm, folded AccessSignal and
+ * The ratified model removed EntryPathway, ContactRoute,
+ * PostedOpportunity, and TaxonomyTerm, kept RoleAssignment as the canonical
+ * first-class roster (an earlier embed-on-ResearchEntity idea was rejected),
+ * folded AccessSignal and
  * UndergraduateLogisticsClaim into a type-based Signal, and froze the heavy
  * evidence claim-graph (EvidenceClaim, SourceDocument, ReviewDecision) as
  * unwired do-not-build-on contracts. The live evidence path is Observation ->
@@ -103,7 +105,8 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     model: 'RoleAssignment',
     group: 'canonical-domain',
     phase: 1,
-    target: 'Removed - roster embedded on ResearchEntity.members',
+    target:
+      'RoleAssignment (canonical first-class roster: dated person <-> entity role edges; replaces the retired research_entity_members)',
   },
   {
     collection: 'org_units',
@@ -137,9 +140,11 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
   {
     collection: 'research_entity_members',
     model: 'ResearchGroupMember',
-    group: 'dual-truth',
+    group: 'legacy-residue',
     phase: 2,
-    target: 'RoleAssignment (one entity id, one person id)',
+    target:
+      'RoleAssignment (retired and dropped in #521; roster is served entirely by role_assignments)',
+    expectPresent: false,
   },
   {
     collection: 'research_entities',
@@ -190,6 +195,14 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'canonical-domain',
     phase: 4,
     target: 'Signal (folded into the type-based signals collection as logistics types)',
+  },
+  {
+    collection: 'signals',
+    model: 'Signal',
+    group: 'canonical-domain',
+    phase: 4,
+    target:
+      'Signal (canonical type-based access/logistics facts; consolidates AccessSignal and UndergraduateLogisticsClaim)',
   },
   {
     collection: 'admin_grants',
@@ -396,6 +409,21 @@ export const INVENTORY_COLLECTIONS: CollectionSpec[] = [
     group: 'operational',
     phase: 0,
     target: 'Environment-local readiness state for the admin access-review projection',
+  },
+  {
+    collection: 'admin_audit_events',
+    model: 'AdminAuditEvent',
+    group: 'operational',
+    phase: null,
+    target: 'Append-only admin audit log (operational; not a research-model migration target)',
+  },
+  {
+    collection: 'observation_reference_repair_audits',
+    model: 'ObservationReferenceRepairAudit',
+    group: 'operational',
+    phase: null,
+    target:
+      'Append-only observation-reference repair audit trail (operational; not a migration target)',
   },
   // Expected already retired by the earlier hard-pivot; presence is residue.
   {

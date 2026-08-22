@@ -79,7 +79,8 @@ describe('INVENTORY_COLLECTIONS', () => {
         collection: 'role_assignments',
         model: 'RoleAssignment',
         group: 'canonical-domain',
-        target: 'Removed - roster embedded on ResearchEntity.members',
+        target:
+          'RoleAssignment (canonical first-class roster: dated person <-> entity role edges; replaces the retired research_entity_members)',
       },
       {
         collection: 'org_units',
