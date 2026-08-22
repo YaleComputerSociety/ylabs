@@ -34,6 +34,18 @@
  * emitted as durable observations so the materializer resolves them normally.
  * Apply requires --confirm-research-descriptions + explicit --limit; blocked
  * against production unless CONFIRM_PROD_SCRAPE=true.
+ *
+ * Card-synthesis lane (--card-synthesis, issue #557): for entities held only on
+ * missing_card_description that already carry a genuine source-backed full
+ * description, resolves a shippable one-line card by trying the deterministic
+ * deriveShortDescriptionFromFullDescription first and, when it returns nothing,
+ * a grounded-LLM synthesis (grounded in the entity's OWN full description and
+ * gated by the existing shortDescriptionQuality bar). The card quality bar is
+ * never relaxed and synthesis fails closed. It reports cards gained and how
+ * many would promote to student_ready (fresh visibility-gate reasons reduced to
+ * missing_card_description alone). Apply writes durable shortDescription
+ * observations plus the entity field, requires --confirm-card-synthesis, and is
+ * production blocked.
  */
 import axios from 'axios';
 import dotenv from 'dotenv';
@@ -69,6 +81,22 @@ import {
   SYNTHESIS_MODEL,
   type LabDescriptionSynthesizer,
 } from './labDescriptionSynthesis';
+import {
+  planCardBackfillRow,
+  summarizeCardBackfill,
+  CARD_BLOCKER_REASON,
+  type CardBackfillEntity,
+  type CardBackfillRow,
+  type CardBackfillSummary,
+  type CardSynthesizeFn,
+} from './backfillCardSynthesisCore';
+import {
+  CARD_SYNTHESIS_MODEL,
+  defaultCardSynthesisLLM,
+  synthesizeGroundedCardDescription,
+  type CardSynthesisLLMFn,
+} from '../utils/groundedCardSynthesis';
+import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,8 +150,10 @@ export interface ResearchDescriptionBackfillOptions {
   confirm: boolean;
   llmRewrite: boolean;
   llmSynthesis: boolean;
+  cardSynthesis: boolean;
   confirmShortDescriptions: boolean;
   confirmLlmSynthesis: boolean;
+  confirmCardSynthesis: boolean;
   projectedEntities: number;
   output?: string;
 }
@@ -140,8 +170,10 @@ export function parseResearchDescriptionBackfillArgs(
     confirm: false,
     llmRewrite: false,
     llmSynthesis: false,
+    cardSynthesis: false,
     confirmShortDescriptions: false,
     confirmLlmSynthesis: false,
+    confirmCardSynthesis: false,
     projectedEntities: DEFAULT_PROJECTED_ENTITIES,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -150,9 +182,11 @@ export function parseResearchDescriptionBackfillArgs(
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--llm-rewrite') options.llmRewrite = true;
     else if (arg === '--llm-synthesis') options.llmSynthesis = true;
+    else if (arg === '--card-synthesis') options.cardSynthesis = true;
     else if (arg === '--confirm-research-descriptions') options.confirm = true;
     else if (arg === '--confirm-short-descriptions') options.confirmShortDescriptions = true;
     else if (arg === '--confirm-llm-synthesis') options.confirmLlmSynthesis = true;
+    else if (arg === '--confirm-card-synthesis') options.confirmCardSynthesis = true;
     else if (arg.startsWith('--projected-entities=')) {
       options.projectedEntities = parsePositiveInt(arg.slice('--projected-entities='.length));
     } else if (arg === '--projected-entities') {
@@ -948,8 +982,214 @@ async function runLlmSynthesisLane(options: ResearchDescriptionBackfillOptions):
   }
 }
 
+interface CardSynthesisEntityDoc {
+  _id: unknown;
+  slug?: string;
+  name?: string;
+  displayName?: string;
+  entityType?: string;
+  shortDescription?: unknown;
+  fullDescription?: unknown;
+  studentVisibilityReasons?: string[];
+  websiteUrl?: unknown;
+  website?: unknown;
+  sourceUrls?: unknown;
+}
+
+const CARD_SYNTHESIS_CONFIDENCE = 0.82;
+
+export interface CardSynthesisBackfillResult {
+  mode: 'dry-run' | 'apply';
+  scanned: number;
+  updated: number;
+  summary: CardBackfillSummary;
+  samples: Array<{
+    slug?: string;
+    entityType?: string;
+    action: string;
+    wouldPromote: boolean;
+    shortDescription: string;
+  }>;
+}
+
+export async function runCardSynthesisBackfill(options: {
+  dryRun: boolean;
+  limit?: number;
+  cardSynthesizer?: CardSynthesisLLMFn;
+  cardModel?: string;
+}): Promise<CardSynthesisBackfillResult> {
+  const callCardLLM = options.cardSynthesizer || defaultCardSynthesisLLM;
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  const cardModel = options.cardModel || CARD_SYNTHESIS_MODEL;
+  const synthesize: CardSynthesizeFn = (fullDescription) =>
+    apiKey
+      ? synthesizeGroundedCardDescription({
+          fullDescription,
+          callLLM: (llmInput) => callCardLLM({ ...llmInput, apiKey, model: cardModel }),
+        })
+      : Promise.resolve('');
+
+  const docs = (await ResearchEntity.find(
+    { archived: { $ne: true }, studentVisibilityReasons: CARD_BLOCKER_REASON },
+    {
+      _id: 1,
+      slug: 1,
+      name: 1,
+      displayName: 1,
+      entityType: 1,
+      shortDescription: 1,
+      fullDescription: 1,
+      studentVisibilityReasons: 1,
+      websiteUrl: 1,
+      website: 1,
+      sourceUrls: 1,
+    },
+  )
+    .sort({ _id: 1 })
+    .lean()) as CardSynthesisEntityDoc[];
+
+  const limited = options.limit ? docs.slice(0, options.limit) : docs;
+  const docsById = new Map(limited.map((doc) => [serializedDocumentId(doc._id) || String(doc._id), doc]));
+  const recordIds = Array.from(docsById.keys());
+
+  const plans = recordIds.length
+    ? await planStudentVisibilityGate({ collection: 'research', mode: 'dry-run', recordIds })
+    : [];
+  const reasonsById = new Map(plans.map((plan) => [plan.recordId, plan.reasons]));
+
+  const rows: CardBackfillRow[] = [];
+  for (const [id, doc] of docsById) {
+    const entity: CardBackfillEntity = {
+      id,
+      slug: doc.slug,
+      entityType: doc.entityType,
+      shortDescription: doc.shortDescription,
+      fullDescription: doc.fullDescription,
+      visibilityReasons: reasonsById.get(id) ?? doc.studentVisibilityReasons,
+    };
+    rows.push(await planCardBackfillRow(entity, synthesize));
+  }
+
+  const summary = summarizeCardBackfill(rows);
+  const changed = rows.filter((row) => row.gainedCard && row.proposedShort);
+
+  let updated = 0;
+  if (!options.dryRun && changed.length > 0) {
+    const source = await getSourceByName(SOURCE_NAME);
+    if (source) {
+      const backfillRunId = new mongoose.Types.ObjectId().toString();
+      for (const row of changed) {
+        const doc = docsById.get(row.id);
+        if (!doc || !row.proposedShort) continue;
+        const sourceUrl = officialSourceUrl(doc);
+        await appendObservations(
+          [
+            {
+              entityType: 'researchEntity',
+              entityId: row.id,
+              entityKey: doc.slug,
+              field: 'shortDescription',
+              value: row.proposedShort,
+              sourceUrl,
+              confidenceOverride: CARD_SYNTHESIS_CONFIDENCE,
+            },
+          ],
+          {
+            sourceId: source._id,
+            sourceName: SOURCE_NAME,
+            scrapeRunId: backfillRunId,
+            sourceWeight: CARD_SYNTHESIS_CONFIDENCE,
+            dryRun: false,
+          },
+        );
+        await ResearchEntity.updateOne(
+          { _id: doc._id },
+          { $set: { shortDescription: row.proposedShort } },
+        );
+        updated += 1;
+      }
+    }
+  }
+
+  return {
+    mode: options.dryRun ? 'dry-run' : 'apply',
+    scanned: rows.length,
+    updated,
+    summary,
+    samples: changed.slice(0, SAMPLE_LIMIT * 2).map((row) => ({
+      slug: row.slug,
+      entityType: row.entityType,
+      action: row.action,
+      wouldPromote: row.wouldPromote,
+      shortDescription: clip(row.proposedShort ?? ''),
+    })),
+  };
+}
+
+async function runCardSynthesisLane(options: ResearchDescriptionBackfillOptions): Promise<void> {
+  const apply = !options.dryRun;
+  if (apply && !options.explicitLimit) {
+    throw new Error('Card-synthesis apply requires an explicit --limit to bound generation.');
+  }
+  if (apply && !options.confirmCardSynthesis) {
+    throw new Error('Card-synthesis apply requires --confirm-card-synthesis.');
+  }
+
+  const guard = assertScriptApplyAllowed({
+    apply,
+    scriptName: 'card-description synthesis backfill',
+    mongoUrl: process.env.MONGODBURL,
+  });
+  console.log(
+    `Environment: ${guard.environment}; Mongo target: ${guard.dbLabel}; lane: card-synthesis; mode: ${apply ? 'apply' : 'dry-run'}`,
+  );
+
+  await initializeConnections();
+  try {
+    const result = await runCardSynthesisBackfill({
+      dryRun: options.dryRun,
+      limit: options.explicitLimit ? options.limit : undefined,
+    });
+    writeBackfillReport(
+      options,
+      {
+        generatedAt: new Date().toISOString(),
+        environment: guard.environment,
+        db: guard.dbLabel,
+        lane: 'card-synthesis',
+        options: { dryRun: options.dryRun, limit: options.explicitLimit ? options.limit : undefined },
+        result,
+      },
+      'card-description synthesis backfill',
+    );
+    console.log(
+      JSON.stringify(
+        {
+          mode: result.mode,
+          scanned: result.scanned,
+          updated: result.updated,
+          summary: result.summary,
+        },
+        null,
+        2,
+      ),
+    );
+    if (apply && result.updated > 0) {
+      console.log(
+        'Rebuild the Meilisearch research index so search picks up the synthesized card descriptions.',
+      );
+    }
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseResearchDescriptionBackfillArgs(process.argv.slice(2));
+  if (options.cardSynthesis) {
+    await runCardSynthesisLane(options);
+    return;
+  }
   if (options.llmSynthesis) {
     await runLlmSynthesisLane(options);
     return;

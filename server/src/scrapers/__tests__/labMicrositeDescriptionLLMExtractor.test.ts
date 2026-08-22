@@ -654,4 +654,83 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
     expect(noNameObservations.map((obs) => obs.field)).not.toContain('name');
   });
+
+  it('synthesizes a grounded card at ingestion when the derivation yields none (#557)', async () => {
+    const { ctx, emitted } = makeContext();
+    const fullDescription =
+      'Our lab is broadly interested in the biology of aging and the ways that metabolism shapes lifespan across species. Over the past decade we have built a range of experimental systems, from yeast to zebrafish, and we continue to expand these tools while training the next generation of scientists.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://example.yale.edu/aging-lab/',
+      html: `<main><p>${fullDescription}</p></main>`,
+    });
+    const callCardLLM = vi
+      .fn()
+      .mockResolvedValue(
+        'Studies the biology of aging and how metabolism shapes lifespan across species.',
+      );
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'aging-1',
+          slug: 'aging-lab',
+          name: 'Aging Lab',
+          websiteUrl: 'https://example.yale.edu/aging-lab/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription,
+        shortDescription: '',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+      callCardLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(callCardLLM).toHaveBeenCalledOnce();
+    const cardObservation = emitted.find((obs) => obs.field === 'shortDescription');
+    expect(cardObservation?.value).toBe(
+      'Studies the biology of aging and how metabolism shapes lifespan across species.',
+    );
+    expect(emitted.some((obs) => obs.field === 'fullDescription')).toBe(true);
+  });
+
+  it('does not synthesize a card when the extraction already carries a usable one (#557)', async () => {
+    const { ctx, emitted } = makeContext();
+    const fullDescription =
+      'The target lab studies cellular signaling, immune response, translational biomarkers, and computational modeling for patient care.';
+    const fetchPage = vi.fn().mockResolvedValue({
+      url: 'https://example.yale.edu/target-lab/',
+      html: `<main><p>${fullDescription}</p></main>`,
+    });
+    const callCardLLM = vi.fn();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'target-3',
+          slug: 'target-lab',
+          name: 'Target Lab',
+          websiteUrl: 'https://example.yale.edu/target-lab/',
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription,
+        shortDescription:
+          'Studies cellular signaling, immune response, translational biomarkers, and computational modeling.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+      callCardLLM,
+    });
+
+    await scraper.run(ctx);
+
+    expect(callCardLLM).not.toHaveBeenCalled();
+    expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(true);
+  });
 });
