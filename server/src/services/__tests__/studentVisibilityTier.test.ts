@@ -944,4 +944,66 @@ describe('computeProgramStudentVisibility', () => {
     expect(result.tier).toBe('suppressed');
     expect(result.reasons).toContain('not_undergraduate_relevant');
   });
+
+  it('holds a lead-requiring lab with no attached PI for review even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Example Lab',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('holds a lead-requiring lab with a weak (unresolved) lead for review even under a limited_but_safe override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Example Lab',
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making, population health datasets, and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, policy evaluation, and statistical tools for estimating treatment effects in complex observational settings.',
+        sourceUrls: ['https://medicine.yale.edu/example-lab'],
+        studentVisibilityOverrideTier: 'limited_but_safe',
+      },
+      leadMembers: [{ role: 'pi' }],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.reasons).toContain('missing_lead');
+  });
+
+  it('keeps the organizational-home exemption: a research center with no named lead can still be student-ready', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        name: 'Center for Research on Teaching and Learning',
+        entityType: 'CENTER',
+        shortDescription:
+          'Conducts empirical research on university teaching and learning through faculty-led research projects and data collection.',
+        fullDescription:
+          'The center conducts empirical research on university teaching and learning. Its investigators lead research projects, collect data, and publish findings about effective instruction.',
+        sourceUrls: ['https://example.yale.edu/teaching-research'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_lead');
+  });
 });
