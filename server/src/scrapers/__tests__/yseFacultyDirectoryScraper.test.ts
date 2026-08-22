@@ -237,7 +237,7 @@ describe('facultyToUserObservations', () => {
 describe('facultyToResearchEntityObservations', () => {
   it('seeds a LAB home with the lab site as websiteUrl and profile + lab as sources', () => {
     const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
-    const obs = facultyToResearchEntityObservations(profile, 'netid:jordan.rivers');
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers');
     const byField = Object.fromEntries(obs.map((o) => [o.field, o.value]));
     expect(byField.entityType).toBe('LAB');
     expect(byField.kind).toBe('lab');
@@ -245,8 +245,23 @@ describe('facultyToResearchEntityObservations', () => {
     expect(byField.sourceUrls).toEqual([RIVERS.profileUrl, 'https://riverslab.example.org/']);
     expect(byField.slug).toBe('yse-faculty-jordan-rivers');
     expect(byField.researchAreas).toEqual(['Water Resources', 'Ecosystem Dynamics']);
-    expect(obs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('netid:jordan.rivers');
+    expect(byField.departments).toEqual(['The Forest School']);
     expect(obs.find((o) => o.field === 'fullDescription')?.confidenceOverride).toBe(0.55);
+  });
+
+  it('keys the lead PI on the person-specific email so an existing professor resolves by email', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(profile, 'yse:jordan-rivers');
+    expect(obs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('jordan.rivers@yale.edu');
+  });
+
+  it('falls back to the synthetic user key for the lead PI when no email was found', () => {
+    const profile = extractProfile(PROFILE_WITH_LAB, RIVERS);
+    const obs = facultyToResearchEntityObservations(
+      { ...profile, email: undefined },
+      'yse:jordan-rivers',
+    );
+    expect(obs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('yse:jordan-rivers');
   });
 
   it('seeds a FACULTY_RESEARCH_AREA home from the profile page with no websiteUrl', () => {

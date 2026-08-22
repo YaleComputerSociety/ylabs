@@ -330,18 +330,24 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
  * research areas seeds a FACULTY_RESEARCH_AREA home whose only cited source is the
  * profile page (the profile page is not a research-home websiteUrl). Returns [] for
  * a profile with neither a lab site nor research areas so nothing empty is minted.
+ *
+ * The lead PI is keyed on the person-specific email when present: YSE profile
+ * emails are firstname.lastname aliases, not netids, and the materializer
+ * reconciles a faculty member to their canonical Yale User by email, so an
+ * email-derived netid key would fail to resolve an already-known professor. The
+ * synthetic user key is only a last resort when no email was found.
  */
 export function facultyToResearchEntityObservations(
   profile: YseFacultyProfile,
-  ownerEntityKey: string,
+  fallbackUserKey: string,
 ): ObservationInput[] {
   const hasLab = Boolean(profile.labUrl);
   if (!hasLab && profile.researchAreas.length === 0) return [];
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;
-  const departments = uniqueStrings([SCHOOL_NAME, ...profile.programs]);
   const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
+  const piUserKey = profile.email || fallbackUserKey;
   const base = {
     entityType: 'researchEntity' as const,
     entityKey: slug,
@@ -354,16 +360,18 @@ export function facultyToResearchEntityObservations(
     { ...base, field: 'kind', value: hasLab ? 'lab' : 'individual' },
     { ...base, field: 'entityType', value: hasLab ? 'LAB' : 'FACULTY_RESEARCH_AREA' },
     { ...base, field: 'school', value: SCHOOL_NAME },
-    { ...base, field: 'departments', value: departments },
     { ...base, field: 'sourceUrls', value: sourceUrls },
     {
       ...base,
       field: 'inferredPiUserKey',
-      value: ownerEntityKey,
+      value: piUserKey,
       confidenceOverride: INFERRED_PI_CONFIDENCE,
     },
   ];
 
+  if (profile.programs.length > 0) {
+    obs.push({ ...base, field: 'departments', value: profile.programs });
+  }
   if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
   if (profile.researchAreas.length > 0) {
     obs.push({ ...base, field: 'researchAreas', value: profile.researchAreas });
