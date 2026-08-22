@@ -38,11 +38,57 @@ const CHEM_HTML = `
 const MCDB_HTML = `
 <main>
   <h1>Undergraduate Research Opportunities</h1>
-  <h4>Undergraduate Research Associate Program with Yale Pediatric Emergency Medicine</h4>
-  <p>The Yale Section of Pediatric Emergency Medicine is recruiting students to join the Undergraduate Research Associate Program.</p>
-  <p>Students will gain hands-on experience working on clinical research studies in the Yale New Haven Children's Hospital pediatric emergency department.</p>
-  <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture">Apply here</a></p>
-  <p>Contact: parker.contact@yale.edu</p>
+  <p>Undergraduate students in Molecular, Cellular and Developmental Biology are encouraged to pursue independent research in a faculty laboratory.</p>
+  <p>Students typically identify a faculty mentor whose research interests align with their own and arrange to join the laboratory for course credit or over the summer.</p>
+</main>
+`;
+
+const TOBIN_HTML = `
+<main>
+  <h1>Tobin Undergraduate Research Assistantships</h1>
+  <p>The Tobin Research Assistantship program places undergraduate students with faculty in the Economics department to support ongoing research projects.</p>
+  <p>Contact: coordinator@yale.edu</p>
+  <p>Application link: <a href="https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic">Apply here</a></p>
+</main>
+`;
+
+const CLICK_HERE_HTML = `
+<main>
+  <h1>History Undergraduate Research</h1>
+  <p>History majors undertake original research projects under the guidance of a faculty adviser during their senior year.</p>
+  <p>Click here for more information.</p>
+</main>
+`;
+
+const URL_FRAGMENT_HTML = `
+<main>
+  <h1>Neuroscience Undergraduate Research Opportunities</h1>
+  <p>Undergraduate students can join a faculty laboratory and apply through the department at https://forms.gle/AbcSyntheticFormXyz to be matched with a research mentor.</p>
+</main>
+`;
+
+const LEAKED_HEADING_HTML = `
+<main>
+  <h1>History Undergraduate Research</h1>
+  <p>Undergraduate Program</p>
+  <p>History majors make extensive use of library resources and create pioneering original research projects with faculty mentors.</p>
+</main>
+`;
+
+const SUBJECT_LESS_HTML = `
+<main>
+  <h1>Molecular Biophysics and Biochemistry Undergraduate Research</h1>
+  <p>The B.S. is designed for students with a strong interest in research and includes an intensive introduction to modern laboratory procedures.</p>
+  <p>Undergraduates conduct research in faculty laboratories during their junior and senior years under close mentorship.</p>
+</main>
+`;
+
+const CHROME_ONLY_HTML = `
+<main>
+  <h1>Chemistry Undergraduate Research</h1>
+  <p>Home Academics Calendar</p>
+  <p>Click here for more information.</p>
+  <p>Copyright Yale University. Privacy policy.</p>
 </main>
 `;
 
@@ -225,26 +271,108 @@ describe('departmentUndergradResearchScraper', () => {
     expect(records[0].joinPageUrl).toBeUndefined();
   });
 
-  it('parses structured undergraduate application pages as official application routes', () => {
-    const records = parseStructuredOpportunityPage(MCDB_HTML, {
-      key: 'mcdb-urap',
+  it('keys the MCDB department page on its own department, not a cross-listed foreign program (#598)', () => {
+    const mcdbConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'mcdb');
+
+    expect(mcdbConfig).toMatchObject({
       url: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
       department: 'Molecular, Cellular and Developmental Biology',
-      school: 'Yale Faculty of Arts and Sciences',
-      parser: 'structured-opportunity',
-      title: 'Pediatric Emergency Medicine Undergraduate Research Associate Program',
+      parser: 'general-guidance',
     });
+
+    const records = parseGeneralDepartmentResearchPage(MCDB_HTML, mcdbConfig!);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      entityKey: 'department-undergrad-research-molecular-cellular-and-developmental-biology',
+      name: 'Molecular, Cellular and Developmental Biology Undergraduate Research',
+      kind: 'program',
+      entityType: 'PROGRAM',
+      department: 'Molecular, Cellular and Developmental Biology',
+      websiteUrl: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+    });
+    expect(records[0].entityKey).not.toContain('pediatric');
+    expect(records[0].description).toMatch(
+      /^Supports undergraduate research in Molecular, Cellular and Developmental Biology\./,
+    );
+  });
+
+  it('parses structured undergraduate application pages as official application routes', () => {
+    const tobinConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'economics-tobin-ra',
+    );
+
+    expect(tobinConfig).toMatchObject({
+      department: 'Economics',
+      parser: 'structured-opportunity',
+    });
+
+    const records = parseStructuredOpportunityPage(TOBIN_HTML, tobinConfig!);
 
     expect(records).toMatchObject([
       {
-        entityKey:
-          'department-undergrad-research-pediatric-emergency-medicine-undergraduate-research-associate-program',
+        entityKey: 'department-undergrad-research-tobin-undergraduate-research-assistantships',
         kind: 'program',
         entityType: 'PROGRAM',
-        contactEmail: 'parker.contact@yale.edu',
-        joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_fixture',
+        department: 'Economics',
+        joinPageUrl: 'https://yalesurvey.ca1.qualtrics.com/jfe/form/SV_synthetic',
+        contactEmail: 'coordinator@yale.edu',
+        contactRole: 'Program contact for undergraduate research',
       },
     ]);
+    expect(records[0].description).toMatch(/^Supports undergraduate research in Economics\./);
+    expect(records[0].description).not.toContain('coordinator@');
+  });
+
+  it('drops sourceChrome, URL fragments, subject-less fragments, and leaked headings (#598)', () => {
+    const historyConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === 'history')!;
+    const neuroscienceConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'neuroscience',
+    )!;
+    const mbbConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'molecular-biophysics-biochemistry',
+    )!;
+
+    const [clickHere] = parseGeneralDepartmentResearchPage(CLICK_HERE_HTML, historyConfig);
+    expect(clickHere.description).toContain('History majors undertake original research projects');
+    expect(clickHere.description).not.toMatch(/click here/i);
+    expect(clickHere.description).not.toMatch(/more information/i);
+
+    const [urlFragment] = parseGeneralDepartmentResearchPage(URL_FRAGMENT_HTML, neuroscienceConfig);
+    expect(urlFragment.description).toContain('matched with a research mentor');
+    expect(urlFragment.description).not.toContain('forms.gle');
+    expect(urlFragment.description).not.toContain('AbcSyntheticFormXyz');
+    expect(urlFragment.description).not.toMatch(/https?:\/\//);
+
+    const [leakedHeading] = parseGeneralDepartmentResearchPage(LEAKED_HEADING_HTML, historyConfig);
+    expect(leakedHeading.description).toContain('History majors make extensive use of library resources');
+    expect(leakedHeading.description).not.toContain('Undergraduate Program History majors');
+
+    const [subjectLess] = parseGeneralDepartmentResearchPage(SUBJECT_LESS_HTML, mbbConfig);
+    expect(subjectLess.description).toContain(
+      'Undergraduates conduct research in faculty laboratories',
+    );
+    const subjectLessBody = subjectLess.description
+      .replace('Supports undergraduate research in Molecular Biophysics and Biochemistry.', '')
+      .trim();
+    expect(subjectLessBody).toMatch(/^[A-Z]/);
+    expect(subjectLess.description).not.toMatch(/Biochemistry\.\s+is designed/);
+  });
+
+  it('fails closed to a minimal subject line instead of dumping raw chrome (#598)', () => {
+    const chemistryConfig = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find(
+      (page) => page.key === 'chemistry',
+    )!;
+
+    const [record] = parseGeneralDepartmentResearchPage(CHROME_ONLY_HTML, chemistryConfig);
+
+    expect(record.description).toBe('Supports undergraduate research in Chemistry.');
+    expect(record.description).not.toContain('Home Academics');
+    expect(record.description).not.toContain('Copyright');
+    expect(record.description).not.toMatch(/click here/i);
+
+    const observations = departmentUndergradResearchRecordsToObservations([record]);
+    expect(observations.map((observation) => observation.field)).not.toContain('undergradEvidenceQuote');
   });
 
   it('emits observations that the access materializer can derive pathways from', () => {
