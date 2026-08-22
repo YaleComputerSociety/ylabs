@@ -17,6 +17,7 @@ describe('buildEntityWorkPlan', () => {
       'lab-microsite-description-llm',
       'lab-microsite-undergrad-llm',
       'research-area-source-extractor',
+      'ysm-mesh-keyword',
     ]);
     expect(getWorkPlannerSourcePolicy('research-area-source-extractor')).toMatchObject({
       entityType: 'researchEntity',

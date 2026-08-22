@@ -45,6 +45,7 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'lab-microsite-description-llm', phase: 'content-access' },
   { name: 'lab-microsite-undergrad-llm', phase: 'content-access' },
   { name: 'research-area-source-extractor', phase: 'content-access' },
+  { name: 'ysm-mesh-keyword', phase: 'content-access' },
 ];
 
 interface ScraperSweepModeConfig {

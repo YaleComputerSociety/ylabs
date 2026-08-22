@@ -110,6 +110,16 @@ export const workPlannerSourcePolicies = [
     notes:
       'Deterministic approved-registry area recovery for empty-area entities from their official pages; skip entities already carrying a recent area observation.',
   },
+  {
+    sourceName: 'ysm-mesh-keyword',
+    entityType: 'researchEntity',
+    targetFields: ['researchAreas'],
+    freshnessWindowMs: 30 * WORK_PLANNER_DAY_MS,
+    paid: false,
+    defaultRecurringCadence: 'monthly',
+    notes:
+      'Governed MeSH research areas for YSM entities read from each faculty individual profile page; skip entities already carrying a recent area observation.',
+  },
 ] satisfies WorkPlannerSourcePolicy[];
 
 export function getWorkPlannerSourcePolicy(
