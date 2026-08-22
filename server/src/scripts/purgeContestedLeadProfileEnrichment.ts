@@ -33,7 +33,7 @@ function parseArgs(argv: string[]): PurgeArgs {
     );
   }
   const limitArg = argv.find((arg) => arg.startsWith('--limit='));
-  const rawLimit = Number(limitArg?.split('=')[1] || (apply ? '0' : '0'));
+  const rawLimit = Number(limitArg?.split('=')[1] || '0');
   const limit = Number.isSafeInteger(rawLimit) && rawLimit > 0 ? rawLimit : 0;
   const outputArg = argv.find((arg) => arg.startsWith('--output='));
   const output = outputArg

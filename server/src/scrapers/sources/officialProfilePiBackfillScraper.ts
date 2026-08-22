@@ -471,7 +471,7 @@ function profileSlug(value: unknown): string {
 export function netidStyleProfileSlug(value: unknown): string {
   const slug = profileSlug(value).toLowerCase();
   if (!slug || slug.includes('-')) return '';
-  return /^[a-z][a-z0-9]{0,15}$/.test(slug) ? slug : '';
+  return /^[a-z]{1,8}[0-9]{1,6}$/.test(slug) ? slug : '';
 }
 
 export function expectedNetidsForOfficialProfile(
