@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -23,6 +24,36 @@ describe('isProfileOrPeopleDirectoryPath', () => {
     expect(isProfileOrPeopleDirectoryPath('/research/')).toBe(false);
     expect(isProfileOrPeopleDirectoryPath('/genomics/')).toBe(false);
     expect(isProfileOrPeopleDirectoryPath('/labs/molecular-biology/')).toBe(false);
+  });
+});
+
+describe('isListingOrIndexUrl', () => {
+  it('flags A-Z / lab-website index pages', () => {
+    expect(
+      isListingOrIndexUrl('https://medicine.example.edu/about/a-to-z-index/lab-websites'),
+    ).toBe(true);
+    expect(isListingOrIndexUrl('https://medicine.example.edu/about/a-to-z-index/')).toBe(true);
+  });
+
+  it('flags paginated directory listings', () => {
+    expect(isListingOrIndexUrl('https://physics.example.edu/people?page=8')).toBe(true);
+    expect(isListingOrIndexUrl('https://physics.example.edu/faculty?page=2&sort=az')).toBe(true);
+  });
+
+  it('flags bare people, people/faculty, and faculty roster roots', () => {
+    expect(isListingOrIndexUrl('https://physics.example.edu/people')).toBe(true);
+    expect(isListingOrIndexUrl('https://physics.example.edu/people/')).toBe(true);
+    expect(isListingOrIndexUrl('https://physics.example.edu/people/faculty')).toBe(true);
+    expect(isListingOrIndexUrl('https://physics.example.edu/mcdb/faculty/')).toBe(true);
+    expect(isListingOrIndexUrl('https://centers.example.edu/directory')).toBe(true);
+  });
+
+  it('does not flag real lab, center, or person pages', () => {
+    expect(isListingOrIndexUrl('https://example-computing-lab.example.org/')).toBe(false);
+    expect(isListingOrIndexUrl('https://centers.example.edu/genomics/')).toBe(false);
+    expect(isListingOrIndexUrl('https://physics.example.edu/people/jordan-example/')).toBe(false);
+    expect(isListingOrIndexUrl('mailto:someone@example.org')).toBe(false);
+    expect(isListingOrIndexUrl(undefined)).toBe(false);
   });
 });
 
@@ -91,5 +122,13 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
     expect(sourceUrlToResearchHomeWebsiteUrl('https://api.nsf.gov/services/v1/awards.json')).toBe(
       '',
     );
+  });
+
+  it('rejects directory, index, and paginated listing source URLs', () => {
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl('https://medicine.example.edu/about/a-to-z-index/lab-websites'),
+    ).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://physics.example.edu/people?page=8')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://physics.example.edu/mcdb/faculty/')).toBe('');
   });
 });

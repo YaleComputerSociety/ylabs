@@ -8,7 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
-  selectBackfillWebsiteUrl,
+  resolveBackfillWebsiteUrl,
   type WebsiteUrlBackfillCandidateEntity,
 } from './backfillResearchEntityWebsiteUrlsCore';
 
@@ -18,6 +18,9 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 export const PROFILE_PAGE_WEBSITE_URL_PATTERN =
   /(\/profile\/|\/people\/|\/person\/|\/faculty\/|\/faculty-directory\/|\/directory\/faculty\/|\/who-we-are\/faculty\/)/i;
+
+export const LISTING_PAGE_WEBSITE_URL_PATTERN =
+  /(a-to-z-index|a-z-index|lab-websites|[?&]page=\d|\/people(\/faculty)?\/?($|\?)|\/faculty\/?($|\?)|\/(faculty-directory|directory)\/?($|\?))/i;
 
 export interface ResearchEntityWebsiteUrlBackfillOptions {
   dryRun: boolean;
@@ -86,10 +89,11 @@ export interface ResearchEntityWebsiteUrlBackfillResult {
   mode: 'dry-run' | 'apply';
   scanned: number;
   resolved: number;
+  cleared: number;
   updated: number;
   unresolved: number;
   errors: number;
-  samples: Array<{ slug: string; websiteUrl: string }>;
+  samples: Array<{ slug: string; from: string; websiteUrl: string; action: 'set' | 'clear' }>;
 }
 
 export async function runResearchEntityWebsiteUrlBackfill(options: {
@@ -104,6 +108,7 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
         { websiteUrl: { $in: ['', null] } },
         { websiteUrl: { $not: /^https?:\/\//i } },
         { websiteUrl: PROFILE_PAGE_WEBSITE_URL_PATTERN },
+        { websiteUrl: LISTING_PAGE_WEBSITE_URL_PATTERN },
       ],
     },
     { _id: 1, slug: 1, name: 1, websiteUrl: 1, website: 1, sourceUrls: 1 },
@@ -113,6 +118,7 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
     mode: options.dryRun ? 'dry-run' : 'apply',
     scanned: 0,
     resolved: 0,
+    cleared: 0,
     updated: 0,
     unresolved: 0,
     errors: 0,
@@ -125,17 +131,27 @@ export async function runResearchEntityWebsiteUrlBackfill(options: {
     if (options.limit && result.scanned >= options.limit) break;
     result.scanned += 1;
     try {
-      const chosen = selectBackfillWebsiteUrl(entity);
-      if (!chosen) {
+      const resolution = resolveBackfillWebsiteUrl(entity);
+      if (resolution.action === 'keep') {
         result.unresolved += 1;
         continue;
       }
-      result.resolved += 1;
+      const nextWebsiteUrl = resolution.action === 'set' ? resolution.websiteUrl : '';
+      if (resolution.action === 'set') result.resolved += 1;
+      else result.cleared += 1;
       if (result.samples.length < 25) {
-        result.samples.push({ slug: String(entity.slug ?? ''), websiteUrl: chosen });
+        result.samples.push({
+          slug: String(entity.slug ?? ''),
+          from: String(entity.websiteUrl ?? ''),
+          websiteUrl: nextWebsiteUrl,
+          action: resolution.action,
+        });
       }
       if (!options.dryRun) {
-        await ResearchEntity.updateOne({ _id: entity._id }, { $set: { websiteUrl: chosen } });
+        await ResearchEntity.updateOne(
+          { _id: entity._id },
+          { $set: { websiteUrl: nextWebsiteUrl } },
+        );
       }
       result.updated += 1;
     } catch (error) {
