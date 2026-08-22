@@ -139,8 +139,9 @@ export function extractOfficialResearchDescription(
   const derivedShort = deriveShortDescriptionFromFullDescription(fullDescription);
   const shortCandidates = [derivedShort, metaShort].filter(Boolean);
   const shortDescription =
-    shortCandidates.find((candidate) => shortDescriptionQuality(candidate, fullDescription).isUseful) ||
-    '';
+    shortCandidates.find(
+      (candidate) => shortDescriptionQuality(candidate, fullDescription).isUseful,
+    ) || '';
 
   return { fullDescription, shortDescription };
 }
