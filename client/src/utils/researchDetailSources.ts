@@ -50,6 +50,26 @@ export const normalizeSourceUrl = (url?: string | null): string | null => {
 };
 
 /**
+ * Reduce a URL to a `host+path+query` key that ignores the cosmetic differences
+ * the source list renders identically (scheme, `www.`, host case), while keeping
+ * distinct paths and query identifiers apart. Two links that render the same host
+ * and label collapse onto one source row instead of appearing twice.
+ */
+export const sourceLedgerKey = (url?: string | null): string | null => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return null;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    return `${host}${path}${parsed.search}`;
+  } catch {
+    return normalized;
+  }
+};
+
+/**
  * Reduce a URL to a `host+path` destination key (scheme/www/query/hash/trailing
  * slash stripped) so two links that point at the same place compare equal. Used
  * to de-duplicate the professor/contact action links on the research detail page.
@@ -161,13 +181,19 @@ export const buildResearchDetailSources = ({
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
     if (isRawDataApiSourceUrl(normalized)) return;
 
-    const existing = sources.get(normalized);
+    const key = sourceLedgerKey(normalized);
+    if (!key) return;
+
+    const existing = sources.get(key);
     if (existing) {
       if (!existing.contexts.includes(context)) existing.contexts.push(context);
+      if (existing.url.startsWith('http://') && normalized.startsWith('https://')) {
+        existing.url = normalized;
+      }
       return;
     }
 
-    sources.set(normalized, {
+    sources.set(key, {
       url: normalized,
       label: context === 'Profile website' ? 'Research website' : sourceLabelForUrl(normalized),
       contexts: [context],
