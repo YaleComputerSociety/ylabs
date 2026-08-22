@@ -14,6 +14,20 @@ export type FellowshipQuickFilter =
   | 'mentorFirst'
   | null;
 
+export interface FellowshipCycleSummary {
+  open: number;
+  closingSoon: number;
+  nextCycle: number;
+  closed: number;
+}
+
+export const emptyFellowshipCycleSummary: FellowshipCycleSummary = {
+  open: 0,
+  closingSoon: 0,
+  nextCycle: 0,
+  closed: 0,
+};
+
 export interface FellowshipSearchState {
   queryString: string;
   selectedYearOfStudy: string[];
@@ -34,6 +48,7 @@ export interface FellowshipSearchState {
   isLoading: boolean;
   searchExhausted: boolean;
   total: number;
+  cycleSummary: FellowshipCycleSummary;
   page: number;
   filterOptions: FellowshipFilterOptions;
   quickFilter: FellowshipQuickFilter;
@@ -83,6 +98,7 @@ export type FellowshipSearchAction =
       };
     }
   | { type: 'SEARCH_FAILURE' }
+  | { type: 'SET_CYCLE_SUMMARY'; payload: FellowshipCycleSummary }
   | { type: 'MARK_QUERY_STRING_LOADED' }
   | { type: 'MARK_FILTERS_LOADED' }
   | { type: 'MARK_INITIAL_SEARCH_DONE' }
@@ -111,6 +127,7 @@ export const createInitialFellowshipSearchState = (
   isLoading: false,
   searchExhausted: false,
   total: 0,
+  cycleSummary: emptyFellowshipCycleSummary,
   page: 1,
   filterOptions: {
     programCategory: [],
@@ -238,6 +255,9 @@ export function fellowshipSearchReducer(
 
     case 'SEARCH_FAILURE':
       return { ...state, isLoading: false };
+
+    case 'SET_CYCLE_SUMMARY':
+      return { ...state, cycleSummary: action.payload };
 
     case 'MARK_QUERY_STRING_LOADED':
       return { ...state, queryStringLoaded: true };
