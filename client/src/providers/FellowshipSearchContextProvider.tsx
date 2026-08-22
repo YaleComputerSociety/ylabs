@@ -281,12 +281,13 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     [isAdmin],
   );
 
-  const summaryRequestIdRef = useRef(0);
+  const loadRequestIdRef = useRef(0);
 
-  const loadJourneySummary = useCallback(() => {
-    const requestId = summaryRequestIdRef.current + 1;
-    summaryRequestIdRef.current = requestId;
+  const loadAllPrograms = useCallback(() => {
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
 
+    dispatch({ type: 'SEARCH_REQUEST' });
     dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: { ...emptyProgramJourneySummary } });
 
     const accumulate = async () => {
@@ -306,17 +307,27 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         currentPage += 1;
       }
 
-      return collected;
+      return { collected, reportedTotal };
     };
 
     accumulate()
-      .then((collected) => {
-        if (summaryRequestIdRef.current !== requestId) return;
+      .then(({ collected, reportedTotal }) => {
+        if (loadRequestIdRef.current !== requestId) return;
+        dispatch({
+          type: 'SEARCH_SUCCESS',
+          payload: {
+            fellowships: collected,
+            total: Number.isFinite(reportedTotal) ? reportedTotal : collected.length,
+            pageSize,
+            append: false,
+          },
+        });
         dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: summarizeProgramJourney(collected) });
       })
       .catch(() => {
-        if (summaryRequestIdRef.current !== requestId) return;
-        console.error('Error loading program journey summary.');
+        if (loadRequestIdRef.current !== requestId) return;
+        console.error('Error loading programs.');
+        dispatch({ type: 'SEARCH_FAILURE' });
       });
   }, [buildSearchUrl, pageSize]);
 
@@ -359,9 +370,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const runFirstPageSearch = useCallback(() => {
     dispatch({ type: 'SET_PAGE', payload: 1 });
-    handleSearch(1);
-    loadJourneySummary();
-  }, [handleSearch, loadJourneySummary]);
+    loadAllPrograms();
+  }, [loadAllPrograms]);
 
   const refreshFellowships = useCallback(() => {
     runFirstPageSearch();

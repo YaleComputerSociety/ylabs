@@ -466,6 +466,35 @@ describe('Programs page', () => {
     }
   });
 
+  it('renders the Apply Now section on first paint when an open program is present among closed records', async () => {
+    const fellowships = [
+      ...Array.from({ length: 40 }, (_, index) =>
+        baseFellowship({
+          id: `closed-${index}`,
+          title: `Closed Program ${index}`,
+          isAcceptingApplications: false,
+          deadline: isoDaysFromNow(-40),
+        }),
+      ),
+      baseFellowship({
+        id: 'open-late',
+        title: 'Open Late Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(60),
+      }),
+    ];
+
+    renderPage(fellowships);
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+    });
+
+    const applyNowHeader = screen.getByRole('heading', { name: 'Apply Now' });
+    expect(applyNowHeader.parentElement?.textContent).toContain('1');
+    expect(screen.getByText('Open Late Program')).toBeTruthy();
+  });
+
   it('renders program controls on the page and wires filter selection to program context', async () => {
     const setSelectedYearOfStudy = vi.fn();
     renderPage(
