@@ -111,17 +111,17 @@ Primary UX ingredients:
 - Evidence section with source-backed snippets.
 - A deduped Sources section that shows each official source once and explains which pathways/evidence/routes it supports.
 - People section that distinguishes PI, program manager, lab manager, mentor, and other roles where possible.
-- A constant contact prompt that always offers to email the PI (a prefilled mailto) when an email exists, shown alongside "Open official profile" and source-backed signals, rather than a computed verdict or ranked next-step CTA.
+- A constant contact prompt that always offers a way to reach out - opening the official profile, or the Yale Directory when no profile link exists, to find contact details and introduce yourself, with a prefilled mailto only when a non-redacted email exists - shown alongside source-backed signals, rather than a computed verdict or ranked next-step CTA.
 
 Current gap: the detail page presents the source-backed research summary, evidence, source-verified team context, deduped sources, and saved-plan actions before active opportunities.
-The sidebar surfaces evidence as a flat additive signal list and a constant prompt to email the PI, not a computed verdict, evidence-level tier, or ranked next-step CTA, so faculty research pages never gate outreach and do not read like posted openings.
+The sidebar surfaces evidence as a flat additive signal list and a constant prompt to reach out via the official profile, not a computed verdict, evidence-level tier, or ranked next-step CTA, so faculty research pages never gate outreach and do not read like posted openings.
 
 ## UX Principles
 
 - **Exploration before application**: a student may be curious before they know the right program, faculty member, method, or funding route.
 - **Evidence over assertion**: prefer source-backed snippets, evidence strength, observed dates, and confidence labels over binary claims.
 - **Planning context is not a posting**: use open/application language only for real posted opportunities.
-- **Contact is constant**: always make emailing the PI easy and never block or discourage outreach; richer source-backed signals make each student's email more specific and targeted, which reduces low-quality mass outreach rather than encouraging it. yLabs should not imply it provides an official outreach channel.
+- **Contact is constant**: always make reaching out easy, primarily via the official profile or Yale Directory since student-facing PI emails are redacted by design, and never block or discourage outreach; richer source-backed signals make each student's outreach more specific and targeted, which reduces low-quality mass outreach rather than encouraging it. yLabs should not imply it provides an official outreach channel.
 - **Discipline-flexible structure**: humanities, social sciences, collections work, course-credit research, thesis advising, and centers should not be forced into a STEM lab hierarchy.
 - **Dense but humane**: the UI should stay scannable and efficient while using warmer student-facing labels.
 
