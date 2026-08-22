@@ -458,7 +458,7 @@ const Research = () => {
     [departmentSearchTargets],
   );
 
-  useDocumentTitle('Yale Research');
+  useDocumentTitle('Research');
 
   const writeResearchSearchParams = (
     nextState: {
