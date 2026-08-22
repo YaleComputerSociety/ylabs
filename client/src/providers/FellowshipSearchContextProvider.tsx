@@ -13,13 +13,11 @@ import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
 import { Fellowship, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
-import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
+import { summarizeProgramJourney, emptyProgramJourneySummary } from '../utils/programJourney';
 import {
   fellowshipSearchReducer,
   createInitialFellowshipSearchState,
   FellowshipQuickFilter,
-  emptyFellowshipCycleSummary,
-  FellowshipCycleSummary,
 } from '../reducers/fellowshipSearchReducer';
 
 interface FellowshipSearchContextProviderProps {
@@ -66,7 +64,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     isLoading,
     searchExhausted,
     total,
-    cycleSummary,
+    journeySummary,
     page,
     filterOptions,
     quickFilter,
@@ -285,11 +283,11 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
 
   const summaryRequestIdRef = useRef(0);
 
-  const loadCycleSummary = useCallback(() => {
+  const loadJourneySummary = useCallback(() => {
     const requestId = summaryRequestIdRef.current + 1;
     summaryRequestIdRef.current = requestId;
 
-    dispatch({ type: 'SET_CYCLE_SUMMARY', payload: { ...emptyFellowshipCycleSummary } });
+    dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: { ...emptyProgramJourneySummary } });
 
     const accumulate = async () => {
       const collected: Fellowship[] = [];
@@ -314,20 +312,11 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     accumulate()
       .then((collected) => {
         if (summaryRequestIdRef.current !== requestId) return;
-        const now = new Date();
-        const summary: FellowshipCycleSummary = { ...emptyFellowshipCycleSummary };
-        for (const fellowship of collected) {
-          const category = getFellowshipCycleStatus(fellowship, now).category;
-          if (category === 'open') summary.open += 1;
-          else if (category === 'closingSoon') summary.closingSoon += 1;
-          else if (category === 'nextCycle') summary.nextCycle += 1;
-          else if (category === 'closed') summary.closed += 1;
-        }
-        dispatch({ type: 'SET_CYCLE_SUMMARY', payload: summary });
+        dispatch({ type: 'SET_JOURNEY_SUMMARY', payload: summarizeProgramJourney(collected) });
       })
       .catch(() => {
         if (summaryRequestIdRef.current !== requestId) return;
-        console.error('Error loading program cycle summary.');
+        console.error('Error loading program journey summary.');
       });
   }, [buildSearchUrl, pageSize]);
 
@@ -371,8 +360,8 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
   const runFirstPageSearch = useCallback(() => {
     dispatch({ type: 'SET_PAGE', payload: 1 });
     handleSearch(1);
-    loadCycleSummary();
-  }, [handleSearch, loadCycleSummary]);
+    loadJourneySummary();
+  }, [handleSearch, loadJourneySummary]);
 
   const refreshFellowships = useCallback(() => {
     runFirstPageSearch();
@@ -478,7 +467,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         setPage,
         pageSize,
         total,
-        cycleSummary,
+        journeySummary,
         filterOptions,
         sortableKeys,
         refreshFellowships,

@@ -15,6 +15,26 @@ export interface ProgramJourneyStatus {
   description: string;
 }
 
+export const PROGRAM_JOURNEY_CATEGORIES: ProgramJourneyCategory[] = [
+  'applyNow',
+  'openingSoon',
+  'structured',
+  'fundingAfterMentor',
+  'nextCycle',
+  'archive',
+];
+
+export type ProgramJourneySummary = Record<ProgramJourneyCategory, number>;
+
+export const emptyProgramJourneySummary: ProgramJourneySummary = {
+  applyNow: 0,
+  openingSoon: 0,
+  structured: 0,
+  fundingAfterMentor: 0,
+  nextCycle: 0,
+  archive: 0,
+};
+
 const STRUCTURED_KINDS = new Set([
   'STRUCTURED_PROGRAM',
   'CENTER_INTERNSHIP',
@@ -87,6 +107,17 @@ export function getProgramJourneyStatus(
     label: 'Archive / Review',
     description: 'Retained records that should not be treated as active opportunities.',
   };
+}
+
+export function summarizeProgramJourney(
+  fellowships: Fellowship[],
+  now: Date = new Date(),
+): ProgramJourneySummary {
+  const summary: ProgramJourneySummary = { ...emptyProgramJourneySummary };
+  for (const fellowship of fellowships) {
+    summary[getProgramJourneyStatus(fellowship, now).category] += 1;
+  }
+  return summary;
 }
 
 export function programKindLabel(kind: string): string {

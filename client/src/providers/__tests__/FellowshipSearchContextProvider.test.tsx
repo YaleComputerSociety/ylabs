@@ -38,7 +38,7 @@ const renderProvider = (userType: 'student' | 'admin' = 'student') =>
             {(context) => (
               <div>
                 <p data-testid="program-kind-count">{context.filterOptions.programKind.length}</p>
-                <p data-testid="cycle-summary">{JSON.stringify(context.cycleSummary)}</p>
+                <p data-testid="journey-summary">{JSON.stringify(context.journeySummary)}</p>
                 <button
                   type="button"
                   onClick={() => context.setSelectedProgramKind(['STRUCTURED_PROGRAM'])}
@@ -92,7 +92,7 @@ describe('FellowshipSearchContextProvider program routes', () => {
     });
   });
 
-  it('derives the cycle summary from the full paginated result set, not one page', async () => {
+  it('derives the journey summary from the full paginated result set, not one page', async () => {
     const makeRecord = (index: number) => ({
       _id: `program-${index}`,
       title: `Program ${index}`,
@@ -118,11 +118,13 @@ describe('FellowshipSearchContextProvider program routes', () => {
     renderProvider();
 
     await waitFor(() => {
-      expect(JSON.parse(screen.getByTestId('cycle-summary').textContent || '{}')).toEqual({
-        open: 0,
-        closingSoon: 0,
+      expect(JSON.parse(screen.getByTestId('journey-summary').textContent || '{}')).toEqual({
+        applyNow: 0,
+        openingSoon: 0,
+        structured: 0,
+        fundingAfterMentor: 0,
         nextCycle: 0,
-        closed: total,
+        archive: total,
       });
     });
 

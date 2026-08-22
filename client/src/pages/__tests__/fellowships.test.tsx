@@ -11,6 +11,7 @@ import FellowshipSearchContext, {
 import UserContext from '../../contexts/UserContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import type { Fellowship } from '../../types/types';
+import { summarizeProgramJourney } from '../../utils/programJourney';
 import axios from '../../utils/axios';
 
 vi.mock('../../utils/axios', () => ({
@@ -176,7 +177,7 @@ const renderPage = (
     setPage: vi.fn(),
     pageSize: 500,
     total: fellowships.length,
-    cycleSummary: { open: 0, closingSoon: 0, nextCycle: 0, closed: 0 },
+    journeySummary: summarizeProgramJourney(fellowships),
     filterOptions: {
       programCategory: [],
       programKind: [],
@@ -278,7 +279,7 @@ const renderStatefulPage = (fellowships: Fellowship[]) => {
                 setPage: vi.fn(),
                 pageSize: 500,
                 total: fellowships.length,
-                cycleSummary: { open: 0, closingSoon: 0, nextCycle: 0, closed: 0 },
+                journeySummary: summarizeProgramJourney(fellowships),
                 filterOptions: {
                   programCategory: ['FELLOWSHIP', 'SUMMER_RESEARCH_PROGRAM'],
                   programKind: ['FELLOWSHIP_FUNDING', 'STRUCTURED_PROGRAM'],
@@ -350,15 +351,28 @@ describe('Programs page', () => {
     expect(
       screen.getByText(/track structured applications, recurring research programs/i),
     ).toBeTruthy();
-    expect(screen.getByText('Open now')).toBeTruthy();
-    expect(screen.getByText('Closing soon')).toBeTruthy();
-    expect(screen.getByText('Likely next cycle')).toBeTruthy();
-    expect(screen.getByText('Planning archive')).toBeTruthy();
+    expect(screen.getByText('Apply now')).toBeTruthy();
+    expect(screen.getByText('Opening soon')).toBeTruthy();
+    expect(screen.getByText('Structured programs')).toBeTruthy();
+    expect(screen.getByText('Funding after mentor')).toBeTruthy();
+    expect(screen.getByText('Plan next cycle')).toBeTruthy();
+    expect(screen.getByText('Archive / review')).toBeTruthy();
+    expect(screen.queryByText('Likely next cycle')).toBeNull();
     expect(screen.getByText('Open Fellowship')).toBeTruthy();
     expect(screen.getByText('Next Cycle Fellowship')).toBeTruthy();
   });
 
-  it('shows full-set cycle summary counts in the stat tiles rather than the loaded page count', async () => {
+  it('shows full-set journey partition counts in the stat tiles rather than the loaded page count', async () => {
+    const journeySummary = {
+      applyNow: 20,
+      openingSoon: 7,
+      structured: 40,
+      fundingAfterMentor: 30,
+      nextCycle: 3,
+      archive: 33,
+    };
+    const total = Object.values(journeySummary).reduce((sum, value) => sum + value, 0);
+
     renderPage(
       [
         baseFellowship({
@@ -368,19 +382,68 @@ describe('Programs page', () => {
           deadline: isoDaysFromNow(-10),
         }),
       ],
-      {
-        total: 133,
-        cycleSummary: { open: 20, closingSoon: 7, nextCycle: 133, closed: 44 },
-      },
+      { total, journeySummary },
     );
 
     await waitFor(() => {
       expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
     });
 
-    expect(screen.getByText('27')).toBeTruthy();
-    expect(screen.getByText('133')).toBeTruthy();
-    expect(screen.getByText('44')).toBeTruthy();
+    expect(total).toBe(133);
+    expect(screen.getByText('20')).toBeTruthy();
+    expect(screen.getByText('7')).toBeTruthy();
+    expect(screen.getByText('40')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+    expect(screen.getByText('33')).toBeTruthy();
+    expect(screen.getAllByText('30').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps each stat tile equal to its matching journey section header', async () => {
+    const fellowships = [
+      baseFellowship({
+        id: 'apply-now',
+        title: 'Open Apply Program',
+        programKind: 'STRUCTURED_PROGRAM',
+        requiresMentorBeforeApply: false,
+        studentFacingCategory: 'Structured program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(60),
+      }),
+      baseFellowship({
+        id: 'structured',
+        title: 'Structured Program Record',
+        programKind: 'STRUCTURED_PROGRAM',
+        requiresMentorBeforeApply: false,
+        studentFacingCategory: 'Structured program',
+        isAcceptingApplications: false,
+        deadline: isoDaysFromNow(-40),
+      }),
+      baseFellowship({
+        id: 'funding',
+        title: 'Funding After Mentor Record',
+        isAcceptingApplications: false,
+        deadline: isoDaysFromNow(-40),
+      }),
+    ];
+
+    renderPage(fellowships);
+
+    await waitFor(() => {
+      expect(mockedAxios.get).toHaveBeenCalledWith('/users/watchedProgramIds');
+    });
+
+    const summary = summarizeProgramJourney(fellowships);
+    expect(Object.values(summary).reduce((sum, value) => sum + value, 0)).toBe(fellowships.length);
+
+    for (const [title, key] of [
+      ['Apply Now', 'applyNow'],
+      ['Structured Research Programs', 'structured'],
+      ['Funding After You Have a Mentor', 'fundingAfterMentor'],
+    ] as const) {
+      if (summary[key] === 0) continue;
+      const header = screen.getByRole('heading', { name: title }).parentElement;
+      expect(header?.textContent).toContain(String(summary[key]));
+    }
   });
 
   it('renders program controls on the page and wires filter selection to program context', async () => {

@@ -3,11 +3,11 @@
  */
 import { createContext } from 'react';
 import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import { FellowshipQuickFilter } from '../reducers/fellowshipSearchReducer';
 import {
-  FellowshipQuickFilter,
-  FellowshipCycleSummary,
-  emptyFellowshipCycleSummary,
-} from '../reducers/fellowshipSearchReducer';
+  ProgramJourneySummary,
+  emptyProgramJourneySummary,
+} from '../utils/programJourney';
 
 export interface FellowshipSearchContextType {
   queryString: string;
@@ -51,7 +51,7 @@ export interface FellowshipSearchContextType {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   pageSize: number;
   total: number;
-  cycleSummary: FellowshipCycleSummary;
+  journeySummary: ProgramJourneySummary;
 
   filterOptions: FellowshipFilterOptions;
 
@@ -104,7 +104,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   setPage: () => {},
   pageSize: 20,
   total: 0,
-  cycleSummary: emptyFellowshipCycleSummary,
+  journeySummary: emptyProgramJourneySummary,
   filterOptions: {
     programCategory: [],
     programKind: [],
