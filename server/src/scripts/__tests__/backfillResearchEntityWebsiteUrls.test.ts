@@ -125,6 +125,24 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
     ).toEqual({ action: 'clear' });
   });
 
+  it('clears a /team/directory faculty-roster-root websiteUrl when no research home exists (#569)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://isps.yale.edu/team/directory/faculty-fellows',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('keeps a named per-person /directory/faculty profile websiteUrl (#556)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://environment.yale.edu/directory/faculty/jordan-example',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'keep' });
+  });
+
   it('clears a boilerplate-host websiteUrl when no research home is available (#572)', () => {
     expect(
       resolveBackfillWebsiteUrl({

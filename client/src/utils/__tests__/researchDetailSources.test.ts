@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildResearchDetailSources,
   isLikelyUnavailableSourceLink,
+  isSuppressedResearchWebsiteCtaUrl,
 } from '../researchDetailSources';
 
 describe('buildResearchDetailSources', () => {
@@ -450,6 +451,45 @@ describe('buildResearchDetailSources', () => {
 
     expect(sources).toHaveLength(1);
     expect(sources[0].isLikelyUnavailable).toBe(true);
+  });
+});
+
+describe('isSuppressedResearchWebsiteCtaUrl', () => {
+  it('suppresses directory faculty-roster roots as a website CTA (#569)', () => {
+    expect(
+      isSuppressedResearchWebsiteCtaUrl('https://isps.yale.edu/team/directory/faculty-fellows'),
+    ).toBe(true);
+    expect(isSuppressedResearchWebsiteCtaUrl('https://environment.yale.edu/directory/faculty')).toBe(
+      true,
+    );
+    expect(isSuppressedResearchWebsiteCtaUrl('https://research.yale.edu/centers-institutes/')).toBe(
+      true,
+    );
+    expect(isSuppressedResearchWebsiteCtaUrl('http://wordpress.org/')).toBe(true);
+  });
+
+  it('keeps a named per-person directory profile as a website CTA (#556)', () => {
+    expect(
+      isSuppressedResearchWebsiteCtaUrl('https://environment.yale.edu/directory/faculty/jordan-example'),
+    ).toBe(false);
+    expect(isSuppressedResearchWebsiteCtaUrl('https://example-computing-lab.example.org/')).toBe(
+      false,
+    );
+  });
+});
+
+describe('buildResearchDetailSources directory-roster roots (#569)', () => {
+  it('drops a faculty-roster-root websiteUrl but keeps a named per-person profile source', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://isps.yale.edu/team/directory/faculty-fellows',
+        sourceUrls: ['https://environment.yale.edu/directory/faculty/jordan-example'],
+      },
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([
+      'https://environment.yale.edu/directory/faculty/jordan-example',
+    ]);
   });
 });
 

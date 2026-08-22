@@ -127,6 +127,21 @@ const DEPARTMENT_FACULTY_ROSTER_PATH = /^\/people\/faculty(?:-|\/|$)/i;
 
 const FACULTY_DIRECTORY_ROOT_PATH = /^\/research-and-faculty\/faculty-directory$/i;
 
+const DIRECTORY_ROSTER_ROOT_PATH =
+  /\/directory\/(?:faculty(?:-fellows|-directory|-and-staff|-staff|-affiliates)?|staff|people|members|fellows|affiliates)$/i;
+
+export const isDirectoryRosterRootUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const path = new URL(normalized).pathname.toLowerCase().replace(/\/+$/, '');
+    return DIRECTORY_ROSTER_ROOT_PATH.test(path);
+  } catch {
+    return false;
+  }
+};
+
 export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean => {
   const normalized = normalizeSourceUrl(url);
   if (!normalized) return false;
@@ -208,7 +223,9 @@ export const isBoilerplatePlatformSourceUrl = (url?: string | null): boolean => 
 };
 
 export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean =>
-  isFacetedOrSectionIndexSourceUrl(url) || isBoilerplatePlatformSourceUrl(url);
+  isFacetedOrSectionIndexSourceUrl(url) ||
+  isBoilerplatePlatformSourceUrl(url) ||
+  isDirectoryRosterRootUrl(url);
 
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
@@ -264,6 +281,7 @@ export const buildResearchDetailSources = ({
     const normalized = normalizeSourceUrl(url);
     if (!normalized) return;
     if (isDepartmentRosterProvenanceUrl(normalized)) return;
+    if (isDirectoryRosterRootUrl(normalized)) return;
     if (isFacetedOrSectionIndexSourceUrl(normalized)) return;
     if (isBoilerplatePlatformSourceUrl(normalized)) return;
     if (isRawDataApiSourceUrl(normalized)) return;

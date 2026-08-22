@@ -49,6 +49,9 @@ const PEOPLE_INDEX_FILE_PATH = /\/people\.(?:html?|aspx|php)(?:\/|$)/i;
 
 const MEMBERS_ROOT_PATH = /\/members\/$/i;
 
+const DIRECTORY_ROSTER_ROOT_PATH =
+  /\/directory\/(?:faculty(?:-fellows|-directory|-and-staff|-staff|-affiliates)?|staff|people|members|fellows|affiliates)\/$/i;
+
 const DRUPAL_FACET_QUERY = /[?&]f(?:\[|%5b)\d+(?:\]|%5d)=/i;
 
 const SECTION_INDEX_ROOT_PATH =
@@ -120,6 +123,7 @@ export function isListingOrIndexUrl(value: unknown): boolean {
   return (
     INDEX_LISTING_PATH.test(pathname) ||
     DIRECTORY_ROOT_PATH.test(pathname) ||
+    DIRECTORY_ROSTER_ROOT_PATH.test(pathname) ||
     PEOPLE_ROSTER_PATH.test(pathname) ||
     PEOPLE_INDEX_PATH.test(pathname) ||
     PEOPLE_INDEX_FILE_PATH.test(pathname) ||
