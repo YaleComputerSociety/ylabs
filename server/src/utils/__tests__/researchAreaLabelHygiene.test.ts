@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isNarrativeProseResearchAreaLabel,
   sanitizeResearchAreaFacetDistribution,
   sanitizeResearchAreaLabel,
   sanitizeResearchAreaLabelList,
@@ -35,6 +36,46 @@ describe('sanitizeResearchAreaLabel', () => {
     expect(sanitizeResearchAreaLabel('YSM Researcher')).toBe('');
     expect(sanitizeResearchAreaLabel(undefined)).toBe('');
     expect(sanitizeResearchAreaLabel(42)).toBe('');
+  });
+
+  it('drops narrative-prose fragments that are not topic tags', () => {
+    expect(
+      sanitizeResearchAreaLabel('I have been applying techniques drawn from probability theory and statistics'),
+    ).toBe('');
+    expect(
+      sanitizeResearchAreaLabel('The study of problems at the interface of optical and condensed matter physics'),
+    ).toBe('');
+    expect(
+      sanitizeResearchAreaLabel('Research in the group is currently focused on three general themes'),
+    ).toBe('');
+    expect(sanitizeResearchAreaLabel('My main teaching interests lie in Experimental Physics')).toBe('');
+    expect(sanitizeResearchAreaLabel('How do core developmental patterns emerge during language learning')).toBe('');
+  });
+
+  it('keeps legitimate multi-word topic phrases even when long', () => {
+    expect(sanitizeResearchAreaLabel('Quantum Physics')).toBe('Quantum Physics');
+    expect(
+      sanitizeResearchAreaLabel('Magnetic and transport properties of perovskites and related materials'),
+    ).toBe('Magnetic and transport properties of perovskites and related materials');
+    expect(
+      sanitizeResearchAreaLabel('Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation'),
+    ).toBe('Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation');
+  });
+});
+
+describe('isNarrativeProseResearchAreaLabel', () => {
+  it('flags run-on concatenations longer than a real topic tag', () => {
+    expect(
+      isNarrativeProseResearchAreaLabel(
+        'Quantum Matter Fractons from polarons Light bipolarons stabilized by Peierls electron-electron coupling Non-equilibrium quantum dynamics',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag concise noun-phrase topics', () => {
+    expect(isNarrativeProseResearchAreaLabel('Condensed Matter Physics')).toBe(false);
+    expect(isNarrativeProseResearchAreaLabel('Artificial Intelligence (AI)')).toBe(false);
+    expect(isNarrativeProseResearchAreaLabel('Studies on Chitinases and Chitosanases')).toBe(false);
   });
 });
 
