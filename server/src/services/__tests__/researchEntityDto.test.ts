@@ -256,6 +256,34 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('fails a first-person PI-bio fullDescription closed while keeping the clean shortDescription (#964)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-first-person-bio',
+      slug: 'first-person-bio-lab',
+      name: 'First Person Bio Lab',
+      shortDescription:
+        'Investigates immune checkpoints and the inhibitory immune landscape in skin cancers.',
+      fullDescription:
+        'I am a physician-scientist with specialized training in immunology, molecular biology, and clinical dermatology. My career is dedicated to integrating fundamental immunology with clinical practice.',
+    });
+
+    expect(dto.fullDescription).toBe('');
+    expect(dto.shortDescription).toBe(
+      'Investigates immune checkpoints and the inhibitory immune landscape in skin cancers.',
+    );
+
+    const groupVoice = toPublicResearchEntityDto({
+      id: 'entity-group-voice',
+      slug: 'group-voice-lab',
+      name: 'Group Voice Lab',
+      fullDescription:
+        'Our lab studies soft robotics and multifunctional materials. We design adaptive systems and develop new manufacturing techniques for reconfigurable machines.',
+    });
+    expect(groupVoice.fullDescription).toBe(
+      'Our lab studies soft robotics and multifunctional materials. We design adaptive systems and develop new manufacturing techniques for reconfigurable machines.',
+    );
+  });
+
   it('leaves shortDescription on the token-tolerant path even when fullDescription fails closed (#676)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-short-tolerant',

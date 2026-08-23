@@ -1,6 +1,7 @@
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
+  isFirstPersonBioDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
@@ -75,7 +76,9 @@ const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set([
 
 function publicDescriptionString(value: unknown): string {
   const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
-  return sanitizeResearchEntityDescription(text);
+  const sanitized = sanitizeResearchEntityDescription(text);
+  if (isFirstPersonBioDescription(sanitized)) return '';
+  return sanitized;
 }
 
 function publicShortDescriptionString(value: unknown): string {

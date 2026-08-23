@@ -7,6 +7,7 @@ import {
   containsHtmlTagMarkup,
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
+  isFirstPersonBioDescription,
   isStudiesTemplateGlueMalformed,
   stripGluedProfileRoleLabel,
   isCurationRationaleText,
@@ -1166,5 +1167,47 @@ describe('stripDeadAnchorCtaSentences lossless sentence walk (#1020)', () => {
     ]) {
       expect(partitionSentencesLossless(value).join('')).toBe(value);
     }
+  });
+});
+
+describe('isFirstPersonBioDescription first-person PI-bio fail-closed (#964)', () => {
+  it('flags a bio that opens "I am" and carries first-person career prose', () => {
+    const bio =
+      'I am a physician-scientist with specialized training in immunology, molecular biology, and clinical dermatology. My career is dedicated to integrating fundamental immunology with clinical practice, and my work spans translational studies of skin inflammation.';
+    expect(isFirstPersonBioDescription(bio)).toBe(true);
+  });
+
+  it('flags a "Welcome to my web page!" personal-site greeting', () => {
+    const bio =
+      "Welcome to my web page! I teach and research comparative politics here, where I'm also associated with several interdisciplinary programs, and this is where you can find out about my research and my teaching.";
+    expect(isFirstPersonBioDescription(bio)).toBe(true);
+  });
+
+  it('flags a first-person-dense bio that does not open in first person', () => {
+    const bio =
+      'Previously the director of a statistics core for twelve years, I founded a new subfield, I lead the design team, and I have co-authored many papers, drawing on my long experience and my collaborators over the years across many projects.';
+    expect(isFirstPersonBioDescription(bio)).toBe(true);
+  });
+
+  it('keeps a clean third-person lab description', () => {
+    const description =
+      'The Doe Laboratory investigates novel immune checkpoints and the inhibitory immune landscape in cutaneous malignancies to develop new immunotherapeutic strategies for patients.';
+    expect(isFirstPersonBioDescription(description)).toBe(false);
+  });
+
+  it('keeps legitimate plural lab group voice ("we"/"our lab")', () => {
+    const description =
+      'Our lab studies soft robotics and multifunctional materials. We design adaptive systems and we develop new manufacturing techniques for reconfigurable machines.';
+    expect(isFirstPersonBioDescription(description)).toBe(false);
+  });
+
+  it('keeps prose where plural voice outweighs an incidental singular mention', () => {
+    const description =
+      'The center brings together our faculty and we host seminars; one visiting scholar once described my colleague as a pioneer in the field of adaptive control.';
+    expect(isFirstPersonBioDescription(description)).toBe(false);
+  });
+
+  it('does not flag a very short first-person fragment', () => {
+    expect(isFirstPersonBioDescription('I study birds.')).toBe(false);
   });
 });

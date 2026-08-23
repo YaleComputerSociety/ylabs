@@ -640,6 +640,37 @@ export function isResearchAreaEchoDescription(text: string): boolean {
   return researchAreaEchoPattern.test(normalizeHygieneWhitespace(text));
 }
 
+const singularFirstPersonPattern = /\b(?:I|I['’](?:m|ve|d|ll)|[Mm]y|[Mm]e|[Mm]ine|[Mm]yself)\b/g;
+
+const pluralFirstPersonPattern =
+  /\b(?:[Ww]e|[Ww]e['’](?:re|ve|d|ll)|[Oo]ur|[Oo]urs|[Uu]s|[Oo]urselves)\b/g;
+
+const firstPersonBioOpenerPattern =
+  /^(?:Welcome\b[^.!?]*\bmy\b|I(?:['’](?:m|ve|d|ll))?\b|My\b)/;
+
+/**
+ * A research-entity fullDescription that is the PI's unedited singular
+ * first-person personal bio ("I am a physician-scientist...", "My research...",
+ * "Welcome to my web page!") served verbatim as the lab's own "what this lab
+ * studies" body, contradicting the clean third-person shortDescription on the
+ * same entity (#964). Plural lab group voice ("we"/"our lab") is legitimate and
+ * must survive, so the singular first-person count must strictly exceed the
+ * plural count; the density arm mirrors the issue's validated >2%/>=3-pronoun
+ * sweep, and the opener arm catches a first-person lead even at lower density.
+ */
+export function isFirstPersonBioDescription(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 12) return false;
+  const singular = countMatches(normalized, singularFirstPersonPattern);
+  if (singular === 0) return false;
+  const plural = countMatches(normalized, pluralFirstPersonPattern);
+  if (singular <= plural) return false;
+  if (firstPersonBioOpenerPattern.test(normalized) && singular >= 2) return true;
+  return singular >= 3 && singular / wordCount >= 0.02;
+}
+
 const provenanceHedgePattern = /[,;]?\s*\bwhen\s+source-confirmed\b/gi;
 
 /**
