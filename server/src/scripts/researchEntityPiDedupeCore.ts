@@ -28,6 +28,9 @@ export interface ResearchEntityPiDedupeRow {
     sourceUrls?: string[];
     departments?: string[];
     researchAreas?: string[];
+    recentGrants?: unknown[];
+    recentGrantCount?: number;
+    fundingAgencies?: string[];
   }>;
 }
 
@@ -46,6 +49,9 @@ export interface ResearchEntityPiDedupeGroup {
   canonicalFullDescription?: string;
   canonicalShortDescription?: string;
   dedupeCategory?: 'profile_area_shell_with_concrete_home' | 'shared_person_id';
+  mergedRecentGrants?: unknown[];
+  mergedRecentGrantCount?: number;
+  mergedFundingAgencies?: string[];
 }
 
 export interface SameNameDifferentPersonQuarantine {
@@ -74,6 +80,48 @@ export interface CurrentMemberDedupeRow {
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.map((value) => (value || '').trim()).filter(Boolean)));
+}
+
+const MAX_MERGED_RECENT_GRANTS = 10;
+
+function grantRecordIdentity(grant: unknown): string {
+  const record = (grant && typeof grant === 'object' ? grant : {}) as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(record)}`;
+}
+
+function grantRecordStartTime(grant: unknown): number {
+  const record = (grant && typeof grant === 'object' ? grant : {}) as Record<string, unknown>;
+  const time = new Date(record.startDate as any).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function mergedGrantEvidenceFromEntities(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): {
+  mergedRecentGrants: unknown[];
+  mergedRecentGrantCount: number;
+  mergedFundingAgencies: string[];
+} {
+  const grants = new Map<string, unknown>();
+  let recentGrantCount = 0;
+  for (const entity of entities) {
+    for (const grant of entity.recentGrants || []) {
+      grants.set(grantRecordIdentity(grant), grant);
+    }
+    if (typeof entity.recentGrantCount === 'number' && Number.isFinite(entity.recentGrantCount)) {
+      recentGrantCount += Math.max(0, Math.floor(entity.recentGrantCount));
+    }
+  }
+  const mergedRecentGrants = [...grants.values()]
+    .sort((left, right) => grantRecordStartTime(right) - grantRecordStartTime(left))
+    .slice(0, MAX_MERGED_RECENT_GRANTS);
+  const mergedFundingAgencies = uniqueStrings(entities.flatMap((entity) => entity.fundingAgencies || []));
+  return {
+    mergedRecentGrants,
+    mergedRecentGrantCount: recentGrantCount,
+    mergedFundingAgencies,
+  };
 }
 
 function timeValue(value: Date | string | null | undefined): number {
@@ -347,6 +395,7 @@ function buildGroupFromCluster(
   if (duplicates.length === 0) return null;
   const { canonicalName, canonicalWebsiteUrl } = carriedCanonicalIdentity(canonical, entities, row);
   const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
+  const grantEvidenceCarry = mergedGrantEvidenceFromEntities(entities);
   return {
     userId: row.userId,
     normalizedName: row.normalizedName,
@@ -363,6 +412,15 @@ function buildGroupFromCluster(
     ...(canonicalName ? { canonicalName } : {}),
     ...(canonicalWebsiteUrl ? { canonicalWebsiteUrl } : {}),
     ...descriptionCarry,
+    ...(grantEvidenceCarry.mergedRecentGrants.length > 0
+      ? { mergedRecentGrants: grantEvidenceCarry.mergedRecentGrants }
+      : {}),
+    ...(grantEvidenceCarry.mergedRecentGrantCount > 0
+      ? { mergedRecentGrantCount: grantEvidenceCarry.mergedRecentGrantCount }
+      : {}),
+    ...(grantEvidenceCarry.mergedFundingAgencies.length > 0
+      ? { mergedFundingAgencies: grantEvidenceCarry.mergedFundingAgencies }
+      : {}),
   };
 }
 
@@ -590,6 +648,7 @@ function buildFundingGroupFromCluster(
     return (a.slug || a.id).localeCompare(b.slug || b.id);
   })[0];
   const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
+  const grantEvidenceCarry = mergedGrantEvidenceFromEntities(entities);
 
   return {
     userId: row.userId,
@@ -605,6 +664,15 @@ function buildFundingGroupFromCluster(
       ...entities.map((entity) => entity.websiteUrl),
     ]),
     ...descriptionCarry,
+    ...(grantEvidenceCarry.mergedRecentGrants.length > 0
+      ? { mergedRecentGrants: grantEvidenceCarry.mergedRecentGrants }
+      : {}),
+    ...(grantEvidenceCarry.mergedRecentGrantCount > 0
+      ? { mergedRecentGrantCount: grantEvidenceCarry.mergedRecentGrantCount }
+      : {}),
+    ...(grantEvidenceCarry.mergedFundingAgencies.length > 0
+      ? { mergedFundingAgencies: grantEvidenceCarry.mergedFundingAgencies }
+      : {}),
   };
 }
 

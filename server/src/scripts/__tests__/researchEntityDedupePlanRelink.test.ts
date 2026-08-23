@@ -141,6 +141,51 @@ describe('applyResearchEntityDedupeMergeGroup field-merge carry', () => {
     expect(canonical?.websiteUrl).toBe('https://example-lab.research.yale.edu/');
     expect(canonical?.fullDescription).toBe('X'.repeat(400));
   });
+
+  it('writes carried recentGrants/recentGrantCount/fundingAgencies onto the canonical entity (#819)', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = new mongoose.Types.ObjectId();
+    const duplicateId = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      {
+        _id: canonicalId,
+        slug: 'yse-faculty-example',
+        archived: false,
+        recentGrantCount: 0,
+        fundingAgencies: [],
+      },
+      { _id: duplicateId, slug: 'nih-pi-shell', archived: false },
+    ]);
+
+    await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: ['https://reporter.nih.gov/project-details/10000001'],
+        mergedRecentGrants: [
+          {
+            id: '10000001',
+            agency: 'NIH',
+            title: 'Fixture grant',
+            startDate: new Date('2023-06-01'),
+            url: 'https://reporter.nih.gov/project-details/10000001',
+          },
+        ],
+        mergedRecentGrantCount: 1,
+        mergedFundingAgencies: ['NIH'],
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    const canonical = await db.collection('research_entities').findOne({ _id: canonicalId });
+    expect(canonical?.recentGrantCount).toBe(1);
+    expect(canonical?.fundingAgencies).toEqual(['NIH']);
+    expect(canonical?.recentGrants).toEqual([
+      expect.objectContaining({ id: '10000001', agency: 'NIH' }),
+    ]);
+  });
 });
 
 describe('org-name dedupe archives the shell twin and redirects it to the survivor', () => {
