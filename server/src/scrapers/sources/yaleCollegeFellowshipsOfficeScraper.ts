@@ -12,7 +12,7 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
+import { clampDescriptionLength, sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
 import { normalizedProgramTitleKey } from '../../utils/programTitle';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
@@ -721,7 +721,7 @@ function candidateFromDetailPage(
     )
     .remove();
   const bodyText = normalizeWhitespace(chromeFreeRoot.text());
-  const safeDescription = sanitizeCatalogDescription(bodyText).slice(0, 2000);
+  const safeDescription = clampDescriptionLength(sanitizeCatalogDescription(bodyText), 2000);
   const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
   const applicationOpenDate = utcStartOfDay(
