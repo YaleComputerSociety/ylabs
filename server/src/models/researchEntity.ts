@@ -105,6 +105,10 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       type: [String],
       default: [],
     },
+    methods: {
+      type: [String],
+      default: [],
+    },
     school: {
       type: String,
       default: '',
