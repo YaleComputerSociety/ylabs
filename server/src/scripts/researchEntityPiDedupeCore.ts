@@ -818,7 +818,9 @@ function buildOrgNameDedupeGroup(
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
     ]),
-    ...(cleanName && cleanName !== (canonical.name || '').trim() ? { canonicalName: cleanName } : {}),
+    ...(cleanName && cleanName !== (canonical.name || '').trim()
+      ? { canonicalName: cleanName }
+      : {}),
     ...(groupWebsite && groupWebsite !== (canonical.websiteUrl || '').trim()
       ? { canonicalWebsiteUrl: groupWebsite }
       : {}),
