@@ -211,6 +211,15 @@ const NavigateToResearchQuery = ({ query }: { query: string }) => {
   );
 };
 
+const NavigateToResearchUrl = ({ to, label }: { to: string; label: string }) => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  );
+};
+
 const ResearchHistoryButtons = () => {
   const navigate = useNavigate();
   return (
@@ -780,6 +789,72 @@ describe('Research page', () => {
       screen.getByRole('button', { name: 'Remove Has hosted undergrads before' }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Research area: Genomics' })).toBeTruthy();
+  });
+
+  it('keeps visible results in place when a filter is toggled via URL on the same query', async () => {
+    const filteredResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockedAxios.post.mockImplementation(
+      (url: string, body: { filters?: Record<string, unknown> }) => {
+        if (url === '/analytics/research' || url === '/analytics/research/batch') {
+          return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
+        }
+        if (url === '/research/search') {
+          if (body.filters?.acceptanceLevel === 'verified-or-likely') {
+            return filteredResponse.promise;
+          }
+          return Promise.resolve(researchSearchResponse([researchEntity]));
+        }
+        return Promise.reject(unexpectedSearchEndpoint(url));
+      },
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning']}>
+        <NavigateToResearchUrl
+          to="/research?q=machine+learning&undergrad=1"
+          label="Add undergrad filter"
+        />
+        <LocationDisplay />
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add undergrad filter' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=machine+learning&undergrad=1',
+      );
+    });
+
+    expect(screen.getByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    expect(screen.queryByText('Loading research homes')).toBeNull();
+
+    filteredResponse.resolve(researchSearchResponse([researchEntity]));
+    await act(async () => {
+      await filteredResponse.promise;
+    });
+
+    expect(screen.getByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    const filteredCall = mockedAxios.post.mock.calls.find(
+      ([url, body]) =>
+        url === '/research/search' &&
+        (body as { filters?: Record<string, unknown> }).filters?.acceptanceLevel ===
+          'verified-or-likely',
+    );
+    expect(filteredCall).toBeTruthy();
   });
 
   it('adapts facet visibility to positive query-scoped buckets while preserving selections', async () => {
