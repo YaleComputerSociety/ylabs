@@ -509,7 +509,24 @@ const Analytics = () => {
       : attentionCount > 0
         ? 'amber'
         : 'green';
-  const topAction = actionCards[0]?.title || 'No urgent admin action returned';
+  const attentionDrivers = [
+    actionCards.length > 0
+      ? `${formatNumber(actionCards.length)} action card${actionCards.length === 1 ? '' : 's'}`
+      : null,
+    zeroResultQueries.length > 0
+      ? `${formatNumber(zeroResultQueries.length)} zero-result quer${zeroResultQueries.length === 1 ? 'y' : 'ies'}`
+      : null,
+    lowResultQueries.length > 0
+      ? `${formatNumber(lowResultQueries.length)} low-result quer${lowResultQueries.length === 1 ? 'y' : 'ies'}`
+      : null,
+  ].filter((driver): driver is string => driver !== null);
+  const topActionTitle = actionCards[0]?.title;
+  const attentionContext =
+    attentionCount === 0
+      ? 'No urgent admin action returned'
+      : `${attentionDrivers.join(', ')} to review${
+          topActionTitle ? `, starting with "${topActionTitle}"` : ''
+        }.`;
 
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
@@ -581,7 +598,7 @@ const Analytics = () => {
             <DashboardMetric
               title="Needs attention"
               value={formatNumber(attentionCount)}
-              context={topAction}
+              context={attentionContext}
               tone={healthTone}
             />
           </div>
