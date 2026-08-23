@@ -1502,19 +1502,20 @@ describe('buildOrgNameResearchEntityDedupePlan', () => {
     ).toEqual([]);
   });
 
-  it('does not merge org entities that carry an attached PI person lead', () => {
+  it('does not merge two org entities that both carry an attached PI person lead', () => {
     expect(
       buildOrgNameResearchEntityDedupePlan([
         {
-          id: 'org-program-home',
-          slug: 'yse-climate-program',
+          id: 'org-led-by-director-a',
+          slug: 'yse-climate-program-a',
           name: 'Yale Program on Synthetic Climate Communication',
           entityType: 'INITIATIVE',
-          websiteUrl: 'https://environment.yale.edu/research/centers/synthetic-climate',
+          websiteUrl: 'https://environment.yale.edu/research/centers/synthetic-climate-a',
+          hasAttachedPi: true,
         },
         {
-          id: 'person-mislabeled-as-org',
-          slug: 'yse-faculty-synthetic-person',
+          id: 'org-led-by-director-b',
+          slug: 'yse-climate-program-b',
           name: 'Yale Program on Synthetic Climate Communication',
           entityType: 'INITIATIVE',
           websiteUrl: 'https://syntheticclimate.yale.edu/',
@@ -1522,6 +1523,31 @@ describe('buildOrgNameResearchEntityDedupePlan', () => {
         },
       ]),
     ).toEqual([]);
+  });
+
+  it('merges a person-derived entity misnamed as a program into its real program twin (#684)', () => {
+    const plan = buildOrgNameResearchEntityDedupePlan([
+      {
+        id: 'org-program-home',
+        slug: 'yse-climate-program',
+        name: 'Yale Program on Synthetic Climate Communication (YPSCC)',
+        entityType: 'PROGRAM',
+        websiteUrl: 'https://environment.yale.edu/research/centers/synthetic-climate',
+      },
+      {
+        id: 'person-mislabeled-as-program',
+        slug: 'yse-faculty-synthetic-person',
+        name: 'Yale Program on Synthetic Climate Communication',
+        entityType: 'PROGRAM',
+        websiteUrl: 'https://syntheticclimate.yale.edu/',
+        hasAttachedPi: true,
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('org-program-home');
+    expect(plan[0].duplicateEntityIds).toEqual(['person-mislabeled-as-program']);
+    expect(plan[0].canonicalWebsiteUrl).toBe('https://syntheticclimate.yale.edu/');
   });
 
   it('corroborates a single-significant-token name via a shared distinctive host', () => {
