@@ -26,6 +26,7 @@ import {
 } from '../../utils/researchHomeDescriptionSelection';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import { flattenHtmlToText } from '../utils/htmlText';
 import { canonicalPersonName } from '../utils/personNameCasing';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -184,7 +185,7 @@ function decodeHtmlEntities(value: string): string {
 }
 
 function plainTextFromHtml(value: string): string {
-  return cheerio.load(value).text().replace(/\s+/g, ' ').trim();
+  return flattenHtmlToText(value);
 }
 
 function cleanDescription(value: unknown): string {
