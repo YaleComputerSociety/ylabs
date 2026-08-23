@@ -355,7 +355,6 @@ export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   searches: AnalyticsEventType.SEARCH,
-  views: AnalyticsEventType.LISTING_VIEW,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
   listingFavorites: AnalyticsEventType.LISTING_FAVORITE,
   listingUnfavorites: AnalyticsEventType.LISTING_UNFAVORITE,
@@ -549,6 +548,18 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
   },
 });
 
+const CONTENT_VIEW_EVENT_TYPES = [
+  AnalyticsEventType.LISTING_VIEW,
+  AnalyticsEventType.RESEARCH_VIEW,
+  AnalyticsEventType.FELLOWSHIP_VIEW,
+];
+
+const buildEventCountAccumulatorForTypes = (eventTypes: AnalyticsEventType[]) => ({
+  $sum: {
+    $cond: [{ $in: ['$eventType', eventTypes] }, 1, 0],
+  },
+});
+
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
@@ -571,6 +582,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         totalEvents: { $sum: 1 },
         firstEventAt: { $min: '$timestamp' },
         lastEventAt: { $max: '$timestamp' },
+        views: buildEventCountAccumulatorForTypes(CONTENT_VIEW_EVENT_TYPES),
         ...Object.fromEntries(
           Object.entries(EVENT_COUNT_FIELDS).map(([field, eventType]) => [
             field,

@@ -172,6 +172,31 @@ describe('search engagement attribution', () => {
   });
 });
 
+describe('per-user activity view aggregation', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('counts listing, research, and fellowship views in the per-user Views metric', async () => {
+    mocks.analyticsAggregate.mockResolvedValueOnce([{ users: [], total: 0 }]);
+
+    await getUserAnalytics({});
+
+    const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
+    const groupStage = pipeline.find((stage: any) => stage.$group)?.$group;
+    const viewsAccumulator = groupStage.views?.$sum?.$cond?.[0]?.$in;
+
+    expect(viewsAccumulator?.[0]).toBe('$eventType');
+    expect(viewsAccumulator?.[1]).toEqual(
+      expect.arrayContaining([
+        AnalyticsEventType.LISTING_VIEW,
+        AnalyticsEventType.RESEARCH_VIEW,
+        AnalyticsEventType.FELLOWSHIP_VIEW,
+      ]),
+    );
+  });
+});
+
 describe('claim-specific research funnel', () => {
   afterEach(() => {
     vi.clearAllMocks();
