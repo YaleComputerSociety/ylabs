@@ -2541,4 +2541,79 @@ describe('Research page', () => {
       initialSearchCalls,
     );
   });
+
+  it('does not duplicate an already-loaded infinite-scroll page after back navigation (#921)', async () => {
+    class MockIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    window.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      bottom: 2000,
+      height: 1,
+      left: 0,
+      right: 1,
+      top: 2000,
+      width: 1,
+      x: 0,
+      y: 2000,
+      toJSON: () => ({}),
+    }));
+
+    const nextResearchEntity = {
+      ...researchEntity,
+      _id: 'entity-2',
+      slug: 'wright-lab',
+      name: 'Wright Lab',
+      displayName: 'Wright Lab',
+    };
+
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(body.page === 2 ? [nextResearchEntity] : [researchEntity], {
+        estimatedTotalHits: 25,
+        page: body.page || 1,
+      });
+    });
+
+    renderResearchWithDetailRoute();
+
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    await waitFor(() => {
+      expect(intersectionCallback).toBeDefined();
+    });
+
+    await act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Wright Lab' })).toBeTruthy();
+    const searchCallsAfterScroll = mockedAxios.post.mock.calls.filter(
+      ([url]) => url === '/research/search',
+    ).length;
+
+    fireEvent.click(screen.getAllByRole('link', { name: 'View profile →' })[0]);
+    expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
+
+    expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { name: 'Wright Lab' })).toHaveLength(1);
+    expect(
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search'),
+    ).toHaveLength(searchCallsAfterScroll);
+  });
 });

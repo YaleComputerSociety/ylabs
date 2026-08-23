@@ -479,6 +479,11 @@ const Research = () => {
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
+  const restoredDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
+  const restoredSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
+  const restoredActiveSearchRequestRef = useRef(
+    restoredSnapshotRef.current?.activeSearchRequest ?? null,
+  );
   const buildResearchAreaOptions = useCallback(
     (counts: Record<string, number> | undefined) =>
       Array.from(new Set(researchAreas.map((area) => area.name.trim()).filter(Boolean)))
@@ -1222,11 +1227,18 @@ const Research = () => {
 
   useEffect(() => {
     if (hasSubmittedSearch || defaultSearchPage <= 1) return;
+    if (defaultSearchPage === restoredDefaultSearchPageRef.current) return;
     void runDefaultResearchHomeSearchRef.current(defaultSearchPage);
   }, [defaultSearchPage, hasSubmittedSearch]);
 
   useEffect(() => {
     if (!hasSubmittedSearch || searchPage <= 1 || !activeSearchRequest) return;
+    if (
+      searchPage === restoredSearchPageRef.current &&
+      activeSearchRequest === restoredActiveSearchRequestRef.current
+    ) {
+      return;
+    }
     void runSearchResultsPageRef.current(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
