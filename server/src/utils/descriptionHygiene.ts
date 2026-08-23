@@ -265,6 +265,20 @@ export function isPublicationsListDumpText(text: string): boolean {
   return publicationsListMarkerPattern.test(normalizeHygieneWhitespace(text));
 }
 
+const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
+
+/**
+ * A vacuous "Research fields include <A>, <B>, and <C>." description whose only
+ * content is a comma-join of the entity's own researchAreas: a bare labeled
+ * chip list carrying no prose, fully redundant with the chips already shown
+ * beside it (#623). Gated to a single sentence (the pattern admits no internal
+ * sentence terminator) so genuine prose that merely opens with the phrase and
+ * continues into a real description is kept.
+ */
+export function isResearchAreaEchoDescription(text: string): boolean {
+  return researchAreaEchoPattern.test(normalizeHygieneWhitespace(text));
+}
+
 /**
  * Clean a scraped catalog description: strip chrome, then fail closed to an
  * empty string when the remainder is roster/PII-shaped, a navigation dump, an
@@ -316,15 +330,20 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
  * fullDescription or shortDescription is the primary "what this lab studies"
- * surface, so a leftover contact-block token or a "Selected Publications:"
- * citation dump fails the whole description closed rather than surviving as
- * read-time-safe token text or a truncated tail (#676).
+ * surface, so a leftover contact-block token, a "Selected Publications:"
+ * citation dump, or a bare "Research fields include <chips>." area echo (#623)
+ * fails the whole description closed rather than surviving as read-time-safe
+ * token text, a truncated tail (#676), or a vacuous restatement of the chips.
  */
 export function sanitizeResearchEntityDescription(text: string): string {
   const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
   if (!stripped) return '';
-  if (hasContactBlockResidue(stripped) || isPublicationsListDumpText(stripped)) {
+  if (
+    hasContactBlockResidue(stripped) ||
+    isPublicationsListDumpText(stripped) ||
+    isResearchAreaEchoDescription(stripped)
+  ) {
     return '';
   }
   return stripped;
