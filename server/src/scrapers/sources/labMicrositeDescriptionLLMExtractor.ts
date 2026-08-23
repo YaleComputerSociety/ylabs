@@ -22,6 +22,7 @@ import {
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import type { DescriptionEntityKind } from '../../utils/researchHomeDescriptionSelection';
 import {
@@ -223,8 +224,14 @@ function expandDescriptionSourceUrls(values: unknown[]): string[] {
 }
 
 function candidateUrlsForDoc(doc: CandidateDescriptionLabDoc): string[] {
+  // Drop a person page whose name belongs to a different professor than this
+  // entity, so a mis-picked source URL (e.g. Keith Baker's people page ending up
+  // in Charles Brown's sourceUrls) can never key a description onto the wrong
+  // entity. Non-person and corroborated person URLs are unaffected (#688).
+  const usableDescriptionSource = (url: string): boolean =>
+    !isRejectedDescriptionSourceUrl(url) && personProfileSourceMatchesEntity(url, doc);
   const primaryUrls = expandDescriptionSourceUrls([doc.websiteUrl, doc.website])
-    .filter((url) => !isRejectedDescriptionSourceUrl(url))
+    .filter(usableDescriptionSource)
     .sort((a, b) => descriptionUrlPriority(a) - descriptionUrlPriority(b) || a.localeCompare(b));
   const primaryNonProfileUrls = primaryUrls.filter((url) => {
     try {
@@ -235,13 +242,13 @@ function candidateUrlsForDoc(doc: CandidateDescriptionLabDoc): string[] {
   });
   if (primaryNonProfileUrls.length > 0) {
     const fallbackUrls = expandDescriptionSourceUrls([...primaryUrls, ...(doc.sourceUrls || [])])
-      .filter((url) => !isRejectedDescriptionSourceUrl(url))
+      .filter(usableDescriptionSource)
       .sort((a, b) => descriptionUrlPriority(a) - descriptionUrlPriority(b) || a.localeCompare(b));
     return uniqueStrings([...primaryNonProfileUrls, ...fallbackUrls]);
   }
 
   return expandDescriptionSourceUrls([...primaryUrls, ...(doc.sourceUrls || [])])
-    .filter((url) => !isRejectedDescriptionSourceUrl(url))
+    .filter(usableDescriptionSource)
     .sort((a, b) => descriptionUrlPriority(a) - descriptionUrlPriority(b) || a.localeCompare(b));
 }
 
@@ -649,7 +656,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           }
         }
         const urls = uniqueStrings([lab.websiteUrl, ...(lab.sourceUrls || [])]).filter(
-          (url) => !isRejectedDescriptionSourceUrl(url),
+          (url) => !isRejectedDescriptionSourceUrl(url) && personProfileSourceMatchesEntity(url, lab),
         );
         let page: FetchedDescriptionPage | null = null;
         let lastFetchError = '';
@@ -671,6 +678,16 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           );
         }
         if (!page?.html) continue;
+
+        // A candidate URL can redirect to a different professor's page; re-check
+        // the resolved URL so a redirect never keys a description onto the wrong
+        // entity (#688).
+        if (!personProfileSourceMatchesEntity(page.url, lab)) {
+          ctx.log(
+            `[${lab.slug || 'candidate'}] skipping description extraction: resolved source ${page.url} names a different person than the entity.`,
+          );
+          continue;
+        }
 
         // Fast, faithful path: many Yale pages (medicine.yale.edu /lab and
         // /profile, etc.) are JS-rendered, so the visible-text LLM path sees an
