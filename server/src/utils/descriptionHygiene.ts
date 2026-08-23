@@ -104,8 +104,11 @@ export function isResearchAreaTemplateLeakText(text: string): boolean {
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
  * research summary phrased as a question is not wrongly blanked, while a
- * chrome-only blurb collapses to empty (#808). Also fails closed on a leaked
- * research-areas heading fragment in a synthesized topic blurb (#816).
+ * chrome-only blurb collapses to empty (#808). Two intentional fail-closed
+ * exceptions apply: a leaked research-areas heading fragment in a synthesized
+ * topic blurb (#816), and the narrow institutional-center-blurb check (#893),
+ * which blanks a promotional center/council landing blurb grafted onto an
+ * unrelated entity.
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
   const cleaned = stripTrailingContactAddress(
