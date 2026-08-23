@@ -338,10 +338,14 @@ function htmlToText(html: string): string {
   return textValue($('body').text() || $.root().text()).slice(0, MAX_PROMPT_CHARS);
 }
 
+const GOVERNANCE_ORG_NAME_RE =
+  /^(?:the\s+)?(?:council|committee|consortium|commission|task\s+force|working\s+group|senate|assembly|office\s+of|board\s+of)\b/i;
+
 function usefulLabName(value: unknown): string {
   const text = textValue(value);
   if (text.length < 2 || text.length > 120) return '';
   if (/^(?:n\/a|none|unknown|the lab|lab|laboratory|research)$/i.test(text)) return '';
+  if (GOVERNANCE_ORG_NAME_RE.test(text)) return '';
   return text;
 }
 
