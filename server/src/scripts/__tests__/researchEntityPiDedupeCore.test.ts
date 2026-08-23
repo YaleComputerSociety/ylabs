@@ -142,6 +142,179 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan[0]?.mergedRecentGrants?.[0]).toMatchObject({ id: '20000001' });
   });
 
+  describe('cross-cutting institute department graft corroboration (#734)', () => {
+    it('strips an uncorroborated biomedical department seed grafted from a low-trust affiliate shell', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-cs-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://cs.yale.edu/ellis',
+              sourceUrls: ['https://cs.yale.edu/ellis'],
+              departments: ['Computer Science'],
+              researchAreas: ['Computer Graphics', 'Geometric Learning'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: [
+                'https://wti.yale.edu/humans/faculty',
+                'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500099',
+              ],
+              departments: [
+                'Neuroscience',
+                'Psychology',
+                'Molecular, Cellular, and Developmental Biology',
+              ],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan).toMatchObject([
+        { canonicalEntityId: 'faculty-home', duplicateEntityIds: ['institute-shell'] },
+      ]);
+      expect(plan[0].mergedDepartments).toEqual(['Computer Science']);
+    });
+
+    it('keeps the biomedical department tuple when the merged researchAreas corroborate it', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-cs-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://cs.yale.edu/ellis',
+              sourceUrls: ['https://cs.yale.edu/ellis'],
+              departments: ['Computer Science'],
+              researchAreas: ['Computer Graphics', 'Cognitive Neuroscience'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: [
+                'https://wti.yale.edu/humans/faculty',
+                'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500099',
+              ],
+              departments: [
+                'Neuroscience',
+                'Psychology',
+                'Molecular, Cellular, and Developmental Biology',
+              ],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan[0].mergedDepartments).toEqual([
+        'Computer Science',
+        'Neuroscience',
+        'Psychology',
+        'Molecular, Cellular, and Developmental Biology',
+      ]);
+    });
+
+    it('keeps the biomedical department tuple when a trusted, non-shell entity independently carries it', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-neuro-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://medicine.yale.edu/profile/jordan-ellis/',
+              sourceUrls: ['https://medicine.yale.edu/profile/jordan-ellis/'],
+              departments: [
+                'Neuroscience',
+                'Psychology',
+                'Molecular, Cellular, and Developmental Biology',
+              ],
+              researchAreas: ['Statistics'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: ['https://wti.yale.edu/humans/faculty'],
+              departments: ['Genetics'],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan[0].mergedDepartments).toEqual([
+        'Neuroscience',
+        'Psychology',
+        'Molecular, Cellular, and Developmental Biology',
+        'Genetics',
+      ]);
+    });
+
+    it('never strips a lone member of the biomedical tuple when the other two never co-occur', () => {
+      const plan = buildResearchEntityPiDedupePlan([
+        {
+          userId: 'fixture-ellis-user',
+          normalizedName: 'same-pi:fixture-ellis-user',
+          piFirstName: 'Jordan',
+          piLastName: 'Ellis',
+          entities: [
+            {
+              id: 'faculty-home',
+              slug: 'dept-neuro-jordan-ellis',
+              name: 'Jordan Ellis',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              websiteUrl: 'https://medicine.yale.edu/profile/jordan-ellis/',
+              sourceUrls: ['https://medicine.yale.edu/profile/jordan-ellis/'],
+              departments: ['Neuroscience'],
+              researchAreas: ['Statistics'],
+            },
+            {
+              id: 'institute-shell',
+              slug: 'nsf-pi-jordan-ellis',
+              name: 'Jordan Ellis Lab',
+              kind: 'lab',
+              entityType: 'LAB',
+              sourceUrls: ['https://wti.yale.edu/humans/faculty'],
+              departments: ['Genetics'],
+            },
+          ],
+        },
+      ]);
+
+      expect(plan[0].mergedDepartments).toEqual(['Neuroscience', 'Genetics']);
+    });
+  });
+
   it('keeps a real-website faculty home as canonical instead of archiving it into the PI-derived grant shell', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
