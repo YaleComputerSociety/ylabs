@@ -262,6 +262,23 @@ export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean 
   );
 }
 
+const SUBJECTLESS_RESEARCH_LEAD_REPAIRS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^\s*Research\s+examines\b/i, 'Examines'],
+  [/^\s*Research\s+investigates\b/i, 'Investigates'],
+  [/^\s*Research\s+focuses\s+on\b/i, 'Focuses on'],
+  [/^\s*Research\s+studies\b/i, 'Studies'],
+  [/^\s*Research\s+explores\b/i, 'Explores'],
+];
+
+export function repairSubjectlessResearchLead(value: unknown): string {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) return text;
+  for (const [pattern, replacement] of SUBJECTLESS_RESEARCH_LEAD_REPAIRS) {
+    if (pattern.test(text)) return text.replace(pattern, replacement);
+  }
+  return text;
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
@@ -273,8 +290,9 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
+      const withResearchLeadRepair = repairSubjectlessResearchLead(next[field]);
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
-        next[field],
+        withResearchLeadRepair,
         leadMemberNames,
       );
       const withLeadNameCorrectionIfResearch =
