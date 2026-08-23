@@ -2,6 +2,7 @@
  * Button that links to the external Google Forms feedback form.
  */
 import Button from '@mui/material/Button';
+import { navFocusRingSx } from '../utils/focusRing';
 
 const FeedbackButton = () => {
   return (
@@ -18,6 +19,7 @@ const FeedbackButton = () => {
         fontWeight: 450,
         fontSize: '14px',
         minHeight: '44px',
+        ...navFocusRingSx,
       }}
       disableRipple={true}
     >
