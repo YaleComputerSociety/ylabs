@@ -81,6 +81,7 @@ import {
 } from './researchActivityIntegrity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
+import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   getPublicUndergraduateLogistics,
@@ -344,6 +345,12 @@ const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
 const MAX_SEARCH_QUERY_LENGTH = 512;
 const MAX_FILTER_VALUES = 50;
+// Hybrid k-NN search always returns the `limit` nearest vectors regardless of how
+// dissimilar they are, so a text query with no real match otherwise dumps the whole
+// student-visible corpus. Genuine matches score >= ~0.2 (exact name ~0.72, broad
+// topics 0.2-0.99) while pure-noise queries score ~1e-7, so this cutoff drops noise
+// without clipping legitimate weak-but-real matches. See #823.
+const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -705,6 +712,22 @@ const isUnsortableAttributeError = (error: unknown): boolean => {
 };
 
 /**
+ * True when the running Meilisearch is too old to understand the
+ * `rankingScoreThreshold` search parameter (added in Meili v1.5). Lets the query
+ * recover by dropping the threshold instead of failing all the way back to Mongo.
+ */
+const isUnsupportedRankingScoreThresholdError = (error: unknown): boolean => {
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    cause?: { code?: string; message?: string };
+  };
+  const message = maybeError?.message || maybeError?.cause?.message || '';
+
+  return /rankingScoreThreshold/i.test(message);
+};
+
+/**
  * When Meilisearch rejects a query because `attributesToSearchOn` references an
  * attribute missing from the running index's searchableAttributes (config
  * drift), let the query recover by dropping the restriction and searching all
@@ -835,6 +858,7 @@ export async function searchResearchGroupsViaMeili(
         semanticRatio: 0.8,
         embedder: 'default',
       };
+      searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
     }
   }
 
@@ -865,6 +889,16 @@ export async function searchResearchGroupsViaMeili(
         if (params.hybrid && isMissingMeiliEmbedderError(error)) {
           params = { ...params };
           delete params.hybrid;
+          delete params.rankingScoreThreshold;
+          degraded = true;
+          continue;
+        }
+        if (
+          params.rankingScoreThreshold !== undefined &&
+          isUnsupportedRankingScoreThresholdError(error)
+        ) {
+          params = { ...params };
+          delete params.rankingScoreThreshold;
           degraded = true;
           continue;
         }
@@ -919,8 +953,13 @@ export async function searchResearchGroupsViaMeili(
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
     if (!rawFacetDistribution) return rawFacetDistribution;
-    const { schools, ...rest } = rawFacetDistribution;
-    return schools ? { ...rest, school: schools } : rest;
+    const { schools, researchAreas, ...rest } = rawFacetDistribution;
+    const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
+    return {
+      ...rest,
+      ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
+      ...(schools ? { school: schools } : {}),
+    };
   })();
 
   const hitIds = (hits || [])
@@ -1105,7 +1144,8 @@ const searchResearchGroupsViaMongoFallback = async (
   const facetDistribution = {
     school: facetCounts(visibleCandidates, 'schools'),
     departments: facetCounts(visibleCandidates, 'departments'),
-    researchAreas: facetCounts(visibleCandidates, 'researchAreas'),
+    researchAreas:
+      sanitizeResearchAreaFacetDistribution(facetCounts(visibleCandidates, 'researchAreas')) ?? {},
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,

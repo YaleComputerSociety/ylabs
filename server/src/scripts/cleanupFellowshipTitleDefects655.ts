@@ -1,7 +1,7 @@
 /**
  * Dev corrective pass for the fellowship title defects (#655).
  *
- * Two independent, evidence-first passes over active fellowship records:
+ * Three independent, evidence-first passes over active fellowship records:
  *  A. ALL-CAPS surname titles: the honoree's surname is stored in ALL-CAPS in
  *     the title while the description renders it correctly. Only an explicit
  *     allowlist of confirmed corruptions is corrected, keyed on the exact
@@ -12,6 +12,17 @@
  *     concatenations) so the standard normalized-title dedupe cannot group
  *     them. Each pair is matched by exact title, guarded on a shared sourceUrl,
  *     and the redundant record is archived (soft delete) with an audit trail.
+ *  C. AND-concatenated component-overlap duplicates: unlike Pass B's hardcoded
+ *     pairs, this discovers active AND-concatenated titles (two joint fellowship
+ *     names joined by a literal "AND") that share one component verbatim while
+ *     the other has drifted. It groups them into connected components by shared
+ *     component, ignores singletons, skips any component larger than two as
+ *     ambiguous (more likely distinct programs that co-list the same secondary
+ *     fellowship than one drifting pair, so those need manual review), and for
+ *     an exact pair archives the shorter title as a duplicate of the fuller one,
+ *     guarded on a shared sourceUrl. This is the general lever for future
+ *     re-scrapes of this corruption shape that Pass B's curated allowlist would
+ *     otherwise miss.
  *
  * The audit trail references records by id/title/sourceUrl only and never
  * prints description text, so no personal data is echoed to logs.
@@ -28,6 +39,7 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { andConcatenationComponentKeys, shareAndConcatenatedTitleComponent } from '../utils/programTitle';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
@@ -151,8 +163,87 @@ async function main() {
     }
   }
 
+  const passBArchivedIds = new Set(archiveIds);
+  let andComponentArchives = 0;
+  console.log('\n=== Pass C: AND-concatenated component-overlap duplicates ===');
+  const andTitledDocs = docs.filter(
+    (doc) =>
+      andConcatenationComponentKeys(String(doc.title || '')).length > 0 &&
+      !passBArchivedIds.has(serializedDocumentId(doc._id) || ''),
+  );
+
+  const parent = andTitledDocs.map((_, idx) => idx);
+  const find = (x: number): number => {
+    let root = x;
+    while (parent[root] !== root) root = parent[root];
+    let cursor = x;
+    while (parent[cursor] !== root) {
+      const next = parent[cursor];
+      parent[cursor] = root;
+      cursor = next;
+    }
+    return root;
+  };
+  const union = (x: number, y: number): void => {
+    const rootX = find(x);
+    const rootY = find(y);
+    if (rootX !== rootY) parent[rootX] = rootY;
+  };
+  for (let i = 0; i < andTitledDocs.length; i += 1) {
+    for (let j = i + 1; j < andTitledDocs.length; j += 1) {
+      if (shareAndConcatenatedTitleComponent(String(andTitledDocs[i].title || ''), String(andTitledDocs[j].title || ''))) {
+        union(i, j);
+      }
+    }
+  }
+
+  const components = new Map<number, number[]>();
+  andTitledDocs.forEach((_, idx) => {
+    const root = find(idx);
+    const members = components.get(root) || [];
+    members.push(idx);
+    components.set(root, members);
+  });
+
+  for (const members of components.values()) {
+    if (members.length < 2) continue;
+    const componentDocs = members.map((idx) => andTitledDocs[idx]);
+    if (members.length > 2) {
+      const titles = componentDocs.map((doc) => `"${doc.title}"`).join(', ');
+      console.log(`  SKIP (ambiguous, ${members.length}-way component overlap; needs manual review) ${titles}`);
+      continue;
+    }
+    const [first, second] = componentDocs;
+    const firstId = serializedDocumentId(first._id) || '';
+    const secondId = serializedDocumentId(second._id) || '';
+    const urlFirst = normalizeUrl(first.sourceUrl);
+    const urlSecond = normalizeUrl(second.sourceUrl);
+    if (!urlFirst || urlFirst !== urlSecond) {
+      console.log(`  SKIP (sourceUrl mismatch) a=${firstId}[${first.sourceUrl}] b=${secondId}[${second.sourceUrl}]`);
+      continue;
+    }
+    const keep = String(first.title || '').length >= String(second.title || '').length ? first : second;
+    const drop = keep === first ? second : first;
+    const keepId = serializedDocumentId(keep._id) || '';
+    const dropId = serializedDocumentId(drop._id) || '';
+    console.log(`\n  Shared AND-component: keep="${keep.title}" drop="${drop.title}"`);
+    console.log(`  KEEP    id=${keepId} sourceUrl=${keep.sourceUrl}`);
+    console.log(`  ARCHIVE id=${dropId} sourceUrl=${drop.sourceUrl}`);
+    archiveIds.push(dropId);
+    andComponentArchives += 1;
+
+    const keepLen = sanitizedLength(keep);
+    const portable = sanitizeCatalogDescription(typeof drop.description === 'string' ? drop.description : '');
+    if (keepLen < THIN_DESCRIPTION_MAX && portable.length > keepLen) {
+      descriptionPorts.push({ keepId, text: portable, from: keepLen, to: portable.length });
+      console.log(`  DESC-PORT keep=${keepId} thin desc ${keepLen}c <- archived sanitized ${portable.length}c (#574)`);
+    } else {
+      console.log(`  DESC-KEEP keep=${keepId} desc adequate (${keepLen}c); no port`);
+    }
+  }
+
   console.log(
-    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length}, description ports=${descriptionPorts.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
+    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length} (${andComponentArchives} via AND-component overlap), description ports=${descriptionPorts.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
   );
 
   if (!options.apply) {

@@ -259,6 +259,71 @@ function mergedResearchAreasFromEntities(
   );
 }
 
+/**
+ * Cross-cutting institute scrapers (e.g. Wu Tsai Institute) seed a broad
+ * affiliate's generated `faculty-research-area-*` shell with the institute's
+ * own home-department tuple. That seed is a reasonable guess for narrow,
+ * single-department centers but is wrong for entities the institute merely
+ * affiliates with across unrelated disciplines (a CS lab, a humanities
+ * scholar). Dedupe historically unioned it into the canonical entity
+ * unconditionally. Each of these three names is also a legitimate standalone
+ * department elsewhere, so the graft signature is the full trio co-occurring
+ * together, not any one name in isolation.
+ */
+const BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS: string[][] = [
+  ['neuroscience'],
+  ['psychology'],
+  [
+    'molecular, cellular, and developmental biology',
+    'molecular, cellular and developmental biology',
+  ],
+];
+
+const BIOMEDICAL_RESEARCH_AREA_CORROBORATION_PATTERN =
+  /\b(neuro\w*|psycholog\w*|cognit\w*|synap\w*|neural|brain|molecular biology|cellular biology|developmental biology|biomedical|physiolog\w*|psychiatr\w*)\b/i;
+
+function hasBiomedicalResearchAreaCorroboration(researchAreas: string[]): boolean {
+  return researchAreas.some((area) => BIOMEDICAL_RESEARCH_AREA_CORROBORATION_PATTERN.test(area));
+}
+
+function departmentKeys(entities: ResearchEntityPiDedupeRow['entities']): Set<string> {
+  return new Set(
+    entities
+      .flatMap((entity) => entity.departments || [])
+      .map((department) => department.trim().toLowerCase()),
+  );
+}
+
+function hasFullBiomedicalGraftTuple(keys: Set<string>): boolean {
+  return BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS.every((memberKeys) =>
+    memberKeys.some((key) => keys.has(key)),
+  );
+}
+
+/**
+ * Departments merged across a dedupe cluster, gated so the Wu-Tsai-style
+ * biomedical seed tuple only survives when the full three-department
+ * signature is corroborated by the entity's own trusted departments or its
+ * merged researchAreas - never on the tuple's presence in a low-trust shell
+ * alone. Any other department, including a lone member of the tuple with no
+ * co-occurring siblings, merges unconditionally.
+ */
+function mergeCorroboratedDepartments(
+  entities: ResearchEntityPiDedupeRow['entities'],
+  mergedResearchAreas: string[],
+): string[] {
+  const merged = uniqueStrings(entities.flatMap((entity) => entity.departments || []));
+  const mergedKeys = departmentKeys(entities);
+  if (!hasFullBiomedicalGraftTuple(mergedKeys)) return merged;
+  if (hasBiomedicalResearchAreaCorroboration(mergedResearchAreas)) return merged;
+
+  const trustedKeys = departmentKeys(trustedAreaShellEntities(entities));
+  if (hasFullBiomedicalGraftTuple(trustedKeys)) return merged;
+
+  const graftKeys = new Set(BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS.flat());
+  return merged.filter((department) => !graftKeys.has(department.trim().toLowerCase()));
+}
+
 function normalizedWords(value: string | undefined): string[] {
   return (value || '')
     .toLowerCase()
@@ -396,6 +461,9 @@ function buildGroupFromCluster(
   const { canonicalName, canonicalWebsiteUrl } = carriedCanonicalIdentity(canonical, entities, row);
   const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
   const grantEvidenceCarry = mergedGrantEvidenceFromEntities(entities);
+  const mergedResearchAreas = mergedResearchAreasFromEntities(entities, {
+    sanitizeProfileChrome: true,
+  });
   return {
     userId: row.userId,
     normalizedName: row.normalizedName,
@@ -403,8 +471,8 @@ function buildGroupFromCluster(
     duplicateEntityIds: duplicates.map((entity) => entity.id),
     canonicalSlug: canonical.slug,
     duplicateSlugs: duplicates.map((entity) => entity.slug || entity.id),
-    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: mergedResearchAreasFromEntities(entities, { sanitizeProfileChrome: true }),
+    mergedDepartments: mergeCorroboratedDepartments(entities, mergedResearchAreas),
+    mergedResearchAreas,
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
@@ -649,6 +717,9 @@ function buildFundingGroupFromCluster(
   })[0];
   const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
   const grantEvidenceCarry = mergedGrantEvidenceFromEntities(entities);
+  const mergedResearchAreas = mergedResearchAreasFromEntities(entities, {
+    sanitizeProfileChrome: true,
+  });
 
   return {
     userId: row.userId,
@@ -657,8 +728,8 @@ function buildFundingGroupFromCluster(
     duplicateEntityIds: fundingDuplicates.map((entity) => entity.id),
     canonicalSlug: canonical.slug,
     duplicateSlugs: fundingDuplicates.map((entity) => entity.slug || entity.id),
-    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: mergedResearchAreasFromEntities(entities, { sanitizeProfileChrome: true }),
+    mergedDepartments: mergeCorroboratedDepartments(entities, mergedResearchAreas),
+    mergedResearchAreas,
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
@@ -904,6 +975,9 @@ function buildOrgNameDedupeGroup(
     '';
   const cleanName = cleanestOrgName(entities);
   const descriptionCarry = bestDescriptionCarry(canonical, entities);
+  const mergedResearchAreas = cleanMergedResearchAreas(
+    entities.flatMap((entity) => entity.researchAreas || []),
+  );
 
   return {
     userId: `org-name:${normalizedName}`,
@@ -912,10 +986,8 @@ function buildOrgNameDedupeGroup(
     duplicateEntityIds: duplicates.map((entity) => entity.id),
     canonicalSlug: canonical.slug,
     duplicateSlugs: duplicates.map((entity) => entity.slug || entity.id),
-    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: cleanMergedResearchAreas(
-      entities.flatMap((entity) => entity.researchAreas || []),
-    ),
+    mergedDepartments: mergeCorroboratedDepartments(entities, mergedResearchAreas),
+    mergedResearchAreas,
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
