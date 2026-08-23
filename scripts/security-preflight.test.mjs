@@ -1007,7 +1007,6 @@ test('public client providers avoid raw auth and config error logs', () => {
 test('public favorite and save flows avoid raw Axios console errors', () => {
   const files = [
     '../client/src/hooks/useFavorites.ts',
-    '../client/src/pages/home.tsx',
     '../client/src/pages/fellowships.tsx',
     '../client/src/components/accounts/ProgramWatch.tsx',
   ];
@@ -1020,10 +1019,7 @@ test('public favorite and save flows avoid raw Axios console errors', () => {
 });
 
 test('public search loaders avoid raw Axios console errors', () => {
-  const files = [
-    '../client/src/providers/SearchContextProvider.tsx',
-    '../client/src/providers/FellowshipSearchContextProvider.tsx',
-  ];
+  const files = ['../client/src/providers/FellowshipSearchContextProvider.tsx'];
 
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
@@ -3326,34 +3322,6 @@ test('self-editable profile writes cap arrays and URL maps before per-item norma
   );
 });
 
-test('listing search bounds query and filter inputs before search work', () => {
-  const source = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-
-  assert.match(source, /MAX_LISTING_SEARCH_QUERY_LENGTH = 512/);
-  assert.match(source, /MAX_LISTING_SEARCH_FILTER_VALUES = 50/);
-  assert.match(source, /MAX_LISTING_SEARCH_FILTER_VALUE_LENGTH = 120/);
-  assert.match(source, /MAX_LISTING_SEARCH_PAGINATION_PARAM_LENGTH = 16/);
-  assert.match(source, /const POSITIVE_INTEGER_PARAM_RE = \/\^\[1-9\]\\d\*\$\/;/);
-  assert.match(source, /typeof value !== 'string' && typeof value !== 'number'/);
-  assert.match(source, /raw\.length > MAX_LISTING_SEARCH_PAGINATION_PARAM_LENGTH/);
-  assert.match(source, /Number\.isSafeInteger\(value\) && value > 0/);
-  assert.match(source, /!POSITIVE_INTEGER_PARAM_RE\.test\(raw\)/);
-  assert.match(source, /Number\.isSafeInteger\(parsed\) \? parsed : undefined/);
-  assert.doesNotMatch(source, /Number\.isFinite\(parsed\) \? parsed : undefined/);
-  assert.match(source, /const boundedListingSearchQuery = \(value: unknown\): string =>/);
-  assert.match(
-    source,
-    /const splitBoundedListingSearchParam = \(value: unknown, separator = ','\): string\[\] =>/,
-  );
-  assert.match(source, /const trimmedQuery = boundedListingSearchQuery\(query\)/);
-  assert.match(source, /index\.search\(trimmedQuery, searchParams\)/);
-  assert.match(source, /splitBoundedListingSearchParam\(departments, '\|\|'\)/);
-  assert.match(source, /splitBoundedListingSearchParam\(researchAreas\)/);
-});
-
 test('program and fellowship search bound query and filter inputs before search work', () => {
   const programController = fs.readFileSync(
     new URL('../server/src/controllers/programController.ts', import.meta.url),
@@ -4083,50 +4051,6 @@ test('public pathway search hides research entity workflow metadata', () => {
   );
 
   assert.doesNotMatch(clientTypeSource, /studentVisibilityTier/);
-});
-
-test('public listing search omits persistence timestamp metadata', () => {
-  const controllerSource = fs.readFileSync(
-    new URL('../server/src/controllers/listingController.ts', import.meta.url),
-    'utf8',
-  );
-  const searchProviderSource = fs.readFileSync(
-    new URL('../client/src/providers/SearchContextProvider.tsx', import.meta.url),
-    'utf8',
-  );
-  const sortDropdownSource = fs.readFileSync(
-    new URL('../client/src/components/navbar/NavbarSortDropdown.tsx', import.meta.url),
-    'utf8',
-  );
-  const homePageSource = fs.readFileSync(
-    new URL('../client/src/pages/home.tsx', import.meta.url),
-    'utf8',
-  );
-  const navbarSource = fs.readFileSync(
-    new URL('../client/src/components/Navbar.tsx', import.meta.url),
-    'utf8',
-  );
-
-  const publicSortFields = controllerSource.match(
-    /const LISTING_SEARCH_SORT_FIELDS = new Set\(\[[\s\S]*?\]\);/,
-  );
-  assert.ok(publicSortFields, 'public listing sort allowlist should exist');
-  assert.doesNotMatch(publicSortFields[0], /'createdAt'/);
-  assert.doesNotMatch(publicSortFields[0], /'updatedAt'/);
-  assert.doesNotMatch(controllerSource, /createdAt: listing\.createdAt/);
-  assert.doesNotMatch(controllerSource, /updatedAt: listing\.updatedAt/);
-  assert.doesNotMatch(controllerSource, /researchEntityId: listing\.researchEntityId/);
-  assert.doesNotMatch(controllerSource, /researchGroupId: listing\.researchGroupId/);
-  assert.doesNotMatch(controllerSource, /sortConfig\.push\(`createdAt:desc`\)/);
-  assert.doesNotMatch(controllerSource, /new Date\(b\.createdAt \|\| 0\)/);
-  assert.doesNotMatch(searchProviderSource, /'createdAt'/);
-  assert.doesNotMatch(sortDropdownSource, /Date Added/);
-  assert.doesNotMatch(sortDropdownSource, /ownerLastName/);
-  assert.doesNotMatch(sortDropdownSource, /ownerFirstName/);
-  assert.doesNotMatch(homePageSource, /quickFilter === 'recent'/);
-  assert.doesNotMatch(homePageSource, /new Date\(l\.createdAt\)/);
-  assert.doesNotMatch(navbarSource, /Recently Added/);
-  assert.doesNotMatch(navbarSource, /value: 'recent'/);
 });
 
 test('public research Meilisearch service bounds direct search inputs', () => {

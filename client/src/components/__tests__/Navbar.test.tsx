@@ -7,7 +7,6 @@ import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContex
 import FellowshipSearchContext, {
   defaultFellowshipSearchContext,
 } from '../../contexts/FellowshipSearchContext';
-import SearchContext, { defaultSearchContext } from '../../contexts/SearchContext';
 import UIContext, { defaultUIContext } from '../../contexts/UIContext';
 import UserContext from '../../contexts/UserContext';
 
@@ -26,15 +25,6 @@ class ResizeObserverMock {
 globalThis.ResizeObserver = ResizeObserverMock as any;
 
 const renderNavbar = (user: any = { userType: 'student' }) => {
-  const searchContext = {
-    ...defaultSearchContext,
-    selectedListingResearchAreas: [],
-    setSelectedListingResearchAreas: vi.fn(),
-    allListingResearchAreas: [],
-    listingResearchAreasFilterMode: 'union',
-    setListingResearchAreasFilterMode: vi.fn(),
-  } as any;
-
   return render(
     <MemoryRouter initialEntries={['/programs']}>
       <UserContext.Provider
@@ -46,13 +36,11 @@ const renderNavbar = (user: any = { userType: 'student' }) => {
         }}
       >
         <ConfigContext.Provider value={defaultConfigContext}>
-          <SearchContext.Provider value={searchContext}>
-            <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
-              <UIContext.Provider value={defaultUIContext}>
-                <Navbar />
-              </UIContext.Provider>
-            </FellowshipSearchContext.Provider>
-          </SearchContext.Provider>
+          <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+            <UIContext.Provider value={defaultUIContext}>
+              <Navbar />
+            </UIContext.Provider>
+          </FellowshipSearchContext.Provider>
         </ConfigContext.Provider>
       </UserContext.Provider>
     </MemoryRouter>,

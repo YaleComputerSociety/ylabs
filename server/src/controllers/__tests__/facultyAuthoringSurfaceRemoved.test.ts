@@ -19,7 +19,6 @@ describe('faculty opportunity authoring surface removal (#301)', () => {
   });
 
   it('keeps source-backed listing read and student interaction handlers', () => {
-    expect(typeof listingController.searchListings).toBe('function');
     expect(typeof listingController.getListingById).toBe('function');
     expect(typeof listingController.recordListingOutreach).toBe('function');
     expect(typeof listingController.addViewToListing).toBe('function');

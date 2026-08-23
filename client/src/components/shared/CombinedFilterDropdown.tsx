@@ -5,8 +5,9 @@
  * Set `mobileSheet` for the Programs surface to use the labelled, focus-contained mobile sheet.
  */
 import { useState, useRef, useEffect } from 'react';
-import { FilterMode } from '../../contexts/SearchContext';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
+
+export type FilterMode = 'intersection' | 'union';
 
 export interface FilterTabConfig {
   key: string;
