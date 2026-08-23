@@ -21,6 +21,17 @@ function makeDeps(overrides: Partial<CronRunnerDependencies> = {}): CronRunnerDe
       skipped: 0,
       errors: 0,
     }),
+    reclaimInferredPiLeads: vi.fn().mockResolvedValue({
+      scanned: 5,
+      lagging: 1,
+      rows: [{ entityId: 'e1', entityKey: 'lab-a', disposition: 'materialized-lead' }],
+      tally: {
+        'materialized-lead': 1,
+        'already-linked': 0,
+        'still-unresolved': 0,
+        'pending-apply': 0,
+      },
+    }),
     getScrapeRunReport: vi.fn().mockResolvedValue({ run: { id: 'run-1' } }),
     runStudentVisibilityGate: vi.fn().mockResolvedValue({
       counts: { scanned: 3, promoted: 2, held: 1, resolved: 2, changed: 2 },
@@ -138,10 +149,19 @@ describe('runScraperCron', () => {
       triggeredBy: 'cron',
     });
     expect(deps.materializeFromRun).toHaveBeenCalledWith('run-1', { dryRun: false });
+    expect(deps.reclaimInferredPiLeads).toHaveBeenCalledWith({ apply: true, scope: 'all' });
     expect(deps.runStudentVisibilityGate).toHaveBeenCalledWith({
       collection: 'all',
       mode: 'apply',
       sourceName: 'openalex',
+    });
+    expect(
+      (deps.reclaimInferredPiLeads as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      (deps.runStudentVisibilityGate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
+    );
+    expect(result).toMatchObject({
+      inferredPiLeadReclaimResult: { tally: { 'materialized-lead': 1 } },
     });
     expect(deps.getScrapeRunReport).toHaveBeenCalledWith('run-1');
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
@@ -186,12 +206,41 @@ describe('runScraperCron', () => {
     );
 
     expect(result.exitCode).toBe(1);
+    expect(deps.reclaimInferredPiLeads).not.toHaveBeenCalled();
     expect(deps.runStudentVisibilityGate).not.toHaveBeenCalled();
     expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
       expect.objectContaining({
         releaseReason: 'failure',
         lastRunId: 'run-1',
       }),
+    );
+  });
+
+  it('completes the run when the inferred-PI lead reclaim throws', async () => {
+    const deps = makeDeps({
+      reclaimInferredPiLeads: vi.fn().mockRejectedValue(new Error('reclaim boom')),
+    });
+
+    const result = await runScraperCron(
+      {
+        sourceName: 'openalex',
+        environment: 'production',
+        options: { dryRun: false, useCache: false, release: true },
+        ownerId: 'owner-1',
+        now: NOW,
+        heartbeatIntervalMs: 0,
+      },
+      deps,
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      exitCode: 0,
+      inferredPiLeadReclaimResult: undefined,
+    });
+    expect(deps.runStudentVisibilityGate).toHaveBeenCalledOnce();
+    expect(deps.releaseScrapeJobLock).toHaveBeenCalledWith(
+      expect.objectContaining({ releaseReason: 'success', lastRunId: 'run-1' }),
     );
   });
 });
