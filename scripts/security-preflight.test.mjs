@@ -664,7 +664,10 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   );
   assert.doesNotMatch(fellowshipModal, /safeUrl\(fellowship\.applicationLink\)/);
   assert.match(fellowshipModal, /const linkHref = safeHttpUrl\(match\[2\]\)/);
-  assert.match(fellowshipModal, /const safeLinks = buildSafeProgramLinks\(fellowship\.links\)/);
+  assert.match(
+    fellowshipModal,
+    /const safeLinks = buildSafeProgramLinks\(fellowship\.links, fellowship\.sourceUrl\)/,
+  );
   assert.match(fellowshipModal, /href=\{link\.href\}/);
   assert.doesNotMatch(fellowshipModal, /const linkHref = safeUrl\(match\[2\]\)/);
   assert.doesNotMatch(fellowshipModal, /href=\{link\.url\}/);

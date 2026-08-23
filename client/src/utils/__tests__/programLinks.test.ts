@@ -4,6 +4,7 @@ import {
   buildSafeProgramLinks,
   isChromeLinkLabel,
   isGenericAdmissionsApplyLink,
+  isSameHostShallowChromeUrl,
   MAX_RENDERED_PROGRAM_LINKS,
 } from '../programLinks';
 
@@ -58,6 +59,40 @@ describe('isGenericAdmissionsApplyLink', () => {
   });
 });
 
+describe('isSameHostShallowChromeUrl', () => {
+  const sourceUrl =
+    'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
+
+  it('rejects same-host site nav/footer chrome shallower than the source page', () => {
+    expect(isSameHostShallowChromeUrl('https://engineering.yale.edu/apply', sourceUrl)).toBe(true);
+    expect(isSameHostShallowChromeUrl('https://engineering.yale.edu/give', sourceUrl)).toBe(true);
+    expect(isSameHostShallowChromeUrl('https://engineering.yale.edu/contact-us', sourceUrl)).toBe(
+      true,
+    );
+    expect(
+      isSameHostShallowChromeUrl(
+        'https://engineering.yale.edu/school-experience/whats-next',
+        sourceUrl,
+      ),
+    ).toBe(true);
+    expect(
+      isSameHostShallowChromeUrl(
+        'https://engineering.yale.edu/academic-study/undergraduate',
+        sourceUrl,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps the source page, off-host links, and program-specific links', () => {
+    expect(isSameHostShallowChromeUrl(sourceUrl, sourceUrl)).toBe(false);
+    expect(isSameHostShallowChromeUrl('https://engineering.yale.edu/apply', undefined)).toBe(false);
+    expect(isSameHostShallowChromeUrl('https://other.example.edu/apply', sourceUrl)).toBe(false);
+    expect(isSameHostShallowChromeUrl('https://engineering.yale.edu/fellowships', sourceUrl)).toBe(
+      false,
+    );
+  });
+});
+
 describe('buildSafeProgramLinks', () => {
   it('drops a scraped site nav and footer dump down to genuine links', () => {
     const links = [
@@ -104,6 +139,26 @@ describe('buildSafeProgramLinks', () => {
       'https://studentgrants.yale.edu/apply/form',
       'https://example.edu/program',
     ]);
+  });
+
+  it('drops an unenumerated same-host nav link shallower than the source page (#871)', () => {
+    const sourceUrl =
+      'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
+    const links = [
+      {
+        label: "Our Mantra / What's Next",
+        url: 'https://engineering.yale.edu/school-experience/whats-next',
+      },
+      {
+        label: 'Research Internship Program',
+        url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      },
+    ];
+
+    const result = buildSafeProgramLinks(links, sourceUrl);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('Research Internship Program');
   });
 
   it('drops links with unsafe urls', () => {
