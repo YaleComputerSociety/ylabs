@@ -128,6 +128,47 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it('does not trigger computer-vision aliases from curriculum-vitae phrasing (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-comp-lit',
+      name: 'Comparative Literature Program',
+      departments: ['Comparative Literature'],
+      fullDescription: 'Applicants should email a CV to the program coordinator to apply.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('does not trigger computer-vision aliases from a citation author-initials pattern (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-neurology',
+      name: 'Neurology Metabolism Lab',
+      departments: ['Neurology'],
+      fullDescription: 'Recent publications include Mobbs CV, Yang X. Hypothalamic control of metabolism.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('still triggers computer-vision aliases when a lab genuinely abbreviates as CV (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-real-cv',
+      name: 'Vision Systems Lab',
+      fullDescription: 'Our CV group builds algorithms for object detection and scene understanding.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
   it('maps "computer vision" and "computational vision" as bidirectional Meili synonyms (#787)', () => {
     const { synonyms } = getResearchEntitySearchIndexSettings();
 
