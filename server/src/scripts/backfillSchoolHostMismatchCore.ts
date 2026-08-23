@@ -50,7 +50,10 @@ function hostnameOf(url: unknown): string {
 }
 
 function hasBiomedicalContent(entity: SchoolHostMismatchEntity): boolean {
-  if (typeof entity.fullDescription === 'string' && BIOMEDICAL_CONTENT_RE.test(entity.fullDescription)) {
+  if (
+    typeof entity.fullDescription === 'string' &&
+    BIOMEDICAL_CONTENT_RE.test(entity.fullDescription)
+  ) {
     return true;
   }
   return asStringArray(entity.researchAreas).some((area) => BIOMEDICAL_CONTENT_RE.test(area));

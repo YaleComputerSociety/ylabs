@@ -17,7 +17,9 @@ const orgUnitRows = [
 ];
 
 function useCanonicalizer(): void {
-  setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(orgUnitRows)));
+  setOrgUnitCanonicalizerForTesting(
+    createOrgUnitCanonicalizer(buildOrgUnitResolverIndex(orgUnitRows)),
+  );
 }
 
 afterEach(() => {

@@ -82,7 +82,9 @@ export async function runSchoolHostMismatchBackfill(options: {
   };
 
   const query = ResearchEntity.find(filter)
-    .select('_id slug name school schools departments websiteUrl sourceUrls fullDescription researchAreas entityType')
+    .select(
+      '_id slug name school schools departments websiteUrl sourceUrls fullDescription researchAreas entityType',
+    )
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
   const entities = await query.lean();
@@ -99,7 +101,9 @@ export async function runSchoolHostMismatchBackfill(options: {
         updateOne: { filter: { _id: row.id }, update: { $set: row.update } },
       })),
     );
-    const updatedDocs = await ResearchEntity.find({ _id: { $in: rows.map((row) => row.id) } }).lean();
+    const updatedDocs = await ResearchEntity.find({
+      _id: { $in: rows.map((row) => row.id) },
+    }).lean();
     await syncEntities('researchEntity', updatedDocs);
   }
 
@@ -129,7 +133,10 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const result = await runSchoolHostMismatchBackfill({ dryRun: options.dryRun, limit: options.limit });
+    const result = await runSchoolHostMismatchBackfill({
+      dryRun: options.dryRun,
+      limit: options.limit,
+    });
     const payload = {
       generatedAt: new Date().toISOString(),
       environment: guard.environment,
