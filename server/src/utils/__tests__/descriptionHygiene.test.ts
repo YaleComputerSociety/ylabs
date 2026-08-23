@@ -650,6 +650,43 @@ describe('descriptionHygiene YSM profile anchor-CTA button label (#931)', () => 
   });
 });
 
+describe('descriptionHygiene anchor-CTA button label broadening (#947)', () => {
+  it('strips a titleless "Learn more about <org> >>" label glued onto the prior sentence', () => {
+    const dirty =
+      'The lab develops soft robots that grip and move like living tissue.Learn more about the Faboratory >>';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'The lab develops soft robots that grip and move like living tissue.',
+    );
+  });
+
+  it('strips a "Read more about <name> >>" variant', () => {
+    const dirty = 'The center advances gender equity in oncology. Read more about our mission >>';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'The center advances gender equity in oncology.',
+    );
+  });
+
+  it('strips a label terminated by the unicode » guillemet', () => {
+    const dirty = 'She studies airway disease using mouse models. Learn more about Dr. Mehra »';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'She studies airway disease using mouse models.',
+    );
+  });
+
+  it('removes a titleless label at both the shortDescription and catalog read layers', () => {
+    const dirty = 'The lab studies stellar formation. Learn more about our program >>';
+    expect(sanitizeResearchEntityShortDescription(dirty)).toBe('The lab studies stellar formation.');
+    expect(sanitizeResearchEntityDescription(dirty)).toBe('The lab studies stellar formation.');
+  });
+
+  it('leaves legitimate "learn more about" prose without an arrow marker untouched', () => {
+    const prose =
+      'Students can learn more about our program by attending the weekly open house or reading the handbook.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+});
+
 describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
   it('flags a bare "Research fields include <chips>." echo', () => {
     expect(
