@@ -117,6 +117,13 @@ export interface DeptConfig {
   dataExtractor?: FacultyDataExtractor;
   /** Defaults to true. Set false for broad people rosters where personal/staff URLs are not research homes. */
   emitPersonalResearchEntities?: boolean;
+  /**
+   * When true, emit only official-profile person observations and never derive a
+   * research entity from a discovered lab link. Used for research-center rosters
+   * (e.g. Wright Laboratory) whose faculty already own lab entities elsewhere, so
+   * this source contributes official-profile coverage without minting duplicates.
+   */
+  officialProfileOnly?: boolean;
   /** Set when the page is JS-rendered and the extractor is intentionally a stub. */
   jsRenderedSkip?: boolean;
 }
@@ -689,6 +696,16 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: mcdbExtractor,
     emitPersonalResearchEntities: false,
+  },
+  {
+    deptKey: 'wright-lab',
+    deptName: 'Physics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://wlab.yale.edu/people/faculty/primary-faculty',
+    paginated: false,
+    extractor: mcdbExtractor,
+    emitPersonalResearchEntities: false,
+    officialProfileOnly: true,
   },
 ];
 
@@ -1450,7 +1467,9 @@ export class DepartmentRosterScraper implements IScraper {
         await ctx.emit(userObs);
         observations += userObs.length;
 
-        const labObs = entryToResearchEntityObservations(entry, dept, sourceUrl, entityKey);
+        const labObs = dept.officialProfileOnly
+          ? []
+          : entryToResearchEntityObservations(entry, dept, sourceUrl, entityKey);
         const labKey = labObs[0]?.entityKey;
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);
