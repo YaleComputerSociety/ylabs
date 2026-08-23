@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isDirectoryIndexChromeText,
+  isPersonBiographyOrAdvisingDescription,
   publicResearchEntityDescriptionText,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
   sanitizeResearchHomeSelfReferenceText,
 } from '../researchEntityDescriptionText';
+
+const PROGRAM_DIRECTOR_BIO =
+  'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication and Director of the Yale Program on Climate Change Communication. He is an internationally recognized expert on public climate change beliefs. In 2020, he was named the second-most influential climate scientist in the world by Reuters. I only consider doctoral student applicants that already have a strong background in climate change or environmental communication. I advise masters students focused on climate perceptions and communication.';
 
 describe('isDirectoryIndexChromeText', () => {
   it('flags YSM A-Z lab-website index directory boilerplate (#517)', () => {
@@ -190,6 +194,80 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.profileSynthesisDescription).toBe(
       'This lab studies how humans process complex sound patterns.',
     );
+  });
+
+  it('drops a director biography served as a non-person entity description (#806)', () => {
+    const program = {
+      entityType: 'PROGRAM',
+      kind: 'program',
+      fullDescription: PROGRAM_DIRECTOR_BIO,
+      shortDescription: 'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(program);
+
+    expect(sanitized.fullDescription).toBe('');
+    expect(sanitized.shortDescription).toBe('');
+  });
+
+  it('keeps a genuine program description on a non-person entity', () => {
+    const program = {
+      entityType: 'PROGRAM',
+      kind: 'program',
+      fullDescription:
+        'The Yale Program on Climate Change Communication conducts scientific research on public climate change knowledge and develops tools to help decision-makers communicate effectively.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(program);
+
+    expect(sanitized.fullDescription).toBe(
+      'The Yale Program on Climate Change Communication conducts scientific research on public climate change knowledge and develops tools to help decision-makers communicate effectively.',
+    );
+  });
+
+  it('does not apply the non-person biography guard to faculty-research entities', () => {
+    const facultyResearch = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription: PROGRAM_DIRECTOR_BIO,
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
+
+    expect(sanitized.fullDescription).toBe(PROGRAM_DIRECTOR_BIO);
+  });
+});
+
+describe('isPersonBiographyOrAdvisingDescription', () => {
+  it('flags a first-person graduate-admissions/advising note', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'I only consider doctoral student applicants with a strong background in climate communication.',
+      ),
+    ).toBe(true);
+    expect(
+      isPersonBiographyOrAdvisingDescription('I advise masters students focused on perceptions.'),
+    ).toBe(true);
+  });
+
+  it('flags a third-person personal appointment biography', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'Jane Doe, PhD is the Sterling Professor of Physics and Director of the Center. She founded the group in 2005 and leads its experimental program.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag a genuine program or center description', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'The Center for Infectious Disease Modeling studies epidemic dynamics and develops models to inform vaccination policy.',
+      ),
+    ).toBe(false);
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'We offer paid summer research fellowships to undergraduates. We welcome applicants from all majors.',
+      ),
+    ).toBe(false);
+    expect(isPersonBiographyOrAdvisingDescription('')).toBe(false);
+    expect(isPersonBiographyOrAdvisingDescription(undefined)).toBe(false);
   });
 });
 
