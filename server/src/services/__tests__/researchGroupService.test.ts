@@ -520,6 +520,31 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'School of Medicine': 4 },
+        departments: { Psychiatry: 2 },
+        researchAreas: {
+          'MedicareYSM Researcher': 1,
+          Medicare: 3,
+          'YSM Researcher': 2,
+          Histones: 5,
+        },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(result.facetDistribution).toEqual({
+      school: { 'School of Medicine': 4 },
+      departments: { Psychiatry: 2 },
+      researchAreas: { Medicare: 4, Histones: 5 },
+    });
+  });
+
   it('recovers on Meili when attributesToSearchOn references a non-searchable attribute', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search

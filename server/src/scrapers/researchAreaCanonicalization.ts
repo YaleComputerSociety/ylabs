@@ -1,4 +1,5 @@
 import { TaxonomyTerm } from '../models/taxonomyTerm';
+import { stripProfileRoleLabelSuffix } from '../utils/researchAreaLabelHygiene';
 import { slugify } from './utils/scraperHelpers';
 
 export interface ResearchAreaResolverRow {
@@ -329,11 +330,15 @@ export function stripResearchAreaSourceChrome(raw: unknown): string[] {
   if (typeof raw !== 'string') return [];
   const value = raw.replace(/\s+/g, ' ').trim();
   if (!value) return [];
-  if (!hasYsmResearcherChrome(value)) return [value];
+  if (!hasYsmResearcherChrome(value)) {
+    const cleaned = stripProfileRoleLabelSuffix(value).trim();
+    return cleaned ? [cleaned] : [value];
+  }
   return value
     .split(YSM_RESEARCHER_CHROME_BLOCK)
     .map((segment) => segment.replace(/\s+/g, ' ').trim())
     .map((segment) => segment.replace(/(?<=\p{L})\d{1,4}$/u, '').trim())
+    .map((segment) => stripProfileRoleLabelSuffix(segment).trim())
     .filter(Boolean);
 }
 
