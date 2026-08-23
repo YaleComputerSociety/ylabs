@@ -598,6 +598,81 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('merges a RoleAssignment-corroborated surname-only lab with its own website into the same-PI funding shell (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'townsend-person-id',
+        normalizedName: 'same-pi:townsend-person-id',
+        piFirstName: 'Jeffrey',
+        piLastName: 'Townsend',
+        entities: [
+          {
+            id: 'canonical-townsend',
+            slug: 'ysm-townsend',
+            name: 'Townsend Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/townsend/',
+            sourceUrls: ['https://medicine.yale.edu/lab/townsend/'],
+            departments: ['Biostatistics'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'funding-shell-townsend',
+            slug: 'nsf-pi-67d8927f50621bcef434a16d',
+            name: 'Jeffrey Townsend Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'canonical-townsend',
+        duplicateEntityIds: ['funding-shell-townsend'],
+        canonicalSlug: 'ysm-townsend',
+        duplicateSlugs: ['nsf-pi-67d8927f50621bcef434a16d'],
+      },
+    ]);
+  });
+
+  it('does not merge a surname-only lab with its own website when the person linkage is uncorroborated (#1113 guard)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'name:townsend',
+        normalizedName: 'name:townsend',
+        piFirstName: 'Jeffrey',
+        piLastName: 'Townsend',
+        entities: [
+          {
+            id: 'canonical-townsend',
+            slug: 'ysm-townsend',
+            name: 'Townsend Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/townsend/',
+            sourceUrls: ['https://medicine.yale.edu/lab/townsend/'],
+            departments: ['Biostatistics'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'funding-shell-townsend',
+            slug: 'nsf-pi-67d8927f50621bcef434a16d',
+            name: 'Jeffrey Townsend Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
   it('merges same-PI full-name and compound-surname lab names', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
@@ -674,6 +749,80 @@ describe('buildResearchEntityPiDedupePlan', () => {
         duplicateSlugs: ['zhang-lab-yz52'],
       },
     ]);
+  });
+
+  it('folds a PI-named funding shell into a same-PI home whose own name is topical (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-habit-lead-user',
+        normalizedName: 'same-pi:fixture-habit-lead-user',
+        piFirstName: 'Krysten',
+        piLastName: 'Bold',
+        entities: [
+          {
+            id: 'concrete-topical-home',
+            slug: 'ysm-bold',
+            name: 'HABIT Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/bold/',
+            sourceUrls: ['https://medicine.yale.edu/lab/bold/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'funding-name-shell',
+            slug: 'nih-pi-krysten-bold',
+            name: 'Krysten Bold Lab',
+            websiteUrl: 'https://medicine.yale.edu/profile/krysten-bold/',
+            sourceUrls: ['https://medicine.yale.edu/profile/krysten-bold/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        dedupeCategory: 'profile_area_shell_with_concrete_home',
+        canonicalEntityId: 'concrete-topical-home',
+        duplicateEntityIds: ['funding-name-shell'],
+        canonicalSlug: 'ysm-bold',
+        duplicateSlugs: ['nih-pi-krysten-bold'],
+      },
+    ]);
+  });
+
+  it('never merges two same-PI entities that both carry their own concrete lab website (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-fucito-lead-user',
+        normalizedName: 'same-pi:fixture-fucito-lead-user',
+        piFirstName: 'Fixture',
+        piLastName: 'Fucito',
+        entities: [
+          {
+            id: 'branded-home',
+            slug: 'ysm-digital',
+            name: 'DIGITAL Insights Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/digital/',
+            sourceUrls: ['https://medicine.yale.edu/lab/digital/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'surname-home',
+            slug: 'ysm-fucito',
+            name: 'Fucito Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fucito/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fucito/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
   });
 
   it('selects only planned duplicate entity ids as same-PI duplicate visibility risk', () => {

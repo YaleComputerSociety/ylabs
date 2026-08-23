@@ -18,6 +18,27 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe('Our lab studies airway disease.');
   });
 
+  it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-doubled',
+      slug: 'faculty-research-area-jane-taylor',
+      name: 'Jane Taylor Lab Lab',
+      displayName: 'Jane Taylor Lab Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+    });
+    expect(dto.name).toBe('Jane Taylor Lab');
+    expect(dto.displayName).toBe('Jane Taylor Lab');
+
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-doubled' },
+      slug: 'faculty-research-area-jane-taylor',
+      name: 'Jane Taylor Lab Lab',
+      kind: 'lab',
+    });
+    expect(summary.name).toBe('Jane Taylor Lab');
+  });
+
   it('drops a card blurb built from a chrome-only shortDescription and falls back to fullDescription', () => {
     const summary = toPublicResearchEntitySummaryDto({
       _id: { toString: () => 'entity-chrome-only' },
@@ -216,7 +237,12 @@ describe('researchEntityDto', () => {
       id: 'entity-ysm-role-label',
       slug: 'ysm-role-label-lab',
       name: 'YSM Role Label Lab',
-      researchAreas: ['MedicareYSM Researcher', 'Medicare', 'YSM Researcher', 'HistonesYSM Researcher'],
+      researchAreas: [
+        'MedicareYSM Researcher',
+        'Medicare',
+        'YSM Researcher',
+        'HistonesYSM Researcher',
+      ],
       profileResearchAreas: ['Demyelinating Autoimmune Diseases, CNSYSM Researcher'],
     });
 

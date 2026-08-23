@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
-import { accessSignalTypes } from '../models/researchAccessTypes';
+import { signalTypes } from '../models/researchAccessTypes';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
@@ -202,12 +202,12 @@ export function writeBackfillEvidenceExcerptRedactionOutput(
   fs.writeFileSync(safeOutput, `${JSON.stringify(report, null, 2)}\n`);
 }
 
-async function loadMarkerBearingAccessSignals(
+async function loadMarkerBearingSignals(
   limit: number,
 ): Promise<EvidenceExcerptSignalRecord[]> {
   return (await Signal.find({
     archived: { $ne: true },
-    type: { $in: [...accessSignalTypes] },
+    type: { $in: [...signalTypes] },
     'source.excerpt': { $regex: REDACTION_MARKER_RE },
   })
     .select('type source.excerpt review.status review.lockedFields')
@@ -238,7 +238,7 @@ async function main(): Promise<void> {
   });
 
   await initializeConnections();
-  const records = await loadMarkerBearingAccessSignals(options.limit);
+  const records = await loadMarkerBearingSignals(options.limit);
   const planResult = buildEvidenceExcerptRedactionPlans(records);
   const plannedWrites = planResult.plans.length;
   assertBackfillEvidenceExcerptRedactionApplyAllowed({

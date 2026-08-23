@@ -99,7 +99,7 @@ export async function loadMiskeyedGroups(): Promise<MiskeyedGroup[]> {
     const entity = await ResearchEntity.findOne(
       group.entityKey ? { slug: group.entityKey } : { _id: group.entityId },
     )
-      .select('slug name displayName school schools departments')
+      .select('slug name displayName school schools departments sourceUrls fullDescription recentGrants')
       .lean();
     if (!entity) continue;
     if (personProfileSourceMatchesEntity(group.sourceUrl, entity as any)) continue;

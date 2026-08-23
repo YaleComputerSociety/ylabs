@@ -110,6 +110,51 @@ describe('personProfileSourceMatchesEntity', () => {
     ).toBe(true);
   });
 
+  it('keeps a topic-named grant shell PI page corroborated by the entity own evidence (#1110)', () => {
+    const reproEcologyShell = {
+      slug: 'nsf-pi-67d891d950621bcef4347e63',
+      name: 'Yale Reproductive Ecology Laboratory',
+      sourceUrls: [
+        'https://eeb.yale.edu/people/faculty-affiliated/richard-bribiescas',
+        'https://anthropology.yale.edu/people/richard-gutierrez-bribiescas',
+        'https://medicine.yale.edu/profile/richard-bribiescas/',
+      ],
+      fullDescription:
+        'The Yale Reproductive Ecology Laboratory studies human life history. PI Dr. Richard Bribiescas.',
+    };
+    expect(
+      personProfileSourceMatchesEntity(
+        'https://anthropology.yale.edu/profile/richard-bribiescas',
+        reproEcologyShell,
+      ),
+    ).toBe(true);
+    expect(
+      personProfileSourceMatchesEntity(
+        'https://anthropology.yale.edu/profile/richard-bribiescas',
+        {
+          slug: 'nsf-pi-67d891d950621bcef4347e63',
+          name: 'Yale Reproductive Ecology Laboratory',
+          fullDescription:
+            'The Yale Reproductive Ecology Laboratory studies human life history. PI Dr. Richard Bribiescas.',
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it('still rejects a lone mis-picked professor page even with entity evidence present', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://physics.yale.edu/people/keith-baker', {
+        slug: 'dept-physics-charles-brown',
+        name: 'Charles Brown Lab',
+        sourceUrls: [
+          'https://physics.yale.edu/people/keith-baker',
+          'https://physics.yale.edu/people/charles-brown',
+        ],
+        fullDescription: 'The Charles Brown Lab studies condensed matter physics. PI Charles Brown.',
+      }),
+    ).toBe(false);
+  });
+
   it('rejects an exact full-name homonym at a contradicting Yale school', () => {
     const medicineGrantShell = {
       slug: 'nih-pi-jordan-avery',

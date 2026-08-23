@@ -51,6 +51,7 @@ Short-alias queries restrict `attributesToSearchOn` to topic fields that actuall
 | `yarn --cwd server research-entity:migrate`             | Run the ResearchEntity physical migration.                           |
 | `yarn --cwd server research-homes:backfill-browse-rank` | Recompute `browseRankScore`; apply requires `--confirm-browse-rank`. |
 | `yarn --cwd server research-homes:backfill-org-units` | Re-canonicalize `school`/`departments[]` (drops administrative units, denoises HR-coded values); apply requires `--confirm-org-units`, then rebuild Meili. |
+| `yarn --cwd server research-homes:backfill-school-host-mismatch` | Correct a stale `school` when a disjoint school (Law, Divinity, Drama, Music, Architecture, Art) sits on a `medicine.yale.edu`/`ysph.yale.edu` host with biomedical content on record (#1093); dry-run default, apply requires `--apply --confirm` and is blocked against production unless `CONFIRM_PROD_SCRAPE=true`, resyncs Meili for changed docs. |
 | `yarn --cwd server research-entity:backfill-person-name-casing` | Heal raw ALL-CAPS `researchers.displayName` via `canonicalPersonName` (Development-gated, dry-run default); apply requires `--apply --confirm-person-name-casing --limit=N`, no Meili rebuild needed. |
 
 ## Default `/research` ordering

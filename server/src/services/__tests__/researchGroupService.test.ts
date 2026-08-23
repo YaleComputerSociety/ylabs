@@ -839,7 +839,7 @@ describe('searchResearchGroupsViaMeili', () => {
     const disjunctiveCall = mocks.search.mock.calls[1];
     expect(mocks.search.mock.calls[0][1].filter).toMatch(/schools = "Law School"/);
     expect(disjunctiveCall[1]).toEqual(
-      expect.objectContaining({ facets: ['schools'], limit: 0, offset: 0 }),
+      expect.objectContaining({ facets: ['schools'], limit: 0 }),
     );
     expect(disjunctiveCall[1].filter).not.toMatch(/schools = /);
     expect(conjunctiveFilter).toBe('');

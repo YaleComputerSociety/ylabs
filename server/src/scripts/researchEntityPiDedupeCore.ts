@@ -31,6 +31,7 @@ export interface ResearchEntityPiDedupeRow {
     recentGrants?: unknown[];
     recentGrantCount?: number;
     fundingAgencies?: string[];
+    piRoleCorroborated?: boolean;
   }>;
 }
 
@@ -362,6 +363,33 @@ function isProfileBackedSurnameLabShell(
   return words.every((word, index) => word === lastNameWords[index]);
 }
 
+/**
+ * A well-formed lab record with its own website whose name reduces to just the
+ * PI's surname (e.g. "Roy Lab") is deliberately excluded from
+ * `isProfileBackedSurnameLabShell` (that guard requires no own website, to avoid
+ * clustering two different people who merely share a surname when the personId
+ * link is uncertain). But when the entity is joined to this row's person by a
+ * direct PI `RoleAssignment` (`piRoleCorroborated`), the personId linkage is
+ * already certain, so the surname-only lab may safely cluster with the same
+ * person's first-name-bearing funding shell (issue #1113). This corroboration
+ * is set only on RoleAssignment-joined entities, never on name-only rows, so the
+ * website guard still holds where the linkage is uncertain.
+ */
+function isPiRoleCorroboratedSurnameLab(
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+  row: ResearchEntityPiDedupeRow,
+): boolean {
+  if (entity.piRoleCorroborated !== true) return false;
+  if (normalizedWords(row.piFirstName).length === 0) return false;
+  const lastNameWords = normalizedWords(row.piLastName);
+  if (lastNameWords.length === 0) return false;
+  const words = normalizedWords(entity.name).filter(
+    (word) => !['the', 'lab', 'laboratory', 'research'].includes(word),
+  );
+  if (words.length !== lastNameWords.length) return false;
+  return words.every((word, index) => word === lastNameWords[index]);
+}
+
 function comparablePiLabName(
   entity: ResearchEntityPiDedupeRow['entities'][number],
   row: ResearchEntityPiDedupeRow,
@@ -382,7 +410,13 @@ function comparablePiLabName(
   if (!matchesTrailingLastName) return null;
 
   const personPrefix = words.slice(0, words.length - lastNameWords.length);
-  if (personPrefix.length === 0 && !isProfileBackedSurnameLabShell(entity, row)) return null;
+  if (
+    personPrefix.length === 0 &&
+    !isProfileBackedSurnameLabShell(entity, row) &&
+    !isPiRoleCorroboratedSurnameLab(entity, row)
+  ) {
+    return null;
+  }
   const hasUnexpectedPrefix = personPrefix.some(
     (word) => word.length > 1 && !firstNameTokens.has(word),
   );
@@ -521,12 +555,26 @@ function buildProfileAreaShellDuplicateGroup(
   const profileBackedSurnameShells = entities.filter((entity) =>
     isProfileBackedSurnameLabShell(entity, row),
   );
+  // Only when the row already has a concrete-website home to absorb them: a PI-named lab stub
+  // with no concrete website of its own folds into that home even when the home's name is
+  // topical, not person-shaped (issue #1113). comparablePiLabName keeps the surname match tied
+  // to the PI's real first name, so a wrong-first-name homonym still fails to cluster.
+  const hasConcreteWebsiteHome = entities.some((entity) => entityCarriesConcreteWebsite(entity));
+  const personNamedPiLabShells = hasConcreteWebsiteHome
+    ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
+    : [];
   // An entity that carries its own real (non-profile, non-funding) lab website is the
   // concrete research home, not a thin profile-area shell - never archive it into a
   // PI-derived grant "<PI> Lab" shell and discard its name/site (issue #456).
-  const duplicateShells = [...profileAreaShells, ...profileBackedSurnameShells].filter(
-    (entity) => !entityCarriesConcreteWebsite(entity),
-  );
+  const shellCandidatesById = new Map<string, ResearchEntityPiDedupeRow['entities'][number]>();
+  for (const entity of [
+    ...profileAreaShells,
+    ...profileBackedSurnameShells,
+    ...personNamedPiLabShells,
+  ]) {
+    if (!entityCarriesConcreteWebsite(entity)) shellCandidatesById.set(entity.id, entity);
+  }
+  const duplicateShells = [...shellCandidatesById.values()];
   const duplicateShellIds = new Set(duplicateShells.map((entity) => entity.id));
   const concreteHomes = entities.filter((entity) => {
     if (duplicateShellIds.has(entity.id)) return false;
