@@ -11,6 +11,7 @@ import {
   roleAssignmentRoles,
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
+  type RoleAssignmentState,
 } from '../models/roleAssignment';
 import { User } from '../models/user';
 import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
@@ -125,6 +126,19 @@ const canonicalRolePriority = (role: RoleAssignmentRole): number => {
   return index === -1 ? roleAssignmentRoles.length : index;
 };
 
+// A live/ongoing assignment (CURRENT, or UNKNOWN pending confirmation) must
+// represent a person over an ended (HISTORICAL) one when collapsing
+// duplicate same-person assignments for the same entity.
+const ROLE_ASSIGNMENT_STATE_PRIORITY: Record<RoleAssignmentState, number> = {
+  CURRENT: 0,
+  UNKNOWN: 1,
+  HISTORICAL: 2,
+};
+
+const rosterEntryStatePriority = (state: string): number =>
+  ROLE_ASSIGNMENT_STATE_PRIORITY[state as RoleAssignmentState] ??
+  Object.keys(ROLE_ASSIGNMENT_STATE_PRIORITY).length;
+
 const collapseRosterEntriesByPerson = (
   entries: ResearchEntityRosterEntry[],
 ): ResearchEntityRosterEntry[] => {
@@ -134,7 +148,11 @@ const collapseRosterEntriesByPerson = (
     candidate: ResearchEntityRosterEntry,
     incumbent: ResearchEntityRosterEntry,
   ): boolean => {
-    if (candidate.isCurrentMember !== incumbent.isCurrentMember) return candidate.isCurrentMember;
+    const candidateStatePriority = rosterEntryStatePriority(candidate.state);
+    const incumbentStatePriority = rosterEntryStatePriority(incumbent.state);
+    if (candidateStatePriority !== incumbentStatePriority) {
+      return candidateStatePriority < incumbentStatePriority;
+    }
     return canonicalRolePriority(candidate.roleCanonical) < canonicalRolePriority(incumbent.roleCanonical);
   };
   for (const entry of entries) {
