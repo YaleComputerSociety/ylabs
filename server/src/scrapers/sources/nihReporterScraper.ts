@@ -62,6 +62,12 @@ const YALE_ORG_NAMES = ['YALE UNIVERSITY'];
 // well above Yale's typical ~3.5k for a 3-year window.
 const MAX_PAGES = 30;
 
+// NIH individual trainee-fellowship activity codes (F30/F31/F32/F33): the
+// contact PI on these awards is the trainee (grad student / postdoc), not a
+// faculty lab lead, so they must not mint a standalone research-home entity
+// (#739).
+const TRAINEE_FELLOWSHIP_ACTIVITY_CODES = new Set(['F30', 'F31', 'F32', 'F33']);
+
 // ---------------------------------------------------------------------------
 // API response shapes (only the fields we use)
 // ---------------------------------------------------------------------------
@@ -179,6 +185,18 @@ export function piEntityKey(canonicalName: string): string {
 export function piSlugForResearchGroup(canonicalName: string): string {
   const slug = slugify(canonicalName);
   return slug ? `nih-pi-${slug}` : '';
+}
+
+/**
+ * True when a grant is an NIH individual trainee-fellowship award (F30/F31/F32/
+ * F33), whose contact PI is the trainee rather than a faculty lab lead. These
+ * awards fail closed at ingestion: dropping them before grouping means no
+ * "<Fellow> Lab" entity is ever minted, while a faculty PI's normal awards
+ * (R01, R35, ...) still group and mint unaffected (#739).
+ */
+export function isTraineeFellowshipGrant(grant: NihGrant): boolean {
+  const code = (grant.activity_code || '').trim().toUpperCase();
+  return TRAINEE_FELLOWSHIP_ACTIVITY_CODES.has(code);
 }
 
 /**
@@ -582,15 +600,25 @@ export class NihReporterScraper implements IScraper {
     }
     ctx.log(`fetched ${allGrants.length}/${total} grants across ${pages} page(s)`);
 
-    // 2. Group by PI.
-    const groups = groupGrantsByPi(allGrants);
+    // 2. Drop individual trainee-fellowship awards (F30/F31/F32/F33) so a
+    //    trainee is never minted as a "<Fellow> Lab" research home (#739).
+    const fundableGrants = allGrants.filter((grant) => !isTraineeFellowshipGrant(grant));
+    const excludedTraineeFellowships = allGrants.length - fundableGrants.length;
+    if (excludedTraineeFellowships > 0) {
+      ctx.log(
+        `excluded ${excludedTraineeFellowships} individual trainee-fellowship award(s) (F30/F31/F32/F33)`,
+      );
+    }
+
+    // 3. Group by PI.
+    const groups = groupGrantsByPi(fundableGrants);
     ctx.log(`grouped into ${groups.size} unique contact PIs`);
 
-    // 3. Honor --limit (caps PIs processed, NOT raw grants).
+    // 4. Honor --limit (caps PIs processed, NOT raw grants).
     const piLimit = limitOption ?? Infinity;
     const piEntries = Array.from(groups.entries()).slice(0, piLimit);
 
-    // 4. Resolve each PI to a User (or stub) and emit observations.
+    // 5. Resolve each PI to a User (or stub) and emit observations.
     let totalObs = 0;
     let matched = 0;
     let unmatched = 0;

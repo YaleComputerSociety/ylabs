@@ -465,6 +465,30 @@ describe('Research page', () => {
     );
   });
 
+  it('shortens the search placeholder on compact viewports', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (queryString: string) =>
+        ({
+          matches: queryString === '(max-width: 639px)',
+          media: queryString,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+
+    try {
+      renderResearch();
+
+      expect(screen.getByPlaceholderText('Type a topic, professor, or lab')).toBeTruthy();
+      expect(
+        screen.queryByPlaceholderText('Type a topic, professor, lab, or research question'),
+      ).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('submits quick-start prompts as research searches', async () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
@@ -2515,6 +2539,86 @@ describe('Research page', () => {
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
       initialSearchCalls,
+    );
+  });
+
+  it('does not duplicate the last loaded search-results page when returning from a research profile', async () => {
+    class MockIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    window.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      bottom: 2000,
+      height: 1,
+      left: 0,
+      right: 1,
+      top: 2000,
+      width: 1,
+      x: 0,
+      y: 2000,
+      toJSON: () => ({}),
+    }));
+
+    const nextResearchEntity = {
+      ...researchEntity,
+      _id: 'entity-2',
+      slug: 'wright-lab',
+      name: 'Wright Lab',
+      displayName: 'Wright Lab',
+    };
+
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(body.page === 2 ? [nextResearchEntity] : [researchEntity], {
+        estimatedTotalHits: 25,
+        page: body.page || 1,
+      });
+    });
+
+    renderResearchWithDetailRoute();
+
+    fireEvent.change(screen.getByLabelText('Search Yale research'), {
+      target: { value: 'protein folding' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() => {
+      expect(intersectionCallback).toBeDefined();
+    });
+
+    await act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    await screen.findByRole('heading', { name: 'Wright Lab' });
+    const searchCallsAfterPagination = mockedAxios.post.mock.calls.filter(
+      ([url]) => url === '/research/search',
+    ).length;
+
+    fireEvent.click(screen.getAllByRole('link', { name: 'View profile →' })[0]);
+    expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.getAllByRole('heading', { name: 'Wright Lab' })).toHaveLength(1);
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      searchCallsAfterPagination,
     );
   });
 });

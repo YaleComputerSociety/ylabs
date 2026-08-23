@@ -13,7 +13,7 @@ import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
-import { normalizedProgramTitleKey } from '../../utils/programTitle';
+import { normalizedProgramTitleKey, primaryConcatenatedAwardTitle } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
@@ -117,16 +117,17 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function sourceKeyForTitle(title: string): string {
+export function sourceKeyForTitle(title: string): string {
   return `${YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE}:${slugify(title)}`;
 }
 
 function normalizedCandidateTitle(value: string): string {
-  return normalizeWhitespace(value)
+  const cleaned = normalizeWhitespace(value)
     .replace(/^ale College\b/, 'Yale College')
     .replace(/\s+Learn more about\b.*$/i, '')
     .replace(/\s+Read More\s*$/i, '')
     .trim();
+  return primaryConcatenatedAwardTitle(cleaned);
 }
 
 function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | undefined {
@@ -557,10 +558,13 @@ function finalizeCandidate(
   candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>,
 ): FellowshipCatalogCandidate {
   const applicationLink =
-    candidate.applicationLink && !isUnhelpfulProgramUrl(candidate.applicationLink)
+    candidate.applicationLink &&
+    !isUnhelpfulProgramUrl(candidate.applicationLink, candidate.sourceUrl)
       ? candidate.applicationLink
       : undefined;
-  const links = candidate.links.filter((link) => !isUnhelpfulProgramUrl(link.url));
+  const links = candidate.links.filter(
+    (link) => !isUnhelpfulProgramUrl(link.url, candidate.sourceUrl),
+  );
   const sanitized = { ...candidate, applicationLink, links };
   return {
     ...sanitized,
@@ -788,7 +792,7 @@ function candidateFromDetailPage(
   pageUrl: string,
   referenceDate: Date,
 ): FellowshipCatalogCandidate | undefined {
-  const title = normalizeWhitespace($('h1').first().text());
+  const title = normalizedCandidateTitle($('h1').first().text());
   if (!title || !isLikelyFellowshipTitle(title)) return undefined;
   if (isGenericCatalogTitle(title)) return undefined;
 

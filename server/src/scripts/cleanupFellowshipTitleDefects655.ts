@@ -23,6 +23,16 @@
  *     guarded on a shared sourceUrl. This is the general lever for future
  *     re-scrapes of this corruption shape that Pass B's curated allowlist would
  *     otherwise miss.
+ *  D. AND-concatenated single-record titles: a surviving record whose own title
+ *     joins two distinct named awards with a literal "AND" (the corruption
+ *     Passes B/C only ever deduped, never de-concatenated - the fuller
+ *     concatenated title was kept as the survivor). This rewrites the title down
+ *     to its primary (first) award component and re-slugs the fellowships-office
+ *     sourceKey to match, so a subsequent scrape (now de-concatenating at the
+ *     source per programTitle.primaryConcatenatedAwardTitle) updates the record
+ *     in place instead of minting a fresh one. Guarded on every component
+ *     reading as a named award and on no active record already owning the
+ *     re-slugged sourceKey.
  *
  * The audit trail references records by id/title/sourceUrl only and never
  * prints description text, so no personal data is echoed to logs.
@@ -39,7 +49,15 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { andConcatenationComponentKeys, shareAndConcatenatedTitleComponent } from '../utils/programTitle';
+import {
+  andConcatenationComponentKeys,
+  primaryConcatenatedAwardTitle,
+  shareAndConcatenatedTitleComponent,
+} from '../utils/programTitle';
+import {
+  YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE,
+  sourceKeyForTitle,
+} from '../scrapers/sources/yaleCollegeFellowshipsOfficeScraper';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
@@ -242,8 +260,41 @@ async function main() {
     }
   }
 
+  const archivedIdSet = new Set(archiveIds);
+  const deconcatUpdates: Array<{ id: string; fromTitle: string; toTitle: string; toKey?: string }> = [];
+  console.log('\n=== Pass D: de-concatenate single-record AND-joined titles ===');
+  const activeSourceKeys = new Set(
+    docs
+      .filter((doc) => !archivedIdSet.has(serializedDocumentId(doc._id) || ''))
+      .map((doc) => String(doc.sourceKey || ''))
+      .filter(Boolean),
+  );
+  for (const doc of docs) {
+    const id = serializedDocumentId(doc._id) || '';
+    if (archivedIdSet.has(id)) continue;
+    const current = String(doc.title || '');
+    const primary = primaryConcatenatedAwardTitle(current);
+    if (primary === current) continue;
+    const currentKey = String(doc.sourceKey || '');
+    let toKey: string | undefined;
+    if (currentKey.startsWith(`${YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE}:`)) {
+      const candidateKey = sourceKeyForTitle(primary);
+      if (candidateKey !== currentKey) {
+        if (activeSourceKeys.has(candidateKey)) {
+          console.log(`  SKIP (sourceKey collision) id=${id} -> ${candidateKey} already owned by an active record`);
+          continue;
+        }
+        toKey = candidateKey;
+      }
+    }
+    deconcatUpdates.push({ id, fromTitle: current, toTitle: primary, toKey });
+    if (toKey) activeSourceKeys.add(toKey);
+    console.log(`  DECONCAT id=${id} "${current}" -> "${primary}"`);
+    if (toKey) console.log(`           sourceKey ${currentKey} -> ${toKey}`);
+  }
+
   console.log(
-    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length} (${andComponentArchives} via AND-component overlap), description ports=${descriptionPorts.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
+    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length} (${andComponentArchives} via AND-component overlap), description ports=${descriptionPorts.length}, de-concatenations=${deconcatUpdates.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
   );
 
   if (!options.apply) {
@@ -282,6 +333,16 @@ async function main() {
     );
     console.log(`Archived ${result.modifiedCount} near-duplicate record(s).`);
   }
+
+  let deconcatWritten = 0;
+  for (const update of deconcatUpdates) {
+    const set: Record<string, string> = { title: update.toTitle };
+    if (update.toKey) set.sourceKey = update.toKey;
+    const result = await Fellowship.updateOne({ _id: update.id, title: update.fromTitle }, { $set: set });
+    deconcatWritten += result.modifiedCount;
+  }
+  console.log(`De-concatenated ${deconcatWritten} single-record AND-joined title(s).`);
+
   console.log('Done. Rebuild the Meilisearch program index to reflect these changes.');
 
   await mongoose.disconnect();

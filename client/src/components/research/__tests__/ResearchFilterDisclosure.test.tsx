@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchFilterDisclosure from '../ResearchFilterDisclosure';
@@ -166,6 +166,61 @@ describe('ResearchFilterDisclosure', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Research area: Robotics' }));
     expect(selectedProps.onResearchAreasChange).toHaveBeenCalledWith([]);
+  });
+
+  it('keeps a controlled popover open across a browse-to-search-results remount', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+
+    const ModeSwitchingFilters = () => {
+      const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
+      const [isOpen, setIsOpen] = useState(false);
+      const shared: ComponentProps<typeof ResearchFilterDisclosure> = {
+        facetDistribution: {},
+        selectedSchool: '',
+        selectedDepartment: '',
+        selectedResearchAreas: [],
+        researchAreaOptions: [{ value: 'Artificial Intelligence', count: 23 }],
+        hostsUndergrads: false,
+        isApplying: false,
+        hasFacetError: false,
+        departmentLabel: (value) => value,
+        onSchoolChange: vi.fn(),
+        onDepartmentChange: vi.fn(),
+        onResearchAreasChange: () => setHasSubmittedSearch(true),
+        onHostsUndergradsChange: vi.fn(),
+        onClearAll: vi.fn(),
+        isOpen,
+        onOpenChange: setIsOpen,
+      };
+      return (
+        <>
+          {!hasSubmittedSearch && (
+            <section aria-label="Research homes to explore" data-testid="browse">
+              <ResearchFilterDisclosure {...shared} />
+            </section>
+          )}
+          {hasSubmittedSearch && (
+            <section aria-label="Search results" data-testid="search-results">
+              <ResearchFilterDisclosure {...shared} />
+            </section>
+          )}
+        </>
+      );
+    };
+
+    render(<ModeSwitchingFilters />);
+
+    expect(screen.getByTestId('browse')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await screen.findByRole('dialog', { name: 'Research filters' });
+
+    fireEvent.change(screen.getByLabelText('Filter by research area'), {
+      target: { value: 'Artificial Intelligence' },
+    });
+
+    expect(screen.getByTestId('search-results')).toBeTruthy();
+    expect(screen.queryByTestId('browse')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
   });
 
   it('hides single and non-positive facets unless selected', () => {

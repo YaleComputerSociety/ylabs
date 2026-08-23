@@ -33,6 +33,11 @@ import {
   stripTrailingOfficialProfileUpdateMetadata,
 } from '../../services/profileService';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  isProseNotTopicPhrase,
+  isResearchSectionLabel,
+  RESEARCH_SECTION_LABEL_PREFIX,
+} from '../researchAreaLabels';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   isLikelyPersonSpecificYaleEmail,
@@ -1385,39 +1390,6 @@ function extractDepartments($: cheerio.CheerioAPI): string[] {
     if (value && value.length < 160) values.push(value);
   });
   return uniqueStrings(values).slice(0, 5);
-}
-
-const RESEARCH_SECTION_LABELS = new Set([
-  'research area',
-  'research areas',
-  'research interest',
-  'research interests',
-  'field of interest',
-  'fields of interest',
-  'field of study',
-  'fields of study',
-  'area of interest',
-  'areas of interest',
-  'topic',
-  'topics',
-]);
-
-const RESEARCH_SECTION_LABEL_PREFIX =
-  /^(?:research\s+areas?|research\s+interests?|fields?\s+of\s+(?:study|interest)|areas?\s+of\s+interest|topics?)\s*:?\s+/i;
-
-function isResearchSectionLabel(value: string): boolean {
-  const key = textValue(value)
-    .replace(/[:\s]+$/g, '')
-    .toLowerCase();
-  return key.length === 0 || RESEARCH_SECTION_LABELS.has(key);
-}
-
-function isProseNotTopicPhrase(value: string): boolean {
-  const text = textValue(value);
-  if (!text) return true;
-  if (text.length > 80) return true;
-  if (text.split(/\s+/).filter(Boolean).length > 8) return true;
-  return /[.!?]\s+[A-Za-z]/.test(text);
 }
 
 function splitResearchInterestText(text: string): string[] {

@@ -54,7 +54,7 @@ interface Plan {
   disposition: Disposition;
 }
 
-async function activeLeadPersonIds(entityId: mongoose.Types.ObjectId): Promise<string[]> {
+export async function activeLeadPersonIds(entityId: mongoose.Types.ObjectId): Promise<string[]> {
   const leads = await RoleAssignment.find(
     {
       'target.kind': 'RESEARCH_ENTITY',
@@ -251,8 +251,14 @@ async function main(): Promise<void> {
   await mongoose.disconnect();
 }
 
-main().catch(async (err) => {
-  console.error(err);
-  await mongoose.disconnect().catch(() => undefined);
-  process.exit(1);
-});
+const isDirectRun = process.argv[1]
+  ? fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  : false;
+
+if (isDirectRun) {
+  main().catch(async (err) => {
+    console.error(err);
+    await mongoose.disconnect().catch(() => undefined);
+    process.exit(1);
+  });
+}

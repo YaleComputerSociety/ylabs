@@ -8,6 +8,7 @@ import {
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
+  isUnavailableResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
   resolveOutreachOfficialSource,
@@ -498,6 +499,14 @@ describe('isSuppressedResearchWebsiteCtaUrl', () => {
     );
   });
 
+  it('does not suppress a well-formed lab website on URL shape alone (#934)', () => {
+    expect(
+      isSuppressedResearchWebsiteCtaUrl(
+        'https://jackson.yale.edu/leitner-program-on-effective-democratic-governance/',
+      ),
+    ).toBe(false);
+  });
+
   it('suppresses file-share and document URLs as a website CTA (#730)', () => {
     expect(isSuppressedResearchWebsiteCtaUrl('https://drive.google.com/open/')).toBe(true);
     expect(
@@ -520,6 +529,57 @@ describe('isSuppressedResearchWebsiteCtaUrl', () => {
     expect(isSuppressedResearchWebsiteCtaUrl('https://chemistry.yale.edu/research/davis-lab')).toBe(
       false,
     );
+  });
+});
+
+describe('isUnavailableResearchWebsiteCtaUrl (#934)', () => {
+  const health = [
+    {
+      url: 'https://jackson.yale.edu/leitner-program-on-effective-democratic-governance/',
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 404,
+    },
+    {
+      url: 'https://jackson.yale.edu/centers-initiatives/',
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+    },
+  ];
+
+  it('flags a websiteUrl whose source-link health is UNAVAILABLE', () => {
+    expect(
+      isUnavailableResearchWebsiteCtaUrl(
+        'https://jackson.yale.edu/leitner-program-on-effective-democratic-governance/',
+        health,
+      ),
+    ).toBe(true);
+  });
+
+  it('matches health entries regardless of trailing slash or scheme differences', () => {
+    expect(
+      isUnavailableResearchWebsiteCtaUrl(
+        'http://www.jackson.yale.edu/leitner-program-on-effective-democratic-governance',
+        health,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a healthy websiteUrl usable', () => {
+    expect(
+      isUnavailableResearchWebsiteCtaUrl('https://jackson.yale.edu/centers-initiatives/', health),
+    ).toBe(false);
+  });
+
+  it('does not flag when there is no matching health entry or no health data', () => {
+    expect(
+      isUnavailableResearchWebsiteCtaUrl('https://example-lab.example.org/', health),
+    ).toBe(false);
+    expect(
+      isUnavailableResearchWebsiteCtaUrl(
+        'https://jackson.yale.edu/leitner-program-on-effective-democratic-governance/',
+      ),
+    ).toBe(false);
+    expect(isUnavailableResearchWebsiteCtaUrl(undefined, health)).toBe(false);
   });
 });
 

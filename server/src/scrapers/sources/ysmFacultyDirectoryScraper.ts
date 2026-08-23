@@ -34,6 +34,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -153,7 +154,7 @@ function htmlToText(value: unknown): string {
 
 function clippedText(value: string, minChars = 40, maxChars = 2000): string | undefined {
   if (value.length < minChars) return undefined;
-  return value.slice(0, maxChars);
+  return clampDescriptionLength(value, maxChars);
 }
 
 function isHttpUrl(value: unknown): boolean {

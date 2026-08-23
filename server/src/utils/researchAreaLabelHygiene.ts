@@ -8,11 +8,28 @@ export const stripProfileRoleLabelSuffix = (value: string): string => {
   return stripped.replace(TRAILING_SEPARATOR_RE, '');
 };
 
+const NARRATIVE_PROSE_MAX_TOPIC_LENGTH = 120;
+const NARRATIVE_PROSE_FIRST_PERSON_RE = /^(?:i|we|our|my)\s/i;
+const NARRATIVE_PROSE_SENTENCE_STEM_RE =
+  /^(?:the\s+(?:study|development|goal|aim|purpose|focus|analysis|role)\s+of\b|research\s+(?:in|at)\s+(?:the|our|my|his|her|their)\b|research\s+(?:focuses|focus\s+on|is|aims|seeks)\b|studies\s+(?:in|at)\s+(?:the|our|my|his|her|their)\b|treatment\s+with\b|how\s+(?:do|does|to|can|could|would|might|are|is|much|many)\b|wh(?:y|at|ich|ere|en)\b)/i;
+
+export const isNarrativeProseResearchAreaLabel = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const collapsed = value.normalize('NFKC').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return false;
+  if (collapsed.length > NARRATIVE_PROSE_MAX_TOPIC_LENGTH) return true;
+  if (NARRATIVE_PROSE_FIRST_PERSON_RE.test(collapsed)) return true;
+  return NARRATIVE_PROSE_SENTENCE_STEM_RE.test(collapsed);
+};
+
 export const sanitizeResearchAreaLabel = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   const collapsed = value.replace(/\s+/g, ' ').trim();
   if (!collapsed) return '';
-  return stripProfileRoleLabelSuffix(collapsed).trim();
+  const stripped = stripProfileRoleLabelSuffix(collapsed).trim();
+  if (!stripped) return '';
+  if (isNarrativeProseResearchAreaLabel(stripped)) return '';
+  return stripped;
 };
 
 export const sanitizeResearchAreaLabelList = (values: unknown): string[] => {

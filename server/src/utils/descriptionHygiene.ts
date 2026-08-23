@@ -39,6 +39,26 @@ export const leadingSectionHeadingPattern = new RegExp(
 export const sourceChromeTextPattern =
   /\b(?:show all breadcrumbs|expand all|homeabout|home academics|calendar|applyprizes|recipient|copyright|privacy|click here|learn more|read more|for more information|more information|apply now|back to top|sign up)\b/i;
 
+export const deadAnchorCtaSentencePattern =
+  /\bclick\s+(?:here|below|(?:on\s+)?(?:this|the|the following)\s+link)\b/i;
+
+/**
+ * Drop whole sentences whose only purpose is an inert click/anchor CTA
+ * ("click here", "click this link") where the scraper kept the visible link
+ * label but dropped the href, leaving a dead instruction with no destination
+ * (#915). Gated to a no-op when no such fragment is present, so clean prose is
+ * returned untouched; a description that is nothing but dead CTAs collapses to
+ * empty. Deliberately narrower than sourceChromeTextPattern so a legitimate
+ * sentence ("Award recipients will perform research...") is never removed.
+ */
+export function stripDeadAnchorCtaSentences(text: string): string {
+  const value = String(text || '');
+  if (!deadAnchorCtaSentencePattern.test(value)) return normalizeHygieneWhitespace(value);
+  const sentences = value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+  const kept = sentences.filter((sentence) => !deadAnchorCtaSentencePattern.test(sentence));
+  return normalizeHygieneWhitespace(kept.join(' '));
+}
+
 export function stripInlineUrls(text: string): string {
   return text
     .replace(/https?:\/\/\S+/gi, ' ')
@@ -53,12 +73,48 @@ export function stripLeadingSectionHeadingChrome(sentence: string): string {
 const redactionPlaceholderPattern =
   /\s*(?:\b(?:at|to|via|contact(?:ed)?|email(?:ed)?|reach(?:ed)?(?:\s+out)?|sent)\b\s*)?[:-]?\s*\[(?:email|phone) redacted\]/gi;
 
+const redactionTokenTest = /\[(?:email|phone) redacted\]/i;
+const redactionTokenGlobal = /\[(?:email|phone) redacted\]/gi;
+const splitIntoSentences = (value: string): string[] =>
+  value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+const endsWithTerminalPunctuation = (value: string): boolean =>
+  /[.!?]["')\]]?$/.test(value.trim());
+const wordCount = (value: string): number => (value.match(/[A-Za-z]{2,}/g) || []).length;
+
+/**
+ * Remove a stored [email redacted] / [phone redacted] contact placeholder while
+ * keeping the surrounding prose grammatical. A token that trails a sentence as a
+ * removable connective phrase ("...committee at [email redacted].") is cleaned in
+ * place, but a token whose removal would strand the rest of its sentence - either
+ * orphaned words follow it mid-sentence ("please contact [email redacted] in the
+ * office" -> "please in the office"), or the strip leaves a fragment with no
+ * terminal punctuation ("...should be sent to [email redacted]" -> "...should be
+ * sent") - drops that whole sentence instead of emitting mangled copy (#774).
+ * Sentences without a token are always kept.
+ */
 export function stripRedactionPlaceholders(text: string): string {
-  return normalizeHygieneWhitespace(
-    String(text || '')
-      .replace(redactionPlaceholderPattern, ' ')
-      .replace(/\s+([.,;:!?])/g, '$1'),
-  );
+  const value = normalizeHygieneWhitespace(text);
+  if (!value || !redactionTokenTest.test(value)) return value;
+  const kept: string[] = [];
+  for (const rawSentence of splitIntoSentences(value)) {
+    const sentence = rawSentence.trim();
+    if (!sentence) continue;
+    if (!redactionTokenTest.test(sentence)) {
+      kept.push(sentence);
+      continue;
+    }
+    const matches = [...sentence.matchAll(redactionTokenGlobal)];
+    const lastMatch = matches[matches.length - 1];
+    const tail = sentence.slice((lastMatch.index ?? 0) + lastMatch[0].length);
+    if (/[A-Za-z]{2,}/.test(tail)) continue;
+    const stripped = normalizeHygieneWhitespace(
+      sentence.replace(redactionPlaceholderPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
+    );
+    if (stripped && endsWithTerminalPunctuation(stripped) && wordCount(stripped) >= 2) {
+      kept.push(stripped);
+    }
+  }
+  return normalizeHygieneWhitespace(kept.join(' '));
 }
 
 const CATALOG_CHROME_PATTERNS: RegExp[] = [
@@ -74,6 +130,9 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\bmain menu\b/gi,
   /\bINFORMATION FOR\b/g,
   /\bCopy Link\b/g,
+  /\bfollow us on\b[^.!?]*[.!?]/gi,
+  /\b(?:Learn|Read) more about\s+[A-Za-z][^>»\n]{0,60}?(?:>>|»)/gi,
+  /\bWatch a video with\s+[A-Za-z][^>»\n]{0,60}?(?:>>|»)/gi,
 ];
 
 export function stripCatalogChrome(text: string): string {
@@ -83,16 +142,89 @@ export function stripCatalogChrome(text: string): string {
 }
 
 /**
+ * Collapse an exact, adjacent duplicate of a prose block: a scrape defect
+ * where a paragraph is concatenated with itself (directly, or separated by
+ * the single normalized whitespace of a paragraph break), sometimes followed
+ * by unrelated trailing chrome (#904). Requires an exact match of a
+ * substantial run (>=40 normalized characters) immediately following itself,
+ * checked from the smallest candidate block up so a long run of a repeated
+ * short sentence collapses one repeat at a time rather than being mistaken
+ * for one giant duplicated block, and ordinary prose that merely repeats a
+ * short phrase is left untouched.
+ */
+export function collapseDuplicatedProseBlock(text: string): string {
+  const normalized = normalizeHygieneWhitespace(text);
+  const minBlockLength = 40;
+  const maxBlockLength = Math.floor(normalized.length / 2);
+  for (let blockLength = minBlockLength; blockLength <= maxBlockLength; blockLength += 1) {
+    const first = normalized.slice(0, blockLength);
+    if (first === normalized.slice(blockLength, blockLength * 2)) {
+      return normalizeHygieneWhitespace(first + normalized.slice(blockLength * 2));
+    }
+    if (
+      normalized[blockLength] === ' ' &&
+      first === normalized.slice(blockLength + 1, blockLength * 2 + 1)
+    ) {
+      return normalizeHygieneWhitespace(first + normalized.slice(blockLength * 2 + 1));
+    }
+  }
+  return normalized;
+}
+
+const researchAreaHeadingLeakPattern =
+  /(?:^\s*|[,;]\s*(?:and\s+)?|\b(?:Studies|include|including)\s+)research\s+(?:areas?|interests?|fields?|topics?)\s*:(?:\s|\.|$)/i;
+
+/**
+ * A synthesized topic blurb ("Studies X, Y, and research areas:.") that leaked a
+ * bare section-heading token ("research areas:", "research interests:") into its
+ * joined area list. The trailing colon on a heading word used as a list item is
+ * the tell - clean topical tags never carry it - so this stays clear of genuine
+ * summaries. Fails closed on the leak so the corrupted card blurb is dropped
+ * rather than shown (#816).
+ */
+export function isResearchAreaTemplateLeakText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(String(text || ''));
+  if (!normalized) return false;
+  return researchAreaHeadingLeakPattern.test(normalized);
+}
+
+const htmlTagMarkupPattern =
+  /<\/[a-z][a-z0-9]*\s*>|<[a-z][a-z0-9]*(?:\s+[a-z][\w:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))+\s*\/?>/i;
+
+/**
+ * A description that still carries literal HTML-element markup - a closing tag
+ * (`</span>`) or an opening tag with at least one valued attribute (`<span
+ * data-id="...">`, `<a href="...">`, `<span data-type="title">`). Scraped
+ * "Selected Publications" citation widgets render their entries as escaped-HTML
+ * text, so a `.text()` extraction decodes the entities back into these literal
+ * tag substrings; a field rendered as plain text (labDetail) then shows the raw
+ * tag garbage (#909). Requiring a closing tag or a name=value attribute keeps
+ * prose that uses bare angle brackets as inequalities ("expression < 0.05",
+ * "0<x and n>100") from matching.
+ */
+export function containsHtmlTagMarkup(text: unknown): boolean {
+  return htmlTagMarkupPattern.test(String(text || ''));
+}
+
+/**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
  * research summary phrased as a question is not wrongly blanked, while a
- * chrome-only blurb collapses to empty (#808).
+ * chrome-only blurb collapses to empty (#808). Two intentional fail-closed
+ * exceptions apply: a leaked research-areas heading fragment in a synthesized
+ * topic blurb (#816), and the narrow institutional-center-blurb check (#893),
+ * which blanks a promotional center/council landing blurb grafted onto an
+ * unrelated entity.
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  return stripTrailingContactAddress(
+  const cleaned = stripTrailingContactAddress(
     stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
   );
+  if (isResearchAreaTemplateLeakText(cleaned)) return '';
+  if (isInstitutionalCenterBlurbText(cleaned)) return '';
+  if (containsHtmlTagMarkup(cleaned)) return '';
+  return cleaned;
 }
 
 function countMatches(text: string, pattern: RegExp): number {
@@ -100,21 +232,32 @@ function countMatches(text: string, pattern: RegExp): number {
 }
 
 /**
- * A recipient roster or person list: a run of "Name '28 Mentor: ..." rows, or a
- * dense list of names with almost no sentences. Class-year and mentor markers
- * are the strongest signal; the name-density arm is gated on the absence of
- * real sentences so multi-sentence prose that merely names people is kept.
+ * A recipient roster or person list: a run of "Name '28 Mentor: ..." rows, a
+ * dense list of names with almost no sentences, or a "meet the mentors" bio
+ * roster that names many people and repeatedly invites students to reach out to
+ * or contact them individually. Mentor markers are the strongest standalone
+ * signal; the class-year and name-density arms are both gated on the absence of
+ * real sentences so multi-sentence donor/eligibility prose that merely mentions
+ * class years or names people is kept, while the contact-invitation arm catches
+ * a many-people bio dump written in full sentences (#904) that the
+ * sentence-gated arms miss.
  */
+const contactInvitationPattern =
+  /\b(?:feel free to (?:reach out|contact|email)|reach out to (?:them|him|her|us)|contact (?:him|her|them)(?:\s+(?:at|directly|via))?)\b/gi;
+
 export function isRosterShapedText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
+  const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
+  const isSentenceSparse = sentenceEnders <= 3;
   const classYearMarkers = countMatches(normalized, /[‘’'`]\s?\d{2}\b/g);
-  if (classYearMarkers >= 3) return true;
+  if (isSentenceSparse && classYearMarkers >= 3) return true;
   const mentorMarkers = countMatches(normalized, /\bmentors?\s*:/gi);
   if (mentorMarkers >= 3) return true;
   const uniqueNames = new Set(normalized.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g) || []).size;
-  const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
-  return uniqueNames >= 8 && sentenceEnders <= 3;
+  if (uniqueNames >= 8 && isSentenceSparse) return true;
+  const contactInvitations = countMatches(normalized, contactInvitationPattern);
+  return contactInvitations >= 2 && uniqueNames >= 8;
 }
 
 /**
@@ -196,6 +339,53 @@ export function isCurationRationaleText(text: string): boolean {
   return CURATION_RATIONALE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+const ctaImperativePattern =
+  /\b(?:sign\s?up|join\s+(?:us|the\s+(?:conversation|community|movement|discussion|mailing\s+list))|register(?:\s+(?:now|today|here))?|rsvp|subscribe|donate|get\s+involved|follow\s+us|take\s+(?:the|a)\s+quiz|find\s+out\s+which\s+group|stay\s+(?:tuned|informed))\b/i;
+
+const socialPlatformPattern =
+  /\b(?:LinkedIn|Bluesky|Twitter|Instagram|Facebook|YouTube|TikTok|Mastodon|Threads)\b/gi;
+
+const socialCtaSignoffPattern =
+  /\b(?:join|follow|connect\s+with|find\s+us|share|watch|subscribe\s+to)\b[^.!?]{0,60}\b(?:LinkedIn|Bluesky|Twitter|Instagram|Facebook|YouTube|TikTok|Mastodon|Threads)\b/i;
+
+const datedEventTeaserPattern =
+  /\bon\s+(?:January|February|March|April|May|June|July|August|September|October|November|December|Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b[^.!?]{0,40}?\b\d{1,2}(?:st|nd|rd|th)?\b/i;
+
+const secondPersonPattern = /\b(?:you|your|you['’]re|yourself)\b/gi;
+
+const welcomeGreetingPattern = /(?:^|[.!?]\s)Welcome!/;
+
+/**
+ * A homepage news-ticker / call-to-action dump: disjointed promotional teaser
+ * fragments (dated event announcements, a "Sign up"/"Join us" imperative, a
+ * "take a quiz" prompt, a "Welcome!" greeting, a "join us on LinkedIn/Bluesky/
+ * YouTube" social sign-off) scraped verbatim from a communications-heavy landing
+ * page instead of a coherent description of the entity. These well-formed
+ * sentences defeat the sentence-ender-gated dumps
+ * (isNavigationDumpText/isFormFieldDumpText bail when sentence enders exceed two)
+ * and carry no "?" for isFaqDumpText, so this arm keys on CTA / second-person /
+ * social-sign-off markers rather than sentence count (#898). A social-platform
+ * call to action is unmistakable promotional chrome on its own; otherwise two
+ * independent promotional signals are required so a genuine description that
+ * merely invites contact is kept.
+ */
+export function isCtaNewsTickerDumpText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (socialCtaSignoffPattern.test(normalized)) return true;
+  const distinctPlatforms = new Set(
+    (normalized.match(socialPlatformPattern) || []).map((platform) => platform.toLowerCase()),
+  ).size;
+  const promotionalSignals = [
+    ctaImperativePattern.test(normalized),
+    distinctPlatforms >= 2,
+    datedEventTeaserPattern.test(normalized),
+    countMatches(normalized, secondPersonPattern) >= 2,
+    welcomeGreetingPattern.test(normalized),
+  ].filter(Boolean).length;
+  return promotionalSignals >= 2;
+}
+
 function lastSentenceBoundary(text: string): number {
   const matches = [...text.matchAll(/[.!?]["')\]]?(?=\s|$)/g)];
   if (matches.length === 0) return -1;
@@ -223,18 +413,39 @@ const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
 const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
 const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
 
+const STREET_SUFFIX_WORD = 'Street|Avenue|Road|Boulevard|Drive|Way|Lane|Place|Court|Circle';
+const STREET_SUFFIX_ABBREVIATION = 'St|Ave|Rd|Blvd|Dr|Ln|Pl|Ct|Cir';
+const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
+
+/**
+ * A bare street-address fragment (`266 Whitney Avenue`), optionally followed by
+ * a floor/room/suite unit (`, Fl 2, Rm 234`), with no `office:`/`address:` label
+ * of its own. Faculty-bio scrapes sometimes merge a page's office-location line
+ * straight into the bio prose with no separating punctuation, so this must be
+ * detected on shape alone (#798).
+ */
+const bareStreetAddressPattern = new RegExp(
+  `\\b\\d{1,5}\\s+[A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3}\\s+` +
+    `(?:(?:${STREET_SUFFIX_WORD})\\b|(?:${STREET_SUFFIX_ABBREVIATION})\\.)` +
+    `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*`,
+);
+
 /**
  * A faculty-bio contact block: a leftover `[email redacted]`/`[phone redacted]`
  * placeholder token (the read-time-safe rendering elsewhere in this module,
- * but never acceptable in a research-entity description), or an
+ * but never acceptable in a research-entity description), an
  * `Email:`/`Phone:`/`Office:`/`Fax:` label paired with a bare phone number
- * lifted straight out of a profile-page header (#676).
+ * lifted straight out of a profile-page header (#676), or a bare office/street
+ * address fragment glued onto the bio with no label at all (#798).
  */
 export function hasContactBlockResidue(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (contactRedactionTokenPattern.test(normalized)) return true;
-  return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
+  if (contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized)) {
+    return true;
+  }
+  return bareStreetAddressPattern.test(normalized);
 }
 
 const trailingOfficeAddressPattern =
@@ -265,6 +476,31 @@ export function isPublicationsListDumpText(text: string): boolean {
   return publicationsListMarkerPattern.test(normalizeHygieneWhitespace(text));
 }
 
+const INSTITUTIONAL_CENTER_BLURB_PATTERNS: RegExp[] = [
+  /\bleading center of excellence\b/i,
+  /\bcenter of excellence for\b[\s\S]{0,80}\bresearch and teaching\b/i,
+  /\ba center dedicated to research and teaching\b/i,
+  /\bresearch and teaching on the local,?\s*national,?\s*and international levels\b/i,
+];
+
+/**
+ * A center/council promotional landing blurb ("... is a leading center of
+ * excellence for X research and teaching on the local, national, and
+ * international levels") scraped from an institution's own page and grafted
+ * onto a lab or individual research entity that the page merely lists (#893).
+ * The text is well-formed prose, so chrome/dump detectors miss it; it is wrong
+ * only because it describes an *organization*, not this entity's research.
+ *
+ * The "Welcome to ..." opener is deliberately NOT a marker: 44 legitimate lab
+ * descriptions open with it, so matching would blank real prose. The
+ * center-of-excellence markers below hit only the grafts.
+ */
+export function isInstitutionalCenterBlurbText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return INSTITUTIONAL_CENTER_BLURB_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
 
 /**
@@ -282,8 +518,8 @@ export function isResearchAreaEchoDescription(text: string): boolean {
 /**
  * Clean a scraped catalog description: strip chrome, then fail closed to an
  * empty string when the remainder is roster/PII-shaped, a navigation dump, an
- * FAQ/Q&A dump, an eligibility-form label dump, or internal
- * curation/reviewer-rationale prose.
+ * FAQ/Q&A dump, an eligibility-form label dump, internal
+ * curation/reviewer-rationale prose, or a homepage news-ticker / CTA dump.
  *
  * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
  * intended safe rendering of contact info at read time and are left in place
@@ -291,14 +527,15 @@ export function isResearchAreaEchoDescription(text: string): boolean {
  * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
-  const stripped = stripCatalogChrome(text);
+  const stripped = collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text)));
   if (!stripped) return '';
   if (
     isRosterShapedText(stripped) ||
     isNavigationDumpText(stripped) ||
     isFaqDumpText(stripped) ||
     isFormFieldDumpText(stripped) ||
-    isCurationRationaleText(stripped)
+    isCurationRationaleText(stripped) ||
+    isCtaNewsTickerDumpText(stripped)
   ) {
     return '';
   }
@@ -334,17 +571,24 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  * citation dump, or a bare "Research fields include <chips>." area echo (#623)
  * fails the whole description closed rather than surviving as read-time-safe
  * token text, a truncated tail (#676), or a vacuous restatement of the chips.
+ *
+ * The clean remainder is finally clamped through clampDescriptionLength so an
+ * over-long or mid-word-truncated faculty/roster slice is trimmed to a sentence
+ * or word boundary rather than served cut mid-word (#897), mirroring the same
+ * final step in sanitizeStoredCatalogDescription (#671).
  */
-export function sanitizeResearchEntityDescription(text: string): string {
+export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
   if (!stripped) return '';
   if (
     hasContactBlockResidue(stripped) ||
     isPublicationsListDumpText(stripped) ||
-    isResearchAreaEchoDescription(stripped)
+    isResearchAreaEchoDescription(stripped) ||
+    isInstitutionalCenterBlurbText(stripped) ||
+    containsHtmlTagMarkup(stripped)
   ) {
     return '';
   }
-  return stripped;
+  return clampDescriptionLength(stripped, maxLength);
 }

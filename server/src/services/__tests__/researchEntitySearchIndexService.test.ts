@@ -73,6 +73,27 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('opennessLastSignalAt');
   });
 
+  it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-area-facet',
+      name: 'Milivojevic Lab',
+      archived: false,
+      researchAreas: [
+        'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+        'Water Supply, Quality, and Scarcity',
+      ],
+    });
+
+    expect(doc?.researchAreas).toEqual([
+      'Anxiety',
+      'Depression',
+      'Psychometrics',
+      'Treatment',
+      'Cognitive Processes',
+      'Water Supply, Quality, and Scarcity',
+    ]);
+  });
+
   it('adds curated student topic aliases to searchable index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-ai',
@@ -107,6 +128,47 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
+  it('does not trigger computer-vision aliases from curriculum-vitae phrasing (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-comp-lit',
+      name: 'Comparative Literature Program',
+      departments: ['Comparative Literature'],
+      fullDescription: 'Applicants should email a CV to the program coordinator to apply.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('does not trigger computer-vision aliases from a citation author-initials pattern (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-neurology',
+      name: 'Neurology Metabolism Lab',
+      departments: ['Neurology'],
+      fullDescription: 'Recent publications include Mobbs CV, Yang X. Hypothalamic control of metabolism.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms ?? []).not.toEqual(
+      expect.arrayContaining(['computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
+  it('still triggers computer-vision aliases when a lab genuinely abbreviates as CV (#899)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-real-cv',
+      name: 'Vision Systems Lab',
+      fullDescription: 'Our CV group builds algorithms for object detection and scene understanding.',
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'image analysis', 'visual recognition']),
+    );
+  });
+
   it('maps "computer vision" and "computational vision" as bidirectional Meili synonyms (#787)', () => {
     const { synonyms } = getResearchEntitySearchIndexSettings();
 
@@ -132,7 +194,7 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc).toMatchObject({
       id: 'entity-url-safety',
-      fullDescription: 'Contact [email redacted] or [phone redacted] for research roles.',
+      fullDescription: '',
       shortDescription: 'Email [email redacted] for details.',
       websiteUrl: 'https://safe.example.edu/lab',
       sourceUrls: ['https://safe.example.edu/source'],

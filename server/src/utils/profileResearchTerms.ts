@@ -99,6 +99,33 @@ function isProseResearchBlurb(value: string): boolean {
   );
 }
 
+const PROSE_CHIP_LEADIN =
+  /^(?:and|or|but|which|that|who|whose|whom|we|our|i|my|his|her|their|its|these|those|including|as|to|for|from|with|by|when|where|while|because|although|however|moreover)\b/i;
+
+const RESEARCH_HEADING_CHIP =
+  /^research\s+(?:areas?|interests?|fields?|topics?)\s*:?\s*$/i;
+
+/**
+ * A "research area" chip is meant to be a short topical tag. Prose SENTENCES or
+ * clause fragments wrongly ingested as areas surface as garbage "BEST FIT FOR"
+ * chips (#816). Flag a value as prose when it carries sentence-ending
+ * punctuation, is long, opens with a prose conjunction/pronoun lead-in, or is a
+ * bare section heading. Clean multi-word tags (no terminal punctuation, <= 8
+ * words, no lead-in) are kept.
+ */
+export function isProseResearchAreaChip(value: unknown): boolean {
+  const cleaned = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return false;
+  if (RESEARCH_HEADING_CHIP.test(cleaned)) return true;
+  if (/[.!?]$/.test(cleaned)) return true;
+  if (PROSE_CHIP_LEADIN.test(cleaned)) return true;
+  return cleaned.split(/\s+/).filter(Boolean).length >= 9;
+}
+
+export function filterProseResearchAreaChips(values: readonly string[]): string[] {
+  return values.filter((value) => !isProseResearchAreaChip(value));
+}
+
 export function sanitizeProfileResearchTerms(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   if (values.some((raw) => PUBLICATION_METADATA_MARKER_RE.test(String(raw || '').trim()))) {

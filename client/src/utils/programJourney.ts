@@ -146,3 +146,13 @@ export function entryModeLabel(mode: string): string {
   };
   return labels[mode] || mode.replace(/_/g, ' ').toLowerCase();
 }
+
+export function programCategoryLabel(category: string): string {
+  const labels: Record<string, string> = {
+    CENTER_INTERNSHIP: 'Center internship',
+    FELLOWSHIP: 'Fellowship',
+    RECURRING_PROGRAM: 'Recurring program',
+    SUMMER_RESEARCH_PROGRAM: 'Summer research program',
+  };
+  return labels[category] || category.replace(/_/g, ' ').toLowerCase();
+}

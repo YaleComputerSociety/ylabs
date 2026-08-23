@@ -1,8 +1,13 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
@@ -267,8 +272,26 @@ const addUniqueSearchTerm = (terms: string[], seen: Set<string>, term: string) =
   terms.push(cleaned);
 };
 
+const CV_ADMIN_CONTEXT_PATTERNS: RegExp[] = [
+  /\b(?:email|send|submit|attach|include|provide|share|mail)\s+(?:a|an|your|the)?\s*cv\b/gi,
+  /\bcv\s+(?:to|and\s+(?:a\s+)?cover\s+letter|and\s+resume|or\s+resume)\b/gi,
+  /\b(?:r[ée]sum[ée]|cover\s+letter)\b[^.]{0,40}\bcv\b/gi,
+  /\bcv\b[^.]{0,40}\b(?:r[ée]sum[ée]|cover\s+letter)\b/gi,
+];
+
+const CV_CITATION_INITIALS_PATTERN = /\b[A-Z][a-zA-Z'-]{1,30}\s+CV[,.]/g;
+
+const stripCvFalsePositiveContext = (text: string): string => {
+  let cleaned = /\bcurriculum\b/i.test(text) ? text.replace(/\bcv\b/gi, ' ') : text;
+  cleaned = cleaned.replace(CV_CITATION_INITIALS_PATTERN, ' ');
+  for (const pattern of CV_ADMIN_CONTEXT_PATTERNS) {
+    cleaned = cleaned.replace(pattern, ' ');
+  }
+  return cleaned;
+};
+
 export function buildStudentSearchTerms(doc: any): string[] {
-  const haystack = normalizedAliasHaystack([
+  const textFields = [
     doc?.name,
     doc?.displayName,
     doc?.summary,
@@ -279,14 +302,21 @@ export function buildStudentSearchTerms(doc: any): string[] {
     doc?.keywords,
     doc?.kind,
     doc?.entityType,
-  ]);
+  ];
+
+  const haystack = normalizedAliasHaystack(textFields);
   if (!haystack) return [];
+
+  const cvGuardedHaystack = normalizedAliasHaystack(
+    textFields.map((value) => (typeof value === 'string' ? stripCvFalsePositiveContext(value) : value)),
+  );
 
   const terms: string[] = [];
   const seen = new Set<string>();
   for (const [trigger, aliases] of Object.entries(STUDENT_TOPIC_ALIASES)) {
     const triggerPattern = new RegExp(`(^|\\s)${trigger.replace(/\s+/g, '\\s+')}(\\s|$)`, 'i');
-    if (!triggerPattern.test(haystack)) continue;
+    const haystackForTrigger = trigger === 'cv' ? cvGuardedHaystack : haystack;
+    if (!triggerPattern.test(haystackForTrigger)) continue;
     for (const alias of aliases) {
       addUniqueSearchTerm(terms, seen, alias);
     }
@@ -355,6 +385,13 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     }
   }
 
+  if (typeof out.fullDescription === 'string') {
+    out.fullDescription = sanitizeResearchEntityDescription(out.fullDescription);
+  }
+  if (typeof out.shortDescription === 'string') {
+    out.shortDescription = sanitizeResearchEntityShortDescription(out.shortDescription);
+  }
+
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {
     const names = uniquePersonNames(out[field]);
     if (names.length > 0) out[field] = names;
@@ -373,6 +410,12 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     const sourceUrls = publicHttpUrls(out.sourceUrls);
     if (sourceUrls.length > 0) out.sourceUrls = sourceUrls;
     else delete out.sourceUrls;
+  }
+
+  if (Array.isArray(out.researchAreas)) {
+    const researchAreas = normalizeResearchAreaList(out.researchAreas);
+    if (researchAreas.length > 0) out.researchAreas = researchAreas;
+    else delete out.researchAreas;
   }
 };
 

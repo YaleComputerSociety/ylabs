@@ -2,19 +2,25 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampDescriptionLength,
+  collapseDuplicatedProseBlock,
+  containsHtmlTagMarkup,
   hasContactBlockResidue,
+  isCtaNewsTickerDumpText,
   isCurationRationaleText,
+  isInstitutionalCenterBlurbText,
   isFaqDumpText,
   isFormFieldDumpText,
   isNavigationDumpText,
   isPublicationsListDumpText,
   isResearchAreaEchoDescription,
+  isResearchAreaTemplateLeakText,
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
+  stripDeadAnchorCtaSentences,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
 } from '../descriptionHygiene';
@@ -146,6 +152,60 @@ describe('descriptionHygiene', () => {
   });
 });
 
+const SYNTHETIC_DONOR_PROVENANCE_PROSE = [
+  'The Class of ’60 endowment was established by graduates who wanted to honor their shared undergraduate years.',
+  'Members of the Class of ’86 later expanded the fund to support summer study and travel abroad.',
+  'Sophomores and juniors in the residential college are eligible to apply for these awards each spring.',
+  'The Class of ’92 reunion gift broadened eligibility further to include independent research projects.',
+].join(' ');
+
+const SYNTHETIC_CLASS_YEAR_ROSTER = [
+  '2025 Fellows: Casey Parker ’28, Jordan Taylor ’27, Dana Robin ’26, Rowan Sage ’25, Sky Vale ’24',
+].join(' ');
+
+describe('descriptionHygiene class-year roster arm sentence-gating (#925)', () => {
+  it('keeps multi-sentence donor-provenance prose that merely mentions class years', () => {
+    expect(isRosterShapedText(SYNTHETIC_DONOR_PROVENANCE_PROSE)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_DONOR_PROVENANCE_PROSE)).toBe(
+      SYNTHETIC_DONOR_PROVENANCE_PROSE,
+    );
+  });
+
+  it('still rejects a sentence-sparse class-year roster with no mentor markers', () => {
+    expect(isRosterShapedText(SYNTHETIC_CLASS_YEAR_ROSTER)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_CLASS_YEAR_ROSTER)).toBe('');
+  });
+});
+
+describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
+  it('drops a "click here" dead-anchor sentence but keeps the surrounding prose', () => {
+    const text =
+      'Applicants may propose research at an approved international site. For a sample list of past locations, click here. Recipients must submit a final report at the end of the summer.';
+    expect(stripDeadAnchorCtaSentences(text)).toBe(
+      'Applicants may propose research at an approved international site. Recipients must submit a final report at the end of the summer.',
+    );
+  });
+
+  it('drops a "click this link" dead-anchor sentence through sanitizeCatalogDescription', () => {
+    const text =
+      'Applicants are expected to present a well-developed proposal for a research project. Click this link for a list of upcoming summer fellowship information sessions. Award recipients will perform research during the summer.';
+    expect(sanitizeCatalogDescription(text)).toBe(
+      'Applicants are expected to present a well-developed proposal for a research project. Award recipients will perform research during the summer.',
+    );
+  });
+
+  it('leaves ordinary prose that never contains a dead anchor unchanged', () => {
+    const prose =
+      'The program supports undergraduate research in the sciences and pairs each student with a faculty mentor for the summer.';
+    expect(stripDeadAnchorCtaSentences(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
+  });
+
+  it('collapses a description that is only dead-anchor CTAs to empty', () => {
+    expect(sanitizeCatalogDescription('Click here. Click this link.')).toBe('');
+  });
+});
+
 const CURATION_RATIONALE_DESCRIPTIONS = [
   'The REEESNe Student Internship and Research Grant has a strong official Yale source, clear student audience, and source-backed internship/research use. It is safe to show prominently when current cycle details are present.',
   'The Herbert Scarf Summer Research Opportunities in Economics are source-backed Yale Economics summer research placements. The known source documents a current/recurring project list and faculty-mentored research structure, but operators should refresh cycle dates each year.',
@@ -180,11 +240,32 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
     expect(cleaned).toBe('Submit all materials to the YSEA undergraduate grants committee.');
   });
 
-  it('removes an [email redacted] token after a colon', () => {
-    const text = 'Confirmation should be sent to: [email redacted]';
+  it('keeps surrounding sentences and cleans a trailing token in place', () => {
+    const text =
+      'Awards support summer research abroad. Submit all materials to the grants committee at [email redacted].';
     const cleaned = stripRedactionPlaceholders(text);
     expect(cleaned).not.toMatch(/redacted/i);
-    expect(cleaned).toBe('Confirmation should be sent');
+    expect(cleaned).toBe(
+      'Awards support summer research abroad. Submit all materials to the grants committee.',
+    );
+  });
+
+  it('drops a whole sentence when a mid-sentence token would strand trailing words (#774)', () => {
+    const text =
+      'Seniors must be members in good standing. If you are an international student, please contact [email redacted] in the International Tax Office.';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).not.toMatch(/please in the/i);
+    expect(cleaned).toBe('Seniors must be members in good standing.');
+  });
+
+  it('drops a trailing fragment left without terminal punctuation after the token (#774)', () => {
+    const text =
+      'Awardees must disclose other funding. The letter of recommendation should be sent to: [email redacted]';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).not.toMatch(/should be sent$/i);
+    expect(cleaned).toBe('Awardees must disclose other funding.');
   });
 
   it('leaves the redaction token in place inside sanitizeCatalogDescription (read-time contract)', () => {
@@ -226,6 +307,32 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
     expect(clamped.length).toBeLessThanOrEqual(2001);
     expect(clamped.endsWith('…')).toBe(true);
     expect(/\S…$/.test(clamped)).toBe(true);
+  });
+});
+
+describe('sanitizeResearchEntityDescription word-boundary clamp (#897)', () => {
+  it('clamps an over-long research-entity description to a complete sentence', () => {
+    const body = `${'The laboratory studies how cities shape regional climate and biodiversity. '.repeat(
+      40,
+    )}Recent work extends this to coastal megacities and the lack of diver`;
+    const cleaned = sanitizeResearchEntityDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2000);
+    expect(cleaned.endsWith('.')).toBe(true);
+    expect(cleaned).not.toMatch(/the lack of diver$/);
+  });
+
+  it('falls back to a word boundary with an ellipsis when no sentence ends in the tail', () => {
+    const body = `Introduction ${'climatebiodiversitymegacities '.repeat(120)}dive`;
+    const cleaned = sanitizeResearchEntityDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2001);
+    expect(cleaned.endsWith('…')).toBe(true);
+    expect(cleaned).not.toMatch(/dive$/);
+  });
+
+  it('leaves genuine prose at or under the cap unchanged', () => {
+    const clean =
+      'The lab investigates urban ecology and the effects of land-use change on regional climate.';
+    expect(sanitizeResearchEntityDescription(clean)).toBe(clean);
   });
 });
 
@@ -282,6 +389,85 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
   it('keeps a genuine lab description with no contact block or publications dump', () => {
     expect(sanitizeResearchEntityDescription(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(
       SYNTHETIC_CLEAN_LAB_PROSE,
+    );
+  });
+});
+
+const SYNTHETIC_OFFICE_ADDRESS_PROSE =
+  'Our lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, and single-particle electron cryo-microscopy. 100 Sample Avenue, Fl 2, Rm 234';
+
+const SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE =
+  'The center coordinates translational research across several affiliated departments. 42 Fixture Boulevard';
+
+describe('descriptionHygiene bare office/street address residue detection (#798)', () => {
+  it('flags a bare office address fragment with a floor/room unit', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_OFFICE_ADDRESS_PROSE)).toBe(true);
+  });
+
+  it('flags a bare street address fragment with no unit label', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE)).toBe(true);
+  });
+
+  it('does not flag ordinary prose with no address-shaped fragment', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
+  });
+
+  it('fails a served description closed to empty on a non-trailing glued office address', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'The lab is at 100 Sample Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.',
+      ),
+    ).toBe('');
+  });
+});
+
+describe('descriptionHygiene raw HTML-markup fail-closed (#909)', () => {
+  const CITATION_MARKUP_FULL =
+    'Doe A, Roe B, Smith C, <span data-id="10001">Ng A</span>, Lee J, ' +
+    '<strong data-id="20002">Park M</strong>, Gomez P. ' +
+    '<span data-type="title">Bridging the gap between structure and function.</span> ' +
+    'Journal of Synthetic Studies. 2024.';
+  const CITATION_MARKUP_SHORT =
+    '<span data-type="title">A synthetic study of an imagined pathway</span>';
+  const ANCHOR_MARKUP =
+    'Our work is described further in <a href="https://example.edu/paper">this article</a> ' +
+    'and covers imagined signaling pathways across model systems in depth.';
+  const CLEAN_PROSE =
+    'Our research interests include imagined repair pathways, model therapy, tumor dynamics, ' +
+    'and synthetic editing for gene therapy in reconstituted systems.';
+  const MATH_PROSE =
+    'We study reaction regimes where the rate expression < 0.05 dominates and yields > 100 units ' +
+    'accumulate over long incubation windows in reconstituted assays.';
+  const UNSPACED_INEQUALITY_PROSE =
+    'We characterize regimes where 0<x and n>100, model p<q dynamics with thresholds q>r, ' +
+    'and track how signals scale as t<tau for stimuli s>0 across reconstituted assays.';
+
+  it('detects closing tags, attributed opening tags, and anchor markup', () => {
+    expect(containsHtmlTagMarkup(CITATION_MARKUP_FULL)).toBe(true);
+    expect(containsHtmlTagMarkup(CITATION_MARKUP_SHORT)).toBe(true);
+    expect(containsHtmlTagMarkup(ANCHOR_MARKUP)).toBe(true);
+  });
+
+  it('does not flag clean prose or bare angle-bracket math comparisons', () => {
+    expect(containsHtmlTagMarkup(CLEAN_PROSE)).toBe(false);
+    expect(containsHtmlTagMarkup(MATH_PROSE)).toBe(false);
+    expect(containsHtmlTagMarkup(UNSPACED_INEQUALITY_PROSE)).toBe(false);
+  });
+
+  it('fails the fullDescription closed to empty on a citation-widget markup dump', () => {
+    expect(sanitizeResearchEntityDescription(CITATION_MARKUP_FULL)).toBe('');
+    expect(sanitizeResearchEntityDescription(ANCHOR_MARKUP)).toBe('');
+  });
+
+  it('fails the shortDescription closed to empty on a bare citation-title span', () => {
+    expect(sanitizeResearchEntityShortDescription(CITATION_MARKUP_SHORT)).toBe('');
+  });
+
+  it('keeps clean prose that only uses angle brackets as math comparisons', () => {
+    expect(sanitizeResearchEntityDescription(MATH_PROSE)).toBe(MATH_PROSE);
+    expect(sanitizeResearchEntityDescription(CLEAN_PROSE)).toBe(CLEAN_PROSE);
+    expect(sanitizeResearchEntityDescription(UNSPACED_INEQUALITY_PROSE)).toBe(
+      UNSPACED_INEQUALITY_PROSE,
     );
   });
 });
@@ -419,6 +605,107 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
     );
     expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
   });
+
+  it('fails closed on a Studies-template blurb that leaked a research-areas heading (#816)', () => {
+    expect(
+      isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.'),
+    ).toBe(true);
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies soft robotics, actuators, and research areas:.',
+      ),
+    ).toBe('');
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Research fields include ecology, evolution, and research interests:.',
+      ),
+    ).toBe('');
+    expect(sanitizeResearchEntityShortDescription('Studies research topics:')).toBe('');
+  });
+
+  it('keeps a clean Studies-template blurb that has no heading leak', () => {
+    const clean = 'Studies soft robotics, compliant actuators, and human-robot interaction.';
+    expect(isResearchAreaTemplateLeakText(clean)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene YSM profile anchor-CTA button label (#931)', () => {
+  it('strips a glued "Learn more about Dr. X>>" anchor label from surrounding prose', () => {
+    const dirty =
+      'She trained at MIT before joining the Yale faculty. Learn more about Dr. Muzumdar>> Using mouse models the lab studies cancer.';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe(
+      'She trained at MIT before joining the Yale faculty. Using mouse models the lab studies cancer.',
+    );
+  });
+
+  it('strips a spaced "Learn more about Dr. X >>" label glued onto the prior sentence', () => {
+    const dirty =
+      'She was awarded Woman Oncologist of the Year for her work in gender equity.Learn more about Dr. Kunz >>';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe(
+      'She was awarded Woman Oncologist of the Year for her work in gender equity.',
+    );
+  });
+
+  it('strips a "Watch a video with Dr. First Last>>" multi-word-name label', () => {
+    const dirty =
+      "Medical Director of the Brain Tumor Center. Watch a video with Dr. Nicholas Blondin>> Dr. Blondin's clinical expertise is in neuro-oncology.";
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe(
+      "Medical Director of the Brain Tumor Center. Dr. Blondin's clinical expertise is in neuro-oncology.",
+    );
+  });
+
+  it('removes the anchor label at both the shortDescription and catalog read layers', () => {
+    const dirty = 'The lab studies airway disease. Learn more about Dr. Mehra>>';
+    expect(sanitizeResearchEntityShortDescription(dirty)).toBe('The lab studies airway disease.');
+    expect(sanitizeCatalogDescription(dirty)).toBe('The lab studies airway disease.');
+  });
+
+  it('leaves legitimate "Learn more about Dr. X" prose without the >> marker untouched', () => {
+    const prose = 'Learn more about Dr. Kunz and her oncology research on the department website.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityShortDescription(prose)).toBe(prose);
+  });
+});
+
+describe('descriptionHygiene anchor-CTA button label broadening (#947)', () => {
+  it('strips a titleless "Learn more about <org> >>" label glued onto the prior sentence', () => {
+    const dirty =
+      'The lab develops soft robots that grip and move like living tissue.Learn more about the Faboratory >>';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'The lab develops soft robots that grip and move like living tissue.',
+    );
+  });
+
+  it('strips a "Read more about <name> >>" variant', () => {
+    const dirty = 'The center advances gender equity in oncology. Read more about our mission >>';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'The center advances gender equity in oncology.',
+    );
+  });
+
+  it('strips a label terminated by the unicode » guillemet', () => {
+    const dirty = 'She studies airway disease using mouse models. Learn more about Dr. Mehra »';
+    expect(stripCatalogChrome(dirty)).toBe(
+      'She studies airway disease using mouse models.',
+    );
+  });
+
+  it('removes a titleless label at both the shortDescription and catalog read layers', () => {
+    const dirty = 'The lab studies stellar formation. Learn more about our program >>';
+    expect(sanitizeResearchEntityShortDescription(dirty)).toBe('The lab studies stellar formation.');
+    expect(sanitizeResearchEntityDescription(dirty)).toBe('The lab studies stellar formation.');
+  });
+
+  it('leaves legitimate "learn more about" prose without an arrow marker untouched', () => {
+    const prose =
+      'Students can learn more about our program by attending the weekly open house or reading the handbook.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
 });
 
 describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
@@ -430,7 +717,9 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
 
   it('flags the "Research areas include" sibling template', () => {
     expect(
-      isResearchAreaEchoDescription('Research areas include Spectroscopy, Chirality, and Signaling.'),
+      isResearchAreaEchoDescription(
+        'Research areas include Spectroscopy, Chirality, and Signaling.',
+      ),
     ).toBe(true);
   });
 
@@ -442,7 +731,9 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
   });
 
   it('does not flag a real "Studies" one-liner or a research-focus sentence', () => {
-    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(false);
+    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(
+      false,
+    );
     expect(
       isResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.'),
     ).toBe(false);
@@ -454,5 +745,160 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
         'Research fields include Gene Expression Regulation, Developmental, Computational Biology, and Cancer.',
       ),
     ).toBe('');
+  });
+});
+
+const SYNTHETIC_CTA_NEWS_TICKER_DUMP = [
+  'Our newly updated factsheet tool provides insights into public attitudes in your region.',
+  'New research highlights the intersection of two emerging topics.',
+  '76% of respondents say they are interested in stories about the subject.',
+  "On August 26th, we'll be joining local officials to talk about the work.",
+  'Sign up to join the conversation: a survey tool covering 32 questions.',
+  "Take a quiz to find out which group you're part of.",
+  'Our research and outreach are sponsored by foundations and many generous individuals.',
+  'Welcome! Here you can find our latest research and insights.',
+  'Please join the conversation on LinkedIn, Bluesky, and YouTube.',
+].join(' ');
+
+const SYNTHETIC_CLEAN_COMMS_PROSE =
+  'The center studies how the public understands emerging science and how communicators can convey complex findings. Researchers combine national surveys with message-testing experiments to map audience attitudes over time. Findings inform outreach practice across universities and nonprofits.';
+
+const SYNTHETIC_SINGLE_CTA_PROSE =
+  'The program pairs undergraduates with faculty mentors for a summer of original research. Students who want to learn more can attend an information session each spring.';
+
+describe('descriptionHygiene CTA/news-ticker dump fail-closed (#898)', () => {
+  it('flags a homepage news-ticker / CTA dump and rejects it', () => {
+    expect(isCtaNewsTickerDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe('');
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe('');
+  });
+
+  it('is not defeated by the many well-formed sentences that slip past the sentence-ender gates', () => {
+    expect(isNavigationDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(false);
+    expect(isFormFieldDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(false);
+    expect(isFaqDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(false);
+  });
+
+  it('fails closed on a social-platform sign-off on its own', () => {
+    expect(
+      isCtaNewsTickerDumpText('Please join the conversation on LinkedIn, Bluesky, and YouTube.'),
+    ).toBe(true);
+  });
+
+  it('keeps genuine communications-research prose that names no CTA markers', () => {
+    expect(isCtaNewsTickerDumpText(SYNTHETIC_CLEAN_COMMS_PROSE)).toBe(false);
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_CLEAN_COMMS_PROSE)).toBe(
+      SYNTHETIC_CLEAN_COMMS_PROSE,
+    );
+  });
+
+  it('keeps prose with a single incidental "learn more" invitation', () => {
+    expect(isCtaNewsTickerDumpText(SYNTHETIC_SINGLE_CTA_PROSE)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_SINGLE_CTA_PROSE)).toBe(SYNTHETIC_SINGLE_CTA_PROSE);
+  });
+});
+
+describe('isInstitutionalCenterBlurbText', () => {
+  const GRAFT_VARIANTS = [
+    'Welcome to the Council on Middle East Studies, a leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+    'Welcome to the Council on Middle East Studies A leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+    'The Council on Middle East Studies is a leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+    'The Council on Middle East Studies at Yale is a leading center of excellence for research and teaching on the Middle East.',
+    'A center of excellence for Middle East research and teaching, focusing on interdisciplinary dialogue.',
+    'A center dedicated to research and teaching on the Middle East, emphasizing multidisciplinary dialogue.',
+  ];
+
+  it('flags every grafted center/council landing blurb variant', () => {
+    for (const variant of GRAFT_VARIANTS) {
+      expect(isInstitutionalCenterBlurbText(variant)).toBe(true);
+    }
+  });
+
+  it('does not flag genuine lab descriptions that open with "Welcome to"', () => {
+    const legitimate = [
+      'Welcome to the Bonde Artificial Heart lab! We believe a creative and imaginative environment drives discovery.',
+      'Welcome to the Pillai Laboratory at the Section of Medical Oncology and Hematology, Yale Cancer Center.',
+      'Welcome to the Thinking Lab at Yale University! The Thinking Lab studies how people reason and make decisions.',
+      'Welcome to Prof. Fengnian Xia’s research group in the Department of Electrical Engineering at Yale.',
+    ];
+    for (const description of legitimate) {
+      expect(isInstitutionalCenterBlurbText(description)).toBe(false);
+    }
+  });
+
+  it('does not flag ordinary research prose or empty input', () => {
+    expect(isInstitutionalCenterBlurbText('')).toBe(false);
+    expect(
+      isInstitutionalCenterBlurbText(
+        'The lab studies condensed matter physics, focusing on surface science and electronic materials.',
+      ),
+    ).toBe(false);
+  });
+
+  it('fails a grafted fullDescription closed via sanitizeResearchEntityDescription', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'Welcome to the Council on Middle East Studies, a leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+      ),
+    ).toBe('');
+  });
+
+  it('fails a grafted shortDescription closed while keeping a real short blurb', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'A center dedicated to research and teaching on the Middle East, emphasizing multidisciplinary dialogue.',
+      ),
+    ).toBe('');
+    expect(
+      sanitizeResearchEntityShortDescription('Studies liver fibrosis and vascular biology.'),
+    ).toBe('Studies liver fibrosis and vascular biology.');
+  });
+});
+
+const SYNTHETIC_APPLICATION_PARAGRAPH =
+  'Applicants should submit a personal statement, an unofficial transcript, and a letter of recommendation from a faculty mentor by the March deadline.';
+
+describe('descriptionHygiene duplicated-block collapse (#904)', () => {
+  it('collapses an exact adjacent duplicate paragraph', () => {
+    const duplicated = `${SYNTHETIC_APPLICATION_PARAGRAPH} ${SYNTHETIC_APPLICATION_PARAGRAPH}`;
+    expect(collapseDuplicatedProseBlock(duplicated)).toBe(SYNTHETIC_APPLICATION_PARAGRAPH);
+  });
+
+  it('keeps the trailing chrome after collapsing the duplicate', () => {
+    const withTrailingChrome = `${SYNTHETIC_APPLICATION_PARAGRAPH} ${SYNTHETIC_APPLICATION_PARAGRAPH} Follow us on Instagram @example and Facebook!`;
+    expect(sanitizeCatalogDescription(withTrailingChrome)).toBe(SYNTHETIC_APPLICATION_PARAGRAPH);
+  });
+
+  it('leaves a short incidental adjacent repeat unchanged (below the minimum block length)', () => {
+    const prose =
+      'Thank you Thank you for applying to our summer research program, which runs for ten weeks starting in June.';
+    expect(collapseDuplicatedProseBlock(prose)).toBe(prose);
+  });
+});
+
+const SYNTHETIC_MENTOR_BIO_DUMP = [
+  'Apply by March 1 and email the coordinator with questions.',
+  'Meet our graduate mentors for the coming year.',
+  'Riley Sawyer grew up in Springfield and studies molecular biology. Feel free to reach out to them at [email redacted].',
+  'Harper Quinn is from Rivertown and works on genetics with Dr. Alex Monroe. Contact her at [email redacted].',
+  'Jordan Blake studies neuroscience under Dr. Sam Carter and hails from Lakeside. Contact him at [email redacted].',
+  'Morgan Lee, mentored by Dr. Casey Flynn, focuses on immunology and comes from Bayview.',
+  'Taylor Reed rounds out the cohort with work on structural biology.',
+].join(' ');
+
+const SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE =
+  'Applications open each spring and close on March 1. The program director is happy to help; feel free to reach out to them with any questions, and contact them at the main office to schedule a visit before you apply.';
+
+describe('descriptionHygiene mentor-bio contact-invitation roster (#904)', () => {
+  it('flags a many-people bio dump with repeated contact invitations as roster-shaped', () => {
+    expect(isRosterShapedText(SYNTHETIC_MENTOR_BIO_DUMP)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_MENTOR_BIO_DUMP)).toBe('');
+  });
+
+  it('keeps genuine apply prose that invites contact but names no roster of people', () => {
+    expect(isRosterShapedText(SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE)).toBe(
+      SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE,
+    );
   });
 });

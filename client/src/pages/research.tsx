@@ -449,6 +449,8 @@ const Research = () => {
   const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
+  const fetchedSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
+  const fetchedDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
   const [searchLoading, setSearchLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
@@ -580,6 +582,7 @@ const Research = () => {
   }, [isAdmin, showWeakestProfilesFirst, qualityFilters.length, trustTierFilters.length]);
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
+    if (page === 1) fetchedDefaultSearchPageRef.current = 1;
     const requestId = ++defaultSearchRequestIdRef.current;
     const browseLoadAnalyticsKey = `${browseAnalyticsSessionRef.current}:${requestId}:${page}`;
     const controller = new AbortController();
@@ -695,6 +698,7 @@ const Research = () => {
     searchAbortRef.current = controller;
 
     setDefaultSearchExhausted(true);
+    fetchedSearchPageRef.current = 1;
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(false);
@@ -1221,12 +1225,16 @@ const Research = () => {
   ]);
 
   useEffect(() => {
-    if (hasSubmittedSearch || defaultSearchPage <= 1) return;
+    if (hasSubmittedSearch || defaultSearchPage <= fetchedDefaultSearchPageRef.current) return;
+    fetchedDefaultSearchPageRef.current = defaultSearchPage;
     void runDefaultResearchHomeSearchRef.current(defaultSearchPage);
   }, [defaultSearchPage, hasSubmittedSearch]);
 
   useEffect(() => {
-    if (!hasSubmittedSearch || searchPage <= 1 || !activeSearchRequest) return;
+    if (!hasSubmittedSearch || !activeSearchRequest || searchPage <= fetchedSearchPageRef.current) {
+      return;
+    }
+    fetchedSearchPageRef.current = searchPage;
     void runSearchResultsPageRef.current(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
@@ -1424,6 +1432,7 @@ const Research = () => {
     }
   };
 
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [isWideFilterLayout, setIsWideFilterLayout] = useState(
     () => window.matchMedia?.('(min-width: 1536px)').matches ?? false,
   );
@@ -1435,6 +1444,21 @@ const Research = () => {
     mediaQuery.addEventListener?.('change', handleChange);
     return () => mediaQuery.removeEventListener?.('change', handleChange);
   }, []);
+
+  const [isCompactViewport, setIsCompactViewport] = useState(
+    () => window.matchMedia?.('(max-width: 639px)').matches ?? false,
+  );
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(max-width: 639px)');
+    if (!mediaQuery) return;
+    const handleChange = (event: MediaQueryListEvent) => setIsCompactViewport(event.matches);
+    setIsCompactViewport(mediaQuery.matches);
+    mediaQuery.addEventListener?.('change', handleChange);
+    return () => mediaQuery.removeEventListener?.('change', handleChange);
+  }, []);
+  const searchPlaceholder = isCompactViewport
+    ? 'Type a topic, professor, or lab'
+    : 'Type a topic, professor, lab, or research question';
 
   const researchFilterProps = {
     facetDistribution,
@@ -1508,8 +1532,8 @@ const Research = () => {
                     }
                   }}
                   aria-describedby="research-search-context research-search-help"
-                  placeholder="Type a topic, professor, lab, or research question"
-                  className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                  placeholder={searchPlaceholder}
+                  className="min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
                 />
                 <button
                   type="submit"
@@ -1589,7 +1613,13 @@ const Research = () => {
                     )}
                   </div>
                 </div>
-                {!isWideFilterLayout && <ResearchFilterDisclosure {...browseFilterProps} />}
+                {!isWideFilterLayout && (
+                  <ResearchFilterDisclosure
+                    {...browseFilterProps}
+                    isOpen={isFilterPanelOpen}
+                    onOpenChange={setIsFilterPanelOpen}
+                  />
+                )}
                 {defaultSearchError && (
                   <div
                     role="alert"
@@ -1712,7 +1742,13 @@ const Research = () => {
                   </div>
                 </div>
 
-                {!isWideFilterLayout && <ResearchFilterDisclosure {...researchFilterProps} />}
+                {!isWideFilterLayout && (
+                  <ResearchFilterDisclosure
+                    {...researchFilterProps}
+                    isOpen={isFilterPanelOpen}
+                    onOpenChange={setIsFilterPanelOpen}
+                  />
+                )}
 
                 {searchError && (
                   <div

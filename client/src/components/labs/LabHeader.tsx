@@ -13,7 +13,7 @@ import { isSuppressedResearchWebsiteCtaUrl } from '../../utils/researchDetailSou
 import {
   entityKindLabel,
   isFacultyResearchEntity as isFacultyResearchEntityCopy,
-  researchEntityDisplayName,
+  researchEntityTitle,
   researchWebsiteCtaLabel,
 } from '../../utils/researchEntityCopy';
 
@@ -75,7 +75,7 @@ const LabHeader = ({ group, dedupeWebsiteUrls = [], actions }: LabHeaderProps) =
         <div className="min-w-0">
           <p className="yr-kicker mb-2">Research profile</p>
           <h1 className="text-3xl font-semibold leading-tight text-slate-950">
-            {researchEntityDisplayName(group)}
+            {researchEntityTitle(group)}
           </h1>
           {group.location && (
             <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">

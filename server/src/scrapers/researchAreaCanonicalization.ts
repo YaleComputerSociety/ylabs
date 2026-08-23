@@ -342,8 +342,42 @@ export function stripResearchAreaSourceChrome(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+const ROLE_TRACK_GLUE_TOKENS = ['Theorist', 'Experimentalist', 'Observational', 'Observer'];
+const ROLE_TRACK_GLUE_TOKEN_GROUP = `(?:${ROLE_TRACK_GLUE_TOKENS.join('|')})`;
+const ROLE_TRACK_GLUE_LEADING_RE = new RegExp(`(?<=\\p{Ll})(${ROLE_TRACK_GLUE_TOKEN_GROUP})`, 'gu');
+const ROLE_TRACK_GLUE_TRAILING_RE = new RegExp(`(${ROLE_TRACK_GLUE_TOKEN_GROUP})(?=\\p{Lu})`, 'gu');
+const ROLE_TRACK_GLUE_SENTINEL = '\u0000';
+
+/**
+ * Physics/astronomy profile fields expose a physicist's research area, their
+ * "Research Type" role track (Theorist/Experimentalist/Observational/Observer),
+ * and a project-title tail. A legacy extractor concatenated them with no
+ * boundary ("Astrophysics & CosmologyTheorist", "Condensed Matter
+ * PhysicsExperimentalistCoherent control of light transport and absorption").
+ * Split at the camelCase glue joint - a role token fused after a lowercase
+ * letter or before an uppercase letter - so the recovered topic pieces flow to
+ * canonicalization while the standalone role token is dropped by the existing
+ * leakage stop-list. A role token that is already whitespace-delimited never
+ * matches, so a legitimate "Observational Cosmology" is left intact (issue #943).
+ */
+export function splitGluedRoleTrackLabels(raw: unknown): string[] {
+  if (typeof raw !== 'string') return [];
+  const value = raw.replace(/\s+/g, ' ').trim();
+  if (!value) return [];
+  const marked = value
+    .replace(ROLE_TRACK_GLUE_LEADING_RE, `${ROLE_TRACK_GLUE_SENTINEL}$1`)
+    .replace(ROLE_TRACK_GLUE_TRAILING_RE, `$1${ROLE_TRACK_GLUE_SENTINEL}`);
+  if (!marked.includes(ROLE_TRACK_GLUE_SENTINEL)) return [value];
+  return marked
+    .split(ROLE_TRACK_GLUE_SENTINEL)
+    .map((segment) => segment.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
 function expandRawResearchAreaEntries(raw: unknown): string[] {
-  return toRawList(raw).flatMap((entry) => stripResearchAreaSourceChrome(entry));
+  return toRawList(raw)
+    .flatMap((entry) => stripResearchAreaSourceChrome(entry))
+    .flatMap((entry) => splitGluedRoleTrackLabels(entry));
 }
 
 export function createResearchAreaCanonicalizer(

@@ -178,6 +178,35 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
+  it('does not glue a "Studies " prefix onto a first sentence that already has the person as subject', () => {
+    const kachru =
+      'Sonam Kachru specializes in the history of premodern South Asian philosophy and literature, with an emphasis on Buddhist philosophy. His first book examined the philosophy of mind of the Buddhist philosopher Vasubandhu.';
+    expect(deriveShortDescriptionFromFullDescription(kachru)).not.toMatch(
+      /^Studies Sonam Kachru/,
+    );
+
+    const dembroff =
+      'Robin Dembroff works in the philosophy of gender and social ontology. Their research asks how social categories shape the structure of the social world.';
+    expect(deriveShortDescriptionFromFullDescription(dembroff)).not.toMatch(
+      /^Studies Robin Dembroff/,
+    );
+
+    const slanski =
+      'Kathryn Slanski holds a joint appointment in Near Eastern Languages and Civilizations and in Humanities. She teaches the ancient languages and cultures of Mesopotamia.';
+    expect(deriveShortDescriptionFromFullDescription(slanski)).not.toMatch(
+      /^Studies Kathryn Slanski/,
+    );
+  });
+
+  it('still derives a "Studies " summary from a leading bare scholarly field list', () => {
+    const fullDescription =
+      'Comparative Literature, Philosophy, and Poetry, especially medieval Islamic thought. The seminar traces how these traditions read one another across centuries.';
+
+    expect(deriveShortDescriptionFromFullDescription(fullDescription)).toBe(
+      'Studies Comparative Literature, Philosophy, and Poetry, especially medieval Islamic thought.',
+    );
+  });
+
   it('derives card copy from singular later research-interest phrasing', () => {
     const fullDescription =
       'Prof. Michael A. Boozer graduated from MIT with a bachelor’s degree in Physics before starting graduate school at Princeton where he obtained his PhD in Economics. His research interest is in Education and Labour policy where he studied consequences of class size on student achievement, looked at the relationship between human development and economic growth and the link between school quality and race.';

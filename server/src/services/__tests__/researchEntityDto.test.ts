@@ -77,6 +77,23 @@ describe('researchEntityDto', () => {
     expect(dto.entityKind).toBe('individual');
   });
 
+  it('drops prose-sentence researchArea chips from the public DTO (#816)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-chips',
+      slug: 'mcnamara-physics',
+      name: 'Harry McNamara - Research',
+      researchAreas: [
+        'Biophysics',
+        'Synthetic Biology',
+        'We study how cells process information to make collective decisions.',
+        'research areas:',
+        'Nonlinear Dynamics',
+      ],
+    });
+
+    expect(dto.researchAreas).toEqual(['Biophysics', 'Synthetic Biology', 'Nonlinear Dynamics']);
+  });
+
   it('collapses prefixed and plain department labels in public DTOs', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-mcdb',
@@ -123,6 +140,31 @@ describe('researchEntityDto', () => {
     expect(dto.undergradEvidenceQuote).toBe(
       'Interested students can email [email redacted] or call [phone redacted].',
     );
+  });
+
+  it('splits bare comma-delimited research-area blobs while preserving enumeration titles', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-area-split',
+      slug: 'nih-pi-example',
+      name: 'Example Lab',
+      departments: [],
+      researchAreas: [
+        'Stress Responses And Cortisol',
+        'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+        'Water Supply, Quality, and Scarcity',
+      ],
+      sourceUrls: [],
+    });
+
+    expect(dto.researchAreas).toEqual([
+      'Stress Responses And Cortisol',
+      'Anxiety',
+      'Depression',
+      'Psychometrics',
+      'Treatment',
+      'Cognitive Processes',
+      'Water Supply, Quality, and Scarcity',
+    ]);
   });
 
   it('redacts direct contact details recursively from public text fields', () => {

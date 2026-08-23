@@ -299,6 +299,27 @@ describe('FellowshipModal', () => {
     expect(regionDetailLabel.parentElement).toHaveTextContent('Regions: Africa');
   });
 
+  it('answers the mentor-first question coherently instead of contradicting itself (#970)', () => {
+    renderModal({ requiresMentorBeforeApply: false, mentorMatching: true });
+
+    expect(
+      screen.getByText('Not first, the program helps match you with a mentor'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('This source suggests a mentor-matching or mentored program route.'),
+    ).toBeNull();
+    expect(screen.queryByText('Not usually')).toBeNull();
+  });
+
+  it('still tells students to secure a mentor first when the program requires it (#970)', () => {
+    renderModal({ requiresMentorBeforeApply: true, mentorMatching: true });
+
+    expect(screen.getByText('Yes, secure a mentor before applying')).toBeInTheDocument();
+    expect(
+      screen.queryByText('This source suggests a mentor-matching or mentored program route.'),
+    ).toBeNull();
+  });
+
   it('falls back to the specific source page and shows legible provenance (#692)', () => {
     const specificSource =
       'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';

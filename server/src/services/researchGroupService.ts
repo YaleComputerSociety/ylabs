@@ -34,7 +34,10 @@ import { Signal } from '../models/signal';
 import { StudentTracking } from '../models/studentTracking';
 import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
-import { isResearchEntitySearchEmbedderConfigured } from './researchEntitySearchIndexService';
+import {
+  isResearchEntitySearchEmbedderConfigured,
+  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+} from './researchEntitySearchIndexService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import {
@@ -351,6 +354,15 @@ const MAX_FILTER_VALUES = 50;
 // topics 0.2-0.99) while pure-noise queries score ~1e-7, so this cutoff drops noise
 // without clipping legitimate weak-but-real matches. See #823.
 const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
+// At semanticRatio 0.8 a hybrid hit's blended score is 0.8*similarity for a
+// semantic-only hit but only 0.2*keywordScore for a keyword-only hit, so a weak
+// semantic-only hit (e.g. a same-first-name person at similarity ~0.27) can
+// outrank a near-perfect keyword/exact-name match (blended ~0.198). Any
+// semantic-only hit below this similarity is treated as too weak to sit above a
+// real keyword match and is floored beneath the keyword hits. Genuine broad
+// topical matches score well above this, so pure-semantic ranking is untouched.
+// See #929.
+const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -470,6 +482,12 @@ const DEPARTMENT_SHORTHAND_ALIASES: Record<string, string[]> = {
   'mech eng': ['mechanical engineering'],
   bme: ['biomedical engineering'],
   biomed: ['biomedical engineering'],
+  eeb: ['ecology and evolutionary biology'],
+  mcdb: ['molecular cellular and developmental biology'],
+  mbb: ['molecular biophysics and biochemistry'],
+  eall: ['east asian languages and literatures'],
+  nelc: ['near eastern languages and civilizations'],
+  wgss: ['women gender and sexuality studies'],
 };
 
 const QUERY_TOPIC_ALIASES: Record<string, string[]> = {
@@ -595,6 +613,35 @@ const mongoVisibilityFilter = (
   }
   return includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
 };
+
+const isPublicVisibilityScope = (
+  filters: ResearchGroupFilterInput,
+  includeNonPublic?: boolean,
+): boolean => !includeNonPublic && !filters.studentVisibilityTier?.length;
+
+// The stored `studentVisibilityTier` is a materialized snapshot, but the detail
+// resolver (getResearchGroupDetail) recomputes the public-description invariant
+// live and returns null (-> 404) when it fails. A stored `student_ready` tier
+// can therefore go stale relative to that live invariant (e.g. after a hygiene
+// change that empties a person-bio description) and leave a browse card that
+// 404s on click. Enforcing the same live invariant on the public browse
+// hydration path keeps the browse index and the detail serve gate as one source
+// of truth. This is safe to run without the roster-derived lead names the detail
+// path uses: lead-name self-reference stripping only ever removes more text, so
+// an entity that fails this name-agnostic invariant necessarily also fails the
+// detail path's stricter (roster-name-aware) invariant. Dropping it can never
+// hide a card the detail page would actually serve.
+const servesPublicResearchDetail = (entity: Record<string, any>): boolean =>
+  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass;
+
+const withServablePublicResearchEntities = <T extends Record<string, any>>(
+  entities: T[],
+  filters: ResearchGroupFilterInput,
+  includeNonPublic?: boolean,
+): T[] =>
+  isPublicVisibilityScope(filters, includeNonPublic)
+    ? entities.filter(servesPublicResearchDetail)
+    : entities;
 
 const applyVisibilityScopeToFilters = (
   filters: ResearchGroupFilterInput,
@@ -748,6 +795,52 @@ const isInvalidSearchAttributesToSearchOnError = (error: unknown): boolean => {
   );
 };
 
+const KEYWORD_RANKING_RULE_KEYS = ['words', 'typo', 'proximity', 'attribute', 'exactness'];
+
+/**
+ * True when Meilisearch retrieved this hit via the keyword leg of a hybrid
+ * search, i.e. `_rankingScoreDetails` carries at least one keyword ranking rule.
+ * A purely semantic hit only carries a `vectorSort` detail.
+ */
+const hitMatchedKeywordLeg = (hit: any): boolean => {
+  const details = hit?._rankingScoreDetails;
+  if (!details || typeof details !== 'object') return false;
+  return KEYWORD_RANKING_RULE_KEYS.some((key) => key in details);
+};
+
+/**
+ * True when the hit was retrieved only by the semantic leg with a similarity
+ * below the weak-match floor, so it should not sit above real keyword matches.
+ */
+const hitIsWeakSemanticOnly = (hit: any): boolean => {
+  const details = hit?._rankingScoreDetails;
+  if (!details || typeof details !== 'object') return false;
+  const similarity = details.vectorSort?.similarity;
+  if (typeof similarity !== 'number') return false;
+  if (hitMatchedKeywordLeg(hit)) return false;
+  return similarity < WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR;
+};
+
+/**
+ * Stable re-rank that floors weak semantic-only hits beneath every hit that
+ * matched the keyword leg (or matched semantics strongly). Only engages when the
+ * result set actually contains a keyword match to protect, so pure-semantic
+ * topical queries keep Meilisearch's native hybrid ordering untouched. Fixes the
+ * name-query mis-ordering in #929 without changing `semanticRatio`.
+ */
+export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
+  if (!Array.isArray(hits) || hits.length < 2) return hits;
+  if (!hits.some(hitMatchedKeywordLeg)) return hits;
+  const strong: T[] = [];
+  const weak: T[] = [];
+  for (const hit of hits) {
+    if (hitIsWeakSemanticOnly(hit)) weak.push(hit);
+    else strong.push(hit);
+  }
+  if (weak.length === 0 || strong.length === 0) return hits;
+  return [...strong, ...weak];
+};
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -773,10 +866,36 @@ export async function searchResearchGroupsViaMeili(
 
   const normalizedQuery = normalizeResearchSearchQuery(query);
   const trimmedQuery = normalizedQuery.query;
-  if (trimmedQuery === '' && safeOptions.lowQualityFirst) {
-    const candidates = await ResearchEntity.find(
-      mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
-    ).lean();
+  // A blank search box legitimately browses the whole corpus. A query that has
+  // raw text but tokenizes to zero ASCII search terms must not silently reuse
+  // that browse-all path (#958): non-Latin-script input (CJK/Arabic/Cyrillic)
+  // is sent to Meilisearch as-is so its own tokenizer/embedder can match it,
+  // while punctuation/symbol-only input has no searchable content and returns
+  // an empty result set rather than the full directory in browse order.
+  const hasUnicodeWordContent = /[\p{L}\p{N}]/u.test(normalizedQuery.raw);
+  const isBrowseAllQuery = normalizedQuery.raw === '';
+  const isUnsearchableQuery = !isBrowseAllQuery && trimmedQuery === '' && !hasUnicodeWordContent;
+  const meiliQueryText = trimmedQuery !== '' ? trimmedQuery : normalizedQuery.raw;
+  if (isUnsearchableQuery) {
+    return addResearchEntitySearchAliases(
+      {
+        hits: [],
+        estimatedTotalHits: 0,
+        page: safePage,
+        pageSize: safePageSize,
+        degraded: false,
+      },
+      { includeOperatorFields: safeOptions.includeNonPublic },
+    );
+  }
+  if (isBrowseAllQuery && safeOptions.lowQualityFirst) {
+    const candidates = withServablePublicResearchEntities(
+      (await ResearchEntity.find(
+        mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
+      ).lean()) as any[],
+      safeFilters,
+      safeOptions.includeNonPublic,
+    );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
     const filteredCandidates = candidatesWithQuality
       .filter((entity) => matchesQualityFilters(entity.qualitySummary, safeOptions.qualityFilters))
@@ -825,7 +944,7 @@ export async function searchResearchGroupsViaMeili(
   if (sort.sortBy) {
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
     sortConfig.push(`${sort.sortBy}:${order}`);
-  } else if (trimmedQuery === '') {
+  } else if (isBrowseAllQuery) {
     // Default browse: surface the "best" research homes first — those with the
     // strongest completeness + undergrad-access signal — then fall back to
     // recency as a tiebreak. See services/researchEntityBrowseRank.ts.
@@ -850,7 +969,7 @@ export async function searchResearchGroupsViaMeili(
   }
 
   const index = await getMeiliIndex('researchentities');
-  if (trimmedQuery !== '') {
+  if (!isBrowseAllQuery) {
     if (normalizedQuery.isTopicAliasQuery) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
     } else if (await isResearchEntitySearchEmbedderConfigured(index)) {
@@ -859,7 +978,23 @@ export async function searchResearchGroupsViaMeili(
         embedder: 'default',
       };
       searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
+      searchParams.showRankingScoreDetails = true;
     }
+  }
+
+  // Meilisearch's offset/limit `estimatedTotalHits` for a thresholded hybrid
+  // query is a windowed estimate over the whole k-NN candidate pool, so it
+  // reports (near) the full corpus size for broad topical queries even though
+  // only a small set clears `rankingScoreThreshold`. Finite pagination
+  // (`page`/`hitsPerPage`) fetches this page's hits and can itself still
+  // report that inflated estimate until the requested depth happens to be
+  // large enough to force an exhaustive scan (see the companion count query
+  // below, which forces that scan on every request). See #885.
+  if (searchParams.rankingScoreThreshold !== undefined) {
+    searchParams.page = safePage;
+    searchParams.hitsPerPage = safePageSize;
+    delete searchParams.limit;
+    delete searchParams.offset;
   }
 
   // Search, degrading gracefully on recoverable errors: drop the semantic
@@ -871,9 +1006,11 @@ export async function searchResearchGroupsViaMeili(
     result: {
       hits?: any[];
       estimatedTotalHits?: number;
+      totalHits?: number;
       facetDistribution?: Record<string, Record<string, number>>;
     };
     degraded: boolean;
+    params: Record<string, any>;
   }> => {
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
@@ -882,14 +1019,16 @@ export async function searchResearchGroupsViaMeili(
     while (true) {
       try {
         return {
-          result: await index.search(trimmedQuery, params),
+          result: await index.search(meiliQueryText, params),
           degraded,
+          params,
         };
       } catch (error) {
         if (params.hybrid && isMissingMeiliEmbedderError(error)) {
           params = { ...params };
           delete params.hybrid;
           delete params.rankingScoreThreshold;
+          delete params.showRankingScoreDetails;
           degraded = true;
           continue;
         }
@@ -927,13 +1066,16 @@ export async function searchResearchGroupsViaMeili(
   let searchResult: {
     hits?: any[];
     estimatedTotalHits?: number;
+    totalHits?: number;
     facetDistribution?: Record<string, Record<string, number>>;
   };
   let degraded = false;
+  let finalSearchParams: Record<string, any> = searchParams;
   try {
     const outcome = await searchWithFallbacks();
     searchResult = outcome.result;
     degraded = outcome.degraded;
+    finalSearchParams = outcome.params;
   } catch (error) {
     console.error(
       'ResearchEntity Meilisearch failed; falling back to Mongo search:',
@@ -948,7 +1090,49 @@ export async function searchResearchGroupsViaMeili(
       safeOptions,
     );
   }
-  const { hits, estimatedTotalHits, facetDistribution: rawFacetDistribution } = searchResult;
+
+  // The per-page totalHits and facetDistribution above only become exhaustive
+  // once Meilisearch has scanned deep enough to have examined every candidate
+  // that could pass rankingScoreThreshold, so a shallow first page can still
+  // report the pre-threshold estimate/distribution over the whole k-NN
+  // candidate pool. Run one companion query deep enough to force the
+  // exhaustive, threshold-aware count and facet distribution regardless of
+  // which page was actually requested. See #885, #941.
+  if (finalSearchParams.rankingScoreThreshold !== undefined) {
+    try {
+      const exhaustiveCountResult = await index.search(meiliQueryText, {
+        filter: filterString,
+        hybrid: finalSearchParams.hybrid,
+        rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
+        page: 1,
+        hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+        attributesToRetrieve: ['id'],
+        facets: ['schools', 'departments', 'researchAreas'],
+      });
+      if (typeof exhaustiveCountResult?.totalHits === 'number') {
+        searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
+      }
+      if (exhaustiveCountResult?.facetDistribution) {
+        searchResult = {
+          ...searchResult,
+          facetDistribution: exhaustiveCountResult.facetDistribution,
+        };
+      }
+    } catch (error) {
+      console.error(
+        'Optional exhaustive hybrid total-hits count failed:',
+        sanitizeLogValue(error),
+      );
+    }
+  }
+
+  const {
+    hits,
+    estimatedTotalHits,
+    totalHits,
+    facetDistribution: rawFacetDistribution,
+  } = searchResult;
+  const resolvedTotalHits = totalHits ?? estimatedTotalHits;
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
@@ -962,18 +1146,22 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
-  const hitIds = (hits || [])
+  const orderedHits = floorWeakSemanticOnlyHits(hits || []);
+  const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
     .filter((id): id is string => Boolean(id));
-  const visibleEntities =
+  const visibleEntities = withServablePublicResearchEntities(
     hitIds.length > 0
-      ? await ResearchEntity.find({
+      ? ((await ResearchEntity.find({
           _id: { $in: hitIds },
           archived: { $ne: true },
           ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
-        }).lean()
-      : [];
+        }).lean()) as any[])
+      : [],
+    safeFilters,
+    safeOptions.includeNonPublic,
+  );
   const visibleEntitiesById = new Map(
     (visibleEntities as any[]).map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
@@ -996,7 +1184,7 @@ export async function searchResearchGroupsViaMeili(
     listAccessSummariesForResearchEntities(visibleHitIds),
     optionalPlanningContexts(visibleHitIds),
   ]);
-  const normalizedHits = (hits || []).flatMap((hit: any) => {
+  const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
     const entity = visibleEntitiesById.get(entityId);
@@ -1014,7 +1202,7 @@ export async function searchResearchGroupsViaMeili(
   return addResearchEntitySearchAliases(
     {
       hits: normalizedHits,
-      estimatedTotalHits: estimatedTotalHits ?? normalizedHits.length,
+      estimatedTotalHits: resolvedTotalHits ?? normalizedHits.length,
       page: safePage,
       pageSize: safePageSize,
       facetDistribution,
@@ -1059,8 +1247,8 @@ const haystackHasTerm = (haystack: string, term: string): boolean => {
 
 const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
   const normalizedQuery = normalizeResearchSearchQuery(query);
-  if (!normalizedQuery.query) return true;
-  if (normalizedQuery.tokens.length === 0) return true;
+  if (normalizedQuery.raw === '') return true;
+  if (!normalizedQuery.query || normalizedQuery.tokens.length === 0) return false;
   const haystack = researchEntitySearchText(entity);
   if (normalizedQuery.aliasTerms) {
     return normalizedQuery.aliasTerms.some((alias) => haystackHasTerm(haystack, alias));
@@ -1138,8 +1326,10 @@ const searchResearchGroupsViaMongoFallback = async (
   const candidates = await ResearchEntity.find(
     mongoFilterFromResearchFilters(filters, options.includeNonPublic),
   ).lean();
-  const visibleCandidates = (candidates as any[]).filter((entity) =>
-    researchEntityMatchesQuery(entity, trimmedQuery),
+  const visibleCandidates = withServablePublicResearchEntities(
+    (candidates as any[]).filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
+    filters,
+    options.includeNonPublic,
   );
   const facetDistribution = {
     school: facetCounts(visibleCandidates, 'schools'),
@@ -1593,7 +1783,7 @@ const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 const PUBLIC_RELATED_ENTITY_PROJECTION =
-  '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier';
+  '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl';
 
 export interface PublicRelationshipCollectionMeta {
   returned: number;
@@ -1699,8 +1889,12 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
           .select(PUBLIC_RELATED_ENTITY_PROJECTION)
           .lean()
       : [];
-  const publicRelatedEntities = (relatedEntities as any[]).filter((entity) =>
-    publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
+  const publicRelatedEntities = withServablePublicResearchEntities(
+    (relatedEntities as any[]).filter((entity) =>
+      publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
+    ),
+    {},
+    false,
   );
 
   const publicEntitiesByInternalId = new Map(

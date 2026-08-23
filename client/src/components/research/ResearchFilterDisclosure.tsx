@@ -23,6 +23,8 @@ interface ResearchFilterDisclosureProps {
   onHostsUndergradsChange: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
@@ -52,9 +54,20 @@ const ResearchFilterDisclosure = ({
   onHostsUndergradsChange,
   onClearAll,
   variant = 'popover',
+  isOpen: controlledIsOpen,
+  onOpenChange,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
-  const [isOpen, setIsOpen] = useState(false);
+  const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
+  const isControlledOpen = controlledIsOpen !== undefined;
+  const isOpen = isControlledOpen ? controlledIsOpen : uncontrolledIsOpen;
+  const setIsOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlledOpen) setUncontrolledIsOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlledOpen, onOpenChange],
+  );
   const [isDesktop, setIsDesktop] = useState(
     () => window.matchMedia?.('(min-width: 640px)').matches ?? false,
   );

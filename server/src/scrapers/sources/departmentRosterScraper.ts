@@ -52,7 +52,15 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
-import { sanitizeResearchEntityDescription } from '../../utils/descriptionHygiene';
+import {
+  clampDescriptionLength,
+  sanitizeResearchEntityDescription,
+} from '../../utils/descriptionHygiene';
+import {
+  isProseNotTopicPhrase,
+  isResearchSectionLabel,
+  stripResearchSectionLabelPrefix,
+} from '../researchAreaLabels';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -1010,31 +1018,15 @@ function elementTextWithChildSeparators($: cheerio.CheerioAPI, el: AnyNode): str
   return parts.length > 0 ? parts.join('; ') : cleanText($(el).text());
 }
 
-const topicLabelChromePhrases = new Set([
-  'research area',
-  'research areas',
-  'research interest',
-  'research interests',
-  'field of interest',
-  'fields of interest',
-  'field of study',
-  'fields of study',
-  'area of interest',
-  'areas of interest',
-]);
-
-const topicLabelPrefixPattern =
-  /^(?:research\s+areas?|research\s+interests?|fields?\s+of\s+(?:study|interest)|areas?\s+of\s+interest)\s*:\s*/i;
-
 function stripTopicLabelPrefix(value: string): string {
-  return cleanText(value).replace(topicLabelPrefixPattern, '');
+  return stripResearchSectionLabelPrefix(value);
 }
 
 function isTopicLabelChrome(value: string): boolean {
   const cleaned = cleanText(value);
   if (!cleaned) return true;
   if (/:$/.test(cleaned)) return true;
-  return topicLabelChromePhrases.has(cleaned.replace(/[:\s]+$/g, '').toLowerCase());
+  return isResearchSectionLabel(cleaned) || isProseNotTopicPhrase(cleaned);
 }
 
 function splitTopicText(value: string | undefined | null): string[] {
@@ -1240,7 +1232,7 @@ function isLikelyProfileChromeBio(value: string): boolean {
 
 function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
   const biography = extractSectionAfterHeading($, /^biography$/i);
-  if (biography) return biography.slice(0, 2000);
+  if (biography) return clampDescriptionLength(biography, 2000);
 
   const selectors = [
     '[class*="profile-body"]',
@@ -1261,7 +1253,8 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
     const text = cleanText($(selector).first().text())
       .replace(/^CV\s+/i, '')
       .replace(/\s+Office hours?:.*$/i, '');
-    if (text.length >= 40 && !isLikelyProfileChromeBio(text)) return text.slice(0, 2000);
+    if (text.length >= 40 && !isLikelyProfileChromeBio(text))
+      return clampDescriptionLength(text, 2000);
   }
   return undefined;
 }

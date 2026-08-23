@@ -4,6 +4,8 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
+import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
+import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -84,15 +86,16 @@ function publicShortDescriptionString(value: unknown): string {
 function publicResearchAreaArray(value: unknown): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
-  for (const raw of stringArray(value)) {
+  for (const raw of normalizeResearchAreaList(stringArray(value))) {
     const cleaned = publicTextString(sanitizeResearchAreaLabel(raw));
     if (!cleaned) continue;
     const key = cleaned.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     labels.push(cleaned);
+    if (labels.length >= MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS) break;
   }
-  return labels;
+  return filterProseResearchAreaChips(labels);
 }
 
 function publicHttpUrl(value: unknown): string | undefined {

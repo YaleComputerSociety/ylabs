@@ -63,7 +63,7 @@ const privateProgram = {
   restrictionsToUseOfAward: 'Research expenses only.',
   additionalInformation: 'Public additional info.',
   links: [{ label: 'Program page', url: 'https://example.yale.edu/program' }],
-  applicationLink: 'https://example.yale.edu/apply',
+  applicationLink: 'https://example.yale.edu/program/apply',
   awardAmount: '$5,000',
   isAcceptingApplications: true,
   applicationOpenDate: new Date('2026-01-01T00:00:00.000Z'),
@@ -105,7 +105,7 @@ const expectPublicProgram = (payload: any) => {
     _id: '64a000000000000000000010',
     title: 'Summer Research Program',
     programCategory: 'SUMMER_RESEARCH_PROGRAM',
-    applicationLink: 'https://example.yale.edu/apply',
+    applicationLink: 'https://example.yale.edu/program/apply',
     deadline: new Date('2026-02-01T00:00:00.000Z'),
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
@@ -452,10 +452,10 @@ describe('programController search visibility', () => {
       programs: [
         {
           ...privateProgram,
-          summary: 'Email prose-contact@yale.edu or call 203-555-1212 before applying.',
-          description: 'Questions: office@example.edu.',
-          applicationInformation: 'Call 203.555.3434 for the form.',
-          eligibility: 'Ask hidden@yale.edu about eligibility.',
+          summary: 'Applications are reviewed each spring. Email prose-contact@yale.edu or call 203-555-1212 before applying.',
+          description: 'The grant funds summer study. Questions: office@example.edu.',
+          applicationInformation: 'Complete the online form. Call 203.555.3434 for the form.',
+          eligibility: 'Open to juniors and seniors. Ask hidden@yale.edu about eligibility.',
           prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
           applicationMaterials: ['Email materials-contact@yale.edu or call 203-555-8888.'],
           contactPhone: '203-555-9999',
@@ -471,12 +471,18 @@ describe('programController search visibility', () => {
     await searchProgramsController({ query: {}, user: { userType: 'student' } } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
-    expect(payload.summary).toBe(
-      'Email [email redacted] or call [phone redacted] before applying.',
-    );
-    expect(payload.description).toBe('Questions: [email redacted].');
-    expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
-    expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
+    for (const field of [
+      payload.summary,
+      payload.description,
+      payload.applicationInformation,
+      payload.eligibility,
+    ]) {
+      expect(field).not.toMatch(/redacted/i);
+    }
+    expect(payload.summary).toBe('Applications are reviewed each spring.');
+    expect(payload.description).toBe('The grant funds summer study.');
+    expect(payload.applicationInformation).toBe('Complete the online form.');
+    expect(payload.eligibility).toBe('Open to juniors and seniors.');
     expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
     expect(payload.applicationMaterials).toEqual([
       'Email [email redacted] or call [phone redacted].',
@@ -486,7 +492,9 @@ describe('programController search visibility', () => {
     expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
     expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
     expect(JSON.stringify(payload)).not.toContain('office@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('hidden@yale.edu');
     expect(JSON.stringify(payload)).not.toContain('203-555');
+    expect(JSON.stringify(payload)).not.toContain('203.555');
   });
 
   it('allowlists public program detail payloads for normal readers', async () => {

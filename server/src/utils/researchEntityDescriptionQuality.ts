@@ -906,11 +906,18 @@ function specializationSectionSummary(full: string): string {
   return shortDescriptionQuality(candidate, full).isUseful ? candidate : '';
 }
 
+const PERSON_NAME_SUBJECT_PREDICATE =
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,3}\s+(?:specializes?|works?|holds?|serves?|pursues?|engages?|received|earned|joined|directs?|leads?|writes?|wrote|edits?|edited|teaches?|taught|studies|investigates|examines|explores|focuses|focused|develops?|researches|analyzes|models?|measures?|is|are|was|were|has|have|had)\b/u;
+
+const startsWithPersonNameSubjectPredicate = (value: string): boolean =>
+  PERSON_NAME_SUBJECT_PREDICATE.test(value);
+
 function leadingScholarlyFieldListSummary(sentences: string[], full: string): string {
   const first = textValue(sentences[0]);
   if (!first || first.length > 140) return '';
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
+  if (startsWithPersonNameSubjectPredicate(first)) return '';
   if (hasResearchDescriptionVerb(first) || /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)) {
     return '';
   }

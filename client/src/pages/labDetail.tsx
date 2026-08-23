@@ -33,12 +33,15 @@ import {
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
+  isLikelyUnavailableSourceLink,
   isSuppressedResearchWebsiteCtaUrl,
+  isUnavailableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
   resolveOutreachOfficialSource,
   ResearchDetailSource,
+  sourceLedgerKey,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
 import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
@@ -52,7 +55,7 @@ import {
   decisionHeadingLabel,
   isFacultyResearchEntity,
   relationshipTypeLabel,
-  researchEntityDisplayName,
+  researchEntityTitle,
   sanitizeFacultyResearchCopy,
   sanitizeResearchHomeSelfReferenceCopy,
 } from '../utils/researchEntityCopy';
@@ -776,7 +779,7 @@ const LabDetail = () => {
   useDocumentTitle(
     isNotFound
       ? 'Page not found'
-      : researchEntityDisplayName(documentTitleGroup) || 'Research profile',
+      : researchEntityTitle(documentTitleGroup) || 'Research profile',
   );
 
   useEffect(() => {
@@ -894,9 +897,18 @@ const LabDetail = () => {
     sourceLinkHealth: group.sourceLinkHealth,
   });
   const primaryWebsiteUrl =
-    group.websiteUrl && !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl)
+    group.websiteUrl &&
+    !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isUnavailableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
       ? group.websiteUrl
       : undefined;
+  const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);
+  const primaryWebsiteHealth = primaryWebsiteHealthKey
+    ? group.sourceLinkHealth?.find(
+        (entry) => sourceLedgerKey(entry.url) === primaryWebsiteHealthKey,
+      )
+    : undefined;
+  const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(primaryWebsiteHealth);
   const fallbackSourceUrl = primaryWebsiteUrl || sources[0]?.url;
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
   const principalInvestigators = dedupeLeadMembers(members);
@@ -914,7 +926,9 @@ const LabDetail = () => {
     group,
     leadOfficialProfileUrl,
   );
-  const officialWebsiteUrl = safeHttpUrl(primaryWebsiteUrl) || undefined;
+  const officialWebsiteUrl = isPrimaryWebsiteLikelyUnavailable
+    ? undefined
+    : safeHttpUrl(primaryWebsiteUrl) || undefined;
   const outreachOfficialSource = resolveOutreachOfficialSource(
     sources,
     [decisionProfileUrl, officialWebsiteUrl],

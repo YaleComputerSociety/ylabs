@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   andConcatenationComponentKeys,
   normalizedProgramTitleKey,
+  primaryConcatenatedAwardTitle,
   shareAndConcatenatedTitleComponent,
 } from '../programTitle';
 
@@ -85,5 +86,42 @@ describe('shareAndConcatenatedTitleComponent', () => {
   it('returns false for identical AND-concatenated titles, which the exact-key lever already handles', () => {
     const title = 'Alpha Research Fellowship AND the Beta Summer Fellowship';
     expect(shareAndConcatenatedTitleComponent(title, title)).toBe(false);
+  });
+});
+
+describe('primaryConcatenatedAwardTitle', () => {
+  it('collapses a two-award "AND"-joined heading to its primary award (Tetelman/Bates repro shape)', () => {
+    expect(
+      primaryConcatenatedAwardTitle(
+        'Alpha Fellowship for International Research in the Sciences AND the Beta Summer Fellowship',
+      ),
+    ).toBe('Alpha Fellowship for International Research in the Sciences');
+  });
+
+  it('keeps only the first component when three named awards are joined', () => {
+    expect(
+      primaryConcatenatedAwardTitle('Alpha Grant AND Beta Scholarship AND the Gamma Prize'),
+    ).toBe('Alpha Grant');
+  });
+
+  it('leaves a title untouched when a component is not a named award (the "AND" is part of one name)', () => {
+    expect(primaryConcatenatedAwardTitle('Science AND Engineering Fellowship')).toBe(
+      'Science AND Engineering Fellowship',
+    );
+  });
+
+  it('does not split on the lowercase word "and" inside an ordinary title', () => {
+    expect(primaryConcatenatedAwardTitle('Research and Travel Grant')).toBe('Research and Travel Grant');
+  });
+
+  it('returns titles with no AND join unchanged', () => {
+    expect(primaryConcatenatedAwardTitle('Wu Tsai Undergraduate Fellowships')).toBe(
+      'Wu Tsai Undergraduate Fellowships',
+    );
+  });
+
+  it('trims surrounding whitespace and handles empty input', () => {
+    expect(primaryConcatenatedAwardTitle('  Alpha Fellowship  ')).toBe('Alpha Fellowship');
+    expect(primaryConcatenatedAwardTitle('')).toBe('');
   });
 });
