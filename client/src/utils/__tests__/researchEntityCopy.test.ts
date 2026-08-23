@@ -52,6 +52,28 @@ describe('researchEntityCopy', () => {
     expect(approachHeadingLabel(entity)).toBe('Ways to approach this program');
   });
 
+  it('derives the badge and copy from canonical entityType when kind is stale', () => {
+    const staleCenter = {
+      name: 'Alison Galvani Lab',
+      displayName: 'Center for Infectious Disease Modeling and Analysis (CIDMA)',
+      kind: 'lab',
+      entityType: 'CENTER',
+    };
+
+    expect(entityKindLabel(staleCenter)).toBe('Center');
+    expect(researchWebsiteLabel(staleCenter)).toBe('center website');
+    expect(researchStructureLabel(staleCenter)).toBe('center');
+    expect(decisionHeadingLabel(staleCenter)).toBe('What this center focuses on');
+    expect(approachHeadingLabel(staleCenter)).toBe('Ways to approach this center');
+  });
+
+  it('falls back to kind when entityType is absent', () => {
+    const legacy = { name: 'Example Institute', kind: 'institute' };
+
+    expect(entityKindLabel(legacy)).toBe('Institute');
+    expect(researchWebsiteLabel(legacy)).toBe('institute website');
+  });
+
   it('sanitizes faculty research copy without changing real lab copy', () => {
     const facultyResearch = {
       name: 'Charles Bailyn Faculty Research',
