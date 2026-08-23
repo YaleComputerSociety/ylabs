@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { Observation } from '../models/observation';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -12,7 +13,9 @@ import {
   REMATERIALIZE_TRACKED_FIELDS,
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
+  observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  researchEntityFieldIsStranded,
   type RematerializeFieldChange,
 } from './rematerializeResearchEntitiesCore';
 
@@ -72,6 +75,47 @@ async function processSlug(slug: string, apply: boolean): Promise<RematerializeE
   };
 }
 
+async function discoverStrandedFieldSlugs(field: string): Promise<string[]> {
+  const observations = await Observation.find({
+    entityType: 'researchEntity',
+    field,
+    superseded: false,
+  })
+    .select('entityKey entityId value')
+    .lean<Array<{ entityKey?: string; entityId?: unknown; value?: unknown }>>();
+
+  const candidateKeys = new Set<string>();
+  const candidateIds = new Set<string>();
+  for (const observation of observations) {
+    if (!observationValueIsMaterializable(observation.value)) continue;
+    if (observation.entityKey) candidateKeys.add(observation.entityKey);
+    else if (observation.entityId) candidateIds.add(String(observation.entityId));
+  }
+
+  const idFilters: any[] = [];
+  if (candidateKeys.size > 0) idFilters.push({ slug: { $in: Array.from(candidateKeys) } });
+  if (candidateIds.size > 0) {
+    const objectIds = Array.from(candidateIds)
+      .filter((value) => mongoose.isValidObjectId(value))
+      .map((value) => new mongoose.Types.ObjectId(value));
+    if (objectIds.length > 0) idFilters.push({ _id: { $in: objectIds } });
+  }
+  if (idFilters.length === 0) return [];
+
+  const entities = await ResearchEntity.find(
+    idFilters.length === 1 ? idFilters[0] : { $or: idFilters },
+  )
+    .select(`slug ${field}`)
+    .lean<Array<{ slug?: string; [key: string]: unknown }>>();
+
+  const strandedSlugs = new Set<string>();
+  for (const entity of entities) {
+    if (!entity.slug) continue;
+    if (researchEntityFieldIsStranded(entity[field])) strandedSlugs.add(entity.slug);
+  }
+  return Array.from(strandedSlugs).sort();
+}
+
 function writeReport(report: Record<string, unknown>, output?: string): void {
   if (!output) return;
   const safeOutput = resolveSafeJsonReportOutputPath(output);
@@ -90,8 +134,15 @@ async function main() {
 
   await initializeConnections();
 
+  let slugs = args.slugs;
+  let discoveredSlugs: string[] | undefined;
+  if (args.reclaimStrandedField) {
+    discoveredSlugs = await discoverStrandedFieldSlugs(args.reclaimStrandedField);
+    slugs = Array.from(new Set([...slugs, ...discoveredSlugs]));
+  }
+
   const entities: RematerializeEntityReport[] = [];
-  for (const slug of args.slugs) {
+  for (const slug of slugs) {
     entities.push(await processSlug(slug, args.apply));
   }
 
@@ -100,7 +151,9 @@ async function main() {
     environment: guard.environment,
     db: guard.dbLabel,
     mode: args.apply ? 'apply' : 'dry-run',
-    requestedSlugs: args.slugs,
+    reclaimStrandedField: args.reclaimStrandedField,
+    discoveredStrandedCount: discoveredSlugs?.length,
+    requestedSlugs: slugs,
     entitiesFound: entities.filter((entity) => entity.found).length,
     entitiesMissing: entities.filter((entity) => !entity.found).map((entity) => entity.slug),
     entitiesChanged: entities.filter((entity) => entity.changes.length > 0).length,

@@ -2,7 +2,23 @@ export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
   apply: boolean;
   confirmRematerialize: boolean;
+  reclaimStrandedField?: string;
   output?: string;
+}
+
+export const RECLAIMABLE_STRANDED_FIELDS = ['methods', 'researchAreas'] as const;
+
+export type ReclaimableStrandedField = (typeof RECLAIMABLE_STRANDED_FIELDS)[number];
+
+function parseReclaimStrandedField(value: string | undefined): ReclaimableStrandedField {
+  const field = value?.trim();
+  if (!field) throw new Error('--reclaim-stranded requires a field name');
+  if (!(RECLAIMABLE_STRANDED_FIELDS as readonly string[]).includes(field)) {
+    throw new Error(
+      `--reclaim-stranded only supports ${RECLAIMABLE_STRANDED_FIELDS.join(', ')} (got: ${field})`,
+    );
+  }
+  return field as ReclaimableStrandedField;
 }
 
 export const REMATERIALIZE_TRACKED_FIELDS = [
@@ -72,6 +88,15 @@ export function parseRematerializeResearchEntitiesArgs(
       index += 1;
       continue;
     }
+    if (arg.startsWith('--reclaim-stranded=')) {
+      args.reclaimStrandedField = parseReclaimStrandedField(arg.slice('--reclaim-stranded='.length));
+      continue;
+    }
+    if (arg === '--reclaim-stranded') {
+      args.reclaimStrandedField = parseReclaimStrandedField(argv[index + 1]);
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--output=')) {
       args.output = arg.slice('--output='.length);
       continue;
@@ -84,7 +109,9 @@ export function parseRematerializeResearchEntitiesArgs(
     throw new Error(`Unknown rematerialize argument: ${arg}`);
   }
 
-  if (!slugsProvided) throw new Error('--slugs is required');
+  if (!slugsProvided && !args.reclaimStrandedField) {
+    throw new Error('--slugs or --reclaim-stranded is required');
+  }
   return args;
 }
 
@@ -141,4 +168,19 @@ export function buildRematerializeFieldChanges(
     }
   }
   return changes;
+}
+
+export function researchEntityFieldIsStranded(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'string') return value.trim().length === 0;
+  return false;
+}
+
+export function observationValueIsMaterializable(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((entry) => (typeof entry === 'string' ? entry.trim().length > 0 : entry != null));
+  }
+  if (typeof value === 'string') return value.trim().length > 0;
+  return value != null;
 }
