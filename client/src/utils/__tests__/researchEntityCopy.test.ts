@@ -12,6 +12,9 @@ import {
   researchEntityTitle,
   sanitizeFacultyResearchCopy,
   sanitizeResearchHomeSelfReferenceCopy,
+  stripLeadingPageChrome,
+  neutralizeFirstPersonResearchCopy,
+  sanitizeResearchEntityCopy,
 } from '../researchEntityCopy';
 
 describe('researchEntityCopy', () => {
@@ -241,6 +244,100 @@ describe('sanitizeResearchHomeSelfReferenceCopy', () => {
         entityType: 'FACULTY_RESEARCH_AREA',
       }),
     ).toBe(copy);
+  });
+});
+
+describe('stripLeadingPageChrome', () => {
+  it('drops leading page-navigation chrome tokens (#1077)', () => {
+    expect(stripLeadingPageChrome('Bio Website I am a chemist.')).toBe('I am a chemist.');
+    expect(stripLeadingPageChrome('Bio Stable isotope geochemistry, astrobiology.')).toBe(
+      'Stable isotope geochemistry, astrobiology.',
+    );
+    expect(stripLeadingPageChrome('Home Studies neurons.')).toBe('Studies neurons.');
+    expect(stripLeadingPageChrome('Website Studies cells.')).toBe('Studies cells.');
+  });
+
+  it('leaves real words that merely start with a chrome token untouched', () => {
+    expect(stripLeadingPageChrome('Biology of marine ecosystems.')).toBe(
+      'Biology of marine ecosystems.',
+    );
+    expect(stripLeadingPageChrome('Bioinformatics pipelines for genomics.')).toBe(
+      'Bioinformatics pipelines for genomics.',
+    );
+    expect(stripLeadingPageChrome('Studies systems neuroscience.')).toBe(
+      'Studies systems neuroscience.',
+    );
+  });
+});
+
+describe('neutralizeFirstPersonResearchCopy', () => {
+  it('re-voices first-person bio openers to neutral third person (#1077)', () => {
+    expect(
+      neutralizeFirstPersonResearchCopy('I am an isotope geochemist who models climate.'),
+    ).toBe('This researcher is an isotope geochemist who models climate.');
+    expect(
+      neutralizeFirstPersonResearchCopy('Broadly, I am a modeler interested in oceans.'),
+    ).toBe('Broadly, this researcher is a modeler interested in oceans.');
+    expect(neutralizeFirstPersonResearchCopy('I study aesthetic objects.')).toBe(
+      'This research studies aesthetic objects.',
+    );
+    expect(neutralizeFirstPersonResearchCopy('My research examines networks.')).toBe(
+      'This research examines networks.',
+    );
+  });
+
+  it('re-voices first-person lab phrasing to neutral third person (#1077)', () => {
+    expect(neutralizeFirstPersonResearchCopy('In the laboratory we study lung cancer.')).toBe(
+      'This research studies lung cancer.',
+    );
+    expect(neutralizeFirstPersonResearchCopy('Research in our lab is focused on DNA repair.')).toBe(
+      'This research is focused on DNA repair.',
+    );
+    expect(
+      neutralizeFirstPersonResearchCopy('The projects in our lab have focused on genetic risks.'),
+    ).toBe('This research has focused on genetic risks.');
+    expect(
+      neutralizeFirstPersonResearchCopy('Our lab studies protein folding, and we use imaging.'),
+    ).toBe('This research studies protein folding, and this research uses imaging.');
+  });
+
+  it('leaves clean third-person copy untouched', () => {
+    expect(neutralizeFirstPersonResearchCopy('Studies systems neuroscience.')).toBe(
+      'Studies systems neuroscience.',
+    );
+  });
+});
+
+describe('sanitizeResearchEntityCopy', () => {
+  const faculty = {
+    name: 'Example Faculty Research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+  const lab = { name: 'Example Lab', kind: 'lab', entityType: 'LAB' };
+
+  it('strips chrome and re-voices first person for faculty cards (#1077)', () => {
+    expect(sanitizeResearchEntityCopy('Bio Website I study aesthetic objects.', faculty)).toBe(
+      'This research studies aesthetic objects.',
+    );
+  });
+
+  it('re-voices first-person lab cards that the faculty sanitizer skips (#1077)', () => {
+    expect(sanitizeResearchEntityCopy('In the laboratory we study lung cancer.', lab)).toBe(
+      'This research studies lung cancer.',
+    );
+  });
+
+  it('keeps the existing faculty lab-name re-voicing in the composed pipeline', () => {
+    expect(sanitizeResearchEntityCopy('The Example Lab studies cells.', faculty)).toBe(
+      "Example's research studies cells.",
+    );
+  });
+
+  it('leaves clean third-person copy unchanged', () => {
+    expect(sanitizeResearchEntityCopy('Studies systems neuroscience.', lab)).toBe(
+      'Studies systems neuroscience.',
+    );
   });
 });
 

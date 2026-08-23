@@ -21,10 +21,7 @@ import LongText from '../components/shared/LongText';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import { createInitialProfilePageState, profilePageReducer } from '../reducers/profilePageReducer';
 import { formatTitleCaseLabel } from '../utils/displayText';
-import {
-  sanitizeFacultyResearchCopy,
-  sanitizeResearchHomeSelfReferenceCopy,
-} from '../utils/researchEntityCopy';
+import { sanitizeResearchEntityCopy } from '../utils/researchEntityCopy';
 import { safeRouteSegment } from '../utils/url';
 
 type Tab = 'bio' | 'research' | 'courses';
@@ -210,11 +207,8 @@ const Profile = () => {
                   <div className="space-y-3">
                     {(profile.researchEntities || []).map((entity) => {
                       const title = entity.displayName || entity.name || 'Untitled research home';
-                      const description = sanitizeResearchHomeSelfReferenceCopy(
-                        sanitizeFacultyResearchCopy(
-                          entity.shortDescription || entity.fullDescription || '',
-                          entity,
-                        ),
+                      const description = sanitizeResearchEntityCopy(
+                        entity.shortDescription || entity.fullDescription || '',
                         entity,
                       );
                       const roleLabel = formatRoleLabel(entity.role);

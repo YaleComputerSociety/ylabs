@@ -146,6 +146,67 @@ export const sanitizeResearchHomeSelfReferenceCopy = (
   );
 };
 
+const LEADING_PAGE_CHROME = /^(?:Bio Website|Bio|Website|Home)\s+(?=[A-Za-z0-9])/;
+
+export const stripLeadingPageChrome = (value: string): string => {
+  let out = value;
+  while (LEADING_PAGE_CHROME.test(out)) {
+    out = out.replace(LEADING_PAGE_CHROME, '');
+  }
+  return out;
+};
+
+const capitalizeSentenceStarts = (value: string): string =>
+  value.replace(/(^|[.!?]\s+)([a-z])/g, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
+
+export const neutralizeFirstPersonResearchCopy = (value: string): string =>
+  capitalizeSentenceStarts(
+    value
+      .replace(/\bIn the (?:laboratory|lab),?\s+we\s+study\b/gi, 'this research studies')
+      .replace(/\bIn the (?:laboratory|lab),?\s+we\s+investigate\b/gi, 'this research investigates')
+      .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+is\s+focused\s+on\b/gi, 'this research is focused on')
+      .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+focuses\s+on\b/gi, 'this research focuses on')
+      .replace(/\bResearch in (?:our|the)\s+(?:lab|laboratory)\s+centers\s+on\b/gi, 'this research centers on')
+      .replace(/\bThe projects in (?:our|the)\s+(?:lab|laboratory)\s+have\s+focused\s+on\b/gi, 'this research has focused on')
+      .replace(/\bThe projects in (?:our|the)\s+(?:lab|laboratory)\s+focus\s+on\b/gi, 'this research focuses on')
+      .replace(/\bmy research\b/gi, 'this research')
+      .replace(/\bmy lab(?:'|’)?s?\b/gi, 'this research')
+      .replace(/\bmy work\b/gi, 'this research')
+      .replace(/\bour lab(?:'|’)?s?\b/gi, 'this research')
+      .replace(/\bour research\b/gi, 'this research')
+      .replace(/\bour work\b/gi, 'this research')
+      .replace(/\bwe are interested in\b/gi, 'this research examines')
+      .replace(/\bwe study\b/gi, 'this research studies')
+      .replace(/\bwe investigate\b/gi, 'this research investigates')
+      .replace(/\bwe develop\b/gi, 'this research develops')
+      .replace(/\bwe examine\b/gi, 'this research examines')
+      .replace(/\bwe explore\b/gi, 'this research explores')
+      .replace(/\bwe use\b/gi, 'this research uses')
+      .replace(/\bI study\b/g, 'this research studies')
+      .replace(/\bI investigate\b/g, 'this research investigates')
+      .replace(/\bI examine\b/g, 'this research examines')
+      .replace(/\bI explore\b/g, 'this research explores')
+      .replace(/\bI focus on\b/g, 'this research focuses on')
+      .replace(/\bI work on\b/g, 'this research focuses on')
+      .replace(/\bI develop\b/g, 'this research develops')
+      .replace(/\bI use\b/g, 'this research uses')
+      .replace(/\bI am interested in\b/g, 'this research examines')
+      .replace(/\bI have been interested in\b/g, 'this researcher has been interested in')
+      .replace(/\bI have\b/g, 'this researcher has')
+      .replace(/\bI am\b/g, 'this researcher is'),
+  );
+
+export const sanitizeResearchEntityCopy = (
+  value: string,
+  entity?: ResearchEntityCopyInput | null,
+): string =>
+  neutralizeFirstPersonResearchCopy(
+    sanitizeResearchHomeSelfReferenceCopy(
+      sanitizeFacultyResearchCopy(stripLeadingPageChrome(value), entity),
+      entity,
+    ),
+  );
+
 export const sanitizeFacultyResearchCopy = (
   value: string,
   entity?: ResearchEntityCopyInput | null,

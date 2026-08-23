@@ -8,10 +8,7 @@ import {
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import { formatTitleCaseLabel } from '../../utils/displayText';
-import {
-  sanitizeFacultyResearchCopy,
-  sanitizeResearchHomeSelfReferenceCopy,
-} from '../../utils/researchEntityCopy';
+import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
 
@@ -141,10 +138,7 @@ const ResearchHomeCard = ({
   const nextStepLabel = home.pathways[0]
     ? directoryFirstPathwayLabel(getPathwayActionLabel(home.pathways[0].bestNextStepCategory))
     : '';
-  const description = sanitizeResearchHomeSelfReferenceCopy(
-    sanitizeFacultyResearchCopy(home.description, home.entities[0]),
-    home.entities[0],
-  );
+  const description = sanitizeResearchEntityCopy(home.description, home.entities[0]);
   const activePostedOpportunity =
     (home.activePostedOpportunity?.provenance !== 'LISTING_BRIDGED'
       ? home.activePostedOpportunity
