@@ -104,13 +104,59 @@ export function isNavigationDumpText(text: string): boolean {
   return capitalized / words.length > 0.4;
 }
 
+const interrogativeQuestionPattern =
+  /(?:^|[.!?]\s|\bFAQs?\b\s*|\bFrequently Asked Questions\b\s*)(?:can|could|do|does|did|how|what|when|where|which|who|whose|why|is|are|will|would|should|may|must|have|has)\b[^.?!]{0,200}\?/gi;
+
+const faqMarkerPattern = /\bfrequently asked questions\b|\bfaqs?\b/i;
+
+/**
+ * An FAQ / Q&A page dump: a scraped page body whose "prose" is actually a run
+ * of question-and-answer pairs. FAQ questions terminate in "?", so they defeat
+ * isNavigationDumpText (which bails on real sentence enders); this arm catches
+ * them instead. Kept conservative so prose with a single rhetorical question is
+ * unaffected.
+ */
+export function isFaqDumpText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  const questionMarks = countMatches(normalized, /\?/g);
+  if (questionMarks >= 3) return true;
+  if (countMatches(normalized, interrogativeQuestionPattern) >= 2) return true;
+  return faqMarkerPattern.test(normalized) && questionMarks >= 1;
+}
+
+const formFieldLabelPattern = /\b[A-Z][A-Za-z]+(?:\s[A-Z][A-Za-z]+){0,3}:\s/g;
+
+/**
+ * An eligibility/requirements form dump: a dense run of "Label: value" fields
+ * (Level: ..., Class: ..., Deadline: ...) with almost no real sentences, lifted
+ * verbatim from a form or requirements table. Gated on the absence of sentences
+ * so ordinary prose that merely uses a colon is kept.
+ */
+export function isFormFieldDumpText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length < 12) return false;
+  const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
+  if (sentenceEnders > 2) return false;
+  return countMatches(normalized, formFieldLabelPattern) >= 4;
+}
+
 /**
  * Clean a scraped catalog description: strip chrome, then fail closed to an
- * empty string when the remainder is roster/PII-shaped or a navigation dump.
+ * empty string when the remainder is roster/PII-shaped, a navigation dump, an
+ * FAQ/Q&A dump, or an eligibility-form label dump.
  */
 export function sanitizeCatalogDescription(text: string): string {
   const stripped = stripCatalogChrome(text);
   if (!stripped) return '';
-  if (isRosterShapedText(stripped) || isNavigationDumpText(stripped)) return '';
+  if (
+    isRosterShapedText(stripped) ||
+    isNavigationDumpText(stripped) ||
+    isFaqDumpText(stripped) ||
+    isFormFieldDumpText(stripped)
+  ) {
+    return '';
+  }
   return stripped;
 }
