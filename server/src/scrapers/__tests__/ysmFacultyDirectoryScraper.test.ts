@@ -144,7 +144,7 @@ describe('extractProfile', () => {
       researchDescription: 'Research on heart failure and cardiac remodeling mechanisms.',
       bio: 'Dr. Rivers received an MD from Yale School of Medicine.',
       labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
-      orcid: '0000-0002-1825-0097',
+      orcid: '0000-0002-1234-5677',
     });
     const profile = extractProfile(html, RIVERS);
     expect(profile?.name).toBe('Jordan Rivers');
@@ -155,7 +155,7 @@ describe('extractProfile', () => {
     expect(profile?.description).toContain('cardiac remodeling');
     expect(profile?.bio).toContain('Yale School of Medicine');
     expect(profile?.labUrl).toBe('https://riverslab.example.org');
-    expect(profile?.orcid).toBe('0000-0002-1825-0097');
+    expect(profile?.orcid).toBe('0000-0002-1234-5677');
   });
 
   it('ignores a departmental admin email and keeps no email when none is person-specific', () => {
