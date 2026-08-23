@@ -459,14 +459,15 @@ function nameFromLastCommaFirst(raw: string): string {
 export const ysphDirectoryExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const out: FacultyEntry[] = [];
-  $('.link-items-list__item a.hyperlink').each((_i, el) => {
+  $('section.generic-anchored-list .link-items-list__item a.hyperlink').each((_i, el) => {
     const link = $(el);
+    const href = link.attr('href') || '';
+    if (!/\/profile\//.test(href)) return;
     const raw = cleanText(link.text());
     if (!raw) return;
     const name = nameFromLastCommaFirst(raw);
     if (!name) return;
-    const href = link.attr('href') || '';
-    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    const profileUrl = absolutize(href, ctx.pageUrl);
     out.push({ name, profileUrl });
   });
   return out;
@@ -801,7 +802,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
   },
   {
     deptKey: 'ysph',
-    deptName: 'All departments (school-wide A-Z)',
+    deptName: 'Yale School of Public Health',
     schoolName: 'Yale School of Public Health',
     url: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
     paginated: false,

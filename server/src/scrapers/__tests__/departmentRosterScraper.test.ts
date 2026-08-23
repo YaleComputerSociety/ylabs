@@ -902,9 +902,28 @@ describe('ysphDirectoryExtractor', () => {
 
   it('ignores entries with no name text', () => {
     const html = `
-      <ul class="link-items-list">
-        <li class="link-items-list__item"><div><a href="/profile/empty-fixture/" class="hyperlink"></a></div></li>
-      </ul>
+      <section class="generic-anchored-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/profile/empty-fixture/" class="hyperlink"></a></div></li>
+        </ul>
+      </section>
+    `;
+    const out = ysphDirectoryExtractor(html, { pageUrl: 'https://ysph.yale.edu/x' });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores generic list links outside the directory section', () => {
+    const html = `
+      <footer>
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/about-us/" class="hyperlink">About Us</a></div></li>
+        </ul>
+      </footer>
+      <section class="generic-anchored-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/give/" class="hyperlink">Give Now</a></div></li>
+        </ul>
+      </section>
     `;
     const out = ysphDirectoryExtractor(html, { pageUrl: 'https://ysph.yale.edu/x' });
     expect(out).toEqual([]);

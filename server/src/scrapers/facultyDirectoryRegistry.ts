@@ -294,7 +294,7 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     status: 'covered',
     studentImpactTier: 4,
     coveredBy: ['dept-faculty-roster'],
-    approxFacultyCount: 300,
+    approxFacultyCount: 686,
     notes:
       'Covered via the dept-faculty-roster "ysph" config row (#641): the school-wide "Faculty Directory by Name" A-Z index renders all ~686 entries server-side on one page (no pagination), each linking to an official ysph.yale.edu/profile/<slug>/ page cited as the per-faculty source.',
   },
