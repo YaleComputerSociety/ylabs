@@ -52,8 +52,7 @@ const publicText = (value: unknown): string | undefined => {
   return text ? redactDirectContactInfo(text) : undefined;
 };
 
-const publicExcerpt = (value: unknown): string | undefined => {
-  const text = boundedString(value, MAX_ACCESS_SUMMARY_TEXT_LENGTH);
+const withoutRedactionMarkerSentences = (text: string | undefined): string | undefined => {
   if (!text) return undefined;
   const cleaned = sanitizeEvidenceExcerpt(text);
   return cleaned || undefined;
@@ -162,7 +161,7 @@ export async function listAccessSummariesForResearchEntities(
       evidence: entitySignals.slice(0, 5).map((signal) => ({
         signalType: boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         confidence: boundedString(signal.confidence, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
-        excerpt: publicExcerpt(signal.source?.excerpt),
+        excerpt: withoutRedactionMarkerSentences(publicText(signal.source?.excerpt)),
         sourceUrl: publicHttpUrl(signal.source?.url),
       })),
       signalTypes: Array.from(signalTypes),
