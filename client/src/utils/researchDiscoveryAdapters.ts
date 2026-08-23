@@ -264,6 +264,15 @@ const STOPWORDS = new Set([
 const uniq = (values: Array<string | undefined | null>): string[] =>
   Array.from(new Set(values.map((value) => (value || '').trim()).filter(Boolean)));
 
+const resolveEntitySchool = (entity: {
+  school?: string | null;
+  schools?: Array<string | undefined | null> | null;
+}): string => {
+  const scalar = (entity.school || '').trim();
+  if (scalar) return scalar;
+  return (entity.schools || []).map((value) => (value || '').trim()).find(Boolean) || '';
+};
+
 const normalizeContextText = (value?: string | null): string =>
   normalizeResearchInlineText(value);
 
@@ -462,7 +471,9 @@ export const buildWayInBadges = (
 
 export const buildResearchHomeContextLine = (entity: ResearchEntity | undefined): string => {
   if (!entity) return '';
-  return uniq([...getUniqueDepartmentLabels(entity.departments), entity.school]).slice(0, 3).join(' · ');
+  return uniq([...getUniqueDepartmentLabels(entity.departments), resolveEntitySchool(entity)])
+    .slice(0, 3)
+    .join(' · ');
 };
 
 export const buildResearchHomeEvidenceStatus = (
@@ -567,7 +578,7 @@ const buildProfileDiscoveryClusters = (
       researchAreas: entity.researchAreas,
       departments: entity.departments,
       sourceUrls: entity.sourceUrls,
-      school: entity.school,
+      school: resolveEntitySchool(entity),
     });
     const matchReason = entity.searchMatch?.reason || 'Yale research profile source.';
     const methodLabels = meaningfulMetadata(entity.searchMatch?.methods || []);
@@ -721,7 +732,7 @@ const identitiesFromResearchEntities = (
           name: entity.contactName || 'Unknown researcher',
           title: entity.contactRole || undefined,
           departments: entity.departments || [],
-          affiliations: uniq([entity.school, kindLabel(entity.kind)]),
+          affiliations: uniq([resolveEntitySchool(entity), kindLabel(entity.kind)]),
           netid,
           email: entity.contactEmail || undefined,
           profileUrl: netid ? `/profile/${netid}` : undefined,
