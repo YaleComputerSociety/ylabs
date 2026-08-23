@@ -93,7 +93,8 @@ export const approachHeadingLabel = (entity?: ResearchEntityCopyInput | null): s
 
 const facultyResearchLabelBase = (entity: ResearchEntityCopyInput): string =>
   String(entity.displayName || entity.name || '')
-    .replace(/\s+(?:Faculty Research|Lab|Laboratory)$/i, '')
+    .replace(/\s*[-–—]\s*Research$/i, '')
+    .replace(/\s+(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
 
 const toPossessiveName = (name: string): string => (name.endsWith('s') ? `${name}'` : `${name}'s`);
