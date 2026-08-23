@@ -9,11 +9,14 @@ import {
   buildFundingResearchEntityDedupePlan,
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildMultiPersonEntityQuarantine,
+  buildOrgNameResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  ORG_NAME_DEDUPE_ENTITY_TYPES,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
+  type OrgNameDedupeEntity,
   type ResearchEntityPiDedupeRow,
   type SameNameDifferentPersonQuarantine,
   selectCurrentMemberIdsToRetire,
@@ -64,6 +67,7 @@ export interface ResearchEntityPiDedupeArgs {
   fundingOnly: boolean;
   fullPlan: boolean;
   officialLabUrlOnly: boolean;
+  orgNameOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
   limit: number;
@@ -139,6 +143,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     fundingOnly: false,
     fullPlan: false,
     officialLabUrlOnly: false,
+    orgNameOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
     limit: 10000,
@@ -179,6 +184,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--official-lab-url-only') {
       args.officialLabUrlOnly = true;
+      continue;
+    }
+    if (arg === '--org-name-only') {
+      args.orgNameOnly = true;
       continue;
     }
     if (arg === '--reviewed-profile-area-only') {
@@ -1056,6 +1065,64 @@ async function loadOfficialLabUrlCandidateRows(limit: number) {
   );
 }
 
+async function loadOrgNameCandidateRows(limit: number): Promise<OrgNameDedupeEntity[]> {
+  return ResearchEntity.aggregate([
+    {
+      $match: {
+        archived: { $ne: true },
+        entityType: { $in: [...ORG_NAME_DEDUPE_ENTITY_TYPES] },
+        name: { $exists: true, $ne: '' },
+      },
+    },
+    {
+      $lookup: {
+        from: 'role_assignments',
+        let: { entityId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$target.id', '$$entityId'] },
+              'target.kind': 'RESEARCH_ENTITY',
+              state: { $ne: 'HISTORICAL' },
+              archived: { $ne: true },
+              personId: { $exists: true, $ne: null },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              memberCount: { $sum: 1 },
+              piCount: { $sum: { $cond: [{ $eq: ['$role', 'PI'] }, 1, 0] } },
+            },
+          },
+        ],
+        as: 'membership',
+      },
+    },
+    {
+      $project: {
+        id: { $toString: '$_id' },
+        slug: '$slug',
+        name: '$name',
+        displayName: '$displayName',
+        entityType: '$entityType',
+        websiteUrl: '$websiteUrl',
+        fullDescription: '$fullDescription',
+        shortDescription: '$shortDescription',
+        sourceUrls: '$sourceUrls',
+        departments: '$departments',
+        researchAreas: '$researchAreas',
+        memberCount: { $ifNull: [{ $arrayElemAt: ['$membership.memberCount', 0] }, 0] },
+        hasAttachedPi: {
+          $gt: [{ $ifNull: [{ $arrayElemAt: ['$membership.piCount', 0] }, 0] }, 0],
+        },
+      },
+    },
+    { $sort: { id: 1 } },
+    { $limit: limit },
+  ]).then((rows) => rows as OrgNameDedupeEntity[]);
+}
+
 async function loadDuplicateCurrentMemberRows(limit: number) {
   return RoleAssignment.aggregate([
     {
@@ -1708,6 +1775,7 @@ async function main() {
     fundingOnly,
     fullPlan,
     officialLabUrlOnly,
+    orgNameOnly,
     limit,
     maxApply,
     slug,
@@ -1731,10 +1799,14 @@ async function main() {
   });
   await mongoose.connect(process.env.MONGODBURL);
 
+  const usesNonPiLane = officialLabUrlOnly || orgNameOnly;
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
     : [];
-  const piRows: ResearchEntityPiDedupeRow[] = officialLabUrlOnly
+  const orgNameRows: OrgNameDedupeEntity[] = orgNameOnly
+    ? await loadOrgNameCandidateRows(limit)
+    : [];
+  const piRows: ResearchEntityPiDedupeRow[] = usesNonPiLane
     ? []
     : sharedPersonId
       ? await loadSamePiCandidateRows(limit, { includeRetiredMembers: true })
@@ -1742,7 +1814,7 @@ async function main() {
           includeNameOnly: !deleteDuplicates,
           includeRetiredPiLinks: deleteDuplicates,
         });
-  const rows = officialLabUrlOnly ? officialLabUrlRows : piRows;
+  const rows = officialLabUrlOnly ? officialLabUrlRows : orgNameOnly ? orgNameRows : piRows;
   const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
     ? buildSameNameDifferentPersonQuarantine(piRows)
     : [];
@@ -1752,11 +1824,13 @@ async function main() {
   const allPlan = dedupePlannedGroups(
     officialLabUrlOnly
       ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : sharedPersonId
-        ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
-        : fundingOnly
-          ? buildFundingResearchEntityDedupePlan(piRows)
-          : buildResearchEntityPiDedupePlan(piRows),
+      : orgNameOnly
+        ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
+        : sharedPersonId
+          ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+          : fundingOnly
+            ? buildFundingResearchEntityDedupePlan(piRows)
+            : buildResearchEntityPiDedupePlan(piRows),
   );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
@@ -1781,7 +1855,9 @@ async function main() {
         )
       : candidatePlan;
   const duplicateCurrentMembers =
-    acceptedDecisions || !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
+    acceptedDecisions ||
+    orgNameOnly ||
+    !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
       ? []
       : await loadDuplicateCurrentMemberRows(limit);
   const plannedDuplicateEntities = plan.reduce(
@@ -1844,6 +1920,7 @@ async function main() {
     duplicateDisposition: deleteDuplicates ? 'delete' : 'archive',
     fundingOnly,
     officialLabUrlOnly,
+    orgNameOnly,
     sharedPersonId,
     candidateGroups: rows.length,
     filteredBySlug: slug || null,

@@ -176,6 +176,75 @@ export const isRawDataApiSourceUrl = (url?: string | null): boolean => {
   }
 };
 
+// Kept in sync with the server-side GRANT_OR_IDENTIFIER_HOST set in
+// scripts/backfillResearchEntityWebsiteUrlsCore.ts; changing one requires updating the other.
+const IDENTIFIER_OR_GRANT_DB_HOST =
+  /(^|\.)(reporter\.nih\.gov|nih\.gov|nsf\.gov|orcid\.org|scholar\.google\.com|doi\.org)$/i;
+
+export const isIdentifierOrGrantDbSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
+    return IDENTIFIER_OR_GRANT_DB_HOST.test(host);
+  } catch {
+    return false;
+  }
+};
+
+const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|$)/i;
+
+export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
+  PROFILE_LIKE_PATH.test(url || '');
+
+const ORG_ENGAGEMENT_PATH =
+  /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|involvement|participate|membership|become[-_]a[-_]member|connect|contact(?:[-_]us)?|volunteer|opportunities)([-/]|$)/i;
+
+export const isOrgEngagementSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+  if (isProfileLikeSourceUrl(normalized)) return false;
+
+  try {
+    const path = new URL(normalized).pathname.toLowerCase().replace(/\/+$/, '');
+    return ORG_ENGAGEMENT_PATH.test(path);
+  } catch {
+    return false;
+  }
+};
+
+const ORG_UMBRELLA_ENTITY_TYPES = new Set(['CENTER', 'INSTITUTE', 'INITIATIVE']);
+
+export const resolveOutreachOfficialSource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
+  entityType?: string,
+): ResearchDetailSource | undefined => {
+  const claimedDestinations = new Set(
+    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
+  );
+
+  const eligible = sources.filter((source) => {
+    if (source.isLikelyUnavailable) return false;
+    if (!safeHttpUrl(source.url)) return false;
+    if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
+    if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
+    const destination = normalizeActionDestination(source.url);
+    return Boolean(destination) && !claimedDestinations.has(destination);
+  });
+
+  if (eligible.length === 0) return undefined;
+
+  if (entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entityType)) {
+    const engagementSource = eligible.find((source) => isOrgEngagementSourceUrl(source.url));
+    if (engagementSource) return engagementSource;
+  }
+
+  return eligible[0];
+};
+
 const DRUPAL_FACET_QUERY = /[?&]f(?:\[|%5b)\d+(?:\]|%5d)=/i;
 
 const SECTION_INDEX_ROOT_PATH =
