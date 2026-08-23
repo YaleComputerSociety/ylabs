@@ -733,4 +733,117 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(callCardLLM).not.toHaveBeenCalled();
     expect(emitted.some((obs) => obs.field === 'shortDescription')).toBe(true);
   });
+
+  it('drops a different-professor people page from an entity candidate URL list', () => {
+    const candidates = candidateDescriptionLabsFromDocs([
+      {
+        _id: 'entity-brown',
+        slug: 'dept-physics-charles-brown',
+        name: 'Charles Brown Lab',
+        websiteUrl: 'https://brownlab.yale.edu/',
+        sourceUrls: [
+          'https://physics.yale.edu/people/keith-baker',
+          'https://brownlab.yale.edu/',
+        ],
+      },
+    ]);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].sourceUrls).toEqual(['https://brownlab.yale.edu/']);
+    expect(candidates[0].sourceUrls).not.toContain('https://physics.yale.edu/people/keith-baker');
+  });
+
+  it('keeps the entity when its own name-shaped people page corroborates it', () => {
+    const candidates = candidateDescriptionLabsFromDocs([
+      {
+        _id: 'entity-baker',
+        slug: 'baker-lab-okb2',
+        name: 'Baker Lab',
+        websiteUrl: 'https://physics.yale.edu/people/keith-baker',
+        sourceUrls: ['https://physics.yale.edu/people/keith-baker'],
+      },
+    ]);
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        _id: 'entity-baker',
+        websiteUrl: 'https://physics.yale.edu/people/keith-baker',
+      }),
+    ]);
+  });
+
+  it('never fetches or attributes a different-professor page keyed onto an entity', async () => {
+    const { ctx, emitted } = makeContext();
+    ctx.options.only = ['dept-physics-charles-brown'];
+    ctx.options.limit = 1;
+    const fetchPage = vi.fn(async (url: string) => ({
+      url,
+      html: '<main><p>The Brown Research Group studies many-body quantum physics, quasicrystals, cavity quantum electrodynamics, and Rydberg atoms using atomic physics.</p></main>',
+    }));
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-brown',
+          slug: 'dept-physics-charles-brown',
+          name: 'Charles Brown Lab',
+          websiteUrl: 'https://brownlab.yale.edu/',
+          sourceUrls: [
+            'https://brownlab.yale.edu/',
+            'https://physics.yale.edu/people/keith-baker',
+          ],
+        },
+      ],
+      fetchPage,
+      callLLM: vi.fn().mockResolvedValue({
+        fullDescription:
+          'The Brown Research Group studies many-body quantum physics, quasicrystals, cavity quantum electrodynamics, and Rydberg atoms using atomic physics.',
+        shortDescription:
+          'Studies many-body quantum physics, quasicrystals, cavity QED, and Rydberg atoms.',
+        topics: [],
+        methods: [],
+      } satisfies DescriptionExtraction),
+    });
+
+    await scraper.run(ctx);
+
+    for (const call of fetchPage.mock.calls) {
+      expect(call[0]).not.toContain('keith-baker');
+    }
+    expect(emitted.every((obs) => obs.sourceUrl !== 'https://physics.yale.edu/people/keith-baker')).toBe(
+      true,
+    );
+  });
+
+  it('skips emission when a source redirects to a different professor page', async () => {
+    const { ctx, emitted, logs } = makeContext();
+    ctx.options.only = ['dept-physics-charles-brown'];
+    ctx.options.limit = 1;
+    const fetchPage = vi.fn(async () => ({
+      url: 'https://physics.yale.edu/people/keith-baker',
+      html: '<main><p>Professor Baker studies experimental particle physics at the Large Hadron Collider in the ATLAS collaboration and beyond the Standard Model.</p></main>',
+    }));
+    const callLLM = vi.fn();
+    const scraper = new LabMicrositeDescriptionLLMExtractor({
+      apiKey: 'test-key',
+      labFinder: async () => [
+        {
+          _id: 'entity-brown',
+          slug: 'dept-physics-charles-brown',
+          name: 'Charles Brown Lab',
+          websiteUrl: 'https://brownlab.yale.edu/',
+          sourceUrls: ['https://brownlab.yale.edu/'],
+        },
+      ],
+      fetchPage,
+      callLLM,
+    });
+
+    const result = await scraper.run(ctx);
+
+    expect(result).toMatchObject({ observationCount: 0, entitiesObserved: 0 });
+    expect(callLLM).not.toHaveBeenCalled();
+    expect(emitted).toHaveLength(0);
+    expect(logs.some((line) => /names a different person/.test(line))).toBe(true);
+  });
 });
