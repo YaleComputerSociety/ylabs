@@ -421,6 +421,38 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('Reach-out plausible')).toBeNull();
   });
 
+  it('uses the entity department in the no-direct-link CTA instead of the raw HR org-code', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+        departments: ['Chemistry'],
+        school: 'Faculty of Arts and Sciences',
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.davis',
+            fname: 'Caitlin',
+            lname: 'Davis',
+            displayName: 'Caitlin Davis',
+            primaryDepartment: 'FASCHM Administration',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(
+      screen.getByText(/does not have a direct link for Caitlin Davis \(Chemistry · Faculty of Arts and Sciences\)/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/FASCHM Administration/)).toBeNull();
+  });
+
   it('prefers an available official source over the generic Yale Directory when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,

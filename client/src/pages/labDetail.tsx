@@ -55,6 +55,7 @@ import {
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { useConfig } from '../hooks/useConfig';
 import UserContext from '../contexts/UserContext';
 import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
 import {
@@ -483,12 +484,9 @@ const DecisionSummary = ({
       .filter(Boolean)
       .join(' ')
       .trim();
+  const { departments: departmentTable } = useConfig();
   const piAffiliation = [
-    (
-      principalInvestigator?.user?.primaryDepartment ||
-      principalInvestigator?.user?.primary_department ||
-      ''
-    ).trim(),
+    getUniqueDepartmentLabels(group.departments, departmentTable)[0] || '',
     (group.school || '').trim(),
   ]
     .filter(Boolean)
