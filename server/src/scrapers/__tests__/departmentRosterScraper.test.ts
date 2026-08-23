@@ -24,6 +24,7 @@ import {
   psychExtractor,
   viewsRowPersonExtractor,
   jacksonPersonCardExtractor,
+  ysphDirectoryExtractor,
   csJsRenderedStub,
   csRenderedExtractor,
   csFacultyDataExtractor,
@@ -368,6 +369,30 @@ const JACKSON_PERSON_CARD_HTML = `
       </div>
     </div>
   </div>
+</body></html>
+`;
+
+const YSPH_DIRECTORY_HTML = `
+<html><body>
+  <section class="generic-anchored-list" aria-label="Faculty Directory by Name list of links">
+    <div class="categorized-list-item">
+      <h2 class="categorized-list-item__title" id="A">A</h2>
+      <div class="categorized-list-item__inner-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item" data-columns="4"><div><a href="/profile/jordan-alvarez-fixture/" tabindex="0" class="hyperlink">Alvarez, Jordan</a></div></li>
+          <li class="link-items-list__item" data-columns="4"><div><a href="/profile/priya-anand-fixture/" tabindex="0" class="hyperlink">Anand, Priya</a></div></li>
+        </ul>
+      </div>
+    </div>
+    <div class="categorized-list-item">
+      <h2 class="categorized-list-item__title" id="B">B</h2>
+      <div class="categorized-list-item__inner-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item" data-columns="4"><div><a href="/profile/morgan-brooks-fixture/" tabindex="0" class="hyperlink">Brooks, Morgan</a></div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
 </body></html>
 `;
 
@@ -850,6 +875,58 @@ describe('jacksonPersonCardExtractor', () => {
         imageUrl: 'https://jackson.yale.edu/wp-content/uploads/2026/05/Eric-Braverman.jpg',
       },
     ]);
+  });
+});
+
+describe('ysphDirectoryExtractor', () => {
+  it('extracts "Last, First" A-Z directory entries and reorders to "First Last"', () => {
+    const out = ysphDirectoryExtractor(YSPH_DIRECTORY_HTML, {
+      pageUrl: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Jordan Alvarez',
+        profileUrl: 'https://ysph.yale.edu/profile/jordan-alvarez-fixture/',
+      },
+      {
+        name: 'Priya Anand',
+        profileUrl: 'https://ysph.yale.edu/profile/priya-anand-fixture/',
+      },
+      {
+        name: 'Morgan Brooks',
+        profileUrl: 'https://ysph.yale.edu/profile/morgan-brooks-fixture/',
+      },
+    ]);
+  });
+
+  it('ignores entries with no name text', () => {
+    const html = `
+      <section class="generic-anchored-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/profile/empty-fixture/" class="hyperlink"></a></div></li>
+        </ul>
+      </section>
+    `;
+    const out = ysphDirectoryExtractor(html, { pageUrl: 'https://ysph.yale.edu/x' });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores generic list links outside the directory section', () => {
+    const html = `
+      <footer>
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/about-us/" class="hyperlink">About Us</a></div></li>
+        </ul>
+      </footer>
+      <section class="generic-anchored-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/give/" class="hyperlink">Give Now</a></div></li>
+        </ul>
+      </section>
+    `;
+    const out = ysphDirectoryExtractor(html, { pageUrl: 'https://ysph.yale.edu/x' });
+    expect(out).toEqual([]);
   });
 });
 
