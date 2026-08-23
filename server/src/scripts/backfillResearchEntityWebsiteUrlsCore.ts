@@ -1,5 +1,6 @@
 import {
   isBoilerplatePlatformHostUrl,
+  isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -67,6 +68,10 @@ export function isBoilerplateHostWebsiteUrl(value: unknown): boolean {
   return isBoilerplatePlatformHostUrl(value);
 }
 
+export function isFileShareOrDocumentWebsiteUrl(value: unknown): boolean {
+  return isFileShareOrDocumentUrl(value);
+}
+
 export function isPromotableWebsiteUrl(value: unknown): boolean {
   return (
     isPublicHttpUrl(value) &&
@@ -74,7 +79,8 @@ export function isPromotableWebsiteUrl(value: unknown): boolean {
     !isContentPageUrl(value) &&
     !isProfilePageWebsiteUrl(value) &&
     !isListingPageWebsiteUrl(value) &&
-    !isBoilerplateHostWebsiteUrl(value)
+    !isBoilerplateHostWebsiteUrl(value) &&
+    !isFileShareOrDocumentWebsiteUrl(value)
   );
 }
 
@@ -103,12 +109,15 @@ export type WebsiteUrlBackfillResolution =
  * listing pages (A-Z index, `?page=N` paginated listings, faceted/section-index
  * roots, bare `/people`, `/people/faculty`, `/faculty` roots), and generic
  * CMS/platform boilerplate hosts (e.g. `wordpress.org` "Powered by" footer links)
- * are never promoted, so a listing, profile, or boilerplate page can never beat a
- * real lab site. An entity whose existing `websiteUrl` is a listing/index page
- * (including `/people/members`, `/people/index`, and other people-roster/index
- * subpages) or a boilerplate platform host is corrected to a genuine research home /
- * lab site when one exists in its evidence, and otherwise cleared (fail closed to no
- * website rather than an off-site or directory-index link). A single-person
+ * and file-share/direct-document hosts (Google Drive/Docs, Dropbox, Box, OneDrive,
+ * bare `.pdf`/`.doc(x)`/`.ppt(x)`/`.xls(x)` links) are never promoted, so a listing,
+ * profile, boilerplate, or non-navigable file page can never beat a real lab site.
+ * An entity whose existing `websiteUrl` is a listing/index page (including
+ * `/people/members`, `/people/index`, and other people-roster/index subpages), a
+ * boilerplate platform host, or a file-share/document link is corrected to a genuine
+ * research home / lab site when one exists in its evidence, and otherwise cleared
+ * (fail closed to no website rather than an off-site, directory-index, or dead/non-navigable
+ * file link). A single-person
  * profile-page `websiteUrl` is corrected to a research home when one exists and
  * otherwise kept as a PI fallback. Any other usable `websiteUrl` is kept.
  * When no usable `websiteUrl` exists, the first promotable candidate (`website`
@@ -127,6 +136,10 @@ export function resolveBackfillWebsiteUrl(
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
     if (isBoilerplateHostWebsiteUrl(entity.websiteUrl)) {
+      const researchHome = selectResearchHomeWebsiteUrl(candidates);
+      return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
+    }
+    if (isFileShareOrDocumentWebsiteUrl(entity.websiteUrl)) {
       const researchHome = selectResearchHomeWebsiteUrl(candidates);
       return researchHome ? { action: 'set', websiteUrl: researchHome } : { action: 'clear' };
     }
