@@ -858,9 +858,7 @@ describe('computeResearchEntityStudentVisibility', () => {
         activeAtYaleCache: true,
         studentVisibilityOverrideTier: 'student_ready',
       },
-      leadMembers: [
-        { role: 'pi', userId: 'jane-smith', user: { fname: 'Jane', lname: 'Smith' } },
-      ],
+      leadMembers: [{ role: 'pi', userId: 'jane-smith', user: { fname: 'Jane', lname: 'Smith' } }],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
     });
@@ -905,6 +903,8 @@ describe('computeProgramStudentVisibility', () => {
     const result = computeProgramStudentVisibility({
       title: 'STARS Summer Research Program',
       studentFacingCategory: 'Structured summer program',
+      summary:
+        'A ten-week paid summer research program placing undergraduates in Yale STEM laboratories.',
       sourceUrl: 'https://science.yalecollege.yale.edu/stars',
       applicationLink: 'https://apply.yale.edu/stars',
       undergraduateOnly: true,
@@ -972,6 +972,8 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Senior Research Fellowship',
       studentFacingCategory: 'Senior research funding',
       programKind: 'FELLOWSHIP_FUNDING',
+      summary:
+        'Funds senior undergraduates pursuing an independent research project with a faculty mentor.',
       sourceUrl: 'https://yalecollege.yale.edu/funding/senior-research-fellowship',
       applicationLink: 'https://apply.yale.edu/senior-research-fellowship',
       undergraduateOnly: true,
@@ -980,6 +982,8 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Research Travel Grant',
       studentFacingCategory: 'Research travel funding',
       programKind: 'TRAVEL_RESEARCH_GRANT',
+      summary:
+        'Supports undergraduate travel to archives, field sites, and conferences for thesis research.',
       sourceUrl: 'https://yalecollege.yale.edu/travel-research',
       applicationLink: 'https://apply.yale.edu/travel-research',
       undergraduateOnly: true,
@@ -988,6 +992,7 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Senior Thesis Funding',
       studentFacingCategory: 'Senior research funding',
       programKind: 'SENIOR_THESIS_FUNDING',
+      summary: 'Covers materials and travel costs for a required senior thesis research project.',
       sourceUrl: 'https://yalecollege.yale.edu/senior-thesis-funding',
       applicationLink: 'https://apply.yale.edu/senior-thesis',
       undergraduateOnly: true,
@@ -1006,6 +1011,8 @@ describe('computeProgramStudentVisibility', () => {
       studentFacingCategory: 'Structured summer program',
       programKind: 'STRUCTURED_PROGRAM',
       entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      summary:
+        'A ten-week paid summer research program placing undergraduates in Yale STEM laboratories.',
       sourceUrl: 'https://science.yalecollege.yale.edu/stars',
       applicationLink: 'https://apply.yale.edu/stars',
       undergraduateOnly: true,
@@ -1016,6 +1023,8 @@ describe('computeProgramStudentVisibility', () => {
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
       mentorMatching: true,
+      summary:
+        'Pairs undergraduates with faculty mentors for a funded year-long research collaboration.',
       sourceUrl: 'https://science.yalecollege.yale.edu/mentor-match',
       applicationLink: 'https://apply.yale.edu/mentor-match',
       undergraduateOnly: true,
@@ -1032,6 +1041,8 @@ describe('computeProgramStudentVisibility', () => {
       title: 'Graduate Dissertation Research Fellowship',
       studentFacingCategory: 'Fellowship funding',
       programKind: 'FELLOWSHIP_FUNDING',
+      summary:
+        'Provides a stipend for doctoral candidates conducting dissertation research away from campus.',
       sourceUrl: 'https://gsas.yale.edu/funding/dissertation-research-fellowship',
       applicationLink: 'https://apply.yale.edu/dissertation-research-fellowship',
       undergraduateOnly: false,
@@ -1067,6 +1078,54 @@ describe('computeProgramStudentVisibility', () => {
 
     expect(result.tier).toBe('suppressed');
     expect(result.reasons).toContain('not_undergraduate_relevant');
+  });
+
+  it('demotes an otherwise student-ready program with no description to limited_but_safe', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Class of 1960 Summer Traveling Fellowship',
+      studentFacingCategory: 'Fellowship funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/class-of-1960-traveling-fellowship',
+      applicationLink: 'https://apply.yale.edu/class-of-1960-traveling-fellowship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
+  });
+
+  it('demotes an otherwise student-ready program with only a thin description to limited_but_safe', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Summer Research Internship',
+      studentFacingCategory: 'Structured summer program',
+      programKind: 'STRUCTURED_PROGRAM',
+      summary: 'Research internship program.',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/summer-research-internship',
+      applicationLink: 'https://apply.yale.edu/summer-research-internship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('thin_description');
+    expect(result.reasons).not.toContain('missing_description');
+  });
+
+  it('promotes a program to student_ready when the description lives on the description field', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Summer Research Internship',
+      studentFacingCategory: 'Structured summer program',
+      programKind: 'STRUCTURED_PROGRAM',
+      description:
+        'Places undergraduates in funded summer research internships across Yale science departments.',
+      sourceUrl: 'https://yalecollege.yale.edu/funding/summer-research-internship',
+      applicationLink: 'https://apply.yale.edu/summer-research-internship',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
   });
 
   it('holds a lead-requiring lab with no attached PI for review even under a student-ready override', () => {
