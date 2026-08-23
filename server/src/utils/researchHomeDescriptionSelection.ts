@@ -4,6 +4,7 @@ import {
   type DescriptionQualityFlag,
 } from './researchEntityDescriptionQuality';
 import { isDirectoryIndexChromeText } from './researchEntityDescriptionText';
+import { containsHtmlTagMarkup } from './descriptionHygiene';
 
 export type DescriptionEntityKind = 'organization' | 'person';
 
@@ -25,6 +26,7 @@ function isDownstreamUsefulDescription(text: string): boolean {
 
 function describesResearchHome(text: string): boolean {
   return (
+    !containsHtmlTagMarkup(text) &&
     !isDirectoryIndexChromeText(text) &&
     isDownstreamUsefulDescription(text) &&
     describesResearchFocus(text)

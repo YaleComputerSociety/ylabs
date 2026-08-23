@@ -79,10 +79,25 @@ describe('selectResearchHomeDescription', () => {
     );
   });
 
+  it('never selects a candidate carrying raw HTML citation markup (#909)', () => {
+    const CITATION_MARKUP_BLOCK =
+      'Doe A, Roe B, <span data-id="10001">Ng A</span>, ' +
+      '<strong data-id="20002">Park M</strong>. ' +
+      '<span data-type="title">Bridging the gap between structure and function in tidal systems.</span>';
+    expect(
+      selectResearchHomeDescription([CITATION_MARKUP_BLOCK], { kind: 'organization' }),
+    ).toBeNull();
+    expect(selectResearchHomeDescription([CITATION_MARKUP_BLOCK, LAB_RESEARCH_BLOCK])).toBe(
+      LAB_RESEARCH_BLOCK,
+    );
+  });
+
   it('never selects A-Z directory-index boilerplate as a description (#517)', () => {
     const A_TO_Z_INDEX_BLOCK =
       'This A–Z index lists Yale School of Medicine lab websites in one place, making it easy to find a specific lab, research group, or program site. Browse alphabetically or use your browser search to quickly locate a lab by name.';
-    expect(selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK], { kind: 'organization' })).toBeNull();
+    expect(
+      selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK], { kind: 'organization' }),
+    ).toBeNull();
     expect(selectResearchHomeDescription([A_TO_Z_INDEX_BLOCK, LAB_RESEARCH_BLOCK])).toBe(
       LAB_RESEARCH_BLOCK,
     );

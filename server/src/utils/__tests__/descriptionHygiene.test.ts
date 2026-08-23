@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampDescriptionLength,
   collapseDuplicatedProseBlock,
+  containsHtmlTagMarkup,
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
   isCurationRationaleText,
@@ -399,6 +400,57 @@ describe('descriptionHygiene bare office/street address residue detection (#798)
   });
 });
 
+describe('descriptionHygiene raw HTML-markup fail-closed (#909)', () => {
+  const CITATION_MARKUP_FULL =
+    'Doe A, Roe B, Smith C, <span data-id="10001">Ng A</span>, Lee J, ' +
+    '<strong data-id="20002">Park M</strong>, Gomez P. ' +
+    '<span data-type="title">Bridging the gap between structure and function.</span> ' +
+    'Journal of Synthetic Studies. 2024.';
+  const CITATION_MARKUP_SHORT =
+    '<span data-type="title">A synthetic study of an imagined pathway</span>';
+  const ANCHOR_MARKUP =
+    'Our work is described further in <a href="https://example.edu/paper">this article</a> ' +
+    'and covers imagined signaling pathways across model systems in depth.';
+  const CLEAN_PROSE =
+    'Our research interests include imagined repair pathways, model therapy, tumor dynamics, ' +
+    'and synthetic editing for gene therapy in reconstituted systems.';
+  const MATH_PROSE =
+    'We study reaction regimes where the rate expression < 0.05 dominates and yields > 100 units ' +
+    'accumulate over long incubation windows in reconstituted assays.';
+  const UNSPACED_INEQUALITY_PROSE =
+    'We characterize regimes where 0<x and n>100, model p<q dynamics with thresholds q>r, ' +
+    'and track how signals scale as t<tau for stimuli s>0 across reconstituted assays.';
+
+  it('detects closing tags, attributed opening tags, and anchor markup', () => {
+    expect(containsHtmlTagMarkup(CITATION_MARKUP_FULL)).toBe(true);
+    expect(containsHtmlTagMarkup(CITATION_MARKUP_SHORT)).toBe(true);
+    expect(containsHtmlTagMarkup(ANCHOR_MARKUP)).toBe(true);
+  });
+
+  it('does not flag clean prose or bare angle-bracket math comparisons', () => {
+    expect(containsHtmlTagMarkup(CLEAN_PROSE)).toBe(false);
+    expect(containsHtmlTagMarkup(MATH_PROSE)).toBe(false);
+    expect(containsHtmlTagMarkup(UNSPACED_INEQUALITY_PROSE)).toBe(false);
+  });
+
+  it('fails the fullDescription closed to empty on a citation-widget markup dump', () => {
+    expect(sanitizeResearchEntityDescription(CITATION_MARKUP_FULL)).toBe('');
+    expect(sanitizeResearchEntityDescription(ANCHOR_MARKUP)).toBe('');
+  });
+
+  it('fails the shortDescription closed to empty on a bare citation-title span', () => {
+    expect(sanitizeResearchEntityShortDescription(CITATION_MARKUP_SHORT)).toBe('');
+  });
+
+  it('keeps clean prose that only uses angle brackets as math comparisons', () => {
+    expect(sanitizeResearchEntityDescription(MATH_PROSE)).toBe(MATH_PROSE);
+    expect(sanitizeResearchEntityDescription(CLEAN_PROSE)).toBe(CLEAN_PROSE);
+    expect(sanitizeResearchEntityDescription(UNSPACED_INEQUALITY_PROSE)).toBe(
+      UNSPACED_INEQUALITY_PROSE,
+    );
+  });
+});
+
 describe('descriptionHygiene trailing office-address strip (#798)', () => {
   const BIO_WITH_TRAILING_ADDRESS =
     'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy. 266 Whitney Avenue, Fl 2, Rm 234';
@@ -534,14 +586,18 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
   });
 
   it('fails closed on a Studies-template blurb that leaked a research-areas heading (#816)', () => {
-    expect(isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.')).toBe(
-      true,
-    );
-    expect(sanitizeResearchEntityShortDescription('Studies soft robotics, actuators, and research areas:.')).toBe(
-      '',
-    );
     expect(
-      sanitizeResearchEntityShortDescription('Research fields include ecology, evolution, and research interests:.'),
+      isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.'),
+    ).toBe(true);
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies soft robotics, actuators, and research areas:.',
+      ),
+    ).toBe('');
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Research fields include ecology, evolution, and research interests:.',
+      ),
     ).toBe('');
     expect(sanitizeResearchEntityShortDescription('Studies research topics:')).toBe('');
   });
