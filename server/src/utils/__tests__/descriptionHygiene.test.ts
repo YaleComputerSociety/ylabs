@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  clampDescriptionLength,
+  isCurationRationaleText,
   isFaqDumpText,
   isFormFieldDumpText,
   isNavigationDumpText,
   isRosterShapedText,
   sanitizeCatalogDescription,
   stripCatalogChrome,
+  stripRedactionPlaceholders,
 } from '../descriptionHygiene';
 
 const SYNTHETIC_ROSTER = [
@@ -109,5 +112,86 @@ describe('descriptionHygiene', () => {
       'This award honors Robin Sage, a longtime supporter of undergraduate research at the university.';
     expect(isRosterShapedText(blurb)).toBe(false);
     expect(sanitizeCatalogDescription(blurb)).toBe(blurb);
+  });
+});
+
+const CURATION_RATIONALE_DESCRIPTIONS = [
+  'The REEESNe Student Internship and Research Grant has a strong official Yale source, clear student audience, and source-backed internship/research use. It is safe to show prominently when current cycle details are present.',
+  'The Herbert Scarf Summer Research Opportunities in Economics are source-backed Yale Economics summer research placements. The known source documents a current/recurring project list and faculty-mentored research structure, but operators should refresh cycle dates each year.',
+  'The John E. Linck and Alanne Headland Linck Fellowship is a source-backed residential college award. It can support research-adjacent student work, but it should not be described as a research placement or research home.',
+  'The Horowitz/Fischer Judaica project funds are source-backed as project funding rather than a research home. Keep public copy restrained until a direct current award page is attached.',
+  'The Program in Grand Strategy fellowship record is source-backed but broad. Treat it as a restrained program/funding route until a more specific current fellowship page is attached.',
+];
+
+describe('descriptionHygiene curation-rationale fail-closed (#671)', () => {
+  it.each(CURATION_RATIONALE_DESCRIPTIONS)(
+    'flags reviewer-rationale prose and rejects it: %s',
+    (description) => {
+      expect(isCurationRationaleText(description)).toBe(true);
+      expect(sanitizeCatalogDescription(description)).toBe('');
+    },
+  );
+
+  it('keeps a genuine student-facing program description', () => {
+    const clean =
+      'The Herbert Scarf program places undergraduates in faculty-mentored economics research each summer. Students receive a stipend and present their findings at a fall symposium.';
+    expect(isCurationRationaleText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
+  it('removes an [email redacted] token embedded after a connective', () => {
+    const text =
+      'Submit all materials to the YSEA undergraduate grants committee at [email redacted].';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).toBe('Submit all materials to the YSEA undergraduate grants committee.');
+  });
+
+  it('removes an [email redacted] token after a colon', () => {
+    const text = 'Confirmation should be sent to: [email redacted]';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).toBe('Confirmation should be sent');
+  });
+
+  it('leaves the redaction token in place inside sanitizeCatalogDescription (read-time contract)', () => {
+    const text =
+      'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].';
+    expect(sanitizeCatalogDescription(text)).toBe(text);
+  });
+
+  it('removes the token when stripRedactionPlaceholders is applied at rest', () => {
+    const text =
+      'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).toBe('The grant supports undergraduate research each summer. Questions can be directed.');
+  });
+});
+
+describe('descriptionHygiene word-boundary clamp (#671)', () => {
+  it('leaves text at or under the cap unchanged', () => {
+    const short = 'A concise, complete program description.';
+    expect(clampDescriptionLength(short, 2000)).toBe(short);
+  });
+
+  it('clamps to the last complete sentence instead of cutting mid-word', () => {
+    const body = `${'The program pairs undergraduates with faculty mentors for original research. '.repeat(
+      40,
+    )}Applicants identify up to three potential mentors before the deadline`;
+    const clamped = clampDescriptionLength(body, 2000);
+    expect(clamped.length).toBeLessThanOrEqual(2000);
+    expect(clamped.endsWith('.')).toBe(true);
+    expect(clamped).not.toMatch(/Applicants identify up$/);
+  });
+
+  it('falls back to a word boundary with an ellipsis when no sentence ends in the tail', () => {
+    const body = `Introduction ${'programresearchmentorship '.repeat(120)}befo`;
+    const clamped = clampDescriptionLength(body, 2000);
+    expect(clamped.length).toBeLessThanOrEqual(2001);
+    expect(clamped.endsWith('…')).toBe(true);
+    expect(/\S…$/.test(clamped)).toBe(true);
   });
 });

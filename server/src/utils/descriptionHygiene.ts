@@ -49,6 +49,17 @@ export function stripLeadingSectionHeadingChrome(sentence: string): string {
   return normalizeHygieneWhitespace(sentence.replace(leadingSectionHeadingPattern, ''));
 }
 
+const redactionPlaceholderPattern =
+  /\s*(?:\b(?:at|to|via|contact(?:ed)?|email(?:ed)?|reach(?:ed)?(?:\s+out)?|sent)\b\s*)?[:-]?\s*\[(?:email|phone) redacted\]/gi;
+
+export function stripRedactionPlaceholders(text: string): string {
+  return normalizeHygieneWhitespace(
+    String(text || '')
+      .replace(redactionPlaceholderPattern, ' ')
+      .replace(/\s+([.,;:!?])/g, '$1'),
+  );
+}
+
 const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\$\(document\)\.ready\([\s\S]*?\}\s*\)\s*;?/gi,
   /\$\([^)]*\)[^;{}]*\{[\s\S]*?\}\s*\)?\s*;?/g,
@@ -142,10 +153,66 @@ export function isFormFieldDumpText(text: string): boolean {
   return countMatches(normalized, formFieldLabelPattern) >= 4;
 }
 
+const CURATION_RATIONALE_PATTERNS: RegExp[] = [
+  /\bsource-backed\b/i,
+  /\bsafe to show\b/i,
+  /\bshow (?:it )?prominently\b/i,
+  /\bpublic copy\b/i,
+  /\boperators?\s+should\b/i,
+  /\bshould not be described as\b/i,
+  /\btreat it as (?:a |an )?(?:restrained|broad)\b/i,
+  /\buntil a (?:more specific )?(?:current )?(?:award|fellowship|program|funding) page is attached\b/i,
+  /\bkeep public copy restrained\b/i,
+  /\bclear student audience\b/i,
+];
+
+/**
+ * Internal curation / reviewer-rationale prose: an LLM or operator suitability
+ * assessment written *about the record* ("is source-backed", "safe to show
+ * prominently", "operators should refresh", "keep public copy restrained until
+ * ... is attached") instead of a student-facing description of the program.
+ * These phrases are internal review vocabulary that never appears in genuine
+ * source prose, so a single marker is enough to fail closed (#671).
+ */
+export function isCurationRationaleText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return CURATION_RATIONALE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function lastSentenceBoundary(text: string): number {
+  const matches = [...text.matchAll(/[.!?]["')\]]?(?=\s|$)/g)];
+  if (matches.length === 0) return -1;
+  const last = matches[matches.length - 1];
+  return (last.index ?? 0) + last[0].length;
+}
+
+/**
+ * Clamp an over-long description to a complete sentence when one is available
+ * in the tail, otherwise to a word boundary with an ellipsis, so stored prose
+ * is never cut mid-word (#671). Shorter text is returned unchanged.
+ */
+export function clampDescriptionLength(text: string, maxLength = 2000): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (value.length <= maxLength) return value;
+  const window = value.slice(0, maxLength);
+  const sentenceEnd = lastSentenceBoundary(window);
+  if (sentenceEnd >= maxLength * 0.6) return window.slice(0, sentenceEnd).trim();
+  const lastSpace = window.slice(0, maxLength).lastIndexOf(' ');
+  const cut = lastSpace > 0 ? window.slice(0, lastSpace) : window.slice(0, maxLength);
+  return `${cut.trim()}…`;
+}
+
 /**
  * Clean a scraped catalog description: strip chrome, then fail closed to an
  * empty string when the remainder is roster/PII-shaped, a navigation dump, an
- * FAQ/Q&A dump, or an eligibility-form label dump.
+ * FAQ/Q&A dump, an eligibility-form label dump, or internal
+ * curation/reviewer-rationale prose.
+ *
+ * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
+ * intended safe rendering of contact info at read time and are left in place
+ * here; stored prose that reads awkwardly around a token is cleaned at rest by
+ * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
   const stripped = stripCatalogChrome(text);
@@ -154,7 +221,8 @@ export function sanitizeCatalogDescription(text: string): string {
     isRosterShapedText(stripped) ||
     isNavigationDumpText(stripped) ||
     isFaqDumpText(stripped) ||
-    isFormFieldDumpText(stripped)
+    isFormFieldDumpText(stripped) ||
+    isCurationRationaleText(stripped)
   ) {
     return '';
   }
