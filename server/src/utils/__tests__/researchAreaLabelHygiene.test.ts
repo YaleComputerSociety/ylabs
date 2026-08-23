@@ -11,9 +11,9 @@ describe('stripProfileRoleLabelSuffix', () => {
   it('removes a glued YSM Researcher role label and keeps the topic', () => {
     expect(stripProfileRoleLabelSuffix('MedicareYSM Researcher')).toBe('Medicare');
     expect(stripProfileRoleLabelSuffix('Sarcoma, KaposiYSM Researcher')).toBe('Sarcoma, Kaposi');
-    expect(stripProfileRoleLabelSuffix('Demyelinating Autoimmune Diseases, CNSYSM Researcher')).toBe(
-      'Demyelinating Autoimmune Diseases, CNS',
-    );
+    expect(
+      stripProfileRoleLabelSuffix('Demyelinating Autoimmune Diseases, CNSYSM Researcher'),
+    ).toBe('Demyelinating Autoimmune Diseases, CNS');
   });
 
   it('handles the plural role label and a space-separated glue', () => {
@@ -40,16 +40,28 @@ describe('sanitizeResearchAreaLabel', () => {
 
   it('drops narrative-prose fragments that are not topic tags', () => {
     expect(
-      sanitizeResearchAreaLabel('I have been applying techniques drawn from probability theory and statistics'),
+      sanitizeResearchAreaLabel(
+        'I have been applying techniques drawn from probability theory and statistics',
+      ),
     ).toBe('');
     expect(
-      sanitizeResearchAreaLabel('The study of problems at the interface of optical and condensed matter physics'),
+      sanitizeResearchAreaLabel(
+        'The study of problems at the interface of optical and condensed matter physics',
+      ),
     ).toBe('');
     expect(
-      sanitizeResearchAreaLabel('Research in the group is currently focused on three general themes'),
+      sanitizeResearchAreaLabel(
+        'Research in the group is currently focused on three general themes',
+      ),
     ).toBe('');
-    expect(sanitizeResearchAreaLabel('My main teaching interests lie in Experimental Physics')).toBe('');
-    expect(sanitizeResearchAreaLabel('How do core developmental patterns emerge during language learning')).toBe('');
+    expect(
+      sanitizeResearchAreaLabel('My main teaching interests lie in Experimental Physics'),
+    ).toBe('');
+    expect(
+      sanitizeResearchAreaLabel(
+        'How do core developmental patterns emerge during language learning',
+      ),
+    ).toBe('');
   });
 
   it('keeps short tags whose leading letter is glued to punctuation', () => {
@@ -60,11 +72,17 @@ describe('sanitizeResearchAreaLabel', () => {
   it('keeps legitimate multi-word topic phrases even when long', () => {
     expect(sanitizeResearchAreaLabel('Quantum Physics')).toBe('Quantum Physics');
     expect(
-      sanitizeResearchAreaLabel('Magnetic and transport properties of perovskites and related materials'),
+      sanitizeResearchAreaLabel(
+        'Magnetic and transport properties of perovskites and related materials',
+      ),
     ).toBe('Magnetic and transport properties of perovskites and related materials');
     expect(
-      sanitizeResearchAreaLabel('Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation'),
-    ).toBe('Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation');
+      sanitizeResearchAreaLabel(
+        'Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation',
+      ),
+    ).toBe(
+      'Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation',
+    );
   });
 });
 
