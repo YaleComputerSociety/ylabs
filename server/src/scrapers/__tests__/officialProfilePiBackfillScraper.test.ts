@@ -1752,6 +1752,49 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
   });
 
+  it('fails closed when a nav-menu container is the only title candidate (#708)', () => {
+    const chromeProfileUrl = 'https://quantuminstitute.yale.edu/people/vic-fixture';
+    const chromeProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${chromeProfileUrl}" /></head>
+        <body><main>
+          <h1>Vic Fixture</h1>
+          <nav class="site-title">HomeAboutResearchPeopleNewsEventsDirector</nav>
+          <a href="mailto:vic.fixture@yale.edu">vic.fixture@yale.edu</a>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(chromeProfileHtml, chromeProfileUrl, {
+      name: 'Vic Fixture Lab',
+      slug: 'nsf-pi-vic-fixture',
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('falls through to a real title when a nav-menu container precedes it (#708)', () => {
+    const chromeProfileUrl = 'https://quantuminstitute.yale.edu/people/dana-fixture';
+    const chromeProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${chromeProfileUrl}" /></head>
+        <body><main>
+          <h1>Dana Fixture</h1>
+          <nav class="site-title">HomeAboutResearchPeopleNewsEventsDirector</nav>
+          <div class="appointment">Professor of Chemistry</div>
+          <a href="mailto:dana.fixture@yale.edu">dana.fixture@yale.edu</a>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(chromeProfileHtml, chromeProfileUrl, {
+      name: 'Dana Fixture Lab',
+      slug: 'nsf-pi-dana-fixture',
+    });
+
+    expect(identity?.title).toBe('Professor of Chemistry');
+  });
+
   it('splits a Yale Economics "Fields of Interest" section into label-free topic phrases (#616)', () => {
     const econProfileUrl = 'https://economics.yale.edu/people/john-fixture';
     const econProfileHtml = `
