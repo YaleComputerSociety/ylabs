@@ -1,4 +1,4 @@
-import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
@@ -12,6 +12,7 @@ import axios from '../utils/axios';
 import {
   buildGroupedSearchResults,
   GroupedResearchResults,
+  ResearchCluster,
 } from '../utils/researchDiscoveryAdapters';
 import {
   normalizeResearchEntitySearchResponse,
@@ -54,7 +55,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
 type ResearchTrustTierFilter = StudentVisibilityTier;
 
-const DEFAULT_RESEARCH_HOME_LABEL = 'all Yale research';
+const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
 const DEFAULT_RESEARCH_HOME_LIMIT = 24;
 const QUICK_START_PROMPTS = [
   { label: 'Machine learning', query: 'machine learning' },
@@ -239,10 +240,11 @@ const resultSummary = (
   if (departmentGapLabel && matchingHomeCount === 0 && results.people.length === 0) {
     return `No indexed research homes yet for ${departmentGapLabel}.`;
   }
+  const homeCountLabel = pluralize(matchingHomeCount, 'research home');
   const homeSummary =
-    matchingHomeCount > loadedHomeCount
-      ? `Showing ${loadedHomeCount.toLocaleString()} of ${pluralize(matchingHomeCount, 'research home')}`
-      : pluralize(matchingHomeCount, 'research home');
+    query === FILTERED_RESULT_QUERY_LABEL
+      ? `${homeCountLabel} match your filters`
+      : `${homeCountLabel} for '${query}'`;
   const parts = [homeSummary];
   if (results.people.length > 0) {
     parts.push(pluralize(results.people.length, 'contact', 'contacts'));
@@ -620,7 +622,7 @@ const Research = () => {
     const hasFilters = hasStructuredFilters(filters) || Boolean(options.hasFilterSelections);
     if (!trimmed && !hasFilters) return;
     if (!searchQuery.trim() && !hasFilters) return;
-    const resultQueryLabel = trimmed || 'filtered research';
+    const resultQueryLabel = trimmed || FILTERED_RESULT_QUERY_LABEL;
     const searchKind = options.departmentSearch ? 'department' : hasFilters ? 'filtered' : 'query';
     const filterCount = Object.values(filters).filter((value) =>
       Array.isArray(value) ? value.length > 0 : Boolean(value),
@@ -648,7 +650,9 @@ const Research = () => {
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(false);
-    setSearchResultResearchEntities([]);
+    if (!options.preserveResults) {
+      setSearchResultResearchEntities([]);
+    }
     setActiveSearchRequest({
       searchQuery: searchQuery.trim(),
       filters,
@@ -926,6 +930,19 @@ const Research = () => {
       pendingSearchSourceParamsRef.current = null;
       pendingSearchSourceLocationKeyRef.current = null;
     }
+
+    // A search submission or filter toggle updates component state and the URL
+    // in the same transition, but the URL write can land a render later. While
+    // the pending write is still unobserved, the params we see are stale: acting
+    // on them would reset the just-toggled filter and re-run the previous query
+    // (hard-resetting results) before the new URL arrives to reconcile. Wait for
+    // the pending write instead.
+    if (
+      pendingSearchParamsRef.current !== null &&
+      pendingSearchParamsRef.current !== observedSearchParams
+    ) {
+      return;
+    }
     const urlQuery = searchParams.get('q') || '';
     const urlDepartmentLabel = searchParams.get('dept') || '';
     const urlSchool = searchParams.get('school') || '';
@@ -1015,13 +1032,17 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current(urlQuery, { filters: studentFilters, syncUrl: false });
+      void runSearchRef.current(urlQuery, {
+        filters: studentFilters,
+        syncUrl: false,
+        preserveResults: submittedQuery === urlQuery.trim(),
+      });
       return;
     }
 
     if (hasStructuredFilters(studentFilters)) {
       if (
-        submittedQuery === 'filtered research' &&
+        submittedQuery === FILTERED_RESULT_QUERY_LABEL &&
         JSON.stringify(activeSearchRequest?.filters || {}) === JSON.stringify(studentFilters)
       ) {
         return;
@@ -1030,6 +1051,7 @@ const Research = () => {
         filters: studentFilters,
         hasFilterSelections: true,
         syncUrl: false,
+        preserveResults: submittedQuery === 'filtered research',
       });
       return;
     }
@@ -1153,14 +1175,28 @@ const Research = () => {
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
-  const defaultGroupedResults = useMemo(
-    () =>
-      buildGroupedSearchResults({
-        query: DEFAULT_RESEARCH_HOME_LABEL,
-        researchEntities: defaultResearchEntities,
+  const clusterByEntityRef = useRef(new WeakMap<ResearchEntity, ResearchCluster>());
+  const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
+    const cache = clusterByEntityRef.current;
+    return entities.map((entity) => {
+      const cached = cache.get(entity);
+      if (cached) return cached;
+      const [cluster] = buildGroupedSearchResults({
+        query: '',
+        researchEntities: [entity],
         pathways: [],
-      }),
-    [defaultResearchEntities],
+      }).clusters;
+      cache.set(entity, cluster);
+      return cluster;
+    });
+  }, []);
+  const activeClusters = useMemo(
+    () => clustersForEntities(searchResultResearchEntities),
+    [clustersForEntities, searchResultResearchEntities],
+  );
+  const defaultClusters = useMemo(
+    () => clustersForEntities(defaultResearchEntities),
+    [clustersForEntities, defaultResearchEntities],
   );
   const defaultSentinelRef = useInfiniteScroll({
     searchExhausted: hasSubmittedSearch || defaultSearchExhausted,
@@ -1239,22 +1275,23 @@ const Research = () => {
       preserveResults: true,
     });
   };
-  const runDepartmentSearch = (target: DepartmentSearchTarget) =>
-    runSearch(target.label, {
-      searchQuery: '',
-      filters: { departments: target.filters.departments },
-      hasFilterSelections: true,
-      departmentSearch: target,
-    });
-  const exploreHome = (label: string) => {
-    scrollResearchViewportToTop();
-    const target = departmentSearchTargetByLabel.get(label.toLowerCase());
-    if (target) {
-      runDepartmentSearch(target);
-      return;
-    }
-    runSearch(label);
-  };
+  const exploreHome = useCallback(
+    (label: string) => {
+      scrollResearchViewportToTop();
+      const target = departmentSearchTargetByLabel.get(label.toLowerCase());
+      if (target) {
+        void runSearchRef.current(target.label, {
+          searchQuery: '',
+          filters: { departments: target.filters.departments },
+          hasFilterSelections: true,
+          departmentSearch: target,
+        });
+        return;
+      }
+      void runSearchRef.current(label);
+    },
+    [departmentSearchTargetByLabel],
+  );
   const toggleQualityFilter = (filter: ResearchQualityFilter) => {
     setQualityFilters((current) => {
       const next = current.includes(filter)
@@ -1504,17 +1541,17 @@ const Research = () => {
                     })}
                   </div>
                 )}
-                {defaultSearchLoading && defaultGroupedResults.clusters.length === 0 ? (
+                {defaultSearchLoading && defaultClusters.length === 0 ? (
                   <div className="grid gap-3">
                     {Array.from({ length: 3 }).map((_, index) => (
                       <ClusterLoadingCard key={index} />
                     ))}
                   </div>
-                ) : defaultGroupedResults.clusters.length > 0 ? (
+                ) : defaultClusters.length > 0 ? (
                   <div className="grid gap-5">
                     <div>
                       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                        {defaultGroupedResults.clusters.map((cluster) => (
+                        {defaultClusters.map((cluster) => (
                           <ResearchHomeCard
                             key={cluster.id}
                             home={cluster}
@@ -1524,7 +1561,7 @@ const Research = () => {
                           />
                         ))}
                       </div>
-                      {defaultSearchLoading && defaultGroupedResults.clusters.length > 0 && (
+                      {defaultSearchLoading && defaultClusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!defaultSearchExhausted && (
@@ -1543,27 +1580,20 @@ const Research = () => {
 
             {hasSubmittedSearch && (
               <section aria-busy={searchLoading} aria-label="Search results">
-                <div className="yr-card rounded-md p-4 md:flex md:items-center md:justify-between md:gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-950">
-                      Showing research matches for &apos;{submittedQuery}&apos;
-                    </h2>
-                    <p
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
-                      className="mt-1 text-sm text-slate-600"
-                    >
-                      {resultSummary(
-                        activeResults,
-                        submittedQuery,
-                        searchLoading,
-                        departmentSearch?.label,
-                        searchTotal,
-                      )}
-                    </p>
-                  </div>
-                </div>
+                <p
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="text-sm font-medium text-slate-700"
+                >
+                  {resultSummary(
+                    activeResults,
+                    submittedQuery,
+                    searchLoading,
+                    departmentSearch?.label,
+                    searchTotal,
+                  )}
+                </p>
 
                 {!isWideFilterLayout && <ResearchFilterDisclosure {...researchFilterProps} />}
 
@@ -1578,13 +1608,13 @@ const Research = () => {
 
                 <section className="mt-5">
                   <SectionHeading>Research profiles</SectionHeading>
-                  {searchLoading && activeResults.clusters.length === 0 ? (
+                  {searchLoading && activeClusters.length === 0 ? (
                     <div className="grid gap-3">
                       {Array.from({ length: 3 }).map((_, index) => (
                         <ClusterLoadingCard key={index} />
                       ))}
                     </div>
-                  ) : activeResults.clusters.length > 0 ? (
+                  ) : activeClusters.length > 0 ? (
                     <>
                       <div
                         aria-busy={isApplyingFilters}
@@ -1593,7 +1623,7 @@ const Research = () => {
                         }`}
                       >
                         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                          {activeResults.clusters.map((cluster) => (
+                          {activeClusters.map((cluster) => (
                             <ResearchHomeCard
                               key={cluster.id}
                               home={cluster}
@@ -1603,7 +1633,7 @@ const Research = () => {
                           ))}
                         </div>
                       </div>
-                      {isLoadingMore && activeResults.clusters.length > 0 && (
+                      {isLoadingMore && activeClusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}

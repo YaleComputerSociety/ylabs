@@ -1068,8 +1068,59 @@ const stripOfficialProfileCtaChromeFromPublicProfileBio = (value: string): strin
   normalizeContactStrippedBio(
     value
       .replace(/\bWatch\s+a\s+video\s+with\s+Dr\.?\s+[^>]{2,120}>>\s*/gi, '')
-      .replace(/\bLearn\s+more\s+about\s+Dr\.?\s+[^>]{2,120}>>\s*/gi, ''),
+      .replace(/\bLearn\s+more\s+about\s+Dr\.?\s+[^>]{2,120}>>\s*/gi, '')
+      .replace(/\s*\bClick\s+here\b[^.!?]*(?:[.!?]|$)/gi, ' '),
   );
+
+const LEADING_PROFILE_PAGE_NAV_CHROME = String.raw`(?:Website|Homepage|Home|About(?:\s+Me)?|Contact(?:\s+(?:Info(?:rmation)?|Me))?|Overview|Menu|Navigation|Biography|Curriculum\s+Vitae|CV|Publications?|Profile|People|News|Events)`;
+
+const REDACTED_CONTACT_PLACEHOLDER = String.raw`\[(?:email|phone|contact)\s+redacted\]`;
+
+const stripLeadingProfilePageChrome = (value: string): string => {
+  const contactToken = `(?:${REDACTED_CONTACT_PLACEHOLDER}|${PUBLIC_PROFILE_EMAIL_PATTERN})`;
+  const separator = String.raw`[\s|·•\-–—]*`;
+  const leadingChrome = new RegExp(
+    `^${separator}(?:(?:${LEADING_PROFILE_PAGE_NAV_CHROME})\\b${separator})*${contactToken}(?:${separator}(?:${LEADING_PROFILE_PAGE_NAV_CHROME})\\b)*${separator}`,
+    'i',
+  );
+  const match = value.match(leadingChrome);
+  if (!match) return value;
+  const remainder = normalizeContactStrippedBio(value.slice(match[0].length));
+  return remainder || value;
+};
+
+const startsWithUppercaseAlpha = (value: string): boolean => {
+  const match = value.match(/[A-Za-z]/);
+  return Boolean(match && /[A-Z]/.test(match[0]));
+};
+
+const WEAK_SUBJECT_BIO_OPENER =
+  /^(?:i|i'?m|i've|my|mine|myself|we|we'?re|our|ours|us|it|its|it'?s|this|that|these|those|he|she|they|them|their|theirs|his|her|hers)\b/i;
+
+const profileBioSentenceEndIndices = (text: string): number[] =>
+  Array.from(text.matchAll(/[.!?](?=\s|$)/g))
+    .filter((match) => {
+      if (typeof match.index !== 'number') return false;
+      const candidate = text.slice(0, match.index + 1).trim();
+      return (
+        !/(?:^|\s)(?:Dr|Prof|Mr|Mrs|Ms|Mx|St|Jr|Sr|Hon|Rev|Fr|Gen|Col|Lt|Capt|Sgt)\.$/i.test(
+          candidate,
+        ) && !/(?:^|\s)[A-Z]\.$/.test(candidate)
+      );
+    })
+    .map((match) => match.index as number);
+
+const recoverBioFromSubjectlessOpener = (value: string): string => {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  if (startsWithUppercaseAlpha(text)) return text;
+  for (const endIndex of profileBioSentenceEndIndices(text)) {
+    const remainder = text.slice(endIndex + 1).replace(/^["'“”\s]+/, '').trim();
+    if (!remainder || WEAK_SUBJECT_BIO_OPENER.test(remainder)) continue;
+    if (startsWithUppercaseAlpha(remainder)) return remainder;
+  }
+  return '';
+};
 
 const isGroupResearchPublicBio = (value: string): boolean =>
   /\b(?:our|the)\s+(?:group|lab|laboratory)\b/i.test(value.replace(/\s+/g, ' ').trim());
@@ -1470,14 +1521,19 @@ export const cleanPublicProfileBio = (user: Record<string, any>): string => {
   if (expandedResearchAreasBio) return '';
 
   const rawBio = stripOfficialProfileCtaChromeFromPublicProfileBio(
-    stripContactChromeFromPublicProfileBio(stripTrailingOfficialProfileUpdateMetadata(rawBioText)),
+    stripContactChromeFromPublicProfileBio(
+      stripLeadingProfilePageChrome(stripTrailingOfficialProfileUpdateMetadata(rawBioText)),
+    ),
   );
 
   const hadBiographicalSketchPrefix = /^biographical\s+sketch\s*:/i.test(rawBio);
   const withoutSketchPrefix = rawBio.replace(/^biographical\s+sketch\s*:\s*/i, '').trim();
   const withoutBioPrefix = withoutSketchPrefix.replace(/^bio(?:graphy)?\s*:\s*/i, '').trim();
   const hadResponsibilitiesPrefix = /^responsibilities\s*:/i.test(withoutBioPrefix);
-  const cleaned = withoutBioPrefix.replace(/^responsibilities\s*:\s*/i, '').trim();
+  const withoutResponsibilitiesPrefix = withoutBioPrefix
+    .replace(/^responsibilities\s*:\s*/i, '')
+    .trim();
+  const cleaned = recoverBioFromSubjectlessOpener(withoutResponsibilitiesPrefix);
   if (!cleaned) return '';
   if (isGroupResearchPublicBio(cleaned)) return '';
   if (isNonBiographicalPublicBio(cleaned)) {
