@@ -198,6 +198,30 @@ const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|
 export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
   PROFILE_LIKE_PATH.test(url || '');
 
+const OFFICIAL_PERSON_PROFILE_PATH =
+  /\/(?:profile|profiles|bio|person|people|faculty)\/([a-z0-9][a-z0-9%._-]*)$/i;
+
+const NON_PERSON_PROFILE_LEAF =
+  /^(?:faculty|staff|people|members|fellows|affiliates|directory|index|all|list|search)$/i;
+
+export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+  if (isIdentifierOrGrantDbSourceUrl(normalized)) return false;
+  if (isDirectoryRosterRootUrl(normalized)) return false;
+  if (isDepartmentRosterProvenanceUrl(normalized)) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    if (!host.endsWith('yale.edu')) return false;
+    const match = parsed.pathname.replace(/\/+$/, '').match(OFFICIAL_PERSON_PROFILE_PATH);
+    return Boolean(match) && !NON_PERSON_PROFILE_LEAF.test(match![1]);
+  } catch {
+    return false;
+  }
+};
+
 const ORG_ENGAGEMENT_PATH =
   /(^|[-/])(get[-_]?involved|join(?:[-_]us)?|involvement|participate|membership|become[-_]a[-_]member|connect|contact(?:[-_]us)?|volunteer|opportunities)([-/]|$)/i;
 
@@ -241,6 +265,11 @@ export const resolveOutreachOfficialSource = (
     const engagementSource = eligible.find((source) => isOrgEngagementSourceUrl(source.url));
     if (engagementSource) return engagementSource;
   }
+
+  const officialPersonProfileSource = eligible.find((source) =>
+    isLikelyOfficialPersonProfileUrl(source.url),
+  );
+  if (officialPersonProfileSource) return officialPersonProfileSource;
 
   return eligible[0];
 };
