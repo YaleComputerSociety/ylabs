@@ -20,6 +20,7 @@ import {
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
+  isStaffContactBlockText,
   partitionSentencesLossless,
   sanitizeCatalogDescription,
   sanitizeEvidenceExcerpt,
@@ -254,6 +255,39 @@ describe('descriptionHygiene curation-rationale fail-closed (#671)', () => {
     const clean =
       'The Herbert Scarf program places undergraduates in faculty-mentored economics research each summer. Students receive a stipend and present their findings at a fall symposium.';
     expect(isCurationRationaleText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene staff-contact-block fail-closed (#926)', () => {
+  const CONTACT_BLOCKS = [
+    'Tahia Thaddeus Kamp, Ph.D. Assistant Director of The Franke Program in Science and the Humanities at Yale Whitney Humanities Center P.O. Box 208298 New Haven, Conn 06520-8298',
+    'Jordan Avery, Program Coordinator, Yale Whitney Humanities Center P.O. Box 208298 New Haven, Conn 06520-8298',
+  ];
+
+  it.each(CONTACT_BLOCKS)('flags a staff-contact/mailing-address block and rejects it: %s', (block) => {
+    expect(isStaffContactBlockText(block)).toBe(true);
+    expect(sanitizeCatalogDescription(block)).toBe('');
+  });
+
+  it('keeps a genuine description that merely names a director', () => {
+    const clean =
+      'Alex Rivera, Program Director of the summer institute, mentors fellows in field ecology across coastal sites each summer.';
+    expect(isStaffContactBlockText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+
+  it('keeps an application step that cites a mailing address for submissions', () => {
+    const clean =
+      'Submit your completed application by mail to P.O. Box 208298, New Haven, CT 06520-8298. The committee reviews applications on a rolling basis.';
+    expect(isStaffContactBlockText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+
+  it('keeps a description that mentions a city and ZIP in prose', () => {
+    const clean =
+      'The New Haven Promise scholarship supports students in New Haven, CT 06511 area high schools who pursue undergraduate degrees.';
+    expect(isStaffContactBlockText(clean)).toBe(false);
     expect(sanitizeCatalogDescription(clean)).toBe(clean);
   });
 });
