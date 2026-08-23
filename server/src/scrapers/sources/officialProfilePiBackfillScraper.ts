@@ -2421,9 +2421,7 @@ async function selectProfileDescriptionTargets(
       archived: { $ne: true },
       ...identityFilter,
     })
-      .select(
-        '_id slug name displayName website websiteUrl sourceUrls school schools departments',
-      )
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
