@@ -1684,9 +1684,6 @@ export function extractOfficialProfileIdentity(
   const email = extractEmail($, profiles, displayName);
   if (!email && options.requireEmail !== false) return null;
   const hasExpectedPeople = (options.expectedPeople || []).length > 0;
-  const hasVerifiableExpectedEmail = (options.expectedPeople || []).some((person) =>
-    Boolean(textValue(person.email)),
-  );
   const matchesExpectedPerson = officialProfileIdentityMatchesExpectedPerson(
     displayName,
     email,
@@ -1695,16 +1692,22 @@ export function extractOfficialProfileIdentity(
   if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
     return null;
   // A same-name faculty member at a different Yale school still passes the bare
-  // name-token check above. The email gate in
-  // officialProfileIdentityMatchesExpectedPerson can only veto the collision
-  // when we actually have an expected email to compare against, so when there
-  // is no known lead - or the known leads carry no recorded email - require the
-  // entity's own department/school not to affirmatively rule out medicine
-  // before trusting a guessed medicine.yale.edu/ysph.yale.edu profile as this
-  // entity's identity (same root cause as #562's PI-attach gate, extended to
-  // the area/website layer, issue #585).
+  // name-token check above. Only the fetched profile's own email actually
+  // establishes identity: skip the discipline backstop solely when that email
+  // is present and matches one we expect for this entity. In every other shape
+  // - no known lead, a lead with no recorded email, or a fetched page exposing
+  // no email - require the entity's own department/school not to affirmatively
+  // rule out medicine before trusting a guessed medicine.yale.edu/ysph.yale.edu
+  // profile as this entity's identity (same root cause as #562's PI-attach
+  // gate, extended to the area/website layer, issue #585).
+  const normalizedFetchedEmail = textValue(email).toLowerCase();
+  const expectedEmails = uniqueStrings(
+    (options.expectedPeople || []).map((person) => textValue(person.email)),
+  ).map((value) => value.toLowerCase());
+  const identityConfirmedByEmail =
+    Boolean(normalizedFetchedEmail) && expectedEmails.includes(normalizedFetchedEmail);
   if (
-    !(hasExpectedPeople && hasVerifiableExpectedEmail) &&
+    !identityConfirmedByEmail &&
     isMedicalSchoolProfileHost(fetchedUrl) &&
     entityDisciplineRulesOutMedicine(entity)
   ) {
