@@ -18,6 +18,8 @@ import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
+const MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL = 'https://macmillan.yale.edu/fellowships-and-grants';
+
 const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
@@ -29,6 +31,10 @@ const DEFAULT_PAGE_URLS = [
   'https://economics.yale.edu/undergraduate/tobin-ra',
   'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
   'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
+  MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL,
+  `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=1`,
+  `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=2`,
+  `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=3`,
 ];
 
 const PUBLIC_YALE_HOSTS = new Set([
@@ -41,6 +47,7 @@ const PUBLIC_YALE_HOSTS = new Set([
   'ycmd.yale.edu',
   'economics.yale.edu',
   'engineering.yale.edu',
+  'macmillan.yale.edu',
 ]);
 
 const MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS: Record<string, string> = {
@@ -704,6 +711,78 @@ function candidateFromLink(
   });
 }
 
+function hostnameOf(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+function candidateFromMacmillanOpportunityRow(
+  $: cheerio.CheerioAPI,
+  row: Parameters<cheerio.CheerioAPI>[0],
+  pageUrl: string,
+  referenceDate: Date,
+): FellowshipCatalogCandidate | undefined {
+  const $row = $(row);
+  const $link = $row.find('.node-teaser__heading a').first();
+  const title = normalizedCandidateTitle($link.text());
+  if (!title || isGenericCatalogTitle(title)) return undefined;
+
+  const rawHref = absoluteUrl($link.attr('href'), pageUrl);
+  const href = rawHref ? normalizeLinkUrl(rawHref) : undefined;
+  if (!href) return undefined;
+
+  const contactOffice = normalizeWhitespace($row.find('.node-teaser__groups').first().text());
+  const summaryText = normalizeWhitespace($row.find('.node-teaser__summary').first().text());
+  const rowContext = normalizeWhitespace(`${title} ${summaryText}`);
+  const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(rowContext), referenceDate);
+  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const links = [{ label: applicationLink ? 'Application' : title, url: href }];
+  const isAcceptingApplications =
+    (deadline ? deadline.getTime() > referenceDate.getTime() : false) ||
+    hasExplicitActiveApplicationLanguage(rowContext);
+
+  return finalizeCandidate({
+    sourceKey: sourceKeyForTitle(title),
+    title,
+    summary: summaryFromRowContext(summaryText, title),
+    description: undefined,
+    applicationInformation: undefined,
+    applicationMaterials: [],
+    researchFocused: isResearchFocused(rowContext),
+    researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(rowContext),
+    sourcePageKind: 'catalog',
+    sourceUrl: pageUrl,
+    applicationLink,
+    links,
+    deadline,
+    applicationOpenDate: undefined,
+    contactOffice: contactOffice || undefined,
+    contactEmail: extractEmail(summaryText),
+    yearOfStudy: [],
+    termOfAward: inferTerm(rowContext),
+    purpose: inferPurpose(rowContext),
+    globalRegions: [],
+    citizenshipStatus: [],
+    isAcceptingApplications,
+    reviewRequired: !deadline,
+  });
+}
+
+function candidatesFromMacmillanOpportunityPage(
+  $: cheerio.CheerioAPI,
+  pageUrl: string,
+  referenceDate: Date,
+): FellowshipCatalogCandidate[] {
+  if (hostnameOf(pageUrl) !== 'macmillan.yale.edu') return [];
+  return $('.node-teaser--opportunity')
+    .toArray()
+    .map((row) => candidateFromMacmillanOpportunityRow($, row, pageUrl, referenceDate))
+    .filter((candidate): candidate is FellowshipCatalogCandidate => !!candidate);
+}
+
 function candidateFromDetailPage(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -871,6 +950,16 @@ export function parseFellowshipCatalogPage(
 ): FellowshipCatalogCandidate[] {
   const $ = cheerio.load(html);
   const byKey = new Map<string, FellowshipCatalogCandidate>();
+
+  const opportunityRowCandidates = candidatesFromMacmillanOpportunityPage(
+    $,
+    pageUrl,
+    referenceDate,
+  );
+  if (opportunityRowCandidates.length > 0) {
+    for (const candidate of opportunityRowCandidates) upsertCandidate(byKey, candidate);
+    return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }
 
   const detail = candidateFromDetailPage($, pageUrl, referenceDate);
   if (detail) upsertCandidate(byKey, detail);

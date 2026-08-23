@@ -1249,3 +1249,100 @@ describe('YaleCollegeFellowshipsOfficeScraper bare-root link hygiene (#692)', ()
     );
   });
 });
+
+describe('YaleCollegeFellowshipsOfficeScraper macmillan opportunity catalog (#675)', () => {
+  const macmillanPageUrl = 'https://macmillan.yale.edu/fellowships-and-grants';
+
+  const macmillanCatalogHtml = `
+    <main>
+      <div class="view__rows">
+        <div class="view__row view__row--1">
+          <article class="node-teaser node-teaser--opportunity node-teaser--text">
+            <header class="node-teaser__header">
+              <div class="node-teaser__groups">MacMillan Center</div>
+              <div class="node-teaser__heading">
+                <a href="https://bit.ly/3rzeOaf"><span>Albert Bildner Travel Prize</span></a>
+              </div>
+            </header>
+            <div class="node-teaser__content">
+              <div class="node-teaser__summary">
+                <div class="ck-content"><p>Supports travel to Latin America for summer research. Applications due March 15, 2027.</p></div>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div class="view__row view__row--2">
+          <article class="node-teaser node-teaser--opportunity node-teaser--text">
+            <header class="node-teaser__header">
+              <div class="node-teaser__groups">MacMillan Center</div>
+              <div class="node-teaser__heading">
+                <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=496">
+                  <span>Canadian Studies Summer Grant for Undergraduate Students</span>
+                </a>
+              </div>
+            </header>
+            <div class="node-teaser__content">
+              <div class="node-teaser__summary">
+                <div class="ck-content"><p>Limited summer funding for undergraduate research on Canada.</p></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </main>
+  `;
+
+  it('extracts opportunity-row candidates with clean titles and per-row summaries', () => {
+    const candidates = parseFellowshipCatalogPage(
+      macmillanCatalogHtml,
+      macmillanPageUrl,
+      new Date('2026-08-22T00:00:00.000Z'),
+    );
+
+    expect(candidates.map((candidate) => candidate.title)).toEqual([
+      'Albert Bildner Travel Prize',
+      'Canadian Studies Summer Grant for Undergraduate Students',
+    ]);
+
+    const prize = candidates.find((candidate) => candidate.title === 'Albert Bildner Travel Prize');
+    expect(prize?.summary).toContain('Supports travel to Latin America');
+    expect(prize?.deadline?.toISOString()).toBe('2027-03-15T23:59:59.999Z');
+    expect(prize?.reviewRequired).toBe(false);
+    expect(prize?.applicationLink).toBeUndefined();
+    expect(prize?.links).toEqual([{ label: 'Albert Bildner Travel Prize', url: 'https://bit.ly/3rzeOaf' }]);
+    expect(prize?.contactOffice).toBe('MacMillan Center');
+
+    const grant = candidates.find((candidate) =>
+      candidate.title.startsWith('Canadian Studies Summer Grant'),
+    );
+    expect(grant?.applicationLink).toBe(
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=496',
+    );
+    expect(grant?.reviewRequired).toBe(true);
+  });
+
+  it('does not apply the opportunity-row adapter on a non-macmillan host', () => {
+    const candidates = parseFellowshipCatalogPage(
+      macmillanCatalogHtml,
+      'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
+      new Date('2026-08-22T00:00:00.000Z'),
+    );
+
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('emits observations for a macmillan opportunity candidate', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      macmillanCatalogHtml,
+      macmillanPageUrl,
+      new Date('2026-08-22T00:00:00.000Z'),
+    );
+    const observations = candidateToObservations(candidate);
+    expect(observations.find((obs) => obs.field === 'title')?.value).toBe(
+      'Albert Bildner Travel Prize',
+    );
+    expect(observations.find((obs) => obs.field === 'sourceName')?.value).toBe(
+      'yale-college-fellowships-office',
+    );
+  });
+});
