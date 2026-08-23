@@ -74,12 +74,16 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
       userType: 'professor',
     });
 
-    await materializeInferredPiMembership(String(entity._id), [inferredPiKeyObservation('pat.rivera')]);
+    await materializeInferredPiMembership(String(entity._id), [
+      inferredPiKeyObservation('pat.rivera'),
+    ]);
 
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
     expect(leads).toHaveLength(1);
 
-    const researcher = await Researcher.findById(leads[0].personId).lean<{ displayName?: string }>();
+    const researcher = await Researcher.findById(leads[0].personId).lean<{
+      displayName?: string;
+    }>();
     expect(researcher?.displayName).toBe('Pat Rivera');
   });
 
@@ -124,7 +128,9 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
     expect(leads).toHaveLength(1);
 
-    const account = await Account.findOne({ netid: 'plr42' }).lean<{ _id: mongoose.Types.ObjectId }>();
+    const account = await Account.findOne({ netid: 'plr42' }).lean<{
+      _id: mongoose.Types.ObjectId;
+    }>();
     expect(account).not.toBeNull();
     const researcher = await Researcher.findById(leads[0].personId).lean<{
       accountId?: mongoose.Types.ObjectId;
