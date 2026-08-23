@@ -14,9 +14,11 @@ import {
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
+  localDevOriginFromRequest,
   logoutRouteHandler,
   placeholderYaleEmail,
   passportRoutes,
+  safeRedirectTarget,
   shouldSkipLocalAuthBypass,
   validateProductionAuthConfig,
 } from '../passport';
@@ -50,6 +52,47 @@ describe('auth environment guards', () => {
 
   it('uses syntactically valid Yale placeholder emails for fallback accounts', () => {
     expect(placeholderYaleEmail('ABC123')).toBe('abc123@yale.edu');
+  });
+
+  it('accepts any local-dev client port for a local-dev redirect target, not just :3000', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalServerBaseUrl = process.env.SERVER_BASE_URL;
+    process.env.NODE_ENV = 'development';
+    process.env.SERVER_BASE_URL = 'http://localhost:4100';
+
+    try {
+      expect(safeRedirectTarget('http://localhost:3096/analytics')).toBe(
+        'http://localhost:3096/analytics',
+      );
+      expect(safeRedirectTarget('http://127.0.0.1:5173/research')).toBe(
+        'http://127.0.0.1:5173/research',
+      );
+      expect(safeRedirectTarget('https://evil.example.com')).toBeNull();
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalServerBaseUrl === undefined) delete process.env.SERVER_BASE_URL;
+      else process.env.SERVER_BASE_URL = originalServerBaseUrl;
+    }
+  });
+
+  it('derives the local-dev fallback origin from the requesting client, defaulting to :3000', () => {
+    const refererReq = {
+      get: vi.fn((header: string) =>
+        header === 'referer' ? 'http://localhost:3096/analytics' : undefined,
+      ),
+    };
+    expect(localDevOriginFromRequest(refererReq as any)).toBe('http://localhost:3096');
+
+    const noHeaderReq = { get: vi.fn(() => undefined) };
+    expect(localDevOriginFromRequest(noHeaderReq as any)).toBe('http://localhost:3000');
+
+    const nonLocalRefererReq = {
+      get: vi.fn((header: string) =>
+        header === 'referer' ? 'https://evil.example.com' : undefined,
+      ),
+    };
+    expect(localDevOriginFromRequest(nonLocalRefererReq as any)).toBe('http://localhost:3000');
   });
 
   it('creates a distinct, unconfirmed devunknown account for ?userType=unknown', async () => {

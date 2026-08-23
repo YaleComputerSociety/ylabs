@@ -185,23 +185,18 @@ describe('per-user activity view aggregation', () => {
     vi.clearAllMocks();
   });
 
-  it('counts listing, research, and fellowship views in the per-user Views metric', async () => {
+  it('counts listing views and research views as separate per-user metrics', async () => {
     mocks.analyticsAggregate.mockResolvedValueOnce([{ users: [], total: 0 }]);
 
     await getUserAnalytics({});
 
     const pipeline = mocks.analyticsAggregate.mock.calls[0][0];
     const groupStage = pipeline.find((stage: any) => stage.$group)?.$group;
-    const viewsAccumulator = groupStage.views?.$sum?.$cond?.[0]?.$in;
+    const viewsAccumulator = groupStage.views?.$sum?.$cond?.[0]?.$eq;
+    const researchViewsAccumulator = groupStage.researchViews?.$sum?.$cond?.[0]?.$eq;
 
-    expect(viewsAccumulator?.[0]).toBe('$eventType');
-    expect(viewsAccumulator?.[1]).toEqual(
-      expect.arrayContaining([
-        AnalyticsEventType.LISTING_VIEW,
-        AnalyticsEventType.RESEARCH_VIEW,
-        AnalyticsEventType.FELLOWSHIP_VIEW,
-      ]),
-    );
+    expect(viewsAccumulator).toEqual(['$eventType', AnalyticsEventType.LISTING_VIEW]);
+    expect(researchViewsAccumulator).toEqual(['$eventType', AnalyticsEventType.RESEARCH_VIEW]);
   });
 });
 

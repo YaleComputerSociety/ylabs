@@ -164,7 +164,8 @@ const AnalyticsSupportingDetail = ({
       { header: 'Total Events', value: (row) => row.totalEvents },
       { header: 'Logins', value: (row) => row.logins },
       { header: 'Site Searches', value: (row) => row.searches },
-      { header: 'Views', value: (row) => row.views },
+      { header: 'Listing Views', value: (row) => row.views },
+      { header: 'Research Views', value: (row) => row.researchViews },
       { header: 'Outreach Clicks', value: (row) => row.outreachClicks },
       {
         header: 'Last Active',
@@ -979,7 +980,8 @@ const AnalyticsSupportingDetail = ({
                 <option value="totalEvents">Total Events</option>
                 <option value="logins">Logins</option>
                 <option value="searches">Site searches</option>
-                <option value="views">Views</option>
+                <option value="views">Listing Views</option>
+                <option value="researchViews">Research Views</option>
               </select>
             </label>
 
@@ -1087,7 +1089,16 @@ const AnalyticsSupportingDetail = ({
                           onClick={() => updateUserActivitySort('views')}
                           className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
-                          Views{sortLabel('views')}
+                          Listing Views{sortLabel('views')}
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                        <button
+                          type="button"
+                          onClick={() => updateUserActivitySort('researchViews')}
+                          className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                        >
+                          Research Views{sortLabel('researchViews')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
@@ -1104,7 +1115,7 @@ const AnalyticsSupportingDetail = ({
                   <tbody>
                     {isUserActivityLoading && userActivity.users.length === 0 ? (
                       <tr>
-                        <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                        <td className="px-4 py-6 text-center text-gray-500" colSpan={8}>
                           Loading user activity...
                         </td>
                       </tr>
@@ -1132,6 +1143,7 @@ const AnalyticsSupportingDetail = ({
                           <td className="px-4 py-3 text-right">{user.logins}</td>
                           <td className="px-4 py-3 text-right">{user.searches}</td>
                           <td className="px-4 py-3 text-right">{user.views}</td>
+                          <td className="px-4 py-3 text-right">{user.researchViews}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">
                             {formatDateTime(user.lastActive)}
                           </td>
@@ -1139,7 +1151,7 @@ const AnalyticsSupportingDetail = ({
                       ))
                     ) : (
                       <tr>
-                        <td className="px-4 py-6 text-center text-gray-500" colSpan={7}>
+                        <td className="px-4 py-6 text-center text-gray-500" colSpan={8}>
                           No users match the current filters.
                         </td>
                       </tr>
@@ -1212,9 +1224,15 @@ const AnalyticsSupportingDetail = ({
                       </p>
                     </div>
                     <div className="rounded-md bg-[var(--yr-panel)] p-3">
-                      <p className="text-gray-500">Views</p>
+                      <p className="text-gray-500">Listing Views</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.views}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-[var(--yr-panel)] p-3">
+                      <p className="text-gray-500">Research Views</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedUser.user.researchViews}
                       </p>
                     </div>
                     <div className="rounded-md bg-[var(--yr-panel)] p-3">

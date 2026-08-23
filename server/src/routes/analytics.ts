@@ -36,6 +36,7 @@ const ANALYTICS_USER_SORTS: readonly AnalyticsUserSort[] = [
   'logins',
   'searches',
   'views',
+  'researchViews',
 ];
 const ANALYTICS_SORT_DIRECTIONS: readonly AnalyticsSortDirection[] = ['asc', 'desc'];
 const MAX_ANALYTICS_USER_TYPE_LENGTH = 40;

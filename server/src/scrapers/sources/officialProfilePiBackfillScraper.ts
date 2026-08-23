@@ -11,9 +11,9 @@ import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueI
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
+import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
 import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
-import { stripTrailingResearchHomeDescription } from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import {
@@ -1569,6 +1569,36 @@ function nameMatchesEntity(displayName: string, entity: Record<string, any>): bo
   return entitySlug.includes(nameParts[0]) && entitySlug.includes(nameParts[nameParts.length - 1]);
 }
 
+const MEDICAL_SCHOOL_PROFILE_HOSTS = new Set(['medicine.yale.edu', 'ysph.yale.edu']);
+
+function isMedicalSchoolProfileHost(url: string): boolean {
+  try {
+    return MEDICAL_SCHOOL_PROFILE_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+const NON_MEDICAL_DISCIPLINE_TEXT_RE = /\b(?:medicine|medical|health|nursing|hospital)\b/i;
+
+/**
+ * True when the entity's own recorded school/department text is present and
+ * plainly does not say medicine. A guessed medicine.yale.edu/ysph.yale.edu
+ * profile must never be trusted as this entity's identity in that case, even
+ * when its name happens to match - the same-surname-but-different-school
+ * collision this guards against otherwise grafts a same-name medical
+ * professor's areas/website onto an unrelated humanities or social-science
+ * entity (issue #585).
+ */
+function entityDisciplineRulesOutMedicine(entity: Record<string, any>): boolean {
+  const text = uniqueStrings([
+    entity.school,
+    ...(Array.isArray(entity.schools) ? entity.schools : []),
+    ...(Array.isArray(entity.departments) ? entity.departments : []),
+  ]).join(' ');
+  return Boolean(text) && !NON_MEDICAL_DISCIPLINE_TEXT_RE.test(text);
+}
+
 function officialProfileIdentityMatchesExpectedPerson(
   displayName: string,
   email: string,
@@ -1580,11 +1610,20 @@ function officialProfileIdentityMatchesExpectedPerson(
     normalizeName(displayName).toLowerCase().split(/\s+/).filter(Boolean),
   );
   const normalizedEmail = textValue(email).toLowerCase();
+  const expectedEmails = uniqueStrings(expected.map((person) => textValue(person.email))).map(
+    (value) => value.toLowerCase(),
+  );
+
+  // A fetched profile carrying its own Yale email is stronger evidence than a
+  // name match: once it disagrees with every email we expect for this entity,
+  // the page belongs to a different person and must fail closed rather than
+  // falling through to the weaker name-token check below - the exact gap that
+  // let a same-name-different-person collision through (issue #585).
+  if (normalizedEmail && expectedEmails.length > 0) {
+    return expectedEmails.includes(normalizedEmail);
+  }
 
   return expected.some((person) => {
-    const expectedEmail = textValue(person.email).toLowerCase();
-    if (expectedEmail && normalizedEmail && expectedEmail === normalizedEmail) return true;
-
     const first = normalizeName(person.fname || '')
       .toLowerCase()
       .split(/\s+/)
@@ -1638,6 +1677,28 @@ export function extractOfficialProfileIdentity(
   );
   if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
     return null;
+  // A same-name faculty member at a different Yale school still passes the bare
+  // name-token check above. Only the fetched profile's own email actually
+  // establishes identity: skip the discipline backstop solely when that email
+  // is present and matches one we expect for this entity. In every other shape
+  // - no known lead, a lead with no recorded email, or a fetched page exposing
+  // no email - require the entity's own department/school not to affirmatively
+  // rule out medicine before trusting a guessed medicine.yale.edu/ysph.yale.edu
+  // profile as this entity's identity (same root cause as #562's PI-attach
+  // gate, extended to the area/website layer, issue #585).
+  const normalizedFetchedEmail = textValue(email).toLowerCase();
+  const expectedEmails = uniqueStrings(
+    (options.expectedPeople || []).map((person) => textValue(person.email)),
+  ).map((value) => value.toLowerCase());
+  const identityConfirmedByEmail =
+    Boolean(normalizedFetchedEmail) && expectedEmails.includes(normalizedFetchedEmail);
+  if (
+    !identityConfirmedByEmail &&
+    isMedicalSchoolProfileHost(fetchedUrl) &&
+    entityDisciplineRulesOutMedicine(entity)
+  ) {
+    return null;
+  }
   // A same-name different-person profile passes the name check above, so when
   // the profile URL carries a netid-style slug it must equal a netid we expect
   // for this person. This rejects name-only collisions such as attaching a
@@ -2169,7 +2230,7 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
 
   const [entities, leadRosterByEntity] = await Promise.all([
     ResearchEntity.find({ _id: { $in: entityIds }, archived: { $ne: true } })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .lean(),
     currentLeadRosterEntriesByEntity(entityIds, LEAD_MEMBER_ROLES),
   ]);
@@ -2346,7 +2407,7 @@ async function selectProfileDescriptionTargets(
       archived: { $ne: true },
       ...identityFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
@@ -2539,7 +2600,7 @@ async function selectResearchHomeProfileTargets(
       archived: { $ne: true },
       ...targetFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
@@ -2626,7 +2687,7 @@ async function selectLeadDirectWebsiteTargets(
       archived: { $ne: true },
       ...targetFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
@@ -2721,7 +2782,9 @@ async function selectSourceUrlWebsiteTargets(
       archived: { $ne: true },
       ...targetFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls')
+      .select(
+        '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
+      )
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,

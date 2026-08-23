@@ -10,6 +10,8 @@ import {
   buildStudentSearchTerms,
   fetchResearchEntitySearchMemberNames,
   getResearchEntitySearchIndexSettings,
+  invalidateResearchEntitySearchEmbedderCache,
+  isResearchEntitySearchEmbedderConfigured,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
@@ -90,6 +92,26 @@ describe('researchEntitySearchIndexService', () => {
       ]),
     });
     expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
+  });
+
+  it('surfaces computational-vision labs under the "computer vision" bigram query (#787)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-computational-vision',
+      name: 'Zucker Faculty Research',
+      researchAreas: ['Computational Vision'],
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'computational vision']),
+    );
+  });
+
+  it('maps "computer vision" and "computational vision" as bidirectional Meili synonyms (#787)', () => {
+    const { synonyms } = getResearchEntitySearchIndexSettings();
+
+    expect(synonyms['computer vision']).toEqual(expect.arrayContaining(['computational vision']));
+    expect(synonyms['computational vision']).toEqual(expect.arrayContaining(['computer vision']));
   });
 
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
@@ -258,6 +280,20 @@ describe('researchEntitySearchIndexService', () => {
     expect(RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL).toBe('text-embedding-3-small');
   });
 
+  it('guards optional fields in the embedder template so documents missing them still index', () => {
+    const template = (buildResearchEntitySearchEmbedderConfig('sk-test') as any).default
+      .documentTemplate as string;
+    for (const field of [
+      'professorNames',
+      'departments',
+      'researchAreas',
+      'shortDescription',
+      'fullDescription',
+    ]) {
+      expect(template).toContain(`{% if doc.${field} %}`);
+    }
+  });
+
   it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {
     const embedderCalls: any[] = [];
     const fakeIndex = {
@@ -288,6 +324,74 @@ describe('researchEntitySearchIndexService', () => {
     delete process.env.OPENAI_API_KEY;
     await run();
     expect(embedderCalls).toHaveLength(0);
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('surfaces a failed updateEmbedders task instead of swallowing it', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => ({ taskUid: 2 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 2
+            ? {
+                status: 'failed',
+                error: { code: 'invalid_document_fields', message: 'missing field in document' },
+              }
+            : { status: 'succeeded' },
+      },
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).rejects.toThrow(/updateEmbedders task 2 did not succeed.*invalid_document_fields/s);
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('surfaces a failed updateSettings task instead of swallowing it', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      tasks: {
+        waitForTask: async () => ({ status: 'failed', error: { code: 'index_not_found' } }),
+      },
+    };
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+      }),
+    ).rejects.toThrow(/updateSettings task 1 did not succeed.*index_not_found/s);
+  });
+
+  it('does not wait on a task when the index client has no task-status support', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => ({ taskUid: 2 }),
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).resolves.toMatchObject({ fetchedDocumentCount: 0 });
 
     if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     else delete process.env.OPENAI_API_KEY;
@@ -362,6 +466,58 @@ describe('researchEntitySearchIndexService', () => {
     ).rejects.toThrow('--page-size must be a safe positive integer');
 
     expect(getIndexCalls).toBe(0);
+  });
+});
+
+describe('isResearchEntitySearchEmbedderConfigured', () => {
+  beforeEach(() => {
+    invalidateResearchEntitySearchEmbedderCache();
+  });
+
+  it('returns true when the running index reports the default embedder', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => ({ default: { source: 'openAi' } }),
+    });
+    expect(configured).toBe(true);
+  });
+
+  it('returns false when the running index has no embedders configured', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => ({}),
+    });
+    expect(configured).toBe(false);
+  });
+
+  it('returns false when the index client does not support getEmbedders', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({});
+    expect(configured).toBe(false);
+  });
+
+  it('fails closed to false when checking the embedder throws', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => {
+        throw new Error('meili unreachable');
+      },
+    });
+    expect(configured).toBe(false);
+  });
+
+  it('caches the result until the cache is invalidated', async () => {
+    let calls = 0;
+    const index = {
+      getEmbedders: async () => {
+        calls += 1;
+        return { default: {} };
+      },
+    };
+
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(calls).toBe(1);
+
+    invalidateResearchEntitySearchEmbedderCache();
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(calls).toBe(2);
   });
 });
 

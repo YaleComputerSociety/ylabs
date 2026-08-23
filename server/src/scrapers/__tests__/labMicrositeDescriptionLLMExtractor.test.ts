@@ -679,6 +679,51 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(noNameObservations.map((obs) => obs.field)).not.toContain('name');
   });
 
+  it('does not emit a governance-body org title as a lab name (shared council landing page)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The council convenes area-studies faculty across the university to support scholarship on the modern Middle East, its languages, politics, and history.',
+        shortDescription: 'Convenes area-studies faculty on the modern Middle East.',
+        topics: [],
+        methods: [],
+        name: 'Council on Middle East Studies',
+      },
+      {
+        entityId: 'entity-baden',
+        entityKey: 'baden-lab-jbaden',
+        sourceUrl: 'https://macmillan.yale.edu/middleeast',
+      },
+    );
+
+    expect(observations.map((obs) => obs.field)).not.toContain('name');
+    expect(observations.map((obs) => obs.field)).not.toContain('displayName');
+
+    for (const governanceName of [
+      'Committee on International Relations',
+      'Office of the Provost',
+      'Consortium for Data Science',
+      'Board of Governors',
+    ]) {
+      const rejected = descriptionExtractionToObservations(
+        {
+          fullDescription:
+            'This body coordinates faculty and administrative work across multiple departments and schools within the university.',
+          shortDescription: 'Coordinates faculty and administrative work across schools.',
+          topics: [],
+          methods: [],
+          name: governanceName,
+        },
+        {
+          entityId: 'entity-governance',
+          entityKey: 'governance',
+          sourceUrl: 'https://example.org/body',
+        },
+      );
+      expect(rejected.map((obs) => obs.field)).not.toContain('name');
+    }
+  });
+
   it('synthesizes a grounded card at ingestion when the derivation yields none (#557)', async () => {
     const { ctx, emitted } = makeContext();
     const fullDescription =

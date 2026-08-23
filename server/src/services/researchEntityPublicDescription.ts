@@ -5,6 +5,7 @@ import {
 import {
   sanitizeFacultyResearchEntityCopyFields,
   sanitizeResearchEntityPublicDescriptionFields,
+  sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
 
 export interface ResearchEntityPublicDescriptionRepresentation {
@@ -60,9 +61,11 @@ export function buildResearchEntityPublicDescriptionRepresentation({
         .filter(Boolean),
     ),
   );
-  const sanitizedEntity = sanitizeFacultyResearchEntityCopyFields(
-    sanitizeResearchEntityPublicDescriptionFields(entity, resolvedLeadMemberNames),
-    resolvedLeadMemberNames,
+  const sanitizedEntity = sanitizeResearchHomeSelfReferenceCopyFields(
+    sanitizeFacultyResearchEntityCopyFields(
+      sanitizeResearchEntityPublicDescriptionFields(entity, resolvedLeadMemberNames),
+      resolvedLeadMemberNames,
+    ),
   );
   const quality = assessResearchEntityDescriptionQuality({
     fullDescription: sanitizedEntity.fullDescription,

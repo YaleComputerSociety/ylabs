@@ -3,9 +3,33 @@ import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
+  toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
 
 describe('researchEntityDto', () => {
+  it('strips YSM profile chrome from the served shortDescription without dropping the prose', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-chrome',
+      slug: 'ysm-chrome-lab',
+      name: 'Chrome Lab',
+      kind: 'lab',
+      shortDescription: 'INFORMATION FOR Copy Link Our lab studies airway disease.',
+    });
+    expect(dto.shortDescription).toBe('Our lab studies airway disease.');
+  });
+
+  it('drops a card blurb built from a chrome-only shortDescription and falls back to fullDescription', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-chrome-only' },
+      slug: 'ysm-chrome-only',
+      name: 'Chrome Only Lab',
+      kind: 'lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+      fullDescription: 'This laboratory investigates vascular biology in human disease.',
+    });
+    expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
+  });
+
   it('builds canonical ResearchEntity DTOs from materialized records', () => {
     const dto = toPublicResearchEntityDto({
       _id: { toString: () => 'entity-1' },
@@ -145,6 +169,20 @@ describe('researchEntityDto', () => {
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
   });
 
+  it('strips glued "YSM Researcher" role-label boilerplate from researchAreas chips (#742)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ysm-role-label',
+      slug: 'ysm-role-label-lab',
+      name: 'YSM Role Label Lab',
+      researchAreas: ['MedicareYSM Researcher', 'Medicare', 'YSM Researcher', 'HistonesYSM Researcher'],
+      profileResearchAreas: ['Demyelinating Autoimmune Diseases, CNSYSM Researcher'],
+    });
+
+    expect(dto.researchAreas).toEqual(['Medicare', 'Histones']);
+    expect(dto.profileResearchAreas).toEqual(['Demyelinating Autoimmune Diseases, CNS']);
+    expect(JSON.stringify(dto)).not.toContain('YSM Researcher');
+  });
+
   it('fails a fullDescription closed to empty when it still carries a contact-block or publications dump (#676)', () => {
     const contactBlock = toPublicResearchEntityDto({
       id: 'entity-contact-block',
@@ -187,6 +225,22 @@ describe('researchEntityDto', () => {
 
     expect(dto.shortDescription).toBe('Questions go to [email redacted].');
     expect(dto.fullDescription).toBe('');
+  });
+
+  it('strips YSM profile chrome from served descriptions and blurbs (#808)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ysm-chrome',
+      slug: 'ysm-takyar',
+      name: 'Takyar Lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+      fullDescription:
+        'INFORMATION FOR The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+    });
+
+    expect(dto.shortDescription).toBe('');
+    expect(dto.fullDescription).toBe(
+      'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+    );
   });
 
   it('omits unsafe public research entity contact email values', () => {

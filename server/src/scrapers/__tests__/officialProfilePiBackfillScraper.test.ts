@@ -1998,6 +1998,125 @@ describe('officialProfilePiBackfillScraper', () => {
     });
   });
 
+  it('rejects a same-name different-person profile when known emails disagree (#585)', () => {
+    // The entity's real "Jules Fixture" is a historian whose actual Yale email
+    // differs from the medical "Jules Fixture" this fetched profile belongs
+    // to; the shared name must not paper over the known email conflict.
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@aya.yale.edu' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches when the expected email agrees with the fetched profile', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('rejects a guessed medicine.yale.edu profile for an entity whose own school rules out medicine (#585)', () => {
+    // A humanities "Jules Fixture" with no known lead yet must not inherit a
+    // same-name medical professor's areas/website just because the names
+    // collide - the entity's own department says History, not medicine.
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a guessed medicine.yale.edu profile when the entity has no known non-medical discipline', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      requireEmail: false,
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('rejects a guessed medicine.yale.edu profile when the known lead has no recorded email to verify identity and the entity rules out medicine (#585)', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a known lead without a recorded email when the entity has no non-medical discipline', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
+  it('rejects a guessed medicine.yale.edu profile that exposes no email when the known lead has one and the entity rules out medicine (#585)', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(emailLessProfileHtml, profileUrl, entity, {
+      requireEmail: false,
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a medicine.yale.edu profile whose email confirms the lead even when the entity discipline rules out medicine', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture', email: 'jules.fixture@yale.edu' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
   it('skips profile chrome headings when extracting the appointment title', () => {
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(

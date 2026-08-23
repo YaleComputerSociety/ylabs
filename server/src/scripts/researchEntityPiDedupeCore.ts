@@ -28,6 +28,9 @@ export interface ResearchEntityPiDedupeRow {
     sourceUrls?: string[];
     departments?: string[];
     researchAreas?: string[];
+    recentGrants?: unknown[];
+    recentGrantCount?: number;
+    fundingAgencies?: string[];
   }>;
 }
 
@@ -46,6 +49,9 @@ export interface ResearchEntityPiDedupeGroup {
   canonicalFullDescription?: string;
   canonicalShortDescription?: string;
   dedupeCategory?: 'profile_area_shell_with_concrete_home' | 'shared_person_id';
+  mergedRecentGrants?: unknown[];
+  mergedRecentGrantCount?: number;
+  mergedFundingAgencies?: string[];
 }
 
 export interface SameNameDifferentPersonQuarantine {
@@ -74,6 +80,48 @@ export interface CurrentMemberDedupeRow {
 
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.map((value) => (value || '').trim()).filter(Boolean)));
+}
+
+const MAX_MERGED_RECENT_GRANTS = 10;
+
+function grantRecordIdentity(grant: unknown): string {
+  const record = (grant && typeof grant === 'object' ? grant : {}) as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  return id ? `id:${id.toLowerCase()}` : `record:${JSON.stringify(record)}`;
+}
+
+function grantRecordStartTime(grant: unknown): number {
+  const record = (grant && typeof grant === 'object' ? grant : {}) as Record<string, unknown>;
+  const time = new Date(record.startDate as any).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function mergedGrantEvidenceFromEntities(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): {
+  mergedRecentGrants: unknown[];
+  mergedRecentGrantCount: number;
+  mergedFundingAgencies: string[];
+} {
+  const grants = new Map<string, unknown>();
+  let recentGrantCount = 0;
+  for (const entity of entities) {
+    for (const grant of entity.recentGrants || []) {
+      grants.set(grantRecordIdentity(grant), grant);
+    }
+    if (typeof entity.recentGrantCount === 'number' && Number.isFinite(entity.recentGrantCount)) {
+      recentGrantCount += Math.max(0, Math.floor(entity.recentGrantCount));
+    }
+  }
+  const mergedRecentGrants = [...grants.values()]
+    .sort((left, right) => grantRecordStartTime(right) - grantRecordStartTime(left))
+    .slice(0, MAX_MERGED_RECENT_GRANTS);
+  const mergedFundingAgencies = uniqueStrings(entities.flatMap((entity) => entity.fundingAgencies || []));
+  return {
+    mergedRecentGrants,
+    mergedRecentGrantCount: recentGrantCount,
+    mergedFundingAgencies,
+  };
 }
 
 function timeValue(value: Date | string | null | undefined): number {
@@ -209,6 +257,71 @@ function mergedResearchAreasFromEntities(
     trustedAreaShellEntities(entities).flatMap((entity) => entity.researchAreas || []),
     options,
   );
+}
+
+/**
+ * Cross-cutting institute scrapers (e.g. Wu Tsai Institute) seed a broad
+ * affiliate's generated `faculty-research-area-*` shell with the institute's
+ * own home-department tuple. That seed is a reasonable guess for narrow,
+ * single-department centers but is wrong for entities the institute merely
+ * affiliates with across unrelated disciplines (a CS lab, a humanities
+ * scholar). Dedupe historically unioned it into the canonical entity
+ * unconditionally. Each of these three names is also a legitimate standalone
+ * department elsewhere, so the graft signature is the full trio co-occurring
+ * together, not any one name in isolation.
+ */
+const BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS: string[][] = [
+  ['neuroscience'],
+  ['psychology'],
+  [
+    'molecular, cellular, and developmental biology',
+    'molecular, cellular and developmental biology',
+  ],
+];
+
+const BIOMEDICAL_RESEARCH_AREA_CORROBORATION_PATTERN =
+  /\b(neuro\w*|psycholog\w*|cognit\w*|synap\w*|neural|brain|molecular biology|cellular biology|developmental biology|biomedical|physiolog\w*|psychiatr\w*)\b/i;
+
+function hasBiomedicalResearchAreaCorroboration(researchAreas: string[]): boolean {
+  return researchAreas.some((area) => BIOMEDICAL_RESEARCH_AREA_CORROBORATION_PATTERN.test(area));
+}
+
+function departmentKeys(entities: ResearchEntityPiDedupeRow['entities']): Set<string> {
+  return new Set(
+    entities
+      .flatMap((entity) => entity.departments || [])
+      .map((department) => department.trim().toLowerCase()),
+  );
+}
+
+function hasFullBiomedicalGraftTuple(keys: Set<string>): boolean {
+  return BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS.every((memberKeys) =>
+    memberKeys.some((key) => keys.has(key)),
+  );
+}
+
+/**
+ * Departments merged across a dedupe cluster, gated so the Wu-Tsai-style
+ * biomedical seed tuple only survives when the full three-department
+ * signature is corroborated by the entity's own trusted departments or its
+ * merged researchAreas - never on the tuple's presence in a low-trust shell
+ * alone. Any other department, including a lone member of the tuple with no
+ * co-occurring siblings, merges unconditionally.
+ */
+function mergeCorroboratedDepartments(
+  entities: ResearchEntityPiDedupeRow['entities'],
+  mergedResearchAreas: string[],
+): string[] {
+  const merged = uniqueStrings(entities.flatMap((entity) => entity.departments || []));
+  const mergedKeys = departmentKeys(entities);
+  if (!hasFullBiomedicalGraftTuple(mergedKeys)) return merged;
+  if (hasBiomedicalResearchAreaCorroboration(mergedResearchAreas)) return merged;
+
+  const trustedKeys = departmentKeys(trustedAreaShellEntities(entities));
+  if (hasFullBiomedicalGraftTuple(trustedKeys)) return merged;
+
+  const graftKeys = new Set(BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS.flat());
+  return merged.filter((department) => !graftKeys.has(department.trim().toLowerCase()));
 }
 
 function normalizedWords(value: string | undefined): string[] {
@@ -347,6 +460,10 @@ function buildGroupFromCluster(
   if (duplicates.length === 0) return null;
   const { canonicalName, canonicalWebsiteUrl } = carriedCanonicalIdentity(canonical, entities, row);
   const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
+  const grantEvidenceCarry = mergedGrantEvidenceFromEntities(entities);
+  const mergedResearchAreas = mergedResearchAreasFromEntities(entities, {
+    sanitizeProfileChrome: true,
+  });
   return {
     userId: row.userId,
     normalizedName: row.normalizedName,
@@ -354,8 +471,8 @@ function buildGroupFromCluster(
     duplicateEntityIds: duplicates.map((entity) => entity.id),
     canonicalSlug: canonical.slug,
     duplicateSlugs: duplicates.map((entity) => entity.slug || entity.id),
-    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: mergedResearchAreasFromEntities(entities, { sanitizeProfileChrome: true }),
+    mergedDepartments: mergeCorroboratedDepartments(entities, mergedResearchAreas),
+    mergedResearchAreas,
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
@@ -363,6 +480,15 @@ function buildGroupFromCluster(
     ...(canonicalName ? { canonicalName } : {}),
     ...(canonicalWebsiteUrl ? { canonicalWebsiteUrl } : {}),
     ...descriptionCarry,
+    ...(grantEvidenceCarry.mergedRecentGrants.length > 0
+      ? { mergedRecentGrants: grantEvidenceCarry.mergedRecentGrants }
+      : {}),
+    ...(grantEvidenceCarry.mergedRecentGrantCount > 0
+      ? { mergedRecentGrantCount: grantEvidenceCarry.mergedRecentGrantCount }
+      : {}),
+    ...(grantEvidenceCarry.mergedFundingAgencies.length > 0
+      ? { mergedFundingAgencies: grantEvidenceCarry.mergedFundingAgencies }
+      : {}),
   };
 }
 
@@ -590,6 +716,10 @@ function buildFundingGroupFromCluster(
     return (a.slug || a.id).localeCompare(b.slug || b.id);
   })[0];
   const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
+  const grantEvidenceCarry = mergedGrantEvidenceFromEntities(entities);
+  const mergedResearchAreas = mergedResearchAreasFromEntities(entities, {
+    sanitizeProfileChrome: true,
+  });
 
   return {
     userId: row.userId,
@@ -598,13 +728,22 @@ function buildFundingGroupFromCluster(
     duplicateEntityIds: fundingDuplicates.map((entity) => entity.id),
     canonicalSlug: canonical.slug,
     duplicateSlugs: fundingDuplicates.map((entity) => entity.slug || entity.id),
-    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: mergedResearchAreasFromEntities(entities, { sanitizeProfileChrome: true }),
+    mergedDepartments: mergeCorroboratedDepartments(entities, mergedResearchAreas),
+    mergedResearchAreas,
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
     ]),
     ...descriptionCarry,
+    ...(grantEvidenceCarry.mergedRecentGrants.length > 0
+      ? { mergedRecentGrants: grantEvidenceCarry.mergedRecentGrants }
+      : {}),
+    ...(grantEvidenceCarry.mergedRecentGrantCount > 0
+      ? { mergedRecentGrantCount: grantEvidenceCarry.mergedRecentGrantCount }
+      : {}),
+    ...(grantEvidenceCarry.mergedFundingAgencies.length > 0
+      ? { mergedFundingAgencies: grantEvidenceCarry.mergedFundingAgencies }
+      : {}),
   };
 }
 
@@ -836,6 +975,9 @@ function buildOrgNameDedupeGroup(
     '';
   const cleanName = cleanestOrgName(entities);
   const descriptionCarry = bestDescriptionCarry(canonical, entities);
+  const mergedResearchAreas = cleanMergedResearchAreas(
+    entities.flatMap((entity) => entity.researchAreas || []),
+  );
 
   return {
     userId: `org-name:${normalizedName}`,
@@ -844,10 +986,8 @@ function buildOrgNameDedupeGroup(
     duplicateEntityIds: duplicates.map((entity) => entity.id),
     canonicalSlug: canonical.slug,
     duplicateSlugs: duplicates.map((entity) => entity.slug || entity.id),
-    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: cleanMergedResearchAreas(
-      entities.flatMap((entity) => entity.researchAreas || []),
-    ),
+    mergedDepartments: mergeCorroboratedDepartments(entities, mergedResearchAreas),
+    mergedResearchAreas,
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),

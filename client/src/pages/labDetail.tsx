@@ -33,13 +33,10 @@ import {
 import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
-  isDepartmentRosterProvenanceUrl,
-  isIdentifierOrGrantDbSourceUrl,
-  isRawDataApiSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
-  normalizeActionDestination,
   normalizeSourceUrl,
   prefersOrgEngagementOutreach,
+  resolveDecisionProfileUrl,
   resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
@@ -57,6 +54,7 @@ import {
   relationshipTypeLabel,
   researchEntityDisplayName,
   sanitizeFacultyResearchCopy,
+  sanitizeResearchHomeSelfReferenceCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { canonicalizeResearcherDepartmentLabel } from '../utils/researcherDepartmentLabel';
@@ -291,32 +289,6 @@ const ResearchPlanSaveButton = ({
   </FavoriteButton>
 );
 
-const resolveDecisionProfileUrl = (
-  fallbackSourceUrl: string | undefined,
-  group?: any,
-): string | undefined => {
-  if (group?.leadIdentityStatus === 'under_review') return undefined;
-  const labWebsiteDestinations = new Set(
-    [group?.websiteUrl, group?.website]
-      .filter((url) => url && !isProfileLikeWebsiteUrl(url))
-      .map((url) => normalizeActionDestination(url))
-      .filter(Boolean),
-  );
-  const candidateUrls = [
-    fallbackSourceUrl,
-    ...(Array.isArray(group?.sourceUrls) ? group.sourceUrls : []),
-  ];
-  for (const url of candidateUrls) {
-    if (typeof url !== 'string') continue;
-    if (!isProfileLikeWebsiteUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
-    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) continue;
-    const destination = normalizeActionDestination(url);
-    if (labWebsiteDestinations.has(destination)) continue;
-    return normalizeSourceUrl(url) || undefined;
-  }
-  return undefined;
-};
-
 const memberDisplayName = (member: LabMember): string =>
   member.user.displayName ||
   [member.user.fname, member.user.lname].filter(Boolean).join(' ') ||
@@ -475,7 +447,10 @@ const DecisionSummary = ({
   const sourceBackedDescription = detailDescription(group);
   const rawDescription =
     (usesProfileSynthesis ? group.profileSynthesisDescription : '') || sourceBackedDescription;
-  const description = sanitizeFacultyResearchCopy(rawDescription, group);
+  const description = sanitizeResearchHomeSelfReferenceCopy(
+    sanitizeFacultyResearchCopy(rawDescription, group),
+    group,
+  );
   useEffect(() => {
     if (description) return;
     captureClientError(
@@ -934,8 +909,11 @@ const LabDetail = () => {
     : officialProfileUrlFromMemberUser(
         singlePrincipalInvestigator?.user as Record<string, unknown> | undefined,
       );
-  const decisionProfileUrl =
-    resolveDecisionProfileUrl(fallbackSourceUrl, group) || leadOfficialProfileUrl;
+  const decisionProfileUrl = resolveDecisionProfileUrl(
+    fallbackSourceUrl,
+    group,
+    leadOfficialProfileUrl,
+  );
   const officialWebsiteUrl = safeHttpUrl(primaryWebsiteUrl) || undefined;
   const outreachOfficialSource = resolveOutreachOfficialSource(
     sources,

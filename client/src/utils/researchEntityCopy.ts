@@ -21,7 +21,11 @@ const ENTITY_TYPE_TO_KIND: Record<string, string> = {
   COLLECTIONS_INITIATIVE: 'initiative',
   GROUP: 'group',
   INDIVIDUAL_RESEARCH: 'individual',
+  FACULTY_RESEARCH: 'individual',
   FACULTY_RESEARCH_AREA: 'individual',
+  FACULTY_PROJECT: 'group',
+  DIGITAL_HUMANITIES_PROJECT: 'group',
+  ARCHIVE_OR_MUSEUM_PROJECT: 'group',
 };
 
 export type ResearchEntityCopyInput = {
@@ -58,6 +62,7 @@ export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null)
     entity &&
       (entity.kind === 'individual' ||
         entity.kind === 'solo' ||
+        entity.entityType === 'FACULTY_RESEARCH' ||
         entity.entityType === 'FACULTY_RESEARCH_AREA' ||
         entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
@@ -93,10 +98,44 @@ export const approachHeadingLabel = (entity?: ResearchEntityCopyInput | null): s
 
 const facultyResearchLabelBase = (entity: ResearchEntityCopyInput): string =>
   String(entity.displayName || entity.name || '')
-    .replace(/\s+(?:Faculty Research|Lab|Laboratory)$/i, '')
+    .replace(/\s*[-–—]\s*Research$/i, '')
+    .replace(/\s+(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
 
 const toPossessiveName = (name: string): string => (name.endsWith('s') ? `${name}'` : `${name}'s`);
+
+const RESEARCH_HOME_SELF_NOUNS: Record<string, string> = {
+  center: 'center',
+  institute: 'institute',
+  initiative: 'initiative',
+  group: 'group',
+  program: 'program',
+};
+
+const researchHomeSelfReferenceNoun = (entity?: ResearchEntityCopyInput | null): string | null => {
+  if (!entity || isFacultyResearchEntity(entity)) return null;
+  return RESEARCH_HOME_SELF_NOUNS[effectiveEntityKind(entity)] || null;
+};
+
+const matchLeadingCase = (sample: string, replacement: string): string => {
+  if (!sample || !replacement) return replacement;
+  const lead = sample.charAt(0);
+  const isUpper = lead === lead.toUpperCase() && lead !== lead.toLowerCase();
+  return isUpper ? replacement.charAt(0).toUpperCase() + replacement.slice(1) : replacement;
+};
+
+export const sanitizeResearchHomeSelfReferenceCopy = (
+  value: string,
+  entity?: ResearchEntityCopyInput | null,
+): string => {
+  const noun = researchHomeSelfReferenceNoun(entity);
+  if (!noun) return value;
+  return value.replace(
+    /\b(the|this|our|your|its)(\s+)(lab|laboratory)(['’]s)?\b/gi,
+    (_match, determiner: string, spacing: string, labToken: string, possessive?: string) =>
+      `${determiner}${spacing}${matchLeadingCase(labToken, noun)}${possessive || ''}`,
+  );
+};
 
 export const sanitizeFacultyResearchCopy = (
   value: string,
