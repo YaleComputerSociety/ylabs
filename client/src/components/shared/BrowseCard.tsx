@@ -222,7 +222,7 @@ const BrowseCard = React.memo(
                     </span>
                   ))}
                   {!isCompact && tags.length > TAG_CAP && (
-                    <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
+                    <span className="text-xs text-gray-500">+{tags.length - TAG_CAP}</span>
                   )}
                 </div>
               )}
@@ -265,7 +265,7 @@ const BrowseCard = React.memo(
                     </span>
                   ))}
                   {!isCompact && tags.length > TAG_CAP && (
-                    <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
+                    <span className="text-xs text-gray-500">+{tags.length - TAG_CAP}</span>
                   )}
                 </div>
               )}
@@ -327,7 +327,7 @@ const BrowseCard = React.memo(
                       </span>
                     ))}
                     {!isCompact && tags.length > FELLOWSHIP_TAG_CAP && (
-                      <span className="self-center text-xs text-gray-400">
+                      <span className="self-center text-xs text-gray-500">
                         +{tags.length - FELLOWSHIP_TAG_CAP}
                       </span>
                     )}
