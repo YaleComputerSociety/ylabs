@@ -34,6 +34,7 @@ import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
   isDepartmentRosterProvenanceUrl,
+  isIdentifierOrGrantDbSourceUrl,
   isRawDataApiSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
   normalizeActionDestination,
@@ -285,7 +286,7 @@ const resolveDecisionProfileUrl = (
   for (const url of candidateUrls) {
     if (typeof url !== 'string') continue;
     if (!isProfileLikeWebsiteUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
-    if (isRawDataApiSourceUrl(url)) continue;
+    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) continue;
     const destination = normalizeActionDestination(url);
     if (labWebsiteDestinations.has(destination)) continue;
     return normalizeSourceUrl(url) || undefined;
