@@ -836,6 +836,88 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('recomputes an actively-filtered facet disjunctively so its dropdown keeps sibling options (#1080)', async () => {
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 6,
+        facetDistribution: {
+          schools: { 'Law School': 6 },
+          departments: {},
+        },
+      })
+      .mockResolvedValueOnce({
+        facetDistribution: {
+          schools: {
+            'Law School': 6,
+            'School of Medicine': 762,
+            'Faculty of Arts and Sciences': 625,
+          },
+        },
+      });
+
+    const result = await searchResearchGroupsViaMeili('', { school: ['Law School'] }, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1].filter).toContain('schools = "Law School"');
+    const disjunctiveCall = mocks.search.mock.calls[1][1];
+    expect(disjunctiveCall).toEqual(
+      expect.objectContaining({ facets: ['schools'], limit: 0 }),
+    );
+    expect(disjunctiveCall.filter).toContain('archived = false');
+    expect(disjunctiveCall.filter).not.toContain('schools = "Law School"');
+    expect(result.facetDistribution).toEqual({
+      departments: {},
+      school: {
+        'Law School': 6,
+        'School of Medicine': 762,
+        'Faculty of Arts and Sciences': 625,
+      },
+    });
+  });
+
+  it('keeps the conjunctive facet counts when the disjunctive facet query fails (#1080)', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 6,
+        facetDistribution: {
+          schools: { 'Law School': 6 },
+          departments: {},
+        },
+      })
+      .mockRejectedValueOnce(new Error('meili facet query failed'));
+
+    const result = await searchResearchGroupsViaMeili('', { school: ['Law School'] }, 1, 24);
+
+    expect(result.facetDistribution).toEqual({
+      departments: {},
+      school: { 'Law School': 6 },
+    });
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('issues no extra facet query when no facet is actively filtered (#1080)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'School of Medicine': 4, 'Law School': 6 },
+        departments: { Psychiatry: 2 },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(result.facetDistribution).toEqual({
+      school: { 'School of Medicine': 4, 'Law School': 6 },
+      departments: { Psychiatry: 2 },
+    });
+  });
+
   it('recovers on Meili when attributesToSearchOn references a non-searchable attribute', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search

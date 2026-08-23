@@ -940,6 +940,22 @@ export const promoteExactAliasFieldMatches = <T>(
   return [...exactDepartment, ...exactResearchArea, ...rest];
 };
 
+// Facets a student can actively filter on. Each must be computed
+// disjunctively: excluding only its own active filter clause so its option
+// list keeps every sibling value (with counts under the other active filters)
+// and stays switchable, instead of self-collapsing to the single chosen value.
+// Cross-facet narrowing is preserved because only the facet's own clause is
+// dropped; every other active filter still constrains the distribution. See
+// issue #1080.
+const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
+  filterKey: 'school' | 'departments' | 'researchAreas';
+  meiliField: 'schools' | 'departments' | 'researchAreas';
+}> = [
+  { filterKey: 'school', meiliField: 'schools' },
+  { filterKey: 'departments', meiliField: 'departments' },
+  { filterKey: 'researchAreas', meiliField: 'researchAreas' },
+];
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -1237,11 +1253,76 @@ export async function searchResearchGroupsViaMeili(
     facetDistribution: rawFacetDistribution,
   } = searchResult;
   const resolvedTotalHits = totalHits ?? estimatedTotalHits;
+
+  // For any facet the request is actively filtering on, recompute its
+  // distribution disjunctively (excluding only its own filter clause) so the
+  // dropdown keeps every sibling option and its comparative counts under the
+  // other active filters. Without this, a conjunctive distribution collapses
+  // the facet to just the chosen value, turning the filter into a dead end.
+  // Each supplementary query mirrors the primary query's mode (hybrid +
+  // threshold, topic-alias attribute scoping, or plain browse) so counts stay
+  // consistent; a failure degrades to the conjunctive counts for that facet.
+  const searchFacetDistributionForFilter = async (
+    overrideFilterString: string,
+    facetFields: string[],
+  ): Promise<Record<string, Record<string, number>> | undefined> => {
+    const params: Record<string, any> = { filter: overrideFilterString, facets: facetFields };
+    if (finalSearchParams.attributesToSearchOn) {
+      params.attributesToSearchOn = finalSearchParams.attributesToSearchOn;
+    }
+    if (finalSearchParams.rankingScoreThreshold !== undefined) {
+      params.hybrid = finalSearchParams.hybrid;
+      params.rankingScoreThreshold = finalSearchParams.rankingScoreThreshold;
+      params.page = 1;
+      params.hitsPerPage = RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS;
+      params.attributesToRetrieve = ['id'];
+    } else {
+      params.limit = 0;
+    }
+    const result = (await index.search(meiliQueryText, params)) as {
+      facetDistribution?: Record<string, Record<string, number>>;
+    };
+    return result?.facetDistribution;
+  };
+
+  const disjunctiveRawFacetDistribution = await (async (): Promise<
+    Record<string, Record<string, number>> | undefined
+  > => {
+    if (!rawFacetDistribution) return rawFacetDistribution;
+    const activeFacets = DISJUNCTIVE_RESEARCH_FACETS.filter(
+      ({ filterKey }) => (safeFilters[filterKey]?.length ?? 0) > 0,
+    );
+    if (activeFacets.length === 0) return rawFacetDistribution;
+    const merged: Record<string, Record<string, number>> = { ...rawFacetDistribution };
+    await Promise.all(
+      activeFacets.map(async ({ filterKey, meiliField }) => {
+        try {
+          const omittedFilterString = buildResearchGroupFilterString(
+            applyVisibilityScopeToFilters(
+              { ...safeFilters, [filterKey]: [] },
+              safeOptions.includeNonPublic,
+            ),
+          );
+          const distribution = await searchFacetDistributionForFilter(omittedFilterString, [
+            meiliField,
+          ]);
+          if (distribution?.[meiliField]) merged[meiliField] = distribution[meiliField];
+        } catch (error) {
+          console.error(
+            `Disjunctive facet computation for ${meiliField} failed; keeping conjunctive counts:`,
+            sanitizeLogValue(error),
+          );
+        }
+      }),
+    );
+    return merged;
+  })();
+
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
-    if (!rawFacetDistribution) return rawFacetDistribution;
-    const { schools, researchAreas, ...rest } = rawFacetDistribution;
+    if (!disjunctiveRawFacetDistribution) return disjunctiveRawFacetDistribution;
+    const { schools, researchAreas, ...rest } = disjunctiveRawFacetDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
     return {
       ...rest,
@@ -1452,11 +1533,35 @@ const searchResearchGroupsViaMongoFallback = async (
     filters,
     options.includeNonPublic,
   );
+  // Mirror the Meili path's disjunctive faceting (issue #1080): a facet the
+  // request is actively filtering on is counted over candidates that drop only
+  // that facet's own clause, so its dropdown keeps every sibling value; other
+  // active filters still constrain the counts.
+  const disjunctiveMongoFacetCounts = async (
+    filterKey: 'school' | 'departments' | 'researchAreas',
+    field: string,
+  ): Promise<Record<string, number>> => {
+    if (!filters[filterKey]?.length) return facetCounts(visibleCandidates, field);
+    const omittedFilters = { ...filters, [filterKey]: [] };
+    const omittedCandidates = (await ResearchEntity.find(
+      mongoFilterFromResearchFilters(omittedFilters, options.includeNonPublic),
+    ).lean()) as any[];
+    const omittedVisible = withServablePublicResearchEntities(
+      omittedCandidates.filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
+      omittedFilters,
+      options.includeNonPublic,
+    );
+    return facetCounts(omittedVisible, field);
+  };
+  const [schoolFacetCounts, departmentFacetCounts, researchAreaFacetCounts] = await Promise.all([
+    disjunctiveMongoFacetCounts('school', 'schools'),
+    disjunctiveMongoFacetCounts('departments', 'departments'),
+    disjunctiveMongoFacetCounts('researchAreas', 'researchAreas'),
+  ]);
   const facetDistribution = {
-    school: facetCounts(visibleCandidates, 'schools'),
-    departments: facetCounts(visibleCandidates, 'departments'),
-    researchAreas:
-      sanitizeResearchAreaFacetDistribution(facetCounts(visibleCandidates, 'researchAreas')) ?? {},
+    school: schoolFacetCounts,
+    departments: departmentFacetCounts,
+    researchAreas: sanitizeResearchAreaFacetDistribution(researchAreaFacetCounts) ?? {},
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,
