@@ -71,6 +71,11 @@ export interface OfficialLabUrlDedupeRow {
   entities: ResearchEntityPiDedupeRow['entities'];
 }
 
+export interface WebsiteUrlDedupeRow {
+  websiteUrl: string;
+  entities: ResearchEntityPiDedupeRow['entities'];
+}
+
 export interface CurrentMemberDedupeRow {
   id: string;
   confidence?: number;
@@ -842,6 +847,155 @@ export function buildOfficialLabUrlResearchEntityDedupePlan(
       ),
     )
     .filter((group): group is ResearchEntityPiDedupeGroup => !!group);
+}
+
+const PERSON_LEAD_NAME_STOPWORDS = new Set([
+  'the',
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'research',
+  'group',
+  'groups',
+  'center',
+  'centre',
+  'institute',
+  'program',
+  'faculty',
+]);
+
+/**
+ * Normalizes a websiteUrl into a scheme-agnostic identity key: the same lab home
+ * reached over `http://` and `https://`, with or without a trailing slash or a
+ * leading `www.`, must collapse to one key so a URL-identity lane clusters them.
+ * Query strings and fragments are dropped; an unparseable value yields ''.
+ */
+export function normalizeWebsiteUrlIdentityKey(value: string | undefined): string {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return '';
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  if (!host) return '';
+  const pathname = parsed.pathname.replace(/\/+$/, '');
+  return `${host}${pathname}`;
+}
+
+function personLeadNameTokens(name: string | undefined): string[] {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !PERSON_LEAD_NAME_STOPWORDS.has(token));
+}
+
+/**
+ * Two entities sharing an identical websiteUrl are only the same lab if their
+ * names agree on a person lead-name: the same trailing surname token plus a
+ * compatible (or absent) first name. This is what separates a same-person clone
+ * ("The Zimmerman Lab" / "Julie Zimmerman Lab") from a shared group/center site
+ * hosting several distinct faculty (het.yale.edu across four physicists), which
+ * have no shared surname and must never collapse (issue #1130).
+ */
+function entitiesShareLeadPersonName(
+  a: ResearchEntityPiDedupeRow['entities'][number],
+  b: ResearchEntityPiDedupeRow['entities'][number],
+): boolean {
+  const tokensA = personLeadNameTokens(a.name);
+  const tokensB = personLeadNameTokens(b.name);
+  if (tokensA.length === 0 || tokensB.length === 0) return false;
+  if (tokensA[tokensA.length - 1] !== tokensB[tokensB.length - 1]) return false;
+
+  const firstNamesA = new Set(tokensA.slice(0, -1));
+  const firstNamesB = new Set(tokensB.slice(0, -1));
+  if (firstNamesA.size === 0 || firstNamesB.size === 0) return true;
+  const [smaller, larger] =
+    firstNamesA.size <= firstNamesB.size ? [firstNamesA, firstNamesB] : [firstNamesB, firstNamesA];
+  for (const token of smaller) {
+    if (!larger.has(token)) return false;
+  }
+  return true;
+}
+
+function clusterEntitiesBySharedLeadPersonName(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeRow['entities'][] {
+  const parent = new Map<string, string>();
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  for (const entity of entities) parent.set(entity.id, entity.id);
+  const find = (id: string): string => {
+    const current = parent.get(id) || id;
+    if (current === id) return id;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a: string, b: string): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  for (let i = 0; i < entities.length; i += 1) {
+    for (let j = i + 1; j < entities.length; j += 1) {
+      if (entitiesShareLeadPersonName(entities[i], entities[j])) {
+        union(entities[i].id, entities[j].id);
+      }
+    }
+  }
+
+  const components = new Map<string, ResearchEntityPiDedupeRow['entities']>();
+  for (const id of byId.keys()) {
+    const root = find(id);
+    components.set(root, [...(components.get(root) || []), byId.get(id)!]);
+  }
+  return Array.from(components.values()).filter((cluster) => cluster.length > 1);
+}
+
+/**
+ * Clusters non-archived entities that share an identical (scheme/slash/www
+ * normalized) websiteUrl and agree on a person lead-name. The canonical survivor
+ * is the entity with an active PI RoleAssignment and the richer evidence, so a
+ * newer PI-bio clone folds into the established lab. Groups that involve a
+ * low-trust funding/area shell (nih-pi-/nsf-pi-/faculty-research-area-) are left
+ * to the funding-only and profile-area lanes, and shared group/center sites are
+ * excluded by the lead-name gate (issue #1130).
+ */
+export function buildWebsiteUrlResearchEntityDedupePlan(
+  rows: WebsiteUrlDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const websiteUrlCanonicalScore = (entity: ResearchEntityPiDedupeRow['entities'][number]) =>
+    canonicalScore(entity) + (entity.piRoleCorroborated ? 200 : 0);
+
+  const groups: ResearchEntityPiDedupeGroup[] = [];
+  for (const row of rows) {
+    const key = normalizeWebsiteUrlIdentityKey(row.websiteUrl);
+    if (!key) continue;
+    const entities = row.entities.filter((entity) => entity.id);
+    if (entities.length <= 1) continue;
+    if (entities.some((entity) => isLowTrustAreaShellSlug(entity.slug))) continue;
+
+    for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
+      const group = buildGroupFromCluster(
+        {
+          userId: `website-url:${key}`,
+          normalizedName: `website-url:${key}`,
+          entities: cluster,
+        },
+        cluster,
+        websiteUrlCanonicalScore,
+      );
+      if (group) groups.push(group);
+    }
+  }
+  return dedupePlanGroupsByEntitySet(groups);
 }
 
 export interface OrgNameDedupeEntity {
