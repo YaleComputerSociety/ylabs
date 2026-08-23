@@ -7,6 +7,7 @@ import {
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
   setResearchAreaCanonicalizerForTesting,
+  splitGluedRoleTrackLabels,
   stripResearchAreaSourceChrome,
 } from '../researchAreaCanonicalization';
 
@@ -48,7 +49,9 @@ describe('stripResearchAreaSourceChrome', () => {
 
   it('strips trailing chrome from a single topic', () => {
     expect(
-      stripResearchAreaSourceChrome('Natural Language Processing9 YSM ResearchersView 121 Related Publications'),
+      stripResearchAreaSourceChrome(
+        'Natural Language Processing9 YSM ResearchersView 121 Related Publications',
+      ),
     ).toEqual(['Natural Language Processing']);
     expect(
       stripResearchAreaSourceChrome('Endometriosis4 YSM ResearchersView 123 Related Publications'),
@@ -95,7 +98,81 @@ describe('stripResearchAreaSourceChrome', () => {
   });
 });
 
+describe('splitGluedRoleTrackLabels', () => {
+  it('splits a role-track label glued onto a topic with no delimiter (#943)', () => {
+    expect(splitGluedRoleTrackLabels('Astrophysics & CosmologyTheorist')).toEqual([
+      'Astrophysics & Cosmology',
+      'Theorist',
+    ]);
+    expect(splitGluedRoleTrackLabels('Particle PhysicsExperimentalist')).toEqual([
+      'Particle Physics',
+      'Experimentalist',
+    ]);
+  });
+
+  it('splits a topic + role-track + project-title triple glued with no delimiter (#943)', () => {
+    expect(
+      splitGluedRoleTrackLabels(
+        'Condensed Matter PhysicsExperimentalistCoherent control of light transport and absorption',
+      ),
+    ).toEqual([
+      'Condensed Matter Physics',
+      'Experimentalist',
+      'Coherent control of light transport and absorption',
+    ]);
+  });
+
+  it('leaves whitespace-delimited role words and clean topics untouched (#943)', () => {
+    expect(splitGluedRoleTrackLabels('Observational Cosmology')).toEqual([
+      'Observational Cosmology',
+    ]);
+    expect(splitGluedRoleTrackLabels('Theoretical Physics')).toEqual(['Theoretical Physics']);
+    expect(splitGluedRoleTrackLabels('Condensed Matter Physics')).toEqual([
+      'Condensed Matter Physics',
+    ]);
+    expect(splitGluedRoleTrackLabels('Astrophysics & Cosmology')).toEqual([
+      'Astrophysics & Cosmology',
+    ]);
+  });
+
+  it('leaves a bare role label for the downstream leakage stop-list to drop (#943)', () => {
+    expect(splitGluedRoleTrackLabels('Theorist')).toEqual(['Theorist']);
+    expect(splitGluedRoleTrackLabels('Experimentalist')).toEqual(['Experimentalist']);
+  });
+
+  it('returns an empty list for non-strings and blanks (#943)', () => {
+    expect(splitGluedRoleTrackLabels(42)).toEqual([]);
+    expect(splitGluedRoleTrackLabels('  ')).toEqual([]);
+  });
+});
+
 describe('canonicalizeResearchAreas', () => {
+  it('drops a glued role-track duplicate and keeps the clean topic sibling (#943)', () => {
+    const specific = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([{ name: 'Astrophysics & Cosmology' }]),
+    );
+    const result = specific.canonicalizeResearchAreas([
+      'Astrophysics & CosmologyTheorist',
+      'Astrophysics & Cosmology',
+    ]);
+    expect(result.values).toEqual(['Astrophysics & Cosmology']);
+    expect(result.dropped).toContain('Theorist');
+  });
+
+  it('recovers each piece of a topic + role-track + project-title glue (#943)', () => {
+    const specific = createResearchAreaCanonicalizer(
+      buildResearchAreaResolverIndex([{ name: 'Condensed Matter Physics' }]),
+    );
+    const result = specific.canonicalizeResearchAreas([
+      'Condensed Matter PhysicsExperimentalistCoherent control of light transport and absorption',
+    ]);
+    expect(result.values).toEqual([
+      'Condensed Matter Physics',
+      'Coherent control of light transport and absorption',
+    ]);
+    expect(result.dropped).toContain('Experimentalist');
+  });
+
   it('splits glued page-chrome into recovered topics before matching (#487)', () => {
     const specific = createResearchAreaCanonicalizer(
       buildResearchAreaResolverIndex([{ name: 'Natural Language Processing' }]),
