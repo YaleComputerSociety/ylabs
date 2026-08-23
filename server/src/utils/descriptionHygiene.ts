@@ -419,15 +419,18 @@ const CURATION_RATIONALE_PATTERNS: RegExp[] = [
   /\buntil a (?:more specific )?(?:current )?(?:award|fellowship|program|funding) page is attached\b/i,
   /\bkeep public copy restrained\b/i,
   /\bclear student audience\b/i,
+  /\b(?:should|must)\s+be\s+(?:shown|displayed|surfaced|rendered)\s+as\b/i,
 ];
 
 /**
  * Internal curation / reviewer-rationale prose: an LLM or operator suitability
  * assessment written *about the record* ("is source-backed", "safe to show
  * prominently", "operators should refresh", "keep public copy restrained until
- * ... is attached") instead of a student-facing description of the program.
- * These phrases are internal review vocabulary that never appears in genuine
- * source prose, so a single marker is enough to fail closed (#671).
+ * ... is attached", or a display-routing directive "it should be shown as
+ * funding/project support rather than a research home") instead of a
+ * student-facing description of the program. These phrases are internal review
+ * vocabulary that never appears in genuine source prose, so a single marker is
+ * enough to fail closed (#671, #1053).
  */
 export function isCurationRationaleText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -616,11 +619,31 @@ export function isResearchAreaEchoDescription(text: string): boolean {
   return researchAreaEchoPattern.test(normalizeHygieneWhitespace(text));
 }
 
+const provenanceHedgePattern = /[,;]?\s*\bwhen\s+source-confirmed\b/gi;
+
 /**
- * Clean a scraped catalog description: strip chrome, then fail closed to an
- * empty string when the remainder is roster/PII-shaped, a navigation dump, an
- * FAQ/Q&A dump, an eligibility-form label dump, internal
- * curation/reviewer-rationale prose, or a homepage news-ticker / CTA dump.
+ * Strip the internal provenance hedge "when source-confirmed" glued onto a
+ * curated program field. It is a gating caveat about whether a figure was
+ * corroborated by the source, not display copy, so as rendered it is dangling
+ * junk on the field students read most closely - funding ("$17/hour when
+ * source-confirmed") (#1053). Removing only the hedge keeps the figure ("$17/
+ * hour") rather than failing the whole field closed, and the leftover
+ * punctuation/space seam is repaired so the copy reads cleanly. Gated to a
+ * no-op when the phrase is absent so ordinary prose is untouched.
+ */
+export function stripProvenanceHedge(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(provenanceHedgePattern, '');
+  if (stripped === value) return value;
+  return normalizeHygieneWhitespace(stripped.replace(/\s+([.,;:!?])/g, '$1'));
+}
+
+/**
+ * Clean a scraped catalog description: strip chrome and the internal
+ * provenance hedge, then fail closed to an empty string when the remainder is
+ * roster/PII-shaped, a navigation dump, an FAQ/Q&A dump, an eligibility-form
+ * label dump, internal curation/reviewer-rationale prose, or a homepage
+ * news-ticker / CTA dump.
  *
  * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
  * intended safe rendering of contact info at read time and are left in place
@@ -628,7 +651,9 @@ export function isResearchAreaEchoDescription(text: string): boolean {
  * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
-  const stripped = collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text)));
+  const stripped = stripProvenanceHedge(
+    collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text))),
+  );
   if (!stripped) return '';
   if (
     isRosterShapedText(stripped) ||

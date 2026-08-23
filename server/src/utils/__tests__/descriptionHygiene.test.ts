@@ -25,6 +25,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripDeadAnchorCtaSentences,
+  stripProvenanceHedge,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
 } from '../descriptionHygiene';
@@ -246,6 +247,47 @@ describe('descriptionHygiene curation-rationale fail-closed (#671)', () => {
   it('keeps a genuine student-facing program description', () => {
     const clean =
       'The Herbert Scarf program places undergraduates in faculty-mentored economics research each summer. Students receive a stipend and present their findings at a fall symposium.';
+    expect(isCurationRationaleText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene provenance-hedge strip (#1053)', () => {
+  it.each([
+    ['$20/hour when source-confirmed', '$20/hour'],
+    ['Paid internship when source-confirmed', 'Paid internship'],
+    ['Summer stipend when source-confirmed', 'Summer stipend'],
+    ['Stipend plus housing/board when source-confirmed', 'Stipend plus housing/board'],
+    ['Academic-year and summer research support when source-confirmed', 'Academic-year and summer research support'],
+  ])('strips the internal hedge but keeps the figure: %s', (before, after) => {
+    expect(stripProvenanceHedge(before)).toBe(after);
+    expect(sanitizeCatalogDescription(before)).toBe(after);
+  });
+
+  it('removes a mid-sentence hedge and repairs the punctuation seam', () => {
+    expect(
+      stripProvenanceHedge('Supports summer research or project work when source-confirmed.'),
+    ).toBe('Supports summer research or project work.');
+  });
+
+  it('is a no-op on copy that has no internal hedge', () => {
+    const clean = 'Up to $7,000 when awarded';
+    expect(stripProvenanceHedge(clean)).toBe(clean);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene display-directive fail-closed (#1053)', () => {
+  it('rejects a classifier display-routing directive as curation rationale', () => {
+    const directive =
+      'The Summer Research Award has a Yale source and a clear undergraduate-facing summer use case, including research or project work when source-confirmed. It should be shown as funding/project support rather than a research home.';
+    expect(isCurationRationaleText(directive)).toBe(true);
+    expect(sanitizeCatalogDescription(directive)).toBe('');
+  });
+
+  it('keeps a genuine program description that merely mentions how support is shown', () => {
+    const clean =
+      'Fellows are shown as a cohort on the program page, and each receives a summer research stipend.';
     expect(isCurationRationaleText(clean)).toBe(false);
     expect(sanitizeCatalogDescription(clean)).toBe(clean);
   });
