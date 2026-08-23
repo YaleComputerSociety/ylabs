@@ -128,7 +128,8 @@ They should not create a research-paper section, display metrics, or replace the
 ## CTA Vocabulary
 
 Reaching out is constant and primary: always offer a way to contact the research home, never gating outreach.
-Because student-facing PI emails are redacted by design, the primary path is to open the official profile, then an available official page from the entity's own classified sources, and only search the Yale Directory as a last resort when no official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
+Because student-facing PI emails are redacted by design, the primary path is to open the official profile, then an available contactable official page from the entity's own classified sources, and only search the Yale Directory as a last resort when no contactable official link exists, to find contact details and introduce yourself; a prefilled mailto appears only when a non-redacted email is available.
+Identifier and grant-database pages that carry no contact path, such as ORCID, NIH RePORTER, NSF award search, and Google Scholar, are never promoted as this outreach page; they stay secondary Sources links and the CTA falls through to the Yale Directory.
 The contact prompt is never conditioned on access evidence, route, or computed confidence, and never gates outreach.
 Other CTA options surface alongside it when the supporting evidence exists:
 

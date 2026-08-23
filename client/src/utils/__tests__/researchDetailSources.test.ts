@@ -541,7 +541,9 @@ describe('isNonContactableIdentifierSourceUrl (#651)', () => {
       isNonContactableIdentifierSourceUrl('https://api.reporter.nih.gov/v2/projects/search'),
     ).toBe(true);
     expect(
-      isNonContactableIdentifierSourceUrl('https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171'),
+      isNonContactableIdentifierSourceUrl(
+        'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171',
+      ),
     ).toBe(true);
     expect(
       isNonContactableIdentifierSourceUrl('https://scholar.google.com/citations?user=example'),
@@ -550,10 +552,12 @@ describe('isNonContactableIdentifierSourceUrl (#651)', () => {
 
   it('does not flag a genuine research home or an NSF page outside award search', () => {
     expect(isNonContactableIdentifierSourceUrl('https://neuro.example.yale.edu/lab')).toBe(false);
-    expect(isNonContactableIdentifierSourceUrl('https://www.nsf.gov/news/example-item')).toBe(false);
-    expect(isNonContactableIdentifierSourceUrl('https://center.example.yale.edu/get-involved')).toBe(
+    expect(isNonContactableIdentifierSourceUrl('https://www.nsf.gov/news/example-item')).toBe(
       false,
     );
+    expect(
+      isNonContactableIdentifierSourceUrl('https://center.example.yale.edu/get-involved'),
+    ).toBe(false);
     expect(isNonContactableIdentifierSourceUrl(undefined)).toBe(false);
   });
 });

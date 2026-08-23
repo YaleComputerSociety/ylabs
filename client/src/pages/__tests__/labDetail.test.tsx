@@ -491,6 +491,43 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
   });
 
+  it('falls through to the Yale Directory when the only source is a non-contactable identifier page (#651)', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: ['https://orcid.org/0000-0002-1825-0097'],
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.7,
+          signalTypes: ['REACH_OUT_PLAUSIBLE'],
+          bestNextStep: 'Reach out to the PI.',
+          evidence: [{ signalType: 'REACH_OUT_PLAUSIBLE', confidence: 'MEDIUM' }],
+        },
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
+    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.queryByText(/Open the official page to find contact details/)).toBeNull();
+  });
+
   it('does not surface a contested lead profile page as the official CTA when the lead identity is under review', async () => {
     renderLabDetail({
       ...basePayload,

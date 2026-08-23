@@ -292,8 +292,8 @@ const ORG_UMBRELLA_KINDS = new Set(['center', 'institute', 'initiative']);
 export const isOrgUmbrellaEntity = (entity?: OutreachEntityLike | null): boolean =>
   Boolean(
     entity &&
-      ((entity.entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entity.entityType)) ||
-        (entity.kind && ORG_UMBRELLA_KINDS.has(entity.kind))),
+    ((entity.entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entity.entityType)) ||
+      (entity.kind && ORG_UMBRELLA_KINDS.has(entity.kind))),
   );
 
 export interface ResolveOutreachOfficialSourceOptions {
