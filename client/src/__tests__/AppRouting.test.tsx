@@ -128,4 +128,23 @@ describe('App routing', () => {
     expect(getByTestId('not-found-page').textContent).toBe('Page not found');
     expect(window.location.pathname).toBe(retiredPath);
   });
+
+  it('exposes a skip-to-content link that precedes the navigation and targets the main landmark', () => {
+    window.history.pushState({}, '', '/research');
+
+    const { container, getByRole } = render(<App />);
+
+    const skipLink = getByRole('link', { name: /skip to main content/i });
+    expect(skipLink.getAttribute('href')).toBe('#main-content');
+
+    const main = container.querySelector('main');
+    expect(main?.getAttribute('id')).toBe('main-content');
+    expect(main?.getAttribute('tabindex')).toBe('-1');
+
+    const focusable = container.querySelectorAll('a[href], button, main[tabindex]');
+    expect(focusable[0]).toBe(skipLink);
+    expect(
+      skipLink.compareDocumentPosition(main as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 });

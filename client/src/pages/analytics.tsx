@@ -576,6 +576,7 @@ const Analytics = () => {
             </div>
           </div>
 
+          <h2 className="sr-only">Key metrics</h2>
           <div className="grid grid-cols-1 gap-4 p-5 lg:grid-cols-4">
             <DashboardMetric
               title="Search success"
