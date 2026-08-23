@@ -154,3 +154,26 @@ describe('resolveGroundedCardDescription', () => {
     expect(resolved).toBe('');
   });
 });
+
+const UNGROUNDABLE_FULL = 'Welcome to the lab website. Thank you for your interest in our group.';
+
+describe('resolveGroundedCardDescription research-areas fallback (#952)', () => {
+  it('falls back to a research-areas card when prose yields no groundable summary', async () => {
+    expect(deriveShortDescriptionFromFullDescription(UNGROUNDABLE_FULL)).toBe('');
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: UNGROUNDABLE_FULL,
+      researchAreas: ['Biostatistics', 'Public Health', 'Cancer Research', 'Clinical Trials'],
+    });
+    expect(resolved).toBe(
+      'Studies Biostatistics, Public Health, Cancer Research, and Clinical Trials.',
+    );
+  });
+
+  it('fails closed to empty rather than fabricating when no clean research areas exist', async () => {
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: UNGROUNDABLE_FULL,
+      researchAreas: [],
+    });
+    expect(resolved).toBe('');
+  });
+});

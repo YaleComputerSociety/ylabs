@@ -252,6 +252,47 @@ const isConciseSpecificResearchDescription = (value: string): boolean =>
     /\b[a-z][a-z-]+(?:ics|ology|tion|ment|nance|theory|design|cycles)\b/i.test(value) &&
     (value.match(/,/g)?.length || 0) + (/\band\b/i.test(value) ? 1 : 0) >= 1);
 
+const VACUOUS_FOCUS_HEAD_NOUNS = [
+  'field',
+  'fields',
+  'area',
+  'areas',
+  'subject',
+  'subjects',
+  'topic',
+  'topics',
+  'discipline',
+  'disciplines',
+  'domain',
+  'domains',
+  'system',
+  'systems',
+  'organism',
+  'organisms',
+  'problem',
+  'problems',
+  'question',
+  'questions',
+  'phenomenon',
+  'phenomena',
+  'process',
+  'processes',
+  'matter',
+  'issue',
+  'issues',
+];
+
+const VACUOUS_FOCUS_SUMMARY_RE = new RegExp(
+  `^(?:studies|investigates|examines|explores|researches|analyzes|analyses|focuses on|works on)\\s+(?:the|a|an)\\s+(?:${VACUOUS_FOCUS_HEAD_NOUNS.join('|')})\\.?$`,
+  'i',
+);
+
+export function isVacuousGenericFocusSummary(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  return VACUOUS_FOCUS_SUMMARY_RE.test(text);
+}
+
 const hasFirstPersonShortLead = (value: string): boolean =>
   /^(?:we|our|my|i)\b/i.test(value) ||
   /[.!?]\s+(?:we|our|my|i)\b/i.test(value) ||
@@ -569,6 +610,7 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   if (text && /^my lab (?:focuses|studies|investigates|examines|works) (?:on|in|with)\b/i.test(text)) {
     flags.push('generic-lead');
   }
+  if (text && isVacuousGenericFocusSummary(text)) flags.push('generic-lead');
   if (text && isIdentityOnlyLabLead(text)) flags.push('generic-lead');
   if (text && isAffiliationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
@@ -608,6 +650,43 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
 
 export function describesResearchFocus(value: unknown): boolean {
   return hasResearchFocusPhrase(textValue(value));
+}
+
+const MAX_RESEARCH_AREA_CARD_TOPICS = 4;
+
+const oxfordJoin = (items: string[]): string => {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+};
+
+/**
+ * Builds a card summary from an entity's own structured `researchAreas[]` when
+ * no usable summary can be grounded in its prose (issue #952: a vacuous
+ * "Studies the field." beats out the clean topics that were already present).
+ * Topics come from a curated structured field, so the result is gated only on
+ * shape (length, non-vacuous), not on `fullDescription` grounding. Returns ''
+ * when no clean topic survives so callers fail closed rather than emit filler.
+ */
+export function buildResearchAreasCardSummary(researchAreas: unknown): string {
+  if (!Array.isArray(researchAreas)) return '';
+  const topics: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of researchAreas) {
+    if (typeof raw !== 'string') continue;
+    const topic = textValue(raw).replace(/[.;:,]+$/g, '').trim();
+    if (topic.length < 3 || topic.length > 60) continue;
+    if (wordCount(topic) > 6) continue;
+    const key = topic.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    topics.push(topic);
+    if (topics.length >= MAX_RESEARCH_AREA_CARD_TOPICS) break;
+  }
+  if (topics.length === 0) return '';
+  const candidate = `Studies ${oxfordJoin(topics)}.`;
+  if (candidate.length > 200 || isVacuousGenericFocusSummary(candidate)) return '';
+  return candidate;
 }
 
 export function assessResearchEntityDescriptionQuality(
