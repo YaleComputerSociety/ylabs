@@ -3,6 +3,8 @@ import {
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import { isProfileAreaShellEntity } from '../utils/profileAreaDuplicateRisk';
+import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
@@ -247,6 +249,31 @@ function isFormalizationOnlyProgram(program: ProgramStudentVisibilityInput): boo
   return formalizationCategoryPattern.test(category);
 }
 
+type ProgramPublicDescriptionState = 'present' | 'thin' | 'missing';
+
+const MIN_PROGRAM_PUBLIC_DESCRIPTION_WORDS = 6;
+
+const publicProgramDescriptionText = (value: unknown): string =>
+  typeof value === 'string'
+    ? textValue(redactDirectContactInfo(sanitizeCatalogDescription(value)))
+    : '';
+
+const wordCount = (value: string): number => value.split(/\s+/).filter(Boolean).length;
+
+function programPublicDescriptionState(
+  program: ProgramStudentVisibilityInput,
+): ProgramPublicDescriptionState {
+  const candidates = [
+    publicProgramDescriptionText(program.description),
+    publicProgramDescriptionText(program.summary),
+  ].filter(Boolean);
+  if (candidates.length === 0) return 'missing';
+  if (candidates.some((text) => wordCount(text) >= MIN_PROGRAM_PUBLIC_DESCRIPTION_WORDS)) {
+    return 'present';
+  }
+  return 'thin';
+}
+
 const overrideTier = (record: Record<string, any>): StudentVisibilityTier | null => {
   const tier = record.studentVisibilityOverrideTier;
   if (
@@ -421,20 +448,6 @@ export function computeResearchEntityStudentVisibility({
   return result;
 }
 
-const PROGRAM_DESCRIPTION_MIN_WORDS = 6;
-
-type ProgramDescriptionState = 'present' | 'thin' | 'missing';
-
-function programDescriptionState(program: ProgramStudentVisibilityInput): ProgramDescriptionState {
-  const text = [program.summary, program.description]
-    .map(textValue)
-    .reduce((longest, current) => (current.length > longest.length ? current : longest), '');
-  if (!text) return 'missing';
-  const words = text.split(/\s+/).filter(Boolean).length;
-  if (words < PROGRAM_DESCRIPTION_MIN_WORDS) return 'thin';
-  return 'present';
-}
-
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
 ): StudentVisibilityResult {
@@ -457,9 +470,8 @@ export function computeProgramStudentVisibility(
     program.undergraduateOnly === true || program.yaleCollegeOnly === true;
   const audienceKnown = undergraduateRelevant || graduateOnly;
   const formalizationOnly = isFormalizationOnlyProgram(program);
-  const descriptionState = programDescriptionState(program);
-  const hasMeaningfulDescription = descriptionState === 'present';
   const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
+  const descriptionState = programPublicDescriptionState(program);
   const catalogOrAdmin =
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
       title,
@@ -487,16 +499,18 @@ export function computeProgramStudentVisibility(
     audienceKnown &&
     hasOfficialSource &&
     hasApplicationRoute &&
-    !sourceIsApplicationPortal &&
-    hasMeaningfulDescription
+    !sourceIsApplicationPortal
   ) {
     // A research program with a known audience, a real (non-portal) official source, and an
     // application route is student-ready regardless of whether that audience is undergraduate
     // or graduate: on a research-discovery surface, audience is an honest label (surfaced as a
     // Graduate badge for graduate-only records), not a suppression trigger. Only catalog/admin
     // pages and non-research records stay suppressed. The `formalization_only` reason is still
-    // recorded for transparency but no longer caps tier.
-    computedTier = 'student_ready';
+    // recorded for transparency but no longer caps tier. A student-facing public description is
+    // required before student_ready: without a non-thin summary or description the card would
+    // render with no explanatory prose, so a description-less record is capped at limited_but_safe
+    // (mirroring the research-entity public-description invariant that gates the same tier).
+    computedTier = descriptionState === 'present' ? 'student_ready' : 'limited_but_safe';
   } else if (!isArchiveReview && audienceKnown && hasOfficialSource) {
     computedTier = 'limited_but_safe';
   }
