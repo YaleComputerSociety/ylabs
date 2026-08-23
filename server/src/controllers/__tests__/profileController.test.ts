@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   listingFind: vi.fn(),
   getProfileByNetid: vi.fn(),
+  userFindOne: vi.fn(),
 }));
 
 vi.mock('../../db/connections', () => ({
@@ -21,7 +22,26 @@ vi.mock('../../services/profileService', async () => {
   };
 });
 
-import { getProfile, getProfileListings } from '../profileController';
+vi.mock('../../models/user', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../models/user')>()),
+  User: {
+    findOne: mocks.userFindOne,
+  },
+}));
+
+vi.mock('../../services/courseTableService', () => ({
+  fetchCourseTableData: vi.fn(),
+}));
+
+import { fetchCourseTableData } from '../../services/courseTableService';
+import { getProfile, getProfileCourses, getProfileListings } from '../profileController';
+
+const mockTargetUser = (user: Record<string, unknown> | undefined) => {
+  mocks.userFindOne.mockReturnValue({
+    select: vi.fn().mockReturnThis(),
+    lean: vi.fn().mockResolvedValue(user ?? null),
+  });
+};
 
 describe('profileController', () => {
   beforeEach(() => {
@@ -67,6 +87,7 @@ describe('profileController', () => {
       sort: vi.fn().mockReturnThis(),
       lean: vi.fn().mockResolvedValue([listing]),
     });
+    mockTargetUser({ userType: 'professor' });
 
     const req = { params: { netid: 'owner123' } } as any;
     const res = {
@@ -109,6 +130,37 @@ describe('profileController', () => {
     expect(payload).not.toHaveProperty('embedding');
   });
 
+  it('404s listings for a non-faculty netid instead of leaking listing data', async () => {
+    mockTargetUser({ userType: 'undergraduate' });
+
+    const req = { params: { netid: 'student123' } } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await getProfileListings(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Profile not found' });
+    expect(mocks.listingFind).not.toHaveBeenCalled();
+  });
+
+  it('404s listings for a nonexistent netid', async () => {
+    mockTargetUser(undefined);
+
+    const req = { params: { netid: 'ghost123' } } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await getProfileListings(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(mocks.listingFind).not.toHaveBeenCalled();
+  });
+
   it('forwards the already-normalized profile (research homes + interest tags) without re-normalizing', async () => {
     // `getProfileByNetid` is the single normalization point and returns a
     // public-safe profile. Internal-field stripping is owned and tested by
@@ -148,5 +200,58 @@ describe('profileController', () => {
     );
     expect(payload.research_interests).toEqual(['Adaptive Optics', 'Wavefront Control']);
     expect(payload.researchEntities).toHaveLength(1);
+  });
+});
+
+describe('getProfileCourses', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns course-table data for a faculty netid', async () => {
+    mockTargetUser({ fname: 'Owner', lname: 'Professor', userType: 'professor' });
+    (fetchCourseTableData as any).mockResolvedValue([{ code: 'CPSC 100' }]);
+
+    const req = { params: { netid: 'owner123' } } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await getProfileCourses(req, res);
+
+    expect(fetchCourseTableData).toHaveBeenCalledWith('Owner Professor');
+    expect(res.json).toHaveBeenCalledWith({ courses: [{ code: 'CPSC 100' }], available: true });
+  });
+
+  it('404s for a non-faculty netid instead of leaking course-table data', async () => {
+    mockTargetUser({ fname: 'Student', lname: 'Victim', userType: 'undergraduate' });
+
+    const req = { params: { netid: 'student123' } } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await getProfileCourses(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Profile not found' });
+    expect(fetchCourseTableData).not.toHaveBeenCalled();
+  });
+
+  it('404s for a nonexistent netid', async () => {
+    mockTargetUser(undefined);
+
+    const req = { params: { netid: 'ghost123' } } as any;
+    const res = {
+      json: vi.fn(),
+      status: vi.fn().mockReturnThis(),
+    } as any;
+
+    await getProfileCourses(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(fetchCourseTableData).not.toHaveBeenCalled();
   });
 });
