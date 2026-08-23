@@ -49,13 +49,15 @@ const PROSE_COMPLETENESS_FIELDS = new Set([
   'researchInterestSummary',
 ]);
 
-// Curated admin overrides are meant to be authoritative until an admin records a
+// Curated manual overrides are meant to be authoritative until a human records a
 // newer one, not to age out against scraper re-scrapes on a 90-day half-life like
-// ordinary evidence. A half-life this long keeps a fresher manual-admin-edit
+// ordinary evidence. Both isManualLock sources seeded in seedSources.ts
+// (manual-admin-edit and manual-pi-edit) share the same decay-reversal exposure,
+// so both are exempted. A half-life this long keeps a fresher manual override
 // ordered ahead of an older one (so a genuinely newer correction still wins) while
 // keeping the decay contribution negligible against any scraper source's weight
 // for any realistic observation age.
-const NON_DECAYING_SOURCES = new Set(['manual-admin-edit']);
+const NON_DECAYING_SOURCES = new Set(['manual-admin-edit', 'manual-pi-edit']);
 const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
 
 // Sources whose description prose is keyword-synthesized from directory listings

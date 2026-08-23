@@ -364,6 +364,31 @@ describe('resolveField', () => {
     expect(r?.contributingSources).toEqual(['manual']);
   });
 
+  it('exempts manual-pi-edit from decay against a fresher scraper observation too', () => {
+    const r = resolveField(
+      'shortDescription',
+      [
+        {
+          field: 'shortDescription',
+          value: 'PI-curated one-line summary of the lab.',
+          sourceName: 'manual-pi-edit',
+          confidence: 1.0,
+          observedAt: D('2026-02-04'),
+        },
+        {
+          field: 'shortDescription',
+          value: 'Fresh scraper-derived summary line.',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.9,
+          observedAt: D('2026-08-22'),
+        },
+      ],
+      { now: D('2026-08-23'), recencyHalfLifeDays: 90 },
+    );
+    expect(r?.value).toBe('PI-curated one-line summary of the lab.');
+    expect(r?.contributingSources).toEqual(['manual-pi-edit']);
+  });
+
   it('serializes arrays in a stable order so [a,b] === [b,a]', () => {
     const r = resolveField(
       'departments',
