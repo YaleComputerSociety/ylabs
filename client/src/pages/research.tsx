@@ -1389,7 +1389,7 @@ const Research = () => {
                 hasSubmittedSearch ? '2xl:hidden' : ''
               }`}
             >
-              Search by interest, professor, course topic, method, or question. We&apos;ll help you
+              Search by interest, professor, course topic, or question. We&apos;ll help you
               find relevant research profiles and verified ways in when the source evidence is
               strong enough.
             </p>
@@ -1415,7 +1415,7 @@ const Research = () => {
                     }
                   }}
                   aria-describedby="research-search-context research-search-help"
-                  placeholder="Type a topic, professor, lab, method, or research question"
+                  placeholder="Type a topic, professor, lab, or research question"
                   className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
                 />
                 <button
@@ -1572,7 +1572,7 @@ const Research = () => {
                 ) : (
                   <EmptyGroup>
                     No research homes match these filters. Try a broader topic, professor name, lab,
-                    method, or research question.
+                    or research question.
                   </EmptyGroup>
                 )}
               </section>
@@ -1641,8 +1641,8 @@ const Research = () => {
                   ) : (
                     <EmptyGroup>
                       {departmentSearch
-                        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, method, professor, or adjacent department while this department is being seeded.'
-                        : 'No indexed research homes matched this search yet. Try a broader topic, related method, professor, or adjacent department while coverage improves.'}
+                        ? 'This is a data coverage gap, not proof that the department has no undergraduate research. Try a topic, professor, or adjacent department while this department is being seeded.'
+                        : 'No indexed research homes matched this search yet. Try a broader topic, professor, or adjacent department while coverage improves.'}
                     </EmptyGroup>
                   )}
                 </section>
