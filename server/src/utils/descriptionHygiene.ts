@@ -54,7 +54,7 @@ export const deadAnchorCtaSentencePattern =
 export function stripDeadAnchorCtaSentences(text: string): string {
   const value = String(text || '');
   if (!deadAnchorCtaSentencePattern.test(value)) return normalizeHygieneWhitespace(value);
-  const sentences = value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+  const sentences = value.split(/(?<=[.!?])\s+/);
   const kept = sentences.filter((sentence) => !deadAnchorCtaSentencePattern.test(sentence));
   return normalizeHygieneWhitespace(kept.join(' '));
 }
