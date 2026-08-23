@@ -144,7 +144,7 @@ const RESEARCH_AREA_SCIENTIFIC_LATIN_RE =
 const RESEARCH_AREA_FIRST_PERSON_RE = /^(?:I|We|My|Our)\s+\S/;
 const RESEARCH_AREA_LAB_BLURB_RE =
   /\b(?:is|are|has|have|been)\s+(?:currently\s+)?(?:focused|interested|working|studying|investigating)\b|\b(?:the|our|my)\s+(?:group|lab|laboratory)\b/i;
-const RESEARCH_AREA_RUN_ON_WORD_CEILING = 15;
+const RESEARCH_AREA_MAX_TOPIC_WORDS = 10;
 
 function researchAreaWordCount(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
@@ -163,7 +163,7 @@ function isNonTopicResearchAreaChip(raw: unknown): boolean {
   const wordCount = researchAreaWordCount(value);
   if (RESEARCH_AREA_FIRST_PERSON_RE.test(value) && wordCount >= 4) return true;
   if (RESEARCH_AREA_LAB_BLURB_RE.test(value)) return true;
-  if (wordCount >= RESEARCH_AREA_RUN_ON_WORD_CEILING) return true;
+  if (wordCount >= RESEARCH_AREA_MAX_TOPIC_WORDS) return true;
   const firstToken = value.split(' ')[0] ?? '';
   if (
     /^[a-z]+$/.test(firstToken) &&
