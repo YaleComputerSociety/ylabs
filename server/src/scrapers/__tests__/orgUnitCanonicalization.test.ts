@@ -206,6 +206,24 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(set.departments).toEqual(['Neuroscience', 'Molecular Biophysics and Biochemistry']);
     expect(set.schools).toEqual(['Yale School of Medicine', 'Faculty of Arts and Sciences']);
   });
+
+  it('backfills the empty scalar school from the primary derived school when only departments are set', async () => {
+    const deptToSchool = new Map([['Neuroscience', 'Yale School of Medicine']]);
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index, deptToSchool));
+    const set: Record<string, unknown> = { departments: ['NSCI'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' });
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+    expect(set.school).toBe('Yale School of Medicine');
+  });
+
+  it('does not overwrite an existing scalar school when departments derive a different primary', async () => {
+    const deptToSchool = new Map([['Neuroscience', 'Yale School of Medicine']]);
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index, deptToSchool));
+    const set: Record<string, unknown> = { departments: ['NSCI'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Faculty of Arts and Sciences' });
+    expect(set.school).toBeUndefined();
+    expect(set.schools).toEqual(['Faculty of Arts and Sciences', 'Yale School of Medicine']);
+  });
 });
 
 describe('buildDepartmentToSchoolMap', () => {

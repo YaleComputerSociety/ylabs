@@ -294,7 +294,10 @@ const asStringList = (value: unknown): string[] =>
  * OrgUnit names when they resolve, and left as raw values otherwise. It also
  * derives the multi-valued `schools[]` (the entity's own school plus each
  * department's parent school) so a cross-school lab is filterable under every
- * school it belongs to. `existing` supplies the entity's current school and
+ * school it belongs to. When the scalar `school` would otherwise stay empty, it
+ * is backfilled from the primary derived school so the singular mirror the
+ * client display sites read never desyncs from the canonical `schools[]`.
+ * `existing` supplies the entity's current school and
  * departments so `schools[]` reflects the merged record when a scrape updates
  * only one of them. Never throws - a canonicalization failure or an unseeded
  * `org_units` collection leaves the raw scraped values untouched so
@@ -349,6 +352,9 @@ export async function applyResearchEntityOrgUnitCanonicalization(
       addSchool(canonicalizer.schoolForDepartment(department));
     }
     if (schools.length > 0) set.schools = schools;
+
+    const scalarSchool = typeof effectiveSchool === 'string' ? effectiveSchool.trim() : '';
+    if (!scalarSchool && schools.length > 0) set.school = schools[0];
   } catch {
     return result;
   }
