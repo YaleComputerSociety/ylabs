@@ -49,7 +49,10 @@ export interface ResearchEntityPiDedupeGroup {
   canonicalWebsiteUrl?: string;
   canonicalFullDescription?: string;
   canonicalShortDescription?: string;
-  dedupeCategory?: 'profile_area_shell_with_concrete_home' | 'shared_person_id';
+  dedupeCategory?:
+    | 'profile_area_shell_with_concrete_home'
+    | 'shared_person_id'
+    | 'website_url_identity';
   mergedRecentGrants?: unknown[];
   mergedRecentGrantCount?: number;
   mergedFundingAgencies?: string[];
@@ -1071,6 +1074,100 @@ export function buildOrgNameResearchEntityDedupePlan(
     if (!isOrgNameDedupeGroupCorroborated(groupEntities)) continue;
     const group = buildOrgNameDedupeGroup(key, groupEntities);
     if (group) groups.push(group);
+  }
+  return dedupePlanGroupsByEntitySet(groups);
+}
+
+export type WebsiteUrlIdentityDedupeRow = OfficialLabUrlDedupeRow;
+
+const PERSON_LAB_NAME_STOPWORDS = new Set([
+  'the',
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'research',
+  'group',
+  'groups',
+  'center',
+  'centre',
+  'institute',
+  'initiative',
+  'program',
+  'programme',
+  'project',
+  'of',
+  'for',
+  'and',
+  'at',
+  'a',
+  'an',
+  'to',
+  'in',
+  'on',
+  'yale',
+]);
+
+const MAX_PERSON_LAB_NAME_TOKENS = 3;
+
+function personLeadSurname(name: string | undefined): string | null {
+  const tokens = normalizedWords(name).filter((word) => !PERSON_LAB_NAME_STOPWORDS.has(word));
+  if (tokens.length === 0 || tokens.length > MAX_PERSON_LAB_NAME_TOKENS) return null;
+  return tokens[tokens.length - 1];
+}
+
+export function normalizeWebsiteUrlIdentityKey(url: string | undefined): string {
+  const value = (url || '').trim().toLowerCase();
+  if (!value) return '';
+  return value.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+}
+
+function websiteUrlIdentityHost(key: string): string {
+  return (key.split('/')[0] || '').replace(/^www\./, '');
+}
+
+/**
+ * A shared, identical lab website is only a same-lab duplicate signal when the
+ * entities sharing it resolve to the same person. Gating on a single shared
+ * trailing lead surname (derived from the person-lab name) merges same-person
+ * clones like "The Zimmerman Lab" / "Julie Zimmerman Lab" while never
+ * collapsing a genuine multi-PI group site such as the shared High Energy
+ * Theory home (het.yale.edu) across distinct physics faculty (issue #1130).
+ */
+function websiteUrlIdentityGroupAgreesOnLead(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): boolean {
+  if (entities.length <= 1) return false;
+  if (!entities.every((entity) => (entity.kind || '').toLowerCase() === 'lab')) return false;
+  const surnames = entities.map((entity) => personLeadSurname(entity.name));
+  if (surnames.some((surname) => !surname)) return false;
+  return new Set(surnames).size === 1;
+}
+
+export function buildWebsiteUrlIdentityResearchEntityDedupePlan(
+  rows: WebsiteUrlIdentityDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const byKey = new Map<string, Map<string, ResearchEntityPiDedupeRow['entities'][number]>>();
+  for (const row of rows) {
+    const key = normalizeWebsiteUrlIdentityKey(row.url);
+    if (!key) continue;
+    if (ORG_DEDUPE_UMBRELLA_HOSTS.has(websiteUrlIdentityHost(key))) continue;
+    const bucket = byKey.get(key) || new Map<string, ResearchEntityPiDedupeRow['entities'][number]>();
+    for (const entity of row.entities) {
+      if (entity.id) bucket.set(entity.id, entity);
+    }
+    byKey.set(key, bucket);
+  }
+
+  const groups: ResearchEntityPiDedupeGroup[] = [];
+  for (const [key, bucket] of byKey) {
+    const entities = [...bucket.values()];
+    if (!websiteUrlIdentityGroupAgreesOnLead(entities)) continue;
+    const group = buildGroupFromCluster(
+      { userId: `website-url:${key}`, normalizedName: `website-url:${key}`, entities },
+      entities,
+    );
+    if (group) groups.push({ ...group, dedupeCategory: 'website_url_identity' as const });
   }
   return dedupePlanGroupsByEntitySet(groups);
 }

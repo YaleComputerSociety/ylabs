@@ -11,6 +11,8 @@ import {
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  buildWebsiteUrlIdentityResearchEntityDedupePlan,
+  normalizeWebsiteUrlIdentityKey,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -1220,6 +1222,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1235,6 +1238,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1256,6 +1260,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
       limit: 10000,
@@ -1271,6 +1276,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: true,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1582,6 +1588,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --reviewed-profile-area-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-reviewed-profile-area.json',
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --funding-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-funding-only.json',
         'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --official-lab-url-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
+        'SCRAPER_ENV=beta yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-website-url.json',
       ],
     });
   });
@@ -1795,6 +1802,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 50,
@@ -1882,6 +1890,156 @@ describe('buildOfficialLabUrlResearchEntityDedupePlan', () => {
           entities: [
             { id: 'ysm-one', slug: 'ysm-one', name: 'One Lab' },
             { id: 'ysm-two', slug: 'ysm-two', name: 'Two Lab' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('normalizeWebsiteUrlIdentityKey', () => {
+  it('strips scheme and trailing slash so http/https and slash variants collapse', () => {
+    expect(normalizeWebsiteUrlIdentityKey('https://zimmermanlab.yale.edu/')).toBe(
+      'zimmermanlab.yale.edu',
+    );
+    expect(normalizeWebsiteUrlIdentityKey('http://zimmermanlab.yale.edu')).toBe(
+      'zimmermanlab.yale.edu',
+    );
+    expect(normalizeWebsiteUrlIdentityKey('  HTTPS://Het.Yale.EDU///  ')).toBe('het.yale.edu');
+    expect(normalizeWebsiteUrlIdentityKey('')).toBe('');
+    expect(normalizeWebsiteUrlIdentityKey(undefined)).toBe('');
+  });
+});
+
+describe('buildWebsiteUrlIdentityResearchEntityDedupePlan', () => {
+  it('merges a same-person lab clone that shares an identical websiteUrl but has no PI role join', () => {
+    const plan = buildWebsiteUrlIdentityResearchEntityDedupePlan([
+      {
+        url: 'zimmermanlab.yale.edu',
+        entities: [
+          {
+            id: 'zimmerman-seas',
+            slug: 'dept-seas-julie-zimmerman',
+            name: 'The Zimmerman Lab',
+            kind: 'lab',
+            websiteUrl: 'https://zimmermanlab.yale.edu/',
+            fullDescription: 'The Zimmerman Lab designs safer, greener chemicals and materials.',
+            shortDescription: 'Green chemistry and sustainable materials.',
+            sourceUrls: ['https://seas.yale.edu/faculty/julie-zimmerman'],
+            departments: ['Chemical Engineering'],
+            researchAreas: ['Green Chemistry', 'Sustainable Materials'],
+          },
+          {
+            id: 'zimmerman-yse',
+            slug: 'yse-faculty-julie-zimmerman',
+            name: 'Julie Zimmerman Lab',
+            kind: 'lab',
+            websiteUrl: 'https://zimmermanlab.yale.edu/',
+            shortDescription: "Dr. Julie Zimmerman's lab studies sustainability.",
+            sourceUrls: ['https://environment.yale.edu/profile/julie-zimmerman'],
+            researchAreas: ['Business and the Environment', 'Circular Economy'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const [group] = plan;
+    expect(group.canonicalEntityId).toBe('zimmerman-seas');
+    expect(group.duplicateEntityIds).toEqual(['zimmerman-yse']);
+    expect(group.dedupeCategory).toBe('website_url_identity');
+    expect(group.userId).toBe('website-url:zimmermanlab.yale.edu');
+    expect(group.mergedResearchAreas).toEqual(
+      expect.arrayContaining(['Business and the Environment', 'Circular Economy']),
+    );
+  });
+
+  it('collapses http/https scheme splits of the same lab home into one group', () => {
+    const plan = buildWebsiteUrlIdentityResearchEntityDedupePlan([
+      {
+        url: 'http://smithlab.yale.edu',
+        entities: [
+          { id: 'smith-a', slug: 'dept-smith', name: 'Smith Lab', kind: 'lab' },
+        ],
+      },
+      {
+        url: 'https://smithlab.yale.edu/',
+        entities: [
+          { id: 'smith-b', slug: 'faculty-research-area-john-smith', name: 'John Smith Lab', kind: 'lab' },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds].sort()).toEqual([
+      'smith-a',
+      'smith-b',
+    ]);
+  });
+
+  it('never collapses a shared multi-PI group site across distinct lead surnames (het.yale.edu)', () => {
+    const plan = buildWebsiteUrlIdentityResearchEntityDedupePlan([
+      {
+        url: 'http://het.yale.edu',
+        entities: [
+          { id: 'het-skiba', slug: 'dept-physics-witold-skiba', name: 'Skiba Lab', kind: 'lab' },
+          {
+            id: 'het-appelquist',
+            slug: 'dept-physics-thomas-appelquist',
+            name: 'Appelquist Lab',
+            kind: 'lab',
+          },
+        ],
+      },
+      {
+        url: 'https://het.yale.edu/',
+        entities: [
+          {
+            id: 'het-goldberger',
+            slug: 'dept-physics-walter-goldberger',
+            name: 'Goldberger Lab',
+            kind: 'lab',
+          },
+          { id: 'het-poland', slug: 'dept-physics-david-poland', name: 'Poland Lab', kind: 'lab' },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('excludes shared umbrella hosts that are never a single lab home', () => {
+    expect(
+      buildWebsiteUrlIdentityResearchEntityDedupePlan([
+        {
+          url: 'yale.edu',
+          entities: [
+            { id: 'u-one', slug: 'dept-one', name: 'Zimmerman Lab', kind: 'lab' },
+            { id: 'u-two', slug: 'dept-two', name: 'Julie Zimmerman Lab', kind: 'lab' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('only merges lab-kind entities so shared org/center sites are left intact', () => {
+    expect(
+      buildWebsiteUrlIdentityResearchEntityDedupePlan([
+        {
+          url: 'zimmermancenter.yale.edu',
+          entities: [
+            {
+              id: 'center-a',
+              slug: 'yale-research-center-zimmerman',
+              name: 'Zimmerman Center',
+              kind: 'center',
+            },
+            {
+              id: 'center-b',
+              slug: 'research-yale-zimmerman',
+              name: 'Zimmerman Center',
+              kind: 'center',
+            },
           ],
         },
       ]),

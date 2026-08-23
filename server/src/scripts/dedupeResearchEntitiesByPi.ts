@@ -13,12 +13,14 @@ import {
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  buildWebsiteUrlIdentityResearchEntityDedupePlan,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   type MultiPersonEntityQuarantine,
   type OfficialLabUrlDedupeRow,
   type OrgNameDedupeEntity,
   type ResearchEntityPiDedupeRow,
   type SameNameDifferentPersonQuarantine,
+  type WebsiteUrlIdentityDedupeRow,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
 } from './researchEntityPiDedupeCore';
@@ -71,6 +73,7 @@ export interface ResearchEntityPiDedupeArgs {
   fullPlan: boolean;
   officialLabUrlOnly: boolean;
   orgNameOnly: boolean;
+  websiteUrlOnly: boolean;
   reviewedProfileAreaOnly: boolean;
   sharedPersonId: boolean;
   limit: number;
@@ -147,6 +150,7 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     fullPlan: false,
     officialLabUrlOnly: false,
     orgNameOnly: false,
+    websiteUrlOnly: false,
     reviewedProfileAreaOnly: false,
     sharedPersonId: false,
     limit: 10000,
@@ -191,6 +195,10 @@ export function parseResearchEntityPiDedupeArgs(argv: string[]) {
     }
     if (arg === '--org-name-only') {
       args.orgNameOnly = true;
+      continue;
+    }
+    if (arg === '--website-url-only') {
+      args.websiteUrlOnly = true;
       continue;
     }
     if (arg === '--reviewed-profile-area-only') {
@@ -728,6 +736,9 @@ export function buildResearchEntityPiDedupeReviewBreakdown(
       betaCommand(
         'yarn --cwd server research-entity:dedupe-by-pi --official-lab-url-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-official-lab-url.json',
       ),
+      betaCommand(
+        'yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --output /tmp/ylabs-research-entity-dedupe-website-url.json',
+      ),
     ],
   };
 }
@@ -1063,6 +1074,68 @@ async function loadOfficialLabUrlCandidateRows(limit: number) {
         url: { $regex: '^https://medicine\\.yale\\.edu/lab/[^/]+/?$' },
       },
     },
+    {
+      $group: {
+        _id: '$url',
+        entities: { $addToSet: '$entity' },
+      },
+    },
+    { $match: { 'entities.1': { $exists: true } } },
+    { $sort: { _id: 1 } },
+    { $limit: limit },
+  ]).then((rows) =>
+    rows.map((row: any) => ({
+      url: row._id,
+      entities: row.entities || [],
+    })),
+  );
+}
+
+async function loadWebsiteUrlIdentityCandidateRows(limit: number) {
+  return ResearchEntity.aggregate([
+    {
+      $match: {
+        archived: { $ne: true },
+        kind: 'lab',
+        websiteUrl: { $nin: [null, ''] },
+      },
+    },
+    {
+      $project: {
+        entity: {
+          id: { $toString: '$_id' },
+          slug: '$slug',
+          name: '$name',
+          kind: '$kind',
+          entityType: '$entityType',
+          websiteUrl: '$websiteUrl',
+          fullDescription: '$fullDescription',
+          shortDescription: '$shortDescription',
+          sourceUrls: '$sourceUrls',
+          departments: '$departments',
+          researchAreas: '$researchAreas',
+        },
+        url: {
+          $rtrim: {
+            input: {
+              $replaceOne: {
+                input: {
+                  $replaceOne: {
+                    input: { $trim: { input: { $toLower: '$websiteUrl' } } },
+                    find: 'https://',
+                    replacement: '',
+                  },
+                },
+                find: 'http://',
+                replacement: '',
+              },
+            },
+            chars: '/',
+          },
+        },
+      },
+    },
+    { $match: { url: { $ne: '' } } },
     {
       $group: {
         _id: '$url',
@@ -1800,6 +1873,7 @@ async function main() {
     fullPlan,
     officialLabUrlOnly,
     orgNameOnly,
+    websiteUrlOnly,
     limit,
     maxApply,
     slug,
@@ -1823,9 +1897,12 @@ async function main() {
   });
   await mongoose.connect(process.env.MONGODBURL);
 
-  const usesNonPiLane = officialLabUrlOnly || orgNameOnly;
+  const usesNonPiLane = officialLabUrlOnly || orgNameOnly || websiteUrlOnly;
   const officialLabUrlRows: OfficialLabUrlDedupeRow[] = officialLabUrlOnly
     ? await loadOfficialLabUrlCandidateRows(limit)
+    : [];
+  const websiteUrlIdentityRows: WebsiteUrlIdentityDedupeRow[] = websiteUrlOnly
+    ? await loadWebsiteUrlIdentityCandidateRows(limit)
     : [];
   const orgNameRows: OrgNameDedupeEntity[] = orgNameOnly
     ? await loadOrgNameCandidateRows(limit)
@@ -1838,7 +1915,13 @@ async function main() {
           includeNameOnly: !deleteDuplicates,
           includeRetiredPiLinks: deleteDuplicates,
         });
-  const rows = officialLabUrlOnly ? officialLabUrlRows : orgNameOnly ? orgNameRows : piRows;
+  const rows = officialLabUrlOnly
+    ? officialLabUrlRows
+    : websiteUrlOnly
+      ? websiteUrlIdentityRows
+      : orgNameOnly
+        ? orgNameRows
+        : piRows;
   const sameNameDifferentPersonQuarantine: SameNameDifferentPersonQuarantine[] = sharedPersonId
     ? buildSameNameDifferentPersonQuarantine(piRows)
     : [];
@@ -1848,13 +1931,15 @@ async function main() {
   const allPlan = dedupePlannedGroups(
     officialLabUrlOnly
       ? buildOfficialLabUrlResearchEntityDedupePlan(officialLabUrlRows)
-      : orgNameOnly
-        ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
-        : sharedPersonId
-          ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
-          : fundingOnly
-            ? buildFundingResearchEntityDedupePlan(piRows)
-            : buildResearchEntityPiDedupePlan(piRows),
+      : websiteUrlOnly
+        ? buildWebsiteUrlIdentityResearchEntityDedupePlan(websiteUrlIdentityRows)
+        : orgNameOnly
+          ? buildOrgNameResearchEntityDedupePlan(orgNameRows)
+          : sharedPersonId
+            ? buildSharedPersonIdResearchEntityDedupePlan(piRows)
+            : fundingOnly
+              ? buildFundingResearchEntityDedupePlan(piRows)
+              : buildResearchEntityPiDedupePlan(piRows),
   );
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
@@ -1881,6 +1966,7 @@ async function main() {
   const duplicateCurrentMembers =
     acceptedDecisions ||
     orgNameOnly ||
+    websiteUrlOnly ||
     !shouldRetireDuplicateCurrentMembersForDedupeRun({ fundingOnly })
       ? []
       : await loadDuplicateCurrentMemberRows(limit);
@@ -1945,6 +2031,7 @@ async function main() {
     fundingOnly,
     officialLabUrlOnly,
     orgNameOnly,
+    websiteUrlOnly,
     sharedPersonId,
     candidateGroups: rows.length,
     filteredBySlug: slug || null,
