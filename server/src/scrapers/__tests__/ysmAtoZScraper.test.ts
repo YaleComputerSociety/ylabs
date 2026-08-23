@@ -12,6 +12,8 @@ import {
   buildPiUserLookupQuery,
   labResearchFacultyToObservations,
   labToObservations,
+  parseLabs,
+  recoverLabDisplayName,
 } from '../sources/ysmAtoZScraper';
 import { User } from '../../models/user';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -148,6 +150,52 @@ describe('YsmAtoZ HTML parsing', () => {
     const labs = parseLabsForTest(SAMPLE_HTML);
     expect(labs.find((l) => l.name === 'Empty URL Lab')).toBeUndefined();
     expect(labs.find((l) => l.name === 'No Link Lab')).toBeUndefined();
+  });
+});
+
+const INITIAL_MANGLING_HTML = `
+<html><body>
+<table>
+  <tbody>
+    <tr><td>XLiu Lab</td><td><a href="https://medicine.yale.edu/lab/x-liu/">https://medicine.yale.edu/lab/x-liu/</a></td></tr>
+    <tr><td>J. R. R. Example Lab</td><td><a href="https://medicine.yale.edu/lab/jrr-example/">https://medicine.yale.edu/lab/jrr-example/</a></td></tr>
+    <tr><td>Q.Example Lab</td><td><a href="https://medicine.yale.edu/lab/q-example/">https://medicine.yale.edu/lab/q-example/</a></td></tr>
+    <tr><td>Arnsten Lab</td><td><a href="https://medicine.yale.edu/lab/arnsten/">https://medicine.yale.edu/lab/arnsten/</a></td></tr>
+  </tbody>
+</table>
+</body></html>
+`;
+
+describe('parseLabs initial-spacing recovery (issue #581)', () => {
+  it('un-glues a leading initial that the source fused to the surname when the URL corroborates the split', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const liu = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/x-liu/');
+    expect(liu?.name).toBe('X. Liu Lab');
+    expect(liu?.slug).toBe('ysm-x-liu');
+  });
+
+  it('preserves spacing for already-correct chained initials', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const example = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/jrr-example/');
+    expect(example?.name).toBe('J. R. R. Example Lab');
+  });
+
+  it('restores the space after an initial period glued to the surname', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const q = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/q-example/');
+    expect(q?.name).toBe('Q. Example Lab');
+  });
+
+  it('leaves an ordinary surname lab name unchanged', () => {
+    const labs = parseLabs(INITIAL_MANGLING_HTML);
+    const arnsten = labs.find((l) => l.url === 'https://medicine.yale.edu/lab/arnsten/');
+    expect(arnsten?.name).toBe('Arnsten Lab');
+  });
+
+  it('does not split a glued name when the URL slug does not corroborate an initial', () => {
+    expect(recoverLabDisplayName('QBio Institute', 'https://medicine.yale.edu/lab/qbio/')).toBe(
+      'QBio Institute',
+    );
   });
 });
 
