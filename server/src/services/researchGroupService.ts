@@ -989,7 +989,21 @@ export async function searchResearchGroupsViaMeili(
   // an empty result set rather than the full directory in browse order.
   const hasUnicodeWordContent = /[\p{L}\p{N}]/u.test(normalizedQuery.raw);
   const isBrowseAllQuery = normalizedQuery.raw === '';
-  const isUnsearchableQuery = !isBrowseAllQuery && trimmedQuery === '' && !hasUnicodeWordContent;
+  // A query like "C++" or "R&D" carries its meaning in symbols that
+  // `tokenizeStudentResearchQuery` treats as separators, so every resulting
+  // token collapses to a single character. Meilisearch then matches that
+  // 1-char token broadly against unrelated name initials instead of the
+  // intended term, silently returning a large but irrelevant result set
+  // (#1228). This is symbol-driven collapse, not a deliberate single-letter
+  // search, so it fails closed the same way an empty tokenization does.
+  const hasStrippedSymbols = /[^a-z0-9\s'’]/i.test(normalizedQuery.raw);
+  const isDegenerateSymbolCollapse =
+    hasStrippedSymbols &&
+    normalizedQuery.tokens.length > 0 &&
+    normalizedQuery.tokens.every((token) => token.length <= 1);
+  const isUnsearchableQuery =
+    (!isBrowseAllQuery && trimmedQuery === '' && !hasUnicodeWordContent) ||
+    isDegenerateSymbolCollapse;
   const meiliQueryText = trimmedQuery !== '' ? trimmedQuery : normalizedQuery.raw;
   if (isUnsearchableQuery) {
     return addResearchEntitySearchAliases(
