@@ -38,6 +38,7 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import type { ScraperContext, ObservationInput } from '../types';
+import { isYaleOfficialProfileUrl } from '../../scripts/backfillResearcherOfficialProfileLinksCore';
 
 // ---------------------------------------------------------------------------
 // Helper sample HTML
@@ -563,6 +564,88 @@ describe('official Yale profile-card extractor coverage', () => {
   });
 });
 
+describe('Wright Laboratory lab-site profile coverage', () => {
+  const WRIGHT_LAB_HTML = `
+    <html><body>
+      <ul class="directory-listing-cards">
+        <li class="directory-listing-card">
+          <div class="directory-listing-card__content">
+            <div class="directory-listing-card__overline"><div>Physics</div></div>
+            <h3 class="directory-listing-card__heading">
+              <a class="directory-listing-card__heading-link" href="/profile/robin-roster">
+                Robin Roster
+              </a>
+            </h3>
+            <div class="directory-listing-card__subheading">
+              <div>Assistant Professor of Physics</div>
+            </div>
+          </div>
+        </li>
+        <li class="directory-listing-card">
+          <div class="directory-listing-card__content">
+            <div class="directory-listing-card__overline"><div>Physics</div></div>
+            <h3 class="directory-listing-card__heading">
+              <a class="directory-listing-card__heading-link" href="/profile/sky-sample">
+                Sky Sample
+              </a>
+            </h3>
+            <div class="directory-listing-card__subheading">
+              <div>Professor of Physics</div>
+            </div>
+          </div>
+        </li>
+      </ul>
+    </body></html>
+  `;
+
+  it('extracts wlab.yale.edu/profile/<slug> official-profile URLs from the primary-faculty cards', () => {
+    const out = mcdbExtractor(WRIGHT_LAB_HTML, {
+      pageUrl: 'https://wlab.yale.edu/people/faculty/primary-faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://wlab.yale.edu/profile/robin-roster',
+        title: 'Assistant Professor of Physics',
+        email: undefined,
+        labUrl: undefined,
+        bio: undefined,
+      },
+      {
+        name: 'Sky Sample',
+        profileUrl: 'https://wlab.yale.edu/profile/sky-sample',
+        title: 'Professor of Physics',
+        email: undefined,
+        labUrl: undefined,
+        bio: undefined,
+      },
+    ]);
+  });
+
+  it('captures wlab profile URLs that count as official Yale profile sources', () => {
+    const out = mcdbExtractor(WRIGHT_LAB_HTML, {
+      pageUrl: 'https://wlab.yale.edu/people/faculty/primary-faculty',
+    });
+
+    for (const entry of out) {
+      expect(isYaleOfficialProfileUrl(entry.profileUrl)).toBe(true);
+    }
+  });
+
+  it('registers the Wright Laboratory config as official-profile-only', () => {
+    const configsByKey = new Map(DEFAULT_DEPT_CONFIGS.map((config) => [config.deptKey, config]));
+    expect(configsByKey.get('wright-lab')).toMatchObject({
+      deptName: 'Physics',
+      schoolName: 'Yale Faculty of Arts and Sciences',
+      url: 'https://wlab.yale.edu/people/faculty/primary-faculty',
+      extractor: mcdbExtractor,
+      emitPersonalResearchEntities: false,
+      officialProfileOnly: true,
+    });
+  });
+});
+
 describe('psychExtractor', () => {
   it('extracts rows from all views-table sections, skipping empty rows', () => {
     const out = psychExtractor(PSYCH_HTML, {
@@ -917,6 +1000,46 @@ describe('DepartmentRosterScraper.run', () => {
       extractor: mcdbExtractor,
       emitPersonalResearchEntities: false,
     });
+  });
+
+  it('emits official-profile person observations without minting a lab entity when officialProfileOnly is set', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      {
+        name: 'Robin Roster',
+        profileUrl: 'https://wlab.yale.edu/profile/robin-roster',
+        title: 'Assistant Professor of Physics',
+        labUrl: 'https://roster-lab.example.org',
+      },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'wright-lab',
+        deptName: 'Physics',
+        schoolName: 'Yale Faculty of Arts and Sciences',
+        url: 'https://wlab.yale.edu/people/faculty/primary-faculty',
+        paginated: false,
+        extractor: cannedExtractor,
+        emitPersonalResearchEntities: false,
+        officialProfileOnly: true,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(1);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    expect(entityObs).toHaveLength(0);
+
+    const profileObs = emitted.find(
+      (o) => o.entityType === 'user' && o.field === 'profileUrls',
+    );
+    expect(profileObs?.value).toEqual({
+      departmental: 'https://wlab.yale.edu/profile/robin-roster',
+    });
+    expect(emitted.find((o) => o.field === 'primaryDepartment')?.value).toBe('Physics');
   });
 
   it('skips JS-rendered depts and only invokes extractors for matching only-filter', async () => {

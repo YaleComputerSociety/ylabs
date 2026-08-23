@@ -182,6 +182,18 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
 
   // ---- Tier 3: cross-cutting research institutes / centers ------------------------
   {
+    url: 'https://wlab.yale.edu/people/faculty/primary-faculty',
+    school: 'Yale Faculty of Arts and Sciences',
+    department: 'Wright Laboratory (Physics)',
+    rendering: 'static',
+    status: 'covered',
+    studentImpactTier: 3,
+    coveredBy: ['dept-faculty-roster'],
+    approxFacultyCount: 13,
+    notes:
+      'Wright Laboratory is a physics research center whose primary-faculty page lists members with directory-listing cards linking wlab.yale.edu/profile/<slug> official-profile pages. Ingested official-profile-only (officialProfileOnly) so it captures each faculty member\'s Wright Lab profile URL as an official-profile source without minting duplicate lab entities; the faculty already own physics lab entities elsewhere.',
+  },
+  {
     url: 'https://wti.yale.edu/humans/faculty',
     school: 'Wu Tsai Institute',
     department: 'Institute faculty',
