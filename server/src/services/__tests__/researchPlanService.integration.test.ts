@@ -7,6 +7,7 @@ import {
   deleteSavedResearchEntityPlan,
   deleteWatchedProgramPlan,
   exportSavedResearchEntities,
+  getSavedResearchEntities,
   getSavedResearchEntityPlans,
   getWatchedProgramPlans,
   removeSavedResearchEntities,
@@ -50,6 +51,11 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
       kind: 'group',
       departments: ['Computer Science'],
       studentVisibilityTier: 'student_ready',
+      shortDescription:
+        'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+      fullDescription:
+        'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+      sourceUrls: ['https://example.yale.edu/labs/test-lab'],
       archived: false,
     });
     await db.collection('fellowships').insertOne({
@@ -209,5 +215,37 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     const item = payload.items.find((entry) => entry.researchEntity.id === entityId);
     expect(item?.privateNote).toBe('override me');
     expect(item).not.toHaveProperty('checklist');
+  });
+
+  it('hides a saved entity whose stored student_ready tier is stale against the live public-description invariant (#998)', async () => {
+    const hollowId = new mongoose.Types.ObjectId('64a0000000000000000000ef');
+    await mongoose.connection.db!.collection('research_entities').insertOne({
+      _id: hollowId,
+      slug: 'hollow-lab',
+      name: 'Hollow Lab',
+      kind: 'group',
+      departments: ['History'],
+      researchAreas: ['Middle East Studies', 'Iranian Studies'],
+      descriptionSource: 'PI_PROFILE_SYNTHESIS',
+      studentVisibilityTier: 'student_ready',
+      shortDescription: '',
+      fullDescription: '',
+      sourceUrls: [],
+      archived: false,
+    });
+
+    await addSavedResearchEntities(NETID, [ENTITY_ID.toHexString(), hollowId.toHexString()]);
+    await updateSavedResearchEntityPlan(NETID, ENTITY_ID.toHexString(), {
+      privateNotes: 'healthy save',
+    });
+
+    const savedPlans = await getSavedResearchEntityPlans(NETID);
+    const savedEntities = await getSavedResearchEntities(NETID);
+    const savedSlugs = savedEntities.map((entity) => entity.slug);
+
+    expect(savedSlugs).toContain('test-lab');
+    expect(savedSlugs).not.toContain('hollow-lab');
+    expect(savedPlans[ENTITY_ID.toHexString()].privateNotes).toBe('healthy save');
+    expect(savedPlans[hollowId.toHexString()]).toBeUndefined();
   });
 });

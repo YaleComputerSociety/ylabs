@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildResearchEntityPublicDescriptionRepresentation,
   publicDescriptionLeadMemberNames,
+  researchEntityServesPublicDetail,
 } from '../researchEntityPublicDescription';
 
 describe('researchEntityPublicDescription', () => {
@@ -68,5 +69,34 @@ describe('researchEntityPublicDescription', () => {
     expect(publicDescriptionLeadMemberNames([{ name: 'Correct Person' }])).toEqual([
       'Correct Person',
     ]);
+  });
+
+  describe('researchEntityServesPublicDetail', () => {
+    it('serves an entity whose live public-description invariant passes', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'group',
+          shortDescription:
+            'Studies molecular dynamics, protein folding, and cellular signaling in biological systems.',
+          fullDescription:
+            'This research studies molecular dynamics, protein folding, and cellular signaling across complex biological systems.',
+          sourceUrls: ['https://example.yale.edu/labs/test-lab'],
+        }),
+      ).toBe(true);
+    });
+
+    it('rejects a hollow entity with empty descriptions even when descriptionSource is set (#998)', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          descriptionSource: 'PI_PROFILE_SYNTHESIS',
+          researchAreas: ['Middle East Studies', 'Iranian Studies'],
+          shortDescription: '',
+          fullDescription: '',
+          sourceUrls: [],
+        }),
+      ).toBe(false);
+    });
   });
 });

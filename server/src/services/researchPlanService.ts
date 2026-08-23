@@ -10,6 +10,7 @@ import {
   type ResearchPlanStage,
 } from '../models/researchPlan';
 import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { researchEntityServesPublicDetail } from './researchEntityPublicDescription';
 import { NotFoundError } from '../utils/errors';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { safeSpreadsheetCell } from '../utils/spreadsheetSafety';
@@ -107,7 +108,7 @@ export const boundSavedResearchEntitySummaryText = (
 };
 
 const savedResearchEntityProjection =
-  '_id slug name displayName kind entityType departments school shortDescription';
+  '_id slug name displayName kind entityType departments school shortDescription fullDescription profileSynthesisDescription sourceUrls website websiteUrl';
 
 const exportTextWithoutDirectContact = (value: unknown): string =>
   safeSpreadsheetCell(redactDirectContactInfo(String(value || '')));
@@ -313,7 +314,7 @@ const visibleSavedResearchEntities = async (
   })
     .select(savedResearchEntityProjection)
     .lean();
-  return entities.flatMap((entity: any) => {
+  return entities.filter(researchEntityServesPublicDetail).flatMap((entity: any) => {
     const shortDescription = boundSavedResearchEntitySummaryText(
       entity.shortDescription,
       MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,

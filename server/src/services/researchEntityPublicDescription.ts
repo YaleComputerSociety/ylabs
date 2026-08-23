@@ -7,6 +7,7 @@ import {
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
+import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
 
 export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
@@ -92,3 +93,20 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     },
   };
 }
+
+// The stored `studentVisibilityTier` is a materialized snapshot, but every
+// public serve path recomputes the servable gate live: the detail resolver
+// returns null (-> 404) when it fails, and the browse hydration path drops the
+// card. A stored `student_ready` tier can go stale relative to that live gate
+// (e.g. after a hygiene change that empties a person-bio description, or a lead
+// later confirmed deceased), so any surface that lists entities by stored tier
+// alone must run this predicate to stay consistent with the detail gate. Running
+// it without the roster-derived lead names the detail path uses is safe: lead-name
+// self-reference stripping only ever removes more text, so an entity that fails
+// this name-agnostic invariant necessarily also fails the detail path's stricter
+// invariant, and dropping it can never hide a card the detail page would serve.
+// The deceased-lead check (#982) is likewise name-agnostic (entity name and
+// description signals only) and mirrors the detail resolver's own guard.
+export const researchEntityServesPublicDetail = (entity: Record<string, any>): boolean =>
+  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
+  !researchEntityHasDeceasedLead(entity);
