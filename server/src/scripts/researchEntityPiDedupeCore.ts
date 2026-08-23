@@ -82,14 +82,20 @@ function timeValue(value: Date | string | null | undefined): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
+  const value = (slug || '').toLowerCase();
+  return (
+    value.startsWith('faculty-research-area-') ||
+    value.startsWith('nih-pi-') ||
+    value.startsWith('nsf-pi-')
+  );
+}
+
 function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
   const slug = entity.slug || '';
   const hasFullDescription = Boolean((entity.fullDescription || '').trim());
   const hasShortDescription = Boolean((entity.shortDescription || '').trim());
-  const isSpecialShell =
-    slug.startsWith('faculty-research-area-') ||
-    slug.startsWith('nih-pi-') ||
-    slug.startsWith('nsf-pi-');
+  const isSpecialShell = isLowTrustAreaShellSlug(slug);
   return (
     (entity.sourceUrls?.length || 0) * 4 +
     (entity.departments?.length || 0) * 3 +
@@ -186,6 +192,15 @@ function cleanMergedResearchAreas(
   const unique = uniqueStrings(values);
   if (!options.sanitizeProfileChrome) return unique;
   return sanitizeProfileResearchTerms(unique);
+}
+
+function mergedResearchAreasFromEntities(
+  entities: ResearchEntityPiDedupeRow['entities'],
+  options: { sanitizeProfileChrome?: boolean } = {},
+): string[] {
+  const trustedEntities = entities.filter((entity) => !isLowTrustAreaShellSlug(entity.slug));
+  const source = trustedEntities.length > 0 ? trustedEntities : entities;
+  return cleanMergedResearchAreas(source.flatMap((entity) => entity.researchAreas || []), options);
 }
 
 function normalizedWords(value: string | undefined): string[] {
@@ -323,6 +338,7 @@ function buildGroupFromCluster(
   const duplicates = entities.filter((entity) => entity.id !== canonical.id);
   if (duplicates.length === 0) return null;
   const { canonicalName, canonicalWebsiteUrl } = carriedCanonicalIdentity(canonical, entities, row);
+  const descriptionCarry = bestDescriptionCarry(canonical, entities);
   return {
     userId: row.userId,
     normalizedName: row.normalizedName,
@@ -331,16 +347,14 @@ function buildGroupFromCluster(
     canonicalSlug: canonical.slug,
     duplicateSlugs: duplicates.map((entity) => entity.slug || entity.id),
     mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: cleanMergedResearchAreas(
-      entities.flatMap((entity) => entity.researchAreas || []),
-      { sanitizeProfileChrome: true },
-    ),
+    mergedResearchAreas: mergedResearchAreasFromEntities(entities, { sanitizeProfileChrome: true }),
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
     ]),
     ...(canonicalName ? { canonicalName } : {}),
     ...(canonicalWebsiteUrl ? { canonicalWebsiteUrl } : {}),
+    ...descriptionCarry,
   };
 }
 
@@ -504,9 +518,7 @@ export function buildSharedPersonIdResearchEntityDedupePlan(
     if (entities.length <= 1) return [];
     const group = buildGroupFromCluster(row, entities);
     if (!group) return [];
-    const canonical = entities.find((entity) => entity.id === group.canonicalEntityId);
-    const descriptionCarry = canonical ? bestDescriptionCarry(canonical, entities) : {};
-    return [{ ...group, ...descriptionCarry, dedupeCategory: 'shared_person_id' as const }];
+    return [{ ...group, dedupeCategory: 'shared_person_id' as const }];
   });
 }
 
@@ -562,6 +574,7 @@ function buildFundingGroupFromCluster(
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
   })[0];
+  const descriptionCarry = bestDescriptionCarry(canonical, entities);
 
   return {
     userId: row.userId,
@@ -571,14 +584,12 @@ function buildFundingGroupFromCluster(
     canonicalSlug: canonical.slug,
     duplicateSlugs: fundingDuplicates.map((entity) => entity.slug || entity.id),
     mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
-    mergedResearchAreas: cleanMergedResearchAreas(
-      entities.flatMap((entity) => entity.researchAreas || []),
-      { sanitizeProfileChrome: true },
-    ),
+    mergedResearchAreas: mergedResearchAreasFromEntities(entities, { sanitizeProfileChrome: true }),
     mergedSourceUrls: uniqueStrings([
       ...entities.flatMap((entity) => entity.sourceUrls || []),
       ...entities.map((entity) => entity.websiteUrl),
     ]),
+    ...descriptionCarry,
   };
 }
 
