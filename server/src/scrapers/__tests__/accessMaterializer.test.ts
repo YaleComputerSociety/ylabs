@@ -173,6 +173,83 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual([]);
   });
 
+  it('does not derive reach-out-plausible from a single bare acceptingUndergrads=true (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
+  });
+
+  it('derives reach-out-plausible when a bare accepting boolean carries an undergrad-access quote (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the lab.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals).toMatchObject([
+      {
+        type: 'REACH_OUT_PLAUSIBLE',
+        excerpt: 'Undergraduates are welcome to join the lab.',
+      },
+    ]);
+  });
+
+  it('derives reach-out-plausible when a second independent source corroborates accepting (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'department-faculty-roster',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).toContain('REACH_OUT_PLAUSIBLE');
+  });
+
+  it('does not corroborate accepting from repeated observations of the same source (#696)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        _id: 'accepting-a',
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+      obs({
+        _id: 'accepting-b',
+        field: 'acceptingUndergrads',
+        value: true,
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.6,
+      }),
+    ]);
+
+    expect(result.accessSignals.map((signal) => signal.type)).not.toContain('REACH_OUT_PLAUSIBLE');
+  });
+
   it('stores explicit negative availability as a signal without creating a pathway', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({

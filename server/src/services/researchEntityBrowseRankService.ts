@@ -61,7 +61,7 @@ const accessSignalsByEntityId = async (
     type: { $in: ACCESS_SIGNAL_TYPES },
     archived: { $ne: true },
   })
-    .select('researchEntityId type confidence confidenceScore')
+    .select('researchEntityId type confidence confidenceScore derivationKey')
     .lean();
   const byId = new Map<string, AccessSignalConfidenceInput[]>();
   for (const signal of signals as any[]) {
@@ -73,6 +73,7 @@ const accessSignalsByEntityId = async (
         type: String(signal.type),
         confidence: signal.confidence,
         confidenceScore: signal.confidenceScore,
+        derivationKey: signal.derivationKey,
       },
     ]);
   }
