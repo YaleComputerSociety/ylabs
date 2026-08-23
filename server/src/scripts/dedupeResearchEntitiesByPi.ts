@@ -32,6 +32,7 @@ import {
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { deleteFromIndex } from '../services/meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -1669,6 +1670,7 @@ export async function applyResearchEntityDedupeMergeGroup(
       deletedEntities: 0,
       retiredConflictingMembers: 0,
       relinkedMembers: 0,
+      searchDocumentsDeleted: 0,
       artifactRelink: {},
       scalarRelink: {},
       arrayRelink: {},
@@ -1800,6 +1802,17 @@ export async function applyResearchEntityDedupeMergeGroup(
       ? await ResearchEntity.deleteMany({ _id: { $in: duplicateIds } })
       : { deletedCount: 0 };
 
+  const duplicatesLeftLiveEntitySet =
+    !options.deleteDuplicates || Object.keys(remainingReferencesBeforeDelete).length === 0;
+  const searchDocumentIdsToDelete = duplicatesLeftLiveEntitySet
+    ? duplicateIds
+        .map((id) => serializedDocumentId(id))
+        .filter((id): id is string => Boolean(id))
+    : [];
+  for (const searchDocumentId of searchDocumentIdsToDelete) {
+    await deleteFromIndex('researchEntity', searchDocumentId);
+  }
+
   return {
     canonicalEntityId: group.canonicalEntityId,
     duplicateEntityIds: group.duplicateEntityIds,
@@ -1808,6 +1821,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     deletedEntities: deleted.deletedCount || 0,
     retiredConflictingMembers: retiredConflictingMembers.modifiedCount || 0,
     relinkedMembers: members.modifiedCount || 0,
+    searchDocumentsDeleted: searchDocumentIdsToDelete.length,
     artifactRelink,
     scalarRelink,
     arrayRelink,

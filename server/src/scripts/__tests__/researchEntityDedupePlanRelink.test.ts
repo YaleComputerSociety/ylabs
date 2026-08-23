@@ -1,6 +1,13 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const deleteFromIndexMock = vi.fn(async (_entityType: string, _id: string) => {});
+
+vi.mock('../../services/meiliSyncService', () => ({
+  deleteFromIndex: (entityType: string, id: string) => deleteFromIndexMock(entityType, id),
+}));
+
 import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesByPi';
 import { buildOrgNameResearchEntityDedupePlan } from '../researchEntityPiDedupeCore';
 
@@ -284,5 +291,101 @@ describe('org-name dedupe archives the shell twin and redirects it to the surviv
     const relinkedPlan = await db.collection('research_plans').findOne({ _id: planId });
     expect(String(relinkedPlan?.target?.id)).toBe(survivorId.toHexString());
     expect(relinkedPlan?.archived).not.toBe(true);
+  });
+});
+
+describe('applyResearchEntityDedupeMergeGroup removes merged-loser search documents (#1198)', () => {
+  let replSet4: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet4 = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet4.getUri());
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet4.stop();
+  });
+
+  beforeEach(async () => {
+    deleteFromIndexMock.mockClear();
+    await mongoose.connection.db!.collection('research_entities').deleteMany({});
+  });
+
+  it('deletes the archived duplicate from the Meili index in archive mode', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = oid();
+    const duplicateId = oid();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'named-lab', archived: false },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: false },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    expect(result.archivedEntities).toBe(1);
+    expect(result.searchDocumentsDeleted).toBe(1);
+    expect(deleteFromIndexMock).toHaveBeenCalledWith('researchEntity', duplicateId.toHexString());
+  });
+
+  it('deletes the hard-deleted duplicate from the Meili index in delete mode', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = oid();
+    const duplicateId = oid();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'named-lab', archived: false },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: false },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      } as any,
+      { deleteDuplicates: true, relinkReferences: true },
+    );
+
+    expect(result.deletedEntities).toBe(1);
+    expect(result.searchDocumentsDeleted).toBe(1);
+    expect(deleteFromIndexMock).toHaveBeenCalledWith('researchEntity', duplicateId.toHexString());
+    const surviving = await db.collection('research_entities').findOne({ _id: duplicateId });
+    expect(surviving).toBeNull();
+  });
+
+  it('deletes a duplicate already archived by a prior dedupe pass', async () => {
+    const db = mongoose.connection.db!;
+    const canonicalId = oid();
+    const duplicateId = oid();
+    await db.collection('research_entities').insertMany([
+      { _id: canonicalId, slug: 'named-lab', archived: false },
+      { _id: duplicateId, slug: 'nsf-pi-shell', archived: true },
+    ]);
+
+    const result = await applyResearchEntityDedupeMergeGroup(
+      {
+        canonicalEntityId: canonicalId.toHexString(),
+        duplicateEntityIds: [duplicateId.toHexString()],
+        mergedDepartments: [],
+        mergedResearchAreas: [],
+        mergedSourceUrls: [],
+      } as any,
+      { deleteDuplicates: false, relinkReferences: true },
+    );
+
+    expect(result.archivedEntities).toBe(0);
+    expect(result.searchDocumentsDeleted).toBe(1);
+    expect(deleteFromIndexMock).toHaveBeenCalledWith('researchEntity', duplicateId.toHexString());
   });
 });
