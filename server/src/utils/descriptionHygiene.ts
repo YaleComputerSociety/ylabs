@@ -243,18 +243,39 @@ const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
 const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
 const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
 
+const STREET_SUFFIX_WORD = 'Street|Avenue|Road|Boulevard|Drive|Way|Lane|Place|Court|Circle';
+const STREET_SUFFIX_ABBREVIATION = 'St|Ave|Rd|Blvd|Dr|Ln|Pl|Ct|Cir';
+const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
+
+/**
+ * A bare street-address fragment (`266 Whitney Avenue`), optionally followed by
+ * a floor/room/suite unit (`, Fl 2, Rm 234`), with no `office:`/`address:` label
+ * of its own. Faculty-bio scrapes sometimes merge a page's office-location line
+ * straight into the bio prose with no separating punctuation, so this must be
+ * detected on shape alone (#798).
+ */
+const bareStreetAddressPattern = new RegExp(
+  `\\b\\d{1,5}\\s+[A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3}\\s+` +
+    `(?:(?:${STREET_SUFFIX_WORD})\\b|(?:${STREET_SUFFIX_ABBREVIATION})\\.)` +
+    `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*`,
+);
+
 /**
  * A faculty-bio contact block: a leftover `[email redacted]`/`[phone redacted]`
  * placeholder token (the read-time-safe rendering elsewhere in this module,
- * but never acceptable in a research-entity description), or an
+ * but never acceptable in a research-entity description), an
  * `Email:`/`Phone:`/`Office:`/`Fax:` label paired with a bare phone number
- * lifted straight out of a profile-page header (#676).
+ * lifted straight out of a profile-page header (#676), or a bare office/street
+ * address fragment glued onto the bio with no label at all (#798).
  */
 export function hasContactBlockResidue(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (contactRedactionTokenPattern.test(normalized)) return true;
-  return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
+  if (contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized)) {
+    return true;
+  }
+  return bareStreetAddressPattern.test(normalized);
 }
 
 const trailingOfficeAddressPattern =
