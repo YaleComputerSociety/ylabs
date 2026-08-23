@@ -542,7 +542,10 @@ function countMatches(text: string, pattern: RegExp): number {
  * real sentences so multi-sentence donor/eligibility prose that merely mentions
  * class years or names people is kept, while the contact-invitation arm catches
  * a many-people bio dump written in full sentences (#904) that the
- * sentence-gated arms miss.
+ * sentence-gated arms miss. The name-density arm additionally requires the text
+ * to be dominated by capitalized tokens (#1200) so a single-person award/bio
+ * whose prizes, institutions, and book titles produce capitalized word-pairs
+ * embedded in mostly-lowercase prose is not mistaken for a bare list of names.
  */
 const contactInvitationPattern =
   /\b(?:feel free to (?:reach out|contact|email)|reach out to (?:them|him|her|us)|contact (?:him|her|them)(?:\s+(?:at|directly|via))?)\b/gi;
@@ -557,7 +560,11 @@ export function isRosterShapedText(text: string): boolean {
   const mentorMarkers = countMatches(normalized, /\bmentors?\s*:/gi);
   if (mentorMarkers >= 3) return true;
   const uniqueNames = new Set(normalized.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g) || []).size;
-  if (uniqueNames >= 8 && isSentenceSparse) return true;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  const capitalizedWordRatio = words.length
+    ? words.filter((word) => /^[A-Z]/.test(word)).length / words.length
+    : 0;
+  if (uniqueNames >= 8 && isSentenceSparse && capitalizedWordRatio >= 0.7) return true;
   const contactInvitations = countMatches(normalized, contactInvitationPattern);
   return contactInvitations >= 2 && uniqueNames >= 8;
 }
