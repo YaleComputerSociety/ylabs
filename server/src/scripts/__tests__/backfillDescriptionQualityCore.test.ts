@@ -47,7 +47,9 @@ describe('sanitizeDescriptionText', () => {
   });
 
   it('strips a dangling empty "research areas:" template clause', () => {
-    const bare = sanitizeDescriptionText('Studies condensed matter physics, including research areas:.');
+    const bare = sanitizeDescriptionText(
+      'Studies condensed matter physics, including research areas:.',
+    );
     expect(bare.removedArtifacts).toBe(true);
     expect(bare.text).toBe('Studies condensed matter physics.');
 
