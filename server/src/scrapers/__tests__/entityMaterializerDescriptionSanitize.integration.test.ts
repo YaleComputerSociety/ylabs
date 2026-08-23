@@ -31,6 +31,12 @@ const DIRTY_CHROME_FULL = CHROME_PREFIX + CLEAN_FULL;
 const ROSTER_FULL =
   "Jane Doe '27 Mentor: Professor Alpha. John Smith '26 Mentor: Professor Beta. Mary Lee '28 Mentor: Professor Gamma. Alex Ray '25 Mentor: Professor Delta.";
 
+const CONTACT_BLOCK_FULL =
+  'Avery Sloane, Ph.D. Professor Email: avery.sloane@example.edu Phone: 203-555-0142 Dr. Avery Sloane is a Tenure Professor whose laboratory investigates how signaling networks coordinate tissue regeneration after injury across model organisms.';
+
+const PUBLICATIONS_DUMP_FULL =
+  'The Sloane Lab studies how signaling networks coordinate tissue regeneration after injury across model organisms. Selected Publications:Rivera J, Sloane A. (2023) Signaling dynamics in tissue repair. Cell Reports.';
+
 const GROUNDED_CARD =
   'Studies how immune cell populations respond to cancer immunotherapy using single-cell RNA sequencing and machine learning.';
 
@@ -114,7 +120,9 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
       { synthesizeCardDescription: capturingSynthesizer(calls) },
     );
 
-    const persisted = await ResearchEntity.findOne({ slug: 'desc-sanitize-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe(CLEAN_FULL);
     expect(persisted?.fullDescription).not.toContain('breadcrumbs');
@@ -134,7 +142,49 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
       { synthesizeCardDescription: capturingSynthesizer(calls) },
     );
 
-    const persisted = await ResearchEntity.findOne({ slug: 'desc-sanitize-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.fullDescription).toBe('');
+    expect(calls).toHaveLength(0);
+    expect(persisted?.shortDescription ?? '').toBe('');
+  });
+
+  it('fails closed to an empty description on a faculty-bio contact block and does not synthesize (#676)', async () => {
+    await seedEntity();
+    await seedFullDescription(CONTACT_BLOCK_FULL);
+
+    const calls: string[] = [];
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: 'desc-sanitize-fixture' },
+      { synthesizeCardDescription: capturingSynthesizer(calls) },
+    );
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
+
+    expect(persisted?.fullDescription).toBe('');
+    expect(calls).toHaveLength(0);
+    expect(persisted?.shortDescription ?? '').toBe('');
+  });
+
+  it('fails closed to an empty description when a "Selected Publications:" dump bleeds into otherwise-clean prose (#676)', async () => {
+    await seedEntity();
+    await seedFullDescription(PUBLICATIONS_DUMP_FULL);
+
+    const calls: string[] = [];
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: 'desc-sanitize-fixture' },
+      { synthesizeCardDescription: capturingSynthesizer(calls) },
+    );
+
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe('');
     expect(calls).toHaveLength(0);
@@ -152,7 +202,9 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
       { synthesizeCardDescription: capturingSynthesizer(calls) },
     );
 
-    const persisted = await ResearchEntity.findOne({ slug: 'desc-sanitize-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe(CLEAN_FULL);
     expect(calls).toEqual([CLEAN_FULL]);
@@ -170,7 +222,9 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
       { synthesizeCardDescription: capturingSynthesizer(calls, GROUP_PROSE_CARD) },
     );
 
-    const persisted = await ResearchEntity.findOne({ slug: 'desc-sanitize-fixture' }).lean<PersistedEntity>();
+    const persisted = await ResearchEntity.findOne({
+      slug: 'desc-sanitize-fixture',
+    }).lean<PersistedEntity>();
 
     expect(persisted?.fullDescription).toBe(GROUP_PROSE_LAB_FULL);
     expect(calls).toEqual([GROUP_PROSE_LAB_FULL]);

@@ -204,6 +204,34 @@ export function clampDescriptionLength(text: string, maxLength = 2000): string {
   return `${cut.trim()}…`;
 }
 
+const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
+const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
+const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
+
+/**
+ * A faculty-bio contact block: a leftover `[email redacted]`/`[phone redacted]`
+ * placeholder token (the read-time-safe rendering elsewhere in this module,
+ * but never acceptable in a research-entity description), or an
+ * `Email:`/`Phone:`/`Office:`/`Fax:` label paired with a bare phone number
+ * lifted straight out of a profile-page header (#676).
+ */
+export function hasContactBlockResidue(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (contactRedactionTokenPattern.test(normalized)) return true;
+  return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
+}
+
+const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
+
+/**
+ * A "Selected Publications:" citation-list dump lifted from a faculty profile
+ * page into a research-entity description (#676).
+ */
+export function isPublicationsListDumpText(text: string): boolean {
+  return publicationsListMarkerPattern.test(normalizeHygieneWhitespace(text));
+}
+
 /**
  * Clean a scraped catalog description: strip chrome, then fail closed to an
  * empty string when the remainder is roster/PII-shaped, a navigation dump, an
@@ -249,4 +277,22 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
     stripRedactionPlaceholders(sanitizeCatalogDescription(redacted)),
     maxLength,
   );
+}
+
+/**
+ * Research-entity description sanitizer (write- and read-time), stricter than
+ * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
+ * fullDescription or shortDescription is the primary "what this lab studies"
+ * surface, so a leftover contact-block token or a "Selected Publications:"
+ * citation dump fails the whole description closed rather than surviving as
+ * read-time-safe token text or a truncated tail (#676).
+ */
+export function sanitizeResearchEntityDescription(text: string): string {
+  const redacted = redactDirectContactInfo(String(text || ''));
+  const stripped = sanitizeCatalogDescription(redacted);
+  if (!stripped) return '';
+  if (hasContactBlockResidue(stripped) || isPublicationsListDumpText(stripped)) {
+    return '';
+  }
+  return stripped;
 }

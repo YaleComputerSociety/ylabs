@@ -28,7 +28,7 @@ import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
-  sanitizeCatalogDescription,
+  sanitizeResearchEntityDescription,
   sanitizeStoredCatalogDescription,
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
@@ -284,7 +284,7 @@ function materializedFieldValue(
     MATERIALIZED_DESCRIPTION_FIELDS.has(field) &&
     typeof value === 'string'
   ) {
-    return sanitizeCatalogDescription(value);
+    return sanitizeResearchEntityDescription(value);
   }
   if (
     entityType === 'fellowship' &&
@@ -2122,7 +2122,8 @@ export async function materializeEntity(
   }
   if (isResearchEntityObservationType(entityType)) {
     const fullDescription =
-      textValue(set.fullDescription) || sanitizeCatalogDescription(textValue(entityDoc?.fullDescription));
+      textValue(set.fullDescription) ||
+      sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));
     const entityName = textValue(
       set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
     );
@@ -2130,7 +2131,8 @@ export async function materializeEntity(
       fullDescription,
       currentShortDescription: set.shortDescription ?? entityDoc?.shortDescription,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
-      synthesize: options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
+      synthesize:
+        options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
     });
     if (groundedShortDescription) {
       set.shortDescription = groundedShortDescription;

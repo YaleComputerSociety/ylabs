@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampDescriptionLength,
+  hasContactBlockResidue,
   isCurationRationaleText,
   isFaqDumpText,
   isFormFieldDumpText,
   isNavigationDumpText,
+  isPublicationsListDumpText,
   isRosterShapedText,
   sanitizeCatalogDescription,
+  sanitizeResearchEntityDescription,
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
@@ -168,7 +171,9 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
       'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].';
     const cleaned = stripRedactionPlaceholders(text);
     expect(cleaned).not.toMatch(/redacted/i);
-    expect(cleaned).toBe('The grant supports undergraduate research each summer. Questions can be directed.');
+    expect(cleaned).toBe(
+      'The grant supports undergraduate research each summer. Questions can be directed.',
+    );
   });
 });
 
@@ -197,6 +202,63 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
   });
 });
 
+const SYNTHETIC_CONTACT_HEADER_PROSE =
+  'Avery Sloane, Ph.D. Professor Email: [email redacted]: 203-555-0142 Dr. Avery Sloane is a Tenure Professor of Cell Biology whose laboratory investigates how signaling networks coordinate tissue regeneration after injury across model organisms.';
+
+const SYNTHETIC_UNREDACTED_CONTACT_HEADER_PROSE =
+  'Avery Sloane, Ph.D. Professor Email: avery.sloane@example.edu Phone: 203-555-0142 Dr. Avery Sloane is a Tenure Professor of Cell Biology whose laboratory investigates how signaling networks coordinate tissue regeneration after injury.';
+
+const SYNTHETIC_INLINE_EMAIL_PROSE =
+  'The Sloane Lab studies tissue regeneration after injury. Please send your inquiry to Dr. Sloane at avery.sloane@example.edu and lab-info@example.edu.';
+
+const SYNTHETIC_PUBLICATIONS_DUMP =
+  'The Sloane Lab studies how signaling networks coordinate tissue regeneration after injury across model organisms. Selected Publications:Rivera J, Sloane A. (2023) Signaling dynamics in tissue repair. Cell Reports. Sloane A, Park T. (2021) Regeneration in model organisms. Nature.';
+
+const SYNTHETIC_CLEAN_LAB_PROSE =
+  'The Sloane Lab studies how signaling networks coordinate tissue regeneration after injury across model organisms, combining live imaging with computational modeling to map the underlying gene-regulatory circuits.';
+
+describe('descriptionHygiene contact-block and publications-dump fail-closed (#676)', () => {
+  it('flags a leftover [email redacted] token anywhere in the text', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_CONTACT_HEADER_PROSE)).toBe(true);
+    expect(hasContactBlockResidue(SYNTHETIC_INLINE_EMAIL_PROSE)).toBe(false);
+  });
+
+  it('flags an Email:/Phone:/Office: label paired with a bare phone number', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_UNREDACTED_CONTACT_HEADER_PROSE)).toBe(true);
+  });
+
+  it('does not flag ordinary prose with no contact markers', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
+  });
+
+  it('flags a "Selected Publications:" citation-list dump', () => {
+    expect(isPublicationsListDumpText(SYNTHETIC_PUBLICATIONS_DUMP)).toBe(true);
+    expect(isPublicationsListDumpText(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
+  });
+
+  it('fails closed to empty on a faculty-bio contact-header block with a redaction token', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_CONTACT_HEADER_PROSE)).toBe('');
+  });
+
+  it('fails closed to empty on a raw, unredacted Email:/Phone: contact header', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_UNREDACTED_CONTACT_HEADER_PROSE)).toBe('');
+  });
+
+  it('fails closed to empty when a raw email in prose gets redacted to a leftover token', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_INLINE_EMAIL_PROSE)).toBe('');
+  });
+
+  it('fails closed to empty on a "Selected Publications:" dump bleeding into otherwise-good prose', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_PUBLICATIONS_DUMP)).toBe('');
+  });
+
+  it('keeps a genuine lab description with no contact block or publications dump', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(
+      SYNTHETIC_CLEAN_LAB_PROSE,
+    );
+  });
+});
+
 describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', () => {
   it('keeps genuine clean prose verbatim', () => {
     const clean =
@@ -210,7 +272,9 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
     const cleaned = sanitizeStoredCatalogDescription(withEmail);
     expect(cleaned).not.toMatch(/redacted/i);
     expect(cleaned).not.toMatch(/@example\.edu/);
-    expect(cleaned).toBe('The grant supports undergraduate research each summer. Questions can be directed.');
+    expect(cleaned).toBe(
+      'The grant supports undergraduate research each summer. Questions can be directed.',
+    );
   });
 
   it('strips a baked-in [email redacted] token left in a stale observation', () => {
