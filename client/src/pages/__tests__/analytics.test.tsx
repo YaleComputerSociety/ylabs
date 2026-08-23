@@ -316,7 +316,9 @@ describe('Analytics page', () => {
       expect(screen.getAllByText('Review zero-result searches').length).toBeGreaterThan(0);
       expect(screen.getAllByText('quantum materials').length).toBeGreaterThan(0);
       expect(
-        screen.getByText(/6 of 20 searches led to a view or save within 30 minutes/),
+        screen.getByText(
+          /6 of 20 site searches \(legacy\) led to a view or save within 30 minutes/,
+        ),
       ).toBeTruthy();
     });
 
@@ -664,7 +666,7 @@ describe('Analytics page', () => {
       expect(screen.getByText('Visitors (30 Days)')).toBeTruthy();
     });
     expect(screen.getByText('Login Events (30 Days)')).toBeTruthy();
-    expect(screen.getByText('Searches (30 Days)')).toBeTruthy();
+    expect(screen.getByText('Site searches (30 Days)')).toBeTruthy();
     expect(screen.getByText('Visitors (Last 7 Days)')).toBeTruthy();
     expect(screen.getByText('Visitors Today')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Last 7 Days by Type' })).toBeTruthy();

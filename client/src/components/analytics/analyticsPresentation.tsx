@@ -54,6 +54,7 @@ export const formatDateTime = (value?: string | null): string => {
 
 export const formatEventType = (eventType: string): string => {
   const labelMap: Record<string, string> = {
+    research_search: 'Research searches',
     listing_view: 'Opportunity View',
     listing_favorite: 'Opportunity Save',
     listing_unfavorite: 'Opportunity Unsave',
