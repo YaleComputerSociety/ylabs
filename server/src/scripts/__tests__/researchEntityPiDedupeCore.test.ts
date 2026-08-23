@@ -764,7 +764,13 @@ describe('buildResearchEntityPiDedupePlan', () => {
             websiteUrl: 'https://www.eng.yale.edu/faboratory/',
             sourceUrls: ['https://www.eng.yale.edu/faboratory/'],
             departments: ['Mechanical Engineering'],
-            researchAreas: ['fabrication', 'Manufacturing', 'materials', 'Robotics', 'soft robotics'],
+            researchAreas: [
+              'fabrication',
+              'Manufacturing',
+              'materials',
+              'Robotics',
+              'soft robotics',
+            ],
             fullDescription:
               'The Rebecca Kramer-Bottiglio Lab focuses on research in Optical Network Technologies, Photonic and Optical Devices, and Semiconductor Lasers and Optical Devices.',
           },

@@ -45,7 +45,9 @@ The canonical entity's slug is preserved; only the duplicate entities are archiv
 
 A merge never discards evidence:
 
-- The canonical entity gains the union of duplicate `departments`, `researchAreas`, and `sourceUrls` through `$addToSet`.
+- The canonical entity gains the union of duplicate `departments` and `sourceUrls` through `$addToSet`.
+- The `researchAreas` union excludes low-trust `nsf-pi-*`, `nih-pi-*`, and `faculty-research-area-*` shell entities, so a wrong-domain grant-shell area is never grafted onto a real research home; it falls back to the full cluster only when every entity is such a shell (issue #604).
+- The canonical `fullDescription`/`shortDescription` are repaired to the fullest correct sibling description across the cluster, using the same low-trust shell exclusion, so a thin or hallucinated canonical description is replaced when a fuller correct sibling exists (issue #604).
 - Non-conflicting duplicate memberships are relinked to the canonical entity; a duplicate membership that would collide with an existing canonical membership is retired with `isCurrentMember: false` and an `endedAt` timestamp instead of being dropped.
 - Relationships, entry pathways, access signals, contact routes, posted opportunities, scholarly links, and students' saved `ResearchPlan` targets are relinked to the canonical entity, or archived when relinking would violate a unique key (a saved plan already on the canonical target keeps its place and the redundant duplicate-targeted plan is archived rather than force-merged past the `(accountId, target.kind, target.id)` unique index).
 - When the canonical entity lacks a concrete website but a merged duplicate carries one, the canonical inherits that concrete `websiteUrl`, and if its own name is only a PI-derived `<PI> Lab` placeholder it also inherits the donor's real `name`/`displayName`; the `reviewBreakdown` reports these as `groupsCarryingCanonicalWebsite` and `groupsCarryingCanonicalName`.
