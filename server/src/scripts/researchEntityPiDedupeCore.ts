@@ -273,7 +273,10 @@ function mergedResearchAreasFromEntities(
 const BIOMEDICAL_DEPARTMENT_GRAFT_TUPLE_KEYS: string[][] = [
   ['neuroscience'],
   ['psychology'],
-  ['molecular, cellular, and developmental biology', 'molecular, cellular and developmental biology'],
+  [
+    'molecular, cellular, and developmental biology',
+    'molecular, cellular and developmental biology',
+  ],
 ];
 
 const BIOMEDICAL_RESEARCH_AREA_CORROBORATION_PATTERN =
@@ -285,9 +288,9 @@ function hasBiomedicalResearchAreaCorroboration(researchAreas: string[]): boolea
 
 function departmentKeys(entities: ResearchEntityPiDedupeRow['entities']): Set<string> {
   return new Set(
-    entities.flatMap((entity) => entity.departments || []).map((department) =>
-      department.trim().toLowerCase(),
-    ),
+    entities
+      .flatMap((entity) => entity.departments || [])
+      .map((department) => department.trim().toLowerCase()),
   );
 }
 
