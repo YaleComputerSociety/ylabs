@@ -16,6 +16,7 @@ import {
   piEntityKey,
   piSlugForResearchGroup,
   groupGrantsByPi,
+  isTraineeFellowshipGrant,
   grantToRecord,
   piGrantsToObservations,
   findUserForPi,
@@ -101,6 +102,33 @@ const grantOrphan: NihGrant = {
   principal_investigators: [],
   organization: { org_name: 'YALE UNIVERSITY', dept_type: 'IMMUNOLOGY' },
   fiscal_year: 2025,
+};
+
+// An F31 individual trainee fellowship whose contact PI (the trainee) is fully
+// resolvable — it would mint a "<Fellow> Lab" if not failed closed (#739).
+const grantTrainee: NihGrant = {
+  project_num: '5F31MH333333-02',
+  appl_id: 14000001,
+  core_project_num: 'F31MH333333',
+  project_title: 'Dissertation research on synaptic plasticity',
+  abstract_text: 'The candidate will investigate synaptic plasticity mechanisms.',
+  contact_pi_name: 'TRAINEE, TAYLOR T',
+  principal_investigators: [
+    {
+      profile_id: 3,
+      first_name: 'Taylor',
+      last_name: 'Trainee',
+      is_contact_pi: true,
+    },
+  ],
+  organization: { org_name: 'YALE UNIVERSITY', dept_type: 'NEUROSCIENCES' },
+  fiscal_year: 2025,
+  award_amount: 45000,
+  project_start_date: '2025-07-01T00:00:00',
+  project_end_date: '2027-06-30T00:00:00',
+  agency_ic_admin: { code: 'MH', abbreviation: 'NIMH', name: 'NIMH' },
+  activity_code: 'F31',
+  project_detail_url: 'https://reporter.nih.gov/project-details/14000001',
 };
 
 // ---------------------------------------------------------------------------
@@ -192,6 +220,31 @@ describe('groupGrantsByPi', () => {
 
   it('returns an empty map for an empty input', () => {
     expect(groupGrantsByPi([]).size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isTraineeFellowshipGrant (#739)
+// ---------------------------------------------------------------------------
+
+describe('isTraineeFellowshipGrant', () => {
+  it('flags NIH individual trainee-fellowship activity codes F30/F31/F32/F33', () => {
+    for (const code of ['F30', 'F31', 'F32', 'F33']) {
+      expect(isTraineeFellowshipGrant({ activity_code: code })).toBe(true);
+    }
+    expect(isTraineeFellowshipGrant(grantTrainee)).toBe(true);
+  });
+
+  it('is case- and whitespace-insensitive on the activity code', () => {
+    expect(isTraineeFellowshipGrant({ activity_code: ' f31 ' })).toBe(true);
+  });
+
+  it('leaves faculty research awards and other fellowship classes unflagged', () => {
+    for (const code of ['R01', 'R35', 'R21', 'K99', 'T32', 'F05', 'P30', undefined]) {
+      expect(isTraineeFellowshipGrant({ activity_code: code })).toBe(false);
+    }
+    expect(isTraineeFellowshipGrant(grantArnsten)).toBe(false);
+    expect(isTraineeFellowshipGrant(grantRoster)).toBe(false);
   });
 });
 
@@ -697,6 +750,44 @@ describe('NihReporterScraper.run', () => {
       (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-riley-roster',
     );
     expect(breakerGroup.find((o) => o.field === 'inferredPiUserId')?.value).toBe('breaker-id');
+  });
+
+  it('never mints an entity for an individual trainee-fellowship award (#739)', async () => {
+    vi.spyOn(axios, 'post').mockImplementation(async (_url, body) => {
+      const offset = (body as any).offset || 0;
+      if (offset === 0) {
+        return {
+          data: {
+            meta: { total: 2, offset: 0, limit: 500 },
+            results: [grantArnsten, grantTrainee],
+          },
+        } as any;
+      }
+      return { data: { meta: { total: 2, offset, limit: 500 }, results: [] } } as any;
+    });
+
+    const scraper = new NihReporterScraper({
+      userModel: mockUserModel([]),
+      researchHomeResolver: vi.fn().mockResolvedValue({ status: 'safe-shell' }),
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await scraper.run(ctx);
+
+    expect(result.entitiesObserved).toBe(1);
+
+    const traineeGroup = emitted.filter(
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-taylor-trainee',
+    );
+    expect(traineeGroup).toHaveLength(0);
+    const traineeUserObs = emitted.filter(
+      (o) => o.entityType === 'user' && o.entityKey === 'nih-pi:taylor-trainee',
+    );
+    expect(traineeUserObs).toHaveLength(0);
+
+    const arnstenGroup = emitted.filter(
+      (o) => o.entityType === 'researchEntity' && o.entityKey === 'nih-pi-amy-arnsten',
+    );
+    expect(arnstenGroup.length).toBeGreaterThan(0);
   });
 
   it('honors the limit option (caps PIs processed, not raw grants)', async () => {
