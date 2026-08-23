@@ -241,11 +241,14 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().rankingRules).toEqual([
       'words',
       'proximity',
-      'attribute',
       'exactness',
       'typo',
+      'attribute',
       'sort',
     ]);
+    const rankingRules = getResearchEntitySearchIndexSettings().rankingRules;
+    expect(rankingRules.indexOf('exactness')).toBeLessThan(rankingRules.indexOf('attribute'));
+    expect(rankingRules.indexOf('typo')).toBeLessThan(rankingRules.indexOf('attribute'));
     expect(getResearchEntitySearchIndexSettings().typoTolerance).toMatchObject({
       minWordSizeForTypos: {
         oneTypo: 5,

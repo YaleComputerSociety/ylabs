@@ -208,6 +208,22 @@ describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
   it('collapses a description that is only dead-anchor CTAs to empty', () => {
     expect(sanitizeCatalogDescription('Click here. Click this link.')).toBe('');
   });
+
+  it('preserves prose before an internal-period abbreviation when dropping a dead-anchor CTA (#1020)', () => {
+    const text =
+      'The Robert C. Bates Summer Research Fellowship supports student STEM-based research projects outside of the continental U.S. that might not otherwise be covered by the Tetelman Fellowship. For details click here.';
+    expect(stripDeadAnchorCtaSentences(text)).toBe(
+      'The Robert C. Bates Summer Research Fellowship supports student STEM-based research projects outside of the continental U.S. that might not otherwise be covered by the Tetelman Fellowship.',
+    );
+  });
+
+  it('does not drop a run glued to a period-then-letter token when stripping a dead-anchor CTA (#1020)', () => {
+    const text =
+      'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying. To register click this link.';
+    expect(stripDeadAnchorCtaSentences(text)).toBe(
+      'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying.',
+    );
+  });
 });
 
 const CURATION_RATIONALE_DESCRIPTIONS = [

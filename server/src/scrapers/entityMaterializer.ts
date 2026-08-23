@@ -97,6 +97,7 @@ function defaultMaterializerCardSynthesizer(
 export interface MaterializedShortDescriptionInput {
   fullDescription?: unknown;
   currentShortDescription?: unknown;
+  researchAreas?: unknown;
   manuallyLocked?: boolean;
   synthesize: (fullDescription: string) => Promise<string>;
 }
@@ -110,6 +111,7 @@ export async function resolveMaterializedShortDescription(
   }
   const grounded = await resolveGroundedCardDescription({
     fullDescription: input.fullDescription,
+    researchAreas: input.researchAreas,
     synthesize: input.synthesize,
   });
   if (grounded && shortDescriptionQuality(grounded, input.fullDescription).isUseful) {
@@ -2148,6 +2150,7 @@ export async function materializeEntity(
     const groundedShortDescription = await resolveMaterializedShortDescription({
       fullDescription,
       currentShortDescription: set.shortDescription ?? entityDoc?.shortDescription,
+      researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       manuallyLocked: manuallyLockedFields.includes('shortDescription'),
       synthesize:
         options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isCorruptResearchAreaLabel,
   isNarrativeProseResearchAreaLabel,
   sanitizeResearchAreaFacetDistribution,
   sanitizeResearchAreaLabel,
@@ -69,6 +70,49 @@ describe('sanitizeResearchAreaLabel', () => {
     expect(sanitizeResearchAreaLabel('I-V characteristics')).toBe('I-V characteristics');
   });
 
+  it('fails closed on symbol-only continuation-token chips', () => {
+    expect(sanitizeResearchAreaLabel('···')).toBe('');
+    expect(sanitizeResearchAreaLabel('...')).toBe('');
+    expect(sanitizeResearchAreaLabel('---')).toBe('');
+  });
+
+  it('fails closed on citation-tail fragments', () => {
+    expect(sanitizeResearchAreaLabel('Smith 1989b)')).toBe('');
+    expect(sanitizeResearchAreaLabel('reviewed in Jones 2003)')).toBe('');
+  });
+
+  it('fails closed on verb-lead clause fragments and number-word phrases', () => {
+    expect(sanitizeResearchAreaLabel('three and four')).toBe('');
+    expect(sanitizeResearchAreaLabel('has occupied morphologists')).toBe('');
+    expect(sanitizeResearchAreaLabel('is currently investigating')).toBe('');
+  });
+
+  it('fails closed on leaked research-area label phrases', () => {
+    expect(sanitizeResearchAreaLabel('Research areas include immunology and genomics')).toBe('');
+    expect(sanitizeResearchAreaLabel('Research Areas: cardiovascular health')).toBe('');
+    expect(sanitizeResearchAreaLabel('research area of interest')).toBe('');
+  });
+
+  it('keeps lowercase-initial topics that faculty enter in lower case', () => {
+    expect(sanitizeResearchAreaLabel('mRNA vaccines')).toBe('mRNA vaccines');
+    expect(sanitizeResearchAreaLabel('de novo protein design')).toBe('de novo protein design');
+    expect(sanitizeResearchAreaLabel('in vivo imaging')).toBe('in vivo imaging');
+    expect(sanitizeResearchAreaLabel('cell biology')).toBe('cell biology');
+    expect(sanitizeResearchAreaLabel('mapping class groups')).toBe('mapping class groups');
+    expect(sanitizeResearchAreaLabel('high entropy alloys')).toBe('high entropy alloys');
+    expect(sanitizeResearchAreaLabel('literature and science')).toBe('literature and science');
+    expect(sanitizeResearchAreaLabel('history of photography')).toBe('history of photography');
+    expect(sanitizeResearchAreaLabel('physics beyond the standard model')).toBe(
+      'physics beyond the standard model',
+    );
+  });
+
+  it('keeps topics that carry a balanced parenthetical', () => {
+    expect(sanitizeResearchAreaLabel('Magnetic Resonance Imaging (MRI)')).toBe(
+      'Magnetic Resonance Imaging (MRI)',
+    );
+  });
+
   it('keeps legitimate multi-word topic phrases even when long', () => {
     expect(sanitizeResearchAreaLabel('Quantum Physics')).toBe('Quantum Physics');
     expect(
@@ -102,6 +146,25 @@ describe('isNarrativeProseResearchAreaLabel', () => {
   });
 });
 
+describe('isCorruptResearchAreaLabel', () => {
+  it('flags symbol-only, citation-tail, lowercase-fragment, and label-leak values', () => {
+    expect(isCorruptResearchAreaLabel('···')).toBe(true);
+    expect(isCorruptResearchAreaLabel('Smith 1989b)')).toBe(true);
+    expect(isCorruptResearchAreaLabel('has occupied morphologists')).toBe(true);
+    expect(isCorruptResearchAreaLabel('Research areas include genomics')).toBe(true);
+  });
+
+  it('does not flag clean topic tags or lowercase noun-phrase topics', () => {
+    expect(isCorruptResearchAreaLabel('Cardiac Imaging and Diagnostics')).toBe(false);
+    expect(isCorruptResearchAreaLabel('mRNA vaccines')).toBe(false);
+    expect(isCorruptResearchAreaLabel('in vivo imaging')).toBe(false);
+    expect(isCorruptResearchAreaLabel('cell biology')).toBe(false);
+    expect(isCorruptResearchAreaLabel('mapping class groups')).toBe(false);
+    expect(isCorruptResearchAreaLabel('high entropy alloys')).toBe(false);
+    expect(isCorruptResearchAreaLabel('Magnetic Resonance Imaging (MRI)')).toBe(false);
+  });
+});
+
 describe('sanitizeResearchAreaLabelList', () => {
   it('repairs, drops empties, and dedupes case-insensitively', () => {
     expect(
@@ -112,6 +175,22 @@ describe('sanitizeResearchAreaLabelList', () => {
         'HistonesYSM Researcher',
       ]),
     ).toEqual(['Medicare', 'Histones']);
+  });
+
+  it('drops a symbol-only continuation token but keeps the surrounding clean topics', () => {
+    expect(
+      sanitizeResearchAreaLabelList([
+        'Atherosclerosis and Cardiovascular Diseases',
+        '···',
+        'Internal Medicine',
+      ]),
+    ).toEqual(['Atherosclerosis and Cardiovascular Diseases', 'Internal Medicine']);
+  });
+
+  it('collapses an all-junk area list to empty', () => {
+    expect(
+      sanitizeResearchAreaLabelList(['Smith 1989b)', 'three and four', 'has occupied morphologists']),
+    ).toEqual([]);
   });
 });
 

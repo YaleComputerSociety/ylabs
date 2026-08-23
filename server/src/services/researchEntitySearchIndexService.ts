@@ -46,7 +46,11 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],
   displayedAttributes: ['*'],
-  rankingRules: ['words', 'proximity', 'attribute', 'exactness', 'typo', 'sort'],
+  // `exactness` and `typo` precede `attribute` (Meili's default puts `attribute`
+  // first) so an exact, typo-free topical match in a lower-priority field beats a
+  // fuzzy/prefix collision that only wins on high-priority-field placement -
+  // e.g. "poetry" must not rank the surname "Petrylak" above real poetry scholars.
+  rankingRules: ['words', 'proximity', 'exactness', 'typo', 'attribute', 'sort'],
   typoTolerance: {
     minWordSizeForTypos: {
       oneTypo: 5,

@@ -267,6 +267,14 @@ const FellowshipModal = ({
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
   const safeLinks = buildSafeProgramLinks(fellowship.links, fellowship.sourceUrl);
   const applicationMaterials = fellowship.applicationMaterials || [];
+  const summaryText = (fellowship.summary ?? '').trim();
+  const descriptionText = (fellowship.description ?? '').trim();
+  const collapseWhitespace = (value: string) => value.replace(/\s+/g, ' ');
+  const hasDistinctSummaryAndDescription =
+    !!summaryText &&
+    !!descriptionText &&
+    collapseWhitespace(summaryText) !== collapseWhitespace(descriptionText);
+  const combinedDescriptionText = descriptionText || summaryText;
 
   return (
     <div
@@ -789,28 +797,40 @@ const FellowshipModal = ({
                   </section>
                 )}
 
-                {fellowship.summary && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Brief Description
-                    </h3>
-                    <RichTextBlock
-                      text={fellowship.summary}
-                      className="text-sm text-gray-700 leading-relaxed"
-                    />
-                  </section>
-                )}
+                {hasDistinctSummaryAndDescription ? (
+                  <>
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                        Brief Description
+                      </h3>
+                      <RichTextBlock
+                        text={summaryText}
+                        className="text-sm text-gray-700 leading-relaxed"
+                      />
+                    </section>
 
-                {fellowship.description && fellowship.description !== fellowship.summary && (
-                  <section>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                      Full Description
-                    </h3>
-                    <RichTextBlock
-                      text={fellowship.description}
-                      className="text-sm text-gray-700 leading-relaxed"
-                    />
-                  </section>
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                        Full Description
+                      </h3>
+                      <RichTextBlock
+                        text={descriptionText}
+                        className="text-sm text-gray-700 leading-relaxed"
+                      />
+                    </section>
+                  </>
+                ) : (
+                  combinedDescriptionText && (
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                        Description
+                      </h3>
+                      <RichTextBlock
+                        text={combinedDescriptionText}
+                        className="text-sm text-gray-700 leading-relaxed"
+                      />
+                    </section>
+                  )
                 )}
 
                 {fellowship.eligibility && (
