@@ -33,9 +33,9 @@ All 11 audited edges reported zero missing-required and zero orphaned references
 Script: `yarn --cwd server model-refactor:strict-readiness --environment development`.
 It counts documents that already fail each canonical collection's desired `$jsonSchema`.
 
-Strict-ready (flipped to `validationLevel: 'strict'` in the registry): `accounts`, `evidence_claims`, `org_units`, `research_plans`, `review_decisions`, `source_documents` (all zero non-conforming documents, and reference-clean).
-Not clean, left at `moderate` (tracked as #753): `researchers` (6 non-conforming of 17,409), `role_assignments` (1 of 4,971), `taxonomy_terms` (15 of 5,306).
+Strict-ready (flipped to `validationLevel: 'strict'` in the registry): all nine canonical collections - `accounts`, `evidence_claims`, `org_units`, `research_plans`, `researchers`, `review_decisions`, `role_assignments`, `source_documents`, `taxonomy_terms` (all zero non-conforming documents, and reference-clean).
+`researchers`, `role_assignments`, and `taxonomy_terms` were the last three to drift (originally 6, 1, and 15 non-conforming). Under #753 the `researchers` stubs were repaired to conform (`users:repair-researcher-display-names` filled the missing required `displayName` on account-linked researchers from the legacy user's first and last name), `role_assignments` and `taxonomy_terms` reached zero non-conforming, and all three were flipped to `strict`.
 
-The strict flips are encoded in `canonicalMongoValidatorRegistry.ts`, and a reviewed Development dry-run confirms the plan is exactly six `strict` collMods plus three `moderate` collMods.
+The strict flips are encoded in `canonicalMongoValidatorRegistry.ts`, and a reviewed Development dry-run confirms the plan is exactly nine `strict` collMods.
 The Development database currently carries no canonical validators, and the least-privilege application credentials cannot run `collMod`, so applying the plan to Development is tracked as #752 (it needs admin credentials and the runbook's dry-run and apply flow).
 Carrying any verified-clean flip forward to Beta or Production is tracked as #754, a separate live-database change that needs its own review.

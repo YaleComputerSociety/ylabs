@@ -33,8 +33,11 @@ const STRICT_READINESS_CLEAN_COLLECTIONS = new Set([
   'evidence_claims',
   'org_units',
   'research_plans',
+  'researchers',
   'review_decisions',
+  'role_assignments',
   'source_documents',
+  'taxonomy_terms',
 ]);
 
 const VERSION_BY_COLLECTION = new Map([
@@ -72,7 +75,7 @@ describe('canonical MongoDB validator registry', () => {
     }
   });
 
-  it('only flips audit-clean collections to strict and leaves drifted collections moderate', () => {
+  it('flips every audit-clean collection to strict once no drifted collections remain', () => {
     const levelByCollection = new Map(
       CANONICAL_MONGO_VALIDATORS.map((desired) => [desired.collectionName, desired.validationLevel]),
     );
@@ -81,14 +84,13 @@ describe('canonical MongoDB validator registry', () => {
       'evidence_claims',
       'org_units',
       'research_plans',
-      'review_decisions',
-      'source_documents',
-    ]);
-    expect([...levelByCollection.entries()].filter(([, level]) => level === 'moderate').map(([name]) => name)).toEqual([
       'researchers',
+      'review_decisions',
       'role_assignments',
+      'source_documents',
       'taxonomy_terms',
     ]);
+    expect([...levelByCollection.entries()].filter(([, level]) => level === 'moderate').map(([name]) => name)).toEqual([]);
   });
 
   it('retains Mongoose structural contracts and important bounded-array safeguards', () => {
@@ -134,7 +136,7 @@ describe('canonical MongoDB validator registry', () => {
 
   it('requires an explicit review when generated validator contracts drift', () => {
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      'd4f8ef5f9179be22866524fdb109f093b017e7e487f93076c19c1929b0ee64f2',
+      '38682216fa88959bfb931e92cb4db2d39e994bf39896581dfd3a440013288bb4',
     );
   });
 });

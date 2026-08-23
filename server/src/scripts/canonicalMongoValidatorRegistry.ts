@@ -151,6 +151,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: Researcher,
     schemaVersion: researcherSchemaVersion,
+    validationLevel: 'strict',
     propertyOverrides: {
       profileLinks: { maxItems: researcherProfileLinkKinds.length },
     },
@@ -158,6 +159,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: RoleAssignment,
     schemaVersion: roleAssignmentSchemaVersion,
+    validationLevel: 'strict',
     propertyOverrides: {
       evidenceClaimIds: {
         maxItems: MAX_EVIDENCE_CLAIMS_PER_ROLE,
@@ -179,6 +181,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: TaxonomyTerm,
     schemaVersion: taxonomyTermSchemaVersion,
+    validationLevel: 'strict',
     propertyOverrides: {
       aliases: {
         maxItems: MAX_TAXONOMY_ALIASES,
