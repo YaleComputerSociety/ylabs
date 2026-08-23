@@ -212,6 +212,27 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
 const hasResolvableLeadIdentity = (identity: LeadDirectoryIdentity): boolean =>
   Boolean(identity.netid) || identity.nameTokens.size > 0 || identity.profileSlugs.size > 0;
 
+const ORGANIZATIONAL_OR_PROGRAM_ENTITY_TYPES = new Set([
+  'CENTER',
+  'INSTITUTE',
+  'INITIATIVE',
+  'CORE_FACILITY',
+  'PROGRAM',
+]);
+
+const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+// An organizational/program home's own identity is institutional, not
+// personal (mirrors the no-attached-PI lead exemption in
+// studentVisibilityTier.ts). A center or program whose websiteUrl happens to
+// resolve to an unrelated person's official profile - e.g. a stale or
+// mis-scraped link - is not "person-derived": that mismatch is a data-quality
+// issue on the entity's own link, not a contested identity between two
+// people, so it must never trip this gate.
+const isOrganizationalOrProgramEntity = (entity: Record<string, any>): boolean =>
+  textValue(entity.kind).toLowerCase() === 'program' ||
+  ORGANIZATIONAL_OR_PROGRAM_ENTITY_TYPES.has(textValue(entity.entityType).toUpperCase());
+
 const MIN_SHARED_NAME_TOKENS_TO_CORROBORATE = 2;
 
 const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => {
@@ -298,7 +319,10 @@ export const entityOfficialPersonProfileDestinations = (entity: Record<string, a
  * #468: name-only matching stitched a foreign Yale profile onto a same-named
  * PI). A contested entity must drop out of student discovery (repair queue),
  * not merely hide the PI card behind the detail "under review" box. Absent any
- * lead identity at all we do not assume a conflict.
+ * lead identity at all we do not assume a conflict. Organizational/program
+ * homes (centers, institutes, initiatives, core facilities, programs) are
+ * exempt: their own identity is never a person, so a person-profile-shaped
+ * link on them is a data-quality issue, not a contested identity.
  */
 export function detectProfileIdentityRisk({
   entity,
@@ -307,6 +331,8 @@ export function detectProfileIdentityRisk({
   entity: Record<string, any>;
   leadMembers?: Array<LeadProfileIdentityLead>;
 }): boolean {
+  if (isOrganizationalOrProgramEntity(entity)) return false;
+
   const entityDestinations = entityOfficialPersonProfileDestinations(entity);
   if (entityDestinations.size === 0) return false;
   if (leadMembers.length === 0) return false;
