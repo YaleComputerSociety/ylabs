@@ -286,7 +286,9 @@ describe('LabDetail page', () => {
         ...basePayload.group,
         websiteUrl: DEAD_PRIMARY_SITE,
         sourceUrls: [DEAD_PRIMARY_SITE],
-        sourceLinkHealth: [{ url: DEAD_PRIMARY_SITE, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }],
+        sourceLinkHealth: [
+          { url: DEAD_PRIMARY_SITE, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+        ],
       },
       members: [],
     });
@@ -350,10 +352,6 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByText('How to get involved')).toBeTruthy();
-    expect(
-      screen.getByText(/Undergraduate research almost always starts by reaching out\./),
-    ).toBeTruthy();
-    expect(screen.getByText(/Open the official profile to find contact details/)).toBeTruthy();
     expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
       OFFICIAL_PROFILE_URL,
@@ -392,10 +390,14 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText('How to get involved')).toBeTruthy();
-    expect(screen.getByText(/Open the official profile to find contact details/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
-      LEAD_OFFICIAL_PROFILE_URL,
+    expect(
+      screen
+        .getByRole('link', { name: "Open Fixture Steele's official profile" })
+        .getAttribute('href'),
+    ).toBe(LEAD_OFFICIAL_PROFILE_URL);
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Visit official website' }).getAttribute('href')).toBe(
+      LAB_WEBSITE_URL,
     );
   });
 
@@ -514,7 +516,6 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText(/Open the official page to find contact details/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open the official page' }).getAttribute('href')).toBe(
       JOIN_PAGE_URL,
     );
@@ -629,7 +630,6 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText(/Visit the official website to find contact details/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
@@ -653,7 +653,6 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText(/Visit the official website to find contact details/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Visit lab website' }).getAttribute('href')).toBe(
       RESEARCH_WEBSITE_URL,
     );
@@ -803,8 +802,11 @@ describe('LabDetail page', () => {
       .closest('section');
 
     expect(screen.queryByText('Lead professor')).toBeNull();
-    // The professor is reached via the action button(s); the name is not a link.
-    expect(screen.queryAllByRole('link', { name: /Jordan Researcher/ })).toHaveLength(0);
+    const profileCardLink = within(principalInvestigatorSection as HTMLElement).getByRole('link', {
+      name: "Open Jordan Researcher's official profile",
+    });
+    expect(profileCardLink.getAttribute('href')).toBe(OFFICIAL_PROFILE_URL);
+    expect(profileCardLink.getAttribute('target')).toBe('_blank');
     expect(screen.getAllByText('Jordan Researcher')).toHaveLength(1);
     expect(
       within(principalInvestigatorSection as HTMLElement).getByRole('img', {
@@ -812,17 +814,11 @@ describe('LabDetail page', () => {
       }),
     ).toBeTruthy();
     expect(
-      within(principalInvestigatorSection as HTMLElement).queryByRole('link', {
-        name: /Jordan Researcher/,
-      }),
-    ).toBeNull();
-    expect(
       within(principalInvestigatorSection as HTMLElement).getAllByText('Principal Investigator')
         .length,
     ).toBeGreaterThan(1);
     expect(screen.getByText('Professor of Example Studies')).toBeTruthy();
     expect(screen.getByText('Example Studies')).toBeTruthy();
-    expect(screen.getByText('How to get involved')).toBeTruthy();
   });
 
   it('never renders verdict-tier or planning-status rows, only a constant contact prompt', async () => {
@@ -1086,7 +1082,7 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('Unverified Investigator')).toBeNull();
   });
 
-  it('does not link principal investigators to official faculty profiles from the detail page', async () => {
+  it('links the principal investigator card to the official faculty profile from the detail page', async () => {
     renderLabDetail({
       ...basePayload,
       members: [
@@ -1110,10 +1106,12 @@ describe('LabDetail page', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.queryAllByRole('link', { name: /Fixture Scholar/ })).toHaveLength(0);
-    expect(
-      document.querySelector('a[href="https://medicine.yale.edu/profile/fixture-scholar/"]'),
-    ).toBeNull();
+    const profileCardLink = screen.getByRole('link', {
+      name: "Open Fixture Scholar's official profile",
+    });
+    expect(profileCardLink.getAttribute('href')).toBe(OFFICIAL_PROFILE_URL);
+    expect(profileCardLink.getAttribute('rel')).toContain('noopener');
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
     expect(screen.getAllByText('Fixture Scholar').length).toBeGreaterThan(0);
   });
 
@@ -2081,7 +2079,6 @@ describe('LabDetail display name unification', () => {
 
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
-    expect(screen.getByText(/Visit the official website to find contact details/)).toBeTruthy();
     const websiteLink = screen.getByRole('link', { name: 'Visit official website' });
     expect(websiteLink.getAttribute('href')).toBe(MATERIALS_LAB_WEBSITE_URL);
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
@@ -2132,7 +2129,9 @@ describe('LabDetail display name unification', () => {
 
     const wayInLink = screen
       .getAllByRole('link')
-      .find((link) => link.getAttribute('href') === 'https://medicine.yale.edu/profile/example-lead');
+      .find(
+        (link) => link.getAttribute('href') === 'https://medicine.yale.edu/profile/example-lead',
+      );
     expect(wayInLink).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
