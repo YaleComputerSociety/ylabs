@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
+import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -458,6 +459,28 @@ async function defaultEntityFinder(
   return emptyAreaFirst.map(candidateEntityFromDoc);
 }
 
+export interface YsmLeadRoleAssignment {
+  personId?: unknown;
+  rosterProvenance?: { profileUrl?: string };
+}
+
+export interface YsmLeadResearcher {
+  profileLinks?: Array<{ kind?: string; url?: string }>;
+}
+
+export function selectYsmLeadProfileUrls(
+  assignments: YsmLeadRoleAssignment[],
+  researchers: YsmLeadResearcher[],
+): string[] {
+  const officialProfileUrls = researchers.flatMap((researcher) =>
+    (researcher.profileLinks || [])
+      .filter((link) => link?.kind === 'YALE_OFFICIAL')
+      .map((link) => link?.url),
+  );
+  const rosterProfileUrls = assignments.map((assignment) => assignment.rosterProvenance?.profileUrl);
+  return uniqueStrings([...officialProfileUrls, ...rosterProfileUrls]).filter(isYsmProfileUrl);
+}
+
 async function defaultLeadProfileUrlLoader(entity: YsmMeshCandidateEntity): Promise<string[]> {
   const entityId = idValue(entity._id);
   if (!entityId) return [];
@@ -468,11 +491,18 @@ async function defaultLeadProfileUrlLoader(entity: YsmMeshCandidateEntity): Prom
       role: { $in: [...LEAD_ROLES] },
       archived: { $ne: true },
     },
-    { 'rosterProvenance.profileUrl': 1 },
-  ).lean<Array<{ rosterProvenance?: { profileUrl?: string } }>>();
-  return uniqueStrings(
-    assignments.map((assignment) => assignment.rosterProvenance?.profileUrl),
-  ).filter(isYsmProfileUrl);
+    { personId: 1, 'rosterProvenance.profileUrl': 1 },
+  ).lean<YsmLeadRoleAssignment[]>();
+  const personObjectIds = uniqueStrings(assignments.map((assignment) => idValue(assignment.personId)))
+    .filter((id) => OBJECT_ID_RE.test(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const researchers = personObjectIds.length
+    ? await Researcher.find(
+        { _id: { $in: personObjectIds }, archived: { $ne: true } },
+        { profileLinks: 1 },
+      ).lean<YsmLeadResearcher[]>()
+    : [];
+  return selectYsmLeadProfileUrls(assignments, researchers);
 }
 
 async function defaultWorkPlanLoader(
