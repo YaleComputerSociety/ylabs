@@ -35,11 +35,6 @@ const listingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    researchGroupId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'ResearchEntity',
-      required: false,
-    },
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
@@ -204,7 +199,6 @@ const listingSchema = new mongoose.Schema(
 );
 
 listingSchema.index({ researchEntityId: 1, archived: 1 });
-listingSchema.index({ researchGroupId: 1, archived: 1 });
 listingSchema.index({ expiresAt: 1 });
 
 export const Listing = mongoose.model('Listing', listingSchema);

@@ -558,7 +558,6 @@ export function buildInferredPiMemberUpsert(
     update: {
       $set: {
         researchEntityId: safeResearchEntityId,
-        researchGroupId: safeResearchEntityId,
         userId: safeUserId,
         role: 'pi',
         isCurrentMember: true,
@@ -698,7 +697,6 @@ export function buildRosterMemberUpsert(
   };
   const set: Record<string, unknown> = {
     researchEntityId,
-    researchGroupId: researchEntityId,
     role,
     isCurrentMember: true,
     sourceUrl,
