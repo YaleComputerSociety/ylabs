@@ -76,6 +76,33 @@ const CHROME_LINK_LABEL_PATTERNS: RegExp[] = [
 
 const GENERIC_APPLY_LABELS = new Set(['', 'apply', 'apply now', 'apply today', 'admissions']);
 
+const PROGRAM_DETAIL_PATH_KEYWORD_PATTERN =
+  /(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|research-internship-program|tobin-ra)/i;
+
+const parseHttpUrl = (value: unknown): URL | null => {
+  const href = safeHttpUrl(value);
+  if (!href) return null;
+  try {
+    return new URL(href);
+  } catch {
+    return null;
+  }
+};
+
+const pathSegmentCount = (url: URL): number => url.pathname.split('/').filter(Boolean).length;
+
+export const isSameHostShallowChromeUrl = (value: unknown, sourceUrlValue: unknown): boolean => {
+  const url = parseHttpUrl(value);
+  const sourceUrl = parseHttpUrl(sourceUrlValue);
+  if (!url || !sourceUrl) return false;
+  if (url.hostname.toLowerCase() !== sourceUrl.hostname.toLowerCase()) return false;
+  if (url.pathname.replace(/\/+$/, '') === sourceUrl.pathname.replace(/\/+$/, '')) return false;
+  if (PROGRAM_DETAIL_PATH_KEYWORD_PATTERN.test(url.pathname)) return false;
+  const linkDepth = pathSegmentCount(url);
+  if (linkDepth === 0) return false;
+  return linkDepth <= 2 && linkDepth <= pathSegmentCount(sourceUrl);
+};
+
 const normalizeLinkLabel = (label?: string): string =>
   (label || '')
     .replace(/[›»▸→>]+\s*$/g, '')
@@ -105,12 +132,14 @@ export const isGenericAdmissionsApplyLink = (link: FellowshipLink): boolean => {
 
 export const buildSafeProgramLinks = (
   links: FellowshipLink[] | undefined | null,
+  sourceUrl?: unknown,
 ): SafeProgramLink[] => {
   const filtered = (links || [])
     .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
     .filter((link): link is SafeProgramLink => Boolean(link.href))
     .filter((link) => !isChromeLinkLabel(link.label))
-    .filter((link) => !isGenericAdmissionsApplyLink(link));
+    .filter((link) => !isGenericAdmissionsApplyLink(link))
+    .filter((link) => !isSameHostShallowChromeUrl(link.href, sourceUrl));
 
   if (filtered.length > MAX_RENDERED_PROGRAM_LINKS) return [];
   return filtered;

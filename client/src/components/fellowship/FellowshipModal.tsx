@@ -260,7 +260,7 @@ const FellowshipModal = ({
       ? labelizeResearchDetailValue(fellowship.sourceName)
       : '';
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
-  const safeLinks = buildSafeProgramLinks(fellowship.links);
+  const safeLinks = buildSafeProgramLinks(fellowship.links, fellowship.sourceUrl);
   const applicationMaterials = fellowship.applicationMaterials || [];
 
   return (
