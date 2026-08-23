@@ -99,6 +99,44 @@ describe('LabHeader', () => {
     expect(container.textContent).not.toContain('Visit lab website');
   });
 
+  it('never renders a website CTA whose URL is marked UNAVAILABLE in sourceLinkHealth (#1027)', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          websiteUrl: 'https://example.edu/lovelace',
+          sourceLinkHealth: [
+            {
+              url: 'https://example.edu/lovelace',
+              healthStatus: 'UNAVAILABLE',
+              httpStatusCode: 404,
+            },
+            { url: 'https://example.edu/labs', healthStatus: 'HEALTHY', httpStatusCode: 200 },
+          ],
+        }}
+      />,
+    );
+    expect(container.querySelector('a[href*="example.edu/lovelace"]')).toBeNull();
+    expect(container.textContent).not.toContain('Visit lab website');
+  });
+
+  it('still renders a website CTA whose URL is HEALTHY in sourceLinkHealth (#1027)', () => {
+    const { container } = render(
+      <LabHeader
+        group={{
+          ...baseGroup,
+          websiteUrl: 'https://example.edu/lovelace',
+          sourceLinkHealth: [
+            { url: 'https://example.edu/lovelace', healthStatus: 'HEALTHY', httpStatusCode: 200 },
+          ],
+        }}
+      />,
+    );
+    const websiteLink = container.querySelector('a[href*="example.edu/lovelace"]');
+    expect(websiteLink).not.toBeNull();
+    expect(websiteLink?.textContent).toContain('Visit lab website');
+  });
+
   it('uses research website wording for faculty research profiles', () => {
     const { container } = render(
       <LabHeader
