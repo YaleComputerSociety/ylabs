@@ -2,10 +2,11 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const syncEntitiesMock = vi.fn(async () => {});
+const syncEntitiesMock = vi.fn(async (_entityType: string, _docs: Array<Record<string, unknown>>) => {});
 
 vi.mock('../../services/meiliSyncService', () => ({
-  syncEntities: (...args: unknown[]) => syncEntitiesMock(...args),
+  syncEntities: (entityType: string, docs: Array<Record<string, unknown>>) =>
+    syncEntitiesMock(entityType, docs),
 }));
 
 import { ResearchEntity } from '../../models/researchEntity';
