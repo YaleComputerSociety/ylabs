@@ -10,6 +10,7 @@ import {
   isStudiesTemplateGlueMalformed,
   stripGluedProfileRoleLabel,
   isCurationRationaleText,
+  isFirstPersonBiographyText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
   isFormFieldDumpText,
@@ -969,6 +970,51 @@ describe('isInstitutionalCenterBlurbText', () => {
     expect(
       sanitizeResearchEntityShortDescription('Studies liver fibrosis and vascular biology.'),
     ).toBe('Studies liver fibrosis and vascular biology.');
+  });
+});
+
+describe('isFirstPersonBiographyText fullDescription fail-closed (#964)', () => {
+  const FIRST_PERSON_BIOS = [
+    'I am a physician-scientist with training in immunology and clinical medicine. My career is dedicated to integrating fundamental science with patient care, and my research combines molecular biology and genetics.',
+    'Welcome to my web page! I teach and research comparative politics here, where I am also affiliated with two centers. This is where you can find out about my research and my teaching.',
+    'Previously the director of a statistics core for over a decade, I founded a new subfield, I lead the design core of a training program, and I co-authored several papers on health disparities.',
+  ];
+
+  const THIRD_PERSON_DESCRIPTIONS = [
+    'My research is focused on the genetic basis of lung disease.',
+    'Our lab studies the pathogenesis of airway diseases. We investigate immune mechanisms and develop new therapies.',
+    'The lab runs Phase I and Phase II trials. Type I and Type II results were compared across the cohort.',
+    'Dr. Rivera received her doctorate and now studies neural circuits. Her lab focuses on memory and develops imaging tools.',
+    '',
+  ];
+
+  it('flags a first-person-dominated personal bio', () => {
+    for (const bio of FIRST_PERSON_BIOS) {
+      expect(isFirstPersonBiographyText(bio)).toBe(true);
+    }
+  });
+
+  it('keeps third-person prose, a lone first-person clause, and Roman-numeral labels', () => {
+    for (const description of THIRD_PERSON_DESCRIPTIONS) {
+      expect(isFirstPersonBiographyText(description)).toBe(false);
+    }
+  });
+
+  it('fails a first-person bio closed via sanitizeResearchEntityDescription', () => {
+    for (const bio of FIRST_PERSON_BIOS) {
+      expect(sanitizeResearchEntityDescription(bio)).toBe('');
+    }
+  });
+
+  it('keeps a lone first-person research clause and third-person lab prose intact', () => {
+    expect(
+      sanitizeResearchEntityDescription('My research is focused on the genetic basis of lung disease.'),
+    ).toBe('My research is focused on the genetic basis of lung disease.');
+    expect(
+      sanitizeResearchEntityDescription(
+        'Our lab studies the pathogenesis of airway diseases. We investigate immune mechanisms and develop new therapies.',
+      ),
+    ).toContain('airway diseases');
   });
 });
 

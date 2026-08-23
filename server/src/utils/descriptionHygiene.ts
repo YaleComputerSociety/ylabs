@@ -626,6 +626,38 @@ export function isInstitutionalCenterBlurbText(text: string): boolean {
   return INSTITUTIONAL_CENTER_BLURB_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+const firstPersonBioMarkerPattern =
+  /\b[Mm]y\b|\b[Mm]e\b|\bmyself\b|\bI['’](?:m|ve|d|ll)\b|\bI\s+(?:am|have|had|will|would|study|studies|studied|investigate|examine|explore|use|used|focus|focused|work|worked|research|researched|develop|developed|lead|led|direct|directed|analyze|apply|combine|seek|aim|began|started|joined|received|earned|hold|held|teach|taught|remain|became|founded|authored|co-authored|serve|served|obtained|graduated|completed|conduct)\b/g;
+
+const firstPersonBioOpenerPattern =
+  /^(?:Welcome to my\b|I['’](?:m|ve|d|ll)\b|I\s+(?:am|have|had|study|teach|research|work|focus|lead|direct|investigate|examine|explore|use|develop|began|started|joined|received|founded)\b|My\s+(?:research|lab|laboratory|work|career|group|team|training|interests?|goal|approach|primary|main|first|current)\b)/;
+
+/**
+ * A fullDescription that is a PI's raw first-person personal-profile bio rather
+ * than a third-person "what this lab studies" description (#964): opens in the
+ * first person (`I am`, `My research`, `Welcome to my web page!`) or is
+ * saturated with first-person singular markers. The complement of #1077's
+ * shortDescription-only first-person fail-close, applied here in the strict
+ * fullDescription sanitizer so a personal bio never survives as the primary
+ * lab/center description and the read-time fallback (shortDescription, then
+ * researchAreas/department framing) supplies clean copy.
+ *
+ * Detection is density-gated (>= 3 markers, plus a first-person opener or a
+ * >= 3% marker density) so a third-person description that merely contains one
+ * first-person research sentence is kept. Only unambiguous first-person tokens
+ * count as markers - `my`/`me`/`myself` and pronoun-`I` verb clauses, never a
+ * bare `I` - so Roman-numeral labels (`Phase I`, `Type I`) are not miscounted.
+ */
+export function isFirstPersonBiographyText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  const markers = (normalized.match(firstPersonBioMarkerPattern) || []).length;
+  if (markers < 3) return false;
+  if (firstPersonBioOpenerPattern.test(normalized)) return true;
+  const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+  return wordCount > 0 && markers / wordCount >= 0.03;
+}
+
 const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
 
 /**
@@ -715,9 +747,11 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
  * fullDescription or shortDescription is the primary "what this lab studies"
  * surface, so a leftover contact-block token, a "Selected Publications:"
- * citation dump, or a bare "Research fields include <chips>." area echo (#623)
- * fails the whole description closed rather than surviving as read-time-safe
- * token text, a truncated tail (#676), or a vacuous restatement of the chips.
+ * citation dump, a bare "Research fields include <chips>." area echo (#623), or
+ * a PI's raw first-person personal bio (#964) fails the whole description closed
+ * rather than surviving as read-time-safe token text, a truncated tail (#676),
+ * a vacuous restatement of the chips, or contradicting the third-person
+ * shortDescription on the same entity.
  *
  * The clean remainder is finally clamped through clampDescriptionLength so an
  * over-long or mid-word-truncated faculty/roster slice is trimmed to a sentence
@@ -735,6 +769,7 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
     isPublicationsListDumpText(stripped) ||
     isResearchAreaEchoDescription(stripped) ||
     isInstitutionalCenterBlurbText(stripped) ||
+    isFirstPersonBiographyText(stripped) ||
     containsHtmlTagMarkup(stripped)
   ) {
     return '';
