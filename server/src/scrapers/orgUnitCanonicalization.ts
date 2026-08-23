@@ -186,6 +186,15 @@ export function createOrgUnitCanonicalizer(
             fallback = denoised;
           }
         }
+        if (!hit) {
+          const schoolHit =
+            resolveOrgUnitCanonical(index, trimmed, SCHOOL_KINDS) ??
+            (fallback !== trimmed ? resolveOrgUnitCanonical(index, fallback, SCHOOL_KINDS) : null);
+          if (schoolHit && schoolHit.kind === 'SCHOOL') {
+            dropped.push(trimmed);
+            continue;
+          }
+        }
         const canonical = hit ? hit.name : fallback;
         if (!hit) unmatched.push(canonical);
         const dedupeKey = canonical.toLocaleLowerCase();

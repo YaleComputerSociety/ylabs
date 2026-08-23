@@ -115,6 +115,37 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.unmatched).toEqual(['Medical Oncology']);
     expect(result.dropped).toEqual([]);
   });
+
+  it('drops a school name that leaked into departments[] instead of keeping it raw', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'NSCI',
+      'Yale School of Medicine',
+      'School of Medicine',
+      'YSM',
+    ]);
+    expect(result.values).toEqual(['Neuroscience']);
+    expect(result.unmatched).toEqual([]);
+    expect(result.dropped).toEqual(['Yale School of Medicine', 'School of Medicine', 'YSM']);
+  });
+
+  it('keeps a DIVISION-kind org unit as a department rather than dropping it as a school', () => {
+    const divisionRows = [
+      ...rows,
+      {
+        slug: 'social-and-behavioral-sciences',
+        name: 'Social and Behavioral Sciences',
+        kind: 'DIVISION' as const,
+      },
+    ];
+    const divisionCanonicalizer = createOrgUnitCanonicalizer(
+      buildOrgUnitResolverIndex(divisionRows),
+    );
+    const result = divisionCanonicalizer.canonicalizeDepartments([
+      'Social and Behavioral Sciences',
+    ]);
+    expect(result.values).toEqual(['Social and Behavioral Sciences']);
+    expect(result.dropped).toEqual([]);
+  });
 });
 
 describe('denoiseOrgUnitValue', () => {
