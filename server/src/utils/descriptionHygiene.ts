@@ -572,6 +572,12 @@ export function isRosterShapedText(text: string): boolean {
 /**
  * A navigation/menu dump: a long run of capitalized menu labels with no real
  * sentences. Gated so short blurbs and ordinary multi-sentence prose pass.
+ *
+ * Also requires near-zero internal punctuation: scraped menu chrome is a run
+ * of bare labels joined by whitespace only, since it was never a sentence. A
+ * sentence-sparse single-person bio that lists several book/prize titles with
+ * semicolons and parentheses can otherwise clear the capitalized-word
+ * threshold on its title-case titles alone while remaining ordinary prose.
  */
 export function isNavigationDumpText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -579,6 +585,8 @@ export function isNavigationDumpText(text: string): boolean {
   if (words.length < 40) return false;
   const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
   if (sentenceEnders > 2) return false;
+  const internalPunctuation = countMatches(normalized, /[,;:()]/g);
+  if (internalPunctuation > 1) return false;
   const capitalized = words.filter((word) => /^[A-Z]/.test(word)).length;
   return capitalized / words.length > 0.4;
 }
