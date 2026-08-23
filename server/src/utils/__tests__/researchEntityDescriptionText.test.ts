@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isDirectoryIndexChromeText,
   isPersonBiographyOrAdvisingDescription,
+  isResearchEntitySourceChromeText,
   publicResearchEntityDescriptionText,
   repairSubjectlessResearchLead,
   revoiceFirstPersonResearchLead,
@@ -561,5 +562,30 @@ describe('sanitizeResearchHomeSelfReferenceCopyFields', () => {
       fullDescription: 'The lab studies neurons.',
     };
     expect(sanitizeResearchHomeSelfReferenceCopyFields(entity)).toBe(entity);
+  });
+});
+
+describe('isResearchEntitySourceChromeText breadcrumb / page-dump detection (#1249)', () => {
+  const FRANKS_PAGE_DUMP =
+    'You are hereHome » Who We Are » Faculty & Affiliates » Paul Franks Paul Franks Areas of Interest: Kant, German Idealism. Education: Ph.D. 1993, Harvard. Recent Courses Taught: Post-Kantian Themes in Analytic Philosophy. Books: All or Nothing. Selected Articles: Divided by Common Sense.';
+
+  it('flags a "You are here" breadcrumb page dump as source chrome', () => {
+    expect(isResearchEntitySourceChromeText(FRANKS_PAGE_DUMP)).toBe(true);
+  });
+
+  it('flags a chained breadcrumb-chevron trail as source chrome', () => {
+    expect(
+      isResearchEntitySourceChromeText('Home » Research » Labs » Smith Lab studies immunology.'),
+    ).toBe(true);
+  });
+
+  it('blanks the breadcrumb page dump through publicResearchEntityDescriptionText', () => {
+    expect(publicResearchEntityDescriptionText(FRANKS_PAGE_DUMP)).toBe('');
+  });
+
+  it('leaves clean research prose without a breadcrumb trail untouched', () => {
+    const prose = 'The lab studies German Idealism and post-Kantian philosophy.';
+    expect(isResearchEntitySourceChromeText(prose)).toBe(false);
+    expect(publicResearchEntityDescriptionText(prose)).toBe(prose);
   });
 });

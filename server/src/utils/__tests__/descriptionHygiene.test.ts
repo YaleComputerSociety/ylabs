@@ -36,6 +36,7 @@ import {
   stripProvenanceHedge,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
+  stripTrailingSourceLayoutLabelSection,
   stripUrlTopicsFromCardSummary,
 } from '../descriptionHygiene';
 
@@ -1679,5 +1680,51 @@ describe('stripLeadingAdministrativeLocationSentences (#1178)', () => {
     expect(stripLeadingAdministrativeLocationSentences(prose)).toBe(
       'We study circadian rhythms in fungi.',
     );
+  });
+});
+
+describe('descriptionHygiene trailing source-layout label section strip (#1249)', () => {
+  const YSM_LABEL_DUMP =
+    'This research focuses on the biology of vascular smooth muscle cells to develop new therapies for treatment and prevention of cardiovascular diseases. Key areas of interest: Vascular smooth muscle; Differentiation; Signal transduction; Transcription; Epigenetics Disease models: Atherosclerosis, Intimal Hyperplasia, Transplant Vasculopathy, Obesity and Diabetes';
+  const YSM_CLEAN =
+    'This research focuses on the biology of vascular smooth muscle cells to develop new therapies for treatment and prevention of cardiovascular diseases.';
+
+  it('drops a trailing "Key areas of interest:" label dump, keeping the prose', () => {
+    expect(stripTrailingSourceLayoutLabelSection(YSM_LABEL_DUMP)).toBe(YSM_CLEAN);
+  });
+
+  it('drops a trailing "Disease models:" label section', () => {
+    const text =
+      'The lab studies vascular development in mice. Disease models: Atherosclerosis; Diabetes';
+    expect(stripTrailingSourceLayoutLabelSection(text)).toBe(
+      'The lab studies vascular development in mice.',
+    );
+  });
+
+  it('drops a trailing "Areas of focus:" label section', () => {
+    const text = 'Studies tumor immunology and cancer genetics. Areas of focus: T cells; Antigens';
+    expect(stripTrailingSourceLayoutLabelSection(text)).toBe(
+      'Studies tumor immunology and cancer genetics.',
+    );
+  });
+
+  it('leaves an inline "key areas of interest include" clause intact', () => {
+    const prose =
+      'The lab studies vascular biology, and its key areas of interest include atherosclerosis and diabetes.';
+    expect(stripTrailingSourceLayoutLabelSection(prose)).toBe(prose);
+  });
+
+  it('leaves "Disease models include ..." prose without a colon untouched', () => {
+    const prose =
+      'The lab studies vascular biology. Disease models include atherosclerosis and diabetes.';
+    expect(stripTrailingSourceLayoutLabelSection(prose)).toBe(prose);
+  });
+
+  it('is applied through the served full-description sanitizer', () => {
+    expect(sanitizeResearchEntityDescription(YSM_LABEL_DUMP)).toBe(YSM_CLEAN);
+  });
+
+  it('is applied through the served short-description sanitizer', () => {
+    expect(sanitizeResearchEntityShortDescription(YSM_LABEL_DUMP)).toBe(YSM_CLEAN);
   });
 });
