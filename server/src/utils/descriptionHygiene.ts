@@ -80,6 +80,87 @@ export function stripDeadAnchorCtaSentences(text: string): string {
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
+const sentenceContinuationAbbreviation =
+  /(?:\b(?:Prof|Dr|Mr|Mrs|Ms|Sr|Jr|St|Mt|vs|etc|Inc|Ltd|Co|Corp|No|Vol|Fig|Dept|Univ|Rev|Hon|Gen|Sen|Rep|Gov|Ph\.?D|M\.?D|B\.?A|B\.?S|M\.?A|M\.?S|D\.?Phil|U\.?S|e\.?g|i\.?e)|\b[A-Z])\.$/i;
+
+/**
+ * Group the lossless sentence segments (which break at every terminal period,
+ * so a title/initial abbreviation like "Prof." or "Daniel A." starts a spurious
+ * new segment) back into logical sentences by merging a segment that ends in a
+ * known abbreviation or a single-letter initial into the following segment.
+ * Concatenation stays lossless, so `join('')` still reconstructs the input; the
+ * grouping only lets sentence-level rules compare and drop whole sentences
+ * without splitting mid-name.
+ */
+function toLogicalSentences(text: string): string[] {
+  const logical: string[] = [];
+  let buffer = '';
+  for (const segment of partitionSentencesLossless(text)) {
+    buffer += segment;
+    if (sentenceContinuationAbbreviation.test(buffer.trimEnd())) continue;
+    logical.push(buffer);
+    buffer = '';
+  }
+  if (buffer) logical.push(buffer);
+  return logical;
+}
+
+const sourcePageLayoutDeixisPattern =
+  /\b(?:listed|shown|displayed|posted|indicated|noted)\s+(?:on|to|in)\s+the\s+(?:right|left)\b|\bin the (?:right-hand\s+|left-hand\s+)?(?:sidebar|column|panel|box|menu)\b|\bat the (?:top|bottom) of (?:this|the) page\b/i;
+
+/**
+ * Drop a sentence whose meaning depends on the original source page's spatial
+ * layout ("...the application dates listed on the right are not correct", a
+ * sidebar/column/panel pointer, a "top/bottom of this page" reference) and is
+ * left dangling once the prose is rehosted in our card/modal, where there is no
+ * "right" column for a student to distrust (#994). Gated to a no-op when no
+ * layout deixis is present so clean prose is untouched, and keyed on the
+ * layout-verb phrasing rather than a bare "on the right" so anatomical/spatial
+ * research prose ("the right hemisphere") is never removed.
+ */
+export function stripSourcePageLayoutNotes(text: string): string {
+  const value = String(text || '');
+  if (!sourcePageLayoutDeixisPattern.test(value)) return normalizeHygieneWhitespace(value);
+  const kept = toLogicalSentences(value).filter(
+    (sentence) => !sourcePageLayoutDeixisPattern.test(sentence),
+  );
+  return normalizeHygieneWhitespace(kept.join(''));
+}
+
+/**
+ * Collapse an exact repeated sentence: a scrape defect where the same
+ * substantial sentence appears twice in one description, non-adjacently and
+ * possibly with a differing "Please " lead ("Please contact Prof. X for further
+ * information. ... Contact Prof. X for further information." -> one copy, #994).
+ * Comparison ignores case, a leading "please", and punctuation, and only a
+ * sentence with at least four alphabetic words is deduplicated so a short
+ * repeated fragment is left alone. Adjacent block duplication is handled
+ * separately by collapseDuplicatedProseBlock.
+ */
+export function collapseRepeatedSentences(text: string): string {
+  const value = String(text || '');
+  const sentences = toLogicalSentences(value);
+  if (sentences.length < 2) return normalizeHygieneWhitespace(value);
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const sentence of sentences) {
+    const alphaWords = sentence.toLowerCase().match(/[a-z]{2,}/g) || [];
+    if (alphaWords.length < 4) {
+      kept.push(sentence);
+      continue;
+    }
+    const key = sentence
+      .toLowerCase()
+      .replace(/^\s*please\s+/, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(sentence);
+  }
+  return normalizeHygieneWhitespace(kept.join(''));
+}
+
 export function stripInlineUrls(text: string): string {
   return text
     .replace(/https?:\/\/\S+/gi, ' ')
@@ -673,7 +754,11 @@ export function stripProvenanceHedge(text: string): string {
  */
 export function sanitizeCatalogDescription(text: string): string {
   const stripped = stripProvenanceHedge(
-    collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text))),
+    collapseRepeatedSentences(
+      stripSourcePageLayoutNotes(
+        collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text))),
+      ),
+    ),
   );
   if (!stripped) return '';
   if (

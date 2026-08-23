@@ -4,6 +4,8 @@ import {
   clampDescriptionLength,
   collapseDoubledSynthesisVerb,
   collapseDuplicatedProseBlock,
+  collapseRepeatedSentences,
+  stripSourcePageLayoutNotes,
   containsHtmlTagMarkup,
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
@@ -294,6 +296,46 @@ describe('descriptionHygiene display-directive fail-closed (#1053)', () => {
   });
 });
 
+describe('descriptionHygiene source-page layout note + repeated CTA (#994)', () => {
+  const WEIZMANN_DEFECT =
+    'Please note, the application opening and closing dates listed on the right are not correct. Please contact Prof. Daniel Prober for further information. This program supports Yale undergraduates who undertake summer research at the Weizmann Institute of Science in Rehovot, Israel, outside Tel Aviv. Contact Prof. Daniel Prober for further information.';
+  const WEIZMANN_EXPECTED =
+    'Please contact Prof. Daniel Prober for further information. This program supports Yale undergraduates who undertake summer research at the Weizmann Institute of Science in Rehovot, Israel, outside Tel Aviv.';
+
+  it('strips the orphaned "listed on the right" layout note and dedupes the CTA end to end', () => {
+    expect(sanitizeCatalogDescription(WEIZMANN_DEFECT)).toBe(WEIZMANN_EXPECTED);
+  });
+
+  it('drops a sentence that references the source page layout', () => {
+    expect(
+      stripSourcePageLayoutNotes(
+        'The stipend covers travel. Details appear in the right-hand sidebar. Applications open in spring.',
+      ),
+    ).toBe('The stipend covers travel. Applications open in spring.');
+  });
+
+  it('leaves anatomical/spatial research prose untouched', () => {
+    const clean =
+      'The lab studies motor control in the right hemisphere and its role in movement on the left side of the body.';
+    expect(stripSourcePageLayoutNotes(clean)).toBe(clean);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+
+  it('collapses an exact repeated multi-word sentence, keeping the first copy', () => {
+    expect(
+      collapseRepeatedSentences(
+        'Applications are due in March. The award funds summer research abroad. Applications are due in March.',
+      ),
+    ).toBe('Applications are due in March. The award funds summer research abroad.');
+  });
+
+  it('leaves a short repeated fragment and non-duplicate prose alone', () => {
+    const clean =
+      'Apply now. The program pairs undergraduates with faculty mentors for a summer of original research. Apply now.';
+    expect(collapseRepeatedSentences(clean)).toBe(clean);
+  });
+});
+
 describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
   it('removes an [email redacted] token embedded after a connective', () => {
     const text =
@@ -403,9 +445,10 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
 
 describe('sanitizeResearchEntityDescription word-boundary clamp (#897)', () => {
   it('clamps an over-long research-entity description to a complete sentence', () => {
-    const body = `${'The laboratory studies how cities shape regional climate and biodiversity. '.repeat(
-      40,
-    )}Recent work extends this to coastal megacities and the lack of diver`;
+    const body = `${Array.from(
+      { length: 40 },
+      (_, i) => `The laboratory studies how urban region ${i + 1} shapes regional climate and biodiversity.`,
+    ).join(' ')} Recent work extends this to coastal megacities and the lack of diver`;
     const cleaned = sanitizeResearchEntityDescription(body);
     expect(cleaned.length).toBeLessThanOrEqual(2000);
     expect(cleaned.endsWith('.')).toBe(true);
@@ -647,9 +690,10 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
   });
 
   it('clamps an over-long description to a complete sentence', () => {
-    const body = `${'The program pairs undergraduates with faculty mentors for original research. '.repeat(
-      40,
-    )}Applicants identify up to three potential mentors before the deadline`;
+    const body = `${Array.from(
+      { length: 40 },
+      (_, i) => `The program pairs undergraduates with faculty mentor ${i + 1} for original research.`,
+    ).join(' ')} Applicants identify up to three potential mentors before the deadline`;
     const cleaned = sanitizeStoredCatalogDescription(body);
     expect(cleaned.length).toBeLessThanOrEqual(2000);
     expect(cleaned.endsWith('.')).toBe(true);
