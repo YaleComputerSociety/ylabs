@@ -270,10 +270,6 @@ export function toPublicResearchEntityDto(
         dto[field] = publicDescriptionString(group[field]);
         continue;
       }
-      if (field === 'shortDescription' && typeof group[field] === 'string') {
-        dto[field] = publicShortDescriptionString(group[field]);
-        continue;
-      }
       dto[field] = publicTextValue(group[field]);
     }
   }
