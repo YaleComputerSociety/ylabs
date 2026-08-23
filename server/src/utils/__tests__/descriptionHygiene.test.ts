@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampDescriptionLength,
+  collapseDoubledSynthesisVerb,
   collapseDuplicatedProseBlock,
   containsHtmlTagMarkup,
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
+  isStudiesTemplateGlueMalformed,
+  stripGluedProfileRoleLabel,
   isCurationRationaleText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
@@ -15,6 +18,7 @@ import {
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
+  partitionSentencesLossless,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
@@ -942,5 +946,154 @@ describe('descriptionHygiene mentor-bio contact-invitation roster (#904)', () =>
     expect(sanitizeCatalogDescription(SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE)).toBe(
       SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE,
     );
+  });
+});
+
+describe('sanitizeResearchEntityShortDescription CTA/news-ticker guard (#932)', () => {
+  const NEWS_TICKER_STAT =
+    '76% of Americans say they are interested in news stories about how global warming is affecting the cost of living.';
+
+  it('fails a leading poll-stat news-ticker shortDescription closed', () => {
+    expect(isCtaNewsTickerDumpText(NEWS_TICKER_STAT)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(NEWS_TICKER_STAT)).toBe('');
+  });
+
+  it('keeps a genuine summary that reports a proportion of a thing', () => {
+    const clean = '40% of the human genome is noncoding regulatory DNA.';
+    expect(isCtaNewsTickerDumpText(clean)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+  });
+
+  it('keeps a genuine question-phrased short summary', () => {
+    const summary = 'How do communities adapt to a warming climate?';
+    expect(sanitizeResearchEntityShortDescription(summary)).toBe(summary);
+  });
+});
+
+describe('stripGluedProfileRoleLabel + doubled-verb collapse (#975)', () => {
+  it('strips a glued acronym role label from a synthesized topic list', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies Postoperative ComplicationsYSM Researcher, Colorectal Surgery, and General Surgery.',
+      ),
+    ).toBe('Studies Postoperative Complications, Colorectal Surgery, and General Surgery.');
+  });
+
+  it('strips repeated glued acronym labels in one sentence', () => {
+    expect(
+      stripGluedProfileRoleLabel(
+        'Studies Legionella pneumophilaYSM Researcher, Macrophages, and Coxiella burnetiiYSM Researcher.',
+      ),
+    ).toBe('Studies Legionella pneumophila, Macrophages, and Coxiella burnetii.');
+  });
+
+  it('collapses a doubled leading synthesis verb', () => {
+    expect(
+      collapseDoubledSynthesisVerb('Studies Studies on Chitinases and Chitosanases.'),
+    ).toBe('Studies on Chitinases and Chitosanases.');
+  });
+
+  it('leaves a spaced acronym in genuine prose untouched', () => {
+    const clean = 'Studies how YSM researchers collaborate across departments.';
+    expect(stripGluedProfileRoleLabel(clean)).toBe(clean);
+  });
+});
+
+describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () => {
+  it('flags a book-citation glued after the Studies template', () => {
+    const text =
+      'Studies America, edited by Greil Marcus and Werner Sollors (Harvard University Press, 2009).';
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+  });
+
+  it('flags a trailing publication-year citation with no strong marker', () => {
+    expect(
+      isStudiesTemplateGlueMalformed(
+        'Studies the Akkadian period, The Age of Agade: Inventing Empire in Ancient Mesopotamia (2016).',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a subject/verb-agreement mismatch lifted from a service sentence', () => {
+    expect(
+      isStudiesTemplateGlueMalformed(
+        'Studies veterinary education have been through her membership on the Council on Education.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a career-milestone fragment misread as a topic', () => {
+    expect(
+      isStudiesTemplateGlueMalformed('Studies Art at Yale University in 1990 and was awarded tenure in 1998.'),
+    ).toBe(true);
+  });
+
+  it('keeps a genuine concise research summary', () => {
+    for (const clean of [
+      'Studies neuroimaging across depression, anxiety, and aging.',
+      'Studies how memory has evolved over time.',
+      'Studies the Paris Agreement (2015) and climate policy.',
+      'Studies Postoperative Complications, Colorectal Surgery, and General Surgery.',
+    ]) {
+      expect(isStudiesTemplateGlueMalformed(clean)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+    }
+  });
+});
+
+describe('stripDeadAnchorCtaSentences lossless sentence walk (#1020)', () => {
+  it('keeps prose that precedes an abbreviation when dropping a dead CTA', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'Fellowship supports research outside the continental U.S. that might help. For details click here.',
+      ),
+    ).toBe('Fellowship supports research outside the continental U.S. that might help.');
+  });
+
+  it('drops only the CTA sentence in the Tetelman-shaped record, preserving the U.S. clause', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'The Robert C. Bates Summer Research Fellowship supports student STEM-based research projects outside of the continental U.S. that might not otherwise be covered by the Tetelman Fellowship. To apply click here.',
+      ),
+    ).toBe(
+      'The Robert C. Bates Summer Research Fellowship supports student STEM-based research projects outside of the continental U.S. that might not otherwise be covered by the Tetelman Fellowship.',
+    );
+  });
+
+  it('preserves an applying-encouragement clause before a click-here sentence', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying. Click here to learn more.',
+      ),
+    ).toBe(
+      'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying.',
+    );
+  });
+
+  it('drops a mid-string CTA sentence without losing the sentences around it', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'Apply by March 1. Click here to register. Awards are announced in April.',
+      ),
+    ).toBe('Apply by March 1. Awards are announced in April.');
+  });
+
+  it('collapses a description that is nothing but a dead CTA', () => {
+    expect(stripDeadAnchorCtaSentences('Click here to apply.')).toBe('');
+  });
+
+  it('partitions abbreviations and glued/stripped tokens losslessly', () => {
+    for (const value of [
+      'U.S.',
+      'Ph.D. e.g. U.S.',
+      'end.no.space',
+      'abc. def.',
+      'Visit yale.edu/apply for details.',
+      '...',
+      'no terminal punctuation here',
+    ]) {
+      expect(partitionSentencesLossless(value).join('')).toBe(value);
+    }
   });
 });

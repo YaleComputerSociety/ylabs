@@ -1043,3 +1043,25 @@ describe('fullDescriptionQuality', () => {
     expect(quality.isUseful).toBe(true);
   });
 });
+
+describe('shortDescriptionQuality Studies-template glue guard (#978)', () => {
+  it('marks a citation/career-fact "Studies " template as not useful', () => {
+    for (const bad of [
+      'Studies America, edited by Greil Marcus and Werner Sollors (Harvard University Press, 2009).',
+      'Studies veterinary education have been through her membership on the Council on Education.',
+      'Studies Art at Yale University in 1990 and was awarded tenure in 1998.',
+    ]) {
+      const quality = shortDescriptionQuality(bad, 'Some faculty bio full description sentence here.');
+      expect(quality.isUseful).toBe(false);
+      expect(quality.flags).toContain('malformed-generated-text');
+    }
+  });
+
+  it('keeps a genuine concise "Studies " summary useful', () => {
+    const quality = shortDescriptionQuality(
+      'Studies neuroimaging across depression, anxiety, and aging.',
+      'The lab studies neuroimaging biomarkers across depression, anxiety, and aging using MRI.',
+    );
+    expect(quality.flags).not.toContain('malformed-generated-text');
+  });
+});

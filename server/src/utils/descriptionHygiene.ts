@@ -43,20 +43,41 @@ export const deadAnchorCtaSentencePattern =
   /\bclick\s+(?:here|below|(?:on\s+)?(?:this|the|the following)\s+link)\b/i;
 
 /**
+ * Partition text into sentence-ish segments that tile the input losslessly:
+ * every character lands in exactly one segment, so `segments.join('')` always
+ * reconstructs the original. Each segment carries its trailing terminal
+ * punctuation and any following whitespace. Unlike the earlier
+ * `/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g` walk, a run ending in period-then-
+ * non-space (an abbreviation like "U.S."/"Ph.D.", a glued token, or a stripped
+ * ".edu/" URL remnant) is not dropped by String.match - the `[^.!?]*` allows an
+ * empty pre-terminal run so consecutive/internal periods still tile (#1020).
+ * A defensive fallback returns the whole string as one segment if tiling ever
+ * fails to reconstruct the input, so it can never silently delete text.
+ */
+export function partitionSentencesLossless(value: string): string[] {
+  if (!value) return [];
+  const segments = value.match(/[^.!?]*[.!?]+\s*|[^.!?]+$/g);
+  if (!segments || segments.join('') !== value) return [value];
+  return segments;
+}
+
+/**
  * Drop whole sentences whose only purpose is an inert click/anchor CTA
  * ("click here", "click this link") where the scraper kept the visible link
  * label but dropped the href, leaving a dead instruction with no destination
  * (#915). Gated to a no-op when no such fragment is present, so clean prose is
  * returned untouched; a description that is nothing but dead CTAs collapses to
  * empty. Deliberately narrower than sourceChromeTextPattern so a legitimate
- * sentence ("Award recipients will perform research...") is never removed.
+ * sentence ("Award recipients will perform research...") is never removed. The
+ * sentence walk is lossless (#1020) so real prose that precedes an abbreviation
+ * ("...continental U.S. that might help.") is never silently deleted.
  */
 export function stripDeadAnchorCtaSentences(text: string): string {
   const value = String(text || '');
   if (!deadAnchorCtaSentencePattern.test(value)) return normalizeHygieneWhitespace(value);
-  const sentences = value.split(/(?<=[.!?])\s+/);
+  const sentences = partitionSentencesLossless(value);
   const kept = sentences.filter((sentence) => !deadAnchorCtaSentencePattern.test(sentence));
-  return normalizeHygieneWhitespace(kept.join(' '));
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 export function stripInlineUrls(text: string): string {
@@ -207,6 +228,74 @@ export function containsHtmlTagMarkup(text: unknown): boolean {
   return htmlTagMarkupPattern.test(String(text || ''));
 }
 
+const gluedProfileRoleLabelPattern =
+  /(?<=[A-Za-z])(?:YSM|FAS|YSE|SOM|STEM|SEAS|WGSS)\s+Researchers?\b/g;
+
+/**
+ * Strip a boilerplate profile role label ("YSM Researcher") that a
+ * MeSH/profile-page extractor glued directly onto the end of a topic term with
+ * no delimiter ("Postoperative ComplicationsYSM Researcher"). #742 removed the
+ * token from the researchArea chip/facet surface, but stale shortDescription
+ * values materialized before that fix still carry it baked into their joined
+ * topic list; this reaches those too (#975). Anchored on a glued (no-space)
+ * letter so a legitimately spaced acronym in prose is untouched, and it repairs
+ * the leftover comma/space seam so the topic list reads cleanly.
+ */
+export function stripGluedProfileRoleLabel(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(gluedProfileRoleLabelPattern, '');
+  if (stripped === value) return value;
+  return normalizeHygieneWhitespace(stripped.replace(/\s+([,;])/g, '$1'));
+}
+
+const doubledSynthesisVerbPattern =
+  /^(Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\s+\1\b/i;
+
+/**
+ * Collapse a doubled leading synthesis verb ("Studies Studies on ...") that a
+ * stale materialization step emitted by prepending its "Studies " template onto
+ * a value that already began with the verb (#975). Only the immediately repeated
+ * leading verb is removed, so ordinary prose is untouched.
+ */
+export function collapseDoubledSynthesisVerb(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  return value.replace(doubledSynthesisVerbPattern, '$1');
+}
+
+const synthesisVerbLeadPattern =
+  /^(?:Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds|Seeks to|Works on|Focuses on|Focused on|Creative work spans|Unites)\b/i;
+
+const citationMarkerPattern =
+  /\bedited by\b|\bUniversity Press\b|\bpp\.\s*\d|\bISBN\b|\((?:19|20)\d{2}\)[.,;:\s]*$/i;
+
+const studiesSubjectVerbMismatchPattern =
+  /^(?:Studies|Investigates|Examines|Explores)\s+(?!(?:how|what|why|when|where|which|who|whom|whose|that|the\s+way)\b)[a-z][a-z\s-]{2,50}?\s+(?:have|has|had|were|was)\s+been\b/i;
+
+const careerFactLeakPattern =
+  /\bin\s+(?:19|20)\d{2}\b[^.!?]*\b(?:was\s+awarded|awarded|tenure|joined|appointed|promoted)\b|\bwas\s+awarded\b|\bawarded\s+tenure\b/i;
+
+/**
+ * A "Studies <text>." synthesis template glued onto a fragment that is not a
+ * coherent research-topic clause: a book citation or bibliography entry
+ * ("Studies America, edited by ... (Harvard University Press, 2009)."), a
+ * subject/verb-agreement mismatch lifted from a service/CV sentence ("Studies
+ * veterinary education have been through ..."), or a biographical career-milestone
+ * fragment ("Studies Art at Yale University in 1990 and was awarded tenure ...").
+ * Gated on a synthesis-verb lead so it only fires on generated blurbs, never on
+ * genuine prose; broader than #944's own-name-subject check because the tail,
+ * not the subject, is the tell (#978).
+ */
+export function isStudiesTemplateGlueMalformed(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (!synthesisVerbLeadPattern.test(normalized)) return false;
+  return (
+    citationMarkerPattern.test(normalized) ||
+    studiesSubjectVerbMismatchPattern.test(normalized) ||
+    careerFactLeakPattern.test(normalized)
+  );
+}
+
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
@@ -219,11 +308,17 @@ export function containsHtmlTagMarkup(text: unknown): boolean {
  * unrelated entity.
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  const cleaned = stripTrailingContactAddress(
-    stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+  const cleaned = collapseDoubledSynthesisVerb(
+    stripGluedProfileRoleLabel(
+      stripTrailingContactAddress(
+        stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+      ),
+    ),
   );
   if (isResearchAreaTemplateLeakText(cleaned)) return '';
   if (isInstitutionalCenterBlurbText(cleaned)) return '';
+  if (isCtaNewsTickerDumpText(cleaned)) return '';
+  if (isStudiesTemplateGlueMalformed(cleaned)) return '';
   if (containsHtmlTagMarkup(cleaned)) return '';
   return cleaned;
 }
@@ -356,6 +451,9 @@ const secondPersonPattern = /\b(?:you|your|you['’]re|yourself)\b/gi;
 
 const welcomeGreetingPattern = /(?:^|[.!?]\s)Welcome!/;
 
+const pollStatCalloutPattern =
+  /^\d{1,3}\s*%\s+of\s+[A-Z][a-z]+s\b[^.!?]*\b(?:say|says|said|report|reports|believe|believes|think|thinks|feel|feels|want|wants|support|supports|agree|agrees|are|were)\b/;
+
 /**
  * A homepage news-ticker / call-to-action dump: disjointed promotional teaser
  * fragments (dated event announcements, a "Sign up"/"Join us" imperative, a
@@ -366,14 +464,16 @@ const welcomeGreetingPattern = /(?:^|[.!?]\s)Welcome!/;
  * (isNavigationDumpText/isFormFieldDumpText bail when sentence enders exceed two)
  * and carry no "?" for isFaqDumpText, so this arm keys on CTA / second-person /
  * social-sign-off markers rather than sentence count (#898). A social-platform
- * call to action is unmistakable promotional chrome on its own; otherwise two
- * independent promotional signals are required so a genuine description that
- * merely invites contact is kept.
+ * call to action, or a leading opinion-poll statistic callout ("76% of Americans
+ * say ...") lifted from a communications page (#932), is unmistakable promotional
+ * chrome on its own; otherwise two independent promotional signals are required
+ * so a genuine description that merely invites contact is kept.
  */
 export function isCtaNewsTickerDumpText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (socialCtaSignoffPattern.test(normalized)) return true;
+  if (pollStatCalloutPattern.test(normalized)) return true;
   const distinctPlatforms = new Set(
     (normalized.match(socialPlatformPattern) || []).map((platform) => platform.toLowerCase()),
   ).size;
@@ -580,7 +680,9 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
+  const stripped = stripGluedProfileRoleLabel(
+    stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+  );
   if (!stripped) return '';
   if (
     hasContactBlockResidue(stripped) ||

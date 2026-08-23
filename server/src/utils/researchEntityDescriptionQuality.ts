@@ -1,3 +1,4 @@
+import { isStudiesTemplateGlueMalformed } from './descriptionHygiene';
 import {
   isAcademicAppointmentDescription,
   isBrokenResearchEntityDescriptionFragment,
@@ -576,6 +577,7 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   if (text && hasRecruitmentBoilerplate(text)) flags.push('recruitment-boilerplate');
   if (text && isDominatedByConsentBoilerplate(text)) flags.push('consent-boilerplate');
   if (text && hasMalformedGeneratedText(text)) flags.push('malformed-generated-text');
+  if (text && isStudiesTemplateGlueMalformed(text)) flags.push('malformed-generated-text');
   if (
     text &&
     hasSourceNewsFragment(text) &&
