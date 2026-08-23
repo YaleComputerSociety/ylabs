@@ -13,6 +13,7 @@ import { ResearchEntityRelationship } from '../models/researchEntityRelationship
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
+import { normalizedProgramTitleKey } from '../utils/programTitle';
 import { normalizeResearchEntityNameDashes } from '../utils/researchEntityNameNormalization';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
@@ -1815,6 +1816,42 @@ export function uniqueKeyValueForIdentifier(
   return entityKey;
 }
 
+/**
+ * Re-scrape dedupe: a fellowship whose title drifted slightly mints a new
+ * sourceKey (title slug) and would otherwise create a duplicate record (#609).
+ * When the exact sourceKey misses, resolve to an existing record whose
+ * normalized title matches, category-agnostic. Candidates are limited to
+ * records owned by the same source scraper or to legacy records with no
+ * sourceName (the pre-scrape imports the catalog scraper should adopt rather
+ * than clone), so two distinct non-empty producers never merge. Prefers a live
+ * record, then the most recently updated one.
+ */
+async function findFellowshipByNormalizedTitle(
+  Model: mongoose.Model<any>,
+  obs: any[],
+): Promise<any | null> {
+  const titleObs = obs.find((o) => o.field === 'title' && typeof o.value === 'string');
+  const sourceNameObs = obs.find((o) => o.field === 'sourceName' && typeof o.value === 'string');
+  const titleKey = normalizedProgramTitleKey(String(titleObs?.value || ''));
+  const sourceName = String(sourceNameObs?.value || '');
+  if (!titleKey || !sourceName) return null;
+
+  const candidates = await Model.find({
+    $or: [{ sourceName }, { sourceName: { $in: ['', null] } }, { sourceName: { $exists: false } }],
+  }).lean();
+  const matches = candidates.filter(
+    (candidate: any) => normalizedProgramTitleKey(String(candidate.title || '')) === titleKey,
+  );
+  if (matches.length === 0) return null;
+
+  matches.sort((a: any, b: any) => {
+    const archivedDelta = Number(Boolean(a.archived)) - Number(Boolean(b.archived));
+    if (archivedDelta !== 0) return archivedDelta;
+    return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+  });
+  return matches[0];
+}
+
 async function findEntityDocByIdentifier(
   Model: mongoose.Model<any>,
   entityType: ObservedEntityType,
@@ -1841,6 +1878,11 @@ async function findEntityDocByIdentifier(
 
   const exact = await Model.findOne({ [keyField]: keyValue }).lean();
   if (exact) return exact;
+
+  if (entityType === 'fellowship') {
+    const byTitle = await findFellowshipByNormalizedTitle(Model, obs);
+    if (byTitle) return byTitle;
+  }
 
   if (entityType === 'user') {
     const emailObservation = obs.find((o) => o.field === 'email' && typeof o.value === 'string');

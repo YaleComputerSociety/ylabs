@@ -12,6 +12,8 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
+import { normalizedProgramTitleKey } from '../../utils/programTitle';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -534,10 +536,7 @@ function finalizeCandidate(
 }
 
 function compactTitleIdentity(title: string): string {
-  return normalizeWhitespace(title)
-    .toLowerCase()
-    .replace(/['’]/g, '')
-    .replace(/[^a-z0-9]+/g, '');
+  return normalizedProgramTitleKey(title);
 }
 
 function existingKeyForCandidate(
@@ -610,6 +609,11 @@ function upsertCandidate(
   byKey.set(key, existing ? mergeCandidates(existing, candidate) : candidate);
 }
 
+function summaryFromRowContext(rowContext: string, title: string): string | undefined {
+  const safe = sanitizeCatalogDescription(rowContext);
+  return safe && safe !== title ? safe : undefined;
+}
+
 function candidateFromLink(
   $: cheerio.CheerioAPI,
   link: Parameters<cheerio.CheerioAPI>[0],
@@ -648,7 +652,7 @@ function candidateFromLink(
   return finalizeCandidate({
     sourceKey: sourceKeyForTitle(title),
     title,
-    summary: rowContext && rowContext !== title ? rowContext : undefined,
+    summary: summaryFromRowContext(rowContext, title),
     description: undefined,
     applicationInformation: undefined,
     applicationMaterials: APPLICATION_HEADING_RE.test(contextText)
@@ -691,7 +695,14 @@ function candidateFromDetailPage(
       : primaryContent.length > 0
         ? primaryContent
         : $('body');
-  const bodyText = normalizeWhitespace(contentRoot.text());
+  const chromeFreeRoot = contentRoot.clone();
+  chromeFreeRoot
+    .find(
+      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
+    )
+    .remove();
+  const bodyText = normalizeWhitespace(chromeFreeRoot.text());
+  const safeDescription = sanitizeCatalogDescription(bodyText).slice(0, 2000);
   const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
   const applicationOpenDate = utcStartOfDay(
@@ -721,7 +732,7 @@ function candidateFromDetailPage(
     sourceKey: sourceKeyForTitle(title),
     title,
     summary: undefined,
-    description: bodyText.slice(0, 2000),
+    description: safeDescription || undefined,
     applicationInformation,
     applicationMaterials: applicationInformation
       ? inferApplicationMaterials(applicationInformation)
