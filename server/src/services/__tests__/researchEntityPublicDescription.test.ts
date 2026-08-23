@@ -34,8 +34,31 @@ describe('researchEntityPublicDescription', () => {
       pass: false,
       fullDescriptionUseful: false,
       cardDescriptionUseful: false,
-      reasons: ['missing_public_full_description', 'missing_public_card_description'],
+      reasons: [
+        'missing_public_full_description',
+        'missing_public_card_description',
+        'blank_served_public_description',
+      ],
     });
+  });
+
+  it('fails closed when the served read-time hygiene empties both descriptions (#1202)', () => {
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        kind: 'program',
+        entityType: 'PROGRAM',
+        shortDescription:
+          '76% of Americans say they are interested in news stories about the topic.',
+        fullDescription:
+          '68% of Americans say they support stronger public investment in the topic, according to our latest national survey of public opinion spanning every region of the country and many demographic groups.',
+        sourceUrls: ['https://example.yale.edu/programs/communications'],
+      },
+    });
+
+    expect(representation.quality.full.isUseful).toBe(true);
+    expect(representation.quality.short.isUseful).toBe(true);
+    expect(representation.invariant.pass).toBe(false);
+    expect(representation.invariant.reasons).toEqual(['blank_served_public_description']);
   });
 
   it('uses the public detail lead-name contract when explicit names are supplied', () => {
@@ -95,6 +118,20 @@ describe('researchEntityPublicDescription', () => {
           shortDescription: '',
           fullDescription: '',
           sourceUrls: [],
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects a student_ready card whose descriptions are CTA/poll-stat chrome the served hygiene strips (#1202)', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'program',
+          entityType: 'PROGRAM',
+          shortDescription:
+            '76% of Americans say they are interested in news stories about the topic.',
+          fullDescription:
+            '68% of Americans say they support stronger public investment in the topic, according to our latest national survey of public opinion spanning every region of the country and many demographic groups.',
+          sourceUrls: ['https://example.yale.edu/programs/communications'],
         }),
       ).toBe(false);
     });

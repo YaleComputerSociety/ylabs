@@ -1,6 +1,9 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  type ResearchEntityPublicDescriptionRepresentation,
+} from './researchEntityPublicDescription';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 
 const LEAD_ROLES = new Set(['pi', 'co-pi', 'director', 'co-director']);
@@ -13,7 +16,7 @@ export interface PublicDescriptionAuditSample {
   name: string;
   descriptionSource?: string;
   leadMemberNames: string[];
-  reasons: Array<'missing_public_full_description' | 'missing_public_card_description'>;
+  reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'];
   fullDescriptionFlags: string[];
   cardDescriptionFlags: string[];
 }
