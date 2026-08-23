@@ -81,6 +81,29 @@ describe('researchEntityCopy', () => {
     expect(approachHeadingLabel(staleCenter)).toBe('Ways to approach this center');
   });
 
+  it('derives Faculty Research badge and copy from entityType FACULTY_RESEARCH when kind is stale (#833)', () => {
+    const staleFacultyResearch = {
+      name: 'Nicha Dvornek Faculty Research',
+      kind: 'lab',
+      entityType: 'FACULTY_RESEARCH',
+    };
+
+    expect(isFacultyResearchEntity(staleFacultyResearch)).toBe(true);
+    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty Research');
+    expect(researchWebsiteLabel(staleFacultyResearch)).toBe('research website');
+    expect(researchWebsiteCtaLabel(staleFacultyResearch)).toBe('Visit research website');
+  });
+
+  it('derives group labels from entityType for the project entityTypes when kind is stale', () => {
+    for (const entityType of ['FACULTY_PROJECT', 'DIGITAL_HUMANITIES_PROJECT', 'ARCHIVE_OR_MUSEUM_PROJECT']) {
+      const staleProject = { name: 'Example Project', kind: 'lab', entityType };
+
+      expect(isFacultyResearchEntity(staleProject)).toBe(false);
+      expect(entityKindLabel(staleProject)).toBe('Group');
+      expect(researchWebsiteLabel(staleProject)).toBe('group website');
+    }
+  });
+
   it('falls back to kind when entityType is absent', () => {
     const legacy = { name: 'Example Institute', kind: 'institute' };
 
