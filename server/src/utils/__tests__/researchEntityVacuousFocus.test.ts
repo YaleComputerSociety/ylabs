@@ -86,4 +86,17 @@ describe('buildResearchAreasCardSummary', () => {
     expect(buildResearchAreasCardSummary([])).toBe('');
     expect(buildResearchAreasCardSummary(undefined)).toBe('');
   });
+
+  it('rejects URL topics so a dirty source list cannot reintroduce a leaked link (#1079)', () => {
+    expect(
+      buildResearchAreasCardSummary([
+        'https://www.ncbi.nlm.nih.gov/myncbi/hong-bo.zhao.1/bibliography/public/',
+        'Hearing',
+        'Cochlea',
+      ]),
+    ).toBe('Studies Hearing and Cochlea.');
+    expect(buildResearchAreasCardSummary(['www.example.org', 'Genetics'])).toBe(
+      'Studies Genetics.',
+    );
+  });
 });

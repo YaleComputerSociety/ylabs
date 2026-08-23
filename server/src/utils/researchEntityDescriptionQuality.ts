@@ -686,6 +686,7 @@ export function buildResearchAreasCardSummary(researchAreas: unknown): string {
     const topic = textValue(raw).replace(/[.;:,]+$/g, '').trim();
     if (topic.length < 3 || topic.length > 60) continue;
     if (wordCount(topic) > 6) continue;
+    if (/https?:\/\/|\bwww\./i.test(topic)) continue;
     const key = topic.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
