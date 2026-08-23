@@ -41,6 +41,8 @@ import type { CanonicalSchemaVersionContract } from '../models/canonicalSchemaVe
 import {
   buildCanonicalCollectionValidator,
   type CanonicalCollectionValidator,
+  type CanonicalValidationAction,
+  type CanonicalValidationLevel,
   type MongoJsonSchemaProperty,
 } from './canonicalMongoValidatorsCore';
 
@@ -53,6 +55,15 @@ interface CanonicalModelValidatorContract {
   model: mongoose.Model<any>;
   schemaVersion: CanonicalSchemaVersionContract;
   propertyOverrides?: Readonly<Record<string, MongoJsonSchemaProperty>>;
+  /**
+   * Per-collection strict-flip override. Omitted means the collection stays
+   * on the shared moderate/error default; only set this once an audit for
+   * that specific collection comes back clean (see #727 and
+   * docs/canonical-mongodb-validator-runbook.md). Never flip every
+   * collection at once by changing the shared defaults instead.
+   */
+  validationLevel?: CanonicalValidationLevel;
+  validationAction?: CanonicalValidationAction;
 }
 
 function numericOption(value: unknown): number | undefined {
@@ -112,6 +123,8 @@ function buildCanonicalModelValidator(
     schemaVersion: contract.schemaVersion,
     requiredFields: (generated.required ?? []).filter((field) => field !== 'schemaVersion'),
     properties,
+    ...(contract.validationLevel ? { validationLevel: contract.validationLevel } : {}),
+    ...(contract.validationAction ? { validationAction: contract.validationAction } : {}),
   });
 }
 
@@ -133,6 +146,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: Account,
     schemaVersion: accountSchemaVersion,
+    validationLevel: 'strict',
   },
   {
     model: Researcher,
@@ -154,6 +168,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: OrgUnit,
     schemaVersion: orgUnitSchemaVersion,
+    validationLevel: 'strict',
     propertyOverrides: {
       aliases: {
         maxItems: MAX_ORG_UNIT_ALIASES,
@@ -174,6 +189,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: ResearchPlan,
     schemaVersion: RESEARCH_PLAN_SCHEMA_VERSION,
+    validationLevel: 'strict',
     propertyOverrides: {
       privateNotes: { maxLength: MAX_RESEARCH_PLAN_NOTES_LENGTH },
       checklist: { maxItems: MAX_RESEARCH_PLAN_CHECKLIST_ITEMS },
@@ -183,6 +199,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: SourceDocument,
     schemaVersion: SOURCE_DOCUMENT_SCHEMA_VERSION,
+    validationLevel: 'strict',
     propertyOverrides: {
       documentKey: { maxLength: MAX_SOURCE_DOCUMENT_KEY_LENGTH },
       canonicalUrl: { maxLength: MAX_SOURCE_DOCUMENT_URL_LENGTH },
@@ -194,6 +211,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: EvidenceClaim,
     schemaVersion: EVIDENCE_CLAIM_SCHEMA_VERSION,
+    validationLevel: 'strict',
     propertyOverrides: {
       subject: {
         ...evidenceSubjectProperty,
@@ -211,6 +229,7 @@ const canonicalModelValidatorContracts: readonly CanonicalModelValidatorContract
   {
     model: ReviewDecision,
     schemaVersion: REVIEW_DECISION_SCHEMA_VERSION,
+    validationLevel: 'strict',
     propertyOverrides: {
       fieldPaths: {
         maxItems: MAX_REVIEW_DECISION_FIELD_PATHS,

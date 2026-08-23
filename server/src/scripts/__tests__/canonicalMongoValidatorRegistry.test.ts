@@ -28,6 +28,15 @@ const EXPECTED_COLLECTIONS = [
   'taxonomy_terms',
 ];
 
+const STRICT_READINESS_CLEAN_COLLECTIONS = new Set([
+  'accounts',
+  'evidence_claims',
+  'org_units',
+  'research_plans',
+  'review_decisions',
+  'source_documents',
+]);
+
 const VERSION_BY_COLLECTION = new Map([
   ['accounts', accountSchemaVersion],
   ['evidence_claims', EVIDENCE_CLAIM_SCHEMA_VERSION],
@@ -56,9 +65,30 @@ describe('canonical MongoDB validator registry', () => {
         enum: contract?.supportedVersions,
         description: `Canonical schema version. New documents use version ${contract?.currentVersion}.`,
       });
-      expect(desired.validationLevel).toBe('moderate');
+      expect(desired.validationLevel).toBe(
+        STRICT_READINESS_CLEAN_COLLECTIONS.has(desired.collectionName) ? 'strict' : 'moderate',
+      );
       expect(desired.validationAction).toBe('error');
     }
+  });
+
+  it('only flips audit-clean collections to strict and leaves drifted collections moderate', () => {
+    const levelByCollection = new Map(
+      CANONICAL_MONGO_VALIDATORS.map((desired) => [desired.collectionName, desired.validationLevel]),
+    );
+    expect([...levelByCollection.entries()].filter(([, level]) => level === 'strict').map(([name]) => name)).toEqual([
+      'accounts',
+      'evidence_claims',
+      'org_units',
+      'research_plans',
+      'review_decisions',
+      'source_documents',
+    ]);
+    expect([...levelByCollection.entries()].filter(([, level]) => level === 'moderate').map(([name]) => name)).toEqual([
+      'researchers',
+      'role_assignments',
+      'taxonomy_terms',
+    ]);
   });
 
   it('retains Mongoose structural contracts and important bounded-array safeguards', () => {
@@ -104,7 +134,7 @@ describe('canonical MongoDB validator registry', () => {
 
   it('requires an explicit review when generated validator contracts drift', () => {
     expect(canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS)).toBe(
-      'ba9f2b43ee7fe987d3f0dca66497f39901235458fb455523dd4288d3d13c3a73',
+      'd4f8ef5f9179be22866524fdb109f093b017e7e487f93076c19c1929b0ee64f2',
     );
   });
 });
