@@ -59,6 +59,8 @@ import {
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { canonicalizeResearcherDepartmentLabel } from '../utils/researcherDepartmentLabel';
+import { useConfig } from '../hooks/useConfig';
 import { leadRoleFamily, leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
 import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
@@ -465,6 +467,7 @@ const DecisionSummary = ({
   preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
 }) => {
+  const { departments } = useConfig();
   const topics = detailTopics(group, 5);
   const usesProfileSynthesis = hasProfileSynthesisDescription(group) && !detailDescription(group);
   const usesFacultyResearchWording =
@@ -493,14 +496,13 @@ const DecisionSummary = ({
       .filter(Boolean)
       .join(' ')
       .trim();
-  const piAffiliation = [
-    (
-      principalInvestigator?.user?.primaryDepartment ||
-      principalInvestigator?.user?.primary_department ||
-      ''
-    ).trim(),
-    (group.school || '').trim(),
-  ]
+  const canonicalPiDepartment = canonicalizeResearcherDepartmentLabel(
+    principalInvestigator?.user?.primaryDepartment ||
+      principalInvestigator?.user?.primary_department,
+    departments,
+    group.departments,
+  );
+  const piAffiliation = [(canonicalPiDepartment || '').trim(), (group.school || '').trim()]
     .filter(Boolean)
     .join(' · ');
   const hasActionablePath =
