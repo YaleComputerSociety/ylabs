@@ -7,6 +7,7 @@ import {
   heartbeatScrapeJobLock,
   releaseScrapeJobLock,
 } from './scrapeJobLock';
+import { reclaimInferredPiLeads } from './inferredPiLeadReclaim';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { ScraperEnvironment } from './scraperEnvironment';
@@ -17,6 +18,7 @@ export interface CronRunnerDependencies {
   loadSource: (sourceName: string) => Promise<{ name: string; enabled?: boolean } | null>;
   orchestrator: Pick<ScraperOrchestrator, 'run'>;
   materializeFromRun: typeof materializeFromRun;
+  reclaimInferredPiLeads: typeof reclaimInferredPiLeads;
   runStudentVisibilityGate: typeof runStudentVisibilityGate;
   getScrapeRunReport: typeof getScrapeRunReport;
   acquireScrapeJobLock: typeof acquireScrapeJobLock;
@@ -50,6 +52,7 @@ export type RunScraperCronResult =
       ownerId: string;
       scrapeResult: unknown;
       materializationResult: Awaited<ReturnType<typeof materializeFromRun>>;
+      inferredPiLeadReclaimResult?: Awaited<ReturnType<typeof reclaimInferredPiLeads>>;
       visibilityGateResult?: Awaited<ReturnType<typeof runStudentVisibilityGate>>;
       report: Awaited<ReturnType<typeof getScrapeRunReport>>;
     };
@@ -61,6 +64,7 @@ export function createCronRunnerDependencies(
     loadSource: loadCronSource,
     orchestrator,
     materializeFromRun,
+    reclaimInferredPiLeads,
     runStudentVisibilityGate,
     getScrapeRunReport,
     acquireScrapeJobLock,
@@ -123,6 +127,10 @@ export async function runScraperCron(
     );
     runId = nextRunId;
     const materializationResult = await deps.materializeFromRun(runId, { dryRun: false });
+    const inferredPiLeadReclaimResult =
+      materializationResult.errors === 0
+        ? await reclaimStrandedInferredPiLeads(input.sourceName, deps)
+        : undefined;
     const visibilityGateResult =
       materializationResult.errors === 0
         ? await deps.runStudentVisibilityGate({
@@ -150,6 +158,7 @@ export async function runScraperCron(
       ownerId,
       scrapeResult,
       materializationResult,
+      inferredPiLeadReclaimResult,
       visibilityGateResult,
       report,
     };
@@ -164,6 +173,21 @@ export async function runScraperCron(
     throw error;
   } finally {
     heartbeat.stop();
+  }
+}
+
+async function reclaimStrandedInferredPiLeads(
+  sourceName: string,
+  deps: Pick<CronRunnerDependencies, 'reclaimInferredPiLeads'>,
+): Promise<Awaited<ReturnType<typeof reclaimInferredPiLeads>> | undefined> {
+  try {
+    return await deps.reclaimInferredPiLeads({ apply: true, scope: 'all' });
+  } catch (error) {
+    console.error(
+      `Failed to reclaim stranded inferred-PI leads after ${sourceName} scrape:`,
+      sanitizeLogValue(error),
+    );
+    return undefined;
   }
 }
 

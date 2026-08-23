@@ -22,7 +22,12 @@
 #   yarn --cwd server scrape cron --source <name> --release
 # which requires SCRAPER_ENV=production + CONFIRM_PROD_SCRAPE=true (set below),
 # is distributed-job-locked (overlaps return skipped-lock-held, never double
-# write), and runs the full pipeline: scrape -> materialize -> visibility gate.
+# write), and runs the full pipeline:
+#   scrape -> materialize -> inferred-PI lead reclaim -> visibility gate.
+# The inferred-PI lead reclaim is a corpus-wide straggler pass that attaches
+# leads whose PI evidence a prior or partial run recorded but never materialized,
+# so leadless entities self-heal each scrape cycle instead of waiting on a
+# manual data:materialize-inferred-pi-leads backfill.
 #
 # Sources are chained with ";" (not "&&") so one source failing does not abort
 # the rest of the sweep. Each invocation is independently locked + isolated.

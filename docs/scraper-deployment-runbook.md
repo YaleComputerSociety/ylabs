@@ -437,9 +437,12 @@ The cron command:
 - Skips cleanly with exit code `0` if another cron already owns that source lock.
 - Refuses disabled `Source` rows unless `--force-disabled` is passed for manual recovery.
 - Runs the scraper with `triggeredBy=cron`, materializes immediately, prints a cron summary plus run report when no output file is requested, and exits nonzero if materialization errors are reported.
+- When the run's materialization reports no errors, runs a corpus-wide inferred-PI lead reclaim before the visibility gate so entities whose PI evidence a prior or partial run recorded but never materialized get a lead attached in the same locked cycle.
+The reclaim is idempotent and best-effort: it skips already-linked and unresolvable entities, and a reclaim failure is logged without failing the primary scrape (it retries next cycle).
+This makes the standalone `data:materialize-inferred-pi-leads --all` backfill a manual recovery tool rather than a recurring necessity.
 - Heartbeats the lock during long runs and releases it with the last `ScrapeRun` id on success or failure.
 
-Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional visibility-gate result, and ScrapeRun report.
+Use `--output <path>` to save the full cron result JSON from a cron run. The artifact includes lock-skip outcomes when a source lock is held, and completed runs include the scrape result, materialization result, optional inferred-PI lead reclaim result, optional visibility-gate result, and ScrapeRun report.
 
 Suggested starting cadence:
 
