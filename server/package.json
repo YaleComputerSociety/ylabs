@@ -34,6 +34,7 @@
     "users:email-hygiene": "tsx src/scripts/userEmailHygiene.ts",
     "users:repair-mismatched-emails": "tsx src/scripts/repairMismatchedPersonEmails.ts",
     "users:repair-fused-identity-artifacts": "tsx src/scripts/repairFusedIdentityArtifacts.ts",
+    "users:repair-researcher-display-names": "tsx src/scripts/repairAccountLinkedResearcherDisplayNames.ts",
     "observations:cross-source-conflict-review": "tsx src/scripts/crossSourceObservationConflictReview.ts",
     "observations:repair-profile-description-conflicts": "tsx src/scripts/repairProfileDescriptionBackfillConflicts.ts",
     "observations:stale-conflict-review": "tsx src/scripts/staleObservationConflictReview.ts",
