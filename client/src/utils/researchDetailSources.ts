@@ -9,8 +9,20 @@ interface DetailSourceGroup {
 interface DetailSourceSignal {
   _id?: string;
   signalType?: string;
+  confidence?: string;
+  confidenceScore?: number;
   sourceUrl?: string;
 }
+
+const CITABLE_ACCESS_SIGNAL_MIN_SCORE = 0.5;
+
+export const isCitableAccessSignal = (signal: DetailSourceSignal): boolean => {
+  if ((signal.confidence || '').toUpperCase() === 'LOW') return false;
+  if (typeof signal.confidenceScore === 'number' && signal.confidenceScore < CITABLE_ACCESS_SIGNAL_MIN_SCORE) {
+    return false;
+  }
+  return true;
+};
 
 interface DetailSourceUndergraduateLogistics {
   claims?: Array<{
@@ -519,6 +531,7 @@ export const buildResearchDetailSources = ({
   group?.sourceUrls?.forEach((url) => addSource(url, 'Profile source'));
 
   accessSignals.forEach((signal) => {
+    if (!isCitableAccessSignal(signal)) return;
     addSource(signal.sourceUrl, `${labelizeResearchDetailValue(signal.signalType)} evidence`);
   });
 
