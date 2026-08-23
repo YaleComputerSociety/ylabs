@@ -1546,6 +1546,11 @@ async function enrichEntryFromOfficialProfile(
   }
 }
 
+const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
+  'mechanical-engineering': 'meng-matsci',
+  'materials-science': 'meng-matsci',
+};
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -1558,7 +1563,9 @@ function entryToUserObservations(
     : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = slugify(cleaned);
-  const entityKey = netid ? `netid:${netid}` : `dept:${dept.deptKey}:${slug || 'unknown'}`;
+  const entityKeyNamespace =
+    SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[dept.deptKey] || dept.deptKey;
+  const entityKey = netid ? `netid:${netid}` : `dept:${entityKeyNamespace}:${slug || 'unknown'}`;
 
   const rosterBase = { entityType: 'user' as const, entityKey, sourceUrl };
   const profileBase = {

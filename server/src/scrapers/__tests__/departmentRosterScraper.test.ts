@@ -2102,6 +2102,42 @@ describe('DepartmentRosterScraper.run', () => {
     expect(chemEnv?.dataUrl).toBeUndefined();
   });
 
+  it('collapses cross-listed MEMS faculty into one synthetic user entity across both sub-rosters', async () => {
+    const meng = vi.fn((): FacultyEntry[] => [{ name: 'Jamie Meng-Matsci' }]);
+    const matsci = vi.fn((): FacultyEntry[] => [{ name: 'Jamie Meng-Matsci' }]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mechanical-engineering',
+        deptName: 'Mechanical Engineering & Materials Science',
+        schoolName: 'Yale School of Engineering & Applied Science',
+        url: 'https://example.invalid/mechanical-engineering',
+        paginated: false,
+        extractor: meng,
+      },
+      {
+        deptKey: 'materials-science',
+        deptName: 'Mechanical Engineering & Materials Science',
+        schoolName: 'Yale School of Engineering & Applied Science',
+        url: 'https://example.invalid/materials-science',
+        paginated: false,
+        extractor: matsci,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userKeys = new Set(
+      emitted.filter((o) => o.entityType === 'user').map((o) => o.entityKey),
+    );
+    expect([...userKeys]).toEqual(['dept:meng-matsci:jamie-meng-matsci']);
+
+    getSpy.mockRestore();
+  });
+
   it('dedupes repeated official profile rows after enrichment', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (url === 'https://physics.yale.edu/people/marie-curie') {
