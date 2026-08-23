@@ -10,6 +10,9 @@ export const MAX_RENDERED_PROGRAM_LINKS = 6;
 const GENERIC_ADMISSIONS_APPLY_PATH =
   /^\/(?:apply|apply-now|apply-today|admission|admissions|how-to-apply|prospective-students)$/i;
 
+const PROGRAM_DETAIL_PATH_KEYWORD_PATTERN =
+  /(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|research-internship-program|tobin-ra)/i;
+
 const CHROME_LINK_LABELS = new Set([
   'home',
   'overview',
@@ -90,6 +93,32 @@ export const isChromeLinkLabel = (label?: string): boolean => {
   return CHROME_LINK_LABEL_PATTERNS.some((pattern) => pattern.test(normalized));
 };
 
+const parseHttpUrl = (value: unknown): URL | null => {
+  const href = safeHttpUrl(value);
+  if (!href) return null;
+  try {
+    return new URL(href);
+  } catch {
+    return null;
+  }
+};
+
+const stripTrailingSlash = (path: string): string => path.replace(/\/+$/, '');
+
+const pathSegmentCount = (url: URL): number => url.pathname.split('/').filter(Boolean).length;
+
+export const isSameHostShallowChromeUrl = (value: unknown, sourceUrl: unknown): boolean => {
+  const url = parseHttpUrl(value);
+  const source = parseHttpUrl(sourceUrl);
+  if (!url || !source) return false;
+  if (url.hostname.toLowerCase() !== source.hostname.toLowerCase()) return false;
+  if (stripTrailingSlash(url.pathname) === stripTrailingSlash(source.pathname)) return false;
+  if (PROGRAM_DETAIL_PATH_KEYWORD_PATTERN.test(url.pathname)) return false;
+  const linkDepth = pathSegmentCount(url);
+  if (linkDepth === 0) return false;
+  return linkDepth <= 2 && linkDepth <= pathSegmentCount(source);
+};
+
 export const isGenericAdmissionsApplyLink = (link: FellowshipLink): boolean => {
   const href = safeHttpUrl(link.url);
   if (!href) return false;
@@ -105,12 +134,14 @@ export const isGenericAdmissionsApplyLink = (link: FellowshipLink): boolean => {
 
 export const buildSafeProgramLinks = (
   links: FellowshipLink[] | undefined | null,
+  sourceUrl?: string,
 ): SafeProgramLink[] => {
   const filtered = (links || [])
     .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
     .filter((link): link is SafeProgramLink => Boolean(link.href))
     .filter((link) => !isChromeLinkLabel(link.label))
-    .filter((link) => !isGenericAdmissionsApplyLink(link));
+    .filter((link) => !isGenericAdmissionsApplyLink(link))
+    .filter((link) => !isSameHostShallowChromeUrl(link.href, sourceUrl));
 
   if (filtered.length > MAX_RENDERED_PROGRAM_LINKS) return [];
   return filtered;
