@@ -24,7 +24,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
-import { normalizedProgramTitleKey } from '../utils/programTitle';
+import { isProgramTitleQualifierDrift, normalizedProgramTitleKey } from '../utils/programTitle';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
@@ -142,8 +142,55 @@ async function main() {
     }
   }
 
+  const processedIds = new Set<string>(archiveIds);
+  for (const [, arr] of groups) {
+    if (arr.length >= 2 && distinctNonEmptySourceNames(arr) <= 1) {
+      for (const doc of arr) processedIds.add(serializedDocumentId(doc._id) || '');
+    }
+  }
+
+  const sourceUrlGroups = new Map<string, any[]>();
+  for (const doc of docs) {
+    const id = serializedDocumentId(doc._id) || '';
+    if (processedIds.has(id)) continue;
+    const sourceUrl = String(doc.sourceUrl || '').trim();
+    if (!sourceUrl) continue;
+    const arr = sourceUrlGroups.get(sourceUrl) || [];
+    arr.push(doc);
+    sourceUrlGroups.set(sourceUrl, arr);
+  }
+
+  let sourceUrlDuplicateGroups = 0;
+  console.log('\n=== Pass C: sourceUrl-uniqueness dedupe (title drifted by more than punctuation) ===');
+  for (const [sourceUrl, arr] of sourceUrlGroups) {
+    if (arr.length !== 2) continue;
+    if (!isProgramTitleQualifierDrift(String(arr[0].title || ''), String(arr[1].title || ''))) continue;
+    if (distinctNonEmptySourceNames(arr) > 1) {
+      skippedGroups += 1;
+      console.log(
+        `\nSKIP (distinct sources) sourceUrl=${sourceUrl}: ` +
+          arr.map((d) => `${serializedDocumentId(d._id)}[${d.sourceName || '(empty)'}]`).join(' '),
+      );
+      continue;
+    }
+    sourceUrlDuplicateGroups += 1;
+    let keep = arr[0];
+    for (const doc of arr.slice(1)) {
+      if (isBetterKeep(doc, keep, sanitized)) keep = doc;
+    }
+    const keepId = serializedDocumentId(keep._id) || '';
+    console.log(`\nGroup sourceUrl=${sourceUrl} (2 records) source=${keep.sourceName}`);
+    console.log(`  KEEP    id=${keepId} title="${keep.title}" category=${keep.programCategory}`);
+    for (const doc of arr) {
+      const docId = serializedDocumentId(doc._id) || '';
+      if (docId === keepId) continue;
+      console.log(`  ARCHIVE id=${docId} title="${doc.title}" category=${doc.programCategory}`);
+      archiveIds.push(docId);
+    }
+  }
+
   console.log(
-    `\nSummary: descriptions to rewrite=${descriptionUpdates.length}, duplicate groups=${duplicateGroups}, records to archive=${archiveIds.length}, groups skipped for manual review=${skippedGroups}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
+    `\nSummary: descriptions to rewrite=${descriptionUpdates.length}, duplicate groups=${duplicateGroups + sourceUrlDuplicateGroups} (title=${duplicateGroups}, sourceUrl=${sourceUrlDuplicateGroups}), records to archive=${archiveIds.length}, groups skipped for manual review=${skippedGroups}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
   );
 
   if (!options.apply) {

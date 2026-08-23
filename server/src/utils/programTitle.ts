@@ -19,6 +19,36 @@ export function normalizedProgramTitleKey(title: string): string {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+function programTitleTokens(title: string): string[] {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/&/g, ' and ')
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * True when the shorter title's tokens are fully contained in the longer
+ * title's tokens, so a dropped/inserted qualifier ("Wu Tsai Undergraduate
+ * Fellowships" vs "Undergraduate Fellowships") counts as the same program
+ * (#609) while two distinct award names that merely share a boilerplate
+ * suffix ("... Richter Summer Fellowship" vs "... Mellon Senior Research
+ * Grant") do not, since neither title's tokens are a subset of the other's.
+ * Requires at least 2 shared tokens so a single generic word never matches.
+ */
+export function isProgramTitleQualifierDrift(titleA: string, titleB: string): boolean {
+  const tokensA = new Set(programTitleTokens(titleA));
+  const tokensB = new Set(programTitleTokens(titleB));
+  if (tokensA.size === 0 || tokensB.size === 0) return false;
+  const [smaller, larger] = tokensA.size <= tokensB.size ? [tokensA, tokensB] : [tokensB, tokensA];
+  if (smaller.size < 2) return false;
+  for (const token of smaller) {
+    if (!larger.has(token)) return false;
+  }
+  return true;
+}
+
 const AND_CONCATENATION_SPLIT = /\s+AND\s+/;
 
 /**

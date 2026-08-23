@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   andConcatenationComponentKeys,
+  isProgramTitleQualifierDrift,
   normalizedProgramTitleKey,
   primaryConcatenatedAwardTitle,
   shareAndConcatenatedTitleComponent,
@@ -123,5 +124,37 @@ describe('primaryConcatenatedAwardTitle', () => {
   it('trims surrounding whitespace and handles empty input', () => {
     expect(primaryConcatenatedAwardTitle('  Alpha Fellowship  ')).toBe('Alpha Fellowship');
     expect(primaryConcatenatedAwardTitle('')).toBe('');
+  });
+});
+
+describe('isProgramTitleQualifierDrift', () => {
+  it('recognizes a dropped leading qualifier (Wu Tsai / STARS II repro shape, #609)', () => {
+    expect(
+      isProgramTitleQualifierDrift('Wu Tsai Undergraduate Fellowships', 'Undergraduate Fellowships'),
+    ).toBe(true);
+    expect(isProgramTitleQualifierDrift('STARS II Academic Year Program', 'STARS II Program')).toBe(
+      true,
+    );
+  });
+
+  it('returns false for two distinct award names that merely share boilerplate words', () => {
+    expect(
+      isProgramTitleQualifierDrift(
+        'Grace Hopper Richter Summer Fellowship',
+        'Grace Hopper Mellon Senior Research Grant',
+      ),
+    ).toBe(false);
+    expect(
+      isProgramTitleQualifierDrift('Josef Albers Traveling Fellowship Fund', 'Michael Coe Summer Fieldwork Fund'),
+    ).toBe(false);
+  });
+
+  it('requires at least 2 shared tokens so a single generic word never matches', () => {
+    expect(isProgramTitleQualifierDrift('Program', 'Alpha Beta Program')).toBe(false);
+  });
+
+  it('returns false for blank titles', () => {
+    expect(isProgramTitleQualifierDrift('', 'Undergraduate Fellowships')).toBe(false);
+    expect(isProgramTitleQualifierDrift('Undergraduate Fellowships', '')).toBe(false);
   });
 });
