@@ -3,6 +3,7 @@ import {
   MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   boundSavedResearchEntitySummaryText,
   normalizeResearchPlanUpdate,
+  researchPlanViewFromDoc,
 } from '../researchPlanService';
 import {
   MAX_RESEARCH_PLAN_CHECKLIST_ITEMS,
@@ -95,5 +96,64 @@ describe('normalizeResearchPlanUpdate', () => {
 
   it('omits fields that are not present in the input', () => {
     expect(normalizeResearchPlanUpdate({})).toEqual({});
+  });
+});
+
+describe('researchPlanViewFromDoc', () => {
+  it('serializes deadlines whose dueAt is a persisted Date instead of dropping them', () => {
+    const view = researchPlanViewFromDoc({
+      stage: 'APPLIED',
+      deadlines: [{ label: 'app due', dueAt: new Date('2026-09-01T00:00:00.000Z') }],
+    });
+    expect(view.stage).toBe('APPLIED');
+    expect(view.deadlines).toEqual([{ label: 'app due', dueAt: '2026-09-01T00:00:00.000Z' }]);
+  });
+
+  it('preserves the stored completedAt Date on completed checklist items instead of stamping now', () => {
+    const view = researchPlanViewFromDoc({
+      checklist: [
+        { label: 'submitted intent form', completed: true, completedAt: new Date('2026-01-15T00:00:00.000Z') },
+      ],
+    });
+    expect(view.checklist).toEqual([
+      { label: 'submitted intent form', completed: true, completedAt: '2026-01-15T00:00:00.000Z' },
+    ]);
+  });
+
+  it('accepts ISO-string dates as well as Date instances', () => {
+    const view = researchPlanViewFromDoc({
+      deadlines: [{ label: 'string due', dueAt: '2026-03-01T00:00:00.000Z' }],
+      checklist: [{ label: 'string done', completed: true, completedAt: '2026-02-01T00:00:00.000Z' }],
+    });
+    expect(view.deadlines).toEqual([{ label: 'string due', dueAt: '2026-03-01T00:00:00.000Z' }]);
+    expect(view.checklist).toEqual([
+      { label: 'string done', completed: true, completedAt: '2026-02-01T00:00:00.000Z' },
+    ]);
+  });
+
+  it('omits completedAt for incomplete checklist items', () => {
+    const view = researchPlanViewFromDoc({
+      checklist: [{ label: 'read papers', completed: false }],
+    });
+    expect(view.checklist).toEqual([{ label: 'read papers', completed: false }]);
+  });
+
+  it('fails loud on a completed checklist item with an unparseable completedAt', () => {
+    expect(() =>
+      researchPlanViewFromDoc({
+        checklist: [{ label: 'broken', completed: true, completedAt: 'not-a-date' }],
+      }),
+    ).toThrow(/completedAt/);
+  });
+
+  it('fails loud on a persisted deadline with an unparseable dueAt', () => {
+    expect(() =>
+      researchPlanViewFromDoc({ deadlines: [{ label: 'broken', dueAt: 'not-a-date' }] }),
+    ).toThrow(/dueAt/);
+  });
+
+  it('serializes updatedAt from a persisted Date', () => {
+    const view = researchPlanViewFromDoc({ updatedAt: new Date('2026-08-23T12:00:00.000Z') });
+    expect(view.updatedAt).toBe('2026-08-23T12:00:00.000Z');
   });
 });

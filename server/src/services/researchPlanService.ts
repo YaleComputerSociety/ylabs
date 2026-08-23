@@ -185,8 +185,71 @@ const emptyResearchPlanView = (): ResearchPlanView => ({
   },
 });
 
-const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
-  const now = new Date();
+const dataIntegrityError = (message: string) => {
+  const error: any = new Error(message);
+  error.status = 500;
+  error.code = 'RESEARCH_PLAN_DATA_INTEGRITY';
+  return error;
+};
+
+const persistedDateToIso = (value: unknown): string | null => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === 'string' && value && !Number.isNaN(Date.parse(value))) {
+    return new Date(value).toISOString();
+  }
+  return null;
+};
+
+const checklistItemFromDoc = (value: unknown): ResearchPlanChecklistItem | null => {
+  if (!isPlainRecord(value)) return null;
+  const label = typeof value.label === 'string' ? value.label.trim() : '';
+  if (!label) return null;
+  const boundedLabel = label.slice(0, MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH);
+  if (!asBoolean(value.completed)) return { label: boundedLabel, completed: false };
+  const completedAt = persistedDateToIso(value.completedAt);
+  if (!completedAt) {
+    throw dataIntegrityError(
+      'Completed research-plan checklist item is missing a parseable completedAt timestamp',
+    );
+  }
+  return { label: boundedLabel, completed: true, completedAt };
+};
+
+const checklistFromDoc = (value: unknown): ResearchPlanChecklistItem[] => {
+  const items: ResearchPlanChecklistItem[] = [];
+  if (Array.isArray(value)) {
+    for (const raw of value) {
+      if (items.length >= MAX_RESEARCH_PLAN_CHECKLIST_ITEMS) break;
+      const item = checklistItemFromDoc(raw);
+      if (item) items.push(item);
+    }
+  }
+  return items;
+};
+
+const deadlinesFromDoc = (value: unknown): ResearchPlanDeadline[] => {
+  const deadlines: ResearchPlanDeadline[] = [];
+  if (Array.isArray(value)) {
+    for (const raw of value) {
+      if (deadlines.length >= MAX_RESEARCH_PLAN_DEADLINES) break;
+      if (!isPlainRecord(raw)) continue;
+      const label = typeof raw.label === 'string' ? raw.label.trim() : '';
+      if (!label) continue;
+      const dueAt = persistedDateToIso(raw.dueAt);
+      if (!dueAt) {
+        throw dataIntegrityError(
+          'Persisted research-plan deadline is missing a parseable dueAt timestamp',
+        );
+      }
+      deadlines.push({ label: label.slice(0, MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH), dueAt });
+    }
+  }
+  return deadlines;
+};
+
+export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
     typeof doc.stage === 'string' && researchPlanStageSet.has(doc.stage as ResearchPlanStage)
       ? (doc.stage as ResearchPlanStage)
@@ -197,10 +260,10 @@ const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView
       typeof doc.privateNotes === 'string'
         ? doc.privateNotes.slice(0, MAX_RESEARCH_PLAN_NOTES_LENGTH)
         : '',
-    checklist: normalizeChecklistInput(doc.checklist, now),
-    deadlines: normalizeDeadlineInput(doc.deadlines),
+    checklist: checklistFromDoc(doc.checklist),
+    deadlines: deadlinesFromDoc(doc.deadlines),
     exportPreferences: normalizeExportPreferences(doc.exportPreferences),
-    updatedAt: doc.updatedAt ? new Date(String(doc.updatedAt)).toISOString() : undefined,
+    updatedAt: persistedDateToIso(doc.updatedAt) ?? undefined,
   };
 };
 
