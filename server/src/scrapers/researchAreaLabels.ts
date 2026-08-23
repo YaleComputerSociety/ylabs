@@ -17,7 +17,11 @@ export const RESEARCH_SECTION_LABEL_PREFIX =
   /^(?:research\s+areas?|research\s+interests?|fields?\s+of\s+(?:study|interest)|areas?\s+of\s+interest|topics?)\s*:?\s+/i;
 
 const normalizeLabelText = (value: unknown): string =>
-  typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : String(value ?? '').replace(/\s+/g, ' ').trim();
+  typeof value === 'string'
+    ? value.replace(/\s+/g, ' ').trim()
+    : String(value ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
 
 export function stripResearchSectionLabelPrefix(value: unknown): string {
   return normalizeLabelText(value).replace(RESEARCH_SECTION_LABEL_PREFIX, '');

@@ -1202,9 +1202,7 @@ describe('DepartmentRosterScraper.run', () => {
     const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
     expect(entityObs).toHaveLength(0);
 
-    const profileObs = emitted.find(
-      (o) => o.entityType === 'user' && o.field === 'profileUrls',
-    );
+    const profileObs = emitted.find((o) => o.entityType === 'user' && o.field === 'profileUrls');
     expect(profileObs?.value).toEqual({
       departmental: 'https://wlab.yale.edu/profile/robin-roster',
     });
@@ -1534,7 +1532,9 @@ describe('DepartmentRosterScraper.run', () => {
 
     const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
     const fullDescription = entityObs.find((o) => o.field === 'fullDescription');
-    expect(fullDescription?.value).toContain('Smith studies the quantum dynamics of ultracold atomic gases');
+    expect(fullDescription?.value).toContain(
+      'Smith studies the quantum dynamics of ultracold atomic gases',
+    );
     expect(fullDescription?.value).not.toContain('Studies quantum physics');
     expect(fullDescription?.confidenceOverride).toBe(0.55);
     expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual([
@@ -1581,7 +1581,9 @@ describe('DepartmentRosterScraper.run', () => {
 
     const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
     const fullDescription = entityObs.find((o) => o.field === 'fullDescription');
-    expect(fullDescription?.value).toContain('examines how long noncoding RNAs regulate gene expression');
+    expect(fullDescription?.value).toContain(
+      'examines how long noncoding RNAs regulate gene expression',
+    );
     expect(fullDescription?.confidenceOverride).toBe(0.55);
   });
 

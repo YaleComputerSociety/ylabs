@@ -43,9 +43,7 @@ describe('researchAreaLabels', () => {
         'The lab studies condensed matter physics. It also builds random lasers.',
       ),
     ).toBe(true);
-    expect(
-      isProseNotTopicPhrase('Coherent control of light transport and absorption'),
-    ).toBe(false);
+    expect(isProseNotTopicPhrase('Coherent control of light transport and absorption')).toBe(false);
     expect(isProseNotTopicPhrase('Random lasers')).toBe(false);
   });
 
