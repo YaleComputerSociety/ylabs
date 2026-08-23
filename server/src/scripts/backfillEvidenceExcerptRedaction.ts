@@ -1,13 +1,15 @@
 /**
- * Dev cleanup for the access-evidence excerpt redaction-marker defect (#1076).
+ * Dev cleanup for the stored evidence-excerpt redaction-marker defect (#1112).
  *
- * accessSummary.evidence[].excerpt is served from Signal.source.excerpt. Legacy
- * signals stored a scraped contact line already reduced by redactDirectContactInfo
- * to a bracket placeholder ("Email us at [email redacted]"), which the client
- * rendered verbatim as glitchy marker text with no substance. This re-runs the
- * shared sanitizeEvidenceExcerpt over every stored signal excerpt so a
- * marker-only / contact-scaffolding excerpt collapses to empty and an excerpt
- * with real remaining prose keeps that prose with its marker sentence stripped.
+ * Both access-signal evidence (accessSummary.evidence[].excerpt) and
+ * undergraduate-logistics evidence (the /programs logistics surface) are served
+ * from Signal.source.excerpt. Legacy signals on both write paths stored a scraped
+ * contact line already reduced by redactDirectContactInfo to a bracket
+ * placeholder ("Email us at [email redacted]"); #1092 masks it at read time, but
+ * the raw marker stays baked in storage. This re-runs the shared
+ * sanitizeEvidenceExcerpt over every stored signal excerpt (both families) so a
+ * marker-only excerpt collapses to empty and an excerpt with real remaining prose
+ * keeps only its non-marker sentences.
  *
  * The audit trail references signals by id, entity slug, and signal type only;
  * it prints excerpt lengths and a verdict, never the excerpt text, so no leaked
@@ -25,7 +27,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { ResearchEntity } from '../models/researchEntity';
-import { accessSignalTypes } from '../models/researchAccessTypes';
+import { signalTypes } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -69,7 +71,7 @@ async function main() {
   console.log(`Target: ${guard.dbLabel} (env=${guard.environment})`);
 
   const signals = await Signal.find({
-    type: { $in: accessSignalTypes },
+    type: { $in: signalTypes },
     archived: false,
     'source.excerpt': { $exists: true, $ne: '' },
   })
@@ -82,7 +84,7 @@ async function main() {
       'review.lockedFields': 1,
     })
     .lean();
-  console.log(`Served access signals with a stored excerpt: ${signals.length}`);
+  console.log(`Served signals with a stored excerpt: ${signals.length}`);
 
   const entityIds = Array.from(
     new Set(signals.map((signal) => serializedDocumentId(signal.researchEntityId)).filter(Boolean)),
