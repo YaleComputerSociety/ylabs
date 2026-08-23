@@ -27,6 +27,7 @@ import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowse
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -129,6 +130,11 @@ const PUBLIC_QUOTE_FIELDS = new Set([
   'undergradRoleEvidenceQuote',
   'contactInstructionsQuote',
   'undergradConstraintQuote',
+]);
+const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
+  'fullDescription',
+  'shortDescription',
+  'description',
 ]);
 const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
 const MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
@@ -268,6 +274,13 @@ function materializedFieldValue(
 ): unknown {
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
     return sanitizeResearchEntitySourceUrlsForMaterialization(value);
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    MATERIALIZED_DESCRIPTION_FIELDS.has(field) &&
+    typeof value === 'string'
+  ) {
+    return sanitizeCatalogDescription(value);
   }
   if (
     isResearchEntityObservationType(entityType) &&
@@ -2097,7 +2110,8 @@ export async function materializeEntity(
     fieldsWritten++;
   }
   if (isResearchEntityObservationType(entityType)) {
-    const fullDescription = set.fullDescription || entityDoc?.fullDescription;
+    const fullDescription =
+      textValue(set.fullDescription) || sanitizeCatalogDescription(textValue(entityDoc?.fullDescription));
     const entityName = textValue(
       set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
     );
