@@ -35,6 +35,31 @@ export function andConcatenationComponentKeys(title: string): string[] {
     .filter(Boolean);
 }
 
+const NAMED_AWARD_PHRASE =
+  /\b(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|programs?)\b/i;
+
+/**
+ * Collapses a source-corrupted "X AND Y" title, where a page heading grouped
+ * two distinct named awards under one literal all-caps "AND", down to its
+ * primary (first) award component (#655).
+ *
+ * Only fires when every AND-joined component independently reads as a named
+ * award phrase, so an ordinary award name that happens to contain an all-caps
+ * "AND" is left untouched (the join is part of one award's real name, not a
+ * two-award grouping). Titles with no such join are returned unchanged.
+ */
+export function primaryConcatenatedAwardTitle(title: string): string {
+  const raw = String(title || '').trim();
+  if (!AND_CONCATENATION_SPLIT.test(raw)) return raw;
+  const parts = raw
+    .split(AND_CONCATENATION_SPLIT)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return raw;
+  if (!parts.every((part) => NAMED_AWARD_PHRASE.test(part))) return raw;
+  return parts[0];
+}
+
 /**
  * True when two AND-concatenated titles share a component key, so title drift
  * on the *other* component (e.g. a prefix/qualifier rename) does not stop
