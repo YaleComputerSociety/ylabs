@@ -133,6 +133,7 @@ export interface ResearchGroup {
   profileResearchAreas?: string[];
   researchAreaSource?: 'PI_PROFILE_FALLBACK';
   school: string;
+  schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
   /** Verbatim quote from the source page supporting undergraduate access. */

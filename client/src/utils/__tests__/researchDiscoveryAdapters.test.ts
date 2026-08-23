@@ -252,6 +252,42 @@ describe('buildGroupedSearchResults', () => {
     ]);
   });
 
+  it('falls back to schools[] when the scalar school is empty on research home cards', () => {
+    const grouped = buildGroupedSearchResults({
+      query: 'efficient computing',
+      researchEntities: [
+        entity({
+          _id: 'ecl',
+          slug: 'ecl',
+          name: 'The Efficient Computing Lab (ECL)',
+          departments: ['Computer Science'],
+          school: '',
+          schools: ['School of Engineering & Applied Science'],
+        }),
+      ],
+      pathways: [],
+    });
+
+    expect(buildResearchHomeContextLine(grouped.clusters[0].entities[0])).toBe(
+      'Computer Science · School of Engineering & Applied Science',
+    );
+    expect(grouped.clusters[0].contextLine).toBe(
+      'Computer Science · School of Engineering & Applied Science',
+    );
+  });
+
+  it('prefers the scalar school over schools[] when both are present', () => {
+    expect(
+      buildResearchHomeContextLine(
+        entity({
+          departments: ['Therapeutic Radiology'],
+          school: 'School of Medicine',
+          schools: ['School of Nursing'],
+        }),
+      ),
+    ).toBe('Therapeutic Radiology · School of Medicine');
+  });
+
   it('adds profile links when contact emails identify Yale netids and exposes lab context', () => {
     const grouped = buildGroupedSearchResults({
       query: 'AI safety mechanism design',
