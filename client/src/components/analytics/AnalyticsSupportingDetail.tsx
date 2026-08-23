@@ -680,31 +680,30 @@ const AnalyticsSupportingDetail = ({
 
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
-              <h3 className="text-lg font-semibold text-gray-800">Student Funnel</h3>
-              <p className="text-sm text-gray-500">Visitor progression through key actions</p>
+              <h3 className="text-lg font-semibold text-gray-800">Student Action Counts</h3>
+              <p className="text-sm text-gray-500">
+                Distinct students who took each research action in this range. These are independent
+                counts, not a nested funnel, so a later action can exceed an earlier one.
+              </p>
             </div>
             <div className="p-4">
               <div className="mb-4 rounded-md bg-[var(--yr-blue-soft)] p-3">
-                <p className="text-sm text-blue-700">Overall conversion</p>
+                <p className="text-sm text-blue-700">Official next-step rate</p>
                 <p className="text-2xl font-semibold text-blue-900">
                   {formatPercent(funnel?.overallConversionRate)}
                 </p>
+                <p className="mt-1 text-xs text-blue-700">
+                  Students reaching an official next step, as a share of logged-in students.
+                </p>
               </div>
               <BarChart
-                ariaLabel="Student progression funnel"
-                emptyMessage="No funnel stages returned."
+                ariaLabel="Student action counts"
+                emptyMessage="No student actions returned."
                 valueFormatter={(value) => formatNumber(value)}
-                data={funnelStages.map((stage, index) => {
-                  const previousCount = index > 0 ? funnelStages[index - 1].count : stage.count;
-                  const derivedRate =
-                    stage.conversionRate ??
-                    (previousCount > 0 ? stage.count / previousCount : undefined);
-                  return {
-                    label: stage.label,
-                    value: stage.count,
-                    note: formatPercent(derivedRate),
-                  };
-                })}
+                data={funnelStages.map((stage) => ({
+                  label: stage.label,
+                  value: stage.count,
+                }))}
               />
             </div>
           </div>
