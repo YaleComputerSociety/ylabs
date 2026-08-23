@@ -110,6 +110,32 @@ describe('researchEntityCopy', () => {
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
   });
+
+  it('strips a trailing "Research" suffix (with or without a dash separator) from the possessive name', () => {
+    const dashSuffixEntity = {
+      name: 'Tara Boroushaki - Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchCopy(
+        'The Boroushaki Lab investigates sensing and mobile technologies.',
+        dashSuffixEntity,
+      ),
+    ).toBe("Tara Boroushaki's research investigates sensing and mobile technologies.");
+
+    const bareSuffixEntity = {
+      name: 'Ada Lovelace Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchCopy(
+        'The Lovelace Lab focuses on analytical engines.',
+        bareSuffixEntity,
+      ),
+    ).toBe("Ada Lovelace's research focuses on analytical engines.");
+  });
 });
 
 describe('relationshipTypeLabel', () => {
