@@ -13,9 +13,32 @@ describe('researchEntityDto', () => {
       slug: 'ysm-chrome-lab',
       name: 'Chrome Lab',
       kind: 'lab',
-      shortDescription: 'INFORMATION FOR Copy Link Our lab studies airway disease.',
+      shortDescription: 'INFORMATION FOR Copy Link The lab studies airway disease.',
     });
-    expect(dto.shortDescription).toBe('Our lab studies airway disease.');
+    expect(dto.shortDescription).toBe('The lab studies airway disease.');
+  });
+
+  it('fails a first-person source-bio shortDescription closed in the served DTO (#1077)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-first-person',
+      slug: 'ysm-first-person-lab',
+      name: 'First Person Lab',
+      kind: 'lab',
+      shortDescription: 'Bio Website In the laboratory we study lung cancer.',
+    });
+    expect(dto.shortDescription).toBe('');
+  });
+
+  it('drops a first-person card blurb and falls back to fullDescription (#1077)', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-first-person-blurb' },
+      slug: 'ysm-first-person-blurb',
+      name: 'First Person Blurb Lab',
+      kind: 'lab',
+      shortDescription: 'Research in our lab is focused on the DNA damage response.',
+      fullDescription: 'This laboratory investigates vascular biology in human disease.',
+    });
+    expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
   });
 
   it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {

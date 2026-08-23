@@ -13,6 +13,7 @@ import {
   isCurationRationaleText,
   isInstitutionalCenterBlurbText,
   isFaqDumpText,
+  isFirstPersonResearchVoiceText,
   isFormFieldDumpText,
   isNavigationDumpText,
   isPublicationsListDumpText,
@@ -27,6 +28,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripDeadAnchorCtaSentences,
+  stripLeadingPageChrome,
   stripPageLayoutReferentialSentences,
   stripProvenanceHedge,
   stripRedactionPlaceholders,
@@ -779,21 +781,19 @@ describe('descriptionHygiene anchor-CTA button label broadening (#947)', () => {
 
   it('strips a "Read more about <name> >>" variant', () => {
     const dirty = 'The center advances gender equity in oncology. Read more about our mission >>';
-    expect(stripCatalogChrome(dirty)).toBe(
-      'The center advances gender equity in oncology.',
-    );
+    expect(stripCatalogChrome(dirty)).toBe('The center advances gender equity in oncology.');
   });
 
   it('strips a label terminated by the unicode » guillemet', () => {
     const dirty = 'She studies airway disease using mouse models. Learn more about Dr. Mehra »';
-    expect(stripCatalogChrome(dirty)).toBe(
-      'She studies airway disease using mouse models.',
-    );
+    expect(stripCatalogChrome(dirty)).toBe('She studies airway disease using mouse models.');
   });
 
   it('removes a titleless label at both the shortDescription and catalog read layers', () => {
     const dirty = 'The lab studies stellar formation. Learn more about our program >>';
-    expect(sanitizeResearchEntityShortDescription(dirty)).toBe('The lab studies stellar formation.');
+    expect(sanitizeResearchEntityShortDescription(dirty)).toBe(
+      'The lab studies stellar formation.',
+    );
     expect(sanitizeResearchEntityDescription(dirty)).toBe('The lab studies stellar formation.');
   });
 
@@ -1065,9 +1065,9 @@ describe('stripGluedProfileRoleLabel + doubled-verb collapse (#975)', () => {
   });
 
   it('collapses a doubled leading synthesis verb', () => {
-    expect(
-      collapseDoubledSynthesisVerb('Studies Studies on Chitinases and Chitosanases.'),
-    ).toBe('Studies on Chitinases and Chitosanases.');
+    expect(collapseDoubledSynthesisVerb('Studies Studies on Chitinases and Chitosanases.')).toBe(
+      'Studies on Chitinases and Chitosanases.',
+    );
   });
 
   it('leaves a spaced acronym in genuine prose untouched', () => {
@@ -1102,7 +1102,9 @@ describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () 
 
   it('flags a career-milestone fragment misread as a topic', () => {
     expect(
-      isStudiesTemplateGlueMalformed('Studies Art at Yale University in 1990 and was awarded tenure in 1998.'),
+      isStudiesTemplateGlueMalformed(
+        'Studies Art at Yale University in 1990 and was awarded tenure in 1998.',
+      ),
     ).toBe(true);
   });
 
@@ -1269,5 +1271,81 @@ describe('sanitizeCatalogDescription end-to-end #994 Weizmann record', () => {
     expect(out).toContain(
       'This program supports Yale undergraduates who undertake summer research at the Weizmann Institute of Science',
     );
+  });
+});
+
+describe('descriptionHygiene shortDescription first-person voice fail-closed (#1077)', () => {
+  const FIRST_PERSON_SHORT_DESCRIPTIONS = [
+    'I am an isotope geochemist that works on environmental change in Earth’s past, present, and future.',
+    'Broadly, I am a physical oceanographer and climate modeler interested in submesoscale dynamics.',
+    'Within these timeframes, I study how aesthetic objects depict and mediate historical experience.',
+    'Trained as an anthropologist, I am committed to a transdisciplinary vision of ethnography.',
+    'In connection with my work on print and the history of reading, I have been interested in early archives.',
+    'With over 300 peer-reviewed articles and continuous NIH funding since 2000, my research has focused on aging.',
+    'In the laboratory we study lung cancer to answer the following questions.',
+    'Research in our lab is focused on the DNA Double Strand Break (DSB) repair response in mammalian cells.',
+    'The projects in our lab have focused on identifying genetic risks for addictive behavior.',
+  ];
+
+  it.each(FIRST_PERSON_SHORT_DESCRIPTIONS)(
+    'flags first-person short-description voice and fails it closed: %s',
+    (description) => {
+      expect(isFirstPersonResearchVoiceText(description)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(description)).toBe('');
+    },
+  );
+
+  it('strips a leading Bio Website nav label before the voice check, then fails closed on first person', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Bio Website I am an isotope geochemist that works on environmental change.',
+      ),
+    ).toBe('');
+  });
+
+  it('strips a leading Bio label but keeps a clean third-person keyword list behind it', () => {
+    expect(
+      stripLeadingPageChrome('Bio Stable isotope geochemistry, geomicrobiology, astrobiology.'),
+    ).toBe('Stable isotope geochemistry, geomicrobiology, astrobiology.');
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Bio Stable isotope geochemistry, geomicrobiology, astrobiology, paleoclimate.',
+      ),
+    ).toBe('Stable isotope geochemistry, geomicrobiology, astrobiology, paleoclimate.');
+  });
+
+  it('leaves genuine third-person research summaries untouched', () => {
+    const clean = [
+      'The Sloane Lab studies how signaling networks coordinate tissue regeneration after injury.',
+      'This lab studies the neural basis of cognition and memory formation.',
+      'Studies the neural basis of decision making across model organisms.',
+      'The center provides information for prospective students and supports interdisciplinary work.',
+    ];
+    for (const text of clean) {
+      expect(isFirstPersonResearchVoiceText(text)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(text)).toBe(text);
+    }
+  });
+
+  it('does not treat an editorial "our understanding" or "we know" as lab first-person voice', () => {
+    const prose =
+      'Advances in imaging have transformed our understanding of the brain, and much of what we know about circuits comes from these tools.';
+    expect(isFirstPersonResearchVoiceText(prose)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(prose)).toBe(prose);
+  });
+
+  it('does not match a bare Roman-numeral or class label as a first-person pronoun', () => {
+    const prose =
+      'Studies Type I interferon signaling and Class I MHC presentation in viral infection.';
+    expect(isFirstPersonResearchVoiceText(prose)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(prose)).toBe(prose);
+  });
+
+  it('leaves the strict fullDescription sanitizer first-person behavior unchanged (#964 stays separate)', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'My research is focused on the genetic basis of lung disease.',
+      ),
+    ).toBe('My research is focused on the genetic basis of lung disease.');
   });
 });
