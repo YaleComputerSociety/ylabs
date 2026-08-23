@@ -9,6 +9,7 @@ import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
+import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
@@ -339,8 +340,8 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 ): Omit<T, 'hits'> & {
   researchEntities: PublicResearchEntityDto[];
 } {
-  const researchEntities = (result.hits || []).map((hit) =>
-    toPublicResearchEntityDto(hit, options),
+  const researchEntities = disambiguateCollidingResearchEntityNames(
+    (result.hits || []).map((hit) => toPublicResearchEntityDto(hit, options)),
   );
   const { hits: _hits, ...rest } = result;
   return {
