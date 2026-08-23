@@ -124,6 +124,59 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(descriptionObservation).toBeUndefined();
   });
 
+  it('does not leak inline <style>/<script> chrome into the description (#586)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Tobin Undergraduate Research Assistantships</h1>
+            <style>.red {color:red !important;}</style>
+            <script>
+              $(document).ready(function(){
+                $(".node-teaser__opportunity-metadata-label:contains('filled')").addClass("red");
+              });
+            </script>
+            <p>Note: Projects for Fall 2026 will be posted in late August. Applications open in early September and are reviewed on a rolling basis by the sponsoring faculty member.</p>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-tobin`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.title).toBe('Tobin Undergraduate Research Assistantships');
+    expect(candidate.description ?? '').not.toMatch(/\.red\s*\{/);
+    expect(candidate.description ?? '').not.toMatch(/document\)\.ready/);
+    expect(candidate.description).toMatch(/Note: Projects for Fall 2026/);
+  });
+
+  it('does not leak an inline catalog-row <script>/<style> into the summary (#586)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <h3>Summer Fellowships for Yale College Students</h3>
+        <h5>Research*</h5>
+        <ul>
+          <li>
+            <style>.red {color:red !important;}</style>
+            <script>var deadlineLabel = "filled"; function markFilled(el) { el.classList.add(deadlineLabel); return el; }</script>
+            <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=555">Fixture Family Research Fellowship</a>
+            Applications reviewed on a rolling basis by faculty sponsors each term.
+          </li>
+        </ul>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.summary ?? '').not.toMatch(/\.red\s*\{/);
+    expect(candidate.summary ?? '').not.toMatch(/deadlineLabel|markFilled/);
+    expect(candidate.summary).toMatch(/Applications reviewed on a rolling basis/);
+  });
+
   it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
     const programUrl = `${detailPageUrl}-official`;
     const fetchPage = vi.fn(async (url: string) => {
