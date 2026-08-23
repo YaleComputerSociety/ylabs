@@ -291,11 +291,12 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Public Health',
     department: 'All departments (A-Z)',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
     studentImpactTier: 4,
+    coveredBy: ['dept-faculty-roster'],
     approxFacultyCount: 300,
     notes:
-      'Faculty identity is available school-wide via the Yalies API, but that is not directory-specific coverage; no roster/lab-discovery scraper walks this directory. Per-department slugs exist under /school-of-public-health-faculty/<dept>/.',
+      'Covered via the dept-faculty-roster "ysph" config row (#641): the school-wide "Faculty Directory by Name" A-Z index renders all ~686 entries server-side on one page (no pagination), each linking to an official ysph.yale.edu/profile/<slug>/ page cited as the per-faculty source.',
   },
   {
     url: 'https://nursing.yale.edu/faculty-research/faculty-directory',

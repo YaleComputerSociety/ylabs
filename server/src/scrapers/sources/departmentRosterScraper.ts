@@ -437,6 +437,42 @@ export const jacksonPersonCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * "Last, First" directory entries (Yale School of Public Health school-wide
+ * A-Z index) list the surname before the given name, unlike every other
+ * roster on this page which is already "First Last".
+ */
+function nameFromLastCommaFirst(raw: string): string {
+  const [last, first] = raw.split(',').map((part) => cleanText(part));
+  if (!first || !last) return cleanText(raw);
+  return `${first} ${last}`;
+}
+
+/**
+ * Yale School of Public Health — school-wide "Faculty Directory by Name"
+ * A-Z index. All letters render server-side on one page (no pagination).
+ *   <li class="link-items-list__item">
+ *     <div><a href="/profile/<slug>/" class="hyperlink">Last, First</a></div>
+ *   </li>
+ * The listing carries no title/department/email; those are enriched from
+ * each faculty member's own official profile page.
+ */
+export const ysphDirectoryExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+  $('.link-items-list__item a.hyperlink').each((_i, el) => {
+    const link = $(el);
+    const raw = cleanText(link.text());
+    if (!raw) return;
+    const name = nameFromLastCommaFirst(raw);
+    if (!name) return;
+    const href = link.attr('href') || '';
+    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
+    out.push({ name, profileUrl });
+  });
+  return out;
+};
+
+/**
  * Yale CS — engineering.yale.edu computer-science faculty page is a Next.js
  * client-rendered SPA: the raw HTML contains no faculty data, only an empty
  * shell that hydrates client-side. Marked with `jsRenderedSkip` so the runner
@@ -762,6 +798,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://german.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'ysph',
+    deptName: 'All departments (school-wide A-Z)',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
+    paginated: false,
+    extractor: ysphDirectoryExtractor,
   },
 ];
 
@@ -1189,7 +1233,7 @@ function profileEnrichmentFromHtml(
 
   const title =
     $(
-      '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"]',
+      '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"], [class*="header-info__title"], [class*="workday-title"]',
     )
       .first()
       .text()
