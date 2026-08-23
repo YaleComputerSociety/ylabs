@@ -465,6 +465,30 @@ describe('Research page', () => {
     );
   });
 
+  it('shortens the search placeholder on compact viewports', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      (queryString: string) =>
+        ({
+          matches: queryString === '(max-width: 639px)',
+          media: queryString,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList,
+    );
+
+    try {
+      renderResearch();
+
+      expect(screen.getByPlaceholderText('Type a topic, professor, or lab')).toBeTruthy();
+      expect(
+        screen.queryByPlaceholderText('Type a topic, professor, lab, or research question'),
+      ).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('submits quick-start prompts as research searches', async () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
