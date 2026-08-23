@@ -47,6 +47,25 @@ const ROLE_PILL_CLASSES: Record<LabMemberRole, string> = {
   affiliate: 'bg-[var(--yr-panel-muted)] text-gray-600',
 };
 
+const LEAD_ROLES: ReadonlySet<LabMemberRole> = new Set([
+  'pi',
+  'co-pi',
+  'director',
+  'co-director',
+]);
+
+const TRAINEE_TITLE_PATTERN = /\b(post-?doctoral|post-?doc|research assistant)\b/i;
+
+const NEUTRAL_TRAINEE_ROLE_LABEL = 'Researcher';
+const NEUTRAL_TRAINEE_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-gray-600';
+
+const isTraineeLevelTitle = (title?: string): boolean => {
+  const normalized = (title || '').trim();
+  if (!normalized) return false;
+  if (/\bprofessor\b/i.test(normalized)) return false;
+  return TRAINEE_TITLE_PATTERN.test(normalized);
+};
+
 // Lower index = more prominent. Sort members so leaders come first.
 const ROLE_ORDER: Record<LabMemberRole, number> = {
   pi: 0,
@@ -85,6 +104,11 @@ const LabMemberCard = ({
     departmentTable,
     entityDepartments,
   );
+  const isMisattributedTraineeLead = LEAD_ROLES.has(role) && isTraineeLevelTitle(user.title);
+  const roleLabel = isMisattributedTraineeLead ? NEUTRAL_TRAINEE_ROLE_LABEL : ROLE_LABELS[role];
+  const rolePillClassName = isMisattributedTraineeLead
+    ? NEUTRAL_TRAINEE_ROLE_PILL
+    : ROLE_PILL_CLASSES[role];
   const className = `flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
   // Lead-investigator cards are intentionally non-interactive: the
   // professor's official profile is reached via the decision-summary
@@ -123,9 +147,9 @@ const LabMemberCard = ({
         )}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <span
-            className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${ROLE_PILL_CLASSES[role]}`}
+            className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${rolePillClassName}`}
           >
-            {ROLE_LABELS[role]}
+            {roleLabel}
           </span>
           {departmentLabel && (
             <span

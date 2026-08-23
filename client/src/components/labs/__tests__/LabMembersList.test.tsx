@@ -162,6 +162,33 @@ describe('LabMembersList', () => {
     expect(container.textContent).not.toContain('Business Operations');
   });
 
+  it('does not label a postdoctoral trainee as Principal Investigator even when role is PI', () => {
+    const { container } = renderMembers([member('', { title: 'Postdoctoral Associate' })]);
+
+    expect(container.textContent).not.toContain('Principal Investigator');
+    expect(container.textContent).toContain('Researcher');
+    expect(container.textContent).toContain('Postdoctoral Associate');
+  });
+
+  it('does not label a research assistant lead as Principal Investigator', () => {
+    const { container } = renderMembers([member('', { title: 'Research Assistant' })]);
+
+    expect(container.textContent).not.toContain('Principal Investigator');
+    expect(container.textContent).toContain('Researcher');
+  });
+
+  it('keeps the Principal Investigator label for a research assistant professor', () => {
+    const { container } = renderMembers([member('', { title: 'Research Assistant Professor' })]);
+
+    expect(container.textContent).toContain('Principal Investigator');
+  });
+
+  it('keeps the Principal Investigator label for a full professor lead', () => {
+    const { container } = renderMembers([member('', { title: 'Professor' })]);
+
+    expect(container.textContent).toContain('Principal Investigator');
+  });
+
   it('renders no department pill when the HR org unit is administrative chrome', () => {
     const { container } = renderMembersWithConfig([
       member('', {

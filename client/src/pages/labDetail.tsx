@@ -111,7 +111,7 @@ const RelatedResearchEntitiesSection = ({
           );
           return (
             <Link
-              key={entity.id || entity.slug}
+              key={entity.slug || entity.id}
               to={`/research/${safeRouteSegment(entity.slug)}`}
               className="block rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 transition hover:border-blue-300 hover:shadow-sm"
             >
@@ -171,14 +171,14 @@ const AffiliatedResearchEntitiesSection = ({
         const canOpenDetail = Boolean(entity.slug);
         return canOpenDetail ? (
           <Link
-            key={entity.id || entity.slug}
+            key={entity.slug || entity.id}
             to={`/research/${safeRouteSegment(entity.slug)}`}
             className={`${className} hover:border-blue-300 hover:shadow-sm`}
           >
             {content}
           </Link>
         ) : (
-          <div key={entity.id || entity.slug} className={className}>
+          <div key={entity.slug || entity.id} className={className}>
             {content}
           </div>
         );
@@ -204,6 +204,25 @@ const compactDepartmentLabels = (
   getUniqueDepartmentLabels(
     (departments || []).filter((department): department is string => Boolean(department)),
   );
+
+const researchEntitySummaryKey = (entity: LabRelatedResearchEntitySummary): string =>
+  (entity.slug || entity.id || '').trim().toLowerCase();
+
+const dedupeResearchEntitySummaries = (
+  entities: LabRelatedResearchEntitySummary[],
+): LabRelatedResearchEntitySummary[] => {
+  const seen = new Set<string>();
+  const deduped: LabRelatedResearchEntitySummary[] = [];
+  for (const entity of entities) {
+    const key = researchEntitySummaryKey(entity);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    deduped.push(entity);
+  }
+  return deduped;
+};
 
 const detailDescription = (group: any): string =>
   (group.fullDescription || group.shortDescription || '').replace(/[ \t\f\v]+/g, ' ').trim();
@@ -846,8 +865,15 @@ const LabDetail = () => {
     undergraduateLogistics,
   } = payload;
   const group = legacyGroup ?? researchEntity;
-  const hasRelatedResearchEntities = relatedResearchEntities.length > 0;
-  const hasAffiliatedResearchEntities = affiliatedResearchEntities.length > 0;
+  const dedupedRelatedResearchEntities = dedupeResearchEntitySummaries(relatedResearchEntities);
+  const dedupedAffiliatedResearchEntities =
+    dedupeResearchEntitySummaries(affiliatedResearchEntities);
+  const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
+  const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
+  const loadedEntitySlug = (group.slug || '').toLowerCase();
+  const requestedSlug = (slug || '').toLowerCase();
+  const isEntityTransition =
+    loading && loadedEntitySlug !== '' && requestedSlug !== '' && loadedEntitySlug !== requestedSlug;
   const sources = buildResearchDetailSources({
     group,
     accessSignals,
@@ -946,7 +972,19 @@ const LabDetail = () => {
       className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:py-8 lg:px-8"
       onClickCapture={handleDetailLinkOpen}
     >
-      <div className="grid grid-cols-1 gap-6 lg:gap-8">
+      {isEntityTransition && (
+        <div
+          className="fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-blue-500"
+          role="progressbar"
+          aria-label="Loading research profile"
+        />
+      )}
+      <div
+        className={`grid grid-cols-1 gap-6 transition-opacity duration-200 lg:gap-8 ${
+          isEntityTransition ? 'pointer-events-none opacity-60' : ''
+        }`}
+        aria-busy={isEntityTransition}
+      >
         <div className="lg:mx-auto lg:w-full lg:max-w-5xl space-y-6 sm:space-y-8">
           {showResearchPlanSavedCallout && (
             <FirstSaveCallout
@@ -1011,13 +1049,13 @@ const LabDetail = () => {
           {hasRelatedResearchEntities && (
             <RelatedResearchEntitiesSection
               relationships={entityRelationships}
-              relatedResearchEntities={relatedResearchEntities}
+              relatedResearchEntities={dedupedRelatedResearchEntities}
             />
           )}
 
           {hasAffiliatedResearchEntities && (
             <AffiliatedResearchEntitiesSection
-              affiliatedResearchEntities={affiliatedResearchEntities}
+              affiliatedResearchEntities={dedupedAffiliatedResearchEntities}
             />
           )}
 

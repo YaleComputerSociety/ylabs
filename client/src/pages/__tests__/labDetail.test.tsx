@@ -1346,6 +1346,51 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: /Yale Quantum Institute/ })).toBeNull();
   });
 
+  it('renders a duplicated affiliation only once', async () => {
+    const duplicateAffiliation = {
+      id: 'entity-umbrella',
+      slug: 'center-example-institute',
+      name: 'Example Institute',
+      kind: 'institute',
+      entityType: 'INSTITUTE',
+      departments: ['Neuroscience', 'Psychology'],
+    };
+    renderLabDetail({
+      ...basePayload,
+      affiliatedResearchEntities: [duplicateAffiliation, { ...duplicateAffiliation }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByText('Affiliated with')).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Example Institute/ })).toHaveLength(1);
+  });
+
+  it('renders a duplicated related research entity only once', async () => {
+    const duplicateRelated = {
+      id: 'dept-physics-example-member',
+      slug: 'dept-physics-example-member',
+      name: 'Example Physics Member',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      departments: ['Physics'],
+    };
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+      },
+      relatedResearchEntities: [duplicateRelated, { ...duplicateRelated }],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByText('Related labs and groups')).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Example Physics Member/ })).toHaveLength(1);
+  });
+
   it('does not render inferred student-fit preparation from topic metadata', async () => {
     renderLabDetail({
       ...basePayload,
