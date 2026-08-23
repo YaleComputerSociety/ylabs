@@ -49,6 +49,15 @@ const PROSE_COMPLETENESS_FIELDS = new Set([
   'researchInterestSummary',
 ]);
 
+// Curated admin overrides are meant to be authoritative until an admin records a
+// newer one, not to age out against scraper re-scrapes on a 90-day half-life like
+// ordinary evidence. A half-life this long keeps a fresher manual-admin-edit
+// ordered ahead of an older one (so a genuinely newer correction still wins) while
+// keeping the decay contribution negligible against any scraper source's weight
+// for any realistic observation age.
+const NON_DECAYING_SOURCES = new Set(['manual-admin-edit']);
+const NON_DECAYING_SOURCE_HALF_LIFE_DAYS = 36500;
+
 // Sources whose description prose is keyword-synthesized from directory listings
 // rather than extracted from the entity's own page. For prose fields these rank
 // strictly below any genuinely extracted description regardless of recency decay,
@@ -101,6 +110,12 @@ function recencyDecay(observedAt: Date, now: Date, halfLifeDays: number): number
   const ageMs = Math.max(0, now.getTime() - observedAt.getTime());
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   return Math.pow(0.5, ageDays / halfLifeDays);
+}
+
+function halfLifeDaysForSource(sourceName: string, defaultHalfLifeDays: number): number {
+  return NON_DECAYING_SOURCES.has(sourceName)
+    ? NON_DECAYING_SOURCE_HALF_LIFE_DAYS
+    : defaultHalfLifeDays;
 }
 
 function normalizedProse(value: unknown): string {
@@ -251,7 +266,11 @@ export function resolveField(
   >();
   for (const obs of fieldObs) {
     const key = serializeValue(obs.value);
-    const decay = recencyDecay(obs.observedAt, now, halfLifeDays);
+    const decay = recencyDecay(
+      obs.observedAt,
+      now,
+      halfLifeDaysForSource(obs.sourceName, halfLifeDays),
+    );
     const contribution = obs.confidence * decay;
     let g = groups.get(key);
     if (!g) {
