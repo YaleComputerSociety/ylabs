@@ -57,6 +57,7 @@ import {
   relationshipTypeLabel,
   researchEntityDisplayName,
   sanitizeFacultyResearchCopy,
+  sanitizeResearchHomeSelfReferenceCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { canonicalizeResearcherDepartmentLabel } from '../utils/researcherDepartmentLabel';
@@ -475,7 +476,10 @@ const DecisionSummary = ({
   const sourceBackedDescription = detailDescription(group);
   const rawDescription =
     (usesProfileSynthesis ? group.profileSynthesisDescription : '') || sourceBackedDescription;
-  const description = sanitizeFacultyResearchCopy(rawDescription, group);
+  const description = sanitizeResearchHomeSelfReferenceCopy(
+    sanitizeFacultyResearchCopy(rawDescription, group),
+    group,
+  );
   useEffect(() => {
     if (description) return;
     captureClientError(

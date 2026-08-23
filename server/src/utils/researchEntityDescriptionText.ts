@@ -356,6 +356,74 @@ export function sanitizeFacultyResearchEntityText(
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
 }
 
+const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  INITIATIVE: 'initiative',
+  COLLECTIONS_INITIATIVE: 'initiative',
+  GROUP: 'group',
+  CORE_FACILITY: 'core facility',
+  PROGRAM: 'program',
+  RA_PROGRAM: 'program',
+  FELLOWSHIP_PROGRAM: 'program',
+  COURSE_SEQUENCE: 'program',
+};
+
+const RESEARCH_HOME_SELF_NOUNS_BY_KIND: Record<string, string> = {
+  center: 'center',
+  institute: 'institute',
+  initiative: 'initiative',
+  group: 'group',
+  program: 'program',
+  core_facility: 'core facility',
+};
+
+function researchHomeSelfReferenceNoun(entity?: FacultyResearchTextEntity | null): string | null {
+  if (!entity || isFacultyResearchTextEntity(entity)) return null;
+  const byType = RESEARCH_HOME_SELF_NOUNS_BY_TYPE[String(entity.entityType || '').toUpperCase()];
+  if (byType) return byType;
+  return RESEARCH_HOME_SELF_NOUNS_BY_KIND[String(entity.kind || '').toLowerCase()] || null;
+}
+
+function matchLeadingCase(sample: string, replacement: string): string {
+  if (!sample || !replacement) return replacement;
+  const lead = sample.charAt(0);
+  const isUpper = lead === lead.toUpperCase() && lead !== lead.toLowerCase();
+  return isUpper ? replacement.charAt(0).toUpperCase() + replacement.slice(1) : replacement;
+}
+
+export function sanitizeResearchHomeSelfReferenceText(
+  value: string,
+  entity?: FacultyResearchTextEntity | null,
+): string {
+  const noun = researchHomeSelfReferenceNoun(entity);
+  if (!noun) return value;
+  return value.replace(
+    /\b(the|this|our|your|its)(\s+)(lab|laboratory)(['’]s)?\b/gi,
+    (_match, determiner: string, spacing: string, labToken: string, possessive?: string) =>
+      `${determiner}${spacing}${matchLeadingCase(labToken, noun)}${possessive || ''}`,
+  );
+}
+
+export function sanitizeResearchHomeSelfReferenceCopyFields<T extends Record<string, any>>(
+  entity: T,
+): T {
+  if (!researchHomeSelfReferenceNoun(entity)) return entity;
+  let changed = false;
+  const next: Record<string, any> = { ...entity };
+
+  for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeResearchHomeSelfReferenceText(next[field], next);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  return changed ? (next as T) : entity;
+}
+
 export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
