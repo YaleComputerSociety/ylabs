@@ -98,6 +98,54 @@ describe('Account page', () => {
     expect(dashboardTab.getAttribute('aria-selected')).toBe('false');
   });
 
+  it('wires each tab to its panel and applies roving tabindex', () => {
+    renderAccount('student');
+
+    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const [dashboardPanel, programPanel] = screen.getAllByRole('tabpanel', { hidden: true });
+
+    expect(dashboardTab.getAttribute('aria-controls')).toBe(dashboardPanel.id);
+    expect(dashboardPanel.getAttribute('aria-labelledby')).toBe(dashboardTab.id);
+    expect(programTab.getAttribute('aria-controls')).toBe(programPanel.id);
+    expect(programPanel.getAttribute('aria-labelledby')).toBe(programTab.id);
+
+    expect(dashboardTab.getAttribute('tabindex')).toBe('0');
+    expect(programTab.getAttribute('tabindex')).toBe('-1');
+
+    fireEvent.click(programTab);
+    expect(dashboardTab.getAttribute('tabindex')).toBe('-1');
+    expect(programTab.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('moves focus and activates the surface with arrow-key navigation', () => {
+    renderAccount('student');
+
+    const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
+    const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    dashboardTab.focus();
+
+    fireEvent.keyDown(dashboardTab, { key: 'ArrowRight' });
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(programTab);
+
+    fireEvent.keyDown(programTab, { key: 'ArrowRight' });
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(dashboardTab);
+
+    fireEvent.keyDown(dashboardTab, { key: 'End' });
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(programTab);
+
+    fireEvent.keyDown(programTab, { key: 'Home' });
+    expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(dashboardTab);
+
+    fireEvent.keyDown(dashboardTab, { key: 'ArrowLeft' });
+    expect(programTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(programTab);
+  });
+
   it('uses the watched program deadline as the next planning cue', () => {
     programSummary = {
       count: 1,

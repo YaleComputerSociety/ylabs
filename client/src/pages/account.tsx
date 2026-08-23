@@ -10,7 +10,7 @@
  * There is no faculty self-edit surface and no faculty/student branching; public
  * profiles are source-derived and admin-curated.
  */
-import { useState } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
@@ -24,11 +24,45 @@ type ProgramSummary = {
   nextDeadlineDate?: string;
 };
 
+const SURFACES: AccountSurface[] = ['dashboard', 'programs'];
+
 const Account = () => {
   useDocumentTitle('Dashboard');
   const [surface, setSurface] = useState<AccountSurface>('dashboard');
   const [savedResearchCount, setSavedResearchCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
+  const tabRefs = useRef<Record<AccountSurface, HTMLButtonElement | null>>({
+    dashboard: null,
+    programs: null,
+  });
+
+  const activateSurface = (next: AccountSurface, focusTab = false) => {
+    setSurface(next);
+    if (focusTab) tabRefs.current[next]?.focus();
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const currentIndex = SURFACES.indexOf(surface);
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowRight':
+        nextIndex = (currentIndex + 1) % SURFACES.length;
+        break;
+      case 'ArrowLeft':
+        nextIndex = (currentIndex - 1 + SURFACES.length) % SURFACES.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = SURFACES.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    activateSurface(SURFACES[nextIndex], true);
+  };
 
   const tabClass = (active: boolean): string =>
     `inline-flex min-h-[44px] items-center px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${
@@ -55,8 +89,15 @@ const Account = () => {
             <button
               type="button"
               role="tab"
+              id="account-dashboard-tab"
+              aria-controls="account-dashboard-panel"
               aria-selected={surface === 'dashboard'}
-              onClick={() => setSurface('dashboard')}
+              tabIndex={surface === 'dashboard' ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current.dashboard = el;
+              }}
+              onClick={() => activateSurface('dashboard')}
+              onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'dashboard')}
             >
               Dashboard ({savedResearchCount})
@@ -64,8 +105,15 @@ const Account = () => {
             <button
               type="button"
               role="tab"
+              id="account-programs-tab"
+              aria-controls="account-programs-panel"
               aria-selected={surface === 'programs'}
-              onClick={() => setSurface('programs')}
+              tabIndex={surface === 'programs' ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current.programs = el;
+              }}
+              onClick={() => activateSurface('programs')}
+              onKeyDown={handleTabKeyDown}
               className={tabClass(surface === 'programs')}
             >
               Program Watch ({programSummary.count})
@@ -73,10 +121,22 @@ const Account = () => {
           </div>
         </div>
 
-        <div className={surface === 'dashboard' ? '' : 'hidden'}>
+        <div
+          id="account-dashboard-panel"
+          role="tabpanel"
+          aria-labelledby="account-dashboard-tab"
+          tabIndex={0}
+          className={surface === 'dashboard' ? '' : 'hidden'}
+        >
           <SavedResearchPlans onCountChange={setSavedResearchCount} />
         </div>
-        <div className={surface === 'programs' ? '' : 'hidden'}>
+        <div
+          id="account-programs-panel"
+          role="tabpanel"
+          aria-labelledby="account-programs-tab"
+          tabIndex={0}
+          className={surface === 'programs' ? '' : 'hidden'}
+        >
           <ProgramWatch onSummaryChange={setProgramSummary} />
         </div>
       </div>
