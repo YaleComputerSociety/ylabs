@@ -1,7 +1,7 @@
 /**
  * Dev corrective pass for the fellowship title defects (#655).
  *
- * Two independent, evidence-first passes over active fellowship records:
+ * Three independent, evidence-first passes over active fellowship records:
  *  A. ALL-CAPS surname titles: the honoree's surname is stored in ALL-CAPS in
  *     the title while the description renders it correctly. Only an explicit
  *     allowlist of confirmed corruptions is corrected, keyed on the exact
@@ -12,6 +12,13 @@
  *     concatenations) so the standard normalized-title dedupe cannot group
  *     them. Each pair is matched by exact title, guarded on a shared sourceUrl,
  *     and the redundant record is archived (soft delete) with an audit trail.
+ *  C. AND-concatenated component-overlap duplicates: unlike Pass B's hardcoded
+ *     pairs, this discovers any two active AND-concatenated titles (two joint
+ *     fellowship names joined by a literal "AND") that share one component
+ *     verbatim while the other component has drifted, guarded on a shared
+ *     sourceUrl, and archives the shorter title as a duplicate of the fuller
+ *     one. This is the general lever for future re-scrapes of this corruption
+ *     shape that Pass B's curated allowlist would otherwise miss.
  *
  * The audit trail references records by id/title/sourceUrl only and never
  * prints description text, so no personal data is echoed to logs.
@@ -28,6 +35,7 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { andConcatenationComponentKeys, shareAndConcatenatedTitleComponent } from '../utils/programTitle';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
 dotenv.config();
@@ -151,8 +159,49 @@ async function main() {
     }
   }
 
+  const resolvedIds = new Set(archiveIds);
+  let andComponentArchives = 0;
+  console.log('\n=== Pass C: AND-concatenated component-overlap duplicates ===');
+  const andTitledDocs = docs.filter((doc) => andConcatenationComponentKeys(String(doc.title || '')).length > 0);
+  for (let i = 0; i < andTitledDocs.length; i += 1) {
+    const a = andTitledDocs[i];
+    const aId = serializedDocumentId(a._id) || '';
+    for (let j = i + 1; j < andTitledDocs.length; j += 1) {
+      if (resolvedIds.has(aId)) break;
+      const b = andTitledDocs[j];
+      const bId = serializedDocumentId(b._id) || '';
+      if (resolvedIds.has(bId)) continue;
+      if (!shareAndConcatenatedTitleComponent(String(a.title || ''), String(b.title || ''))) continue;
+      const urlA = normalizeUrl(a.sourceUrl);
+      const urlB = normalizeUrl(b.sourceUrl);
+      if (!urlA || urlA !== urlB) {
+        console.log(`  SKIP (sourceUrl mismatch) a=${aId}[${a.sourceUrl}] b=${bId}[${b.sourceUrl}]`);
+        continue;
+      }
+      const keep = String(a.title || '').length >= String(b.title || '').length ? a : b;
+      const drop = keep === a ? b : a;
+      const keepId = serializedDocumentId(keep._id) || '';
+      const dropId = serializedDocumentId(drop._id) || '';
+      console.log(`\n  Shared AND-component: keep="${keep.title}" drop="${drop.title}"`);
+      console.log(`  KEEP    id=${keepId} sourceUrl=${keep.sourceUrl}`);
+      console.log(`  ARCHIVE id=${dropId} sourceUrl=${drop.sourceUrl}`);
+      archiveIds.push(dropId);
+      resolvedIds.add(dropId);
+      andComponentArchives += 1;
+
+      const keepLen = sanitizedLength(keep);
+      const portable = sanitizeCatalogDescription(typeof drop.description === 'string' ? drop.description : '');
+      if (keepLen < THIN_DESCRIPTION_MAX && portable.length > keepLen) {
+        descriptionPorts.push({ keepId, text: portable, from: keepLen, to: portable.length });
+        console.log(`  DESC-PORT keep=${keepId} thin desc ${keepLen}c <- archived sanitized ${portable.length}c (#574)`);
+      } else {
+        console.log(`  DESC-KEEP keep=${keepId} desc adequate (${keepLen}c); no port`);
+      }
+    }
+  }
+
   console.log(
-    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length}, description ports=${descriptionPorts.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
+    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length} (${andComponentArchives} via AND-component overlap), description ports=${descriptionPorts.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
   );
 
   if (!options.apply) {
