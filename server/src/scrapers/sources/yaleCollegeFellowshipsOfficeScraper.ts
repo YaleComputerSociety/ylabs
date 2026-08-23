@@ -270,6 +270,25 @@ function isInPrimaryContent($: cheerio.CheerioAPI, $link: cheerio.Cheerio<any>):
   return $link.closest('main, [role="main"], article').length > 0;
 }
 
+const MAX_DETAIL_PROGRAM_LINKS = 12;
+
+function isProgramRelevantLink(url: string, label: string): boolean {
+  if (isCommunityForceUrl(url) || isStudentGrantsUrl(url)) return true;
+  if (/\b(?:apply|application)\b/i.test(label) && isYaleOwnedUrl(url)) return true;
+  return isLikelyPublicFellowshipDetailUrl(url);
+}
+
+function dedupeProgramLinks(
+  links: Array<{ label: string; url: string }>,
+): Array<{ label: string; url: string }> {
+  const byUrl = new Map<string, { label: string; url: string }>();
+  for (const link of links) {
+    const url = normalizeLinkUrl(link.url);
+    if (!byUrl.has(url)) byUrl.set(url, { label: link.label, url });
+  }
+  return Array.from(byUrl.values());
+}
+
 function inferTerm(text: string): string[] {
   const terms: string[] = [];
   if (/\bsummer\b/i.test(text)) terms.push('Summer');
@@ -708,18 +727,20 @@ function candidateFromDetailPage(
   const applicationOpenDate = utcStartOfDay(
     parseDeadlineToUtcEndOfDay(bestApplicationOpenText(bodyText), referenceDate),
   );
-  const links = contentRoot
-    .find('a')
-    .toArray()
-    .filter((link) => !isInExcludedPageRegion($(link)))
-    .map((link) => {
-      const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
-      const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
-      const label = normalizeWhitespace($(link).text()) || 'Link';
-      return url ? { label, url } : undefined;
-    })
-    .filter((item) => item && (isYaleOwnedUrl(item.url) || isCommunityForceUrl(item.url)))
-    .filter((item): item is { label: string; url: string } => !!item);
+  const links = dedupeProgramLinks(
+    contentRoot
+      .find('a')
+      .toArray()
+      .filter((link) => !isInExcludedPageRegion($(link)))
+      .map((link) => {
+        const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
+        const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
+        const label = normalizeWhitespace($(link).text()) || 'Link';
+        return url ? { label, url } : undefined;
+      })
+      .filter((item): item is { label: string; url: string } => !!item)
+      .filter((item) => isProgramRelevantLink(item.url, item.label)),
+  ).slice(0, MAX_DETAIL_PROGRAM_LINKS);
   const applicationLink =
     links.find((link) => isCommunityForceUrl(link.url))?.url ||
     links.find((link) => isStudentGrantsUrl(link.url))?.url ||
@@ -761,13 +782,9 @@ function mergeCandidates(
   existing: FellowshipCatalogCandidate,
   incoming: FellowshipCatalogCandidate,
 ): FellowshipCatalogCandidate {
-  const links = Array.from(
-    new Map(
-      [...existing.links, ...incoming.links].map((link) => [
-        normalizeLinkUrl(link.url),
-        { ...link, url: normalizeLinkUrl(link.url) },
-      ]),
-    ).values(),
+  const links = dedupeProgramLinks([...existing.links, ...incoming.links]).slice(
+    0,
+    MAX_DETAIL_PROGRAM_LINKS,
   );
   const applicationLink = incoming.applicationLink || existing.applicationLink;
   const sourceSpecificity = (url: string): number => {
