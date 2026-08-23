@@ -40,6 +40,170 @@ const normalizedOrcid = (value: unknown): string | undefined => {
   return orcid && isValidOrcid(orcid) ? orcid : undefined;
 };
 
+const ORGANIZATIONAL_MAILBOX_LOCAL_PARTS = new Set<string>([
+  'info',
+  'contact',
+  'admin',
+  'administration',
+  'office',
+  'help',
+  'helpdesk',
+  'support',
+  'webmaster',
+  'postmaster',
+  'hostmaster',
+  'noreply',
+  'donotreply',
+  'mailbox',
+  'general',
+  'inquiries',
+  'inquiry',
+  'enquiries',
+  'enquiry',
+  'hr',
+  'humanresources',
+  'ithelp',
+  'staff',
+  'team',
+  'group',
+  'dept',
+  'department',
+  'secretary',
+  'reception',
+  'communications',
+  'comms',
+  'media',
+  'press',
+  'events',
+  'alumni',
+  'giving',
+  'development',
+  'registrar',
+  'admissions',
+  'undergrad',
+  'undergraduate',
+  'graduate',
+  'academics',
+  'facilities',
+  'finance',
+  'operations',
+  'marketing',
+  'outreach',
+  'recruiting',
+  'recruitment',
+  'careers',
+  'service',
+  'services',
+  'program',
+  'programs',
+  'center',
+  'centre',
+  'lab',
+  'committee',
+  'council',
+  'society',
+  'organization',
+  'library',
+]);
+
+const DEPARTMENT_MAILBOX_LOCAL_PARTS = new Set<string>([
+  'physics',
+  'chemistry',
+  'biology',
+  'mathematics',
+  'statistics',
+  'economics',
+  'history',
+  'english',
+  'psychology',
+  'sociology',
+  'philosophy',
+  'engineering',
+  'neuroscience',
+  'genetics',
+  'astronomy',
+  'anthropology',
+  'geology',
+  'geosciences',
+  'linguistics',
+  'nursing',
+  'medicine',
+  'surgery',
+  'pharmacology',
+  'pathology',
+  'immunology',
+  'radiology',
+  'pediatrics',
+  'psychiatry',
+  'neurology',
+  'cardiology',
+  'oncology',
+  'biochemistry',
+  'biophysics',
+  'microbiology',
+  'ecology',
+  'geography',
+  'archaeology',
+  'classics',
+  'divinity',
+  'forestry',
+  'architecture',
+  'management',
+  'accounting',
+  'politics',
+  'government',
+  'religion',
+  'music',
+  'theater',
+  'theatre',
+  'humanities',
+  'sciences',
+  'science',
+]);
+
+const ORGANIZATIONAL_MAILBOX_SEGMENTS = new Set<string>([
+  'dept',
+  'department',
+  'office',
+  'admin',
+  'info',
+  'noreply',
+  'donotreply',
+  'mailbox',
+  'helpdesk',
+  'webmaster',
+  'postmaster',
+  'contact',
+  'support',
+  'inquiries',
+  'enquiries',
+  'reception',
+  'secretary',
+  'committee',
+  'group',
+  'team',
+  'lab',
+]);
+
+const isOrganizationalMailboxLocalPart = (localPart: string): boolean => {
+  const value = localPart.trim().toLowerCase();
+  if (!value) return false;
+  if (ORGANIZATIONAL_MAILBOX_LOCAL_PARTS.has(value)) return true;
+  if (DEPARTMENT_MAILBOX_LOCAL_PARTS.has(value)) return true;
+  const joined = value.replace(/[-._]+/g, '');
+  if (joined !== value && ORGANIZATIONAL_MAILBOX_LOCAL_PARTS.has(joined)) return true;
+  const segments = value.split(/[-._]+/).filter(Boolean);
+  return segments.some((segment) => ORGANIZATIONAL_MAILBOX_SEGMENTS.has(segment));
+};
+
+export const identityIsOrganizationalMailbox = (identity: CanonicalMemberIdentity): boolean => {
+  const netid = normalizedNetid(identity.netid);
+  if (netid && isOrganizationalMailboxLocalPart(netid)) return true;
+  const email = normalizedEmail(identity.email);
+  const emailLocalPart = email?.split('@')[0] ?? '';
+  return Boolean(emailLocalPart) && isOrganizationalMailboxLocalPart(emailLocalPart);
+};
+
 const isDuplicateKeyError = (error: unknown): boolean =>
   Boolean(error && typeof error === 'object' && (error as { code?: number }).code === 11000);
 
@@ -147,6 +311,7 @@ export function buildCanonicalRoleAssignmentUpsert(
 async function resolveOrCreateAccountId(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
+  if (identityIsOrganizationalMailbox(identity)) return undefined;
   const netid = normalizedNetid(identity.netid);
   const email = normalizedEmail(identity.email);
   if (!netid || !email) return undefined;
@@ -172,6 +337,7 @@ async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
   accountId: mongoose.Types.ObjectId | undefined,
 ): Promise<mongoose.Types.ObjectId | undefined> {
+  if (identityIsOrganizationalMailbox(identity)) return undefined;
   const displayName = trimmed(identity.displayName);
   const orcid = normalizedOrcid(identity.orcid);
 
@@ -299,6 +465,14 @@ export async function materializeCanonicalMembership(
   const entityObjectId = toObjectId(researchEntityId);
   if (!entityObjectId) return;
   if (!canonicalRoleForLegacy(facts.legacyRole)) return;
+  if (identityIsOrganizationalMailbox(identity)) {
+    console.warn(
+      `[canonical-membership] skipped mint for entity ${sanitizeLogValue(
+        researchEntityId,
+      )}: identity resembles an organizational mailbox, not an individual`,
+    );
+    return;
+  }
 
   const state = roleStateForLegacyMembership(facts);
   const resolution = identity.hasCanonicalSourceReference
