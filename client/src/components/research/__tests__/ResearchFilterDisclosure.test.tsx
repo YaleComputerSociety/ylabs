@@ -143,17 +143,25 @@ describe('ResearchFilterDisclosure', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({
       variant: 'sidebar',
-      researchAreaOptions: ['Genomics', 'Robotics'],
+      researchAreaOptions: [
+        { value: 'Genomics', count: 3 },
+        { value: 'Robotics', count: 2 },
+      ],
     });
 
-    fireEvent.change(screen.getByLabelText('Filter by research area'), {
+    const areaSelect = screen.getByLabelText('Filter by research area');
+    expect(within(areaSelect).getByRole('option', { name: 'Robotics (2)' })).toBeTruthy();
+    fireEvent.change(areaSelect, {
       target: { value: 'Robotics' },
     });
     expect(props.onResearchAreasChange).toHaveBeenCalledWith(['Robotics']);
 
     const { props: selectedProps } = renderFilters({
       variant: 'sidebar',
-      researchAreaOptions: ['Genomics', 'Robotics'],
+      researchAreaOptions: [
+        { value: 'Genomics', count: 3 },
+        { value: 'Robotics', count: 2 },
+      ],
       selectedResearchAreas: ['Robotics'],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Remove Research area: Robotics' }));

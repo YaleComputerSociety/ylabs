@@ -442,13 +442,13 @@ const Research = () => {
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
-  const researchAreaOptions = useMemo(
-    () =>
-      Array.from(new Set(researchAreas.map((area) => area.name.trim()).filter(Boolean))).sort(
-        (a, b) => a.localeCompare(b),
-      ),
-    [researchAreas],
-  );
+  const researchAreaOptions = useMemo(() => {
+    const counts = facetDistribution.researchAreas || {};
+    return Array.from(new Set(researchAreas.map((area) => area.name.trim()).filter(Boolean)))
+      .map((name) => ({ value: name, count: counts[name] }))
+      .filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0)
+      .sort((a, b) => a.value.localeCompare(b.value));
+  }, [researchAreas, facetDistribution.researchAreas]);
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
