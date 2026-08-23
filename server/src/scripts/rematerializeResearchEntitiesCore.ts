@@ -3,6 +3,7 @@ export interface RematerializeResearchEntitiesArgs {
   apply: boolean;
   confirmRematerialize: boolean;
   reclaimStrandedField?: string;
+  onlyFields: string[];
   output?: string;
 }
 
@@ -53,6 +54,21 @@ function parseSlugList(value: string | undefined): string[] {
   return Array.from(new Set(slugs));
 }
 
+function parseOnlyFieldsList(value: string | undefined): string[] {
+  if (!value) throw new Error('--only-fields requires a comma-separated list of fields');
+  const fields = value
+    .split(',')
+    .map((field) => field.trim())
+    .filter(Boolean);
+  if (fields.length === 0) throw new Error('--only-fields requires at least one field');
+  for (const field of fields) {
+    if (!(REMATERIALIZE_TRACKED_FIELDS as readonly string[]).includes(field)) {
+      throw new Error(`Unsupported --only-fields field: ${field}`);
+    }
+  }
+  return Array.from(new Set(fields));
+}
+
 export function parseRematerializeResearchEntitiesArgs(
   argv: string[],
 ): RematerializeResearchEntitiesArgs {
@@ -60,6 +76,7 @@ export function parseRematerializeResearchEntitiesArgs(
     slugs: [],
     apply: false,
     confirmRematerialize: false,
+    onlyFields: [],
   };
   let slugsProvided = false;
 
@@ -94,6 +111,15 @@ export function parseRematerializeResearchEntitiesArgs(
     }
     if (arg === '--reclaim-stranded') {
       args.reclaimStrandedField = parseReclaimStrandedField(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--only-fields=')) {
+      args.onlyFields = parseOnlyFieldsList(arg.slice('--only-fields='.length));
+      continue;
+    }
+    if (arg === '--only-fields') {
+      args.onlyFields = parseOnlyFieldsList(argv[index + 1]);
       index += 1;
       continue;
     }

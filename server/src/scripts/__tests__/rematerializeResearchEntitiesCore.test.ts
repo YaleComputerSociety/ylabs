@@ -68,6 +68,30 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
       parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=fullDescription']),
     ).toThrow('--reclaim-stranded only supports');
   });
+
+  it('defaults --only-fields to an empty scope', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--slugs=a']);
+    expect(args.onlyFields).toEqual([]);
+  });
+
+  it('parses a scoped --only-fields list and dedupes', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs=a',
+      '--only-fields=methods,methods,researchAreas',
+    ]);
+    expect(args.onlyFields).toEqual(['methods', 'researchAreas']);
+  });
+
+  it('supports the space-separated --only-fields form', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--slugs=a', '--only-fields', 'methods']);
+    expect(args.onlyFields).toEqual(['methods']);
+  });
+
+  it('rejects an unsupported --only-fields field', () => {
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--slugs=a', '--only-fields=notAField']),
+    ).toThrow('Unsupported --only-fields field');
+  });
 });
 
 describe('researchEntityFieldIsStranded', () => {
@@ -96,7 +120,7 @@ describe('observationValueIsMaterializable', () => {
 });
 
 describe('assertRematerializeApplyAllowed', () => {
-  const base = { slugs: ['a'], apply: true, confirmRematerialize: true };
+  const base = { slugs: ['a'], apply: true, confirmRematerialize: true, onlyFields: [] };
 
   it('is a no-op for dry-run', () => {
     expect(() =>

@@ -45,14 +45,18 @@ async function loadTrackedFields(slug: string): Promise<Record<string, unknown> 
   return doc || null;
 }
 
-async function processSlug(slug: string, apply: boolean): Promise<RematerializeEntityReport> {
+async function processSlug(
+  slug: string,
+  apply: boolean,
+  onlyFields: string[],
+): Promise<RematerializeEntityReport> {
   const before = await loadTrackedFields(slug);
   if (!before) return { slug, found: false, changes: [] };
 
   const result = await materializeEntity(
     'researchEntity',
     { entityKey: slug },
-    { dryRun: !apply },
+    { dryRun: !apply, ...(onlyFields.length > 0 ? { writeOnlyFields: onlyFields } : {}) },
   );
 
   let plannedSet: Record<string, unknown> = result.plannedSet || {};
@@ -143,7 +147,7 @@ async function main() {
 
   const entities: RematerializeEntityReport[] = [];
   for (const slug of slugs) {
-    entities.push(await processSlug(slug, args.apply));
+    entities.push(await processSlug(slug, args.apply, args.onlyFields));
   }
 
   const report = {
@@ -153,6 +157,7 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     reclaimStrandedField: args.reclaimStrandedField,
     discoveredStrandedCount: discoveredSlugs?.length,
+    onlyFields: args.onlyFields,
     requestedSlugs: slugs,
     entitiesFound: entities.filter((entity) => entity.found).length,
     entitiesMissing: entities.filter((entity) => !entity.found).map((entity) => entity.slug),
