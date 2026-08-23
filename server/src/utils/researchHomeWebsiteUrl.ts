@@ -91,6 +91,28 @@ export function isBoilerplatePlatformHostUrl(value: unknown): boolean {
   return BOILERPLATE_PLATFORM_HOSTS.has(url.hostname.toLowerCase());
 }
 
+const FILE_SHARE_HOSTS = new Set([
+  'drive.google.com',
+  'docs.google.com',
+  'dropbox.com',
+  'www.dropbox.com',
+  'box.com',
+  'www.box.com',
+  'app.box.com',
+  'onedrive.live.com',
+  '1drv.ms',
+]);
+
+const DIRECT_DOCUMENT_PATH = /\.(?:pdf|docx?|pptx?|xlsx?)$/i;
+
+export function isFileShareOrDocumentUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return (
+    FILE_SHARE_HOSTS.has(url.hostname.toLowerCase()) || DIRECT_DOCUMENT_PATH.test(url.pathname)
+  );
+}
+
 const DIRECTORY_LOADER_SEGMENT_PATH = /\/load_[a-z0-9_]+(?:\/|$)/i;
 
 const DIRECTORY_NUMERIC_ID_SUBPATH =
@@ -254,7 +276,7 @@ export function sourceUrlToResearchHomeWebsiteUrl(value: unknown): string {
     url.search = '';
     url.hostname = url.hostname.toLowerCase();
     if (!/^https?:$/i.test(url.protocol)) return '';
-    if (/\.(?:pdf|docx?|pptx?|xlsx?)$/i.test(url.pathname)) return '';
+    if (isFileShareOrDocumentUrl(url.toString())) return '';
     if (/\/profile\//i.test(url.pathname)) return '';
     if (url.hostname === 'epilepsy.yale.edu') return '';
     if (url.hostname === 'sites.google.com' && !isGoogleSitesResearchHome(url)) return '';

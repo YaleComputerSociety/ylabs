@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isBoilerplateHostWebsiteUrl,
   isContentPageUrl,
+  isFileShareOrDocumentWebsiteUrl,
   isGrantOrIdentifierUrl,
   isListingPageWebsiteUrl,
   isProfilePageWebsiteUrl,
@@ -94,6 +95,22 @@ describe('backfillResearchEntityWebsiteUrls URL classification', () => {
     expect(isBoilerplateHostWebsiteUrl('https://rjohnwilliams.wordpress.com/')).toBe(false);
     expect(isPromotableWebsiteUrl('http://wordpress.org/')).toBe(false);
     expect(isPromotableWebsiteUrl('https://rjohnwilliams.wordpress.com/')).toBe(true);
+  });
+
+  it('flags file-share and direct-document links and never promotes them (#730)', () => {
+    expect(isFileShareOrDocumentWebsiteUrl('https://drive.google.com/open/')).toBe(true);
+    expect(isFileShareOrDocumentWebsiteUrl('https://www.dropbox.com/s/abc123/lab.pdf')).toBe(true);
+    expect(
+      isFileShareOrDocumentWebsiteUrl(
+        'https://history.yale.edu/sites/default/files/files/2010%20rankin%20-%20epistemology%20of%20the%20suburbs.pdf',
+      ),
+    ).toBe(true);
+    expect(isFileShareOrDocumentWebsiteUrl('https://example-computing-lab.example.org/')).toBe(
+      false,
+    );
+    expect(isPromotableWebsiteUrl('https://drive.google.com/open/')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://lab.yale.edu/papers/summary.pdf')).toBe(false);
+    expect(isPromotableWebsiteUrl('https://example-computing-lab.example.org/')).toBe(true);
   });
 });
 
@@ -191,6 +208,39 @@ describe('resolveBackfillWebsiteUrl listing handling', () => {
     ).toEqual({ action: 'keep' });
   });
 
+  it('clears a Google Drive share-link websiteUrl when no research home is available (#730)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://drive.google.com/open/',
+        sourceUrls: [
+          'https://drive.google.com/open?id=1QwRyarvB_ZeBtk_IvIA77E_eSvYFwmOp&usp=drive_copy',
+        ],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('clears a direct-document (.pdf) websiteUrl when no research home is available (#730)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl:
+          'https://history.yale.edu/sites/default/files/files/2010%20rankin%20-%20epistemology%20of%20the%20suburbs.pdf',
+        sourceUrls: [],
+      }),
+    ).toEqual({ action: 'clear' });
+  });
+
+  it('re-picks a real research home over a file-share websiteUrl when one exists in evidence (#730)', () => {
+    expect(
+      resolveBackfillWebsiteUrl({
+        websiteUrl: 'https://drive.google.com/open/',
+        sourceUrls: [
+          'https://drive.google.com/open?id=1QwRyarvB_ZeBtk_IvIA77E_eSvYFwmOp&usp=drive_copy',
+          'https://example-computing-lab.example.org/',
+        ],
+      }),
+    ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
+  });
+
   it('clears a people-roster (members) listing websiteUrl when no research home exists (#518)', () => {
     expect(
       resolveBackfillWebsiteUrl({
@@ -260,6 +310,18 @@ describe('selectBackfillWebsiteUrl', () => {
         ],
       }),
     ).toBe('https://centers.yale.edu/genomics/');
+  });
+
+  it('skips file-share and direct-document candidates when choosing a sourceUrl (#730)', () => {
+    expect(
+      selectBackfillWebsiteUrl({
+        sourceUrls: [
+          'https://drive.google.com/open/',
+          'https://lab.yale.edu/papers/summary.pdf',
+          'https://lab.yale.edu/',
+        ],
+      }),
+    ).toBe('https://lab.yale.edu/');
   });
 
   it('skips content pages when choosing a sourceUrl', () => {

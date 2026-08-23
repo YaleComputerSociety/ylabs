@@ -5,6 +5,7 @@ import {
   isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
   isFacetedOrSectionIndexUrl,
+  isFileShareOrDocumentUrl,
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
@@ -164,6 +165,39 @@ describe('isBoilerplatePlatformHostUrl', () => {
     expect(isBoilerplatePlatformHostUrl('https://example-lab.example.edu/')).toBe(false);
     expect(isBoilerplatePlatformHostUrl('mailto:someone@example.org')).toBe(false);
     expect(isBoilerplatePlatformHostUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isFileShareOrDocumentUrl', () => {
+  it('flags file-share hosts (#730)', () => {
+    expect(isFileShareOrDocumentUrl('https://drive.google.com/open/')).toBe(true);
+    expect(
+      isFileShareOrDocumentUrl(
+        'https://drive.google.com/open?id=1QwRyarvB_ZeBtk_IvIA77E_eSvYFwmOp&usp=drive_copy',
+      ),
+    ).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://docs.google.com/document/d/abc123/edit')).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://www.dropbox.com/s/abc123/paper.pdf')).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://app.box.com/s/abc123')).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://1drv.ms/w/s!abc123')).toBe(true);
+  });
+
+  it('flags direct document links regardless of host (#730)', () => {
+    expect(
+      isFileShareOrDocumentUrl(
+        'https://history.example.edu/sites/default/files/files/2010%20rankin%20-%20epistemology%20of%20the%20suburbs.pdf',
+      ),
+    ).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://lab.example.edu/papers/summary.docx')).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://lab.example.edu/slides/talk.pptx')).toBe(true);
+    expect(isFileShareOrDocumentUrl('https://lab.example.edu/data/results.xlsx')).toBe(true);
+  });
+
+  it('does not flag a real lab site or malformed values', () => {
+    expect(isFileShareOrDocumentUrl('https://example-computing-lab.example.org/')).toBe(false);
+    expect(isFileShareOrDocumentUrl('https://lab.example.edu/publications/')).toBe(false);
+    expect(isFileShareOrDocumentUrl('mailto:someone@example.org')).toBe(false);
+    expect(isFileShareOrDocumentUrl(undefined)).toBe(false);
   });
 });
 
@@ -393,6 +427,16 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
     expect(sourceUrlToResearchHomeWebsiteUrl('http://wordpress.org/')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://www.wordpress.com/')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://squarespace.com/')).toBe('');
+  });
+
+  it('rejects file-share and direct-document source URLs (#730)', () => {
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://drive.google.com/open/')).toBe('');
+    expect(sourceUrlToResearchHomeWebsiteUrl('https://www.dropbox.com/s/abc123/lab.pdf')).toBe('');
+    expect(
+      sourceUrlToResearchHomeWebsiteUrl(
+        'https://history.example.edu/sites/default/files/files/2010%20rankin%20-%20epistemology%20of%20the%20suburbs.pdf',
+      ),
+    ).toBe('');
   });
 });
 
