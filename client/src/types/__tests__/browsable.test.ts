@@ -73,6 +73,30 @@ describe('getItemTags fellowship audience', () => {
     ).map((t) => t.label);
     expect(labels.filter((label) => label === 'Research')).toHaveLength(1);
   });
+
+  it('keeps a Graduate chip when the category merely shares the substring', () => {
+    const labels = getItemTags(
+      fellowshipItem({
+        undergraduateOnly: false,
+        studentFacingCategory: 'Undergraduate research funding',
+      }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels).toContain('Graduate');
+    expect(labels).toContain('Undergraduate research funding');
+  });
+
+  it('keeps a distinct year-of-study chip alongside an unrelated longer category label', () => {
+    const labels = getItemTags(
+      fellowshipItem({
+        studentFacingCategory: 'Senior research funding',
+        yearOfStudy: ['Senior'],
+      }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels).toContain('Senior');
+    expect(labels).toContain('Senior research funding');
+  });
 });
 
 describe('isItemOpen for research entities', () => {

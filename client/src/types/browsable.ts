@@ -117,18 +117,14 @@ interface TagInfo {
   text: string;
 }
 
+const normalizeTagLabel = (label: string) => label.trim().toLowerCase();
+
 function dedupeTags(tags: TagInfo[]): TagInfo[] {
-  const normalize = (label: string) => label.trim().toLowerCase();
   const kept: TagInfo[] = [];
   for (const tag of tags) {
-    const norm = normalize(tag.label);
+    const norm = normalizeTagLabel(tag.label);
     if (!norm) continue;
-    if (kept.some((k) => normalize(k.label) === norm)) continue;
-    const impliedByMoreSpecific = tags.some((other) => {
-      const otherNorm = normalize(other.label);
-      return otherNorm.length > norm.length && otherNorm.includes(norm);
-    });
-    if (impliedByMoreSpecific) continue;
+    if (kept.some((k) => normalizeTagLabel(k.label) === norm)) continue;
     kept.push(tag);
   }
   return kept;
@@ -147,6 +143,12 @@ export function getItemTags(
     const areas = item.data.researchAreas || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
+  const categoryLabel = item.data.studentFacingCategory;
+  const categoryNorm = categoryLabel ? normalizeTagLabel(categoryLabel) : '';
+  const entryModeChipLabel = item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
+  const entryModeNorm = normalizeTagLabel(entryModeChipLabel);
+  const entryModeImpliedByCategory =
+    !!entryModeNorm && !!categoryNorm && categoryNorm.includes(entryModeNorm);
   return dedupeTags([
     ...(item.data.undergraduateOnly === false
       ? [
@@ -157,19 +159,19 @@ export function getItemTags(
           },
         ]
       : []),
-    ...(item.data.studentFacingCategory
+    ...(categoryLabel
       ? [
           {
-            label: item.data.studentFacingCategory,
+            label: categoryLabel,
             bg: 'bg-sky-50',
             text: 'text-sky-700',
           },
         ]
       : []),
-    ...(item.data.entryMode
+    ...(entryModeChipLabel && !entryModeImpliedByCategory
       ? [
           {
-            label: entryModeLabel(item.data.entryMode),
+            label: entryModeChipLabel,
             bg: 'bg-emerald-50',
             text: 'text-emerald-700',
           },
