@@ -224,6 +224,94 @@ export async function synthesizeGroundedCardDescription(
   return shortDescriptionQuality(card, full).isUseful ? card : '';
 }
 
+const CARD_LEAD_VERBS = new Set([
+  'studies',
+  'study',
+  'investigates',
+  'investigate',
+  'examines',
+  'examine',
+  'explores',
+  'explore',
+  'develops',
+  'develop',
+  'focuses',
+  'focus',
+  'focused',
+  'advances',
+  'advance',
+  'uses',
+  'employs',
+  'employ',
+  'analyzes',
+  'analyze',
+  'models',
+  'measures',
+  'measure',
+  'researches',
+  'research',
+  'seeks',
+  'seek',
+  'works',
+  'work',
+  'combines',
+  'combine',
+  'conducts',
+  'conduct',
+  'builds',
+  'build',
+  'designs',
+  'design',
+  'creates',
+  'create',
+  'supports',
+  'support',
+  'fosters',
+  'foster',
+  'improves',
+  'improve',
+  'enhances',
+  'enhance',
+]);
+
+const MAX_GENERATED_CARD_CHARS = 180;
+
+function looksLikeGeneratedCardSummary(value: string): boolean {
+  const text = textValue(value);
+  if (!text || text.length > MAX_GENERATED_CARD_CHARS) return false;
+  if ((text.match(/[.!?](?:\s|$)/g) || []).length > 1) return false;
+  const firstWord = (text.toLowerCase().match(/^[a-z]+/) || [''])[0];
+  return CARD_LEAD_VERBS.has(firstWord);
+}
+
+export function isUngroundedGeneratedCardSummary(
+  shortDescription: unknown,
+  fullDescription: unknown,
+): boolean {
+  const short = textValue(shortDescription);
+  const full = textValue(fullDescription);
+  if (!short || !full) return false;
+  if (!looksLikeGeneratedCardSummary(short)) return false;
+  return !isCardGroundedInFullDescription(short, full);
+}
+
+export function resolveServedCardShortDescription(input: {
+  shortDescription: unknown;
+  fullDescription: unknown;
+}): string {
+  const short = textValue(input.shortDescription);
+  if (!isUngroundedGeneratedCardSummary(short, input.fullDescription)) return short;
+  const derived = deriveShortDescriptionFromFullDescription(input.fullDescription);
+  if (
+    derived &&
+    shortDescriptionQuality(derived, input.fullDescription).isUseful &&
+    isCardGroundedInFullDescription(derived, input.fullDescription)
+  ) {
+    return derived;
+  }
+  return '';
+}
+
 export interface ResolveGroundedCardInput {
   fullDescription: unknown;
   researchAreas?: unknown;

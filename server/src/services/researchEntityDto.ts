@@ -4,6 +4,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
+import { resolveServedCardShortDescription } from '../utils/groundedCardSynthesis';
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
@@ -172,8 +173,12 @@ function publicDepartmentArray(value: unknown): string[] {
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
+  const groundedShortDescription = resolveServedCardShortDescription({
+    shortDescription: group.shortDescription,
+    fullDescription: group.fullDescription,
+  });
   const blurbSource =
-    publicShortDescriptionString(group.shortDescription || '') ||
+    publicShortDescriptionString(groundedShortDescription) ||
     publicDescriptionString(group.fullDescription || '');
   const blurb = blurbSource.slice(0, 280);
 
@@ -283,7 +288,12 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'shortDescription' && typeof group[field] === 'string') {
-        dto[field] = publicShortDescriptionString(group[field]);
+        dto[field] = publicShortDescriptionString(
+          resolveServedCardShortDescription({
+            shortDescription: group[field],
+            fullDescription: group.fullDescription,
+          }),
+        );
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {

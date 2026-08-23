@@ -74,6 +74,46 @@ describe('researchEntityDto', () => {
     expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
   });
 
+  it('replaces a fabricated ungrounded card summary with the grounded full description (#1212)', () => {
+    const fullDescription =
+      'The lab studies the formation of the colonial and post-colonial state in Morocco and across North Africa, drawing on historical sociology and the politics of empire.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-fabricated-card',
+      slug: 'wyrtzen-jw678',
+      name: 'Jonathan Wyrtzen',
+      kind: 'lab',
+      shortDescription: 'Studies Texas from the first.',
+      fullDescription,
+    });
+    expect(dto.shortDescription).not.toBe('Studies Texas from the first.');
+    expect(dto.shortDescription).toBeTruthy();
+
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-fabricated-card' },
+      slug: 'wyrtzen-jw678',
+      name: 'Jonathan Wyrtzen',
+      kind: 'lab',
+      shortDescription: 'Studies Texas from the first.',
+      fullDescription,
+    });
+    expect(summary.blurb).not.toBe('Studies Texas from the first.');
+    expect(summary.blurb).toBeTruthy();
+  });
+
+  it('keeps a grounded card summary unchanged on the served card (#1212)', () => {
+    const fullDescription =
+      'The Rivera Lab studies how immune cells detect and respond to viral infection. Ongoing projects map the antiviral signaling pathways that shape the earliest stages of the response.';
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-grounded-card',
+      slug: 'rivera-lab',
+      name: 'Rivera Lab',
+      kind: 'lab',
+      shortDescription: 'Studies antiviral signaling in immune cells.',
+      fullDescription,
+    });
+    expect(dto.shortDescription).toBe('Studies antiviral signaling in immune cells.');
+  });
+
   it('builds canonical ResearchEntity DTOs from materialized records', () => {
     const dto = toPublicResearchEntityDto({
       _id: { toString: () => 'entity-1' },

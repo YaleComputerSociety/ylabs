@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   cardGroundingScore,
   isCardGroundedInFullDescription,
+  isUngroundedGeneratedCardSummary,
   normalizeCardText,
   resolveGroundedCardDescription,
+  resolveServedCardShortDescription,
   synthesizeGroundedCardDescription,
 } from '../groundedCardSynthesis';
 import {
@@ -175,5 +177,85 @@ describe('resolveGroundedCardDescription research-areas fallback (#952)', () => 
       researchAreas: [],
     });
     expect(resolved).toBe('');
+  });
+});
+
+const WYRTZEN_FULL =
+  'The lab studies the formation of the colonial and post-colonial state in Morocco and across North Africa, drawing on historical sociology and the politics of empire.';
+
+const RIVERA_FULL =
+  'The Rivera Lab studies how immune cells detect and respond to viral infection. Ongoing projects map the antiviral signaling pathways that shape the earliest stages of the response.';
+
+describe('isUngroundedGeneratedCardSummary (#1212)', () => {
+  it('flags a generated scaffold one-liner whose topic is absent from the full description', () => {
+    expect(isUngroundedGeneratedCardSummary('Studies Texas from the first.', WYRTZEN_FULL)).toBe(
+      true,
+    );
+    expect(isUngroundedGeneratedCardSummary('Studies Italian Cooking.', WYRTZEN_FULL)).toBe(true);
+  });
+
+  it('does not flag a generated card that is grounded in the full description', () => {
+    expect(
+      isUngroundedGeneratedCardSummary(
+        'Studies antiviral signaling in immune cells.',
+        RIVERA_FULL,
+      ),
+    ).toBe(false);
+  });
+
+  it('does not flag hand-authored summaries that lack a card-lead verb', () => {
+    expect(
+      isUngroundedGeneratedCardSummary('A soft-robotics lab in Texas.', WYRTZEN_FULL),
+    ).toBe(false);
+  });
+
+  it('does not flag when either description is missing', () => {
+    expect(isUngroundedGeneratedCardSummary('Studies Texas from the first.', '')).toBe(false);
+    expect(isUngroundedGeneratedCardSummary('', WYRTZEN_FULL)).toBe(false);
+  });
+});
+
+describe('resolveServedCardShortDescription (#1212)', () => {
+  it('keeps a grounded card unchanged', () => {
+    const card = 'Studies antiviral signaling in immune cells.';
+    expect(
+      resolveServedCardShortDescription({ shortDescription: card, fullDescription: RIVERA_FULL }),
+    ).toBe(card);
+  });
+
+  it('replaces an ungrounded generated card with a grounded derivation from the full description', () => {
+    const resolved = resolveServedCardShortDescription({
+      shortDescription: 'Studies antiviral pathways in Antarctica.',
+      fullDescription: RIVERA_FULL,
+    });
+    expect(resolved).not.toBe('Studies antiviral pathways in Antarctica.');
+    expect(resolved).not.toBe('');
+    expect(isCardGroundedInFullDescription(resolved, RIVERA_FULL)).toBe(true);
+  });
+
+  it('replaces a fabricated card with the entity own grounded full description', () => {
+    const resolved = resolveServedCardShortDescription({
+      shortDescription: 'Studies Texas from the first.',
+      fullDescription: WYRTZEN_FULL,
+    });
+    expect(resolved).not.toBe('Studies Texas from the first.');
+    expect(isCardGroundedInFullDescription(resolved, WYRTZEN_FULL)).toBe(true);
+  });
+
+  it('fails closed to empty when no groundable derivation exists', () => {
+    expect(deriveShortDescriptionFromFullDescription(UNGROUNDABLE_FULL)).toBe('');
+    expect(
+      resolveServedCardShortDescription({
+        shortDescription: 'Studies antiviral pathways in Antarctica.',
+        fullDescription: UNGROUNDABLE_FULL,
+      }),
+    ).toBe('');
+  });
+
+  it('leaves a hand-authored summary untouched even when ungrounded', () => {
+    const card = 'A soft-robotics lab.';
+    expect(
+      resolveServedCardShortDescription({ shortDescription: card, fullDescription: WYRTZEN_FULL }),
+    ).toBe(card);
   });
 });
