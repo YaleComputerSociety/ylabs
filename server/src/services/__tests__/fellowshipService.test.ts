@@ -108,6 +108,57 @@ describe('fellowship public serializer', () => {
     expect(noDeadline.isAcceptingApplications).toBe(true);
   });
 
+  it('strips a stale present-by clause whose month precedes the record deadline', () => {
+    const staleText =
+      'To provide funding to off-set the costs associated with a senior research project or senior essay. For funding research which must take place during the academic year and awardees must present the result of their research either to the Senior Mellon Forum or another educational forum in the college by April, 2025.';
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1e0',
+      title: 'Davenport College Mellon Senior Research Grant',
+      summary: staleText,
+      description: staleText,
+      deadline: new Date('2026-03-02T05:00:00.000Z'),
+    });
+    expect(payload.summary).toBe(
+      'To provide funding to off-set the costs associated with a senior research project or senior essay. For funding research which must take place during the academic year and awardees must present the result of their research either to the Senior Mellon Forum or another educational forum in the college.',
+    );
+    expect(payload.description).toBe(payload.summary);
+    expect(payload.summary).not.toContain('April, 2025');
+  });
+
+  it('keeps a present-by clause whose month is on or after the record deadline', () => {
+    const consistentText =
+      'For funding research and awardees must present the result of their research either to the Senior Mellon Forum or another educational forum in the college by April, 2026.';
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1e1',
+      title: 'Benjamin Franklin College Mellon Research Fellowship for Seniors',
+      summary: consistentText,
+      deadline: new Date('2025-12-07T04:59:00.000Z'),
+    });
+    expect(payload.summary).toBe(consistentText);
+  });
+
+  it('leaves present-by clauses untouched when the record has no deadline', () => {
+    const text =
+      'Awardees must present the result of their research to the college by April, 2025.';
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1e2',
+      title: 'Rolling grant',
+      summary: text,
+    });
+    expect(payload.summary).toBe(text);
+  });
+
+  it('does not strip a stale-looking date clause unrelated to presenting results', () => {
+    const text = 'Applications for the current cycle are due by April, 2025.';
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1e3',
+      title: 'Grant with an unrelated date',
+      summary: text,
+      deadline: new Date('2026-03-02T05:00:00.000Z'),
+    });
+    expect(payload.summary).toBe(text);
+  });
+
   it('bounds public fellowship serializer arrays and skips polluted values', () => {
     const links = Array.from({ length: 50 }, (_, index) => ({
       label: `Program ${index}`,

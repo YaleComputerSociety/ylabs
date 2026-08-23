@@ -284,10 +284,49 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
   return value;
 };
 
-const deadlineIsPast = (value: unknown, now: Date): boolean => {
-  if (!value) return false;
+const toValidDate = (value: unknown): Date | undefined => {
+  if (!value) return undefined;
   const date = value instanceof Date ? value : new Date(String(value));
-  return !Number.isNaN(date.getTime()) && date.getTime() < now.getTime();
+  return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+const deadlineIsPast = (value: unknown, now: Date): boolean => {
+  const date = toValidDate(value);
+  return date !== undefined && date.getTime() < now.getTime();
+};
+
+const MONTH_NAME_TO_INDEX: Record<string, number> = {
+  january: 0,
+  february: 1,
+  march: 2,
+  april: 3,
+  may: 4,
+  june: 5,
+  july: 6,
+  august: 7,
+  september: 8,
+  october: 9,
+  november: 10,
+  december: 11,
+};
+
+const PRESENTATION_DATE_CLAUSE_RE =
+  /\s+by\s+(January|February|March|April|May|June|July|August|September|October|November|December),?\s+(\d{4})(?=[.,;)\s]|$)/gi;
+
+const stripStalePresentationDate = (text: string, deadline: Date): string => {
+  const deadlineMonthOrdinal = deadline.getUTCFullYear() * 12 + deadline.getUTCMonth();
+  return text.replace(
+    PRESENTATION_DATE_CLAUSE_RE,
+    (match, monthName: string, yearText: string, offset: number, whole: string) => {
+      const monthIndex = MONTH_NAME_TO_INDEX[monthName.toLowerCase()];
+      if (monthIndex === undefined) return match;
+      const contextBefore = whole.slice(Math.max(0, offset - 200), offset).toLowerCase();
+      if (!contextBefore.includes('present')) return match;
+      const clauseMonthOrdinal = Number(yearText) * 12 + monthIndex;
+      if (clauseMonthOrdinal >= deadlineMonthOrdinal) return match;
+      return '';
+    },
+  );
 };
 
 export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date()) => {
@@ -305,6 +344,15 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
     deadlineIsPast(publicFellowship.deadline, now)
   ) {
     publicFellowship.isAcceptingApplications = false;
+  }
+
+  const deadlineDate = toValidDate(publicFellowship.deadline);
+  if (deadlineDate) {
+    for (const field of ['summary', 'description'] as const) {
+      if (typeof publicFellowship[field] === 'string') {
+        publicFellowship[field] = stripStalePresentationDate(publicFellowship[field], deadlineDate);
+      }
+    }
   }
 
   return publicFellowship;
