@@ -163,6 +163,9 @@ describe('isResearchAreaLabelLeakage', () => {
       'C. elegans Genetics',
       'Cognitive Neuroscience: Graduate Program',
       'Global Health: Certificate Program',
+      'mRNA vaccine development platforms and delivery systems',
+      'iPSC-derived cardiomyocytes for disease modeling and drug screening',
+      'Keyword Extraction',
     ]) {
       expect(isResearchAreaLabelLeakage(area)).toBe(false);
     }
