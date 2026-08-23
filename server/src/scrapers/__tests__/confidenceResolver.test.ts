@@ -316,6 +316,226 @@ describe('resolveField', () => {
   });
 });
 
+describe('resolveField name selection prefers branded over synthesized', () => {
+  it('prefers a branded microsite name over a synthesized PI-derived name that wins on agreement and recency', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'SPIN (Statistical Physics, Information & Networks) Lab',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-22'),
+        },
+        {
+          field: 'name',
+          value: 'Alex Rivera Lab',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.7,
+          observedAt: D('2026-07-25'),
+        },
+        {
+          field: 'name',
+          value: 'Alex Rivera Lab',
+          sourceName: 'department-undergrad-research',
+          confidence: 0.8,
+          observedAt: D('2026-08-23'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('SPIN (Statistical Physics, Information & Networks) Lab');
+    expect(r?.contributingSources).toEqual(['lab-microsite-description-llm']);
+  });
+
+  it('demotes a bare person name in favor of a head-noun lab name from the same source', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Rivera Lab',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-22'),
+        },
+        {
+          field: 'name',
+          value: 'Alexandra Rivera',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-23'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('Rivera Lab');
+  });
+
+  it('demotes a "<Person> Faculty Research" label in favor of a branded lab name', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Jordan Okafor Faculty Research',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.7,
+          observedAt: D('2026-05-21'),
+        },
+        {
+          field: 'name',
+          value: 'Okafor Lab',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-22'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('Okafor Lab');
+  });
+
+  it('applies the same demotion to the displayName field', () => {
+    const r = resolveField(
+      'displayName',
+      [
+        {
+          field: 'displayName',
+          value: 'Rivera Lab',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-22'),
+        },
+        {
+          field: 'displayName',
+          value: 'Alexandra Rivera',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-23'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('Rivera Lab');
+  });
+
+  it('keeps a synthesized "<PI> Lab" name when it is the only available source (grant-shell lab)', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Alex Rivera Lab',
+          sourceName: 'nih-reporter',
+          confidence: 0.9,
+          observedAt: D('2026-08-22'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('Alex Rivera Lab');
+    expect(r?.contributingSources).toEqual(['nih-reporter']);
+  });
+
+  it('does not demote a synthesized "<PI> Lab" when no microsite brand exists (no affiliation-name conflation)', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Alex Rivera Lab',
+          sourceName: 'nih-reporter',
+          confidence: 0.9,
+          observedAt: D('2026-08-23'),
+        },
+        {
+          field: 'name',
+          value: 'Center for Brain and Mind Health',
+          sourceName: 'official-profile-pi-backfill',
+          confidence: 0.7,
+          observedAt: D('2026-05-01'),
+        },
+      ],
+      { now: D('2026-08-24'), conflictThreshold: 0.05 },
+    );
+    expect(r?.value).toBe('Alex Rivera Lab');
+  });
+
+  it('keeps the single branded microsite name when it is the only candidate', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'The Faboratory',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.55,
+          observedAt: D('2026-05-18'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('The Faboratory');
+  });
+
+  it('does not regress a clean curated name to a lower-weight page-title-glued variant', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Doe Lab',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.95,
+          observedAt: D('2026-08-22'),
+        },
+        {
+          field: 'name',
+          value: 'Doe Lab',
+          sourceName: 'ysm-atoz-index',
+          confidence: 0.8,
+          observedAt: D('2026-07-25'),
+        },
+        {
+          field: 'name',
+          value: 'Illuminating chemistry at the human:microbe interface | Doe Lab',
+          sourceName: 'lab-microsite-undergrad-llm',
+          confidence: 0.55,
+          observedAt: D('2026-05-25'),
+        },
+      ],
+      { now: D('2026-08-24') },
+    );
+    expect(r?.value).toBe('Doe Lab');
+  });
+
+  it('leaves non-name fields untouched by the branded-name preference', () => {
+    const r = resolveField(
+      'title',
+      [
+        {
+          field: 'title',
+          value: 'Alex Rivera Lab',
+          sourceName: 'dept-faculty-roster',
+          confidence: 0.9,
+          observedAt: D('2026-08-23'),
+        },
+        {
+          field: 'title',
+          value: 'Rivera Lab',
+          sourceName: 'lab-microsite-description-llm',
+          confidence: 0.5,
+          observedAt: D('2026-05-01'),
+        },
+      ],
+      { now: D('2026-08-24'), conflictThreshold: 0.05 },
+    );
+    expect(r?.value).toBe('Alex Rivera Lab');
+  });
+});
+
 describe('resolveAllFields', () => {
   it('produces a record keyed by field with all resolved entries', () => {
     const out = resolveAllFields(
