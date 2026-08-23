@@ -32,6 +32,38 @@ describe('classifyProgram', () => {
     });
   });
 
+  it('does not let a Wu Tsai cross-referral in a record description hijack the record classification', () => {
+    const deansRosenfeld = classifyProgram({
+      title: "Yale College Dean's Research Fellowship & Rosenfeld Science Scholars Program",
+      sourceUrl: 'https://science.yalecollege.yale.edu/deans-research-fellowship',
+      description:
+        'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying to the Wu Tsai Undergraduate Fellowships Program instead.',
+    });
+    expect(deansRosenfeld).toMatchObject({
+      programKind: 'FELLOWSHIP_FUNDING',
+      studentFacingCategory: 'Funding after mentor',
+      yaleCollegeOnly: true,
+    });
+    expect(deansRosenfeld.mentorMatching).toBe(false);
+    expect(deansRosenfeld.bestNextStep).not.toContain('Wu Tsai');
+  });
+
+  it('classifies a first-year summer fellowship on its own identity even when it name-drops Wu Tsai', () => {
+    const firstYear = classifyProgram({
+      title: 'Yale College First-Year Summer Research Fellowship in the Sciences & Engineering',
+      sourceUrl: 'https://science.yalecollege.yale.edu/first-year-summer-research-fellowship',
+      description:
+        'Students interested in neuroscience should also consider the Wu Tsai Undergraduate Fellowships Program.',
+    });
+    expect(firstYear).toMatchObject({
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Funding after mentor',
+    });
+    expect(firstYear.mentorMatching).toBe(false);
+    expect(firstYear.bestNextStep).not.toContain('Wu Tsai');
+  });
+
   it('classifies mentor-required funding as funding after mentor fit', () => {
     expect(
       classifyProgram({
