@@ -134,7 +134,7 @@ const RESEARCH_AREA_LIST_MARKER_RE = /^\s*(?:#{1,6}\s|[*+–—-]\s|>\s|\d+[.)]\
 const RESEARCH_AREA_AWARD_RE =
   /\b(?:scholarship|loan\s+repayment|grant\s+(?:no|number)|award(?:ed|ee)?|prize)\b/i;
 const RESEARCH_AREA_PERSON_AWARD_RE =
-  /^(?:\d{4}\s+)?[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z'’.-]+\s*:\s+\S.*\b(?:scholarship|fellowship|award|prize|grant|repayment|program)\b/i;
+  /^(?:\d{4}\s+)?[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z'’.-]+\s*:\s+\S.*\b(?:[Ss]cholarship|[Ff]ellowship|[Aa]ward(?:ee)?|[Pp]rize|[Gg]rant|[Rr]epayment)\b/;
 const RESEARCH_AREA_LABEL_PREFIX_RE =
   /^(?:research\s+areas?|research\s+interests?|research\s+focus|research\s+topics?|fields?\s+of\s+(?:interest|study)|areas?\s+of\s+(?:interest|research|expertise|focus|specialization)|specializations?|keywords?(?:\s+and\s+concepts)?)\b[\s:]+\S/i;
 

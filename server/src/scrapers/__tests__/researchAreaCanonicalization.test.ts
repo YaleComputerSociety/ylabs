@@ -161,6 +161,8 @@ describe('isResearchAreaLabelLeakage', () => {
       'Interstitial Lung Diseases and Idiopathic Pulmonary Fibrosis',
       'Mesoscopic Physics / Nanoscience (Condensed Matter Physics)',
       'C. elegans Genetics',
+      'Cognitive Neuroscience: Graduate Program',
+      'Global Health: Certificate Program',
     ]) {
       expect(isResearchAreaLabelLeakage(area)).toBe(false);
     }
