@@ -332,6 +332,18 @@ const undergraduateClaimClauses = (quote: string): string[] =>
     .map((clause) => clause.trim())
     .filter((clause) => clause.length > 0 && quoteHasUndergraduatePopulation(clause));
 
+const DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY =
+  /\b(?:not\s+(?:currently\s+|now\s+)?accepting|(?:currently|now)\s+not\s+accepting)\b[^.!?;]{0,80}\b(?:undergrads?|undergraduates?|undergraduate\s+(?:students?|researchers?)|research\s+assistants?)\b/i;
+
+export function quoteExplicitlyDeclinesUndergraduates(quote: string): boolean {
+  return undergraduateClaimClauses(quote).some(
+    (clause) =>
+      clauseIsDeclarative(clause) &&
+      !clauseHasExclusionOrConditionalScope(clause) &&
+      DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY.test(clause),
+  );
+}
+
 const clauseHasUndergraduateAvailabilitySubject = (clause: string): boolean => {
   const undergraduatePopulation = String.raw`(?:undergrads?|undergraduates?|undergraduate\s+students?|college\s+students?|yale\s+college\s+students?)`;
   const availabilitySubject = String.raw`(?:applications?|positions?|roles?|opportunities|openings?)`;
@@ -601,10 +613,13 @@ function quoteSupportsClaim(
       /\b(not currently (?:accepting|taking|hiring)|not accepting|no (?:current )?(?:openings|positions)|positions? (?:are|is) filled|unable to accept)\b/i;
     return clauses.some(
       (clause) =>
-        clauseHasUndergraduateAvailabilitySubject(clause) &&
-        clauseIsDeclarative(clause) &&
-        unavailablePolicy.test(clause) &&
-        predicateGovernedByUndergraduateSubject(clause, unavailablePolicy),
+        (clauseHasUndergraduateAvailabilitySubject(clause) &&
+          clauseIsDeclarative(clause) &&
+          unavailablePolicy.test(clause) &&
+          predicateGovernedByUndergraduateSubject(clause, unavailablePolicy)) ||
+        (clauseIsDeclarative(clause) &&
+          !clauseHasExclusionOrConditionalScope(clause) &&
+          DIRECT_UNDERGRADUATE_NON_ACCEPTANCE_POLICY.test(clause)),
     );
   }
   const negatedAvailability =

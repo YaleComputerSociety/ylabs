@@ -23,6 +23,7 @@ vi.mock('../../models/signal', async (importOriginal) => {
 
 import {
   materializeUndergraduateLogisticsForResearchEntity,
+  quoteExplicitlyDeclinesUndergraduates,
   resolveUndergraduateLogisticsClaims,
   validateUndergraduateLogisticsObservation,
 } from '../undergraduateLogisticsMaterializer';
@@ -1113,5 +1114,65 @@ describe('undergraduate logistics materialization', () => {
     expect(
       persistenceMocks.claimUpdateOne.mock.calls.every(([, , options]) => options.upsert === true),
     ).toBe(true);
+  });
+});
+
+describe('lab-as-subject non-acceptance availability (symmetric to direct recruiting)', () => {
+  it.each([
+    'not accepting undergraduates',
+    'We are not currently accepting undergraduate researchers.',
+    'We are currently not accepting undergraduate students.',
+    'We are not currently accepting undergraduate students for research positions.',
+    'We are currently not accepting undergraduate students for research opportunities.',
+  ])('accepts NOT_CURRENTLY_AVAILABLE for lab-as-subject non-acceptance: %s', (evidenceQuote) => {
+    const result = validateUndergraduateLogisticsObservation(
+      observation(
+        'undergraduateLogisticsCurrentAvailability',
+        'CURRENT_AVAILABILITY',
+        { status: 'NOT_CURRENTLY_AVAILABLE' },
+        evidenceQuote,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      accepted: { claimType: 'CURRENT_AVAILABILITY', value: { status: 'NOT_CURRENTLY_AVAILABLE' } },
+    });
+  });
+
+  it.each([
+    'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.',
+    'Please do not email about openings.',
+    'We are now accepting undergraduate applications.',
+    'We are not accepting late applications.',
+    'Graduate students are not accepted for this position.',
+    'We are recruiting undergraduate students to join our lab.',
+  ])('rejects NOT_CURRENTLY_AVAILABLE for non-availability or positive phrasing: %s', (evidenceQuote) => {
+    const result = validateUndergraduateLogisticsObservation(
+      observation(
+        'undergraduateLogisticsCurrentAvailability',
+        'CURRENT_AVAILABILITY',
+        { status: 'NOT_CURRENTLY_AVAILABLE' },
+        evidenceQuote,
+      ),
+    );
+
+    expect(result).toEqual({ rejectedReason: 'evidence_does_not_support_exact_claim' });
+  });
+
+  it('exposes quoteExplicitlyDeclinesUndergraduates for scraper-side derivation', () => {
+    expect(quoteExplicitlyDeclinesUndergraduates('not accepting undergraduates')).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'We are not currently accepting undergraduate researchers.',
+      ),
+    ).toBe(true);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates(
+        'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.',
+      ),
+    ).toBe(false);
+    expect(
+      quoteExplicitlyDeclinesUndergraduates('We are now accepting undergraduate applications.'),
+    ).toBe(false);
   });
 });

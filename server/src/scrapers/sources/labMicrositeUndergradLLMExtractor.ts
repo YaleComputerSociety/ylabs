@@ -33,6 +33,7 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { quoteExplicitlyDeclinesUndergraduates } from '../undergraduateLogisticsMaterializer';
 import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import {
@@ -845,13 +846,29 @@ export function extractionToObservations(
       extraction.modalityQuote,
     );
   }
-  if (extraction.currentAvailability && extraction.currentAvailability !== 'UNKNOWN') {
+  const explicitNonAcceptanceQuote = [
+    extraction.explicitConstraintQuote,
+    extraction.evidenceQuote,
+  ]
+    .map((candidate) => (candidate || '').trim())
+    .find((candidate) => candidate && quoteExplicitlyDeclinesUndergraduates(candidate));
+  const derivedAvailability: ExtractedCurrentAvailability | undefined =
+    extraction.currentAvailability && extraction.currentAvailability !== 'UNKNOWN'
+      ? extraction.currentAvailability
+      : explicitNonAcceptanceQuote
+        ? 'NOT_CURRENTLY_AVAILABLE'
+        : undefined;
+  if (derivedAvailability) {
     pushLogisticsClaim(
       'undergraduateLogisticsCurrentAvailability',
       'CURRENT_AVAILABILITY',
-      { status: extraction.currentAvailability },
-      extraction.currentAvailabilityQuote,
-      extraction.availabilityValidThrough,
+      { status: derivedAvailability },
+      derivedAvailability === extraction.currentAvailability
+        ? extraction.currentAvailabilityQuote
+        : explicitNonAcceptanceQuote,
+      derivedAvailability === extraction.currentAvailability
+        ? extraction.availabilityValidThrough
+        : undefined,
     );
   }
 

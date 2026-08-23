@@ -432,6 +432,60 @@ describe('claim-specific undergraduate logistics extraction', () => {
       humanReadable.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
     ).toMatchObject({ validThrough: '2026-08-15' });
   });
+
+  it('derives NOT_CURRENTLY_AVAILABLE from an explicit non-acceptance constraint quote when the LLM left availability UNKNOWN', () => {
+    const sourceUrl = 'https://smith.example.com/join';
+    const quote = 'We are not currently accepting undergraduate researchers.';
+    const observations = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: sourceUrl,
+        currentAvailability: 'UNKNOWN',
+        currentAvailabilityQuote: '',
+        explicitConstraintQuote: quote,
+      },
+      new Date('2026-07-14T00:00:00.000Z'),
+      { sourcePages: [{ url: sourceUrl, text: quote }] },
+    );
+
+    expect(
+      observations.find((row) => row.field === 'undergraduateLogisticsCurrentAvailability')?.value,
+    ).toMatchObject({
+      claimType: 'CURRENT_AVAILABILITY',
+      value: { status: 'NOT_CURRENTLY_AVAILABLE' },
+      evidenceQuote: quote,
+      quoteVerified: true,
+    });
+  });
+
+  it('does not derive availability from a contact-only constraint quote', () => {
+    const sourceUrl = 'https://smith.example.com/join';
+    const quote = 'I do not have bandwidth to respond to inquiries about undergraduate research opportunities.';
+    const observations = extractionToObservations(
+      'smith-lab',
+      sourceUrl,
+      {
+        openToUndergrads: 'unclear',
+        currentUndergradCount: 0,
+        evidenceQuote: '',
+        evidenceSource: 'none',
+        joinPageUrl: sourceUrl,
+        currentAvailability: 'UNKNOWN',
+        explicitConstraintQuote: quote,
+      },
+      new Date('2026-07-14T00:00:00.000Z'),
+      { sourcePages: [{ url: sourceUrl, text: quote }] },
+    );
+
+    expect(
+      observations.some((row) => row.field === 'undergraduateLogisticsCurrentAvailability'),
+    ).toBe(false);
+  });
 });
 
 describe('logisticsAcquisitionAllowed', () => {
