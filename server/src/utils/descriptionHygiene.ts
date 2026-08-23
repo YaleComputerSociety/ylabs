@@ -11,6 +11,7 @@
  * catalog scraper (#609/#610) both feed here, and the read-time program
  * payload uses it as a second line of defense over already-stored records.
  */
+import { redactDirectContactInfo } from './contactRedaction';
 
 export function normalizeHygieneWhitespace(value: string): string {
   return String(value || '')
@@ -227,4 +228,25 @@ export function sanitizeCatalogDescription(text: string): string {
     return '';
   }
   return stripped;
+}
+
+/**
+ * Stored-layer sanitizer for catalog description prose, applied at every write
+ * step (program/fellowship materialize and the #671 backfill) so a
+ * re-materialize over a stale dirty observation can never re-introduce a
+ * chrome/roster/FAQ/form/curation dump, a leaked contact detail, a baked-in
+ * [email redacted] token, or a mid-word truncation.
+ *
+ * Contact details are redacted and their placeholder tokens then removed here
+ * because the [email redacted] token is the intended read-time contact
+ * rendering, not stored prose (#671): a stored description must read as clean
+ * prose, so the token cleanup lives at the write step, not at read time. Fails
+ * closed to an empty string on dump shapes.
+ */
+export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000): string {
+  const redacted = redactDirectContactInfo(String(text || ''));
+  return clampDescriptionLength(
+    stripRedactionPlaceholders(sanitizeCatalogDescription(redacted)),
+    maxLength,
+  );
 }

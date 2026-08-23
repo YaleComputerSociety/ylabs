@@ -8,6 +8,7 @@ import {
   isNavigationDumpText,
   isRosterShapedText,
   sanitizeCatalogDescription,
+  sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
 } from '../descriptionHygiene';
@@ -193,5 +194,58 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
     expect(clamped.length).toBeLessThanOrEqual(2001);
     expect(clamped.endsWith('…')).toBe(true);
     expect(/\S…$/.test(clamped)).toBe(true);
+  });
+});
+
+describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', () => {
+  it('keeps genuine clean prose verbatim', () => {
+    const clean =
+      'The summer research program pairs undergraduates with faculty mentors for original laboratory work across the sciences.';
+    expect(sanitizeStoredCatalogDescription(clean)).toBe(clean);
+  });
+
+  it('redacts a raw email and removes the resulting token so stored prose stays clean', () => {
+    const withEmail =
+      'The grant supports undergraduate research each summer. Questions can be directed to grants@example.edu.';
+    const cleaned = sanitizeStoredCatalogDescription(withEmail);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).not.toMatch(/@example\.edu/);
+    expect(cleaned).toBe('The grant supports undergraduate research each summer. Questions can be directed.');
+  });
+
+  it('strips a baked-in [email redacted] token left in a stale observation', () => {
+    const withToken =
+      'The fellowship funds senior thesis research. Submit questions to [email redacted].';
+    const cleaned = sanitizeStoredCatalogDescription(withToken);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).toBe('The fellowship funds senior thesis research. Submit questions.');
+  });
+
+  it('fails closed to empty on an FAQ/Q&A dump', () => {
+    const faq =
+      'Frequently Asked Questions. Who is eligible? All undergraduates. When is the deadline? In March. How do I apply?';
+    expect(sanitizeStoredCatalogDescription(faq)).toBe('');
+  });
+
+  it('fails closed to empty on internal curation-rationale prose', () => {
+    const rationale =
+      'This award is source-backed and safe to show prominently until a more specific current award page is attached.';
+    expect(sanitizeStoredCatalogDescription(rationale)).toBe('');
+  });
+
+  it('clamps an over-long description to a complete sentence', () => {
+    const body = `${'The program pairs undergraduates with faculty mentors for original research. '.repeat(
+      40,
+    )}Applicants identify up to three potential mentors before the deadline`;
+    const cleaned = sanitizeStoredCatalogDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2000);
+    expect(cleaned.endsWith('.')).toBe(true);
+  });
+
+  it('is idempotent: re-running over its own output does not change a clean result', () => {
+    const dirty =
+      'Skip to main content Show all breadcrumbs The travel research grant funds summer fieldwork. Contact grants@example.edu for details.';
+    const once = sanitizeStoredCatalogDescription(dirty);
+    expect(sanitizeStoredCatalogDescription(once)).toBe(once);
   });
 });

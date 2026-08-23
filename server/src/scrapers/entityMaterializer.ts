@@ -27,7 +27,10 @@ import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowse
 import { materializeAccessForResearchGroup } from './accessMaterializer';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
+import {
+  sanitizeCatalogDescription,
+  sanitizeStoredCatalogDescription,
+} from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -136,6 +139,7 @@ const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
   'shortDescription',
   'description',
 ]);
+const FELLOWSHIP_DESCRIPTION_FIELDS = new Set(['description', 'summary']);
 const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt']);
 const MATERIALIZER_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
@@ -281,6 +285,13 @@ function materializedFieldValue(
     typeof value === 'string'
   ) {
     return sanitizeCatalogDescription(value);
+  }
+  if (
+    entityType === 'fellowship' &&
+    FELLOWSHIP_DESCRIPTION_FIELDS.has(field) &&
+    typeof value === 'string'
+  ) {
+    return sanitizeStoredCatalogDescription(value);
   }
   if (
     isResearchEntityObservationType(entityType) &&
