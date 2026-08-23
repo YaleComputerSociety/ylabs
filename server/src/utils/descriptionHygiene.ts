@@ -138,6 +138,27 @@ export function stripRedactionPlaceholders(text: string): string {
   return normalizeHygieneWhitespace(kept.join(' '));
 }
 
+/**
+ * Prepare a scraped source quote for use as a student-facing evidence excerpt:
+ * redact direct contact details, then drop every sentence that still carries a
+ * `[email redacted]`/`[phone redacted]` marker so the raw placeholder is never
+ * rendered to students (#1076). Unlike stripRedactionPlaceholders (which salvages
+ * a description sentence by trimming a trailing marker), an evidence excerpt is a
+ * short verbatim quote where a marker-bearing sentence is almost always a bare
+ * contact directive ("Email us at [email redacted]") with no independent value,
+ * and partial salvage tends to strand a mangled label fragment - so the whole
+ * marker-bearing sentence is dropped. Returns an empty string when nothing of
+ * substance survives, so the caller can omit the excerpt entirely.
+ */
+export function sanitizeEvidenceExcerpt(value: string): string {
+  const redacted = normalizeHygieneWhitespace(redactDirectContactInfo(String(value ?? '')));
+  if (!redacted || !redactionTokenTest.test(redacted)) return redacted;
+  const kept = splitIntoSentences(redacted)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence && !redactionTokenTest.test(sentence));
+  return normalizeHygieneWhitespace(kept.join(' '));
+}
+
 const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\$\(document\)\.ready\([\s\S]*?\}\s*\)\s*;?/gi,
   /\$\([^)]*\)[^;{}]*\{[\s\S]*?\}\s*\)?\s*;?/g,

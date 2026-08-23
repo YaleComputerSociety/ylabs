@@ -90,6 +90,39 @@ describe('EvidenceSourceRow', () => {
     expect(container.textContent).not.toContain('POSTED_OPENING');
   });
 
+  it('drops a redaction-marker sentence but keeps the substantive quote (#1076)', () => {
+    const { container } = render(
+      <EvidenceSourceRow
+        evidence={[
+          {
+            claim: 'This lab welcomes undergraduates.',
+            excerpt: 'We welcome undergraduate researchers year-round. Email us at [email redacted].',
+          },
+        ]}
+      />,
+    );
+
+    expect(container.textContent).toContain('We welcome undergraduate researchers year-round.');
+    expect(container.textContent).not.toContain('[email redacted]');
+  });
+
+  it('hides an excerpt that is only a redaction marker (#1076)', () => {
+    const { container } = render(
+      <EvidenceSourceRow
+        evidence={[
+          {
+            claim: 'Contact instructions exist for this lab.',
+            excerpt: 'Email us at [email redacted]',
+          },
+        ]}
+      />,
+    );
+
+    expect(container.textContent).toContain('Contact instructions exist for this lab.');
+    expect(container.textContent).not.toContain('redacted');
+    expect(container.textContent).not.toContain('Email us at');
+  });
+
   it('omits unsafe source links', () => {
     const { container } = render(
       <EvidenceSourceRow

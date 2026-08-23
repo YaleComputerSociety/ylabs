@@ -84,7 +84,7 @@ describe('accessSummaryService', () => {
       {
         signalType: 'REACH_OUT_PLAUSIBLE',
         confidence: 'HIGH',
-        excerpt: 'Questions: [email redacted] or [phone redacted].',
+        excerpt: undefined,
         sourceUrl: undefined,
       },
       {
@@ -94,10 +94,59 @@ describe('accessSummaryService', () => {
         sourceUrl: 'https://lab.example.test/people',
       },
     ]);
+    expect(JSON.stringify(summary)).not.toContain('[email redacted]');
+    expect(JSON.stringify(summary)).not.toContain('[phone redacted]');
     expect(summary?.bestNextStep).toBe('Save for later');
     expect(JSON.stringify(summary)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(summary)).not.toContain('203-432-1234');
     expect(JSON.stringify(summary)).not.toContain('mailto:');
+  });
+
+  it('keeps substantive evidence sentences while dropping redaction-marker directives (#1076)', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'CONTACT_INSTRUCTIONS_EXIST',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: {
+            excerpt: 'We welcome undergraduate researchers year-round. Email us at intake@example.edu.',
+            url: 'https://lab.example.test/join',
+          },
+        },
+        {
+          researchEntityId: entityId,
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'MEDIUM',
+          source: {
+            excerpt: 'Contact: <intake@example.edu>',
+            url: 'https://lab.example.test/contact',
+          },
+        },
+      ]),
+    );
+
+    const summaries = await listAccessSummariesForResearchEntities([entityId]);
+    const summary = summaries.get(entityId.toString());
+
+    expect(summary?.evidence).toEqual([
+      {
+        signalType: 'CONTACT_INSTRUCTIONS_EXIST',
+        confidence: 'HIGH',
+        excerpt: 'We welcome undergraduate researchers year-round.',
+        sourceUrl: 'https://lab.example.test/join',
+      },
+      {
+        signalType: 'REACH_OUT_PLAUSIBLE',
+        confidence: 'MEDIUM',
+        excerpt: undefined,
+        sourceUrl: 'https://lab.example.test/contact',
+      },
+    ]);
+    expect(JSON.stringify(summary)).not.toContain('redacted');
+    expect(JSON.stringify(summary)).not.toContain('intake@example.edu');
   });
 
   it('bounds public summary shaping without stringifying polluted record values', async () => {
