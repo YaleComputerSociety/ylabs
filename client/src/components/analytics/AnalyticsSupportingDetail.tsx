@@ -27,6 +27,7 @@ import {
   formatOpenness,
   formatOutcome,
   formatPercent,
+  formatSearchResultOutcome,
   formatSearcherName,
   formatUserType,
   formatVisibilityTier,
@@ -131,6 +132,12 @@ const AnalyticsSupportingDetail = ({
   const avgResults = searchQuality?.avgResults ?? searchQuality?.avgResultsPerSearch;
   const zeroResultQueries = searchQuality?.zeroResultQueries || [];
   const lowResultQueries = searchQuality?.lowResultQueries || [];
+  const rangeVisitors = data.visitors.lifetime.total;
+  const rangeLogins = data.visitors.loginFrequency.totalLogins;
+  const loginsPerVisitorSubtitle =
+    rangeVisitors > 0
+      ? `Total sign-ins; a visitor can log in many times (${formatNumber(rangeLogins / rangeVisitors, 1)} per visitor)`
+      : 'Total sign-ins; a visitor can log in many times';
   const searchQueryRows = searchQueries?.queries || [];
   const actionCards = actions?.cards || [];
   const actionItems = actions?.items || [];
@@ -322,7 +329,7 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title={`Login Events (${selectedRangeLabel})`}
             value={data.visitors.loginFrequency.totalLogins}
-            subtitle="Login count in range"
+            subtitle={loginsPerVisitorSubtitle}
           />
           {showSevenDayBreakdown && (
             <StatCard
@@ -442,7 +449,7 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title="Avg Events Per User"
             value={data.engagement.userActivity.avgEventsPerUser.toFixed(1)}
-            subtitle={`Per active user in ${selectedRangeLabel}`}
+            subtitle={`Tracked actions (searches, views, saves, clicks) per active user in ${selectedRangeLabel}`}
           />
         </div>
       </section>
@@ -606,7 +613,7 @@ const AnalyticsSupportingDetail = ({
                 </p>
               </div>
               <div>
-                <p className="text-gray-500">Zero-Result</p>
+                <p className="text-gray-500">Zero-Result rate</p>
                 <p className="text-xl font-semibold text-gray-900">
                   {formatPercent(searchQuality?.zeroResultRate)}
                 </p>
@@ -635,19 +642,24 @@ const AnalyticsSupportingDetail = ({
                 Zero or Low Result Queries
               </h4>
               <div className="space-y-2">
-                {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
-                  <div
-                    key={`${query.query}-${index}`}
-                    className="flex items-center justify-between gap-3 border-b border-[var(--yr-line)] pb-2 last:border-0 last:pb-0"
-                  >
-                    <span className="min-w-0 truncate text-gray-700">
-                      {query.query || '(empty search)'}
-                    </span>
-                    <span className="shrink-0 text-xs font-medium text-blue-600">
-                      {query.zeroResults ?? query.count} hits
-                    </span>
-                  </div>
-                ))}
+                {[
+                  ...zeroResultQueries.map((query) => ({ query, isZeroResult: true })),
+                  ...lowResultQueries.map((query) => ({ query, isZeroResult: false })),
+                ]
+                  .slice(0, 5)
+                  .map(({ query, isZeroResult }, index) => (
+                    <div
+                      key={`${query.query}-${index}`}
+                      className="flex items-center justify-between gap-3 border-b border-[var(--yr-line)] pb-2 last:border-0 last:pb-0"
+                    >
+                      <span className="min-w-0 truncate text-gray-700">
+                        {query.query || '(empty search)'}
+                      </span>
+                      <span className="shrink-0 text-xs font-medium text-blue-600">
+                        {formatSearchResultOutcome(query, isZeroResult)}
+                      </span>
+                    </div>
+                  ))}
                 {zeroResultQueries.length === 0 && lowResultQueries.length === 0 && (
                   <p className="text-gray-500">No search quality flags returned.</p>
                 )}

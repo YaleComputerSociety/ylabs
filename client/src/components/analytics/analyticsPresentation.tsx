@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import type { AnalyticsSearchQualityQuery } from '../../reducers/analyticsReducer';
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin_grant.grant': 'Admin granted',
@@ -118,6 +119,23 @@ export const formatPercent = (value?: number | null): string => {
   }
 
   return `${formatNumber(value > 1 ? value : value * 100, 1)}%`;
+};
+
+export const formatSearchResultOutcome = (
+  query: AnalyticsSearchQualityQuery,
+  isZeroResult: boolean,
+): string => {
+  const searches =
+    query.totalSearches ?? query.count ?? query.zeroResultSearches ?? query.zeroResults ?? 0;
+  const searchLabel = `${formatNumber(searches)} search${searches === 1 ? '' : 'es'}`;
+  if (isZeroResult) {
+    return `${searchLabel}, 0 results`;
+  }
+  const avgResults = query.avgResults ?? query.avgResultsPerSearch ?? query.avgResultCount;
+  if (typeof avgResults === 'number' && !Number.isNaN(avgResults)) {
+    return `${searchLabel}, ~${formatNumber(avgResults, avgResults % 1 === 0 ? 0 : 1)} results`;
+  }
+  return `${searchLabel}, few results`;
 };
 
 export const formatCompactMetric = (value?: number | string | null): string => {

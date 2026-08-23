@@ -381,7 +381,9 @@ describe('Analytics page', () => {
     expect(tile).toBeTruthy();
     expect(tile.querySelector('.text-3xl')?.textContent).toBe('6');
     expect(tile.className).toContain('bg-red-50');
-    expect(tile.textContent).toContain('5 zero-result queries, 1 low-result query to review.');
+    expect(tile.textContent).toContain(
+      '6 items to review across 5 zero-result queries, 1 low-result query.',
+    );
     expect(tile.textContent).not.toContain('No urgent admin action returned');
   });
 

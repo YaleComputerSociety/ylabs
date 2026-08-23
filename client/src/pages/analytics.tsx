@@ -524,7 +524,7 @@ const Analytics = () => {
   const attentionContext =
     attentionCount === 0
       ? 'No urgent admin action returned'
-      : `${attentionDrivers.join(', ')} to review${
+      : `${formatNumber(attentionCount)} item${attentionCount === 1 ? '' : 's'} to review across ${attentionDrivers.join(', ')}${
           topActionTitle ? `, starting with "${topActionTitle}"` : ''
         }.`;
 
