@@ -109,6 +109,7 @@
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
     "research-homes:backfill-school-host-mismatch": "tsx src/scripts/backfillSchoolHostMismatch.ts",
+    "research-homes:backfill-school-from-profile-host": "tsx src/scripts/backfillSchoolFromProfileHost.ts",
     "research-homes:backfill-center-directors": "tsx src/scripts/backfillCenterDirectors.ts",
     "research-homes:backfill-source-link-health": "tsx src/scripts/backfillSourceLinkHealth.ts",
     "programs:backfill-source-link-health": "tsx src/scripts/backfillFellowshipSourceLinkHealth.ts",
