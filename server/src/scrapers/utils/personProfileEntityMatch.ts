@@ -7,6 +7,9 @@ export interface ResearchEntityIdentity {
   school?: string;
   schools?: string[];
   departments?: string[];
+  sourceUrls?: string[];
+  fullDescription?: string;
+  recentGrants?: Array<{ title?: string; abstract?: string } | null | undefined>;
 }
 
 const ROLE_WORDS = new Set([
@@ -234,6 +237,70 @@ export function sourceUrlSchoolContradictsEntity(
   return !entitySchools.has(urlSchool);
 }
 
+function normalizeUrlForCompare(value: string): string {
+  return value.trim().toLowerCase().replace(/\/+$/, '');
+}
+
+function distinctTokensPresent(tokens: string[], present: Set<string>): number {
+  let count = 0;
+  for (const token of new Set(tokens)) if (present.has(token)) count += 1;
+  return count;
+}
+
+/**
+ * The person-name tokens the entity's own descriptive prose carries, drawn from its
+ * `fullDescription` and each `recentGrants` title/abstract. Used only to corroborate
+ * a page whose name did not match the entity's name/slug, so credential tokens are
+ * dropped and short tokens are excluded to keep the corroboration name-shaped.
+ */
+function entityProseNameTokens(entity: ResearchEntityIdentity): Set<string> {
+  const parts = [textValue(entity.fullDescription)];
+  if (Array.isArray(entity.recentGrants)) {
+    for (const grant of entity.recentGrants) {
+      parts.push(textValue(grant?.title), textValue(grant?.abstract));
+    }
+  }
+  const tokens = new Set<string>();
+  for (const token of parts.join(' ').toLowerCase().split(/[^a-z]+/i)) {
+    if (token.length >= 2 && !CREDENTIAL_TOKENS.has(token)) tokens.add(token);
+  }
+  return tokens;
+}
+
+/**
+ * Whether an entity's own recorded evidence independently names the person a
+ * source URL points to, even though that name never appears in the entity's name
+ * or slug. A topic-named grant shell ("Yale Reproductive Ecology Laboratory",
+ * slug `nsf-pi-<objectId>`) never carries its PI's personal name in its name/slug,
+ * so `personProfileSourceMatchesEntity`'s token check can never match the shell's
+ * own legitimate PI profile page; this recovers that case (issue #1110). Two
+ * independent signals corroborate, each requiring the full person (>= 2 shared name
+ * tokens, i.e. first and last) so a single mis-picked wrong-professor page (#688)
+ * can never satisfy them: the entity's own prose (`fullDescription`/`recentGrants`)
+ * names the same person, or the same person appears on two or more of the entity's
+ * other recorded `sourceUrls`.
+ */
+function entityCorroboratesPersonProfile(
+  urlTokens: string[],
+  value: unknown,
+  entity: ResearchEntityIdentity,
+): boolean {
+  if (distinctTokensPresent(urlTokens, entityProseNameTokens(entity)) >= 2) return true;
+  const sourceUrls = Array.isArray(entity.sourceUrls)
+    ? entity.sourceUrls.map(textValue).filter(Boolean)
+    : [];
+  const candidateUrl = normalizeUrlForCompare(textValue(value));
+  let corroboratingPages = 0;
+  for (const sourceUrl of sourceUrls) {
+    if (normalizeUrlForCompare(sourceUrl) === candidateUrl) continue;
+    const otherTokens = personProfileNameTokensFromUrl(sourceUrl);
+    if (otherTokens && distinctTokensPresent(urlTokens, new Set(otherTokens)) >= 2) {
+      corroboratingPages += 1;
+    }
+  }
+  return corroboratingPages >= 2;
+}
+
 /**
  * Whether a description-source URL may be attributed to an entity. A URL that is
  * not a name-shaped Yale person page is always allowed (it carries no checkable
@@ -241,7 +308,9 @@ export function sourceUrlSchoolContradictsEntity(
  * name tokens overlaps the entity identity; a page whose person shares no token
  * with the entity (a different professor entirely, e.g. `keith-baker` under
  * `dept-physics-charles-brown`) is rejected so its content never keys onto the
- * wrong entity. Ambiguous partial matches (a shared first name or surname) are
+ * wrong entity, unless the entity's own recorded evidence independently names that
+ * same person (a topic-named grant shell whose PI never appears in its name/slug,
+ * issue #1110). Ambiguous partial matches (a shared first name or surname) are
  * allowed and left to identity/dedupe resolution, so the guard never fabricates a
  * conflation from a name it cannot rule out. A URL whose Yale school subdomain
  * contradicts the entity's own recorded school is always rejected first, so an
@@ -257,7 +326,12 @@ export function personProfileSourceMatchesEntity(
   if (!urlTokens) return true;
   const identityTokens = researchEntityIdentityTokens(entity);
   if (identityTokens.length === 0) return true;
-  return urlTokens.some((urlToken) =>
-    identityTokens.some((identityToken) => tokensOverlap(urlToken, identityToken)),
-  );
+  if (
+    urlTokens.some((urlToken) =>
+      identityTokens.some((identityToken) => tokensOverlap(urlToken, identityToken)),
+    )
+  ) {
+    return true;
+  }
+  return entityCorroboratesPersonProfile(urlTokens, value, entity);
 }
