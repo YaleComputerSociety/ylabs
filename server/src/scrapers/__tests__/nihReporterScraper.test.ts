@@ -127,7 +127,7 @@ describe('canonicalPiName', () => {
   });
 
   it('leaves already-correctly-cased hyphenated/apostrophized names unchanged', () => {
-    expect(canonicalPiName('Ohno-Machado, Riley')).toBe("Riley Ohno-Machado");
+    expect(canonicalPiName('Ohno-Machado, Riley')).toBe('Riley Ohno-Machado');
     expect(canonicalPiName("D'Souza, Riley")).toBe("Riley D'Souza");
   });
 
