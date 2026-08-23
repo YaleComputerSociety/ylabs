@@ -158,7 +158,7 @@ const AnalyticsSupportingDetail = ({
       { header: 'Type', value: (row) => formatUserType(row.userType) },
       { header: 'Total Events', value: (row) => row.totalEvents },
       { header: 'Logins', value: (row) => row.logins },
-      { header: 'Searches', value: (row) => row.searches },
+      { header: 'Site Searches', value: (row) => row.searches },
       { header: 'Views', value: (row) => row.views },
       { header: 'Outreach Clicks', value: (row) => row.outreachClicks },
       {
@@ -171,7 +171,7 @@ const AnalyticsSupportingDetail = ({
   const exportSearchQueriesCsv = () => {
     downloadRowsAsCsv(`search-queries-${csvTimestampSuffix()}.csv`, searchQueryRows, [
       { header: 'Query', value: (row) => row.query || '(empty search)' },
-      { header: 'Searches', value: (row) => row.totalSearches },
+      { header: 'Site Searches', value: (row) => row.totalSearches },
       { header: 'Unique Searchers', value: (row) => row.uniqueSearchers },
       { header: 'Zero Results', value: (row) => row.zeroResultSearches || 0 },
       {
@@ -397,22 +397,22 @@ const AnalyticsSupportingDetail = ({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <StatCard
-            title={`Searches (${selectedRangeLabel})`}
+            title={`Site searches (${selectedRangeLabel})`}
             value={data.engagement.search.totalSearches}
-            subtitle="Search queries in range"
+            subtitle="Legacy site-wide search, distinct from Research searches"
           />
           {showSevenDayBreakdown && (
             <StatCard
-              title="Searches (Last 7 Days)"
+              title="Site searches (Last 7 Days)"
               value={data.engagement.search.searchesLast7Days}
-              subtitle="Recent searches"
+              subtitle="Recent site-wide searches"
             />
           )}
           {showTodayBreakdown && (
             <StatCard
-              title="Searches Today"
+              title="Site searches Today"
               value={data.engagement.search.searchesToday}
-              subtitle="Searches today"
+              subtitle="Site-wide searches today"
             />
           )}
         </div>
@@ -592,11 +592,13 @@ const AnalyticsSupportingDetail = ({
           <div className="bg-[var(--yr-panel)] rounded-lg shadow-md border border-[var(--yr-line)] overflow-hidden">
             <div className="border-b border-[var(--yr-line)] p-4">
               <h3 className="text-lg font-semibold text-gray-800">Search Quality</h3>
-              <p className="text-sm text-gray-500">Results coverage and failed intent signals</p>
+              <p className="text-sm text-gray-500">
+                Legacy site-wide search - results coverage and failed intent signals
+              </p>
             </div>
             <div className="grid grid-cols-3 gap-3 p-4 text-sm">
               <div>
-                <p className="text-gray-500">Searches</p>
+                <p className="text-gray-500">Site searches</p>
                 <p className="text-xl font-semibold text-gray-900">{formatNumber(searchTotal)}</p>
               </div>
               <div>
@@ -956,7 +958,7 @@ const AnalyticsSupportingDetail = ({
                 <option value="lastActive">Last Active</option>
                 <option value="totalEvents">Total Events</option>
                 <option value="logins">Logins</option>
-                <option value="searches">Searches</option>
+                <option value="searches">Site searches</option>
                 <option value="views">Views</option>
               </select>
             </label>
@@ -1056,7 +1058,7 @@ const AnalyticsSupportingDetail = ({
                           onClick={() => updateUserActivitySort('searches')}
                           className="inline-flex min-h-[44px] items-center rounded-md px-2 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
                         >
-                          Searches{sortLabel('searches')}
+                          Site searches{sortLabel('searches')}
                         </button>
                       </th>
                       <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
@@ -1184,7 +1186,7 @@ const AnalyticsSupportingDetail = ({
                       </p>
                     </div>
                     <div className="rounded-md bg-[var(--yr-panel)] p-3">
-                      <p className="text-gray-500">Searches</p>
+                      <p className="text-gray-500">Site searches</p>
                       <p className="text-lg font-semibold text-gray-900">
                         {selectedUser.user.searches}
                       </p>

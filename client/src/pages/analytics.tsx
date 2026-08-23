@@ -580,7 +580,7 @@ const Analytics = () => {
             <DashboardMetric
               title="Search success"
               value={searchSuccessRate === null ? '-' : formatPercent(searchSuccessRate)}
-              context={`${formatNumber(engagedSearches)} of ${formatNumber(searchTotal)} searches led to a view or save within ${formatNumber(searchQuality?.attributionWindowMinutes || 30)} minutes in ${selectedRangeLabel}.`}
+              context={`${formatNumber(engagedSearches)} of ${formatNumber(searchTotal)} site searches (legacy) led to a view or save within ${formatNumber(searchQuality?.attributionWindowMinutes || 30)} minutes in ${selectedRangeLabel}.`}
               tone={searchSuccessRate !== null && searchSuccessRate < 0.75 ? 'amber' : 'green'}
             />
             <DashboardMetric
