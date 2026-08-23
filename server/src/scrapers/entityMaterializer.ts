@@ -80,6 +80,7 @@ interface MaterializeOptions {
   dryRun?: boolean;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+  writeOnlyFields?: string[];
 }
 
 function defaultMaterializerCardSynthesizer(
@@ -94,6 +95,33 @@ function defaultMaterializerCardSynthesizer(
       callLLM: (llmInput) =>
         defaultCardSynthesisLLM({ ...llmInput, apiKey, model: CARD_SYNTHESIS_MODEL }),
     });
+}
+
+function restrictMaterializerSetToFields(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  confidenceByField: Record<string, number>,
+  fields: string[],
+): number {
+  const valueFields = fields.filter((field) => field in set && field !== 'confidenceByField');
+  const keep = new Set<string>();
+  for (const field of valueFields) {
+    keep.add(field);
+    keep.add(`fieldProvenance.${field}`);
+  }
+  for (const key of Object.keys(set)) {
+    if (!keep.has(key)) delete set[key];
+  }
+  for (const field of valueFields) {
+    if (typeof confidenceByField[field] === 'number') {
+      set[`confidenceByField.${field}`] = confidenceByField[field];
+    }
+  }
+  for (const key of Object.keys(unset)) {
+    if (!fields.includes(key)) delete unset[key];
+  }
+  if (valueFields.length > 0) set.lastObservedAt = new Date();
+  return valueFields.length + Object.keys(unset).length;
 }
 
 export interface MaterializedShortDescriptionInput {
@@ -2274,6 +2302,15 @@ export async function materializeEntity(
   set.confidenceByField = confidenceByField;
   set.lastObservedAt = new Date();
 
+  if (options.writeOnlyFields && options.writeOnlyFields.length > 0) {
+    fieldsWritten = restrictMaterializerSetToFields(
+      set,
+      unset,
+      confidenceByField,
+      options.writeOnlyFields,
+    );
+  }
+
   if (options.dryRun) {
     return {
       entityType,
@@ -2290,6 +2327,18 @@ export async function materializeEntity(
 
   let created = false;
   if (entityDoc) {
+    if (Object.keys(set).length === 0 && Object.keys(unset).length === 0) {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts,
+        created: false,
+        resolved,
+        skipped: 'no-scoped-fields',
+      };
+    }
     const update: Record<string, unknown> = { $set: set };
     if (Object.keys(unset).length > 0) update.$unset = unset;
     if (isResearchEntityObservationType(entityType)) {
