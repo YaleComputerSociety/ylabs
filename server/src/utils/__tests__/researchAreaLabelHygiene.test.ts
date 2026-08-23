@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isJunkResearchAreaLabel,
   isNarrativeProseResearchAreaLabel,
   sanitizeResearchAreaFacetDistribution,
   sanitizeResearchAreaLabel,
@@ -84,6 +85,21 @@ describe('sanitizeResearchAreaLabel', () => {
       'Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation',
     );
   });
+
+  it('fails closed on extraction-artifact junk (issue #980)', () => {
+    expect(sanitizeResearchAreaLabel('···')).toBe('');
+    expect(sanitizeResearchAreaLabel('…')).toBe('');
+    expect(sanitizeResearchAreaLabel('Wagner 1989b)')).toBe('');
+    expect(sanitizeResearchAreaLabel('has occupied morphologists')).toBe('');
+    expect(sanitizeResearchAreaLabel('three and four')).toBe('');
+    expect(sanitizeResearchAreaLabel('an epicenter for amphibian deformities')).toBe('');
+  });
+
+  it('keeps real topics, including lowercase scientific-Latin phrases', () => {
+    expect(sanitizeResearchAreaLabel('Machine Learning')).toBe('Machine Learning');
+    expect(sanitizeResearchAreaLabel('in vivo imaging')).toBe('in vivo imaging');
+    expect(sanitizeResearchAreaLabel('de novo protein design')).toBe('de novo protein design');
+  });
 });
 
 describe('isNarrativeProseResearchAreaLabel', () => {
@@ -99,6 +115,21 @@ describe('isNarrativeProseResearchAreaLabel', () => {
     expect(isNarrativeProseResearchAreaLabel('Condensed Matter Physics')).toBe(false);
     expect(isNarrativeProseResearchAreaLabel('Artificial Intelligence (AI)')).toBe(false);
     expect(isNarrativeProseResearchAreaLabel('Studies on Chitinases and Chitosanases')).toBe(false);
+  });
+});
+
+describe('isJunkResearchAreaLabel', () => {
+  it('flags symbol-only, citation-tail, and lowercase-fragment values', () => {
+    expect(isJunkResearchAreaLabel('···')).toBe(true);
+    expect(isJunkResearchAreaLabel('Wagner 1989b)')).toBe(true);
+    expect(isJunkResearchAreaLabel('the mechanisms underlying cosmogony')).toBe(true);
+  });
+
+  it('does not flag legitimate topics', () => {
+    expect(isJunkResearchAreaLabel('Immunology')).toBe(false);
+    expect(isJunkResearchAreaLabel('Human-Computer Interaction')).toBe(false);
+    expect(isJunkResearchAreaLabel('in vitro fertilization')).toBe(false);
+    expect(isJunkResearchAreaLabel('COVID-19')).toBe(false);
   });
 });
 

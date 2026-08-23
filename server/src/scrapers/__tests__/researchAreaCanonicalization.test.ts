@@ -333,6 +333,12 @@ describe('isResearchAreaLabelLeakage', () => {
       expect(isResearchAreaLabelLeakage(area)).toBe(false);
     }
   });
+
+  it('rejects symbol-only, citation-tail, and short lowercase-fragment junk (#980)', () => {
+    for (const junk of ['···', 'Wagner 1989b)', 'has occupied morphologists', 'three and four']) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
 });
 
 describe('canonicalizeResearchAreas leakage stop-list', () => {

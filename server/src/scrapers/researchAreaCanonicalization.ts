@@ -1,5 +1,8 @@
 import { TaxonomyTerm } from '../models/taxonomyTerm';
-import { stripProfileRoleLabelSuffix } from '../utils/researchAreaLabelHygiene';
+import {
+  isJunkResearchAreaLabel,
+  stripProfileRoleLabelSuffix,
+} from '../utils/researchAreaLabelHygiene';
 import { slugify } from './utils/scraperHelpers';
 
 export interface ResearchAreaResolverRow {
@@ -153,6 +156,7 @@ function isNonTopicResearchAreaChip(raw: unknown): boolean {
   if (typeof raw !== 'string') return false;
   const value = raw.normalize('NFKC').replace(/\s+/g, ' ').trim();
   if (!value) return false;
+  if (isJunkResearchAreaLabel(value)) return true;
   if (RESEARCH_AREA_LIST_MARKER_RE.test(value)) return true;
   if (RESEARCH_AREA_URL_RE.test(value)) return true;
   if (RESEARCH_AREA_PROTOCOL_ID_RE.test(value)) return true;
