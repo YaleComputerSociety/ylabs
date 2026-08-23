@@ -118,6 +118,33 @@ describe('descriptionHygiene', () => {
     expect(isRosterShapedText(blurb)).toBe(false);
     expect(sanitizeCatalogDescription(blurb)).toBe(blurb);
   });
+
+  it('strips leading YSM "INFORMATION FOR" nav chrome but keeps the real prose (#808)', () => {
+    const leaked =
+      'INFORMATION FOR The Chun Lab studies visual attention and the neural basis of cognition.';
+    const cleaned = stripCatalogChrome(leaked);
+    expect(cleaned).not.toMatch(/INFORMATION FOR/);
+    expect(cleaned).toBe('The Chun Lab studies visual attention and the neural basis of cognition.');
+  });
+
+  it('strips a "Copy Link" share label wherever it appears (#808)', () => {
+    const leaked =
+      'The Glahn Lab investigates the genetics of brain structure. Copy Link Copy Link';
+    const cleaned = stripCatalogChrome(leaked);
+    expect(cleaned).not.toMatch(/Copy Link/);
+    expect(cleaned).toBe('The Glahn Lab investigates the genetics of brain structure.');
+  });
+
+  it('reduces a chrome-only shortDescription to an empty string (#808)', () => {
+    expect(stripCatalogChrome('INFORMATION FOR Copy Link Copy Link')).toBe('');
+  });
+
+  it('leaves genuine lower-case "information for" / "copy link" prose untouched (#808)', () => {
+    const prose =
+      'The center provides information for students and faculty, and each project page has a copy link references button.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
+  });
 });
 
 const CURATION_RATIONALE_DESCRIPTIONS = [

@@ -3,6 +3,7 @@ import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
+  toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
 
 describe('researchEntityDto', () => {
@@ -202,6 +203,44 @@ describe('researchEntityDto', () => {
     expect(dto.shortDescription).toBe('');
     expect(dto.fullDescription).toBe(
       'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+    );
+  });
+
+  it('strips leaked YSM page chrome from the served shortDescription (#808)', () => {
+    const detail = toPublicResearchEntityDto({
+      id: 'ysm-takyar',
+      slug: 'ysm-takyar',
+      name: 'Takyar Lab',
+      shortDescription: 'INFORMATION FOR The Takyar Lab studies liver fibrosis. Copy Link',
+    });
+    expect(detail.shortDescription).toBe('The Takyar Lab studies liver fibrosis.');
+  });
+
+  it('reduces a chrome-only shortDescription to an empty string on detail and card (#808)', () => {
+    const detail = toPublicResearchEntityDto({
+      id: 'ysm-chun-lab',
+      slug: 'ysm-chun-lab',
+      name: 'Chun Lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+    });
+    expect(detail.shortDescription).toBe('');
+
+    const summary = toPublicResearchEntitySummaryDto({
+      slug: 'ysm-koff',
+      name: 'Koff Lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+    });
+    expect(summary.blurb).toBeUndefined();
+  });
+
+  it('keeps genuine lower-case prose in the shortDescription card blurb (#808)', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      slug: 'center-provides-info',
+      name: 'Information Center',
+      shortDescription: 'The center provides information for students exploring research paths.',
+    });
+    expect(summary.blurb).toBe(
+      'The center provides information for students exploring research paths.',
     );
   });
 
