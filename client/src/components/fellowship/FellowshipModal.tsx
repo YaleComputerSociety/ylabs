@@ -13,6 +13,7 @@ import {
   getStructuredEligibilityDetails,
 } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
+import { labelizeResearchDetailValue } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
@@ -251,7 +252,12 @@ const FellowshipModal = ({
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';
-  const applicationHref = safeHttpUrl(fellowship.applicationLink);
+  const sourceHref = safeHttpUrl(fellowship.sourceUrl);
+  const applicationHref = safeHttpUrl(fellowship.applicationLink) || sourceHref;
+  const sourceLabel =
+    typeof fellowship.sourceName === 'string' && fellowship.sourceName.trim()
+      ? labelizeResearchDetailValue(fellowship.sourceName)
+      : '';
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
   const safeLinks = (fellowship.links || [])
     .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
@@ -907,6 +913,24 @@ const FellowshipModal = ({
                       </svg>
                     </a>
                   </div>
+                )}
+
+                {(sourceLabel || sourceHref) && (
+                  <p className="mt-4 border-t border-[var(--yr-line)] pt-3 text-xs text-gray-500">
+                    Source:{' '}
+                    {sourceHref ? (
+                      <a
+                        href={sourceHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {sourceLabel || 'Official source'}
+                      </a>
+                    ) : (
+                      <span className="text-gray-600">{sourceLabel}</span>
+                    )}
+                  </p>
                 )}
               </div>
             </div>

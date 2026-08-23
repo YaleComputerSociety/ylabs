@@ -257,4 +257,18 @@ describe('FellowshipModal', () => {
     const regionDetailLabel = screen.getByText('Regions:');
     expect(regionDetailLabel.parentElement).toHaveTextContent('Regions: Africa');
   });
+
+  it('falls back to the specific source page and shows legible provenance (#692)', () => {
+    const specificSource =
+      'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
+    renderModal({
+      applicationLink: '',
+      sourceName: 'yale-college-fellowships-office',
+      sourceUrl: specificSource,
+    });
+
+    expect(screen.getByRole('link', { name: /Apply Now/ })).toHaveAttribute('href', specificSource);
+    const provenance = screen.getByRole('link', { name: 'Yale College Fellowships Office' });
+    expect(provenance).toHaveAttribute('href', specificSource);
+  });
 });

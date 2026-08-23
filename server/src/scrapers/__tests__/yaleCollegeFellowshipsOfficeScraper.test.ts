@@ -1215,3 +1215,37 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ]);
   });
 });
+
+describe('YaleCollegeFellowshipsOfficeScraper bare-root link hygiene (#692)', () => {
+  const engineeringDetailUrl =
+    'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
+
+  it('fails a bare-root application link closed and keeps the specific page link', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Research Internship Program</h1>
+            <p>Applications are due March 1, 2027.</p>
+            <a href="https://engineering.yale.edu/">Apply</a>
+            <a href="${engineeringDetailUrl}">Research Internship Program details</a>
+          </article>
+        </main>
+      `,
+      engineeringDetailUrl,
+      new Date('2026-08-22T00:00:00.000Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const candidate = candidates[0];
+    expect(candidate.applicationLink).toBeUndefined();
+    expect(candidate.links.map((link) => link.url)).not.toContain('https://engineering.yale.edu/');
+    expect(candidate.links.map((link) => link.url)).toContain(engineeringDetailUrl);
+
+    const observations = candidateToObservations(candidate);
+    expect(observations.find((obs) => obs.field === 'applicationLink')).toBeUndefined();
+    expect(observations.find((obs) => obs.field === 'links')?.value).toEqual(
+      candidate.links,
+    );
+  });
+});
