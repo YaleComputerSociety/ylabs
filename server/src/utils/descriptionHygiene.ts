@@ -82,17 +82,37 @@ export function stripCatalogChrome(text: string): string {
   return normalizeHygieneWhitespace(out);
 }
 
+const researchAreaHeadingLeakPattern =
+  /(?:^\s*|[,;]\s*(?:and\s+)?|\b(?:Studies|include|including)\s+)research\s+(?:areas?|interests?|fields?|topics?)\s*:(?:\s|\.|$)/i;
+
+/**
+ * A synthesized topic blurb ("Studies X, Y, and research areas:.") that leaked a
+ * bare section-heading token ("research areas:", "research interests:") into its
+ * joined area list. The trailing colon on a heading word used as a list item is
+ * the tell - clean topical tags never carry it - so this stays clear of genuine
+ * summaries. Fails closed on the leak so the corrupted card blurb is dropped
+ * rather than shown (#816).
+ */
+export function isResearchAreaTemplateLeakText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(String(text || ''));
+  if (!normalized) return false;
+  return researchAreaHeadingLeakPattern.test(normalized);
+}
+
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
  * research summary phrased as a question is not wrongly blanked, while a
- * chrome-only blurb collapses to empty (#808).
+ * chrome-only blurb collapses to empty (#808). Also fails closed on a leaked
+ * research-areas heading fragment in a synthesized topic blurb (#816).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  return stripTrailingContactAddress(
+  const cleaned = stripTrailingContactAddress(
     stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
   );
+  if (isResearchAreaTemplateLeakText(cleaned)) return '';
+  return cleaned;
 }
 
 function countMatches(text: string, pattern: RegExp): number {
