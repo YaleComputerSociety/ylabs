@@ -136,9 +136,16 @@ const nameTokensFrom = (value: unknown): string[] =>
     .split(/[^a-z]+/)
     .filter((token) => token.length >= 2);
 
+const orderedNameTokensFrom = (value: unknown): string[] =>
+  String(value ?? '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean);
+
 interface LeadDirectoryIdentity {
   netid: string;
   nameTokens: Set<string>;
+  nameTokenList: string[];
   profileSlugs: Set<string>;
 }
 
@@ -164,11 +171,33 @@ const isGroupLikeProfileSlug = (slug: string): boolean =>
     .split(/[^a-z]+/)
     .some((token) => GROUP_LIKE_SLUG_TOKENS.has(token));
 
+const WEB_PAGE_FILE_EXTENSIONS = new Set([
+  'php',
+  'htm',
+  'html',
+  'asp',
+  'aspx',
+  'cfm',
+  'jsp',
+  'jspx',
+  'shtml',
+  'do',
+]);
+
+// A profile served as a static page keeps its file extension in the slug
+// (e.g. `VSchultz.htm`, `dfischer.php`), which would otherwise defeat an
+// exact netid/name-token match against a lead. Strip only recognized page
+// extensions so a real hyphen-then-suffix slug is left intact.
+const stripWebPageFileExtension = (slug: string): string => {
+  const match = slug.match(/^(.+)\.([a-z0-9]{2,5})$/i);
+  return match && WEB_PAGE_FILE_EXTENSIONS.has(match[2].toLowerCase()) ? match[1] : slug;
+};
+
 const personProfileSlugFromDestination = (destination: string): string => {
   const segments = destination.split('/').filter(Boolean);
   for (let index = segments.length - 2; index >= 1; index -= 1) {
     if (PERSON_PROFILE_PATH_SEGMENTS.includes(segments[index]) && segments[index + 1]) {
-      const slug = segments[index + 1];
+      const slug = stripWebPageFileExtension(segments[index + 1]);
       return isGroupLikeProfileSlug(slug) ? '' : slug;
     }
   }
@@ -205,6 +234,7 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
   return {
     netid,
     nameTokens: new Set(nameTokensFrom(nameSource)),
+    nameTokenList: orderedNameTokensFrom(nameSource),
     profileSlugs: new Set(leadOfficialProfileSlugs(lead)),
   };
 };
@@ -244,7 +274,41 @@ const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => 
   return shared;
 };
 
-const profileSlugCorroboratesLead = (slug: string, identity: LeadDirectoryIdentity): boolean => {
+const MIN_ABBREVIATED_GIVEN_NAME_LENGTH = 2;
+
+// An abbreviated given name is the SAME name shortened (Doug/Douglas, La/Laurie),
+// not a different one: the shorter form must be a genuine prefix of the longer.
+// This never clears a foreign same-surname graft, which spells out a distinct
+// given name that is not a prefix of the lead's (Mary vs John).
+const givenNamesAbbreviationMatch = (slugGiven: string, leadGiven: string): boolean => {
+  if (!slugGiven || !leadGiven) return false;
+  if (slugGiven === leadGiven) return true;
+  const [shorter, longer] =
+    slugGiven.length <= leadGiven.length ? [slugGiven, leadGiven] : [leadGiven, slugGiven];
+  return shorter.length >= MIN_ABBREVIATED_GIVEN_NAME_LENGTH && longer.startsWith(shorter);
+};
+
+// A first-initial + surname slug (`dfischer`, `e-gordon`) names only an initial,
+// never a competing given name, so it corroborates when both the lead's given
+// initial and full surname line up.
+const firstInitialSurnameMatch = (
+  normalizedSlug: string,
+  nameTokenList: string[],
+): boolean => {
+  if (nameTokenList.length < 2) return false;
+  const given = nameTokenList[0];
+  const surname = nameTokenList[nameTokenList.length - 1];
+  if (!given || !surname) return false;
+  return normalizedSlug === `${given[0]}${surname}`;
+};
+
+const MIN_SURNAME_ONLY_SLUG_LENGTH = 3;
+
+const profileSlugCorroboratesLead = (
+  slug: string,
+  identity: LeadDirectoryIdentity,
+  { allowSurnameOnly = false }: { allowSurnameOnly?: boolean } = {},
+): boolean => {
   const normalizedSlug = normalizeIdentityToken(slug);
   if (identity.netid && normalizedSlug === identity.netid) return true;
   if (identity.profileSlugs.has(normalizedSlug)) return true;
@@ -255,8 +319,35 @@ const profileSlugCorroboratesLead = (slug: string, identity: LeadDirectoryIdenti
   // tokens (typically given plus family). This one symmetric rule replaces the
   // asymmetric behavior that held same-person slug variants when the lead had
   // its own profile URL, yet cleared surname-only collisions when it did not.
+  if (sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE) {
+    return true;
+  }
+
+  // A genuine self-profile whose slug is not a full first+last name (#1060):
+  // initials, abbreviations, nicknames, or a surname-only home for a single
+  // unique lead. Each rule stays fail-closed against a different given name
+  // sharing the surname, which is the only true graft (#468/#677).
+  const { nameTokenList } = identity;
+  if (nameTokenList.length === 0) return false;
+  const leadGiven = nameTokenList[0];
+  const leadSurname = nameTokenList[nameTokenList.length - 1];
+
+  if (firstInitialSurnameMatch(normalizedSlug, nameTokenList)) return true;
+
+  const slugTokens = orderedNameTokensFrom(slug);
+  if (slugTokens.length >= 2) {
+    const slugGiven = slugTokens[0];
+    const slugSurname = slugTokens[slugTokens.length - 1];
+    if (slugSurname === leadSurname && givenNamesAbbreviationMatch(slugGiven, leadGiven)) {
+      return true;
+    }
+  }
+
   return (
-    sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
+    allowSurnameOnly &&
+    slugTokens.length === 1 &&
+    slugTokens[0] === leadSurname &&
+    leadSurname.length >= MIN_SURNAME_ONLY_SLUG_LENGTH
   );
 };
 
@@ -347,8 +438,15 @@ export function detectProfileIdentityRisk({
     .filter(hasResolvableLeadIdentity);
   if (leadIdentities.length === 0) return false;
 
+  // A surname-only slug (e.g. `/profile/graedel`) may corroborate only when
+  // there is exactly one lead and one person-profile home, so no competing
+  // same-surname person could be the real subject of the profile.
+  const allowSurnameOnly = leadIdentities.length === 1 && entityPersonSlugs.length === 1;
+
   const corroborated = entityPersonSlugs.some((slug) =>
-    leadIdentities.some((identity) => profileSlugCorroboratesLead(slug, identity)),
+    leadIdentities.some((identity) =>
+      profileSlugCorroboratesLead(slug, identity, { allowSurnameOnly }),
+    ),
   );
   return !corroborated;
 }
