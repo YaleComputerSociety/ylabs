@@ -41,6 +41,47 @@ describe('researchEntityDto', () => {
     expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
   });
 
+  it('drops a synthesized shortDescription ungrounded in the fullDescription (#1212)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ungrounded-card',
+      slug: 'wyrtzen-jw678',
+      name: 'Jonathan Wyrtzen Research',
+      kind: 'lab',
+      shortDescription: 'Studies Texas from the first.',
+      fullDescription:
+        'Studies the making of the modern Moroccan state, colonial state formation across North Africa, and the social history of empire in the Maghreb.',
+    });
+    expect(dto.shortDescription).toBe('');
+  });
+
+  it('keeps a synthesized shortDescription grounded in the fullDescription (#1212)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-grounded-card',
+      slug: 'grounded-lab',
+      name: 'Grounded Lab',
+      kind: 'lab',
+      shortDescription: 'Studies colonial state formation across North Africa.',
+      fullDescription:
+        'Studies the making of the modern Moroccan state, colonial state formation across North Africa, and the social history of empire in the Maghreb.',
+    });
+    expect(dto.shortDescription).toBe('Studies colonial state formation across North Africa.');
+  });
+
+  it('drops an ungrounded synthesized card blurb and falls back to fullDescription (#1212)', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-ungrounded-blurb' },
+      slug: 'farina-mf393',
+      name: 'Michael Farina Research',
+      kind: 'lab',
+      shortDescription: 'Studies Italian Cooking.',
+      fullDescription:
+        'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature.',
+    });
+    expect(summary.blurb).toBe(
+      'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature.',
+    );
+  });
+
   it('collapses a doubled research-home suffix at read time so stale storage renders clean (#1106)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-doubled',
