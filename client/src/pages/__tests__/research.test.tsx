@@ -1922,6 +1922,75 @@ describe('Research page', () => {
     expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
   });
 
+  it('lets a corrected query win when resubmitted while the first search is in flight', async () => {
+    const firstResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      if (body.q === 'neuroscience') return firstResponse.promise;
+      if (body.q === 'climate change') {
+        return researchSearchResponse(
+          [
+            {
+              ...researchEntity,
+              _id: 'climate-change-1',
+              slug: 'climate-change-example',
+              name: 'Climate Change Example',
+              displayName: 'Climate Change Example',
+            },
+          ],
+          { estimatedTotalHits: 55 },
+        );
+      }
+      return researchSearchResponse();
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Try a starting point');
+    const input = screen.getByLabelText('Search Yale research');
+
+    fireEvent.change(input, { target: { value: 'neuroscience' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText(/Searching Yale Research for neuroscience/)).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: 'climate change' } });
+    const submitButton = screen.getByRole('button', { name: /^Search/ }) as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+    fireEvent.click(submitButton);
+
+    await screen.findByRole('heading', { name: 'Climate Change Example' });
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=climate+change');
+      expect((input as HTMLInputElement).value).toBe('climate change');
+      expect(screen.getByRole('status').textContent).toMatch(
+        /research homes? for 'climate change'/,
+      );
+    });
+    expect(screen.queryByText(/research homes? for 'neuroscience'/)).toBeNull();
+
+    firstResponse.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 201 }));
+    await act(async () => {
+      await firstResponse.promise;
+    });
+    expect(screen.getByRole('heading', { name: 'Climate Change Example' })).toBeTruthy();
+    expect(screen.getByTestId('location').textContent).toBe('/research?q=climate+change');
+  });
+
   it('resets when navigation returns to the pending search source location', async () => {
     const searchResponse = createDeferred<ReturnType<typeof researchSearchResponse>>();
     mockedAxios.post.mockImplementation((url: string, body: { q?: string }) => {

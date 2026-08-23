@@ -1215,7 +1215,10 @@ const Research = () => {
   const hasStudentFacetSelection = Boolean(
     selectedSchool || selectedDepartment || selectedResearchAreas.length || hostsUndergrads,
   );
-  const searchDisabled = searchLoading || (query.trim().length === 0 && !hasStudentFacetSelection);
+  const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
+  const searchDisabled =
+    (query.trim().length === 0 && !hasStudentFacetSelection) ||
+    (searchLoading && !hasSubmittableChange);
   const searchHelpText = query.trim()
     ? 'Press Enter or Search to see matching research homes.'
     : hasStudentFacetSelection
