@@ -908,11 +908,14 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://science.yalecollege.yale.edu/stars',
       applicationLink: 'https://apply.yale.edu/stars',
       undergraduateOnly: true,
+      description:
+        'A summer research program placing undergraduates in Yale STEM laboratories with faculty mentorship.',
     });
 
     expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('official_source');
     expect(result.reasons).toContain('application_route');
+    expect(result.reasons).toContain('has_description');
   });
 
   it('keeps official but ambiguous program records in review', () => {
@@ -975,6 +978,8 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://yalecollege.yale.edu/funding/senior-research-fellowship',
       applicationLink: 'https://apply.yale.edu/senior-research-fellowship',
       undergraduateOnly: true,
+      description:
+        'Funds seniors pursuing an independent research project during their final year.',
     });
     const travel = computeProgramStudentVisibility({
       title: 'Research Travel Grant',
@@ -983,6 +988,8 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://yalecollege.yale.edu/travel-research',
       applicationLink: 'https://apply.yale.edu/travel-research',
       undergraduateOnly: true,
+      summary:
+        'Covers travel costs for undergraduates conducting field or archival research abroad.',
     });
     const thesis = computeProgramStudentVisibility({
       title: 'Senior Thesis Funding',
@@ -991,6 +998,7 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://yalecollege.yale.edu/senior-thesis-funding',
       applicationLink: 'https://apply.yale.edu/senior-thesis',
       undergraduateOnly: true,
+      description: 'Supports materials and travel for senior thesis research in any discipline.',
     });
 
     expect(fellowship.tier).toBe('student_ready');
@@ -1009,6 +1017,7 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://science.yalecollege.yale.edu/stars',
       applicationLink: 'https://apply.yale.edu/stars',
       undergraduateOnly: true,
+      description: 'A mentored summer research cohort for undergraduates in the natural sciences.',
     });
     const mentorMatching = computeProgramStudentVisibility({
       title: 'Mentor Matching Fellowship',
@@ -1019,6 +1028,7 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://science.yalecollege.yale.edu/mentor-match',
       applicationLink: 'https://apply.yale.edu/mentor-match',
       undergraduateOnly: true,
+      description: 'Pairs undergraduates with faculty mentors for a funded research placement.',
     });
 
     expect(structured.tier).toBe('student_ready');
@@ -1035,6 +1045,7 @@ describe('computeProgramStudentVisibility', () => {
       sourceUrl: 'https://gsas.yale.edu/funding/dissertation-research-fellowship',
       applicationLink: 'https://apply.yale.edu/dissertation-research-fellowship',
       undergraduateOnly: false,
+      description: 'Supports doctoral candidates during a year of dedicated dissertation research.',
     });
 
     expect(result.tier).toBe('student_ready');
@@ -1067,6 +1078,66 @@ describe('computeProgramStudentVisibility', () => {
 
     expect(result.tier).toBe('suppressed');
     expect(result.reasons).toContain('not_undergraduate_relevant');
+  });
+
+  it('caps an otherwise student-ready program without any summary or description at limited_but_safe', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Research Internship Program',
+      studentFacingCategory: 'Structured summer program',
+      sourceUrl: 'https://seas.yale.edu/research-internship-program',
+      applicationLink: 'https://apply.yale.edu/research-internship-program',
+      undergraduateOnly: true,
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('missing_description');
+    expect(result.reasons).not.toContain('has_description');
+  });
+
+  it('caps an otherwise student-ready program with only a thin fragment description at limited_but_safe', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Summer Traveling Fellowship',
+      studentFacingCategory: 'Research travel funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      sourceUrl: 'https://yalecollege.yale.edu/summer-traveling-fellowship',
+      applicationLink: 'https://apply.yale.edu/summer-traveling-fellowship',
+      undergraduateOnly: true,
+      summary: 'Summer fellowship.',
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('thin_description');
+  });
+
+  it('promotes a program to student_ready from either a summary or a description', () => {
+    const fromSummary = computeProgramStudentVisibility({
+      title: 'Class of 1960 Summer Traveling Fellowship',
+      studentFacingCategory: 'Research travel funding',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      sourceUrl: 'https://yalecollege.yale.edu/class-of-1960-fellowship',
+      applicationLink: 'https://apply.yale.edu/class-of-1960-fellowship',
+      undergraduateOnly: true,
+      summary: 'Funds independent summer travel for research or cultural study abroad.',
+    });
+
+    expect(fromSummary.tier).toBe('student_ready');
+    expect(fromSummary.reasons).toContain('has_description');
+  });
+
+  it('fails closed on the description requirement even under a student-ready override', () => {
+    const result = computeProgramStudentVisibility({
+      title: 'Robert C. Bates Summer Fellowship',
+      studentFacingCategory: 'Senior research funding',
+      programKind: 'FELLOWSHIP_FUNDING',
+      sourceUrl: 'https://yalecollege.yale.edu/bates-fellowship',
+      applicationLink: 'https://apply.yale.edu/bates-fellowship',
+      undergraduateOnly: true,
+      studentVisibilityOverrideTier: 'student_ready',
+    });
+
+    expect(result.tier).toBe('limited_but_safe');
+    expect(result.computedTier).toBe('limited_but_safe');
+    expect(result.reasons).toContain('missing_description');
   });
 
   it('holds a lead-requiring lab with no attached PI for review even under a student-ready override', () => {

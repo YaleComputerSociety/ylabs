@@ -130,6 +130,7 @@ const evidenceReasons = new Set([
   'application_route',
   'concrete_next_step',
   'graduate_relevant',
+  'has_description',
   'official_source',
   'source_backed_description',
   'undergraduate_relevant',

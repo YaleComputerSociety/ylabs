@@ -247,6 +247,19 @@ function isFormalizationOnlyProgram(program: ProgramStudentVisibilityInput): boo
   return formalizationCategoryPattern.test(category);
 }
 
+type ProgramDescriptionState = 'present' | 'thin' | 'missing';
+
+const MINIMUM_PROGRAM_DESCRIPTION_WORDS = 5;
+
+function programDescriptionState(program: ProgramStudentVisibilityInput): ProgramDescriptionState {
+  const best = [program.summary, program.description]
+    .map(textValue)
+    .sort((first, second) => second.length - first.length)[0];
+  if (!best) return 'missing';
+  const words = best.split(/\s+/).filter(Boolean).length;
+  return words >= MINIMUM_PROGRAM_DESCRIPTION_WORDS ? 'present' : 'thin';
+}
+
 const overrideTier = (record: Record<string, any>): StudentVisibilityTier | null => {
   const tier = record.studentVisibilityOverrideTier;
   if (
@@ -444,6 +457,7 @@ export function computeProgramStudentVisibility(
   const audienceKnown = undergraduateRelevant || graduateOnly;
   const formalizationOnly = isFormalizationOnlyProgram(program);
   const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
+  const descriptionState = programDescriptionState(program);
   const catalogOrAdmin =
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
       title,
@@ -460,6 +474,9 @@ export function computeProgramStudentVisibility(
   if (graduateOnly) reasons.push('graduate_relevant');
   if (formalizationOnly) reasons.push('formalization_only');
   if (!researchRelated) reasons.push('non_research_program');
+  if (descriptionState === 'present') reasons.push('has_description');
+  else if (descriptionState === 'thin') reasons.push('thin_description');
+  else reasons.push('missing_description');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (catalogOrAdmin || !researchRelated) {
@@ -476,13 +493,31 @@ export function computeProgramStudentVisibility(
     // or graduate: on a research-discovery surface, audience is an honest label (surfaced as a
     // Graduate badge for graduate-only records), not a suppression trigger. Only catalog/admin
     // pages and non-research records stay suppressed. The `formalization_only` reason is still
-    // recorded for transparency but no longer caps tier.
-    computedTier = 'student_ready';
+    // recorded for transparency but no longer caps tier. A student-facing card must still carry
+    // real explanatory prose, so a program with no usable summary/description is held one tier
+    // down at limited_but_safe (mirroring the research-entity public-description invariant).
+    computedTier = descriptionState === 'present' ? 'student_ready' : 'limited_but_safe';
   } else if (!isArchiveReview && audienceKnown && hasOfficialSource) {
     computedTier = 'limited_but_safe';
   }
 
   if (!hasAnyHttpUrl(sourceUrls)) reasons.push('missing_source_route');
 
-  return withOverride(program, computedTier, Array.from(new Set(reasons)));
+  const result = withOverride(program, computedTier, Array.from(new Set(reasons)));
+  // The description requirement fails closed against an operator override too: a
+  // prose-less program can never be published as student_ready, only held at
+  // limited_but_safe, matching computeResearchEntityStudentVisibility.
+  if (result.tier === 'student_ready' && descriptionState !== 'present') {
+    return {
+      tier: 'limited_but_safe',
+      computedTier: result.computedTier,
+      reasons: Array.from(
+        new Set([
+          ...result.reasons,
+          descriptionState === 'missing' ? 'missing_description' : 'thin_description',
+        ]),
+      ),
+    };
+  }
+  return result;
 }
