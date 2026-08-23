@@ -46,6 +46,26 @@ describe('sanitizeDescriptionText', () => {
     expect(withPmc.text).not.toContain('PMC1234567');
   });
 
+  it('strips a dangling "research areas:" clause that ends with a trailing period', () => {
+    const result = sanitizeDescriptionText('Studies condensed matter physics, including research areas:.');
+    expect(result.removedArtifacts).toBe(true);
+    expect(result.text).toBe('Studies condensed matter physics');
+    expect(result.text.toLowerCase()).not.toContain('research areas');
+  });
+
+  it('strips a dangling "research areas:" clause with no trailing period', () => {
+    const result = sanitizeDescriptionText('Studies coastal ecology; research areas:');
+    expect(result.removedArtifacts).toBe(true);
+    expect(result.text).toBe('Studies coastal ecology');
+  });
+
+  it('leaves genuine mid-sentence "research areas:" prose untouched', () => {
+    const genuineAreas = 'Studies research areas: quantum optics and atomic physics.';
+    const result = sanitizeDescriptionText(genuineAreas);
+    expect(result.removedArtifacts).toBe(false);
+    expect(result.text).toBe(genuineAreas);
+  });
+
   it('leaves clean text unchanged', () => {
     const result = sanitizeDescriptionText(genuineFull);
     expect(result.removedCaveat).toBe(false);
