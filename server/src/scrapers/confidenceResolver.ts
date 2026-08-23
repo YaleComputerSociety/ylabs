@@ -58,6 +58,31 @@ const SYNTHESIZED_DESCRIPTION_SOURCES = new Set(['dept-faculty-roster']);
 const SYNTHESIZED_SOURCE_DEMOTION_FIELDS = new Set(['fullDescription']);
 const PROSE_EXTENSION_BONUS = 1.25;
 
+// Name selection favors a genuinely branded name (extracted from the lab's own
+// microsite or a curated directory) over a synthesized PI-derived label. These
+// sources only ever emit a "<PI> Lab"/"<Person> Faculty Research" name derived
+// from a grant or roster row, never the entity's self-identified brand, so for
+// name fields a group sourced solely from them is demoted - but only when the
+// lab's own microsite actually captured a genuine branded name to prefer, so a
+// grant-shell lab with no microsite keeps its "<PI> Lab" name and a PI's
+// affiliated-center name never displaces the grant name absent a microsite
+// brand.
+const ENTITY_NAME_FIELDS = new Set(['name', 'displayName']);
+const SYNTHESIZED_NAME_SOURCES = new Set([
+  'nih-reporter',
+  'nsf-award-search',
+  'dept-faculty-roster',
+  'department-undergrad-research',
+]);
+// The lab's own site: authoritative for its self-identified brand.
+export const MICROSITE_NAME_SOURCES = new Set([
+  'lab-microsite-description-llm',
+  'lab-microsite-undergrad-llm',
+]);
+const RESEARCH_HOME_HEAD_NOUN_RE =
+  /\b(labs?|laborator(?:y|ies)|cent(?:er|re)s?|institutes?|programs?|programmes?|initiatives?|groups?|projects?|collaboratives?|consorti(?:um|a)|networks?|clinics?|cores?|facilit(?:y|ies)|observator(?:y|ies)|studios?|workshops?)\b/i;
+const FACULTY_RESEARCH_NAME_RE = /\bfaculty\s+research\s*$/i;
+
 function serializeValue(value: unknown): string {
   if (value === null || value === undefined) return '__null__';
   if (typeof value === 'string') return `s:${value.trim().toLowerCase()}`;
@@ -137,6 +162,67 @@ function preferExtractedProseGroups<T extends { sources: Set<string> }>(
   return extracted.length > 0 ? extracted : groups;
 }
 
+function nameHasResearchHomeHeadNoun(value: unknown): boolean {
+  return typeof value === 'string' && RESEARCH_HOME_HEAD_NOUN_RE.test(value);
+}
+
+function isBarePersonName(value: unknown): boolean {
+  if (typeof value !== 'string' || nameHasResearchHomeHeadNoun(value)) return false;
+  const tokens = value
+    .trim()
+    .replace(/^(the|a|an)\s+/i, '')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 3) return false;
+  return tokens.every((token) => /^[A-Z][a-zA-Z'.-]*$/.test(token));
+}
+
+function isSynthesizedNameGroup(group: { sources: Set<string> }): boolean {
+  if (group.sources.size === 0) return false;
+  for (const source of group.sources) {
+    if (!SYNTHESIZED_NAME_SOURCES.has(source)) return false;
+  }
+  return true;
+}
+
+function isFacultyResearchName(value: unknown): boolean {
+  return typeof value === 'string' && FACULTY_RESEARCH_NAME_RE.test(value);
+}
+
+function hasMicrositeSource(group: { sources: Set<string> }): boolean {
+  for (const source of group.sources) {
+    if (MICROSITE_NAME_SOURCES.has(source)) return true;
+  }
+  return false;
+}
+
+function preferGenuineEntityNameGroups<T extends { value: unknown; sources: Set<string> }>(
+  field: string,
+  groups: T[],
+): T[] {
+  if (!ENTITY_NAME_FIELDS.has(field)) return groups;
+  const someGroupHasHeadNoun = groups.some((group) => nameHasResearchHomeHeadNoun(group.value));
+  // Synthesized/faculty-research labels are demoted only when the lab's own
+  // microsite captured a genuine branded name to prefer instead; without one,
+  // a "<PI> Lab" grant name is kept and a non-microsite affiliation name never
+  // wins by default. A bare person name is never a good entity name, so it is
+  // demoted whenever a head-noun alternative exists, regardless of source.
+  const micrositeGenuineExists = groups.some(
+    (group) =>
+      hasMicrositeSource(group) &&
+      !isBarePersonName(group.value) &&
+      !isFacultyResearchName(group.value),
+  );
+  const isLowQualityNameGroup = (group: T): boolean => {
+    if (micrositeGenuineExists && (isSynthesizedNameGroup(group) || isFacultyResearchName(group.value))) {
+      return true;
+    }
+    return someGroupHasHeadNoun && isBarePersonName(group.value);
+  };
+  const genuine = groups.filter((group) => !isLowQualityNameGroup(group));
+  return genuine.length > 0 ? genuine : groups;
+}
+
 export function resolveField(
   field: string,
   observations: ResolverObservation[],
@@ -183,7 +269,10 @@ export function resolveField(
   }
   applyProseCompletenessBonus(field, groups.values());
 
-  const rankable = preferExtractedProseGroups(field, Array.from(groups.values()));
+  const rankable = preferGenuineEntityNameGroups(
+    field,
+    preferExtractedProseGroups(field, Array.from(groups.values())),
+  );
   const ranked = rankable.sort((a, b) => b.weight - a.weight);
   const winner = ranked[0];
   const runnerUp = ranked[1];
