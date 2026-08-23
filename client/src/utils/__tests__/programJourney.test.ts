@@ -3,6 +3,7 @@ import {
   PROGRAM_JOURNEY_CATEGORIES,
   getProgramJourneyStatus,
   summarizeProgramJourney,
+  programCategoryLabel,
 } from '../programJourney';
 import type { Fellowship } from '../../types/types';
 
@@ -128,5 +129,18 @@ describe('summarizeProgramJourney', () => {
     expect(summary.structured).toBe(1);
     expect(summary.fundingAfterMentor).toBe(2);
     expect(summary.archive).toBe(1);
+  });
+});
+
+describe('programCategoryLabel', () => {
+  it('maps known legacy-category enums to human copy', () => {
+    expect(programCategoryLabel('CENTER_INTERNSHIP')).toBe('Center internship');
+    expect(programCategoryLabel('FELLOWSHIP')).toBe('Fellowship');
+    expect(programCategoryLabel('RECURRING_PROGRAM')).toBe('Recurring program');
+    expect(programCategoryLabel('SUMMER_RESEARCH_PROGRAM')).toBe('Summer research program');
+  });
+
+  it('falls back to a lowercased spaced form for unknown enums instead of the raw key', () => {
+    expect(programCategoryLabel('SOME_NEW_KIND')).toBe('some new kind');
   });
 });

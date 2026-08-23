@@ -30,6 +30,9 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 import { getFellowshipCycleStatus } from '../utils/fellowshipCycle';
 import {
   getProgramJourneyStatus,
+  programKindLabel,
+  entryModeLabel,
+  programCategoryLabel,
   type ProgramJourneyCategory,
   type ProgramJourneySummary,
 } from '../utils/programJourney';
@@ -346,6 +349,7 @@ const Fellowships = () => {
       key: 'programKind',
       label: 'Program Kind',
       options: filterOptions.programKind,
+      labelFn: programKindLabel,
       selected: selectedProgramKind,
       setSelected: setSelectedProgramKind,
     },
@@ -353,6 +357,7 @@ const Fellowships = () => {
       key: 'entryMode',
       label: 'Entry Mode',
       options: filterOptions.entryMode,
+      labelFn: entryModeLabel,
       selected: selectedEntryMode,
       setSelected: setSelectedEntryMode,
     },
@@ -360,6 +365,7 @@ const Fellowships = () => {
       key: 'programCategory',
       label: 'Legacy Type',
       options: filterOptions.programCategory,
+      labelFn: programCategoryLabel,
       selected: selectedProgramCategory,
       setSelected: setSelectedProgramCategory,
     },
@@ -407,17 +413,33 @@ const Fellowships = () => {
     },
   ];
 
-  const fellowshipFilterGroups = [
+  const fellowshipFilterGroups: {
+    label: string;
+    values: string[];
+    labelFn?: (item: string) => string;
+    clear: () => void;
+  }[] = [
     {
       label: 'Journey',
       values: selectedStudentFacingCategory,
       clear: () => setSelectedStudentFacingCategory([]),
     },
-    { label: 'Program Kind', values: selectedProgramKind, clear: () => setSelectedProgramKind([]) },
-    { label: 'Entry Mode', values: selectedEntryMode, clear: () => setSelectedEntryMode([]) },
+    {
+      label: 'Program Kind',
+      values: selectedProgramKind,
+      labelFn: programKindLabel,
+      clear: () => setSelectedProgramKind([]),
+    },
+    {
+      label: 'Entry Mode',
+      values: selectedEntryMode,
+      labelFn: entryModeLabel,
+      clear: () => setSelectedEntryMode([]),
+    },
     {
       label: 'Legacy Type',
       values: selectedProgramCategory,
+      labelFn: programCategoryLabel,
       clear: () => setSelectedProgramCategory([]),
     },
     { label: 'Year', values: selectedYearOfStudy, clear: () => setSelectedYearOfStudy([]) },
@@ -429,10 +451,11 @@ const Fellowships = () => {
   ].filter((g) => g.values.length > 0);
 
   const fellowshipChips: ActiveFilterChip[] = fellowshipFilterGroups.map((group) => {
+    const displayValues = group.labelFn ? group.values.map(group.labelFn) : group.values;
     const display =
-      group.values.length <= 3
-        ? group.values.join(', ')
-        : `${group.values.slice(0, 2).join(', ')} +${group.values.length - 2} more`;
+      displayValues.length <= 3
+        ? displayValues.join(', ')
+        : `${displayValues.slice(0, 2).join(', ')} +${displayValues.length - 2} more`;
     return {
       key: `f-${group.label}`,
       label: `${group.label}: ${display}`,
