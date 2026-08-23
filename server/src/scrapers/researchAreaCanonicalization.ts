@@ -140,6 +140,10 @@ const RESEARCH_AREA_LABEL_PREFIX_RE =
   /^(?:research\s+areas?|research\s+interests?|research\s+focus|research\s+topics?|fields?\s+of\s+(?:interest|study)|areas?\s+of\s+(?:interest|research|expertise|focus|specialization)|specializations?|keywords\s+and\s+concepts)\b[\s:]+\S/i;
 const RESEARCH_AREA_SCIENTIFIC_LATIN_RE =
   /^(?:in\s+(?:vivo|vitro|situ|silico)|de\s+novo|ex\s+vivo)\b/i;
+const RESEARCH_AREA_FIRST_PERSON_RE = /^(?:I|We|My|Our)\s+\S/;
+const RESEARCH_AREA_LAB_BLURB_RE =
+  /\b(?:is|are|has|have|been)\s+(?:currently\s+)?(?:focused|interested|working|studying|investigating)\b|\b(?:the|our|my)\s+(?:group|lab|laboratory)\b/i;
+const RESEARCH_AREA_RUN_ON_WORD_CEILING = 15;
 
 function researchAreaWordCount(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
@@ -156,6 +160,9 @@ function isNonTopicResearchAreaChip(raw: unknown): boolean {
   if (RESEARCH_AREA_AWARD_RE.test(value) && /\d/.test(value)) return true;
   if (RESEARCH_AREA_LABEL_PREFIX_RE.test(value)) return true;
   const wordCount = researchAreaWordCount(value);
+  if (RESEARCH_AREA_FIRST_PERSON_RE.test(value) && wordCount >= 4) return true;
+  if (RESEARCH_AREA_LAB_BLURB_RE.test(value)) return true;
+  if (wordCount >= RESEARCH_AREA_RUN_ON_WORD_CEILING) return true;
   const firstToken = value.split(' ')[0] ?? '';
   if (
     /^[a-z]+$/.test(firstToken) &&
@@ -314,6 +321,12 @@ function toRawList(raw: unknown): string[] {
 const YSM_RESEARCHER_CHROME_BLOCK =
   /\s*YSM\s+Researchers?\s*View\s*\d*\s*Related\s+Publications?/gi;
 
+const RESEARCH_AREA_LEADING_CONJUNCTION_RE = /^(?:and|or)\s+(?=\S)/i;
+
+function stripLeadingConjunction(value: string): string {
+  return value.replace(RESEARCH_AREA_LEADING_CONJUNCTION_RE, '').trim();
+}
+
 function hasYsmResearcherChrome(value: string): boolean {
   return new RegExp(YSM_RESEARCHER_CHROME_BLOCK.source, 'i').test(value);
 }
@@ -331,7 +344,7 @@ export function stripResearchAreaSourceChrome(raw: unknown): string[] {
   const value = raw.replace(/\s+/g, ' ').trim();
   if (!value) return [];
   if (!hasYsmResearcherChrome(value)) {
-    const cleaned = stripProfileRoleLabelSuffix(value).trim();
+    const cleaned = stripLeadingConjunction(stripProfileRoleLabelSuffix(value).trim());
     return cleaned ? [cleaned] : [value];
   }
   return value
@@ -339,6 +352,7 @@ export function stripResearchAreaSourceChrome(raw: unknown): string[] {
     .map((segment) => segment.replace(/\s+/g, ' ').trim())
     .map((segment) => segment.replace(/(?<=\p{L})\d{1,4}$/u, '').trim())
     .map((segment) => stripProfileRoleLabelSuffix(segment).trim())
+    .map((segment) => stripLeadingConjunction(segment))
     .filter(Boolean);
 }
 

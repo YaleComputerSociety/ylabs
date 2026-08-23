@@ -96,6 +96,20 @@ describe('stripResearchAreaSourceChrome', () => {
   it('leaves a bare role label for the downstream leakage stop-list to drop (#742)', () => {
     expect(stripResearchAreaSourceChrome('YSM Researcher')).toEqual(['YSM Researcher']);
   });
+
+  it('strips a stray leading coordinating conjunction from a split-fragment topic (#948)', () => {
+    expect(stripResearchAreaSourceChrome('and Optical Physics')).toEqual(['Optical Physics']);
+    expect(stripResearchAreaSourceChrome('and Market Design')).toEqual(['Market Design']);
+    expect(stripResearchAreaSourceChrome('Or Computational Biology')).toEqual([
+      'Computational Biology',
+    ]);
+  });
+
+  it('never strips an internal conjunction from a real multi-topic area', () => {
+    expect(stripResearchAreaSourceChrome('Ecology and Evolutionary Biology')).toEqual([
+      'Ecology and Evolutionary Biology',
+    ]);
+  });
 });
 
 describe('splitGluedRoleTrackLabels', () => {
@@ -204,6 +218,20 @@ describe('canonicalizeResearchAreas', () => {
     const result = canonicalizer.canonicalizeResearchAreas(['AI', 'artificial intelligence']);
     expect(result.values).toEqual(['Artificial Intelligence']);
   });
+
+  it('drops prose research-area chips while keeping clean topics on the same entity (#948)', () => {
+    const result = canonicalizer.canonicalizeResearchAreas([
+      'Neuroscience',
+      'I have been applying techniques drawn from probability theory and statistics',
+      'Research in the group is currently focused on three general themes: Decoding self-organization',
+      'and Optical Physics',
+    ]);
+    expect(result.values).toEqual(['Neuroscience', 'Optical Physics']);
+    expect(result.dropped).toEqual([
+      'I have been applying techniques drawn from probability theory and statistics',
+      'Research in the group is currently focused on three general themes: Decoding self-organization',
+    ]);
+  });
 });
 
 describe('matchCanonicalResearchAreas', () => {
@@ -279,6 +307,30 @@ describe('isResearchAreaLabelLeakage', () => {
       'https://www.ncbi.nlm.nih.gov/myncbi/fake.person.1/bibliography/public/',
     ]) {
       expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('flags first-person prose, lab-blurb sentences, and run-on concatenations (#948)', () => {
+    for (const junk of [
+      'I have been applying techniques drawn from probability theory and statistics',
+      'My main teaching interests lie in Experimental Physics',
+      'We study the emergence of collective behavior in living systems',
+      'Research in the group is currently focused on three general themes: Decoding self-organization',
+      'The laboratory investigates protein folding',
+      'Quantum Matter Fractons from polarons Light bipolarons stabilized by Peierls electron-electron coupling Non-equilibrium quantum dynamics Phonon-induced disorder in dynamics of optically pumped metals from non-linear electron-phonon coupling Artificial Intelligence and physics',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('does not treat short topic phrases that merely contain a stop word as prose', () => {
+    for (const area of [
+      'Machine Learning and Optimization',
+      'Interstitial Lung Diseases and Idiopathic Pulmonary Fibrosis',
+      'Optical Physics',
+      'Market Design',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
     }
   });
 });
