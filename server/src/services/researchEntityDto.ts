@@ -4,6 +4,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
+import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -92,7 +93,7 @@ function publicResearchAreaArray(value: unknown): string[] {
     seen.add(key);
     labels.push(cleaned);
   }
-  return labels;
+  return filterProseResearchAreaChips(labels);
 }
 
 function publicHttpUrl(value: unknown): string | undefined {

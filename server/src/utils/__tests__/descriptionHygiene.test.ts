@@ -9,6 +9,7 @@ import {
   isNavigationDumpText,
   isPublicationsListDumpText,
   isResearchAreaEchoDescription,
+  isResearchAreaTemplateLeakText,
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
@@ -418,6 +419,25 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
       'How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.',
     );
     expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
+  });
+
+  it('fails closed on a Studies-template blurb that leaked a research-areas heading (#816)', () => {
+    expect(isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.')).toBe(
+      true,
+    );
+    expect(sanitizeResearchEntityShortDescription('Studies soft robotics, actuators, and research areas:.')).toBe(
+      '',
+    );
+    expect(
+      sanitizeResearchEntityShortDescription('Research fields include ecology, evolution, and research interests:.'),
+    ).toBe('');
+    expect(sanitizeResearchEntityShortDescription('Studies research topics:')).toBe('');
+  });
+
+  it('keeps a clean Studies-template blurb that has no heading leak', () => {
+    const clean = 'Studies soft robotics, compliant actuators, and human-robot interaction.';
+    expect(isResearchAreaTemplateLeakText(clean)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
   });
 });
 
