@@ -708,6 +708,32 @@ describe('descriptionHygiene anchor-CTA button label broadening (#947)', () => {
   });
 });
 
+describe('descriptionHygiene "Read More" text-anchored nav-teaser (#953)', () => {
+  it('strips a glued "Learn more about our X.Read More" fellowship nav-teaser', () => {
+    const dirty =
+      'Undergraduate Research Fellowship Learn more about our undergraduate fellowship.Read More';
+    expect(stripCatalogChrome(dirty)).toBe('Undergraduate Research Fellowship');
+    expect(sanitizeCatalogDescription(dirty)).toBe('Undergraduate Research Fellowship');
+  });
+
+  it('strips a spaced "Learn more about the program Read More" teaser', () => {
+    const dirty = 'Global Health Fellowship Learn more about the program Read More';
+    expect(stripCatalogChrome(dirty)).toBe('Global Health Fellowship');
+  });
+
+  it('strips a "Read more about this award. Read More" teaser', () => {
+    const dirty = 'Summer Research Award Read more about this award. Read More';
+    expect(stripCatalogChrome(dirty)).toBe('Summer Research Award');
+  });
+
+  it('leaves lowercase prose that mentions "read more" untouched', () => {
+    const prose =
+      'Students can learn more about our program and read more of our published work in the handbook.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
+  });
+});
+
 describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
   it('flags a bare "Research fields include <chips>." echo', () => {
     expect(
