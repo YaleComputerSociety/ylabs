@@ -7,6 +7,7 @@ import {
   buildFundingResearchEntityDedupePlan,
   buildMultiPersonEntityQuarantine,
   buildOfficialLabUrlResearchEntityDedupePlan,
+  buildOrgNameResearchEntityDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
@@ -777,6 +778,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -791,6 +793,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -811,6 +814,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      orgNameOnly: false,
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
       limit: 10000,
@@ -825,6 +829,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: true,
       officialLabUrlOnly: false,
+      orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1348,6 +1353,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: true,
       fullPlan: false,
       officialLabUrlOnly: false,
+      orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 50,
@@ -1439,6 +1445,111 @@ describe('buildOfficialLabUrlResearchEntityDedupePlan', () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('buildOrgNameResearchEntityDedupePlan', () => {
+  it('merges same-name center twins into the members-rich survivor and carries the real website', () => {
+    const plan = buildOrgNameResearchEntityDedupePlan([
+      {
+        id: 'center-synthetic-genome',
+        slug: 'center-synthetic-genome',
+        name: 'Yale Center for Synthetic Genome Analysis',
+        entityType: 'CENTER',
+        websiteUrl: '',
+        sourceUrls: ['https://medicine.yale.edu/genetics/research/scga/people/'],
+        departments: ['Genetics'],
+        researchAreas: ['Genomics'],
+        memberCount: 12,
+      },
+      {
+        id: 'research-yale-synthetic-genome-shell',
+        slug: 'research-yale-synthetic-genome-analysis',
+        name: 'Yale Center for Synthetic Genome Analysis',
+        entityType: 'CENTER',
+        websiteUrl: 'https://syntheticgenome.yale.edu/',
+        sourceUrls: ['https://syntheticgenome.yale.edu/'],
+        departments: [],
+        memberCount: 0,
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('center-synthetic-genome');
+    expect(plan[0].duplicateEntityIds).toEqual(['research-yale-synthetic-genome-shell']);
+    expect(plan[0].canonicalWebsiteUrl).toBe('https://syntheticgenome.yale.edu/');
+    expect(plan[0].mergedDepartments).toContain('Genetics');
+  });
+
+  it('does not merge two different centers that merely share a word', () => {
+    expect(
+      buildOrgNameResearchEntityDedupePlan([
+        {
+          id: 'keck-mass-spec',
+          slug: 'yale-research-core-keck-mass-spectrometry',
+          name: 'Keck Mass Spectrometry and Proteomics Resource',
+          entityType: 'CORE_FACILITY',
+          websiteUrl: 'https://keckmassspec.yale.edu/',
+        },
+        {
+          id: 'keck-microarray',
+          slug: 'yale-research-core-keck-microarray',
+          name: 'Keck Microarray Shared Resource',
+          entityType: 'CORE_FACILITY',
+          websiteUrl: 'https://keckmicroarray.yale.edu/',
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('does not merge org entities that carry an attached PI person lead', () => {
+    expect(
+      buildOrgNameResearchEntityDedupePlan([
+        {
+          id: 'org-program-home',
+          slug: 'yse-climate-program',
+          name: 'Yale Program on Synthetic Climate Communication',
+          entityType: 'INITIATIVE',
+          websiteUrl: 'https://environment.yale.edu/research/centers/synthetic-climate',
+        },
+        {
+          id: 'person-mislabeled-as-org',
+          slug: 'yse-faculty-synthetic-person',
+          name: 'Yale Program on Synthetic Climate Communication',
+          entityType: 'INITIATIVE',
+          websiteUrl: 'https://syntheticclimate.yale.edu/',
+          hasAttachedPi: true,
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('corroborates a single-significant-token name via a shared distinctive host', () => {
+    const plan = buildOrgNameResearchEntityDedupePlan([
+      {
+        id: 'center-synthetic-quantum',
+        slug: 'center-synthetic-quantum-institute',
+        name: 'Yale Synthetic Institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: '',
+        sourceUrls: ['https://synthquantum.yale.edu/people/members'],
+        memberCount: 20,
+      },
+      {
+        id: 'shell-synthetic-quantum',
+        slug: 'yale-research-center-synthetic-institute',
+        name: 'Yale Synthetic Institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: 'https://synthquantum.yale.edu/',
+        sourceUrls: ['https://synthquantum.yale.edu/'],
+        memberCount: 0,
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('center-synthetic-quantum');
+    expect(plan[0].duplicateEntityIds).toEqual(['shell-synthetic-quantum']);
+    expect(plan[0].canonicalWebsiteUrl).toBe('https://synthquantum.yale.edu/');
   });
 });
 
