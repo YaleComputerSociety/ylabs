@@ -277,6 +277,54 @@ describe('getAnalytics research coverage and range scoping', () => {
     vi.clearAllMocks();
   });
 
+  it('counts visitors-by-type at the same distinct-netid grain as the visitor headline', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    await getAnalytics();
+
+    const visitorFacetCall = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some(
+        (stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors,
+      ),
+    );
+    expect(visitorFacetCall).toBeDefined();
+    const facet = visitorFacetCall![0].find(
+      (stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors,
+    ).$facet;
+
+    const groupStages = (branch: any[]) =>
+      branch.filter((stage: Record<string, any>) => stage.$group);
+    const headlineGrain = (branch: any[]) => groupStages(branch)[0].$group._id;
+    const byTypeGrain = (branch: any[]) => {
+      const grouping = groupStages(branch);
+      return {
+        perNetid: grouping[0].$group._id,
+        perNetidUserType: grouping[0].$group.userType,
+        rollup: grouping[1].$group._id,
+      };
+    };
+
+    for (const window of ['lifetime', 'last7Days', 'today'] as const) {
+      const headlineBranch = facet[`${window}Visitors`];
+      const byTypeBranch = facet[`${window}VisitorsByType`];
+      expect(headlineGrain(headlineBranch)).toBe('$netid');
+      const grain = byTypeGrain(byTypeBranch);
+      expect(grain.perNetid).toBe('$netid');
+      expect(grain.perNetidUserType).toEqual({ $first: '$userType' });
+      expect(grain.rollup).toBe('$userType');
+    }
+  });
+
   it('reports total as archived-inclusive and active as the non-archived subset', async () => {
     primeAnalyticsMocks();
     mocks.researchEntityAggregate.mockResolvedValue([

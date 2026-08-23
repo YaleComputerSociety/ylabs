@@ -328,6 +328,76 @@ describe('Analytics page', () => {
     );
   });
 
+  it('keeps the Needs attention count, tone, and caption self-consistent when only queries drive it', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') {
+        return Promise.resolve({ data: analyticsData });
+      }
+      if (url === '/analytics/users') {
+        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
+      }
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+        });
+      }
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({
+          data: {
+            totalSearches: 40,
+            engagedSearches: 36,
+            zeroResultQueries: [
+              { query: 'alpha' },
+              { query: 'beta' },
+              { query: 'gamma' },
+              { query: 'delta' },
+              { query: 'epsilon' },
+            ],
+            lowResultQueries: [{ query: 'zeta' }],
+          },
+        });
+      }
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [], limit: 25 } });
+      }
+      if (url === '/analytics/funnel') {
+        return Promise.resolve({ data: { stages: [] } });
+      }
+      if (url === '/analytics/actions') {
+        return Promise.resolve({ data: { cards: [], items: [] } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(<Analytics />);
+
+    const tile = await waitFor(() => {
+      const heading = screen.getByText('Needs attention');
+      return heading.closest('div') as HTMLElement;
+    });
+
+    expect(tile).toBeTruthy();
+    expect(tile.querySelector('.text-3xl')?.textContent).toBe('6');
+    expect(tile.className).toContain('bg-red-50');
+    expect(tile.textContent).toContain('5 zero-result queries, 1 low-result query to review.');
+    expect(tile.textContent).not.toContain('No urgent admin action returned');
+  });
+
+  it('shows the no-action caption only when nothing drives the Needs attention count', async () => {
+    mockDashboardEndpoints();
+
+    render(<Analytics />);
+
+    const tile = await waitFor(() => {
+      const heading = screen.getByText('Needs attention');
+      return heading.closest('div') as HTMLElement;
+    });
+
+    expect(tile.querySelector('.text-3xl')?.textContent).toBe('0');
+    expect(tile.className).toContain('bg-emerald-50');
+    expect(tile.textContent).toContain('No urgent admin action returned');
+  });
+
   it('shows current admin access from the admin grants source of truth', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/analytics') {
