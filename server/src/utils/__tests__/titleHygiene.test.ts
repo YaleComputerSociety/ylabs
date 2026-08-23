@@ -178,6 +178,20 @@ describe('sanitizePersonTitle', () => {
     ).toBeUndefined();
   });
 
+  it('drops a title longer than a role string ever runs (#740)', () => {
+    expect(sanitizePersonTitle(`Professor of ${'Molecular Biology '.repeat(10)}`)).toBeUndefined();
+  });
+
+  it('keeps a long but single-phrase endowed-chair title under the length cap', () => {
+    expect(
+      sanitizePersonTitle(
+        'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+      ),
+    ).toBe(
+      'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+    );
+  });
+
   it('keeps and normalizes a real job title', () => {
     expect(sanitizePersonTitle('  Associate   Professor of Chemistry ')).toBe(
       'Associate Professor of Chemistry',

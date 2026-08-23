@@ -1204,6 +1204,16 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user.title).toBeUndefined();
   });
 
+  it('renders a member card title stripped of the issue #740 email/office/phone contact block', async () => {
+    seedSingleMemberDetail(
+      'Professor of Historyfixture.researcher@example.eduOffice: 320 York StPhone: 203-432-0000',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
   it('renders a member card title stripped of a multi-sentence bio dump', async () => {
     seedSingleMemberDetail(
       'Her lab studies protein folding. She teaches biochemistry. She joined the faculty in 2004.',

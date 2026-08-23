@@ -94,7 +94,7 @@ describe('backfillPersonDisplayFields core', () => {
     expect(composed.title).toBe('The William K. Lanman, Jr. Professor of Molecular Biophysics');
   });
 
-  it('truncates oversize display values to their schema bounds', () => {
+  it('truncates oversize display values to their schema bounds and drops an oversize title', () => {
     const composed = composeDisplayProfileFromLegacy({
       user: {
         title: 't'.repeat(300),
@@ -103,14 +103,14 @@ describe('backfillPersonDisplayFields core', () => {
         website: `https://site.example.test/${'b'.repeat(3000)}`,
       },
     });
-    expect(composed.title).toHaveLength(240);
+    expect(composed.title).toBeUndefined();
     expect(composed.primaryDepartment).toHaveLength(240);
     expect(composed.imageUrl).toHaveLength(2048);
     expect(composed.websiteUrl).toHaveLength(2048);
 
     const update = displayProfileFillUpdate(undefined, composed);
     expect(update.imageUrl).toHaveLength(2048);
-    expect(update.title).toHaveLength(240);
+    expect(update.title).toBeUndefined();
   });
 
   it('only fills fields that are currently empty', () => {
