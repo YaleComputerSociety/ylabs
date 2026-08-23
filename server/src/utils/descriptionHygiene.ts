@@ -392,6 +392,11 @@ const studiesSubjectVerbMismatchPattern =
 const careerFactLeakPattern =
   /\bin\s+(?:19|20)\d{2}\b[^.!?]*\b(?:was\s+awarded|awarded|tenure|joined|appointed|promoted)\b|\bwas\s+awarded\b|\bawarded\s+tenure\b/i;
 
+const vacuousInterestBoilerplatePattern =
+  /^(?:studies|investigates|examines|explores|researches|focuses on|focused on|works on)\s+(?:(?:his|her|their|my|our)\s+)?(?:main\s+|primary\s+|current\s+|broad\s+|general\s+|various\s+)?(?:fields?|areas?|topics?)\s+of\s+(?:interest|research|expertise|study|specialization|specialisation|focus)\b/i;
+
+const danglingOrdinalTailPattern = /\bfrom\s+the\s+(?:first|second|third|fourth|fifth|last)\.?$/i;
+
 /**
  * A "Studies <text>." synthesis template glued onto a fragment that is not a
  * coherent research-topic clause: a book citation or bibliography entry
@@ -401,7 +406,11 @@ const careerFactLeakPattern =
  * fragment ("Studies Art at Yale University in 1990 and was awarded tenure ...").
  * Gated on a synthesis-verb lead so it only fires on generated blurbs, never on
  * genuine prose; broader than #944's own-name-subject check because the tail,
- * not the subject, is the tell (#978).
+ * not the subject, is the tell (#978). Also flags a CV "fields of interest"
+ * boilerplate head with no real topic ("Studies fields of interest, including
+ * macroeconomics.") and a dangling truncated ordinal tail lifted mid-sentence
+ * ("Studies Texas from the first."), both of which surface as fabricated card
+ * summaries (#1212).
  */
 export function isStudiesTemplateGlueMalformed(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -410,7 +419,9 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
   return (
     citationMarkerPattern.test(normalized) ||
     studiesSubjectVerbMismatchPattern.test(normalized) ||
-    careerFactLeakPattern.test(normalized)
+    careerFactLeakPattern.test(normalized) ||
+    vacuousInterestBoilerplatePattern.test(normalized) ||
+    danglingOrdinalTailPattern.test(normalized)
   );
 }
 

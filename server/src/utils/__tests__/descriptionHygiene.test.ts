@@ -1292,6 +1292,41 @@ describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () 
   });
 });
 
+describe('isStudiesTemplateGlueMalformed fabricated card-summary guard (#1212)', () => {
+  it('flags a CV "fields of interest" boilerplate head with no real topic', () => {
+    const text = 'Studies fields of interest, including macroeconomics.';
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+  });
+
+  it('flags "areas of research" and "topics of interest" boilerplate variants', () => {
+    for (const text of [
+      'Studies his main areas of research in comparative politics.',
+      'Investigates topics of interest such as urban policy.',
+      'Focuses on her primary areas of expertise across development economics.',
+    ]) {
+      expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    }
+  });
+
+  it('flags a dangling truncated ordinal tail lifted mid-sentence', () => {
+    const text = 'Studies Texas from the first.';
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+  });
+
+  it('keeps genuine summaries that mention areas, interests, or ordinals in context', () => {
+    for (const clean of [
+      'Studies areas of the brain involved in memory and attention.',
+      'Studies the first galaxies and early-universe cosmology.',
+      'Studies how policy interest groups shape legislation.',
+    ]) {
+      expect(isStudiesTemplateGlueMalformed(clean)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+    }
+  });
+});
+
 describe('stripDeadAnchorCtaSentences lossless sentence walk (#1020)', () => {
   it('keeps prose that precedes an abbreviation when dropping a dead CTA', () => {
     expect(
