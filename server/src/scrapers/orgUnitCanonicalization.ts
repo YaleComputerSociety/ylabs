@@ -202,10 +202,6 @@ export function createOrgUnitCanonicalizer(
             continue;
           }
         }
-        if (!hit && resolveOrgUnitCanonical(index, fallback, SCHOOL_KINDS)) {
-          dropped.push(trimmed);
-          continue;
-        }
         const canonical = hit ? hit.name : fallback;
         if (!hit) unmatched.push(canonical);
         const dedupeKey = canonical.toLocaleLowerCase();

@@ -109,16 +109,17 @@ describe('createOrgUnitCanonicalizer', () => {
     ]);
   });
 
-  it('drops a school-name value that leaked into the department array', () => {
+  it('drops school-name values that leaked into the department array', () => {
     const result = canonicalizer.canonicalizeDepartments([
       'Psychiatry',
       'Yale School of Medicine',
+      'YSM',
       'School of Medicine',
       'NSCI',
     ]);
     expect(result.values).toEqual(['Psychiatry', 'Neuroscience']);
     expect(result.unmatched).toEqual(['Psychiatry']);
-    expect(result.dropped).toEqual(['Yale School of Medicine', 'School of Medicine']);
+    expect(result.dropped).toEqual(['Yale School of Medicine', 'YSM', 'School of Medicine']);
   });
 
   it('strips an HR org-code prefix from an unresolved department instead of showing raw', () => {
@@ -126,22 +127,6 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.values).toEqual(['Medical Oncology']);
     expect(result.unmatched).toEqual(['Medical Oncology']);
     expect(result.dropped).toEqual([]);
-  });
-
-  it('drops a school name from the department facet instead of keeping it as an unmatched fallback', () => {
-    const result = canonicalizer.canonicalizeDepartments([
-      'Psychiatry',
-      'Yale School of Medicine',
-      'YSM',
-      'School of Medicine',
-    ]);
-    expect(result.values).toEqual(['Psychiatry']);
-    expect(result.unmatched).toEqual(['Psychiatry']);
-    expect(result.dropped).toEqual([
-      'Yale School of Medicine',
-      'YSM',
-      'School of Medicine',
-    ]);
   });
 });
 
