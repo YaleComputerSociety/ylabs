@@ -614,6 +614,89 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * Newer Yale Drupal directory theme shared across many FAS humanities and
+ * professional-school people pages.
+ *   <li class="directory-listing-card">
+ *     <a class="directory-listing-card__heading-link" href="/profile/<slug>">Name</a>
+ *     <div class="directory-listing-card__subheading"><div>Title…</div></div>
+ *     <a class="directory-listing-card__link" href="mailto:…">Email</a>
+ *     <div class="directory-listing-card__image"><img srcset="…"></div>
+ * One extractor covers every directory rendered with this theme.
+ */
+export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('.directory-listing-card').each((_i, el) => {
+    const card = $(el);
+    const nameLink = card.find('.directory-listing-card__heading-link').first();
+    const name = normalizeName(cleanText(nameLink.text()));
+    if (!name) return;
+
+    const profileHref = nameLink.attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title =
+      cleanText(card.find('.directory-listing-card__subheading').first().text()) || undefined;
+    const email = yaleEmailFromElement($, card);
+    const imageUrl = imageUrlFromElement(
+      card.find('.directory-listing-card__image').first(),
+      ctx.pageUrl,
+    );
+
+    out.push({
+      name,
+      profileUrl,
+      title,
+      email,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
+  return out;
+};
+
+/**
+ * Drupal Views rendered as an HTML table (as opposed to the `.views-row` div
+ * grid handled by `viewsRowPersonExtractor`). Used by several FAS humanities
+ * departments.
+ *   <tr>
+ *     <td class="views-field views-field-picture"><img></td>
+ *     <td class="views-field views-field-name"><a class="username" href="/people/…">Name</a></td>
+ *     <td class="views-field views-field-field-title">Title…</td>
+ */
+export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('tr').each((_i, el) => {
+    const row = $(el);
+    const nameCell = row.find('td.views-field-name').first();
+    if (!nameCell.length) return;
+
+    const nameLink = nameCell.find('a.username, a').first();
+    const name = normalizeName(cleanText(nameLink.text() || nameCell.text()));
+    if (!name) return;
+
+    const profileHref = nameLink.attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title =
+      cleanText(row.find('[class*="views-field-field-title"]').first().text()) || undefined;
+    const email = yaleEmailFromElement($, row);
+    const imageUrl = imageUrlFromElement(row.find('.views-field-picture').first(), ctx.pageUrl);
+
+    out.push({
+      name,
+      profileUrl,
+      title,
+      email,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -956,6 +1039,110 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
     paginated: false,
     extractor: ysphDirectoryExtractor,
+  },
+  {
+    deptKey: 'english',
+    deptName: 'English',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://english.yale.edu/people/ladder-faculty',
+    paginated: false,
+    extractor: viewsTableRowExtractor,
+  },
+  {
+    deptKey: 'eeb',
+    deptName: 'Ecology and Evolutionary Biology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://eeb.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsTableRowExtractor,
+  },
+  {
+    deptKey: 'film-media-studies',
+    deptName: 'Film and Media Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://filmstudies.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsTableRowExtractor,
+  },
+  {
+    deptKey: 'spanish-portuguese',
+    deptName: 'Spanish and Portuguese',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://span-port.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsTableRowExtractor,
+  },
+  {
+    deptKey: 'sociology',
+    deptName: 'Sociology',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://sociology.yale.edu/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'philosophy',
+    deptName: 'Philosophy',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://philosophy.yale.edu/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'religious-studies',
+    deptName: 'Religious Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://religiousstudies.yale.edu/people/core-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'linguistics',
+    deptName: 'Linguistics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://ling.yale.edu/people/linguistics-faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'comparative-literature',
+    deptName: 'Comparative Literature',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://complit.yale.edu/people/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'french',
+    deptName: 'French',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://french.yale.edu/people/professors',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'slavic',
+    deptName: 'Slavic Languages and Literatures',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://slavic.yale.edu/directory/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'italian',
+    deptName: 'Italian Language and Literature',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://italian.yale.edu/people/faculty',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
+  },
+  {
+    deptKey: 'divinity',
+    deptName: 'Divinity',
+    schoolName: 'Yale Divinity School',
+    url: 'https://divinity.yale.edu/about/faculty-directory',
+    paginated: false,
+    extractor: directoryListingCardExtractor,
   },
 ];
 

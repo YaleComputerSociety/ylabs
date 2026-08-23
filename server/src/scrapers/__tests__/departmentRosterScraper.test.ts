@@ -23,6 +23,8 @@ import {
   mcdbExtractor,
   psychExtractor,
   viewsRowPersonExtractor,
+  viewsTableRowExtractor,
+  directoryListingCardExtractor,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -856,6 +858,70 @@ describe('viewsRowPersonExtractor', () => {
         profileUrl: 'https://erm.yale.edu/people/jordan-winter-fixture',
         title:
           "Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration",
+      },
+    ]);
+  });
+});
+
+describe('directoryListingCardExtractor', () => {
+  const DIRECTORY_LISTING_CARD_HTML = `
+    <ul>
+      <li class="directory-listing-card">
+        <div class="directory-listing-card__content">
+          <h3 class="directory-listing-card__heading">
+            <a class="directory-listing-card__heading-link" href="/profile/robin-fixture">Robin Fixture</a>
+          </h3>
+          <div class="directory-listing-card__subheading"><div>Professor of Philosophy</div></div>
+          <a class="directory-listing-card__link" href="mailto:robin.fixture@yale.edu">Email</a>
+          <div class="directory-listing-card__phone"><div>+1 203 555-0100</div></div>
+        </div>
+        <div class="directory-listing-card__image">
+          <img srcset="/sites/default/files/robin-fixture.jpg?itok=abc 150w, /sites/default/files/robin-fixture-2x.jpg?itok=def 300w">
+        </div>
+      </li>
+    </ul>`;
+
+  it('extracts directory-listing-card faculty with profile, title, email, and image', () => {
+    const out = directoryListingCardExtractor(DIRECTORY_LISTING_CARD_HTML, {
+      pageUrl: 'https://philosophy.yale.edu/faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://philosophy.yale.edu/profile/robin-fixture',
+        title: 'Professor of Philosophy',
+        email: 'robin.fixture@yale.edu',
+        imageUrl: 'https://philosophy.yale.edu/sites/default/files/robin-fixture.jpg?itok=abc',
+      },
+    ]);
+  });
+});
+
+describe('viewsTableRowExtractor', () => {
+  const VIEWS_TABLE_HTML = `
+    <table>
+      <thead><tr><th class="views-field views-field-name"></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="views-field views-field-picture"><a href="/people/casey-fixture"><img src="/sites/casey-fixture.jpg"></a></td>
+          <td class="views-field views-field-name"><a href="/people/casey-fixture" class="username">Casey Fixture</a></td>
+          <td class="views-field views-field-field-title">Sterling Professor of English</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  it('extracts table-rendered Drupal views rows and skips the empty header row', () => {
+    const out = viewsTableRowExtractor(VIEWS_TABLE_HTML, {
+      pageUrl: 'https://english.yale.edu/people/ladder-faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Casey Fixture',
+        profileUrl: 'https://english.yale.edu/people/casey-fixture',
+        title: 'Sterling Professor of English',
+        imageUrl: 'https://english.yale.edu/sites/casey-fixture.jpg',
       },
     ]);
   });
