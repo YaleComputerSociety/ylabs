@@ -124,7 +124,10 @@ export async function runResearchAreaHygieneBackfill(options: {
   batchSize: number;
   limit?: number;
 }): Promise<ResearchAreaHygieneResult> {
-  const query = ResearchEntity.find({ archived: { $ne: true }, researchAreas: { $exists: true, $ne: [] } })
+  const query = ResearchEntity.find({
+    archived: { $ne: true },
+    researchAreas: { $exists: true, $ne: [] },
+  })
     .select('_id slug researchAreas')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);
