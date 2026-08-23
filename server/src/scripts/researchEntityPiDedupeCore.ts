@@ -545,6 +545,19 @@ function carriedCanonicalIdentity(
   };
 }
 
+/**
+ * A row is person-corroborated when it was grouped by a shared PI `personId`
+ * rather than by name alone. `loadSinglePiNameCandidateRows` marks the
+ * uncorroborated, name-only clusters with a `name:`-prefixed `userId`; every
+ * personId-joined row (`loadSamePiCandidateRows` and the single-PI name path
+ * with exactly one corroborating RoleAssignment) carries a real personId there.
+ * Changing that prefix convention in `dedupeResearchEntitiesByPi` also requires
+ * updating this guard.
+ */
+function rowHasCorroboratedPersonLinkage(row: ResearchEntityPiDedupeRow): boolean {
+  return !String(row.userId || '').startsWith('name:');
+}
+
 function buildProfileAreaShellDuplicateGroup(
   row: ResearchEntityPiDedupeRow,
 ): ResearchEntityPiDedupeGroup | null {
@@ -555,14 +568,18 @@ function buildProfileAreaShellDuplicateGroup(
   const profileBackedSurnameShells = entities.filter((entity) =>
     isProfileBackedSurnameLabShell(entity, row),
   );
-  // Only when the row already has a concrete-website home to absorb them: a PI-named lab stub
-  // with no concrete website of its own folds into that home even when the home's name is
-  // topical, not person-shaped (issue #1113). comparablePiLabName keeps the surname match tied
-  // to the PI's real first name, so a wrong-first-name homonym still fails to cluster.
+  // Only when the row already has a concrete-website home to absorb them, and only when the
+  // person linkage is corroborated by a shared personId: a PI-named lab stub with no concrete
+  // website of its own folds into that home even when the home's name is topical, not
+  // person-shaped (issue #1113). comparablePiLabName keeps the surname match tied to the PI's
+  // real first name, so a wrong-first-name homonym still fails to cluster; the corroboration
+  // gate keeps two different people who merely share a surname from clustering when the row was
+  // grouped by name alone (issue #1113 uncorroborated guard).
   const hasConcreteWebsiteHome = entities.some((entity) => entityCarriesConcreteWebsite(entity));
-  const personNamedPiLabShells = hasConcreteWebsiteHome
-    ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
-    : [];
+  const personNamedPiLabShells =
+    hasConcreteWebsiteHome && rowHasCorroboratedPersonLinkage(row)
+      ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
+      : [];
   // An entity that carries its own real (non-profile, non-funding) lab website is the
   // concrete research home, not a thin profile-area shell - never archive it into a
   // PI-derived grant "<PI> Lab" shell and discard its name/site (issue #456).
