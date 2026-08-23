@@ -1,8 +1,8 @@
 /**
  * Controller handlers for faculty profile routes.
  */
-import { Request, Response } from 'express';
-import { User } from '../models/user';
+import { Request, Response, NextFunction } from 'express';
+import { User, normalizeUserType } from '../models/user';
 import { getListingModel } from '../db/connections';
 import { getProfileByNetid } from '../services/profileService';
 import { fetchCourseTableData } from '../services/courseTableService';
@@ -11,6 +11,44 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 
 const MAX_PUBLIC_PROFILE_URLS = 20;
+
+/**
+ * Faculty/staff accounts are the only ones with a legitimate public-facing
+ * profile: PI links on research/lab pages and listing investigator links
+ * (see principalInvestigatorLinks.ts, ListingDetailModal.tsx) point students
+ * at these netids by design. Student accounts have no such discovery path,
+ * so cross-viewing a student's profile is never an intended feature.
+ */
+const PUBLICLY_DISCOVERABLE_PROFILE_USER_TYPES = new Set(['professor', 'staff']);
+
+/**
+ * Authorization guard for GET /profiles/:netid and its sub-routes — a viewer
+ * may always see their own profile; otherwise the target account must be a
+ * publicly discoverable faculty/staff profile. Returns 404 (not 403) so a
+ * disallowed lookup can't be used to enumerate which netids exist.
+ */
+export const canViewProfile = async (req: Request, res: Response, next: NextFunction) => {
+  const { netid } = req.params;
+  const viewer = req.user as { netId?: unknown; netid?: unknown } | undefined;
+  const viewerNetid = String(viewer?.netId ?? viewer?.netid ?? '').toLowerCase();
+
+  if (viewerNetid && viewerNetid === netid.toLowerCase()) {
+    return next();
+  }
+
+  try {
+    const targetUser = await User.findOne({ netid }).select('userType').lean();
+    const targetUserType = normalizeUserType((targetUser as any)?.userType);
+    if (targetUser && PUBLICLY_DISCOVERABLE_PROFILE_USER_TYPES.has(targetUserType)) {
+      return next();
+    }
+  } catch (error: any) {
+    console.error('Profile: Error authorizing profile view:', sanitizeLogValue(error));
+    return res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+
+  return res.status(404).json({ error: 'Profile not found' });
+};
 
 const publicHttpUrl = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;

@@ -3194,15 +3194,23 @@ test('profile read routes validate netid path params before controller work', ()
   );
   assert.match(
     routeSource,
-    /router\.get\(\s*'\/:netid',\s*isAuthenticated,\s*validateNetid\('netid'\),[\s\S]*?getProfile,\s*\)/,
+    /router\.get\(\s*'\/:netid',\s*isAuthenticated,\s*validateNetid\('netid'\),\s*canViewProfile,[\s\S]*?getProfile,\s*\)/,
   );
   assert.match(
     routeSource,
-    /router\.get\('\/:netid\/listings', isAuthenticated, validateNetid\('netid'\), getProfileListings\)/,
+    /router\.get\(\s*'\/:netid\/listings',\s*isAuthenticated,\s*validateNetid\('netid'\),\s*canViewProfile,\s*getProfileListings,\s*\)/,
   );
   assert.match(
     routeSource,
-    /router\.get\('\/:netid\/courses', isAuthenticated, validateNetid\('netid'\), getProfileCourses\)/,
+    /router\.get\(\s*'\/:netid\/courses',\s*isAuthenticated,\s*validateNetid\('netid'\),\s*canViewProfile,\s*getProfileCourses,\s*\)/,
+  );
+  assert.match(
+    controllerSource,
+    /const PUBLICLY_DISCOVERABLE_PROFILE_USER_TYPES = new Set\(\['professor', 'staff'\]\)/,
+  );
+  assert.match(
+    controllerSource,
+    /export const canViewProfile = async \(req: Request, res: Response, next: NextFunction\)/,
   );
   assert.match(controllerSource, /MAX_PUBLIC_PROFILE_URLS = 20/);
   assert.match(

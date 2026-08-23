@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   listingFind: vi.fn(),
   getProfileByNetid: vi.fn(),
+  userFindOne: vi.fn(),
 }));
 
 vi.mock('../../db/connections', () => ({
@@ -21,7 +22,33 @@ vi.mock('../../services/profileService', async () => {
   };
 });
 
-import { getProfile, getProfileListings } from '../profileController';
+vi.mock('../../models/user', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../models/user')>()),
+  User: {
+    findOne: mocks.userFindOne,
+  },
+}));
+
+import { canViewProfile, getProfile, getProfileListings } from '../profileController';
+
+const mockTargetUserType = (userType: string | undefined) => {
+  mocks.userFindOne.mockReturnValue({
+    select: vi.fn().mockReturnThis(),
+    lean: vi.fn().mockResolvedValue(userType === undefined ? null : { userType }),
+  });
+};
+
+const invokeCanViewProfile = async (viewerNetid: string, targetNetid: string) => {
+  const req = { params: { netid: targetNetid }, user: { netId: viewerNetid } } as any;
+  const res = {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  } as any;
+  const next = vi.fn();
+
+  await canViewProfile(req, res, next);
+  return { res, next };
+};
 
 describe('profileController', () => {
   beforeEach(() => {
@@ -148,5 +175,66 @@ describe('profileController', () => {
     );
     expect(payload.research_interests).toEqual(['Adaptive Optics', 'Wavefront Control']);
     expect(payload.researchEntities).toHaveLength(1);
+  });
+});
+
+describe('canViewProfile', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('lets a student view their own profile', async () => {
+    mockTargetUserType('undergraduate');
+
+    const { res, next } = await invokeCanViewProfile('student1', 'student1');
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('blocks a student from viewing another student profile', async () => {
+    mockTargetUserType('undergraduate');
+
+    const { res, next } = await invokeCanViewProfile('student1', 'victim123');
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Profile not found' });
+  });
+
+  it('lets a student view a professor profile (PI/investigator discovery links)', async () => {
+    mockTargetUserType('professor');
+
+    const { res, next } = await invokeCanViewProfile('student1', 'prof123');
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('lets a student view a staff profile', async () => {
+    mockTargetUserType('staff');
+
+    const { next } = await invokeCanViewProfile('student1', 'staff123');
+
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('normalizes legacy faculty userType before checking discoverability', async () => {
+    mockTargetUserType('faculty');
+
+    const { res, next } = await invokeCanViewProfile('student1', 'prof123');
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 rather than leaking existence when the target netid has no account', async () => {
+    mockTargetUserType(undefined);
+
+    const { res, next } = await invokeCanViewProfile('student1', 'ghost123');
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Profile not found' });
   });
 });

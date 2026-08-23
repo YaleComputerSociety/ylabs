@@ -4,6 +4,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { isAuthenticated, validateNetid } from '../middleware/index';
 import {
+  canViewProfile,
   getProfile,
   getProfileListings,
   getProfileCourses,
@@ -28,10 +29,23 @@ router.get(
   '/:netid',
   isAuthenticated,
   validateNetid('netid'),
+  canViewProfile,
   logResearchEventOnSuccess(AnalyticsEventType.RESEARCH_VIEW, 'profile', (req) => req.params.netid),
   getProfile,
 );
-router.get('/:netid/listings', isAuthenticated, validateNetid('netid'), getProfileListings);
-router.get('/:netid/courses', isAuthenticated, validateNetid('netid'), getProfileCourses);
+router.get(
+  '/:netid/listings',
+  isAuthenticated,
+  validateNetid('netid'),
+  canViewProfile,
+  getProfileListings,
+);
+router.get(
+  '/:netid/courses',
+  isAuthenticated,
+  validateNetid('netid'),
+  canViewProfile,
+  getProfileCourses,
+);
 
 export default router;

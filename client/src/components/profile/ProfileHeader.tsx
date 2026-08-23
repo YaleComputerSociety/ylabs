@@ -34,6 +34,19 @@ const orcidHref = (orcid: unknown, profileUrl: unknown): string => {
 
 const profileLinkDedupeKey = (href: string): string => href.replace(/\/+$/, '').toLowerCase();
 
+const PROFILE_KICKER_LABEL_BY_USER_TYPE: Record<string, string> = {
+  professor: 'Faculty profile',
+  faculty: 'Faculty profile',
+  staff: 'Staff profile',
+  admin: 'Admin profile',
+  undergraduate: 'Student profile',
+  graduate: 'Student profile',
+  student: 'Student profile',
+};
+
+const profileKickerLabel = (userType: string | undefined): string =>
+  PROFILE_KICKER_LABEL_BY_USER_TYPE[String(userType || '').toLowerCase()] || 'Profile';
+
 const profileUrlLinks = (
   profileUrls: FacultyProfile['profile_urls'] | undefined,
   alreadyRenderedHrefs: string[] = [],
@@ -97,7 +110,7 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="yr-kicker mb-2">Faculty profile</p>
+        <p className="yr-kicker mb-2">{profileKickerLabel(profile.userType)}</p>
         <h1 className="text-2xl font-semibold text-slate-950">{fullName}</h1>
         {profile.title && <p className="mt-1 text-base text-slate-600">{profile.title}</p>}
 

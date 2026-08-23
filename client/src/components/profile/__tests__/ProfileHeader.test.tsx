@@ -186,6 +186,26 @@ describe('ProfileHeader', () => {
     expect(container.textContent).toContain('ER');
   });
 
+  it('labels a professor profile as a faculty profile', () => {
+    const { container } = renderProfileHeader({ ...baseProfile, userType: 'professor' });
+
+    expect(container.textContent).toContain('Faculty profile');
+  });
+
+  it('labels a student profile as a student profile instead of the hardcoded faculty label', () => {
+    const { container } = renderProfileHeader({ ...baseProfile, userType: 'undergraduate' });
+
+    expect(container.textContent).toContain('Student profile');
+    expect(container.textContent).not.toContain('Faculty profile');
+  });
+
+  it('falls back to a generic profile label when userType is missing or unrecognized', () => {
+    const { container } = renderProfileHeader({ ...baseProfile, userType: undefined });
+
+    expect(container.textContent).toContain('Profile');
+    expect(container.textContent).not.toContain('Faculty profile');
+  });
+
   it('shows canonical CPSC profile department labels without raw Yale org-unit labels', () => {
     const { container } = renderProfileHeader({
       ...baseProfile,

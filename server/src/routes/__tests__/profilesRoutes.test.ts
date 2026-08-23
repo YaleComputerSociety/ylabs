@@ -48,7 +48,7 @@ describe('profile routes', () => {
     for (const path of ['/:netid', '/:netid/listings', '/:netid/courses']) {
       const handlers = routeHandlers(path);
       expect(handlers[0].name).toBe('isAuthenticated');
-      expect(handlers.length).toBe(path === '/:netid' ? 4 : 3);
+      expect(handlers.length).toBe(path === '/:netid' ? 5 : 4);
 
       const req = { params: { netid: 'not valid because spaces' } };
       const res = {
@@ -62,6 +62,13 @@ describe('profile routes', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({ error: 'Invalid netid' });
+    }
+  });
+
+  it('runs the profile-view authorization guard after netid validation and before controller work', () => {
+    for (const path of ['/:netid', '/:netid/listings', '/:netid/courses']) {
+      const handlers = routeHandlers(path);
+      expect(handlers[2].name).toBe('canViewProfile');
     }
   });
 });
