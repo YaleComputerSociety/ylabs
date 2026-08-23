@@ -112,6 +112,51 @@ describe('publicProgramForReader link hygiene (#692)', () => {
   });
 });
 
+describe('publicProgramForReader bare-URL link labels (#774)', () => {
+  const stemSourcePage =
+    'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/yale-college-first-year-summer-research-fellowship';
+
+  it('replaces a bare-URL application-portal label with a host-based label and drops the scheme mismatch', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d474dd496b1d43b7b4',
+      title: 'Yale College First-Year Summer Research Fellowship in the Sciences & Engineering',
+      sourceUrl: stemSourcePage,
+      applicationLink: 'https://studentgrants.yale.edu/',
+      links: [{ label: 'http://studentgrants.yale.edu/', url: 'https://studentgrants.yale.edu/' }],
+    });
+
+    expect(payload.links).toEqual([
+      { label: 'studentgrants.yale.edu', url: 'https://studentgrants.yale.edu/' },
+    ]);
+  });
+
+  it('humanizes a bare-URL label that carries a path', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d474dd496b1d43b826',
+      title: 'Yale College Dean’s Research Fellowship & Rosenfeld Science Scholars Program',
+      sourceUrl: stemSourcePage,
+      links: [{ label: 'https://sumry.yale.edu/sumry', url: 'https://sumry.yale.edu/sumry' }],
+    });
+
+    expect(payload.links).toEqual([
+      { label: 'sumry.yale.edu/sumry', url: 'https://sumry.yale.edu/sumry' },
+    ]);
+  });
+
+  it('keeps a genuine human label untouched', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d474dd496b1d43b827',
+      title: 'Yale College Dean’s Research Fellowship',
+      sourceUrl: stemSourcePage,
+      links: [{ label: 'Application', url: 'https://studentgrants.yale.edu/' }],
+    });
+
+    expect(payload.links).toEqual([
+      { label: 'Application', url: 'https://studentgrants.yale.edu/' },
+    ]);
+  });
+});
+
 describe('publicProgramForReader redaction placeholder hygiene (#671/#774)', () => {
   it('cleans a trailing token in place and keeps the surrounding summary prose', () => {
     const payload = publicProgramForReader({

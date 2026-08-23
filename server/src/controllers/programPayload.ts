@@ -4,6 +4,7 @@ import {
   stripRedactionPlaceholders,
 } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { humanizeProgramLinkLabel } from '../utils/programLinkLabel';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 
@@ -44,7 +45,8 @@ const publicProgramLinks = (
           if (rawLabel && isChromeLinkLabel(rawLabel)) return [];
           const url = publicSpecificProgramUrl(record.url, sourceUrl);
           if (!url) return [];
-          const label = rawLabel ? redactDirectContactInfo(rawLabel) : undefined;
+          const humanLabel = humanizeProgramLinkLabel(rawLabel, url);
+          const label = humanLabel ? redactDirectContactInfo(humanLabel) : undefined;
           return [{ ...(label ? { label } : {}), url }];
         })
         .slice(0, MAX_PROGRAM_LINKS)

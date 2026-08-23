@@ -355,6 +355,31 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ]);
   });
 
+  it('humanizes a link whose anchor text is a bare URL instead of storing the raw URL (#774)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <div class="node">
+            <h1>Fixture First-Year Summer Research Fellowship</h1>
+            <p>
+              Apply through
+              <a href="http://studentgrants.yale.edu/">http://studentgrants.yale.edu/</a>.
+            </p>
+          </div>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.links).toEqual([
+      {
+        label: 'studentgrants.yale.edu',
+        url: 'https://studentgrants.yale.edu/',
+      },
+    ]);
+  });
+
   it('rejects site-wide nav and footer chrome when a detail page has no content container', () => {
     const candidates = parseFellowshipCatalogPage(
       `
