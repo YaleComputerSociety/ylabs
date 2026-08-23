@@ -35,6 +35,29 @@ export const validateObjectId = (paramName: string = 'id') => {
   };
 };
 
+const RESEARCH_ENTITY_REF_RE = /^(?:[a-fA-F0-9]{24}|[a-z0-9][a-z0-9_-]{0,159})$/i;
+
+/**
+ * Middleware to validate a ResearchEntity reference parameter that may be either a
+ * raw 24-hex ObjectId or the entity's public slug, matching the slug-or-id inputs
+ * the saved-research-entity mutation routes already accept.
+ */
+export const validateResearchEntityId = (paramName: string = 'entityId') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params[paramName];
+
+    if (!id) {
+      return res.status(400).json({ error: `Missing required parameter: ${paramName}` });
+    }
+
+    if (!RESEARCH_ENTITY_REF_RE.test(id)) {
+      return res.status(400).json({ error: `Invalid ${paramName}` });
+    }
+
+    next();
+  };
+};
+
 const NETID_RE = /^[A-Za-z0-9]{2,12}$/;
 
 /**

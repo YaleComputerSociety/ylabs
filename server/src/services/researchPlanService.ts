@@ -387,6 +387,16 @@ export const resolveSavedResearchEntityObjectIds = async (
   return deduped;
 };
 
+const resolveSavedResearchEntityTargetId = async (
+  entityId: string,
+): Promise<mongoose.Types.ObjectId> => {
+  const [targetId] = await resolveSavedResearchEntityObjectIds([entityId]);
+  if (!targetId) {
+    throw new NotFoundError('Saved research entity not found');
+  }
+  return targetId;
+};
+
 interface LoadedPlans {
   accountId: mongoose.Types.ObjectId;
   entities: SavedResearchEntitySummary[];
@@ -509,7 +519,7 @@ export const updateSavedResearchEntityPlan = async (
   plan: ResearchPlanInput,
 ): Promise<Record<string, ResearchPlanView>> => {
   const accountId = await resolveAccountIdByNetid(netid);
-  const targetId = new mongoose.Types.ObjectId(normalizeObjectIdString(entityId, 'researchEntity'));
+  const targetId = await resolveSavedResearchEntityTargetId(entityId);
   const update = normalizeResearchPlanUpdate(plan);
   const filter = {
     accountId,
@@ -536,7 +546,7 @@ export const deleteSavedResearchEntityPlan = async (
   entityId: string,
 ): Promise<Record<string, ResearchPlanView>> => {
   const accountId = await resolveAccountIdByNetid(netid);
-  const targetId = new mongoose.Types.ObjectId(normalizeObjectIdString(entityId, 'researchEntity'));
+  const targetId = await resolveSavedResearchEntityTargetId(entityId);
   await ResearchPlan.updateOne(
     {
       accountId,

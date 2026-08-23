@@ -2,7 +2,7 @@
  * User routes for favorites, fellowships, listings, and profile updates.
  */
 import { Router, Request, Response, NextFunction } from 'express';
-import { isAuthenticated, validateObjectId } from '../middleware/index';
+import { isAuthenticated, validateObjectId, validateResearchEntityId } from '../middleware/index';
 import { writeLimit } from '../middleware/rateLimiters';
 import * as userController from '../controllers/userController';
 import { logEvent } from '../services/analyticsService';
@@ -340,14 +340,14 @@ router.put(
   '/savedResearchEntityPlans/:entityId',
   writeLimit,
   isAuthenticated,
-  validateObjectId('entityId'),
+  validateResearchEntityId('entityId'),
   userController.updateSavedResearchEntityPlan,
 );
 router.delete(
   '/savedResearchEntityPlans/:entityId',
   writeLimit,
   isAuthenticated,
-  validateObjectId('entityId'),
+  validateResearchEntityId('entityId'),
   userController.deleteSavedResearchEntityPlan,
 );
 router.get('/listings', isAuthenticated, userController.getUserListings);
