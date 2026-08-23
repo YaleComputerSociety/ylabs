@@ -14,7 +14,10 @@ import {
 } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
-import { labelizeResearchDetailValue } from '../../utils/researchDetailSources';
+import {
+  isLikelyUnavailableSourceLink,
+  labelizeResearchDetailValue,
+} from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
@@ -258,7 +261,8 @@ const FellowshipModal = ({
   const applicationActionLabel = applicationStatus.isApplicationWindowOpen
     ? 'Apply'
     : 'Open source';
-  const sourceHref = safeHttpUrl(fellowship.sourceUrl);
+  const sourceLinkUnavailable = isLikelyUnavailableSourceLink(fellowship.sourceLinkHealth);
+  const sourceHref = sourceLinkUnavailable ? undefined : safeHttpUrl(fellowship.sourceUrl);
   const applicationHref = safeHttpUrl(fellowship.applicationLink) || sourceHref;
   const sourceLabel =
     typeof fellowship.sourceName === 'string' && fellowship.sourceName.trim()

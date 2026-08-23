@@ -104,6 +104,30 @@ const publicBestNextStep = (program: any): unknown => {
   );
 };
 
+interface PublicProgramSourceLinkHealth {
+  url: string;
+  healthStatus: string;
+  httpStatusCode?: number;
+}
+
+const publicProgramSourceLinkHealth = (
+  value: unknown,
+): PublicProgramSourceLinkHealth | undefined => {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const url = publicHttpUrl(record.url);
+  const healthStatus = record.healthStatus;
+  if (!url || typeof healthStatus !== 'string') return undefined;
+  const httpStatusCode = record.httpStatusCode;
+  return {
+    url,
+    healthStatus,
+    ...(typeof httpStatusCode === 'number' && Number.isFinite(httpStatusCode)
+      ? { httpStatusCode }
+      : {}),
+  };
+};
+
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   return {
@@ -146,5 +170,6 @@ export const publicProgramForReader = (program: any) => {
     citizenshipStatus: Array.isArray(program.citizenshipStatus) ? program.citizenshipStatus : [],
     sourceName: publicProgramText(program.sourceName),
     sourceUrl: publicHttpUrl(program.sourceUrl),
+    sourceLinkHealth: publicProgramSourceLinkHealth(program.sourceLinkHealth),
   };
 };

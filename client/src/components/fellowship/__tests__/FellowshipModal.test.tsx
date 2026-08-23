@@ -367,4 +367,45 @@ describe('FellowshipModal', () => {
     const provenance = screen.getByRole('link', { name: 'Yale College Fellowships Office' });
     expect(provenance).toHaveAttribute('href', specificSource);
   });
+
+  it('renders the official-source link when link health is healthy (#1022)', () => {
+    const source = 'https://wff.yale.edu/grants-awards/seed-grants/seed-grant-application';
+    renderModal({
+      sourceName: 'yale-women-faculty-forum',
+      sourceUrl: source,
+      sourceLinkHealth: { url: source, healthStatus: 'HEALTHY' },
+    });
+
+    expect(screen.getByRole('link', { name: 'Yale Women Faculty Forum' })).toHaveAttribute(
+      'href',
+      source,
+    );
+  });
+
+  it('drops the official-source link when the stored source url is known dead (#1022)', () => {
+    const deadSource = 'https://wff.yale.edu/grants-awards/seed-grants/seed-grant-application';
+    renderModal({
+      sourceName: 'yale-women-faculty-forum',
+      sourceUrl: deadSource,
+      sourceLinkHealth: { url: deadSource, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+    });
+
+    expect(screen.queryByRole('link', { name: 'Yale Women Faculty Forum' })).toBeNull();
+    expect(screen.getByText('Yale Women Faculty Forum')).toBeTruthy();
+  });
+
+  it('does not fall back to a dead source url for the primary apply CTA (#1022)', () => {
+    const deadSource = 'https://ypsa.yale.edu/academics/student-research-grants';
+    renderModal({
+      applicationLink: '',
+      sourceName: 'yale-poorvu-center',
+      sourceUrl: deadSource,
+      sourceLinkHealth: { url: deadSource, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+    });
+
+    expect(screen.queryByRole('link', { name: /Apply Now/ })).toBeNull();
+    expect(
+      screen.queryAllByRole('link').some((node) => node.getAttribute('href') === deadSource),
+    ).toBe(false);
+  });
 });
