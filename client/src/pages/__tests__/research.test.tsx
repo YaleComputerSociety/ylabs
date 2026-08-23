@@ -689,14 +689,16 @@ describe('Research page', () => {
 
   it('applies a filter toggle in place without re-running the previous query', async () => {
     const searchFilters: Array<Record<string, unknown>> = [];
-    mockedAxios.post.mockImplementation((url: string, body: { filters?: Record<string, unknown> }) => {
-      if (url === '/analytics/research' || url === '/analytics/research/batch') {
-        return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
-      }
-      if (url !== '/research/search') return Promise.reject(unexpectedSearchEndpoint(url));
-      searchFilters.push(body.filters || {});
-      return Promise.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }));
-    });
+    mockedAxios.post.mockImplementation(
+      (url: string, body: { filters?: Record<string, unknown> }) => {
+        if (url === '/analytics/research' || url === '/analytics/research/batch') {
+          return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
+        }
+        if (url !== '/research/search') return Promise.reject(unexpectedSearchEndpoint(url));
+        searchFilters.push(body.filters || {});
+        return Promise.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }));
+      },
+    );
 
     renderResearch(departments, ['/research?q=machine+learning']);
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
@@ -1550,7 +1552,9 @@ describe('Research page', () => {
       );
     });
 
-    expect(screen.getByText("25 research homes for 'protein folding'", { exact: false })).toBeTruthy();
+    expect(
+      screen.getByText("25 research homes for 'protein folding'", { exact: false }),
+    ).toBeTruthy();
     expect(screen.queryByText(/Searching Yale Research for/)).toBeNull();
     const searchButton = screen.getByRole('button', { name: 'Search' });
     expect(searchButton).toBeTruthy();
@@ -1561,7 +1565,9 @@ describe('Research page', () => {
     );
 
     await screen.findByRole('heading', { name: 'Wright Lab' });
-    expect(screen.getByText("25 research homes for 'protein folding'", { exact: false })).toBeTruthy();
+    expect(
+      screen.getByText("25 research homes for 'protein folding'", { exact: false }),
+    ).toBeTruthy();
   });
 
   it('preserves facet availability when loading more search results fails', async () => {
