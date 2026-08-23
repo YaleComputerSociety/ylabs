@@ -121,7 +121,13 @@ const publicAnalyticsUserEvent = (event: any): AnalyticsUserEvent => {
   };
 };
 
-export type AnalyticsUserSort = 'lastActive' | 'totalEvents' | 'logins' | 'searches' | 'views';
+export type AnalyticsUserSort =
+  | 'lastActive'
+  | 'totalEvents'
+  | 'logins'
+  | 'searches'
+  | 'views'
+  | 'researchViews';
 export type AnalyticsSortDirection = 'asc' | 'desc';
 
 export interface AnalyticsUsersQuery {
@@ -148,6 +154,7 @@ export interface AnalyticsUserSummary {
   logins: number;
   searches: number;
   views: number;
+  researchViews: number;
   fellowshipViews: number;
   listingFavorites: number;
   listingUnfavorites: number;
@@ -306,6 +313,7 @@ const USER_ANALYTICS_SORTS = new Set<AnalyticsUserSort>([
   'logins',
   'searches',
   'views',
+  'researchViews',
 ]);
 
 const CANONICAL_ACADEMIC_USER_TYPE = 'professor';
@@ -357,6 +365,8 @@ export const MAX_USER_ANALYTICS_SEARCH_LENGTH = 120;
 const EVENT_COUNT_FIELDS: Record<string, AnalyticsEventType> = {
   logins: AnalyticsEventType.LOGIN,
   searches: AnalyticsEventType.SEARCH,
+  views: AnalyticsEventType.LISTING_VIEW,
+  researchViews: AnalyticsEventType.RESEARCH_VIEW,
   fellowshipViews: AnalyticsEventType.FELLOWSHIP_VIEW,
   listingFavorites: AnalyticsEventType.LISTING_FAVORITE,
   listingUnfavorites: AnalyticsEventType.LISTING_UNFAVORITE,
@@ -553,18 +563,6 @@ const buildEventCountAccumulator = (eventType: AnalyticsEventType) => ({
   },
 });
 
-const CONTENT_VIEW_EVENT_TYPES = [
-  AnalyticsEventType.LISTING_VIEW,
-  AnalyticsEventType.RESEARCH_VIEW,
-  AnalyticsEventType.FELLOWSHIP_VIEW,
-];
-
-const buildEventCountAccumulatorForTypes = (eventTypes: AnalyticsEventType[]) => ({
-  $sum: {
-    $cond: [{ $in: ['$eventType', eventTypes] }, 1, 0],
-  },
-});
-
 const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): PipelineStage[] => {
   const activeSince = parseActiveSince(query.activeSince);
   const limit = clampLimit(query.limit, 50, 200);
@@ -587,7 +585,6 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         totalEvents: { $sum: 1 },
         firstEventAt: { $min: '$timestamp' },
         lastEventAt: { $max: '$timestamp' },
-        views: buildEventCountAccumulatorForTypes(CONTENT_VIEW_EVENT_TYPES),
         ...Object.fromEntries(
           Object.entries(EVENT_COUNT_FIELDS).map(([field, eventType]) => [
             field,
@@ -659,6 +656,7 @@ const userSummaryPipeline = (netid?: string, query: AnalyticsUsersQuery = {}): P
         logins: 1,
         searches: 1,
         views: 1,
+        researchViews: 1,
         fellowshipViews: 1,
         listingFavorites: 1,
         listingUnfavorites: 1,

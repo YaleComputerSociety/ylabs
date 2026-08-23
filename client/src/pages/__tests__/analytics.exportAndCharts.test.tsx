@@ -98,6 +98,7 @@ const userRow = {
   logins: 2,
   searches: 4,
   views: 3,
+  researchViews: 2,
   fellowshipViews: 0,
   listingFavorites: 0,
   listingUnfavorites: 0,
