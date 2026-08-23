@@ -18,7 +18,6 @@ import { serializedDocumentId } from '../utils/idSerialization';
 
 export interface ResearchEntityRosterEntry {
   researchEntityId: mongoose.Types.ObjectId;
-  researchGroupId: mongoose.Types.ObjectId;
   personId: mongoose.Types.ObjectId;
   accountId?: mongoose.Types.ObjectId;
   roleAssignmentId: mongoose.Types.ObjectId;
@@ -94,7 +93,6 @@ const buildRosterEntry = (
 
   return {
     researchEntityId: entityId,
-    researchGroupId: entityId,
     personId,
     ...(person.accountId ? { accountId: person.accountId } : {}),
     roleAssignmentId: assignment._id,

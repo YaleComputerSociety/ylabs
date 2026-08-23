@@ -262,7 +262,6 @@ describe('Beta to Development sync guards', () => {
       fname: 'Faculty',
       lname: 'Person',
       savedResearchEntities: ['research-1'],
-      savedResearchEntityPlans: { 'research-1': { notes: 'private' } },
       lastLoginAt: new Date('2026-07-25T00:00:00Z'),
       loginCount: 5,
       college: 'Example',
@@ -278,7 +277,6 @@ describe('Beta to Development sync guards', () => {
       lname: 'Person',
     });
     expect(sanitized).not.toHaveProperty('savedResearchEntities');
-    expect(sanitized).not.toHaveProperty('savedResearchEntityPlans');
     expect(sanitized).not.toHaveProperty('lastLoginAt');
     expect(sanitized).not.toHaveProperty('loginCount');
     expect(sanitized).not.toHaveProperty('college');

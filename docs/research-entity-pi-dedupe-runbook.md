@@ -45,7 +45,8 @@ The canonical entity's slug is preserved; only the duplicate entities are archiv
 
 A merge never discards evidence:
 
-- The canonical entity gains the union of duplicate `departments` and `sourceUrls` through `$addToSet`.
+- The canonical entity gains the union of duplicate `sourceUrls` through `$addToSet`, and the union of duplicate `departments` through `$addToSet` under one corroboration gate.
+- The `departments` union drops the cross-cutting biomedical seed tuple (`Neuroscience` + `Psychology` + `Molecular, Cellular, and Developmental Biology`, whose derived `School of Medicine`/`FAS` schools follow) only when the full three-department signature co-occurs and neither the merged `researchAreas` (biomedical keyword match) nor a trusted non-shell entity in the cluster corroborates a biomedical affiliation, so a Wu-Tsai-style institute seed grafted onto an off-domain lab or scholar is not unioned in; a lone member of the tuple with no co-occurring siblings, and every other department, merge unconditionally (issue #734).
 - The `researchAreas` union excludes low-trust `nsf-pi-*`, `nih-pi-*`, and `faculty-research-area-*` shell entities, so a wrong-domain grant-shell area is never grafted onto a real research home; it falls back to the full cluster only when every entity is such a shell (issue #604).
 - The canonical `fullDescription`/`shortDescription` are repaired to the fullest correct sibling description across the cluster, using the same low-trust shell exclusion, so a thin or hallucinated canonical description is replaced when a fuller correct sibling exists (issue #604).
 - Non-conflicting duplicate memberships are relinked to the canonical entity; a duplicate membership that would collide with an existing canonical membership is retired with `isCurrentMember: false` and an `endedAt` timestamp instead of being dropped.

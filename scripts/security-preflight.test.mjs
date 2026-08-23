@@ -645,6 +645,10 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
     new URL('../client/src/components/fellowship/FellowshipModal.tsx', import.meta.url),
     'utf8',
   );
+  const programLinks = fs.readFileSync(
+    new URL('../client/src/utils/programLinks.ts', import.meta.url),
+    'utf8',
+  );
 
   assert.match(
     adminAccessReview,
@@ -660,10 +664,15 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   );
   assert.doesNotMatch(fellowshipModal, /safeUrl\(fellowship\.applicationLink\)/);
   assert.match(fellowshipModal, /const linkHref = safeHttpUrl\(match\[2\]\)/);
-  assert.match(fellowshipModal, /href: safeHttpUrl\(link\.url\)/);
+  assert.match(fellowshipModal, /const safeLinks = buildSafeProgramLinks\(fellowship\.links\)/);
+  assert.match(fellowshipModal, /href=\{link\.href\}/);
   assert.doesNotMatch(fellowshipModal, /const linkHref = safeUrl\(match\[2\]\)/);
-  assert.doesNotMatch(fellowshipModal, /href: safeUrl\(link\.url\)/);
+  assert.doesNotMatch(fellowshipModal, /href=\{link\.url\}/);
   assert.match(fellowshipModal, /safeMailtoHref\(fellowship\.contactEmail\)/);
+
+  assert.match(programLinks, /href: safeHttpUrl\(link\.url\)/);
+  assert.doesNotMatch(programLinks, /href: safeUrl\(link\.url\)/);
+  assert.doesNotMatch(programLinks, /href: link\.url/);
 });
 
 test('public research detail queries cap unauthenticated fan-out before serialization', () => {
@@ -3261,12 +3270,9 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /archived: \{ \$ne: true \}/);
   assert.match(
     source,
-    /const suppliedResearchEntityId = normalizeListingObjectId\(\s*data\?\.researchEntityId \|\| data\?\.researchGroupId,\s*\)/,
+    /const suppliedResearchEntityId = normalizeListingObjectId\(data\?\.researchEntityId\)/,
   );
-  assert.doesNotMatch(
-    source,
-    /const suppliedResearchEntityId = data\?\.researchEntityId \|\| data\?\.researchGroupId/,
-  );
+  assert.doesNotMatch(source, /const suppliedResearchEntityId = data\?\.researchEntityId/);
   assert.match(source, /const safeId = normalizeListingObjectId\(id\)/);
   assert.match(source, /const requestedIds = Array\.isArray\(ids\) \? ids : \[\]/);
   assert.match(source, /requestedIds\.slice\(0, MAX_LISTING_ID_READS\)/);
@@ -4336,7 +4342,9 @@ test('analytics user drilldown sanitizes legacy event fields before response', (
     /const searchDepartments = sanitizeAnalyticsStringArray\(event\?\.searchDepartments\)/,
   );
   assert.match(source, /const metadata = sanitizeAnalyticsMetadata\(event\?\.metadata\)/);
-  assert.match(source, /events: events\.map\(publicAnalyticsUserEvent\)/);
+  assert.match(source, /const publicEvents = events\.map\(publicAnalyticsUserEvent\)/);
+  assert.match(source, /const enrichedEvents = publicEvents\.map\(/);
+  assert.match(source, /events: enrichedEvents/);
   assert.doesNotMatch(source, /searchQuery: event\.searchQuery/);
   assert.doesNotMatch(source, /searchDepartments: event\.searchDepartments/);
   assert.doesNotMatch(source, /metadata: event\.metadata/);
@@ -4447,29 +4455,12 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     'utf8',
   );
 
-  assert.match(
-    source,
-    /const sanitizeSavedPathwayChecklistKey = \(key: unknown\): string \| undefined => \{/,
-  );
-  assert.match(source, /trimmed === '__proto__' \|\|/);
-  assert.match(source, /trimmed === 'constructor' \|\|/);
-  assert.match(source, /trimmed === 'prototype'/);
-  assert.match(source, /replace\(\/\^\\\$\+\/, '_'\)\.replace\(\/\\\.\/g, '_'\)/);
-  assert.match(source, /const normalizedKey = sanitizeSavedPathwayChecklistKey\(key\)/);
-  assert.match(source, /MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000/);
-  assert.match(source, /!Array\.isArray\(candidate\.checklist\)/);
-  assert.match(source, /let checklistCount = 0/);
-  assert.match(source, /if \(checklistCount >= MAX_SAVED_PATHWAY_CHECKLIST_ITEMS\) break/);
-  assert.match(source, /checklistCount \+= 1/);
-  assert.match(source, /candidate\.note\.slice\(0, MAX_SAVED_PATHWAY_NOTE_LENGTH\)/);
-  assert.match(source, /const MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS = 100/);
-  assert.match(source, /export function sanitizeSavedPathwayPlansForResponse\(/);
-  assert.match(source, /if \(count >= MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS\) break/);
-  assert.match(
-    source,
-    /pathwayKey = normalizeObjectIdStringForUserMutation\(pathwayId, 'pathway'\)/,
-  );
-  assert.match(source, /sanitized\[pathwayKey\] = sanitizeSavedPathwayPlanForStorage\(plan\)/);
+  assert.doesNotMatch(source, /const sanitizeSavedPathwayChecklistKey =/);
+  assert.doesNotMatch(source, /export function sanitizeSavedPathwayPlansForResponse\(/);
+  assert.doesNotMatch(source, /export function sanitizeSavedPathwayPlanForStorage\(/);
+  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_NOTE_LENGTH/);
+  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_CHECKLIST_ITEMS/);
+  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS/);
   assert.doesNotMatch(
     source,
     /Object\.entries\(candidate\.checklist \|\| \{\}\)[\s\S]*\.slice\(0, MAX_SAVED_PATHWAY_CHECKLIST_ITEMS\)/,
@@ -4753,7 +4744,8 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
     source,
     /displayName:\s*group\.displayName === undefined \? undefined : publicTextString\(group\.displayName\)/,
   );
-  assert.match(source, /researchAreas:\s*publicTextStringArray\(group\.researchAreas\)/);
+  assert.match(source, /researchAreas:\s*publicResearchAreaArray\(group\.researchAreas\)/);
+  assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
   assert.match(
     source,
     /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS\)\s*\.map\(publicTextValue\)/,

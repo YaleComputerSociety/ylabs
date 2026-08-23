@@ -437,6 +437,43 @@ export const jacksonPersonCardExtractor: FacultyExtractor = (html, ctx) => {
 };
 
 /**
+ * "Last, First" directory entries (Yale School of Public Health school-wide
+ * A-Z index) list the surname before the given name, unlike every other
+ * roster on this page which is already "First Last".
+ */
+function nameFromLastCommaFirst(raw: string): string {
+  const [last, first] = raw.split(',').map((part) => cleanText(part));
+  if (!first || !last) return cleanText(raw);
+  return `${first} ${last}`;
+}
+
+/**
+ * Yale School of Public Health — school-wide "Faculty Directory by Name"
+ * A-Z index. All letters render server-side on one page (no pagination).
+ *   <li class="link-items-list__item">
+ *     <div><a href="/profile/<slug>/" class="hyperlink">Last, First</a></div>
+ *   </li>
+ * The listing carries no title/department/email; those are enriched from
+ * each faculty member's own official profile page.
+ */
+export const ysphDirectoryExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+  $('section.generic-anchored-list .link-items-list__item a.hyperlink').each((_i, el) => {
+    const link = $(el);
+    const href = link.attr('href') || '';
+    if (!/\/profile\//.test(href)) return;
+    const raw = cleanText(link.text());
+    if (!raw) return;
+    const name = nameFromLastCommaFirst(raw);
+    if (!name) return;
+    const profileUrl = absolutize(href, ctx.pageUrl);
+    out.push({ name, profileUrl });
+  });
+  return out;
+};
+
+/**
  * Yale CS — engineering.yale.edu computer-science faculty page is a Next.js
  * client-rendered SPA: the raw HTML contains no faculty data, only an empty
  * shell that hydrates client-side. Marked with `jsRenderedSkip` so the runner
@@ -526,6 +563,48 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
   return out;
 };
 
+/**
+ * Yale SEAS Chemical & Environmental Engineering — unlike its sibling SEAS
+ * department pages, this one renders its roster as static server-side HTML
+ * instead of hydrating a client-side `load_faculty` widget:
+ *   <a class="stories-item" href="/research-and-faculty/faculty-directory/<slug>">
+ *     <h3>Name <em class="fa fa-arrow-right"></em></h3>
+ *     <span class="font-bold">Title</span>
+ *   </a>
+ */
+export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('a.stories-item').each((_i, el) => {
+    const card = $(el);
+    const heading = card.find('h3').first();
+    const name = normalizeName(
+      cleanText(
+        heading
+          .contents()
+          .filter((_j, node) => node.type === 'text')
+          .text(),
+      ),
+    );
+    if (!name) return;
+
+    const profileHref = card.attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('span.font-bold').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+
+    out.push({
+      name,
+      profileUrl,
+      title,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -557,6 +636,104 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: csJsRenderedStub,
     dataUrl:
       'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/load_faculty/4841',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'applied-physics',
+    deptName: 'Applied Physics',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/applied-physics/people',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/applied-physics/people/load_faculty/4867',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'biomedical-engineering',
+    deptName: 'Biomedical Engineering',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/faculty/load_faculty/4868',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'chemical-environmental-engineering',
+    deptName: 'Chemical & Environmental Engineering',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/chemical-and-environmental-engineering/faculty',
+    paginated: false,
+    extractor: chemEnvFacultyExtractor,
+  },
+  {
+    deptKey: 'electrical-computer-engineering',
+    deptName: 'Electrical & Computer Engineering',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/electrical-and-computer-engineering/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/electrical-and-computer-engineering/faculty/load_faculty/266',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'mechanical-engineering',
+    deptName: 'Mechanical Engineering & Materials Science',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/mechanical-engineering/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/mechanical-engineering/faculty/load_faculty/4870',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'materials-science',
+    deptName: 'Mechanical Engineering & Materials Science',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/materials-science/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/materials-science/faculty/load_faculty/4869',
     dataRequest: {
       template: 'department',
       maxpages: '0',
@@ -762,6 +939,14 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://german.yale.edu/people/faculty',
     paginated: false,
     extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'ysph',
+    deptName: 'Yale School of Public Health',
+    schoolName: 'Yale School of Public Health',
+    url: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
+    paginated: false,
+    extractor: ysphDirectoryExtractor,
   },
 ];
 
@@ -1189,7 +1374,7 @@ function profileEnrichmentFromHtml(
 
   const title =
     $(
-      '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"]',
+      '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"], [class*="header-info__title"], [class*="workday-title"]',
     )
       .first()
       .text()
@@ -1366,6 +1551,15 @@ async function enrichEntryFromOfficialProfile(
   }
 }
 
+const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
+  'mechanical-engineering': 'meng-matsci',
+  'materials-science': 'meng-matsci',
+};
+
+function namespacedDeptKey(deptKey: string): string {
+  return SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[deptKey] || deptKey;
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -1378,7 +1572,8 @@ function entryToUserObservations(
     : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = slugify(cleaned);
-  const entityKey = netid ? `netid:${netid}` : `dept:${dept.deptKey}:${slug || 'unknown'}`;
+  const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
+  const entityKey = netid ? `netid:${netid}` : `dept:${entityKeyNamespace}:${slug || 'unknown'}`;
 
   const rosterBase = { entityType: 'user' as const, entityKey, sourceUrl };
   const profileBase = {
@@ -1443,7 +1638,7 @@ function entryToResearchEntityObservations(
   if (!entry.labUrl) return [];
   const cleanedName = normalizeName(entry.name);
   const nameSlug = slugify(cleanedName) || slugify(entry.labUrl);
-  const slug = `dept-${dept.deptKey}-${nameSlug}`.slice(0, 100);
+  const slug = `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
   const isExplicitLab = isLikelyExplicitLabWebsite(entry);
   if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
   const entityName = cleanedName

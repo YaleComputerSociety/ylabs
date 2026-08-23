@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isDirectoryIndexChromeText,
+  isPersonBiographyOrAdvisingDescription,
   publicResearchEntityDescriptionText,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
+  sanitizeResearchHomeSelfReferenceCopyFields,
+  sanitizeResearchHomeSelfReferenceText,
 } from '../researchEntityDescriptionText';
+
+const PROGRAM_DIRECTOR_BIO =
+  'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication and Director of the Yale Program on Climate Change Communication. He is an internationally recognized expert on public climate change beliefs. In 2020, he was named the second-most influential climate scientist in the world by Reuters. I only consider doctoral student applicants that already have a strong background in climate change or environmental communication. I advise masters students focused on climate perceptions and communication.';
 
 describe('isDirectoryIndexChromeText', () => {
   it('flags YSM A-Z lab-website index directory boilerplate (#517)', () => {
@@ -130,6 +136,32 @@ describe('sanitizeFacultyResearchEntityText', () => {
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
   });
+
+  it('strips a trailing "Research" suffix (with or without a dash separator) from the possessive name', () => {
+    const dashSuffixEntity = {
+      name: 'Tara Boroushaki - Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Boroushaki Lab investigates sensing and mobile technologies.',
+        dashSuffixEntity,
+      ),
+    ).toBe("Tara Boroushaki's research investigates sensing and mobile technologies.");
+
+    const bareSuffixEntity = {
+      name: 'Ada Lovelace Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Lovelace Lab focuses on analytical engines.',
+        bareSuffixEntity,
+      ),
+    ).toBe("Ada Lovelace's research focuses on analytical engines.");
+  });
 });
 
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {
@@ -162,5 +194,167 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.profileSynthesisDescription).toBe(
       'This lab studies how humans process complex sound patterns.',
     );
+  });
+
+  it('drops a director biography served as a non-person entity description (#806)', () => {
+    const program = {
+      entityType: 'PROGRAM',
+      kind: 'program',
+      fullDescription: PROGRAM_DIRECTOR_BIO,
+      shortDescription: 'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(program);
+
+    expect(sanitized.fullDescription).toBe('');
+    expect(sanitized.shortDescription).toBe('');
+  });
+
+  it('keeps a genuine program description on a non-person entity', () => {
+    const program = {
+      entityType: 'PROGRAM',
+      kind: 'program',
+      fullDescription:
+        'The Yale Program on Climate Change Communication conducts scientific research on public climate change knowledge and develops tools to help decision-makers communicate effectively.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(program);
+
+    expect(sanitized.fullDescription).toBe(
+      'The Yale Program on Climate Change Communication conducts scientific research on public climate change knowledge and develops tools to help decision-makers communicate effectively.',
+    );
+  });
+
+  it('does not apply the non-person biography guard to faculty-research entities', () => {
+    const facultyResearch = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription: PROGRAM_DIRECTOR_BIO,
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
+
+    expect(sanitized.fullDescription).toBe(PROGRAM_DIRECTOR_BIO);
+  });
+});
+
+describe('isPersonBiographyOrAdvisingDescription', () => {
+  it('flags a first-person graduate-admissions/advising note', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'I only consider doctoral student applicants with a strong background in climate communication.',
+      ),
+    ).toBe(true);
+    expect(
+      isPersonBiographyOrAdvisingDescription('I advise masters students focused on perceptions.'),
+    ).toBe(true);
+  });
+
+  it('flags a third-person personal appointment biography', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'Jane Doe, PhD is the Sterling Professor of Physics and Director of the Center. She founded the group in 2005 and leads its experimental program.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag a genuine program or center description', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'The Center for Infectious Disease Modeling studies epidemic dynamics and develops models to inform vaccination policy.',
+      ),
+    ).toBe(false);
+    expect(
+      isPersonBiographyOrAdvisingDescription(
+        'We offer paid summer research fellowships to undergraduates. We welcome applicants from all majors.',
+      ),
+    ).toBe(false);
+    expect(isPersonBiographyOrAdvisingDescription('')).toBe(false);
+    expect(isPersonBiographyOrAdvisingDescription(undefined)).toBe(false);
+  });
+});
+
+describe('sanitizeResearchHomeSelfReferenceText', () => {
+  it('rewrites stray "the lab" body copy to the center noun for CENTER entities (#807)', () => {
+    const center = { name: 'Yale Center for Genome Analysis', entityType: 'CENTER', kind: 'center' };
+    expect(
+      sanitizeResearchHomeSelfReferenceText(
+        'The Yale Center for Genome Analysis specializes in genomics. The lab offers DNA sequencing services.',
+        center,
+      ),
+    ).toBe(
+      'The Yale Center for Genome Analysis specializes in genomics. The center offers DNA sequencing services.',
+    );
+    expect(
+      sanitizeResearchHomeSelfReferenceText('this lab provides research opportunities.', center),
+    ).toBe('this center provides research opportunities.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText("the lab's members present findings.", center),
+    ).toBe("the center's members present findings.");
+  });
+
+  it('uses the correct noun for other non-lab entity types', () => {
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab convenes annually.', {
+        name: 'Some Institute',
+        entityType: 'INSTITUTE',
+        kind: 'institute',
+      }),
+    ).toBe('The institute convenes annually.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab trains fellows.', {
+        name: 'Some Program',
+        entityType: 'PROGRAM',
+        kind: 'program',
+      }),
+    ).toBe('The program trains fellows.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab runs shared instruments.', {
+        name: 'Some Core',
+        entityType: 'CORE_FACILITY',
+      }),
+    ).toBe('The core facility runs shared instruments.');
+  });
+
+  it('leaves LAB and faculty-research entities untouched', () => {
+    const labText = 'The lab studies neurons. The lab offers rotations.';
+    expect(
+      sanitizeResearchHomeSelfReferenceText(labText, { name: 'Smith Lab', entityType: 'LAB', kind: 'lab' }),
+    ).toBe(labText);
+    expect(
+      sanitizeResearchHomeSelfReferenceText(labText, {
+        name: 'Jane Doe Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+      }),
+    ).toBe(labText);
+  });
+
+  it('does not rewrite a named lab embedded inside a center description', () => {
+    const center = { name: 'A Center', entityType: 'CENTER', kind: 'center' };
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The center collaborates with the Smith Lab.', center),
+    ).toBe('The center collaborates with the Smith Lab.');
+  });
+});
+
+describe('sanitizeResearchHomeSelfReferenceCopyFields', () => {
+  it('normalizes shortDescription and fullDescription for CENTER entities', () => {
+    const sanitized = sanitizeResearchHomeSelfReferenceCopyFields({
+      entityType: 'CENTER',
+      kind: 'center',
+      shortDescription: 'The lab offers sequencing.',
+      fullDescription: 'Yale Forests manages forestland. The lab provides educational opportunities.',
+    });
+    expect(sanitized.shortDescription).toBe('The center offers sequencing.');
+    expect(sanitized.fullDescription).toBe(
+      'Yale Forests manages forestland. The center provides educational opportunities.',
+    );
+  });
+
+  it('returns the entity unchanged for LAB entities', () => {
+    const entity = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription: 'The lab studies neurons.',
+    };
+    expect(sanitizeResearchHomeSelfReferenceCopyFields(entity)).toBe(entity);
   });
 });

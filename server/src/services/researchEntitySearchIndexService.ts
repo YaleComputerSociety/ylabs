@@ -54,6 +54,8 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     ml: ['machine learning', 'artificial intelligence', 'deep learning'],
     nlp: ['natural language processing', 'computational linguistics'],
     cv: ['computer vision', 'medical imaging', 'image analysis'],
+    'computer vision': ['computational vision', 'cv'],
+    'computational vision': ['computer vision', 'cv'],
     neuro: ['neuroscience', 'neurology', 'neural', 'brain'],
     psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
   },
@@ -160,8 +162,21 @@ const STUDENT_TOPIC_ALIASES: Record<string, string[]> = {
     'natural language processing',
     'computational linguistics',
   ],
-  cv: ['cv', 'computer vision', 'image analysis', 'visual recognition'],
-  'computer vision': ['cv', 'computer vision', 'image analysis', 'visual recognition'],
+  cv: ['cv', 'computer vision', 'computational vision', 'image analysis', 'visual recognition'],
+  'computer vision': [
+    'cv',
+    'computer vision',
+    'computational vision',
+    'image analysis',
+    'visual recognition',
+  ],
+  'computational vision': [
+    'cv',
+    'computer vision',
+    'computational vision',
+    'image analysis',
+    'visual recognition',
+  ],
   neuro: ['neuro', 'neuroscience', 'neurology', 'neural', 'brain'],
   neuroscience: ['neuro', 'neuroscience', 'neurology', 'neural', 'brain'],
   psych: ['psych', 'psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
@@ -443,12 +458,89 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
     model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
     documentTemplate:
       'Name: {{doc.name}}\n' +
-      'Professors: {{doc.professorNames}}\n' +
-      'Departments: {{doc.departments}}\n' +
-      'Research areas: {{doc.researchAreas}}\n' +
-      'Description: {{doc.shortDescription}} {{doc.fullDescription}}',
+      '{% if doc.professorNames %}Professors: {{doc.professorNames}}\n{% endif %}' +
+      '{% if doc.departments %}Departments: {{doc.departments}}\n{% endif %}' +
+      '{% if doc.researchAreas %}Research areas: {{doc.researchAreas}}\n{% endif %}' +
+      '{% if doc.shortDescription %}Description: {{doc.shortDescription}} {% endif %}' +
+      '{% if doc.fullDescription %}{{doc.fullDescription}}{% endif %}',
   },
 });
+
+const RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let embedderConfiguredCache: boolean | null = null;
+let embedderConfiguredCacheAt = 0;
+
+export const invalidateResearchEntitySearchEmbedderCache = (): void => {
+  embedderConfiguredCache = null;
+  embedderConfiguredCacheAt = 0;
+};
+
+interface ResearchEntitySearchIndexLike {
+  getEmbedders?: () => Promise<Record<string, unknown> | null | undefined>;
+}
+
+export async function isResearchEntitySearchEmbedderConfigured(
+  index: ResearchEntitySearchIndexLike,
+): Promise<boolean> {
+  const now = Date.now();
+  if (
+    embedderConfiguredCache !== null &&
+    now - embedderConfiguredCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
+  ) {
+    return embedderConfiguredCache;
+  }
+
+  let configured = false;
+  try {
+    const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+    configured = Boolean(
+      embedders &&
+      typeof embedders === 'object' &&
+      RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
+    );
+  } catch {
+    configured = false;
+  }
+
+  embedderConfiguredCache = configured;
+  embedderConfiguredCacheAt = now;
+  return configured;
+}
+
+const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
+
+interface MeiliTaskWaiter {
+  waitForTask: (
+    taskUid: number,
+    options?: { timeout?: number },
+  ) => Promise<{
+    status: string;
+    error?: unknown;
+  }>;
+}
+
+interface MeiliTaskAwareIndex {
+  tasks?: MeiliTaskWaiter;
+}
+
+async function assertMeiliSettingsTaskSucceeded(
+  index: MeiliTaskAwareIndex,
+  enqueued: unknown,
+  label: string,
+): Promise<void> {
+  const taskUid = (enqueued as { taskUid?: number })?.taskUid;
+  if (typeof index.tasks?.waitForTask !== 'function' || typeof taskUid !== 'number') return;
+
+  const task = await index.tasks.waitForTask(taskUid, {
+    timeout: MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  });
+  if (task.status !== 'succeeded') {
+    throw new Error(
+      `Meilisearch ${label} task ${taskUid} did not succeed (status: ${task.status}): ${JSON.stringify(task.error)}`,
+    );
+  }
+}
 
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
@@ -459,10 +551,15 @@ export async function rebuildResearchEntitySearchIndex(
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
 
-  await index.updateSettings(getResearchEntitySearchIndexSettings());
+  const settingsTask = await index.updateSettings(getResearchEntitySearchIndexSettings());
+  await assertMeiliSettingsTaskSucceeded(index, settingsTask, 'updateSettings');
   const openAiApiKey = process.env.OPENAI_API_KEY;
   if (openAiApiKey && typeof (index as any).updateEmbedders === 'function') {
-    await (index as any).updateEmbedders(buildResearchEntitySearchEmbedderConfig(openAiApiKey));
+    const embedderTask = await (index as any).updateEmbedders(
+      buildResearchEntitySearchEmbedderConfig(openAiApiKey),
+    );
+    await assertMeiliSettingsTaskSucceeded(index, embedderTask, 'updateEmbedders');
+    invalidateResearchEntitySearchEmbedderCache();
   }
   if (clearExisting) {
     await index.deleteAllDocuments();

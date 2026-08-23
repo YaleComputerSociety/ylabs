@@ -13,6 +13,7 @@ import {
   getStructuredEligibilityDetails,
 } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
+import { buildSafeProgramLinks } from '../../utils/programLinks';
 import { labelizeResearchDetailValue } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
 import FavoriteButton from '../shared/FavoriteButton';
@@ -259,9 +260,7 @@ const FellowshipModal = ({
       ? labelizeResearchDetailValue(fellowship.sourceName)
       : '';
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
-  const safeLinks = (fellowship.links || [])
-    .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
-    .filter((link) => link.href);
+  const safeLinks = buildSafeProgramLinks(fellowship.links);
   const applicationMaterials = fellowship.applicationMaterials || [];
 
   return (

@@ -187,6 +187,7 @@ const buildUserRow = (index: number) => ({
   logins: 5,
   searches: 4,
   views: 3,
+  researchViews: 2,
   fellowshipViews: 0,
   listingFavorites: 0,
   listingUnfavorites: 0,

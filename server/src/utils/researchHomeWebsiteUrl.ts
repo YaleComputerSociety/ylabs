@@ -203,12 +203,22 @@ export function isSameHostShallowChromeUrl(value: unknown, sourceUrlValue: unkno
   return linkDepth <= 2 && linkDepth <= pathSegmentCount(sourceUrl);
 }
 
+const SITE_CHROME_PATH =
+  /(?:^|\/)(?:privacy(?:-policy)?|accessibility(?:-statement)?|terms(?:-of-use|-of-service|-and-conditions)?|sitemap|site-map|contact(?:-us)?|give(?:-back|-now)?|giving|donate|make-a-gift|campus-life|faculty-(?:directory|openings|positions)|our-mantra|social-media|log-in|sign-in)(?:\/|$)/i;
+
+export function isSiteNavigationOrFooterChromeUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return SITE_CHROME_PATH.test(url.pathname.toLowerCase());
+}
+
 export function isUnhelpfulProgramUrl(value: unknown, sourceUrlValue?: unknown): boolean {
   if (isProgramApplicationPortalUrl(value)) return false;
   return (
     isBareDomainRootUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
+    isSiteNavigationOrFooterChromeUrl(value) ||
     isSelfReferentialUrl(value) ||
     isSameHostShallowChromeUrl(value, sourceUrlValue)
   );

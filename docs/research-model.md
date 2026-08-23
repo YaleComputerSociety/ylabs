@@ -70,7 +70,8 @@ Raw, append-only scraped evidence; the substrate that feeds the confidence resol
 
 Private student saved planning, keyed on `accountId` plus a target (`{ kind: 'RESEARCH_ENTITY' | 'PROGRAM', id }`).
 The saved-research and program-watch routes read and write `ResearchPlan` through `researchPlanService` at runtime (PR #484 / commit `34b9fd7e`).
-The embedded `User.savedResearchEntities`, `User.savedResearchEntityPlans`, `User.savedPathwayPlans`, and `User.savedPrograms` fields are stale residue that no runtime reader consumes; backfilling them onto `ResearchPlan` and dropping the fields is a separate, tracked cleanup (#725), not an open design question.
+The embedded `User.savedResearchEntities` and `User.savedPrograms` fields are stale residue that no runtime reader consumes; backfilling them onto `ResearchPlan` and dropping the fields is a separate, tracked cleanup (#725), not an open design question.
+The `User.savedResearchEntityPlans`, `User.savedResearchEntityPlanMigrationConflicts`, and `User.savedPathwayPlans` declarations were already dropped as part of that cleanup, with the Dev-only `retire:stale-saved-plan-fields` script clearing any stale stored values.
 
 ## Removed, Retired, And Frozen
 
@@ -214,8 +215,9 @@ Current behavior:
 - Saved profile cards link back to `/research/:slug` rather than introducing a separate planning-detail route.
 
 The `favPathways` saving feature was removed (#363): the `/users/favPathways*` endpoints and the client saved-pathways section are gone, and saving is covered entirely by saved research entities and their plans.
-All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; nothing consumes the embedded planning fields (`User.favPathways`, `User.savedPathwayPlans`, `User.savedResearchEntities`, `User.savedResearchEntityPlans`, `User.savedPrograms`) at runtime.
+All of the saved-research and program-watch routes read and write the canonical `ResearchPlan` collection through `researchPlanService` at runtime; nothing consumes the embedded planning fields (`User.favPathways`, `User.savedResearchEntities`, `User.savedPrograms`) at runtime.
 Those fields are intentionally left in the `User` schema only so their legacy data survives the pending, human-gated backfill onto `ResearchPlan` tracked in #725; they are stale residue, not an open design question.
+The former `User.savedResearchEntityPlans`, `User.savedResearchEntityPlanMigrationConflicts`, and `User.savedPathwayPlans` declarations were dropped once the canonical `ResearchPlan` cutover shipped and their Development backfill completed; the Dev-only `retire:stale-saved-plan-fields` script clears any stale stored values.
 
 Program watching (the account Program Watch surface and the `/programs` watch affordance) is a second canonical `ResearchPlan` surface, keyed on `accountId` plus a `PROGRAM` target, exposed through the `/api/users/watchedPrograms`, `/api/users/watchedProgramIds`, and `/api/users/watchedProgramPlans` routes and reusing the visibility-filtered, contact-redacted program projection.
 

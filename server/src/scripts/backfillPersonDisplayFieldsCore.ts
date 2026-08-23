@@ -1,3 +1,5 @@
+import { sanitizePersonTitle } from '../utils/titleHygiene';
+
 export const PERSON_DISPLAY_PROFILE_FIELDS = [
   'title',
   'primaryDepartment',
@@ -57,7 +59,7 @@ export function composeDisplayProfileFromLegacy(
   const user = sources.user || undefined;
   const composed: PersonDisplayProfileValues = {};
 
-  const title = boundDisplayValue('title', cleanString(user?.title));
+  const title = boundDisplayValue('title', sanitizePersonTitle(cleanString(user?.title)));
   const primaryDepartment = boundDisplayValue(
     'primaryDepartment',
     cleanString(user?.primaryDepartment),

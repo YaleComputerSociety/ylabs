@@ -24,9 +24,11 @@ import {
   psychExtractor,
   viewsRowPersonExtractor,
   jacksonPersonCardExtractor,
+  ysphDirectoryExtractor,
   csJsRenderedStub,
   csRenderedExtractor,
   csFacultyDataExtractor,
+  chemEnvFacultyExtractor,
   type DeptConfig,
   type FacultyEntry,
 } from '../sources/departmentRosterScraper';
@@ -368,6 +370,30 @@ const JACKSON_PERSON_CARD_HTML = `
       </div>
     </div>
   </div>
+</body></html>
+`;
+
+const YSPH_DIRECTORY_HTML = `
+<html><body>
+  <section class="generic-anchored-list" aria-label="Faculty Directory by Name list of links">
+    <div class="categorized-list-item">
+      <h2 class="categorized-list-item__title" id="A">A</h2>
+      <div class="categorized-list-item__inner-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item" data-columns="4"><div><a href="/profile/jordan-alvarez-fixture/" tabindex="0" class="hyperlink">Alvarez, Jordan</a></div></li>
+          <li class="link-items-list__item" data-columns="4"><div><a href="/profile/priya-anand-fixture/" tabindex="0" class="hyperlink">Anand, Priya</a></div></li>
+        </ul>
+      </div>
+    </div>
+    <div class="categorized-list-item">
+      <h2 class="categorized-list-item__title" id="B">B</h2>
+      <div class="categorized-list-item__inner-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item" data-columns="4"><div><a href="/profile/morgan-brooks-fixture/" tabindex="0" class="hyperlink">Brooks, Morgan</a></div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
 </body></html>
 `;
 
@@ -853,6 +879,58 @@ describe('jacksonPersonCardExtractor', () => {
   });
 });
 
+describe('ysphDirectoryExtractor', () => {
+  it('extracts "Last, First" A-Z directory entries and reorders to "First Last"', () => {
+    const out = ysphDirectoryExtractor(YSPH_DIRECTORY_HTML, {
+      pageUrl: 'https://ysph.yale.edu/school-of-public-health-faculty/directory-name/',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Jordan Alvarez',
+        profileUrl: 'https://ysph.yale.edu/profile/jordan-alvarez-fixture/',
+      },
+      {
+        name: 'Priya Anand',
+        profileUrl: 'https://ysph.yale.edu/profile/priya-anand-fixture/',
+      },
+      {
+        name: 'Morgan Brooks',
+        profileUrl: 'https://ysph.yale.edu/profile/morgan-brooks-fixture/',
+      },
+    ]);
+  });
+
+  it('ignores entries with no name text', () => {
+    const html = `
+      <section class="generic-anchored-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/profile/empty-fixture/" class="hyperlink"></a></div></li>
+        </ul>
+      </section>
+    `;
+    const out = ysphDirectoryExtractor(html, { pageUrl: 'https://ysph.yale.edu/x' });
+    expect(out).toEqual([]);
+  });
+
+  it('ignores generic list links outside the directory section', () => {
+    const html = `
+      <footer>
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/about-us/" class="hyperlink">About Us</a></div></li>
+        </ul>
+      </footer>
+      <section class="generic-anchored-list">
+        <ul class="link-items-list">
+          <li class="link-items-list__item"><div><a href="/give/" class="hyperlink">Give Now</a></div></li>
+        </ul>
+      </section>
+    `;
+    const out = ysphDirectoryExtractor(html, { pageUrl: 'https://ysph.yale.edu/x' });
+    expect(out).toEqual([]);
+  });
+});
+
 describe('csJsRenderedStub', () => {
   it('throws to signal the page needs a headless browser', () => {
     expect(() => csJsRenderedStub('<html></html>', { pageUrl: 'x' })).toThrow(/JS-rendered/);
@@ -929,6 +1007,49 @@ describe('csFacultyDataExtractor', () => {
         title: 'Assistant Professor of Computer Science',
         profileUrl: 'https://www.vandijklab.org/',
         labUrl: 'https://www.vandijklab.org/',
+      },
+    ]);
+  });
+});
+
+describe('chemEnvFacultyExtractor', () => {
+  const html = `
+    <div class="stories">
+      <a class="block stories-item py-2 !no-underline" target="_self" href="/research-and-faculty/faculty-directory/eric-i-altman">
+        <picture><img class="img-fluid" src="/application/files/thumbnails/eric-altman.webp" /></picture>
+        <span class="text-black pt-4 block"> </span>
+        <h3 class="!pb-0 block text-brand-blue">
+           Eric Altman  <em class="fa fa-arrow-right text-light-blue"></em>
+        </h3>
+        <span class="text-black block font-bold">Roberto C. Goizueta Professor</span>
+      </a>
+      <a class="block stories-item py-2 !no-underline" target="_blank" href="https://environment.yale.edu/directory/faculty/yuan-yao">
+        <h3 class="!pb-0 block text-brand-blue">
+           Yuan Yao  <em class="fa fa-arrow-right text-light-blue"></em>
+        </h3>
+        <span class="text-black block font-bold">Professor</span>
+      </a>
+    </div>
+  `;
+
+  it('extracts name, title, profile URL, and image from static stories-item cards', () => {
+    const out = chemEnvFacultyExtractor(html, {
+      pageUrl:
+        'https://engineering.yale.edu/academic-study/departments/chemical-and-environmental-engineering/faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Eric Altman',
+        profileUrl:
+          'https://engineering.yale.edu/research-and-faculty/faculty-directory/eric-i-altman',
+        title: 'Roberto C. Goizueta Professor',
+        imageUrl: 'https://engineering.yale.edu/application/files/thumbnails/eric-altman.webp',
+      },
+      {
+        name: 'Yuan Yao',
+        profileUrl: 'https://environment.yale.edu/directory/faculty/yuan-yao',
+        title: 'Professor',
       },
     ]);
   });
@@ -1944,6 +2065,116 @@ describe('DepartmentRosterScraper.run', () => {
     expect(DEFAULT_DEPT_CONFIGS.map((config) => config.deptKey)).toEqual(
       expect.arrayContaining(['math', 'physics', 'statistics', 'astronomy']),
     );
+  });
+
+  it('registers all remaining SEAS engineering department rosters (#640)', () => {
+    const configsByKey = new Map(DEFAULT_DEPT_CONFIGS.map((config) => [config.deptKey, config]));
+
+    expect(DEFAULT_DEPT_CONFIGS.map((config) => config.deptKey)).toEqual(
+      expect.arrayContaining([
+        'applied-physics',
+        'biomedical-engineering',
+        'chemical-environmental-engineering',
+        'electrical-computer-engineering',
+        'mechanical-engineering',
+        'materials-science',
+      ]),
+    );
+
+    for (const deptKey of [
+      'applied-physics',
+      'biomedical-engineering',
+      'electrical-computer-engineering',
+      'mechanical-engineering',
+      'materials-science',
+    ]) {
+      const config = configsByKey.get(deptKey);
+      expect(config?.schoolName).toBe('Yale School of Engineering & Applied Science');
+      expect(config?.dataUrl).toMatch(/\/load_faculty\/\d+$/);
+      expect(config?.dataExtractor).toBe(csFacultyDataExtractor);
+      expect(config?.jsRenderedSkip).toBe(true);
+    }
+
+    const chemEnv = configsByKey.get('chemical-environmental-engineering');
+    expect(chemEnv?.schoolName).toBe('Yale School of Engineering & Applied Science');
+    expect(chemEnv?.extractor).toBe(chemEnvFacultyExtractor);
+    expect(chemEnv?.dataUrl).toBeUndefined();
+  });
+
+  it('collapses cross-listed MEMS faculty into one synthetic user entity across both sub-rosters', async () => {
+    const meng = vi.fn((): FacultyEntry[] => [{ name: 'Jamie Meng-Matsci' }]);
+    const matsci = vi.fn((): FacultyEntry[] => [{ name: 'Jamie Meng-Matsci' }]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mechanical-engineering',
+        deptName: 'Mechanical Engineering & Materials Science',
+        schoolName: 'Yale School of Engineering & Applied Science',
+        url: 'https://example.invalid/mechanical-engineering',
+        paginated: false,
+        extractor: meng,
+      },
+      {
+        deptKey: 'materials-science',
+        deptName: 'Mechanical Engineering & Materials Science',
+        schoolName: 'Yale School of Engineering & Applied Science',
+        url: 'https://example.invalid/materials-science',
+        paginated: false,
+        extractor: matsci,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userKeys = new Set(
+      emitted.filter((o) => o.entityType === 'user').map((o) => o.entityKey),
+    );
+    expect([...userKeys]).toEqual(['dept:meng-matsci:jamie-meng-matsci']);
+
+    getSpy.mockRestore();
+  });
+
+  it('collapses cross-listed MEMS faculty with an off-site lab into one research entity across both sub-rosters', async () => {
+    const meng = vi.fn((): FacultyEntry[] => [
+      { name: 'Jamie Meng-Matsci', labUrl: 'https://jamielab.example.org' },
+    ]);
+    const matsci = vi.fn((): FacultyEntry[] => [
+      { name: 'Jamie Meng-Matsci', labUrl: 'https://jamielab.example.org' },
+    ]);
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mechanical-engineering',
+        deptName: 'Mechanical Engineering & Materials Science',
+        schoolName: 'Yale School of Engineering & Applied Science',
+        url: 'https://example.invalid/mechanical-engineering',
+        paginated: false,
+        extractor: meng,
+      },
+      {
+        deptKey: 'materials-science',
+        deptName: 'Mechanical Engineering & Materials Science',
+        schoolName: 'Yale School of Engineering & Applied Science',
+        url: 'https://example.invalid/materials-science',
+        paginated: false,
+        extractor: matsci,
+      },
+    ];
+    const axios = (await import('axios')).default;
+    const getSpy = vi.spyOn(axios, 'get').mockResolvedValue({ data: '<html></html>' } as any);
+
+    const scraper = new DepartmentRosterScraper(configs);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const researchEntityKeys = new Set(
+      emitted.filter((o) => o.entityType === 'researchEntity').map((o) => o.entityKey),
+    );
+    expect([...researchEntityKeys]).toEqual(['dept-meng-matsci-jamie-meng-matsci']);
+
+    getSpy.mockRestore();
   });
 
   it('dedupes repeated official profile rows after enrichment', async () => {

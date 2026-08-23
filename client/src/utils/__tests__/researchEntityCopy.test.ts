@@ -10,6 +10,7 @@ import {
   approachHeadingLabel,
   relationshipTypeLabel,
   sanitizeFacultyResearchCopy,
+  sanitizeResearchHomeSelfReferenceCopy,
 } from '../researchEntityCopy';
 
 describe('researchEntityCopy', () => {
@@ -23,6 +24,19 @@ describe('researchEntityCopy', () => {
     expect(isFacultyResearchEntity(entity)).toBe(true);
     expect(entityKindLabel(entity)).toBe('Faculty Research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
+  });
+
+  it('uses faculty research labels for FACULTY_RESEARCH entities despite stale lab kind', () => {
+    const entity = {
+      name: 'Example Researcher Faculty Research',
+      kind: 'lab',
+      entityType: 'FACULTY_RESEARCH',
+    };
+
+    expect(isFacultyResearchEntity(entity)).toBe(true);
+    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(researchWebsiteLabel(entity)).toBe('research website');
+    expect(researchWebsiteCtaLabel(entity)).toBe('Visit research website');
   });
 
   it('keeps lab labels for real lab entities', () => {
@@ -50,6 +64,51 @@ describe('researchEntityCopy', () => {
     expect(researchStructureLabel(entity)).toBe('program');
     expect(decisionHeadingLabel(entity)).toBe('What this program focuses on');
     expect(approachHeadingLabel(entity)).toBe('Ways to approach this program');
+  });
+
+  it('derives the badge and copy from canonical entityType when kind is stale', () => {
+    const staleCenter = {
+      name: 'Alison Galvani Lab',
+      displayName: 'Center for Infectious Disease Modeling and Analysis (CIDMA)',
+      kind: 'lab',
+      entityType: 'CENTER',
+    };
+
+    expect(entityKindLabel(staleCenter)).toBe('Center');
+    expect(researchWebsiteLabel(staleCenter)).toBe('center website');
+    expect(researchStructureLabel(staleCenter)).toBe('center');
+    expect(decisionHeadingLabel(staleCenter)).toBe('What this center focuses on');
+    expect(approachHeadingLabel(staleCenter)).toBe('Ways to approach this center');
+  });
+
+  it('derives Faculty Research badge and copy from entityType FACULTY_RESEARCH when kind is stale (#833)', () => {
+    const staleFacultyResearch = {
+      name: 'Nicha Dvornek Faculty Research',
+      kind: 'lab',
+      entityType: 'FACULTY_RESEARCH',
+    };
+
+    expect(isFacultyResearchEntity(staleFacultyResearch)).toBe(true);
+    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty Research');
+    expect(researchWebsiteLabel(staleFacultyResearch)).toBe('research website');
+    expect(researchWebsiteCtaLabel(staleFacultyResearch)).toBe('Visit research website');
+  });
+
+  it('derives group labels from entityType for the project entityTypes when kind is stale', () => {
+    for (const entityType of ['FACULTY_PROJECT', 'DIGITAL_HUMANITIES_PROJECT', 'ARCHIVE_OR_MUSEUM_PROJECT']) {
+      const staleProject = { name: 'Example Project', kind: 'lab', entityType };
+
+      expect(isFacultyResearchEntity(staleProject)).toBe(false);
+      expect(entityKindLabel(staleProject)).toBe('Group');
+      expect(researchWebsiteLabel(staleProject)).toBe('group website');
+    }
+  });
+
+  it('falls back to kind when entityType is absent', () => {
+    const legacy = { name: 'Example Institute', kind: 'institute' };
+
+    expect(entityKindLabel(legacy)).toBe('Institute');
+    expect(researchWebsiteLabel(legacy)).toBe('institute website');
   });
 
   it('sanitizes faculty research copy without changing real lab copy', () => {
@@ -87,6 +146,69 @@ describe('researchEntityCopy', () => {
         facultyResearch,
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
+  });
+
+  it('strips a trailing "Research" suffix (with or without a dash separator) from the possessive name', () => {
+    const dashSuffixEntity = {
+      name: 'Tara Boroushaki - Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchCopy(
+        'The Boroushaki Lab investigates sensing and mobile technologies.',
+        dashSuffixEntity,
+      ),
+    ).toBe("Tara Boroushaki's research investigates sensing and mobile technologies.");
+
+    const bareSuffixEntity = {
+      name: 'Ada Lovelace Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+    expect(
+      sanitizeFacultyResearchCopy(
+        'The Lovelace Lab focuses on analytical engines.',
+        bareSuffixEntity,
+      ),
+    ).toBe("Ada Lovelace's research focuses on analytical engines.");
+  });
+});
+
+describe('sanitizeResearchHomeSelfReferenceCopy', () => {
+  it('rewrites stray "the lab" body copy to the center noun for CENTER entities (#807)', () => {
+    const center = {
+      name: 'Yale Center for Genome Analysis',
+      kind: 'center',
+      entityType: 'CENTER',
+    };
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy('The lab offers DNA sequencing services.', center),
+    ).toBe('The center offers DNA sequencing services.');
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy("the lab's members present findings.", center),
+    ).toBe("the center's members present findings.");
+  });
+
+  it('resolves the noun from canonical entityType even when kind is stale', () => {
+    const staleCenter = { name: 'A Center', kind: 'lab', entityType: 'CENTER' };
+    expect(sanitizeResearchHomeSelfReferenceCopy('The lab convenes yearly.', staleCenter)).toBe(
+      'The center convenes yearly.',
+    );
+  });
+
+  it('leaves real lab and faculty-research copy untouched', () => {
+    const copy = 'The lab studies neurons. The lab offers rotations.';
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy(copy, { name: 'Smith Lab', kind: 'lab', entityType: 'LAB' }),
+    ).toBe(copy);
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy(copy, {
+        name: 'Jane Doe Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe(copy);
   });
 });
 

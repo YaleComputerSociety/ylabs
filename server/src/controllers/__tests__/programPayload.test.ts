@@ -78,6 +78,38 @@ describe('publicProgramForReader link hygiene (#692)', () => {
 
     expect(payload.applicationLink).toBeUndefined();
   });
+
+  it('drops nav/footer chrome links by label and breadcrumb arrow (#633)', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b192',
+      title: 'Research Internship Program',
+      links: [
+        { label: 'Experience Overview >', url: 'https://engineering.yale.edu/school-experience' },
+        { label: 'Faculty Directory', url: 'https://engineering.yale.edu/faculty-directory' },
+        { label: 'Accessibility >', url: 'https://www.yale.edu/accessibility' },
+        { label: 'Privacy Policy >', url: 'https://www.yale.edu/privacy-policy' },
+        { label: 'Give Back >', url: 'https://www.yale.edu/give-back' },
+        { label: 'Contact Us >', url: 'https://www.yale.edu/contact-us' },
+        { label: 'Research Internship Program', url: specificPage },
+      ],
+    });
+
+    expect(payload.links).toEqual([{ label: 'Research Internship Program', url: specificPage }]);
+  });
+
+  it('caps the links list as a backstop against bloated arrays (#633)', () => {
+    const links = Array.from({ length: 40 }, (_, index) => ({
+      label: `Program Page ${index}`,
+      url: `${specificPage}-${index}`,
+    }));
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b193',
+      title: 'Tobin Undergraduate Research Assistantships',
+      links,
+    });
+
+    expect(payload.links).toHaveLength(8);
+  });
 });
 
 describe('publicProgramForReader redaction placeholder hygiene (#671 residual)', () => {

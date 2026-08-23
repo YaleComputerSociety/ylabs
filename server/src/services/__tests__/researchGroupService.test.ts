@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
+  getEmbedders: vi.fn(),
   listingDistinct: vi.fn(),
   listingFind: vi.fn(),
   researchEntityFindOne: vi.fn(),
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../utils/meiliClient', () => ({
   getMeiliIndex: vi.fn(async () => ({
     search: mocks.search,
+    getEmbedders: mocks.getEmbedders,
   })),
 }));
 
@@ -121,6 +123,7 @@ import {
   resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
+import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -151,7 +154,10 @@ const validPublicDescriptions = {
 };
 
 beforeEach(() => {
+  invalidateResearchEntitySearchEmbedderCache();
   mocks.search.mockReset();
+  mocks.getEmbedders.mockReset();
+  mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
   mocks.listingDistinct.mockReset();
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
@@ -196,12 +202,12 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery(' Professor Zhong ')).toMatchObject({
       query: 'zhong',
       tokens: ['zhong'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('computer vision for medical imaging')).toMatchObject({
       query: 'computer vision medical imaging',
       tokens: ['computer', 'vision', 'medical', 'imaging'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
   });
 
@@ -209,19 +215,19 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('labs studying black holes')).toMatchObject({
       query: 'black holes',
       tokens: ['black', 'holes'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(
       normalizeResearchSearchQuery('where can I study machine learning for medicine'),
     ).toMatchObject({
       query: 'machine learning medicine',
       tokens: ['machine', 'learning', 'medicine'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('how do neurons communicate')).toMatchObject({
       query: 'neurons communicate',
       tokens: ['neurons', 'communicate'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
   });
 
@@ -229,17 +235,17 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('american studies')).toMatchObject({
       query: 'american studies',
       tokens: ['american', 'studies'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('environmental studies')).toMatchObject({
       query: 'environmental studies',
       tokens: ['environmental', 'studies'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('group theory')).toMatchObject({
       query: 'group theory',
       tokens: ['group', 'theory'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
   });
 
@@ -247,6 +253,62 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('how do i')).toMatchObject({
       query: 'how do i',
       tokens: ['how', 'do', 'i'],
+    });
+  });
+
+  it('resolves single-token department shorthand to its topic-scoped field name', () => {
+    expect(normalizeResearchSearchQuery('CS')).toMatchObject({
+      query: 'computer science',
+      tokens: ['cs'],
+      isTopicAliasQuery: true,
+      aliasTerms: ['computer science'],
+    });
+    expect(normalizeResearchSearchQuery('econ')).toMatchObject({
+      query: 'economics',
+      tokens: ['econ'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('resolves multi-token department abbreviations to the full field name', () => {
+    expect(normalizeResearchSearchQuery('comp sci')).toMatchObject({
+      query: 'computer science',
+      tokens: ['comp', 'sci'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('poli sci')).toMatchObject({
+      query: 'political science',
+      tokens: ['poli', 'sci'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('polisci')).toMatchObject({
+      query: 'political science',
+      tokens: ['polisci'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('topic-scopes department shorthand even when paired with a filler word', () => {
+    expect(normalizeResearchSearchQuery('cs labs')).toMatchObject({
+      query: 'computer science',
+      tokens: ['cs'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('preserves the AI short-alias expansion and marks it a topic-alias query', () => {
+    expect(normalizeResearchSearchQuery('AI')).toMatchObject({
+      query: 'artificial intelligence machine learning deep learning ai',
+      tokens: ['ai'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('does not topic-scope a department shorthand buried in a longer phrase', () => {
+    expect(normalizeResearchSearchQuery('cs for medicine')).toMatchObject({
+      tokens: ['cs', 'medicine'],
+      isTopicAliasQuery: false,
+      aliasTerms: null,
     });
   });
 
@@ -263,8 +325,99 @@ describe('searchResearchGroupsViaMeili', () => {
     ).toBeUndefined();
   });
 
-  it('falls back to keyword search when a local Meili index lacks the hybrid embedder', async () => {
+  it('never requests hybrid search when no embedder is configured on the live index', async () => {
     const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      'reilly',
+      expect.not.objectContaining({ hybrid: expect.anything() }),
+    );
+    expect(result).toMatchObject({
+      estimatedTotalHits: 1,
+      page: 1,
+      pageSize: 1,
+      degraded: false,
+      researchEntities: [{ _id: 'reilly-lab', slug: 'reilly-lab', name: 'Reilly Lab' }],
+    });
+  });
+
+  it('requests hybrid search when the live index reports a configured embedder', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      'reilly',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      }),
+    );
+    expect(result.degraded).toBe(false);
+  });
+
+  it('falls back to keyword search when Meili rejects hybrid despite a configured embedder (config-drift safety net)', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
     mocks.search
       .mockRejectedValueOnce({
         cause: {
@@ -367,6 +520,31 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'School of Medicine': 4 },
+        departments: { Psychiatry: 2 },
+        researchAreas: {
+          'MedicareYSM Researcher': 1,
+          Medicare: 3,
+          'YSM Researcher': 2,
+          Histones: 5,
+        },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(result.facetDistribution).toEqual({
+      school: { 'School of Medicine': 4 },
+      departments: { Psychiatry: 2 },
+      researchAreas: { Medicare: 4, Histones: 5 },
+    });
+  });
+
   it('recovers on Meili when attributesToSearchOn references a non-searchable attribute', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
@@ -430,6 +608,67 @@ describe('searchResearchGroupsViaMeili', () => {
         hybrid: { semanticRatio: 0.8, embedder: 'default' },
       }),
     );
+  });
+
+  it('applies a ranking score threshold to hybrid text queries so noise queries return empty', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'zzzxxxqqq123nonsense',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+        rankingScoreThreshold: 0.15,
+      }),
+    );
+    expect(result.estimatedTotalHits).toBe(0);
+    expect(result.degraded).toBe(false);
+  });
+
+  it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+  });
+
+  it('drops the ranking score threshold alongside hybrid when the embedder is missing', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        cause: {
+          code: 'invalid_search_embedder',
+          message: 'Cannot find embedder with name `default`.',
+        },
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('hybrid');
+    expect(result.degraded).toBe(true);
+  });
+
+  it('drops only the ranking score threshold when the running Meili version rejects it', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'bad_request',
+        message: 'Unknown field `rankingScoreThreshold`.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
+    expect(result.degraded).toBe(true);
   });
 
   it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {
@@ -912,6 +1151,112 @@ describe('getResearchGroupDetail', () => {
       fname: 'Matching',
       lname: 'Scholar',
     });
+  });
+
+  const seedSingleMemberDetail = (profileTitle: string) => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'title-hygiene-lab',
+        name: 'Title Hygiene Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.95,
+          reviewStatus: 'APPROVED',
+          archived: false,
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: personId,
+          displayName: 'Victor Batista',
+          accountId,
+          profile: { title: profileTitle },
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'vb1001', email: 'victor.batista@example.edu' }]),
+    );
+  };
+
+  it('renders a member card title stripped of the issue #708 nav-menu chrome', async () => {
+    seedSingleMemberDetail(
+      'About the InstituteMission & HistoryCommunity ValuesOur membersAnnual ReportsJoin the InstituteYQI in the MediaLocation & ContactsPrograms & EventsUpcoming Events',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user.displayName).toBe('Victor Batista');
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of a street-address fragment', async () => {
+    seedSingleMemberDetail(
+      'Professor of Ecology & Evolutionary BiologyAddress: 21 Sachem St. New Haven, CT 06511',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of a leaked raw email address', async () => {
+    seedSingleMemberDetail('Professor of Immunobiology fixture.researcher@yale.edu');
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of the issue #740 email/office/phone contact block', async () => {
+    seedSingleMemberDetail(
+      'Professor of Historyfixture.researcher@example.eduOffice: 320 York StPhone: 203-432-0000',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of a multi-sentence bio dump', async () => {
+    seedSingleMemberDetail(
+      'Her lab studies protein folding. She teaches biochemistry. She joined the faculty in 2004.',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('keeps a legitimate endowed-chair title on the member card', async () => {
+    seedSingleMemberDetail('The William K. Lanman, Jr. Professor of Molecular Biophysics');
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBe(
+      'The William K. Lanman, Jr. Professor of Molecular Biophysics',
+    );
   });
 
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {

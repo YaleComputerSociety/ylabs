@@ -10,6 +10,7 @@ import {
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
   isSameHostShallowChromeUrl,
+  isSiteNavigationOrFooterChromeUrl,
   isUnhelpfulProgramUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
@@ -524,6 +525,16 @@ describe('isUnhelpfulProgramUrl', () => {
   it('does not reject a shallow link when no source page context is given', () => {
     expect(isUnhelpfulProgramUrl('https://school.example.edu/apply')).toBe(false);
   });
+
+  it('rejects same-host site nav/footer chrome links (#633)', () => {
+    expect(isUnhelpfulProgramUrl('https://engineering.yale.edu/campus-life')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://engineering.yale.edu/faculty-directory')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://engineering.yale.edu/faculty-openings')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://www.yale.edu/privacy-policy')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://www.yale.edu/accessibility')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://www.yale.edu/contact-us')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://www.yale.edu/give-back')).toBe(true);
+  });
 });
 
 describe('isSameHostShallowChromeUrl', () => {
@@ -538,5 +549,32 @@ describe('isSameHostShallowChromeUrl', () => {
     expect(isSameHostShallowChromeUrl('https://school.example.edu/fellowships', sourceUrl)).toBe(
       false,
     );
+  });
+});
+
+describe('isSiteNavigationOrFooterChromeUrl (#633)', () => {
+  it('flags footer/utility and top-nav chrome paths', () => {
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/privacy')).toBe(true);
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/accessibility')).toBe(
+      true,
+    );
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/contact/')).toBe(true);
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/giving')).toBe(true);
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/campus-life')).toBe(
+      true,
+    );
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/sitemap')).toBe(true);
+  });
+
+  it('does not flag a genuine program page on the same host', () => {
+    expect(
+      isSiteNavigationOrFooterChromeUrl(
+        'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      ),
+    ).toBe(false);
+    expect(
+      isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/undergraduate-study'),
+    ).toBe(false);
+    expect(isSiteNavigationOrFooterChromeUrl('not a url')).toBe(false);
   });
 });

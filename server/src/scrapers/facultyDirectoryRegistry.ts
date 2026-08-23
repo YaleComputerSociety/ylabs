@@ -57,24 +57,24 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Medicine',
     department: 'All departments (school-wide A-Z)',
     rendering: 'static',
-    status: 'partial',
+    status: 'covered',
     studentImpactTier: 1,
-    coveredBy: ['ysm-atoz-index'],
+    coveredBy: ['ysm-atoz-index', 'ysm-faculty-directory'],
     approxFacultyCount: 4000,
     notes:
-      'Partially covered via the A-Z lab index (ysm-atoz-index), which ingests YSM lab research homes. The Yalies API is a school-wide faculty-identity source that is not specific to this directory, so it is not counted as coverage here. There is no scraper that walks the YSM faculty directory per-faculty for profile enrichment / lab-website discovery.',
+      'Covered via the A-Z lab index (ysm-atoz-index), which ingests YSM lab research homes, and ysm-faculty-directory (#639), which walks the school-wide A-Z faculty directory per-faculty: each profile with a lab website or governed research areas seeds/enriches a research home, keyed to the profile-page-derived PI identity. The directory itself lists ~14k entries (faculty, staff, and trainees); only profiles carrying real research content are enriched.',
   },
   {
     url: 'https://engineering.yale.edu/research-and-faculty/faculty-directory',
     school: 'Yale School of Engineering & Applied Science',
     department: 'All departments (school-wide)',
     rendering: 'js-rendered',
-    status: 'partial',
+    status: 'covered',
     studentImpactTier: 1,
     coveredBy: ['dept-faculty-roster'],
     approxFacultyCount: 124,
     notes:
-      'Only Computer Science is configured (via its client-side load_faculty JSON endpoint). Applied Physics, Biomedical Engineering, Chemical & Environmental Engineering, Electrical & Computer Engineering, Mechanical Engineering, and Materials Science are not covered. JS-rendered SPA; per-department pages have no static roster.',
+      'All SEAS departments configured (#640): Computer Science, Applied Physics, Biomedical Engineering, Electrical & Computer Engineering, and Mechanical Engineering/Materials Science via their shared client-side load_faculty JSON endpoint; Chemical & Environmental Engineering via a dedicated static-HTML card extractor since that department page renders server-side instead of hydrating the load_faculty widget.',
   },
 
   // ---- Tier 2: high-density STEM / life-science departments -----------------------
@@ -291,11 +291,12 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Public Health',
     department: 'All departments (A-Z)',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
     studentImpactTier: 4,
-    approxFacultyCount: 300,
+    coveredBy: ['dept-faculty-roster'],
+    approxFacultyCount: 686,
     notes:
-      'Faculty identity is available school-wide via the Yalies API, but that is not directory-specific coverage; no roster/lab-discovery scraper walks this directory. Per-department slugs exist under /school-of-public-health-faculty/<dept>/.',
+      'Covered via the dept-faculty-roster "ysph" config row (#641): the school-wide "Faculty Directory by Name" A-Z index renders all ~686 entries server-side on one page (no pagination), each linking to an official ysph.yale.edu/profile/<slug>/ page cited as the per-faculty source.',
   },
   {
     url: 'https://nursing.yale.edu/faculty-research/faculty-directory',

@@ -72,12 +72,27 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\bexpand all\b/gi,
   /\bcollapse all\b/gi,
   /\bmain menu\b/gi,
+  /\bINFORMATION FOR\b/g,
+  /\bCopy Link\b/g,
 ];
 
 export function stripCatalogChrome(text: string): string {
   let out = String(text || '');
   for (const pattern of CATALOG_CHROME_PATTERNS) out = out.replace(pattern, ' ');
   return normalizeHygieneWhitespace(out);
+}
+
+/**
+ * Chrome-only cleaner for a research-entity shortDescription (card blurb and
+ * detail field): strip page chrome and redact contact info, but skip the
+ * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
+ * research summary phrased as a question is not wrongly blanked, while a
+ * chrome-only blurb collapses to empty (#808).
+ */
+export function sanitizeResearchEntityShortDescription(text: string): string {
+  return stripTrailingContactAddress(
+    stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+  );
 }
 
 function countMatches(text: string, pattern: RegExp): number {
@@ -222,6 +237,24 @@ export function hasContactBlockResidue(text: string): boolean {
   return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
 }
 
+const trailingOfficeAddressPattern =
+  /\s+\d{1,5}\s+(?:[A-Z][\w.'-]*\s+){1,5}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Way|Lane|Ln|Place|Pl|Court|Ct|Terrace|Ter|Circle|Cir|Plaza|Highway|Hwy)\.?(?:[,\s]+(?:Fl|Floor|Rm|Room|Ste|Suite|Unit|Apt|Bldg|Building)\.?\s*\d+[A-Za-z]?)*(?:[,\s]+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})?(?:,?\s+[A-Z]{2})?(?:\s+\d{5}(?:-\d{4})?)?[.\s]*$/;
+
+/**
+ * Strip a bare campus office/street-address fragment glued onto the end of a
+ * faculty-bio description (a lost-line-break scrape artifact, #798), preserving
+ * the bio prose ahead of it. Requires a street number and a street-type suffix
+ * so ordinary research prose that merely names a street is not affected; the
+ * optional unit (Fl/Rm/Suite) and city/state/ZIP tail extend coverage. Only a
+ * trailing, sentence-final fragment is removed so a mid-text mention is left
+ * intact.
+ */
+export function stripTrailingContactAddress(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(trailingOfficeAddressPattern, '');
+  return stripped === value ? value : normalizeHygieneWhitespace(stripped);
+}
+
 const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
 
 /**
@@ -230,6 +263,20 @@ const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
  */
 export function isPublicationsListDumpText(text: string): boolean {
   return publicationsListMarkerPattern.test(normalizeHygieneWhitespace(text));
+}
+
+const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
+
+/**
+ * A vacuous "Research fields include <A>, <B>, and <C>." description whose only
+ * content is a comma-join of the entity's own researchAreas: a bare labeled
+ * chip list carrying no prose, fully redundant with the chips already shown
+ * beside it (#623). Gated to a single sentence (the pattern admits no internal
+ * sentence terminator) so genuine prose that merely opens with the phrase and
+ * continues into a real description is kept.
+ */
+export function isResearchAreaEchoDescription(text: string): boolean {
+  return researchAreaEchoPattern.test(normalizeHygieneWhitespace(text));
 }
 
 /**
@@ -283,15 +330,20 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
  * fullDescription or shortDescription is the primary "what this lab studies"
- * surface, so a leftover contact-block token or a "Selected Publications:"
- * citation dump fails the whole description closed rather than surviving as
- * read-time-safe token text or a truncated tail (#676).
+ * surface, so a leftover contact-block token, a "Selected Publications:"
+ * citation dump, or a bare "Research fields include <chips>." area echo (#623)
+ * fails the whole description closed rather than surviving as read-time-safe
+ * token text, a truncated tail (#676), or a vacuous restatement of the chips.
  */
 export function sanitizeResearchEntityDescription(text: string): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = sanitizeCatalogDescription(redacted);
+  const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
   if (!stripped) return '';
-  if (hasContactBlockResidue(stripped) || isPublicationsListDumpText(stripped)) {
+  if (
+    hasContactBlockResidue(stripped) ||
+    isPublicationsListDumpText(stripped) ||
+    isResearchAreaEchoDescription(stripped)
+  ) {
     return '';
   }
   return stripped;

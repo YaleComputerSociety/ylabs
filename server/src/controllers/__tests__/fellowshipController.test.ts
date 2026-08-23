@@ -309,7 +309,9 @@ describe('fellowshipController', () => {
     await searchFellowshipsController({ query: {} } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
-    expect(payload.summary).toBe('Email [email redacted] or call [phone redacted] before applying.');
+    expect(payload.summary).toBe(
+      'Email [email redacted] or call [phone redacted] before applying.',
+    );
     expect(payload.description).toBe('Questions: [email redacted].');
     expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
     expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
@@ -397,10 +399,7 @@ describe('fellowshipController', () => {
     const res = response();
     mocks.addView.mockResolvedValue(privateFellowship);
 
-    await addViewToFellowship(
-      { params: { id: '64a000000000000000000010' } } as any,
-      res as any,
-    );
+    await addViewToFellowship({ params: { id: '64a000000000000000000010' } } as any, res as any);
 
     expectPublicFellowship(res.json.mock.calls[0][0].fellowship);
   });

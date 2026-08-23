@@ -13,6 +13,11 @@ const departmentTable: DepartmentNameRecord[] = [
     displayName: 'CBIO - Cell Biology',
     aliases: ['Cellular Biology'],
   },
+  {
+    abbreviation: 'MCDB',
+    name: 'Molecular, Cellular, and Developmental Biology',
+    displayName: 'MCDB - Molecular, Cellular, and Developmental Biology',
+  },
 ];
 
 describe('canonicalizeResearcherDepartmentLabel', () => {
@@ -46,6 +51,21 @@ describe('canonicalizeResearcherDepartmentLabel', () => {
     ).toBeNull();
     expect(
       canonicalizeResearcherDepartmentLabel('MEDPED Critical Care', departmentTable),
+    ).toBeNull();
+  });
+
+  it('strips a leading org code with an all-caps/code-like remainder that resolves to a real department', () => {
+    expect(canonicalizeResearcherDepartmentLabel('FASMCD MCDB', departmentTable)).toBe(
+      'Molecular, Cellular, and Developmental Biology',
+    );
+    expect(
+      canonicalizeResearcherDepartmentLabel('FASMCD MCDB', undefined, ['MCDB']),
+    ).toBe('MCDB');
+  });
+
+  it('drops a leading org code whose all-caps remainder does not resolve to a real department', () => {
+    expect(
+      canonicalizeResearcherDepartmentLabel('MEDCSC TS/OCD/ADHD', departmentTable),
     ).toBeNull();
   });
 

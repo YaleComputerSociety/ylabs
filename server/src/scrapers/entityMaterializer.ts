@@ -20,7 +20,10 @@ import {
   synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
 import { normalizedProgramTitleKey } from '../utils/programTitle';
-import { normalizeResearchEntityNameDashes } from '../utils/researchEntityNameNormalization';
+import {
+  normalizeResearchEntityNameDashes,
+  stripTrailingResearchHomeDescription,
+} from '../utils/researchEntityNameNormalization';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
@@ -33,6 +36,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
 import {
@@ -270,7 +274,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
   );
 }
 
-function materializedFieldValue(
+export function materializedFieldValue(
   entityType: ObservedEntityType,
   field: string,
   value: unknown,
@@ -305,7 +309,7 @@ function materializedFieldValue(
     (field === 'name' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return normalizeResearchEntityNameDashes(value);
+    return normalizeResearchEntityNameDashes(stripTrailingResearchHomeDescription(value));
   }
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);
@@ -558,7 +562,6 @@ export function buildInferredPiMemberUpsert(
     update: {
       $set: {
         researchEntityId: safeResearchEntityId,
-        researchGroupId: safeResearchEntityId,
         userId: safeUserId,
         role: 'pi',
         isCurrentMember: true,
@@ -687,7 +690,7 @@ export function buildRosterMemberUpsert(
   const confidence = typeof roleSource?.confidence === 'number' ? roleSource.confidence : 0.5;
   const sourceUrl = textValue(roleSource?.sourceUrl);
   const sourceName = textValue(roleSource?.sourceName);
-  const title = textValue(resolved.title?.value);
+  const title = sanitizePersonTitle(textValue(resolved.title?.value)) || '';
 
   const identityFilter: Record<string, unknown> = userId ? { userId } : { membershipKey };
   const filter = {
@@ -698,7 +701,6 @@ export function buildRosterMemberUpsert(
   };
   const set: Record<string, unknown> = {
     researchEntityId,
-    researchGroupId: researchEntityId,
     role,
     isCurrentMember: true,
     sourceUrl,

@@ -229,12 +229,46 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
   return cleaned;
 }
 
+const NON_PERSON_ORG_ENTITY_TYPES = new Set([
+  'PROGRAM',
+  'RA_PROGRAM',
+  'FELLOWSHIP_PROGRAM',
+  'COURSE_SEQUENCE',
+  'CENTER',
+  'INSTITUTE',
+  'INITIATIVE',
+  'COLLECTIONS_INITIATIVE',
+  'GROUP',
+  'CORE_FACILITY',
+]);
+
+export function isNonPersonOrgEntityType(entity?: FacultyResearchTextEntity | null): boolean {
+  if (!entity || isFacultyResearchTextEntity(entity)) return false;
+  return NON_PERSON_ORG_ENTITY_TYPES.has(String(entity.entityType || '').toUpperCase());
+}
+
+export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean {
+  const cleaned = textValue(value);
+  if (!cleaned) return false;
+
+  const hasFirstPersonAdvisingNote =
+    /\bI\s+(?:only\s+)?(?:consider|advise|welcome|require|expect|prefer|recruit|mentor|supervise|am\s+(?:currently\s+)?(?:recruiting|looking(?:\s+for)?|accepting|seeking|interested\s+in))\b/.test(
+      cleaned,
+    );
+  if (hasFirstPersonAdvisingNote) return true;
+
+  return /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,\/-]+){0,8}Professor\b/u.test(
+    cleaned,
+  );
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
 ): T {
   let changed = false;
   const next: Record<string, any> = { ...entity };
+  const rejectPersonBiography = isNonPersonOrgEntityType(next);
 
   for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
     if (field in next) {
@@ -248,7 +282,12 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
         !isLikelyResearchFocusedText(withLeadNameCorrection)
           ? ''
           : withLeadNameCorrection;
-      const cleaned = publicResearchEntityDescriptionText(withLeadNameCorrectionIfResearch);
+      const withNonPersonBiographyGuard =
+        rejectPersonBiography &&
+        isPersonBiographyOrAdvisingDescription(withLeadNameCorrectionIfResearch)
+          ? ''
+          : withLeadNameCorrectionIfResearch;
+      const cleaned = publicResearchEntityDescriptionText(withNonPersonBiographyGuard);
       if (cleaned !== next[field]) {
         next[field] = cleaned;
         changed = true;
@@ -257,7 +296,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   }
 
   if ('summary' in next) {
-    const cleaned = publicResearchEntityDescriptionText(next.summary);
+    const guardedSummary =
+      rejectPersonBiography && isPersonBiographyOrAdvisingDescription(next.summary)
+        ? ''
+        : next.summary;
+    const cleaned = publicResearchEntityDescriptionText(guardedSummary);
     if (cleaned !== next.summary) {
       next.summary = cleaned;
       changed = true;
@@ -279,7 +322,8 @@ export function isFacultyResearchTextEntity(entity?: FacultyResearchTextEntity |
 
 function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
   return textValue(entity.displayName || entity.name)
-    .replace(/\s+(?:Faculty Research|Lab|Laboratory)$/i, '')
+    .replace(/\s*[-–—]\s*Research$/i, '')
+    .replace(/\s+(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
 }
 
@@ -354,6 +398,74 @@ export function sanitizeFacultyResearchEntityText(
     .replace(/\bour\s+lab\b/gi, 'this research profile')
     .replace(/\byour\s+lab\b/gi, 'this research profile')
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
+}
+
+const RESEARCH_HOME_SELF_NOUNS_BY_TYPE: Record<string, string> = {
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  INITIATIVE: 'initiative',
+  COLLECTIONS_INITIATIVE: 'initiative',
+  GROUP: 'group',
+  CORE_FACILITY: 'core facility',
+  PROGRAM: 'program',
+  RA_PROGRAM: 'program',
+  FELLOWSHIP_PROGRAM: 'program',
+  COURSE_SEQUENCE: 'program',
+};
+
+const RESEARCH_HOME_SELF_NOUNS_BY_KIND: Record<string, string> = {
+  center: 'center',
+  institute: 'institute',
+  initiative: 'initiative',
+  group: 'group',
+  program: 'program',
+  core_facility: 'core facility',
+};
+
+function researchHomeSelfReferenceNoun(entity?: FacultyResearchTextEntity | null): string | null {
+  if (!entity || isFacultyResearchTextEntity(entity)) return null;
+  const byType = RESEARCH_HOME_SELF_NOUNS_BY_TYPE[String(entity.entityType || '').toUpperCase()];
+  if (byType) return byType;
+  return RESEARCH_HOME_SELF_NOUNS_BY_KIND[String(entity.kind || '').toLowerCase()] || null;
+}
+
+function matchLeadingCase(sample: string, replacement: string): string {
+  if (!sample || !replacement) return replacement;
+  const lead = sample.charAt(0);
+  const isUpper = lead === lead.toUpperCase() && lead !== lead.toLowerCase();
+  return isUpper ? replacement.charAt(0).toUpperCase() + replacement.slice(1) : replacement;
+}
+
+export function sanitizeResearchHomeSelfReferenceText(
+  value: string,
+  entity?: FacultyResearchTextEntity | null,
+): string {
+  const noun = researchHomeSelfReferenceNoun(entity);
+  if (!noun) return value;
+  return value.replace(
+    /\b(the|this|our|your|its)(\s+)(lab|laboratory)(['’]s)?\b/gi,
+    (_match, determiner: string, spacing: string, labToken: string, possessive?: string) =>
+      `${determiner}${spacing}${matchLeadingCase(labToken, noun)}${possessive || ''}`,
+  );
+}
+
+export function sanitizeResearchHomeSelfReferenceCopyFields<T extends Record<string, any>>(
+  entity: T,
+): T {
+  if (!researchHomeSelfReferenceNoun(entity)) return entity;
+  let changed = false;
+  const next: Record<string, any> = { ...entity };
+
+  for (const field of DESCRIPTION_AND_SYNTHESIS_FIELDS) {
+    if (typeof next[field] !== 'string') continue;
+    const cleaned = sanitizeResearchHomeSelfReferenceText(next[field], next);
+    if (cleaned !== next[field]) {
+      next[field] = cleaned;
+      changed = true;
+    }
+  }
+
+  return changed ? (next as T) : entity;
 }
 
 export function sanitizeFacultyResearchEntityCopyFields<T extends Record<string, any>>(

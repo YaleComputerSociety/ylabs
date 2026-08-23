@@ -98,6 +98,7 @@ const userRow = {
   logins: 2,
   searches: 4,
   views: 3,
+  researchViews: 2,
   fellowshipViews: 0,
   listingFavorites: 0,
   listingUnfavorites: 0,
@@ -174,7 +175,7 @@ describe('Analytics charts and CSV export', () => {
     await waitFor(() => {
       expect(screen.getByRole('group', { name: 'Active research entities by type' })).toBeTruthy();
     });
-    expect(screen.getByRole('group', { name: 'Student progression funnel' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Student action counts' })).toBeTruthy();
     expect(screen.getByRole('group', { name: /Visitors by type/ })).toBeTruthy();
     expect(screen.getAllByText('Outreach Clicked')).toHaveLength(1);
     expect(screen.getByText('Lab')).toBeTruthy();

@@ -20,20 +20,10 @@ import mongoose from 'mongoose';
 import { escapeRegex } from '../utils/regex';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
-const PLANNING_INTENTS = new Set(['thesis', 'outreach', 'credit', 'funding', 'apply', 'later']);
-const PLANNING_STAGES = new Set(['saved', 'researching', 'ready', 'acted', 'archived']);
-const FOLLOW_UP_INTERVAL_DAYS = new Set([7, 14, 30, 60, 90]);
-const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_ACCOUNT_MUTATION_IDS = 100;
-const MAX_SAVED_PATHWAY_CHECKLIST_ITEMS = 50;
-const MAX_SAVED_PATHWAY_CHECKLIST_KEY_LENGTH = 120;
-const MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_ITEMS = 50;
-const MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_LABEL_LENGTH = 240;
-const MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS = 100;
 const MAX_USER_UPDATE_VALUE_DEPTH = 20;
 const MAX_USER_UPDATE_VALUE_ARRAY_ITEMS = 200;
 const MAX_USER_UPDATE_VALUE_OBJECT_KEYS = 200;
-export const MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000;
 export const MAX_SAVED_PROGRAM_NOTE_LENGTH = 2000;
 const NETID_LOOKUP_RE = /^[A-Za-z0-9]{2,12}$/;
 const USER_UPDATE_OPERATORS = new Set(['$set', '$unset', '$addToSet']);
@@ -98,136 +88,6 @@ const recordFavoriteCounterSideEffect = async (
     console.error(`${label} failed:`, sanitizeLogValue(error));
   }
 };
-
-export interface SavedPathwayPlanInput {
-  intent?: string;
-  stage?: string;
-  note?: string;
-  checklist?: Record<string, unknown>;
-  checklistHistory?: SavedPathwayChecklistHistoryInput[];
-  targetDeadline?: string | null;
-  actedOnDate?: string | null;
-  followUpIntervalDays?: number | null;
-}
-
-export interface SavedPathwayChecklistHistoryInput {
-  intent?: string;
-  label?: string;
-  completedAt?: string;
-}
-
-const sanitizeSavedPathwayChecklistKey = (key: unknown): string | undefined => {
-  if (typeof key !== 'string') return undefined;
-  const trimmed = key.trim();
-  if (
-    !trimmed ||
-    trimmed.length > MAX_SAVED_PATHWAY_CHECKLIST_KEY_LENGTH ||
-    trimmed === '__proto__' ||
-    trimmed === 'constructor' ||
-    trimmed === 'prototype'
-  ) {
-    return undefined;
-  }
-  return trimmed.replace(/^\$+/, '_').replace(/\./g, '_');
-};
-
-export function sanitizeSavedPathwayPlanForStorage(plan: unknown): Required<SavedPathwayPlanInput> {
-  const candidate = plan && typeof plan === 'object' ? (plan as SavedPathwayPlanInput) : {};
-  const dateOnly = (value: unknown): string | null => {
-    if (typeof value !== 'string' || !DATE_ONLY_RE.test(value)) return null;
-    const [year, month, day] = value.split('-').map(Number);
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    return parsed.getUTCFullYear() === year &&
-      parsed.getUTCMonth() === month - 1 &&
-      parsed.getUTCDate() === day
-      ? value
-      : null;
-  };
-  const checklist: Record<string, boolean> = {};
-  const rawChecklist =
-    candidate.checklist &&
-    typeof candidate.checklist === 'object' &&
-    !Array.isArray(candidate.checklist)
-      ? candidate.checklist
-      : {};
-  let checklistCount = 0;
-  const checklistHistory = Array.isArray(candidate.checklistHistory)
-    ? candidate.checklistHistory
-        .slice(-MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_ITEMS)
-        .flatMap((item) => {
-          if (!item || typeof item !== 'object') return [];
-          const intent = item.intent && PLANNING_INTENTS.has(item.intent) ? item.intent : undefined;
-          const label = typeof item.label === 'string' ? item.label.trim() : '';
-          const completedAt =
-            typeof item.completedAt === 'string' && !Number.isNaN(Date.parse(item.completedAt))
-              ? new Date(item.completedAt).toISOString()
-              : undefined;
-          if (!intent || !label || !completedAt) return [];
-          return [
-            {
-              intent,
-              label: label.slice(0, MAX_SAVED_PATHWAY_CHECKLIST_HISTORY_LABEL_LENGTH),
-              completedAt,
-            },
-          ];
-        })
-    : [];
-
-  for (const key in rawChecklist) {
-    if (checklistCount >= MAX_SAVED_PATHWAY_CHECKLIST_ITEMS) break;
-    if (!Object.prototype.hasOwnProperty.call(rawChecklist, key)) continue;
-    const normalizedKey = sanitizeSavedPathwayChecklistKey(key);
-    if (normalizedKey) {
-      checklist[normalizedKey] = rawChecklist[key] === true;
-      checklistCount += 1;
-    }
-  }
-
-  return {
-    intent: candidate.intent && PLANNING_INTENTS.has(candidate.intent) ? candidate.intent : 'later',
-    stage: candidate.stage && PLANNING_STAGES.has(candidate.stage) ? candidate.stage : 'saved',
-    note:
-      typeof candidate.note === 'string'
-        ? candidate.note.slice(0, MAX_SAVED_PATHWAY_NOTE_LENGTH)
-        : '',
-    checklist,
-    checklistHistory,
-    targetDeadline: dateOnly(candidate.targetDeadline),
-    actedOnDate: dateOnly(candidate.actedOnDate),
-    followUpIntervalDays:
-      typeof candidate.followUpIntervalDays === 'number' &&
-      FOLLOW_UP_INTERVAL_DAYS.has(candidate.followUpIntervalDays)
-        ? candidate.followUpIntervalDays
-        : null,
-  };
-}
-
-export function sanitizeSavedPathwayPlansForResponse(
-  savedPathwayPlans: unknown,
-): Record<string, Required<SavedPathwayPlanInput>> {
-  if (
-    !savedPathwayPlans ||
-    typeof savedPathwayPlans !== 'object' ||
-    Array.isArray(savedPathwayPlans)
-  ) {
-    return {};
-  }
-
-  const sanitized: Record<string, Required<SavedPathwayPlanInput>> = {};
-  let count = 0;
-  for (const [pathwayId, plan] of Object.entries(savedPathwayPlans as Record<string, unknown>)) {
-    if (count >= MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS) break;
-    let pathwayKey = '';
-    try {
-      pathwayKey = normalizeObjectIdStringForUserMutation(pathwayId, 'pathway');
-    } catch {
-      continue;
-    }
-    sanitized[pathwayKey] = sanitizeSavedPathwayPlanForStorage(plan);
-    count += 1;
-  }
-  return sanitized;
-}
 
 const badRequestError = (message: string) => {
   const error: any = new Error(message);

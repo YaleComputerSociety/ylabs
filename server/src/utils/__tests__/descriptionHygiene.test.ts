@@ -8,12 +8,15 @@ import {
   isFormFieldDumpText,
   isNavigationDumpText,
   isPublicationsListDumpText,
+  isResearchAreaEchoDescription,
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
+  stripTrailingContactAddress,
 } from '../descriptionHygiene';
 
 const SYNTHETIC_ROSTER = [
@@ -103,6 +106,30 @@ describe('descriptionHygiene', () => {
     expect(sanitizeCatalogDescription(SYNTHETIC_SCRIPT_CHROME)).toMatch(
       /The program pairs students with faculty mentors/,
     );
+  });
+
+  it('strips the YSM profile "INFORMATION FOR" section header and "Copy Link" share chrome but keeps the prose', () => {
+    const cleaned = stripCatalogChrome(
+      'INFORMATION FOR Copy Link Our lab focuses on the pathogenesis of airway diseases.',
+    );
+    expect(cleaned).not.toMatch(/INFORMATION FOR|Copy Link/);
+    expect(cleaned).toBe('Our lab focuses on the pathogenesis of airway diseases.');
+    expect(
+      sanitizeResearchEntityDescription(
+        'INFORMATION FOR My research is focused on the genetic basis of lung disease.',
+      ),
+    ).toBe('My research is focused on the genetic basis of lung disease.');
+  });
+
+  it('fails closed when the description is only YSM profile chrome', () => {
+    expect(sanitizeResearchEntityDescription('INFORMATION FOR Copy Link Copy Link')).toBe('');
+    expect(sanitizeCatalogDescription('INFORMATION FOR Copy Link')).toBe('');
+  });
+
+  it('does not strip lower-case "information for" or "copy link" from genuine prose', () => {
+    const prose =
+      'The center provides information for prospective students and lets visitors copy link references from the reading list.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
   });
 
   it('leaves ordinary multi-sentence prose unchanged', () => {
@@ -259,6 +286,51 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
   });
 });
 
+describe('descriptionHygiene trailing office-address strip (#798)', () => {
+  const BIO_WITH_TRAILING_ADDRESS =
+    'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy. 266 Whitney Avenue, Fl 2, Rm 234';
+
+  it('strips a trailing campus office address while preserving the bio', () => {
+    expect(stripTrailingContactAddress(BIO_WITH_TRAILING_ADDRESS)).toBe(
+      'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy.',
+    );
+  });
+
+  it('strips a trailing street address with a city/state/ZIP tail', () => {
+    expect(
+      stripTrailingContactAddress(
+        'Our group studies gravitational-wave detectors and precision metrology. 217 Prospect Street, New Haven, CT 06511',
+      ),
+    ).toBe('Our group studies gravitational-wave detectors and precision metrology.');
+  });
+
+  it('leaves ordinary prose that merely names a street intact', () => {
+    const prose =
+      'The project traces how commerce reshaped daily life along Chapel Street in nineteenth-century New Haven.';
+    expect(stripTrailingContactAddress(prose)).toBe(prose);
+  });
+
+  it('leaves an address that is not the trailing fragment intact', () => {
+    const prose =
+      'The lab is at 266 Whitney Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.';
+    expect(stripTrailingContactAddress(prose)).toBe(prose);
+  });
+
+  it('served research-entity description drops the trailing address but keeps the bio', () => {
+    expect(sanitizeResearchEntityDescription(BIO_WITH_TRAILING_ADDRESS)).toBe(
+      'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy.',
+    );
+  });
+
+  it('short-description path also drops a trailing address', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies the neural basis of decision making. 2 Hillhouse Avenue, Fl 3',
+      ),
+    ).toBe('Studies the neural basis of decision making.');
+  });
+});
+
 describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', () => {
   it('keeps genuine clean prose verbatim', () => {
     const clean =
@@ -311,5 +383,76 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
       'Skip to main content Show all breadcrumbs The travel research grant funds summer fieldwork. Contact grants@example.edu for details.';
     const once = sanitizeStoredCatalogDescription(dirty);
     expect(sanitizeStoredCatalogDescription(once)).toBe(once);
+  });
+});
+
+describe('descriptionHygiene YSM profile chrome (#808)', () => {
+  it('strips the all-caps INFORMATION FOR header but keeps the real prose', () => {
+    const dirty = 'INFORMATION FOR The Takyar lab studies liver fibrosis and vascular biology.';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe('The Takyar lab studies liver fibrosis and vascular biology.');
+  });
+
+  it('strips the Copy Link share label but keeps the real prose', () => {
+    const dirty = 'Copy Link The Glahn lab uses imaging genetics to study brain structure.';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe('The Glahn lab uses imaging genetics to study brain structure.');
+  });
+
+  it('collapses a chrome-only shortDescription to empty', () => {
+    expect(sanitizeResearchEntityShortDescription('INFORMATION FOR Copy Link Copy Link')).toBe('');
+  });
+
+  it('leaves lower-case prose that happens to contain the tokens untouched', () => {
+    const prose =
+      'This center provides information for students and staff; copy link references appear in its handbook.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityShortDescription(prose)).toBe(prose);
+  });
+
+  it('cleans chrome from a shortDescription without fail-closing a question-phrased summary', () => {
+    const questionSummary =
+      'INFORMATION FOR How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.';
+    const cleaned = sanitizeResearchEntityShortDescription(questionSummary);
+    expect(cleaned).toBe(
+      'How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.',
+    );
+    expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
+  });
+});
+
+describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
+  it('flags a bare "Research fields include <chips>." echo', () => {
+    expect(
+      isResearchAreaEchoDescription('Research fields include HIV Infections, Veterans, and Aging.'),
+    ).toBe(true);
+  });
+
+  it('flags the "Research areas include" sibling template', () => {
+    expect(
+      isResearchAreaEchoDescription('Research areas include Spectroscopy, Chirality, and Signaling.'),
+    ).toBe(true);
+  });
+
+  it('keeps genuine prose that opens with the phrase and continues', () => {
+    const prose =
+      'Research fields include immunology. The lab develops single-cell assays to map how T cells respond to infection.';
+    expect(isResearchAreaEchoDescription(prose)).toBe(false);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+
+  it('does not flag a real "Studies" one-liner or a research-focus sentence', () => {
+    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(false);
+    expect(
+      isResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.'),
+    ).toBe(false);
+  });
+
+  it('collapses a served fullDescription that only echoes the chips to empty', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'Research fields include Gene Expression Regulation, Developmental, Computational Biology, and Cancer.',
+      ),
+    ).toBe('');
   });
 });
