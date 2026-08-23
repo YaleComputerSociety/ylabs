@@ -11,6 +11,7 @@ import {
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
@@ -311,5 +312,40 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
       'Skip to main content Show all breadcrumbs The travel research grant funds summer fieldwork. Contact grants@example.edu for details.';
     const once = sanitizeStoredCatalogDescription(dirty);
     expect(sanitizeStoredCatalogDescription(once)).toBe(once);
+  });
+});
+
+describe('descriptionHygiene YSM profile chrome (#808)', () => {
+  it('strips the all-caps INFORMATION FOR header but keeps the real prose', () => {
+    const dirty = 'INFORMATION FOR The Takyar lab studies liver fibrosis and vascular biology.';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe('The Takyar lab studies liver fibrosis and vascular biology.');
+  });
+
+  it('strips the Copy Link share label but keeps the real prose', () => {
+    const dirty = 'Copy Link The Glahn lab uses imaging genetics to study brain structure.';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe('The Glahn lab uses imaging genetics to study brain structure.');
+  });
+
+  it('collapses a chrome-only shortDescription to empty', () => {
+    expect(sanitizeResearchEntityShortDescription('INFORMATION FOR Copy Link Copy Link')).toBe('');
+  });
+
+  it('leaves lower-case prose that happens to contain the tokens untouched', () => {
+    const prose =
+      'This center provides information for students and staff; copy link references appear in its handbook.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityShortDescription(prose)).toBe(prose);
+  });
+
+  it('cleans chrome from a shortDescription without fail-closing a question-phrased summary', () => {
+    const questionSummary =
+      'INFORMATION FOR How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.';
+    const cleaned = sanitizeResearchEntityShortDescription(questionSummary);
+    expect(cleaned).toBe(
+      'How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.',
+    );
+    expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
   });
 });

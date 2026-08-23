@@ -1,6 +1,9 @@
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeResearchEntityDescription } from '../utils/descriptionHygiene';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
@@ -70,6 +73,11 @@ const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set([
 function publicDescriptionString(value: unknown): string {
   const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
   return sanitizeResearchEntityDescription(text);
+}
+
+function publicShortDescriptionString(value: unknown): string {
+  const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
+  return sanitizeResearchEntityShortDescription(text);
 }
 
 function publicTextStringArray(value: unknown): string[] {
@@ -146,7 +154,7 @@ export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
   const blurbSource = group.shortDescription
-    ? publicTextString(group.shortDescription)
+    ? publicShortDescriptionString(group.shortDescription)
     : publicDescriptionString(group.fullDescription || '');
   const blurb = blurbSource.slice(0, 280);
 
@@ -252,6 +260,10 @@ export function toPublicResearchEntityDto(
       if (field === 'website' || field === 'websiteUrl') {
         const url = publicHttpUrl(group[field]);
         if (url) dto[field] = url;
+        continue;
+      }
+      if (field === 'shortDescription' && typeof group[field] === 'string') {
+        dto[field] = publicShortDescriptionString(group[field]);
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {
