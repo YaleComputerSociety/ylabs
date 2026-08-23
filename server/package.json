@@ -28,6 +28,7 @@
     "research-entity:audit-lead-identity": "tsx src/scripts/leadIdentityConsistencyAudit.ts",
     "research-entity:purge-contested-lead-profiles": "tsx src/scripts/purgeContestedLeadProfileEnrichment.ts",
     "research-entity:repair-shell-clobbered-descriptions": "tsx src/scripts/repairShellClobberedCanonicalDescriptions.ts",
+    "research-entity:rematerialize": "tsx src/scripts/rematerializeResearchEntities.ts",
     "users:dedupe-by-identity": "tsx src/scripts/dedupeUsersByIdentity.ts",
     "users:email-hygiene": "tsx src/scripts/userEmailHygiene.ts",
     "users:repair-mismatched-emails": "tsx src/scripts/repairMismatchedPersonEmails.ts",
