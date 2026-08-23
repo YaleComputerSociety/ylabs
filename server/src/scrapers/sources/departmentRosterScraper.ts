@@ -52,7 +52,7 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
-import { sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
+import { sanitizeResearchEntityDescription } from '../../utils/descriptionHygiene';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -1237,9 +1237,9 @@ function extractGroundedProfileDescription(
 ): { fullDescription: string; shortDescription: string } | undefined {
   const extracted = extractOfficialResearchDescription(html, { kind: 'person' });
   if (!extracted) return undefined;
-  const fullDescription = sanitizeCatalogDescription(extracted.fullDescription);
+  const fullDescription = sanitizeResearchEntityDescription(extracted.fullDescription);
   if (!fullDescription) return undefined;
-  const shortDescription = sanitizeCatalogDescription(extracted.shortDescription);
+  const shortDescription = sanitizeResearchEntityDescription(extracted.shortDescription);
   return { fullDescription, shortDescription };
 }
 

@@ -145,6 +145,50 @@ describe('researchEntityDto', () => {
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
   });
 
+  it('fails a fullDescription closed to empty when it still carries a contact-block or publications dump (#676)', () => {
+    const contactBlock = toPublicResearchEntityDto({
+      id: 'entity-contact-block',
+      slug: 'contact-block-lab',
+      name: 'Contact Block Lab',
+      fullDescription:
+        'Avery Sloane, Ph.D. Professor Email: avery.sloane@example.edu Phone: 203-555-0142 Dr. Avery Sloane studies tissue regeneration after injury.',
+    });
+    expect(contactBlock.fullDescription).toBe('');
+
+    const publicationsDump = toPublicResearchEntityDto({
+      id: 'entity-pub-dump',
+      slug: 'pub-dump-lab',
+      name: 'Pub Dump Lab',
+      fullDescription:
+        'The Sloane Lab studies tissue regeneration after injury. Selected Publications:Rivera J, Sloane A. (2023) Signaling dynamics. Cell Reports.',
+    });
+    expect(publicationsDump.fullDescription).toBe('');
+
+    const clean = toPublicResearchEntityDto({
+      id: 'entity-clean-full',
+      slug: 'clean-full-lab',
+      name: 'Clean Full Lab',
+      fullDescription:
+        'The Sloane Lab studies how signaling networks coordinate tissue regeneration after injury across model organisms.',
+    });
+    expect(clean.fullDescription).toBe(
+      'The Sloane Lab studies how signaling networks coordinate tissue regeneration after injury across model organisms.',
+    );
+  });
+
+  it('leaves shortDescription on the token-tolerant path even when fullDescription fails closed (#676)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-short-tolerant',
+      slug: 'short-tolerant-lab',
+      name: 'Short Tolerant Lab',
+      shortDescription: 'Questions go to lab-contact@example.edu.',
+      fullDescription: 'Avery Sloane, Ph.D. Professor Email: [email redacted]: 203-555-0142.',
+    });
+
+    expect(dto.shortDescription).toBe('Questions go to [email redacted].');
+    expect(dto.fullDescription).toBe('');
+  });
+
   it('omits unsafe public research entity contact email values', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-contact-email-safety',
