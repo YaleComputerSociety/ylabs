@@ -1048,6 +1048,37 @@ describe('sanitizeResearchEntityShortDescription CTA/news-ticker guard (#932)', 
   });
 });
 
+describe('bare opinion-poll statistic card fail-closed, broadened forms (#1028)', () => {
+  const POLL_STAT_CARDS = [
+    'Nearly 70% of adults believe climate change is happening.',
+    'About 62% of voters support stronger climate policy.',
+    '3 in 5 Americans report they rarely discuss global warming.',
+    '4 out of 5 students say they want more research opportunities.',
+    'Roughly 55% of respondents think local governments should act.',
+  ];
+
+  it('fails a leading-qualifier or fractional opinion-poll statistic card closed', () => {
+    for (const card of POLL_STAT_CARDS) {
+      expect(isCtaNewsTickerDumpText(card)).toBe(true);
+      expect(sanitizeResearchEntityShortDescription(card)).toBe('');
+      expect(sanitizeCatalogDescription(card)).toBe('');
+    }
+  });
+
+  it('keeps a research card that reports a proportion of a subject under study', () => {
+    const clean = [
+      '40% of the human genome is noncoding regulatory DNA.',
+      'The lab investigates how 40% of neurons respond to stimuli during learning.',
+      'Develops models where 90% accuracy is achieved on benchmark datasets.',
+      '76% of the genome was sequenced using a novel assembly pipeline the lab developed.',
+    ];
+    for (const summary of clean) {
+      expect(isCtaNewsTickerDumpText(summary)).toBe(false);
+      expect(sanitizeResearchEntityShortDescription(summary)).toBe(summary);
+    }
+  });
+});
+
 describe('stripGluedProfileRoleLabel + doubled-verb collapse (#975)', () => {
   it('strips a glued acronym role label from a synthesized topic list', () => {
     expect(

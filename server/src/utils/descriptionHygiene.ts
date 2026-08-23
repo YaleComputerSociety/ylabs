@@ -661,7 +661,7 @@ const secondPersonPattern = /\b(?:you|your|you['’]re|yourself)\b/gi;
 const welcomeGreetingPattern = /(?:^|[.!?]\s)Welcome!/;
 
 const pollStatCalloutPattern =
-  /^\d{1,3}\s*%\s+of\s+[A-Z][a-z]+s\b[^.!?]*\b(?:say|says|said|report|reports|believe|believes|think|thinks|feel|feels|want|wants|support|supports|agree|agrees|are|were)\b/;
+  /^(?:nearly|about|roughly|approximately|over|almost|around|just|only|an estimated|as many as|more than|up to)?\s*(?:\d{1,3}\s*%\s+of\s+[A-Za-z][a-z]+s|\d+\s+(?:in|out of)\s+\d+\s+[A-Za-z][a-z]+s)\b[^.!?]*\b(?:say|says|said|report|reports|believe|believes|think|thinks|feel|feels|want|wants|support|supports|agree|agrees|are|were|expect|expects|prefer|prefers)\b/i;
 
 /**
  * A homepage news-ticker / call-to-action dump: disjointed promotional teaser
@@ -674,9 +674,11 @@ const pollStatCalloutPattern =
  * and carry no "?" for isFaqDumpText, so this arm keys on CTA / second-person /
  * social-sign-off markers rather than sentence count (#898). A social-platform
  * call to action, or a leading opinion-poll statistic callout ("76% of Americans
- * say ...") lifted from a communications page (#932), is unmistakable promotional
- * chrome on its own; otherwise two independent promotional signals are required
- * so a genuine description that merely invites contact is kept.
+ * say ...", "Nearly 70% of adults believe ...", "3 in 5 Americans report ...")
+ * lifted from a communications page (#932, broadened for leading-qualifier and
+ * fractional forms in #1028), is unmistakable promotional chrome on its own;
+ * otherwise two independent promotional signals are required so a genuine
+ * description that merely invites contact is kept.
  */
 export function isCtaNewsTickerDumpText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
