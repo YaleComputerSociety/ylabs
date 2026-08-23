@@ -1,10 +1,14 @@
 import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import {
-  isCorruptResearchAreaLabel,
+  sanitizeResearchAreaLabel,
   sanitizeResearchAreaLabelList,
 } from '../utils/researchAreaLabelHygiene';
 import { syncEntities } from '../services/meiliSyncService';
+
+const __filename = fileURLToPath(import.meta.url);
 
 interface EntityPlan {
   slug: string;
@@ -18,9 +22,9 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
-function planForEntity(slug: string, id: string, researchAreas: unknown): EntityPlan | null {
+export function planForEntity(slug: string, id: string, researchAreas: unknown): EntityPlan | null {
   const before = asStringArray(researchAreas);
-  if (!before.some(isCorruptResearchAreaLabel)) return null;
+  if (!before.some((value) => sanitizeResearchAreaLabel(value) === '')) return null;
   const after = sanitizeResearchAreaLabelList(before);
   const afterSet = new Set(after.map((v) => v.toLowerCase()));
   const removed = before.filter((v) => !afterSet.has(v.toLowerCase()));
@@ -56,7 +60,7 @@ async function main(): Promise<void> {
     if (plan) plans.push(plan);
   }
 
-  console.log(`\ncandidates with corrupt researchArea chips: ${plans.length}`);
+  console.log(`\ncandidates with non-topic researchArea chips: ${plans.length}`);
   for (const plan of plans) {
     console.log(`\n[${plan.slug}]`);
     console.log(`  before (${plan.before.length}): ${JSON.stringify(plan.before)}`);
@@ -82,7 +86,9 @@ async function main(): Promise<void> {
   await mongoose.disconnect();
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
