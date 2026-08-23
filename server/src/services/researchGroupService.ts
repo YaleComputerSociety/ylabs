@@ -786,6 +786,48 @@ const isInvalidSearchAttributesToSearchOnError = (error: unknown): boolean => {
   );
 };
 
+const KEYWORD_FLOOR_MIN_WORDS_SCORE = 1;
+const KEYWORD_FLOOR_MIN_EXACTNESS_SCORE = 0.9;
+
+const rankingRuleScore = (details: any, rule: string): number | undefined => {
+  const value = details?.[rule]?.score;
+  return typeof value === 'number' ? value : undefined;
+};
+
+const isStrongKeywordMatchHit = (hit: any): boolean => {
+  const wordsScore = rankingRuleScore(hit?._rankingScoreDetails, 'words');
+  const exactnessScore = rankingRuleScore(hit?._rankingScoreDetails, 'exactness');
+  return (
+    wordsScore !== undefined &&
+    wordsScore >= KEYWORD_FLOOR_MIN_WORDS_SCORE &&
+    exactnessScore !== undefined &&
+    exactnessScore >= KEYWORD_FLOOR_MIN_EXACTNESS_SCORE
+  );
+};
+
+/**
+ * Meilisearch's hybrid merge (semanticRatio 0.8) compares keyword-leg and
+ * semantic-leg scores on incommensurable scales, so a weak semantic-only hit
+ * (cosine ~0.2) can outrank a near-perfect keyword/exact-name match retrieved
+ * via the keyword leg. When strong keyword matches exist but Meili did not
+ * already rank them first, float them ahead of the rest while preserving
+ * Meili's relative order within each group, so an exact name match is never
+ * buried by a weak semantic hit. No-op unless both groups are non-empty (which
+ * requires `showRankingScoreDetails`), so keyword-only and non-hybrid searches
+ * are unaffected. See #929.
+ */
+const floatStrongKeywordMatchesFirst = <T>(hits: T[]): T[] => {
+  if (!Array.isArray(hits) || hits.length < 2) return hits;
+  const strong: T[] = [];
+  const rest: T[] = [];
+  for (const hit of hits) {
+    if (isStrongKeywordMatchHit(hit)) strong.push(hit);
+    else rest.push(hit);
+  }
+  if (strong.length === 0 || rest.length === 0) return hits;
+  return [...strong, ...rest];
+};
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -901,6 +943,7 @@ export async function searchResearchGroupsViaMeili(
         embedder: 'default',
       };
       searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
+      searchParams.showRankingScoreDetails = true;
     }
   }
 
@@ -1059,7 +1102,8 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
-  const hitIds = (hits || [])
+  const orderedHits = floatStrongKeywordMatchesFirst(hits || []);
+  const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
     .filter((id): id is string => Boolean(id));
@@ -1096,7 +1140,7 @@ export async function searchResearchGroupsViaMeili(
     listAccessSummariesForResearchEntities(visibleHitIds),
     optionalPlanningContexts(visibleHitIds),
   ]);
-  const normalizedHits = (hits || []).flatMap((hit: any) => {
+  const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
     const entity = visibleEntitiesById.get(entityId);

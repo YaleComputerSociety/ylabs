@@ -257,7 +257,7 @@ export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean 
     );
   if (hasFirstPersonAdvisingNote) return true;
 
-  return /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,\/-]+){0,8}Professor\b/u.test(
+  return /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,/-]+){0,8}Professor\b/u.test(
     cleaned,
   );
 }

@@ -770,6 +770,128 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(326);
   });
 
+  it('requests hybrid ranking score details so a buried exact-name match can be surfaced (#929)', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('Erika Edwards', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      showRankingScoreDetails: true,
+    });
+  });
+
+  it('floats a strong keyword/exact-name hit above a weak semantic-only hit (#929)', async () => {
+    const semanticId = '67d8928150621bcef434a1d5';
+    const keywordId = '67d8928150621bcef434a1d6';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: semanticId,
+          slug: 'erikson-research',
+          name: 'Emily Erikson - Research',
+          _rankingScoreDetails: { vectorSort: { similarity: 0.2715 } },
+        },
+        {
+          id: keywordId,
+          slug: 'erika-edwards-lab',
+          name: 'Erika Edwards Lab',
+          _rankingScoreDetails: {
+            words: { score: 1 },
+            proximity: { score: 1 },
+            attribute: { score: 0.9 },
+            exactness: { score: 1 },
+          },
+        },
+      ],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: semanticId,
+          slug: 'erikson-research',
+          name: 'Emily Erikson - Research',
+          kind: 'lab',
+          departments: ['Sociology'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: keywordId,
+          slug: 'erika-edwards-lab',
+          name: 'Erika Edwards Lab',
+          kind: 'lab',
+          departments: ['Ecology & Evolutionary Biology'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('Erika Edwards', {}, 1, 24);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'erika-edwards-lab',
+      'erikson-research',
+    ]);
+  });
+
+  it('leaves hit order unchanged when no strong keyword match is present (#929)', async () => {
+    const firstId = '67d8928150621bcef434a1d5';
+    const secondId = '67d8928150621bcef434a1d6';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: firstId,
+          slug: 'first-lab',
+          name: 'First Lab',
+          _rankingScoreDetails: { vectorSort: { similarity: 0.41 } },
+        },
+        {
+          id: secondId,
+          slug: 'second-lab',
+          name: 'Second Lab',
+          _rankingScoreDetails: { vectorSort: { similarity: 0.33 } },
+        },
+      ],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: firstId,
+          slug: 'first-lab',
+          name: 'First Lab',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: secondId,
+          slug: 'second-lab',
+          name: 'Second Lab',
+          kind: 'lab',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('molecular dynamics', {}, 1, 24);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'first-lab',
+      'second-lab',
+    ]);
+  });
+
   it('maps page/pageSize to finite pagination for a deeper thresholded hybrid page', async () => {
     mocks.search
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 74 })
