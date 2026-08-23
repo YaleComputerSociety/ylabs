@@ -490,7 +490,6 @@ describe('entityMaterializer post-materialization metrics', () => {
       update: {
         $set: {
           researchEntityId: '64f000000000000000000010',
-          researchGroupId: '64f000000000000000000010',
           userId: '64f000000000000000000020',
           role: 'pi',
           isCurrentMember: true,
@@ -564,7 +563,6 @@ describe('entityMaterializer post-materialization metrics', () => {
       update: {
         $set: {
           researchEntityId: '64f000000000000000000010',
-          researchGroupId: '64f000000000000000000010',
           userId: '64f000000000000000000020',
           name: 'Jane Doe',
           role: 'director',

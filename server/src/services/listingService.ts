@@ -54,7 +54,7 @@ export function normalizeListingObjectId(value: unknown): string | undefined {
 const placeholderYaleEmail = (netid: string): string => `${netid.trim().toLowerCase()}@yale.edu`;
 
 async function syncResearchEntityProfileFromListing(listing: any): Promise<void> {
-  const researchEntityId = listing?.researchEntityId || listing?.researchGroupId;
+  const researchEntityId = listing?.researchEntityId;
   const safeResearchEntityId = normalizeListingObjectId(researchEntityId);
   if (!safeResearchEntityId) return;
 
@@ -110,9 +110,7 @@ const hasListingEntityAuthority = async (
 };
 
 const resolveListingResearchEntityId = async (data: any, owner: any): Promise<any> => {
-  const suppliedResearchEntityId = normalizeListingObjectId(
-    data?.researchEntityId || data?.researchGroupId,
-  );
+  const suppliedResearchEntityId = normalizeListingObjectId(data?.researchEntityId);
   if (await hasListingEntityAuthority(suppliedResearchEntityId, owner)) {
     return suppliedResearchEntityId;
   }
@@ -361,7 +359,7 @@ const filterAdminListingUpdateData = (data: any): Record<string, any> => {
     }
   }
 
-  for (const field of ['researchEntityId', 'researchGroupId', 'createdByUserId']) {
+  for (const field of ['researchEntityId', 'createdByUserId']) {
     if (data[field] !== undefined) {
       const id = normalizeListingObjectId(data[field]);
       if (id !== undefined) safeData[field] = id;
@@ -414,7 +412,6 @@ export const createListing = async (data: any, owner: any) => {
   const listing = new (getListingModel())({
     ...safeData,
     researchEntityId,
-    researchGroupId: researchEntityId,
     createdByUserId: owner._id,
     title: processedTitle,
     ownerId: owner.netid,

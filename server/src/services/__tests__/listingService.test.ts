@@ -213,7 +213,6 @@ describe('listingService', () => {
       expect.objectContaining({ _id: ownerUserId, netid: 'abc123' }),
     );
     expect(String(listing.researchEntityId)).toBe(ownerEntityId);
-    expect(String(listing.researchGroupId)).toBe(ownerEntityId);
     expect(String(listing.createdByUserId)).toBe(ownerUserId);
   });
 
@@ -321,7 +320,6 @@ describe('listingService', () => {
     );
     expect(mocks.findOrCreateForOwner).not.toHaveBeenCalled();
     expect(String(listing.researchEntityId)).toBe(authorizedEntityId);
-    expect(String(listing.researchGroupId)).toBe(authorizedEntityId);
   });
 
   it('does not let a faculty user add forged collaborators while creating a listing', async () => {

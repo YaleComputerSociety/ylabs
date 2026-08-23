@@ -3270,12 +3270,9 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /archived: \{ \$ne: true \}/);
   assert.match(
     source,
-    /const suppliedResearchEntityId = normalizeListingObjectId\(\s*data\?\.researchEntityId \|\| data\?\.researchGroupId,\s*\)/,
+    /const suppliedResearchEntityId = normalizeListingObjectId\(data\?\.researchEntityId\)/,
   );
-  assert.doesNotMatch(
-    source,
-    /const suppliedResearchEntityId = data\?\.researchEntityId \|\| data\?\.researchGroupId/,
-  );
+  assert.doesNotMatch(source, /const suppliedResearchEntityId = data\?\.researchEntityId/);
   assert.match(source, /const safeId = normalizeListingObjectId\(id\)/);
   assert.match(source, /const requestedIds = Array\.isArray\(ids\) \? ids : \[\]/);
   assert.match(source, /requestedIds\.slice\(0, MAX_LISTING_ID_READS\)/);
