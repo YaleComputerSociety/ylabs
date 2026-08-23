@@ -115,6 +115,22 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.unmatched).toEqual(['Medical Oncology']);
     expect(result.dropped).toEqual([]);
   });
+
+  it('drops a school name from the department facet instead of keeping it as an unmatched fallback', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'Psychiatry',
+      'Yale School of Medicine',
+      'YSM',
+      'School of Medicine',
+    ]);
+    expect(result.values).toEqual(['Psychiatry']);
+    expect(result.unmatched).toEqual(['Psychiatry']);
+    expect(result.dropped).toEqual([
+      'Yale School of Medicine',
+      'YSM',
+      'School of Medicine',
+    ]);
+  });
 });
 
 describe('denoiseOrgUnitValue', () => {

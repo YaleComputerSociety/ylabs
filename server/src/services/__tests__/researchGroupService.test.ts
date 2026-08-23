@@ -585,6 +585,67 @@ describe('searchResearchGroupsViaMeili', () => {
     );
   });
 
+  it('applies a ranking score threshold to hybrid text queries so noise queries return empty', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'zzzxxxqqq123nonsense',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+        rankingScoreThreshold: 0.15,
+      }),
+    );
+    expect(result.estimatedTotalHits).toBe(0);
+    expect(result.degraded).toBe(false);
+  });
+
+  it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+  });
+
+  it('drops the ranking score threshold alongside hybrid when the embedder is missing', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        cause: {
+          code: 'invalid_search_embedder',
+          message: 'Cannot find embedder with name `default`.',
+        },
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('hybrid');
+    expect(result.degraded).toBe(true);
+  });
+
+  it('drops only the ranking score threshold when the running Meili version rejects it', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'bad_request',
+        message: 'Unknown field `rankingScoreThreshold`.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
+    expect(result.degraded).toBe(true);
+  });
+
   it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {
     mocks.search.mockRejectedValueOnce(new Error('meili unavailable'));
     mocks.researchEntityFind.mockReturnValue(
