@@ -642,6 +642,7 @@ const CURATION_RATIONALE_PATTERNS: RegExp[] = [
   /\bthis (?:record|row|entry|listing) should\b/i,
   /\bclear student audience\b/i,
   /\b(?:should|must)\s+be\s+(?:shown|displayed|surfaced|rendered)\s+as\b/i,
+  /\b(?:should|must)\s+be\s+(?:presented|treated|framed|positioned|described)\s+as\b[^.!?]{0,120}?\b(?:rather than|not as|instead of)\b/i,
 ];
 
 /**
@@ -650,10 +651,11 @@ const CURATION_RATIONALE_PATTERNS: RegExp[] = [
  * prominently", "operators should refresh", a "keep/stay/remain restrained
  * until ... page is attached" restraint directive, a record-referential "this
  * record/row should ..." instruction, or a display-routing directive "it should
- * be shown as funding/project support rather than a research home") instead of a
- * student-facing description of the program. These phrases are internal review
- * vocabulary that never appears in genuine source prose, so a single marker is
- * enough to fail closed (#671, #1053).
+ * be shown as funding/project support rather than a research home" / "it should
+ * be presented as residential-college funding ... not as a general research
+ * placement") instead of a student-facing description of the program. These
+ * phrases are internal review vocabulary that never appears in genuine source
+ * prose, so a single marker is enough to fail closed (#671, #1053).
  */
 export function isCurationRationaleText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
@@ -735,6 +737,34 @@ export function clampDescriptionLength(text: string, maxLength = 2000): string {
   if (sentenceEnd >= maxLength * 0.6) return window.slice(0, sentenceEnd).trim();
   const lastSpace = window.slice(0, maxLength).lastIndexOf(' ');
   const cut = lastSpace > 0 ? window.slice(0, lastSpace) : window.slice(0, maxLength);
+  return `${cut.trim()}…`;
+}
+
+const terminalPunctuationTailPattern = /[.!?]["'’)\]]?$/;
+
+const MID_SENTENCE_TRUNCATION_MIN_LENGTH = 1500;
+
+/**
+ * Repair a stored description that a legacy producer hard-cut at its length cap
+ * mid-sentence, leaving a dangling fragment with no terminal punctuation
+ * ("...Projects may", "...STARS II H", #671). A well-formed description ends on
+ * terminal punctuation, so a value this long that does not is treated as
+ * truncated and trimmed back to its last complete sentence; when no sentence
+ * boundary sits in the retained span the trailing partial word is dropped with
+ * an ellipsis. Applied at read time so already-stored cut records are repaired
+ * on every serve without a backfill. The length gate keeps a short curated
+ * field that legitimately ends without a period untouched (the confirmed cut
+ * records store the full 2000-char cap); a no-op for any value that already
+ * ends on terminal punctuation.
+ */
+export function repairMidSentenceTruncation(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (value.length < MID_SENTENCE_TRUNCATION_MIN_LENGTH) return value;
+  if (terminalPunctuationTailPattern.test(value)) return value;
+  const sentenceEnd = lastSentenceBoundary(value);
+  if (sentenceEnd >= value.length * 0.6) return value.slice(0, sentenceEnd).trim();
+  const lastSpace = value.lastIndexOf(' ');
+  const cut = lastSpace > 0 ? value.slice(0, lastSpace) : value;
   return `${cut.trim()}…`;
 }
 
@@ -903,7 +933,10 @@ export function stripProvenanceHedge(text: string): string {
  * provenance hedge, then fail closed to an empty string when the remainder is
  * roster/PII-shaped, a navigation dump, an FAQ/Q&A dump, an eligibility-form
  * label dump, internal curation/reviewer-rationale prose, a staff-contact /
- * mailing-address block, or a homepage news-ticker / CTA dump.
+ * mailing-address block, or a homepage news-ticker / CTA dump. Surviving prose
+ * is finally passed through repairMidSentenceTruncation so a stored record that
+ * a legacy producer hard-cut mid-sentence at its length cap is trimmed to a
+ * clean sentence boundary at read time rather than served cut mid-word (#671).
  *
  * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
  * intended safe rendering of contact info at read time and are left in place
@@ -932,7 +965,7 @@ export function sanitizeCatalogDescription(text: string): string {
   ) {
     return '';
   }
-  return stripped;
+  return repairMidSentenceTruncation(stripped);
 }
 
 /**
