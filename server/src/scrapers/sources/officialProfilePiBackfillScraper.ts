@@ -1684,6 +1684,9 @@ export function extractOfficialProfileIdentity(
   const email = extractEmail($, profiles, displayName);
   if (!email && options.requireEmail !== false) return null;
   const hasExpectedPeople = (options.expectedPeople || []).length > 0;
+  const hasVerifiableExpectedEmail = (options.expectedPeople || []).some((person) =>
+    Boolean(textValue(person.email)),
+  );
   const matchesExpectedPerson = officialProfileIdentityMatchesExpectedPerson(
     displayName,
     email,
@@ -1691,14 +1694,17 @@ export function extractOfficialProfileIdentity(
   );
   if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
     return null;
-  // With no known lead to corroborate against, a same-name faculty member at a
-  // different Yale school still passes the bare name-token check above.
-  // Require the entity's own known department/school not to affirmatively
-  // rule out medicine before trusting a guessed medicine.yale.edu/ysph.yale.edu
-  // profile as this entity's identity (same root cause as #562's PI-attach
-  // gate, extended to the area/website layer, issue #585).
+  // A same-name faculty member at a different Yale school still passes the bare
+  // name-token check above. The email gate in
+  // officialProfileIdentityMatchesExpectedPerson can only veto the collision
+  // when we actually have an expected email to compare against, so when there
+  // is no known lead - or the known leads carry no recorded email - require the
+  // entity's own department/school not to affirmatively rule out medicine
+  // before trusting a guessed medicine.yale.edu/ysph.yale.edu profile as this
+  // entity's identity (same root cause as #562's PI-attach gate, extended to
+  // the area/website layer, issue #585).
   if (
-    !hasExpectedPeople &&
+    !(hasExpectedPeople && hasVerifiableExpectedEmail) &&
     isMedicalSchoolProfileHost(fetchedUrl) &&
     entityDisciplineRulesOutMedicine(entity)
   ) {

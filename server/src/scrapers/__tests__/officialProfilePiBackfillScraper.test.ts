@@ -2058,6 +2058,34 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity?.displayName).toBe('Jules Fixture');
   });
 
+  it('rejects a guessed medicine.yale.edu profile when the known lead has no recorded email to verify identity and the entity rules out medicine (#585)', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'Yale Faculty of Arts and Sciences',
+      departments: ['History'],
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture' }],
+    });
+
+    expect(identity).toBeNull();
+  });
+
+  it('still matches a known lead without a recorded email when the entity has no non-medical discipline', () => {
+    const entity = {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    };
+
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, entity, {
+      expectedPeople: [{ fname: 'Jules', lname: 'Fixture' }],
+    });
+
+    expect(identity?.displayName).toBe('Jules Fixture');
+  });
+
   it('skips profile chrome headings when extracting the appointment title', () => {
     const identity = extractOfficialProfileIdentity(
       profileHtml.replace(
