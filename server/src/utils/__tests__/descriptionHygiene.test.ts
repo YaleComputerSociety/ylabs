@@ -18,6 +18,7 @@ import {
   isResearchAreaEchoDescription,
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
+  partitionSentencesLossless,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
@@ -1021,6 +1022,62 @@ describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () 
     ]) {
       expect(isStudiesTemplateGlueMalformed(clean)).toBe(false);
       expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+    }
+  });
+});
+
+describe('stripDeadAnchorCtaSentences lossless sentence walk (#1020)', () => {
+  it('keeps prose that precedes an abbreviation when dropping a dead CTA', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'Fellowship supports research outside the continental U.S. that might help. For details click here.',
+      ),
+    ).toBe('Fellowship supports research outside the continental U.S. that might help.');
+  });
+
+  it('drops only the CTA sentence in the Tetelman-shaped record, preserving the U.S. clause', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'The Robert C. Bates Summer Research Fellowship supports student STEM-based research projects outside of the continental U.S. that might not otherwise be covered by the Tetelman Fellowship. To apply click here.',
+      ),
+    ).toBe(
+      'The Robert C. Bates Summer Research Fellowship supports student STEM-based research projects outside of the continental U.S. that might not otherwise be covered by the Tetelman Fellowship.',
+    );
+  });
+
+  it('preserves an applying-encouragement clause before a click-here sentence', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying. Click here to learn more.',
+      ),
+    ).toBe(
+      'If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying.',
+    );
+  });
+
+  it('drops a mid-string CTA sentence without losing the sentences around it', () => {
+    expect(
+      stripDeadAnchorCtaSentences(
+        'Apply by March 1. Click here to register. Awards are announced in April.',
+      ),
+    ).toBe('Apply by March 1. Awards are announced in April.');
+  });
+
+  it('collapses a description that is nothing but a dead CTA', () => {
+    expect(stripDeadAnchorCtaSentences('Click here to apply.')).toBe('');
+  });
+
+  it('partitions abbreviations and glued/stripped tokens losslessly', () => {
+    for (const value of [
+      'U.S.',
+      'Ph.D. e.g. U.S.',
+      'end.no.space',
+      'abc. def.',
+      'Visit yale.edu/apply for details.',
+      '...',
+      'no terminal punctuation here',
+    ]) {
+      expect(partitionSentencesLossless(value).join('')).toBe(value);
     }
   });
 });

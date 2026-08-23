@@ -43,20 +43,41 @@ export const deadAnchorCtaSentencePattern =
   /\bclick\s+(?:here|below|(?:on\s+)?(?:this|the|the following)\s+link)\b/i;
 
 /**
+ * Partition text into sentence-ish segments that tile the input losslessly:
+ * every character lands in exactly one segment, so `segments.join('')` always
+ * reconstructs the original. Each segment carries its trailing terminal
+ * punctuation and any following whitespace. Unlike the earlier
+ * `/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g` walk, a run ending in period-then-
+ * non-space (an abbreviation like "U.S."/"Ph.D.", a glued token, or a stripped
+ * ".edu/" URL remnant) is not dropped by String.match - the `[^.!?]*` allows an
+ * empty pre-terminal run so consecutive/internal periods still tile (#1020).
+ * A defensive fallback returns the whole string as one segment if tiling ever
+ * fails to reconstruct the input, so it can never silently delete text.
+ */
+export function partitionSentencesLossless(value: string): string[] {
+  if (!value) return [];
+  const segments = value.match(/[^.!?]*[.!?]+\s*|[^.!?]+$/g);
+  if (!segments || segments.join('') !== value) return [value];
+  return segments;
+}
+
+/**
  * Drop whole sentences whose only purpose is an inert click/anchor CTA
  * ("click here", "click this link") where the scraper kept the visible link
  * label but dropped the href, leaving a dead instruction with no destination
  * (#915). Gated to a no-op when no such fragment is present, so clean prose is
  * returned untouched; a description that is nothing but dead CTAs collapses to
  * empty. Deliberately narrower than sourceChromeTextPattern so a legitimate
- * sentence ("Award recipients will perform research...") is never removed.
+ * sentence ("Award recipients will perform research...") is never removed. The
+ * sentence walk is lossless (#1020) so real prose that precedes an abbreviation
+ * ("...continental U.S. that might help.") is never silently deleted.
  */
 export function stripDeadAnchorCtaSentences(text: string): string {
   const value = String(text || '');
   if (!deadAnchorCtaSentencePattern.test(value)) return normalizeHygieneWhitespace(value);
-  const sentences = value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+  const sentences = partitionSentencesLossless(value);
   const kept = sentences.filter((sentence) => !deadAnchorCtaSentencePattern.test(sentence));
-  return normalizeHygieneWhitespace(kept.join(' '));
+  return normalizeHygieneWhitespace(kept.join(''));
 }
 
 export function stripInlineUrls(text: string): string {
