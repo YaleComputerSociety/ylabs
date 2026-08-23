@@ -196,6 +196,53 @@ export function isCurationRationaleText(text: string): boolean {
   return CURATION_RATIONALE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+const ctaImperativePattern =
+  /\b(?:sign\s?up|join\s+(?:us|the\s+(?:conversation|community|movement|discussion|mailing\s+list))|register(?:\s+(?:now|today|here))?|rsvp|subscribe|donate|get\s+involved|follow\s+us|take\s+(?:the|a)\s+quiz|find\s+out\s+which\s+group|stay\s+(?:tuned|informed))\b/i;
+
+const socialPlatformPattern =
+  /\b(?:LinkedIn|Bluesky|Twitter|Instagram|Facebook|YouTube|TikTok|Mastodon|Threads)\b/gi;
+
+const socialCtaSignoffPattern =
+  /\b(?:join|follow|connect\s+with|find\s+us|share|watch|subscribe\s+to)\b[^.!?]{0,60}\b(?:LinkedIn|Bluesky|Twitter|Instagram|Facebook|YouTube|TikTok|Mastodon|Threads)\b/i;
+
+const datedEventTeaserPattern =
+  /\bon\s+(?:January|February|March|April|May|June|July|August|September|October|November|December|Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b[^.!?]{0,40}?\b\d{1,2}(?:st|nd|rd|th)?\b/i;
+
+const secondPersonPattern = /\b(?:you|your|you['’]re|yourself)\b/gi;
+
+const welcomeGreetingPattern = /(?:^|[.!?]\s)Welcome!/;
+
+/**
+ * A homepage news-ticker / call-to-action dump: disjointed promotional teaser
+ * fragments (dated event announcements, a "Sign up"/"Join us" imperative, a
+ * "take a quiz" prompt, a "Welcome!" greeting, a "join us on LinkedIn/Bluesky/
+ * YouTube" social sign-off) scraped verbatim from a communications-heavy landing
+ * page instead of a coherent description of the entity. These well-formed
+ * sentences defeat the sentence-ender-gated dumps
+ * (isNavigationDumpText/isFormFieldDumpText bail when sentence enders exceed two)
+ * and carry no "?" for isFaqDumpText, so this arm keys on CTA / second-person /
+ * social-sign-off markers rather than sentence count (#898). A social-platform
+ * call to action is unmistakable promotional chrome on its own; otherwise two
+ * independent promotional signals are required so a genuine description that
+ * merely invites contact is kept.
+ */
+export function isCtaNewsTickerDumpText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  if (socialCtaSignoffPattern.test(normalized)) return true;
+  const distinctPlatforms = new Set(
+    (normalized.match(socialPlatformPattern) || []).map((platform) => platform.toLowerCase()),
+  ).size;
+  const promotionalSignals = [
+    ctaImperativePattern.test(normalized),
+    distinctPlatforms >= 2,
+    datedEventTeaserPattern.test(normalized),
+    countMatches(normalized, secondPersonPattern) >= 2,
+    welcomeGreetingPattern.test(normalized),
+  ].filter(Boolean).length;
+  return promotionalSignals >= 2;
+}
+
 function lastSentenceBoundary(text: string): number {
   const matches = [...text.matchAll(/[.!?]["')\]]?(?=\s|$)/g)];
   if (matches.length === 0) return -1;
@@ -282,8 +329,8 @@ export function isResearchAreaEchoDescription(text: string): boolean {
 /**
  * Clean a scraped catalog description: strip chrome, then fail closed to an
  * empty string when the remainder is roster/PII-shaped, a navigation dump, an
- * FAQ/Q&A dump, an eligibility-form label dump, or internal
- * curation/reviewer-rationale prose.
+ * FAQ/Q&A dump, an eligibility-form label dump, internal
+ * curation/reviewer-rationale prose, or a homepage news-ticker / CTA dump.
  *
  * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
  * intended safe rendering of contact info at read time and are left in place
@@ -298,7 +345,8 @@ export function sanitizeCatalogDescription(text: string): string {
     isNavigationDumpText(stripped) ||
     isFaqDumpText(stripped) ||
     isFormFieldDumpText(stripped) ||
-    isCurationRationaleText(stripped)
+    isCurationRationaleText(stripped) ||
+    isCtaNewsTickerDumpText(stripped)
   ) {
     return '';
   }
