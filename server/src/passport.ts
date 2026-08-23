@@ -83,7 +83,11 @@ function safeRedirectTarget(raw: unknown): string | null {
     const base = unquoteEnvValue(process.env.SERVER_BASE_URL);
     const target = new URL(raw);
     if (target.username || target.password) return null;
-    if (isLocalDevelopmentRuntime() && target.origin === 'http://localhost:3000') {
+    if (
+      isLocalDevelopmentRuntime() &&
+      target.protocol === 'http:' &&
+      isPrivateOrLocalHostname(target.hostname)
+    ) {
       return target.toString();
     }
     if (!base) return null;
@@ -112,6 +116,20 @@ function originFromUrl(value: string | undefined): string {
   } catch {
     return '';
   }
+}
+
+const LOCAL_DEV_FALLBACK_ORIGIN = 'http://localhost:3000';
+
+function localDevOriginFromRequest(req: express.Request): string {
+  const candidateOrigin = originFromUrl(req.get('referer')) || originFromUrl(req.get('origin'));
+  if (!candidateOrigin) return LOCAL_DEV_FALLBACK_ORIGIN;
+  try {
+    const { protocol, hostname } = new URL(candidateOrigin);
+    if (protocol === 'http:' && isPrivateOrLocalHostname(hostname)) return candidateOrigin;
+  } catch {
+    // fall through to the default below
+  }
+  return LOCAL_DEV_FALLBACK_ORIGIN;
 }
 
 function unquoteEnvValue(value: string | undefined): string {
@@ -568,7 +586,9 @@ const casLogin = function (
           return res.redirect(safeTarget);
         }
 
-        const defaultRedirect = isLocalDevelopmentRuntime() ? 'http://localhost:3000' : '/';
+        const defaultRedirect = isLocalDevelopmentRuntime()
+          ? localDevOriginFromRequest(req)
+          : '/';
         return res.redirect(defaultRedirect);
       });
     },
@@ -663,7 +683,7 @@ const logoutRouteHandler = async (
   let serviceUrl;
 
   if (isLocalDevelopmentRuntime()) {
-    serviceUrl = 'http://localhost:3000/login';
+    serviceUrl = `${localDevOriginFromRequest(req)}/login`;
   } else {
     serviceUrl = `${authConfig.serverBaseURL}/login`;
   }
@@ -718,7 +738,8 @@ if (isDevLoginAllowed()) {
           );
         }
 
-        const redirectUrl = safeRedirectTarget(req.query?.redirect) ?? 'http://localhost:3000';
+        const redirectUrl =
+          safeRedirectTarget(req.query?.redirect) ?? localDevOriginFromRequest(req);
         res.redirect(redirectUrl);
       });
     } catch (error) {
@@ -735,8 +756,10 @@ export {
   isLocalAuthBypassAllowed,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
+  localDevOriginFromRequest,
   logoutRouteHandler,
   placeholderYaleEmail,
+  safeRedirectTarget,
   shouldSkipLocalAuthBypass,
   validateProductionAuthConfig,
 };
