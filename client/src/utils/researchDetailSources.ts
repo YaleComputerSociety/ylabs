@@ -288,6 +288,17 @@ export const resolveOutreachOfficialSource = (
   return eligible[0];
 };
 
+export const prefersOrgEngagementOutreach = (
+  entityType: string | undefined,
+  officialSource: ResearchDetailSource | undefined,
+  leadIsGenuinePrincipalInvestigator: boolean,
+): boolean => {
+  if (!officialSource) return false;
+  if (!entityType || !ORG_UMBRELLA_ENTITY_TYPES.has(entityType)) return false;
+  if (leadIsGenuinePrincipalInvestigator) return false;
+  return isOrgEngagementSourceUrl(officialSource.url);
+};
+
 const DRUPAL_FACET_QUERY = /[?&]f(?:\[|%5b)\d+(?:\]|%5d)=/i;
 
 const SECTION_INDEX_ROOT_PATH =

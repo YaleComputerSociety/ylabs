@@ -39,6 +39,7 @@ import {
   isSuppressedResearchWebsiteCtaUrl,
   normalizeActionDestination,
   normalizeSourceUrl,
+  prefersOrgEngagementOutreach,
   resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
@@ -58,7 +59,7 @@ import {
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
-import { leadSectionHeading } from '../utils/leadRoleDisplay';
+import { leadRoleFamily, leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
 import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
 import {
@@ -454,12 +455,14 @@ const DecisionSummary = ({
   profileUrl,
   websiteUrl,
   officialSource,
+  preferOrgEngagementOutreach = false,
   principalInvestigator,
 }: {
   group: any;
   profileUrl?: string;
   websiteUrl?: string;
   officialSource?: ResearchDetailSource;
+  preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
 }) => {
   const topics = detailTopics(group, 5);
@@ -592,17 +595,49 @@ const DecisionSummary = ({
               How to get involved
             </p>
             <p className="mt-1 text-sm leading-relaxed text-gray-800">
-              {piEmail
-                ? 'Undergraduate research almost always starts with an email. Reach out to introduce yourself and ask about getting involved.'
-                : profileUrl
-                  ? 'Undergraduate research almost always starts by reaching out. Open the official profile to find contact details and introduce yourself.'
-                  : websiteUrl
-                    ? 'Undergraduate research almost always starts by reaching out. Visit the official website to find contact details and introduce yourself.'
-                    : officialSource
-                      ? 'Undergraduate research almost always starts by reaching out. Open the official page to find contact details and introduce yourself.'
-                      : 'Undergraduate research almost always starts by reaching out.'}
+              {preferOrgEngagementOutreach
+                ? 'This research home coordinates involvement at the organization level. Open its get-involved page to see how undergraduates can take part, then reach out to introduce yourself.'
+                : piEmail
+                  ? 'Undergraduate research almost always starts with an email. Reach out to introduce yourself and ask about getting involved.'
+                  : profileUrl
+                    ? 'Undergraduate research almost always starts by reaching out. Open the official profile to find contact details and introduce yourself.'
+                    : websiteUrl
+                      ? 'Undergraduate research almost always starts by reaching out. Visit the official website to find contact details and introduce yourself.'
+                      : officialSource
+                        ? 'Undergraduate research almost always starts by reaching out. Open the official page to find contact details and introduce yourself.'
+                        : 'Undergraduate research almost always starts by reaching out.'}
             </p>
-            {piEmail || profileUrl ? (
+            {preferOrgEngagementOutreach && officialSource ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={officialSource.url}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  See how to get involved
+                </a>
+                {piEmail ? (
+                  <a
+                    href={`mailto:${piEmail}?subject=${encodeURIComponent(
+                      'Interest in undergraduate research',
+                    )}`}
+                    className="inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                  >
+                    {piName ? `Email ${piName}` : 'Email the director'}
+                  </a>
+                ) : profileUrl && principalInvestigator ? (
+                  <a
+                    href={profileUrl}
+                    target="_blank"
+                    rel={EXTERNAL_LINK_REL}
+                    className="inline-flex min-h-11 items-center justify-center rounded-md border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                  >
+                    {piName ? `Contact ${piName}` : 'Contact the director'}
+                  </a>
+                ) : null}
+              </div>
+            ) : piEmail || profileUrl ? (
               <div className="mt-3 flex flex-col gap-2">
                 {piEmail && (
                   <a
@@ -906,6 +941,14 @@ const LabDetail = () => {
     leadIdentityUnderReview,
     group.entityType,
   );
+  const singleLeadIsGenuinePrincipalInvestigator = singlePrincipalInvestigator
+    ? leadRoleFamily(singlePrincipalInvestigator) === 'pi'
+    : false;
+  const preferOrgEngagementOutreach = prefersOrgEngagementOutreach(
+    group.entityType,
+    outreachOfficialSource,
+    singleLeadIsGenuinePrincipalInvestigator,
+  );
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
@@ -1013,6 +1056,7 @@ const LabDetail = () => {
             profileUrl={decisionProfileUrl}
             websiteUrl={officialWebsiteUrl}
             officialSource={outreachOfficialSource}
+            preferOrgEngagementOutreach={preferOrgEngagementOutreach}
             principalInvestigator={singlePrincipalInvestigator}
           />
 
