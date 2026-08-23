@@ -226,6 +226,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Yale School of Medicine research-by-keyword (MeSH) directory and department index as crawl seeds for YSM faculty individual profiles. Each faculty individual profile is the cited source of governed MeSH research areas; the keyword index, department index, and every /research-profiles/?...&meshId= results page are faceted listings and are never recorded as a source. Emits research-area observations only (fail-closed on contact); never creates entities, access, routes, or opportunities.',
   },
+  'ysm-faculty-directory': {
+    priority: 2,
+    tier: 'OFFICIAL_INDEX',
+    artifactTypes: ['ResearchEntity', 'Observation'],
+    evidenceCategories: ['ENTITY_IDENTITY', 'ENTITY_MEMBERSHIP', 'OFFICIAL_PROFILE', 'TOPICS'],
+    defaultConfidence: 'HIGH',
+    notes:
+      'Yale School of Medicine school-wide A-Z faculty directory and individual profile pages for researcher identity, lab-website discovery, governed research areas, and official profile prose. Each faculty individual profile is the cited source; the directory root is a crawl seed only (~14k entries, most non-research staff/trainees) and is never recorded as a source. Discovery-only; must not imply undergraduate access without a more explicit source.',
+  },
   'yse-centers-index': {
     priority: 2,
     tier: 'OFFICIAL_INDEX',

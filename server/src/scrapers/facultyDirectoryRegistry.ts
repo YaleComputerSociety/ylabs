@@ -57,12 +57,12 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Medicine',
     department: 'All departments (school-wide A-Z)',
     rendering: 'static',
-    status: 'partial',
+    status: 'covered',
     studentImpactTier: 1,
-    coveredBy: ['ysm-atoz-index'],
+    coveredBy: ['ysm-atoz-index', 'ysm-faculty-directory'],
     approxFacultyCount: 4000,
     notes:
-      'Partially covered via the A-Z lab index (ysm-atoz-index), which ingests YSM lab research homes. The Yalies API is a school-wide faculty-identity source that is not specific to this directory, so it is not counted as coverage here. There is no scraper that walks the YSM faculty directory per-faculty for profile enrichment / lab-website discovery.',
+      'Covered via the A-Z lab index (ysm-atoz-index), which ingests YSM lab research homes, and ysm-faculty-directory (#639), which walks the school-wide A-Z faculty directory per-faculty: each profile with a lab website or governed research areas seeds/enriches a research home, keyed to the profile-page-derived PI identity. The directory itself lists ~14k entries (faculty, staff, and trainees); only profiles carrying real research content are enriched.',
   },
   {
     url: 'https://engineering.yale.edu/research-and-faculty/faculty-directory',
