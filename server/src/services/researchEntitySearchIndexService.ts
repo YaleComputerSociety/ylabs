@@ -443,10 +443,11 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
     model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
     documentTemplate:
       'Name: {{doc.name}}\n' +
-      'Professors: {{doc.professorNames}}\n' +
-      'Departments: {{doc.departments}}\n' +
-      'Research areas: {{doc.researchAreas}}\n' +
-      'Description: {{doc.shortDescription}} {{doc.fullDescription}}',
+      '{% if doc.professorNames %}Professors: {{doc.professorNames}}\n{% endif %}' +
+      '{% if doc.departments %}Departments: {{doc.departments}}\n{% endif %}' +
+      '{% if doc.researchAreas %}Research areas: {{doc.researchAreas}}\n{% endif %}' +
+      '{% if doc.shortDescription %}Description: {{doc.shortDescription}} {% endif %}' +
+      '{% if doc.fullDescription %}{{doc.fullDescription}}{% endif %}',
   },
 });
 

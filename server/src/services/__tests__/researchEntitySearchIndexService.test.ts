@@ -258,6 +258,20 @@ describe('researchEntitySearchIndexService', () => {
     expect(RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL).toBe('text-embedding-3-small');
   });
 
+  it('guards optional fields in the embedder template so documents missing them still index', () => {
+    const template = (buildResearchEntitySearchEmbedderConfig('sk-test') as any).default
+      .documentTemplate as string;
+    for (const field of [
+      'professorNames',
+      'departments',
+      'researchAreas',
+      'shortDescription',
+      'fullDescription',
+    ]) {
+      expect(template).toContain(`{% if doc.${field} %}`);
+    }
+  });
+
   it('applies the embedder during rebuild only when OPENAI_API_KEY is present', async () => {
     const embedderCalls: any[] = [];
     const fakeIndex = {
