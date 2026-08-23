@@ -1511,6 +1511,23 @@ export interface PublicRelationshipCollectionMeta {
   truncated: boolean;
 }
 
+const dedupePublicResearchEntitiesInOrder = (
+  orderedEntityIds: unknown[],
+  entitiesByInternalId: Map<string, PublicResearchEntitySummaryDto>,
+): PublicResearchEntitySummaryDto[] => {
+  const seenCanonicalKeys = new Set<string>();
+  const uniqueEntities: PublicResearchEntitySummaryDto[] = [];
+  for (const entityId of orderedEntityIds) {
+    const entity = entitiesByInternalId.get(researchGroupDocumentId(entityId));
+    if (!entity) continue;
+    const canonicalKey = entity.slug || entity.id;
+    if (!canonicalKey || seenCanonicalKeys.has(canonicalKey)) continue;
+    seenCanonicalKeys.add(canonicalKey);
+    uniqueEntities.push(entity);
+  }
+  return uniqueEntities;
+};
+
 const publicRelationshipForResearchDetail = (
   relationship: any,
   relatedResearchEntity?: PublicResearchEntitySummaryDto,
@@ -1604,6 +1621,15 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
     ]),
   );
 
+  const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
+    relatedEntityIds,
+    publicEntitiesByInternalId,
+  );
+  const affiliatedResearchEntities = dedupePublicResearchEntitiesInOrder(
+    affiliatedEntityIds,
+    publicEntitiesByInternalId,
+  );
+
   return {
     entityRelationships: relatedRelationships
       .map((relationship) => ({
@@ -1616,13 +1642,9 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       .map(({ relationship, relatedResearchEntity }) =>
         publicRelationshipForResearchDetail(relationship, relatedResearchEntity),
       ),
-    relatedResearchEntities: relatedEntityIds
-      .map((id) => publicEntitiesByInternalId.get(researchGroupDocumentId(id)))
-      .filter((entity): entity is PublicResearchEntitySummaryDto => Boolean(entity)),
+    relatedResearchEntities,
     relatedResearchEntitiesMeta: {
-      returned: relatedEntityIds.filter((id) =>
-        publicEntitiesByInternalId.has(researchGroupDocumentId(id)),
-      ).length,
+      returned: relatedResearchEntities.length,
       truncated: relatedRelationshipsAll.length > relatedRelationships.length,
     },
     affiliatedRelationships: affiliatedRelationships
@@ -1636,13 +1658,9 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
       .map(({ relationship, relatedResearchEntity }) =>
         publicRelationshipForResearchDetail(relationship, relatedResearchEntity),
       ),
-    affiliatedResearchEntities: affiliatedEntityIds
-      .map((id) => publicEntitiesByInternalId.get(researchGroupDocumentId(id)))
-      .filter((entity): entity is PublicResearchEntitySummaryDto => Boolean(entity)),
+    affiliatedResearchEntities,
     affiliatedResearchEntitiesMeta: {
-      returned: affiliatedEntityIds.filter((id) =>
-        publicEntitiesByInternalId.has(researchGroupDocumentId(id)),
-      ).length,
+      returned: affiliatedResearchEntities.length,
       truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
     },
   };

@@ -1875,6 +1875,54 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(encoded).not.toContain('@example.edu');
     expect(Buffer.byteLength(encoded)).toBeLessThan(25_000);
   });
+
+  it('dedupes a related entity reached by multiple relationships to a single card', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const sharedTargetId = '67d8928150621bcef434a1e0';
+
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult([
+          {
+            _id: 'rel-member',
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: sharedTargetId,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            label: 'Member lab',
+          },
+          {
+            _id: 'rel-collab',
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: sharedTargetId,
+            relationshipType: 'COLLABORATES_WITH',
+            label: 'Collaborating lab',
+          },
+        ]),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: sharedTargetId,
+          slug: 'lab-shared-target',
+          name: 'Shared Target Lab',
+          kind: 'lab',
+          entityType: 'LAB',
+          departments: ['Physics'],
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+        },
+      ]),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(result.relatedResearchEntities).toHaveLength(1);
+    expect(result.relatedResearchEntities[0].slug).toBe('lab-shared-target');
+    expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 1, truncated: false });
+    const relatedSlugs = result.relatedResearchEntities.map((entity) => entity.slug);
+    expect(new Set(relatedSlugs).size).toBe(relatedSlugs.length);
+  });
 });
 
 describe('buildResearchActivityLinkPayload', () => {
