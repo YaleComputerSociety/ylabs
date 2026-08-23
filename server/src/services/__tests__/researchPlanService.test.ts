@@ -3,6 +3,7 @@ import {
   MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   boundSavedResearchEntitySummaryText,
   normalizeResearchPlanUpdate,
+  researchPlanViewFromDoc,
 } from '../researchPlanService';
 import {
   MAX_RESEARCH_PLAN_CHECKLIST_ITEMS,
@@ -95,5 +96,55 @@ describe('normalizeResearchPlanUpdate', () => {
 
   it('omits fields that are not present in the input', () => {
     expect(normalizeResearchPlanUpdate({})).toEqual({});
+  });
+});
+
+describe('researchPlanViewFromDoc', () => {
+  it('serializes deadlines whose dueAt was persisted as a Date, not a string', () => {
+    const view = researchPlanViewFromDoc({
+      stage: 'SAVED',
+      deadlines: [{ label: 'Application', dueAt: new Date('2026-09-01T00:00:00.000Z') }],
+    });
+    expect(view.deadlines).toEqual([{ label: 'Application', dueAt: '2026-09-01T00:00:00.000Z' }]);
+  });
+
+  it('preserves a persisted completedAt Date instead of overwriting it with now', () => {
+    const view = researchPlanViewFromDoc({
+      stage: 'SAVED',
+      checklist: [
+        {
+          label: 'Submitted intent form',
+          completed: true,
+          completedAt: new Date('2026-01-15T00:00:00.000Z'),
+        },
+      ],
+    });
+    expect(view.checklist).toEqual([
+      { label: 'Submitted intent form', completed: true, completedAt: '2026-01-15T00:00:00.000Z' },
+    ]);
+  });
+
+  it('still stamps now for a completed item with no valid completedAt', () => {
+    const view = researchPlanViewFromDoc({
+      stage: 'SAVED',
+      checklist: [{ label: 'No timestamp', completed: true }],
+    });
+    expect(view.checklist).toHaveLength(1);
+    expect(view.checklist[0].completed).toBe(true);
+    expect(typeof view.checklist[0].completedAt).toBe('string');
+  });
+
+  it('also accepts an ISO string dueAt/completedAt for backward compatibility', () => {
+    const view = researchPlanViewFromDoc({
+      stage: 'SAVED',
+      deadlines: [{ label: 'Application', dueAt: '2026-09-01T00:00:00.000Z' }],
+      checklist: [
+        { label: 'Sent email', completed: true, completedAt: '2026-01-02T00:00:00.000Z' },
+      ],
+    });
+    expect(view.deadlines).toEqual([{ label: 'Application', dueAt: '2026-09-01T00:00:00.000Z' }]);
+    expect(view.checklist).toEqual([
+      { label: 'Sent email', completed: true, completedAt: '2026-01-02T00:00:00.000Z' },
+    ]);
   });
 });
