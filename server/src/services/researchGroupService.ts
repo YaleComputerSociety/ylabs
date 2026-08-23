@@ -1248,66 +1248,6 @@ export async function searchResearchGroupsViaMeili(
     }
   }
 
-  // Meilisearch's facetDistribution is conjunctive: it counts the result set
-  // that already has each active filter applied, including the filter on the
-  // facet's own field. That makes a single-select facet collapse onto its own
-  // active value (school=Law School -> the school facet only reports Law
-  // School) instead of showing every option a student could pivot to. Recompute
-  // the school and department facets disjunctively by excluding only that
-  // facet's own filter clause, so they still respect every OTHER active filter.
-  // See #1080.
-  if (searchResult.facetDistribution) {
-    const disjunctiveFacetFields: Array<{
-      filterKey: 'school' | 'departments';
-      meiliField: 'schools' | 'departments';
-    }> = [
-      { filterKey: 'school', meiliField: 'schools' },
-      { filterKey: 'departments', meiliField: 'departments' },
-    ];
-    const activeDisjunctiveFacetFields = disjunctiveFacetFields.filter(
-      ({ filterKey }) => (visibilityScopedFilters[filterKey]?.length ?? 0) > 0,
-    );
-    if (activeDisjunctiveFacetFields.length > 0) {
-      const facetOnlySearchParams: Record<string, any> =
-        finalSearchParams.rankingScoreThreshold !== undefined
-          ? {
-              hybrid: finalSearchParams.hybrid,
-              rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
-              page: 1,
-              hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
-              attributesToRetrieve: ['id'],
-            }
-          : { limit: 0, offset: 0 };
-      if (finalSearchParams.attributesToSearchOn) {
-        facetOnlySearchParams.attributesToSearchOn = finalSearchParams.attributesToSearchOn;
-      }
-      const disjunctiveResults = await Promise.all(
-        activeDisjunctiveFacetFields.map(async ({ filterKey, meiliField }) => {
-          try {
-            const disjunctiveFilterString = buildResearchGroupFilterString(
-              visibilityScopedFilters,
-              { excludeField: filterKey },
-            );
-            const result = await index.search(meiliQueryText, {
-              ...facetOnlySearchParams,
-              filter: disjunctiveFilterString,
-              facets: [meiliField],
-            });
-            return { meiliField, distribution: result?.facetDistribution?.[meiliField] };
-          } catch (error) {
-            console.error('Disjunctive facet distribution query failed:', sanitizeLogValue(error));
-            return { meiliField, distribution: undefined };
-          }
-        }),
-      );
-      const mergedFacetDistribution = { ...searchResult.facetDistribution };
-      for (const { meiliField, distribution } of disjunctiveResults) {
-        if (distribution) mergedFacetDistribution[meiliField] = distribution;
-      }
-      searchResult = { ...searchResult, facetDistribution: mergedFacetDistribution };
-    }
-  }
-
   const {
     hits,
     estimatedTotalHits,
