@@ -823,6 +823,34 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
+  it('does not glue "Studies " onto a bio sentence that already leads with the person and their own verb', () => {
+    const kachru =
+      'Sonam Kachru specializes in the history of premodern South Asian philosophy and literature, with an emphasis on Buddhist philosophy.';
+    const dembroff =
+      'Robin Dembroff works in the philosophy of gender and social ontology, especially questions about the nature of social kinds. Their recent work examines gender categories and social construction.';
+    const slanski =
+      'Kathryn Slanski holds a joint appointment in Near Eastern Languages and Civilizations and in Humanities.';
+
+    expect(deriveShortDescriptionFromFullDescription(kachru)).not.toMatch(/^Studies Sonam Kachru/);
+    expect(deriveShortDescriptionFromFullDescription(dembroff)).not.toMatch(/^Studies Robin Dembroff/);
+    expect(deriveShortDescriptionFromFullDescription(slanski)).not.toMatch(/^Studies Kathryn Slanski/);
+
+    expect(deriveShortDescriptionFromFullDescription(kachru)).toBe(
+      'Studies premodern South Asian philosophy and literature, with an emphasis on Buddhist philosophy.',
+    );
+    expect(deriveShortDescriptionFromFullDescription(slanski)).toBe('');
+  });
+
+  it('skips the leading-field-list prefix for other person-subject bio verbs', () => {
+    const served =
+      'Maria Alvarez serves as director of the Institute for Renaissance Studies and Comparative Literature at Yale.';
+    const held =
+      'Peter Nguyen held the chair of Medieval History and European Studies before joining the faculty.';
+
+    expect(deriveShortDescriptionFromFullDescription(served)).not.toMatch(/^Studies Maria Alvarez/);
+    expect(deriveShortDescriptionFromFullDescription(held)).not.toMatch(/^Studies Peter Nguyen/);
+  });
+
   it('rejects teaching-only profile biographies as research descriptions', () => {
     const fullDescription =
       'Andrew Ehrgood teaches expository writing in the English Department. A former trusts and estates lawyer, Andrew also teaches an undergraduate introduction to legal reasoning and writing. Before teaching in the English Department, Andrew taught Japanese in the Department of East Asian Languages and Literatures. In 2018, he received the Brodhead Prize for Teaching Excellence.';

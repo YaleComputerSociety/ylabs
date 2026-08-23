@@ -177,7 +177,7 @@ const hasPaperFragment = (value: string): boolean =>
   /\b(?:arxiv|doi|journal|proceedings|abstract)\b/i.test(value);
 
 const hasResearchDescriptionVerb = (value: string): boolean =>
-  /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
+  /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|specializes? in|specialized in|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
     value,
   );
 
@@ -906,12 +906,26 @@ function specializationSectionSummary(full: string): string {
   return shortDescriptionQuality(candidate, full).isUseful ? candidate : '';
 }
 
+const PERSON_NAME_SUBJECT_PREDICATE_VERB =
+  /^(?:specializ(?:es?|ed)|specialis(?:es?|ed)|works?|worked|holds?|held|serves?|served|directs?|directed|leads?|led|chairs?|chaired|founded|co-?founded|establish(?:es|ed)|maintains?|maintained|oversees?|oversaw|received|earned|joined|focus(?:es|ed)?|teaches?|taught|studies|studied|investigates?|examines?|explores?|researches?|analyzes?|develops?|is|are|was|were|has|have|had)$/i;
+
+const firstSentenceLeadsWithPersonNameSubject = (value: string): boolean => {
+  const match = value.match(
+    /^[A-Z][\p{L}'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,3}\s+([a-z][\p{L}'’-]*)\b/u,
+  );
+  return match ? PERSON_NAME_SUBJECT_PREDICATE_VERB.test(match[1]) : false;
+};
+
 function leadingScholarlyFieldListSummary(sentences: string[], full: string): string {
   const first = textValue(sentences[0]);
   if (!first || first.length > 140) return '';
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
-  if (hasResearchDescriptionVerb(first) || /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first)) {
+  if (
+    hasResearchDescriptionVerb(first) ||
+    /\b(?:is|are|was|were|has|have|had|teaches?|taught|edited|editing)\b/i.test(first) ||
+    firstSentenceLeadsWithPersonNameSubject(first)
+  ) {
     return '';
   }
   if (
