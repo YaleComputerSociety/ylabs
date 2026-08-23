@@ -22,3 +22,7 @@ export function stripTrailingResearchHomeDescription(value: string): string {
   if (typeof value !== 'string') return value;
   return value.replace(RESEARCH_HOME_DESCRIPTION_RE, '$1').replace(/\s+/g, ' ').trim();
 }
+
+export function hasTrailingResearchHomeDescription(value: string): boolean {
+  return typeof value === 'string' && stripTrailingResearchHomeDescription(value) !== value;
+}
