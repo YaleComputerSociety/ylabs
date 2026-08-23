@@ -1434,10 +1434,10 @@ const Research = () => {
 
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [isWideFilterLayout, setIsWideFilterLayout] = useState(
-    () => window.matchMedia?.('(min-width: 1536px)').matches ?? false,
+    () => window.matchMedia?.('(min-width: 1280px)').matches ?? false,
   );
   useEffect(() => {
-    const mediaQuery = window.matchMedia?.('(min-width: 1536px)');
+    const mediaQuery = window.matchMedia?.('(min-width: 1280px)');
     if (!mediaQuery) return;
     const handleChange = (event: MediaQueryListEvent) => setIsWideFilterLayout(event.matches);
     setIsWideFilterLayout(mediaQuery.matches);
@@ -1494,8 +1494,8 @@ const Research = () => {
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
-        <div className="grid gap-5 sm:gap-6 2xl:grid-cols-[22rem_minmax(0,1fr)] 2xl:items-start 2xl:gap-8">
-          <header className="yr-panel rounded-md p-4 sm:p-6 2xl:sticky 2xl:top-6">
+        <div className="grid gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
+          <header className="yr-panel rounded-md p-4 sm:p-6 xl:sticky xl:top-6">
             <p className="yr-kicker mb-3">Yale Research</p>
             <h1 className="max-w-3xl text-2xl font-semibold leading-tight tracking-normal text-slate-950 sm:text-4xl">
               Find a Yale lab that fits you.
@@ -1503,7 +1503,7 @@ const Research = () => {
             <p
               id="research-search-context"
               className={`mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 sm:mt-3 sm:text-base ${
-                hasSubmittedSearch ? '2xl:hidden' : ''
+                hasSubmittedSearch ? 'xl:hidden' : ''
               }`}
             >
               Search by interest, professor, course topic, or question. We&apos;ll help you
@@ -1518,7 +1518,7 @@ const Research = () => {
               >
                 Search Yale research
               </label>
-              <div className="flex flex-col gap-2 sm:flex-row 2xl:flex-col">
+              <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
                 <input
                   id="research-search"
                   ref={searchInputRef}
@@ -1614,11 +1614,13 @@ const Research = () => {
                   </div>
                 </div>
                 {!isWideFilterLayout && (
-                  <ResearchFilterDisclosure
-                    {...browseFilterProps}
-                    isOpen={isFilterPanelOpen}
-                    onOpenChange={setIsFilterPanelOpen}
-                  />
+                  <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
+                    <ResearchFilterDisclosure
+                      {...browseFilterProps}
+                      isOpen={isFilterPanelOpen}
+                      onOpenChange={setIsFilterPanelOpen}
+                    />
+                  </div>
                 )}
                 {defaultSearchError && (
                   <div
@@ -1743,11 +1745,13 @@ const Research = () => {
                 </div>
 
                 {!isWideFilterLayout && (
-                  <ResearchFilterDisclosure
-                    {...researchFilterProps}
-                    isOpen={isFilterPanelOpen}
-                    onOpenChange={setIsFilterPanelOpen}
-                  />
+                  <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
+                    <ResearchFilterDisclosure
+                      {...researchFilterProps}
+                      isOpen={isFilterPanelOpen}
+                      onOpenChange={setIsFilterPanelOpen}
+                    />
+                  </div>
                 )}
 
                 {searchError && (
