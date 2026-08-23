@@ -74,7 +74,10 @@ import {
   isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
-import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import {
+  buildResearchEntityPublicDescriptionRepresentation,
+  researchEntityServesPublicDetail,
+} from './researchEntityPublicDescription';
 import {
   researchEntityHasDeceasedLead,
   stripTrailingPersonNameLifespan,
@@ -636,27 +639,7 @@ const isPublicVisibilityScope = (
   includeNonPublic?: boolean,
 ): boolean => !includeNonPublic && !filters.studentVisibilityTier?.length;
 
-// The stored `studentVisibilityTier` is a materialized snapshot, but the detail
-// resolver (getResearchGroupDetail) recomputes the public-description invariant
-// live and returns null (-> 404) when it fails. A stored `student_ready` tier
-// can therefore go stale relative to that live invariant (e.g. after a hygiene
-// change that empties a person-bio description) and leave a browse card that
-// 404s on click. Enforcing the same live invariant on the public browse
-// hydration path keeps the browse index and the detail serve gate as one source
-// of truth. This is safe to run without the roster-derived lead names the detail
-// path uses: lead-name self-reference stripping only ever removes more text, so
-// an entity that fails this name-agnostic invariant necessarily also fails the
-// detail path's stricter (roster-name-aware) invariant. Dropping it can never
-// hide a card the detail page would actually serve.
-//
-// A confirmed-deceased sole/lead PI is also dropped here (#982): an entity whose
-// only lead is a memorialized/emeritus professor with a birth-death lifespan must
-// not be surfaced as a live "reach out" research opportunity. Detection is
-// name-agnostic (entity name/description signals only) and mirrored in
-// getResearchGroupDetail so browse and detail stay one source of truth.
-const servesPublicResearchDetail = (entity: Record<string, any>): boolean =>
-  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
-  !researchEntityHasDeceasedLead(entity);
+const servesPublicResearchDetail = researchEntityServesPublicDetail;
 
 const withServablePublicResearchEntities = <T extends Record<string, any>>(
   entities: T[],
