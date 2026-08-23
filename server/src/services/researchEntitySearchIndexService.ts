@@ -4,6 +4,7 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { sanitizeResearchAreasForDisplay } from '../scrapers/researchAreaCanonicalization';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
 export const RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY = 'id';
@@ -345,6 +346,12 @@ const publicHttpUrls = (value: unknown): string[] =>
   Array.isArray(value) ? value.flatMap((item) => publicHttpUrl(item) ?? []) : [];
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
+  if ('researchAreas' in out) {
+    const areas = sanitizeResearchAreasForDisplay(out.researchAreas);
+    if (areas.length > 0) out.researchAreas = areas;
+    else delete out.researchAreas;
+  }
+
   for (const field of SEARCH_INDEX_DIRECT_CONTACT_FIELDS) {
     delete out[field];
   }

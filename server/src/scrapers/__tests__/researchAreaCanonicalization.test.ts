@@ -6,6 +6,7 @@ import {
   isResearchAreaLabelLeakage,
   researchAreaMatchKey,
   resetResearchAreaCanonicalizerCache,
+  sanitizeResearchAreasForDisplay,
   setResearchAreaCanonicalizerForTesting,
   stripResearchAreaSourceChrome,
 } from '../researchAreaCanonicalization';
@@ -71,12 +72,47 @@ describe('stripResearchAreaSourceChrome', () => {
     expect(stripResearchAreaSourceChrome('  ')).toEqual([]);
   });
 
+  it('strips a bare trailing "YSM Researcher" role label glued to the topic (#742)', () => {
+    expect(stripResearchAreaSourceChrome('MedicareYSM Researcher')).toEqual(['Medicare']);
+    expect(stripResearchAreaSourceChrome('Sarcoma, KaposiYSM Researcher')).toEqual([
+      'Sarcoma, Kaposi',
+    ]);
+    expect(stripResearchAreaSourceChrome('BlockchainYSM Researcher')).toEqual(['Blockchain']);
+    expect(stripResearchAreaSourceChrome('Demyelinating Autoimmune Diseases, CNSYSM Researcher')).toEqual([
+      'Demyelinating Autoimmune Diseases, CNS',
+    ]);
+    expect(stripResearchAreaSourceChrome('SodiumYSM Researchers')).toEqual(['Sodium']);
+  });
+
   it('does not corrupt a hyphen-number topic glued to widget chrome into a dangling hyphen (#487)', () => {
     const recovered = stripResearchAreaSourceChrome(
       'SARS-CoV-23 YSM ResearchersView 5 Related PublicationsImmunology',
     );
     expect(recovered).not.toContain('SARS-CoV-');
     expect(recovered).toEqual(['SARS-CoV-23', 'Immunology']);
+  });
+});
+
+describe('sanitizeResearchAreasForDisplay', () => {
+  it('strips glued role-label chrome from stored area chips without a taxonomy (#742)', () => {
+    expect(
+      sanitizeResearchAreasForDisplay([
+        'MedicareYSM Researcher',
+        'Demyelinating Autoimmune Diseases, CNSYSM Researcher',
+        'Immunology',
+      ]),
+    ).toEqual(['Medicare', 'Demyelinating Autoimmune Diseases, CNS', 'Immunology']);
+  });
+
+  it('drops a value that is only the boilerplate role label and dedupes', () => {
+    expect(sanitizeResearchAreasForDisplay(['YSM Researcher', 'Sodium', 'Sodium'])).toEqual([
+      'Sodium',
+    ]);
+  });
+
+  it('returns an empty list for non-array input', () => {
+    expect(sanitizeResearchAreasForDisplay(null)).toEqual([]);
+    expect(sanitizeResearchAreasForDisplay('Neuroscience')).toEqual(['Neuroscience']);
   });
 });
 

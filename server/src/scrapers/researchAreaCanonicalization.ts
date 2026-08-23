@@ -313,8 +313,22 @@ function toRawList(raw: unknown): string[] {
 const YSM_RESEARCHER_CHROME_BLOCK =
   /\s*YSM\s+Researchers?\s*View\s*\d*\s*Related\s+Publications?/gi;
 
+const YSM_RESEARCHER_ROLE_LABEL_SUFFIX = /\s*YSM\s+Researchers?\s*$/i;
+
 function hasYsmResearcherChrome(value: string): boolean {
   return new RegExp(YSM_RESEARCHER_CHROME_BLOCK.source, 'i').test(value);
+}
+
+/**
+ * The YSM profile role label ("YSM Researcher") is appended to the final MeSH
+ * term with no delimiter ("MedicareYSM Researcher", "Demyelinating Autoimmune
+ * Diseases, CNSYSM Researcher"), distinct from the "View N Related Publications"
+ * widget chrome above. Strip a trailing occurrence so the topic survives clean;
+ * no real research area ends in this boilerplate, so the match is safe (#742).
+ */
+function stripYsmResearcherRoleLabelSuffix(value: string): string {
+  const stripped = value.replace(YSM_RESEARCHER_ROLE_LABEL_SUFFIX, '').trim();
+  return stripped || value;
 }
 
 /**
@@ -323,22 +337,46 @@ function hasYsmResearcherChrome(value: string): boolean {
  * <pubCount> Related Publications<NextTopic>..."). Split on the repeating chrome
  * block to recover each topic, drop a researcher-count run left glued to a topic
  * name, and discard segments that are pure chrome, so a corrupted glued value
- * yields clean topic strings instead of a chrome fragment (issue #487).
+ * yields clean topic strings instead of a chrome fragment (issue #487). Also
+ * strips a bare trailing "YSM Researcher" role label glued to the topic (#742).
  */
 export function stripResearchAreaSourceChrome(raw: unknown): string[] {
   if (typeof raw !== 'string') return [];
   const value = raw.replace(/\s+/g, ' ').trim();
   if (!value) return [];
-  if (!hasYsmResearcherChrome(value)) return [value];
-  return value
-    .split(YSM_RESEARCHER_CHROME_BLOCK)
-    .map((segment) => segment.replace(/\s+/g, ' ').trim())
-    .map((segment) => segment.replace(/(?<=\p{L})\d{1,4}$/u, '').trim())
-    .filter(Boolean);
+  const segments = hasYsmResearcherChrome(value)
+    ? value
+        .split(YSM_RESEARCHER_CHROME_BLOCK)
+        .map((segment) => segment.replace(/\s+/g, ' ').trim())
+        .map((segment) => segment.replace(/(?<=\p{L})\d{1,4}$/u, '').trim())
+    : [value];
+  return segments.map(stripYsmResearcherRoleLabelSuffix).filter(Boolean);
 }
 
 function expandRawResearchAreaEntries(raw: unknown): string[] {
   return toRawList(raw).flatMap((entry) => stripResearchAreaSourceChrome(entry));
+}
+
+/**
+ * Read-time defense for the student-facing area chips and `/research` facet:
+ * strips scraper chrome and role-label glue and drops non-topic leakage from a
+ * stored `researchAreas[]`, deduped, without touching the taxonomy. Stored
+ * values are already canonicalized at write; this guards residual glue so a
+ * corrupted value never renders before a backfill lands (issues #487, #742).
+ */
+export function sanitizeResearchAreasForDisplay(raw: unknown): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of expandRawResearchAreaEntries(raw)) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    if (isResearchAreaLabelLeakage(trimmed)) continue;
+    const key = trimmed.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 export function createResearchAreaCanonicalizer(

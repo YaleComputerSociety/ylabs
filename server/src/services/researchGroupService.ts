@@ -27,6 +27,7 @@ import { Department, DepartmentCategory } from '../models/department';
 import { Listing } from '../models/listing';
 import { User } from '../models/user';
 import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
+import { sanitizeResearchAreasForDisplay } from '../scrapers/researchAreaCanonicalization';
 import { ResearchScholarlyAttribution } from '../models/researchScholarlyAttribution';
 import { ResearchScholarlyLink } from '../models/researchScholarlyLink';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -2187,6 +2188,9 @@ const publicResearchDetailGroup = (group: any) => {
     publicGroup.sourceUrls = publicGroup.sourceUrls.filter(
       (url: unknown) => !isDisallowedResearchEntitySourceUrl(url),
     );
+  }
+  if ('researchAreas' in publicGroup) {
+    publicGroup.researchAreas = sanitizeResearchAreasForDisplay(publicGroup.researchAreas);
   }
   return {
     ...publicGroup,

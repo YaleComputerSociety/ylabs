@@ -115,6 +115,34 @@ describe('planResearchAreaBackfillRow', () => {
     expect(row.fromDescription).toEqual(['Machine Learning']);
     expect(row.changed).toBe(true);
   });
+
+  it('canonicalizeOnly repairs glued role-label chrome without deriving new areas (#742)', () => {
+    const row = planResearchAreaBackfillRow(
+      canonicalizer,
+      {
+        id: '7',
+        existingResearchAreas: ['NeuroscienceYSM Researcher'],
+        departments: ['Economics'],
+        fullDescription: 'We advance machine learning for public health.',
+      },
+      { onlyEmpty: false, maxAreas: 6, canonicalizeOnly: true },
+    );
+    expect(row.after).toEqual(['Neuroscience']);
+    expect(row.fromDepartments).toEqual([]);
+    expect(row.fromDescription).toEqual([]);
+    expect(row.changed).toBe(true);
+  });
+
+  it('canonicalizeOnly preserves all existing areas beyond maxAreas (no truncation)', () => {
+    const existingResearchAreas = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const row = planResearchAreaBackfillRow(
+      canonicalizer,
+      { id: '8', existingResearchAreas },
+      { onlyEmpty: false, maxAreas: 6, canonicalizeOnly: true },
+    );
+    expect(row.after).toEqual(existingResearchAreas);
+    expect(row.changed).toBe(false);
+  });
 });
 
 describe('planResearchAreaBackfillRow specific-term and department coverage', () => {

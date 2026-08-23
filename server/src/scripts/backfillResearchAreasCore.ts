@@ -30,6 +30,7 @@ export interface ResearchAreaBackfillPlanRow {
 export interface ResearchAreaBackfillPlanOptions {
   onlyEmpty: boolean;
   maxAreas: number;
+  canonicalizeOnly?: boolean;
 }
 
 const DEFAULT_MAX_AREAS = 6;
@@ -66,7 +67,7 @@ export function planResearchAreaBackfillRow(
   const before = cleanList(facts.existingResearchAreas);
   const existing = canonicalizer.canonicalizeResearchAreas(before);
   const hadAreas = before.length > 0;
-  const deriveAllowed = !options.onlyEmpty || !hadAreas;
+  const deriveAllowed = options.canonicalizeOnly ? false : !options.onlyEmpty || !hadAreas;
 
   const textBlob = [facts.name, facts.shortDescription, facts.fullDescription]
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
@@ -86,7 +87,7 @@ export function planResearchAreaBackfillRow(
   const push = (value: string): void => {
     const key = value.toLocaleLowerCase();
     if (seen.has(key)) return;
-    if (after.length >= options.maxAreas) return;
+    if (!options.canonicalizeOnly && after.length >= options.maxAreas) return;
     seen.add(key);
     after.push(value);
   };

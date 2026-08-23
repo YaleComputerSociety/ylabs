@@ -40,6 +40,7 @@ export interface ResearchAreaBackfillCliOptions {
   dryRun: boolean;
   confirmResearchAreas: boolean;
   onlyEmpty: boolean;
+  canonicalizeOnly: boolean;
   maxAreas: number;
   limit?: number;
   batchSize: number;
@@ -70,6 +71,7 @@ export function parseResearchAreaBackfillArgs(argv: string[]): ResearchAreaBackf
     dryRun: true,
     confirmResearchAreas: false,
     onlyEmpty: true,
+    canonicalizeOnly: false,
     maxAreas: normalizeMaxAreas(undefined),
     batchSize: 200,
   };
@@ -85,6 +87,9 @@ export function parseResearchAreaBackfillArgs(argv: string[]): ResearchAreaBackf
       options.onlyEmpty = false;
     } else if (arg === '--only-empty') {
       options.onlyEmpty = true;
+    } else if (arg === '--canonicalize-only') {
+      options.canonicalizeOnly = true;
+      options.onlyEmpty = false;
     } else if (arg.startsWith('--max-areas=')) {
       options.maxAreas = normalizeMaxAreas(parsePositiveInt(arg.slice('--max-areas='.length), '--max-areas'));
     } else if (arg === '--max-areas') {
@@ -138,6 +143,7 @@ interface EntityRow {
 export async function runResearchAreaBackfill(options: {
   dryRun: boolean;
   onlyEmpty: boolean;
+  canonicalizeOnly?: boolean;
   maxAreas: number;
   limit?: number;
   batchSize: number;
@@ -147,7 +153,9 @@ export async function runResearchAreaBackfill(options: {
 
   const filter: Record<string, unknown> = { archived: { $ne: true } };
   if (options.kinds && options.kinds.length > 0) filter.kind = { $in: options.kinds };
-  if (options.onlyEmpty) {
+  if (options.canonicalizeOnly) {
+    filter['researchAreas.0'] = { $exists: true };
+  } else if (options.onlyEmpty) {
     filter.$or = [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }];
   }
 
@@ -170,7 +178,11 @@ export async function runResearchAreaBackfill(options: {
         shortDescription: entity.shortDescription,
         fullDescription: entity.fullDescription,
       },
-      { onlyEmpty: options.onlyEmpty, maxAreas: options.maxAreas },
+      {
+        onlyEmpty: options.onlyEmpty,
+        maxAreas: options.maxAreas,
+        canonicalizeOnly: options.canonicalizeOnly,
+      },
     ),
   );
 
@@ -219,6 +231,7 @@ async function main(): Promise<void> {
     const result = await runResearchAreaBackfill({
       dryRun: options.dryRun,
       onlyEmpty: options.onlyEmpty,
+      canonicalizeOnly: options.canonicalizeOnly,
       maxAreas: options.maxAreas,
       limit: options.limit,
       batchSize: options.batchSize,
@@ -231,6 +244,7 @@ async function main(): Promise<void> {
       options: {
         dryRun: options.dryRun,
         onlyEmpty: options.onlyEmpty,
+        canonicalizeOnly: options.canonicalizeOnly,
         maxAreas: options.maxAreas,
         limit: options.limit,
         batchSize: options.batchSize,
