@@ -9,6 +9,7 @@ import {
   orgUnitMatchKey,
   resetOrgUnitCanonicalizerCache,
   resolveOrgUnitCanonical,
+  schoolNameFromProfileHosts,
   setOrgUnitCanonicalizerForTesting,
 } from '../orgUnitCanonicalization';
 
@@ -208,6 +209,57 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     await applyResearchEntityOrgUnitCanonicalization(set, { school: 'Faculty of Arts and Sciences' });
     expect(set.school).toBeUndefined();
     expect(set.schools).toEqual(['Faculty of Arts and Sciences', 'Yale School of Medicine']);
+  });
+
+  it('derives school and schools[] from a profile host when no school or department resolves', async () => {
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
+    const set: Record<string, unknown> = { school: '' };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' }, [
+      'https://medicine.yale.edu/profile/jane-doe/',
+    ]);
+    expect(set.school).toBe('Yale School of Medicine');
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+  });
+
+  it('prefers a department-derived school over the profile host', async () => {
+    const deptToSchool = new Map([['Neuroscience', 'Yale School of Medicine']]);
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index, deptToSchool));
+    const set: Record<string, unknown> = { departments: ['NSCI'] };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' }, [
+      'https://divinity.yale.edu/profile/jane-doe/',
+    ]);
+    expect(set.school).toBe('Yale School of Medicine');
+    expect(set.schools).toEqual(['Yale School of Medicine']);
+  });
+
+  it('fails closed when the profile host does not name a school', async () => {
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
+    const set: Record<string, unknown> = { school: '' };
+    await applyResearchEntityOrgUnitCanonicalization(set, { school: '' }, [
+      'https://research.yale.edu/people/jane-doe',
+      'https://westcampus.yale.edu/jane-doe',
+    ]);
+    expect(set.school).toBe('');
+    expect(set.schools).toBeUndefined();
+  });
+});
+
+describe('schoolNameFromProfileHosts', () => {
+  it('maps a school subdomain to its school name and ignores generic hosts', () => {
+    expect(schoolNameFromProfileHosts(['https://medicine.yale.edu/profile/x/'])).toBe(
+      'School of Medicine',
+    );
+    expect(schoolNameFromProfileHosts(['https://nursing.yale.edu/faculty/x'])).toBe(
+      'School of Nursing',
+    );
+    expect(
+      schoolNameFromProfileHosts([
+        'https://research.yale.edu/x',
+        'https://westcampus.yale.edu/x',
+      ]),
+    ).toBeNull();
+    expect(schoolNameFromProfileHosts([])).toBeNull();
+    expect(schoolNameFromProfileHosts(['not a url'])).toBeNull();
   });
 });
 

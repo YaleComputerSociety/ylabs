@@ -2260,7 +2260,19 @@ export async function materializeEntity(
     }
   }
   if (isResearchEntityObservationType(entityType)) {
-    await applyResearchEntityOrgUnitCanonicalization(set, entityDoc);
+    const orgUnitProfileUrls = [
+      ...(typeof set.websiteUrl === 'string' && set.websiteUrl
+        ? [set.websiteUrl]
+        : typeof entityDoc?.websiteUrl === 'string' && entityDoc.websiteUrl
+          ? [entityDoc.websiteUrl]
+          : []),
+      ...(Array.isArray(set.sourceUrls)
+        ? set.sourceUrls
+        : Array.isArray(entityDoc?.sourceUrls)
+          ? entityDoc.sourceUrls
+          : []),
+    ].filter((url): url is string => typeof url === 'string');
+    await applyResearchEntityOrgUnitCanonicalization(set, entityDoc, orgUnitProfileUrls);
     await applyResearchEntityResearchAreaCanonicalization(set);
     if (!manuallyLockedFields.includes('websiteUrl')) {
       const websiteResolution = deriveResearchEntityWebsiteUrl(set, entityDoc);

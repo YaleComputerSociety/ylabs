@@ -285,6 +285,50 @@ const asStringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 
 /**
+ * Yale school subdomains that name exactly one school, so a profile hosted there
+ * is first-party evidence of that school. Generic research portals
+ * (research.yale.edu), campus locations (westcampus.yale.edu), and cross-school
+ * centers are deliberately absent: the host only sets a school when the host
+ * itself names one, keeping the fallback fail-closed (issue #1182).
+ */
+export const SCHOOL_PROFILE_HOSTS: Record<string, string> = {
+  'medicine.yale.edu': 'School of Medicine',
+  'ysph.yale.edu': 'School of Public Health',
+  'nursing.yale.edu': 'School of Nursing',
+  'divinity.yale.edu': 'Divinity School',
+  'law.yale.edu': 'Law School',
+  'som.yale.edu': 'School of Management',
+  'environment.yale.edu': 'School of the Environment',
+  'art.yale.edu': 'School of Art',
+  'architecture.yale.edu': 'School of Architecture',
+  'music.yale.edu': 'School of Music',
+  'drama.yale.edu': 'David Geffen School of Drama',
+};
+
+function hostnameOf(url: unknown): string {
+  if (typeof url !== 'string' || !url) return '';
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The school named by the first profile URL whose host is a school subdomain, or
+ * null when no host names a school. Returns the raw mapped name; callers resolve
+ * it through the canonicalizer so a school that is not a known OrgUnit fails
+ * closed rather than writing an off-catalog value.
+ */
+export function schoolNameFromProfileHosts(urls: string[]): string | null {
+  for (const url of urls) {
+    const school = SCHOOL_PROFILE_HOSTS[hostnameOf(url)];
+    if (school) return school;
+  }
+  return null;
+}
+
+/**
  * Canonicalizes a research-entity materialization `$set` in place: the scalar
  * `school` and the `departments[]` strings are rewritten to their canonical
  * OrgUnit names when they resolve, and left as raw values otherwise. It also
@@ -302,6 +346,7 @@ const asStringList = (value: unknown): string[] =>
 export async function applyResearchEntityOrgUnitCanonicalization(
   set: Record<string, unknown>,
   existing?: Record<string, unknown> | null,
+  profileUrls: string[] = [],
 ): Promise<{
   unmatchedSchool?: string;
   unmatchedDepartments: string[];
@@ -347,9 +392,17 @@ export async function applyResearchEntityOrgUnitCanonicalization(
     for (const department of effectiveDepartments) {
       addSchool(canonicalizer.schoolForDepartment(department));
     }
-    if (schools.length > 0) set.schools = schools;
 
     const scalarSchool = typeof effectiveSchool === 'string' ? effectiveSchool.trim() : '';
+    if (schools.length === 0 && !scalarSchool && profileUrls.length > 0) {
+      const hostSchool = schoolNameFromProfileHosts(profileUrls);
+      if (hostSchool) {
+        const canonical = canonicalizer.canonicalizeSchool(hostSchool);
+        if (canonical.matched) addSchool(canonical.value);
+      }
+    }
+
+    if (schools.length > 0) set.schools = schools;
     if (!scalarSchool && schools.length > 0) set.school = schools[0];
   } catch {
     return result;
