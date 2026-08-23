@@ -212,16 +212,31 @@ const resolveLeadDirectoryIdentity = (lead: LeadProfileIdentityLead): LeadDirect
 const hasResolvableLeadIdentity = (identity: LeadDirectoryIdentity): boolean =>
   Boolean(identity.netid) || identity.nameTokens.size > 0 || identity.profileSlugs.size > 0;
 
+const MIN_SHARED_NAME_TOKENS_TO_CORROBORATE = 2;
+
+const sharedNameTokenCount = (slug: string, nameTokens: Set<string>): number => {
+  const slugTokens = new Set(nameTokensFrom(slug));
+  let shared = 0;
+  for (const token of slugTokens) {
+    if (nameTokens.has(token)) shared += 1;
+  }
+  return shared;
+};
+
 const profileSlugCorroboratesLead = (slug: string, identity: LeadDirectoryIdentity): boolean => {
   const normalizedSlug = normalizeIdentityToken(slug);
   if (identity.netid && normalizedSlug === identity.netid) return true;
   if (identity.profileSlugs.has(normalizedSlug)) return true;
-  // A lead's own official profile page is authoritative: when we have one, a
-  // different person page under the entity is a conflict even if it shares a
-  // surname with a different person. Only fall back to the softer
-  // name-token overlap when the lead offers no profile page to compare against.
-  if (identity.profileSlugs.size > 0) return false;
-  return nameTokensFrom(slug).some((token) => identity.nameTokens.has(token));
+  // A shared surname alone stitches a foreign, same-named person's profile onto
+  // a different lead (issue #468), so a single overlapping name token can never
+  // corroborate. Corroborate on the lead's full directory name instead: the
+  // entity's person-profile slug and the lead name must share at least two name
+  // tokens (typically given plus family). This one symmetric rule replaces the
+  // asymmetric behavior that held same-person slug variants when the lead had
+  // its own profile URL, yet cleared surname-only collisions when it did not.
+  return (
+    sharedNameTokenCount(slug, identity.nameTokens) >= MIN_SHARED_NAME_TOKENS_TO_CORROBORATE
+  );
 };
 
 export const resolveLeadOfficialProfileUrl = (lead: LeadProfileIdentityLead): string => {

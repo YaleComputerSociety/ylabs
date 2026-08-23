@@ -804,6 +804,100 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('profile_identity_risk');
     expect(result.reasons).toContain('operator_override');
   });
+
+  it('clears the identity hold when the lead full name corroborates despite a variant profile slug', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-variant-slug',
+        name: 'Jane Doe Lab',
+        slug: 'jane-doe-lab-variant',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/jane-doe/',
+        sourceUrls: ['https://medicine.yale.edu/profile/jane-doe/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'jane-doe',
+          user: {
+            netid: 'jd88',
+            fname: 'Jane',
+            lname: 'Doe',
+            profileUrls: { official: 'https://chem.yale.edu/profile/jane-e-doe' },
+          },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('profile_identity_risk');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('keeps a surname-only contested lead gated even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-surname-collision',
+        name: 'John Smith Lab',
+        slug: 'john-smith-lab-collision',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://medicine.yale.edu/profile/john-smith/',
+        sourceUrls: ['https://medicine.yale.edu/profile/john-smith/'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'jane-smith', user: { fname: 'Jane', lname: 'Smith' } },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('profile_identity_risk');
+    expect(result.reasons).toContain('operator_override');
+  });
+
+  it('holds a lead-requiring entity with no attached PI for review even under a student-ready override', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'person-derived-no-lead',
+        name: 'Cognitive Neuroscience Lab',
+        slug: 'cognitive-neuroscience-lab-no-lead',
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: 'https://example.yale.edu/labs/cognitive-neuroscience',
+        sourceUrls: ['https://example.yale.edu/labs/cognitive-neuroscience'],
+        shortDescription:
+          'Studies causal inference methods for public health research, with projects on clinical decision-making and policy evaluation.',
+        fullDescription:
+          'The lab studies causal inference methods for public health research. Current projects examine clinical decision-making, population health datasets, and statistical tools for estimating treatment effects in complex observational settings.',
+        activeAtYaleCache: true,
+        studentVisibilityOverrideTier: 'student_ready',
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('operator_review');
+    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.reasons).toContain('missing_lead');
+    expect(result.reasons).toContain('operator_override');
+  });
 });
 
 describe('computeProgramStudentVisibility', () => {
