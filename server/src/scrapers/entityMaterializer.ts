@@ -997,16 +997,24 @@ export function canonicalRosterProvenanceFromSet(
   };
 }
 
+function canonicalUserDisplayName(user: Record<string, unknown> | null): string {
+  if (!user) return '';
+  const explicit = textValue(user.displayName) || textValue(user.name);
+  if (explicit) return explicit;
+  return [textValue(user.fname), textValue(user.lname)].filter(Boolean).join(' ').trim();
+}
+
 async function materializeCanonicalPiMembership(
   researchEntityId: string,
   patch: { filter: Record<string, any>; update: any },
   userId: string,
 ): Promise<void> {
   const canonicalUser = userId
-    ? await User.findById(userId).select('_id netid email orcid').lean()
+    ? await User.findById(userId).select('_id netid email orcid fname lname').lean()
     : null;
   const patchSet = (patch.update as { $set?: Record<string, unknown> }).$set || {};
-  const displayName = textValue(patchSet.name);
+  const displayName =
+    textValue(patchSet.name) || canonicalUserDisplayName(canonicalUser as Record<string, unknown>);
   await materializeCanonicalMembership(
     researchEntityId,
     {
