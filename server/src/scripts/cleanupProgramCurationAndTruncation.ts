@@ -28,6 +28,7 @@ import {
   clampDescriptionLength,
   isCurationRationaleText,
   sanitizeCatalogDescription,
+  stripRedactionPlaceholders,
 } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -56,7 +57,7 @@ const hasContactToRedact = (before: string): boolean =>
 
 const deriveDescription = (before: string): { after: string; verdict: Verdict } => {
   const curation = isCurationRationaleText(before);
-  let after = sanitizeCatalogDescription(redactDirectContactInfo(before));
+  let after = stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(before)));
   const wasHardCapped =
     before.length === LEGACY_TRUNCATION_CAP && after.length > 0 && !endsOnCompleteSentence(after);
   if (wasHardCapped) after = clampDescriptionLength(after, after.length - 1);

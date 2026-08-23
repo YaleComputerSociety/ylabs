@@ -156,12 +156,18 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
     expect(cleaned).toBe('Confirmation should be sent');
   });
 
-  it('strips redaction placeholders inside sanitizeCatalogDescription', () => {
+  it('leaves the redaction token in place inside sanitizeCatalogDescription (read-time contract)', () => {
     const text =
       'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].';
-    const cleaned = sanitizeCatalogDescription(text);
+    expect(sanitizeCatalogDescription(text)).toBe(text);
+  });
+
+  it('removes the token when stripRedactionPlaceholders is applied at rest', () => {
+    const text =
+      'The grant supports undergraduate research each summer. Questions can be directed to [email redacted].';
+    const cleaned = stripRedactionPlaceholders(text);
     expect(cleaned).not.toMatch(/redacted/i);
-    expect(cleaned).toMatch(/The grant supports undergraduate research each summer\./);
+    expect(cleaned).toBe('The grant supports undergraduate research each summer. Questions can be directed.');
   });
 });
 

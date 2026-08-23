@@ -204,13 +204,18 @@ export function clampDescriptionLength(text: string, maxLength = 2000): string {
 }
 
 /**
- * Clean a scraped catalog description: strip chrome and any leaked redaction
- * placeholder tokens, then fail closed to an empty string when the remainder is
- * roster/PII-shaped, a navigation dump, an FAQ/Q&A dump, an eligibility-form
- * label dump, or internal curation/reviewer-rationale prose.
+ * Clean a scraped catalog description: strip chrome, then fail closed to an
+ * empty string when the remainder is roster/PII-shaped, a navigation dump, an
+ * FAQ/Q&A dump, an eligibility-form label dump, or internal
+ * curation/reviewer-rationale prose.
+ *
+ * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
+ * intended safe rendering of contact info at read time and are left in place
+ * here; stored prose that reads awkwardly around a token is cleaned at rest by
+ * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
-  const stripped = stripRedactionPlaceholders(stripCatalogChrome(text));
+  const stripped = stripCatalogChrome(text);
   if (!stripped) return '';
   if (
     isRosterShapedText(stripped) ||
