@@ -8,6 +8,10 @@ import {
   sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 
 export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
@@ -19,7 +23,11 @@ export interface ResearchEntityPublicDescriptionRepresentation {
     pass: boolean;
     fullDescriptionUseful: boolean;
     cardDescriptionUseful: boolean;
-    reasons: Array<'missing_public_full_description' | 'missing_public_card_description'>;
+    reasons: Array<
+      | 'missing_public_full_description'
+      | 'missing_public_card_description'
+      | 'blank_served_public_description'
+    >;
   };
 }
 
@@ -75,9 +83,26 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     website: sanitizedEntity.website,
     websiteUrl: sanitizedEntity.websiteUrl,
   });
+  // The public DTO runs a second read-time hygiene pass over the served copy
+  // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
+  // that the quality assessment above does not, so a card can clear the quality
+  // invariant yet serve an empty description once that hygiene strips CTA/news
+  // chrome (#932) or roster-shaped prose. Assess the actually-served copy and
+  // fail closed when both fields reduce to empty so a stored `student_ready`
+  // entity never renders a blank detail page (#998 precedent). Idempotent with
+  // the DTO's own pass, and name-agnostic like the rest of this gate.
+  const servedFullDescription = sanitizeResearchEntityDescription(
+    textValue(sanitizedEntity.fullDescription),
+  );
+  const servedShortDescription = sanitizeResearchEntityShortDescription(
+    textValue(sanitizedEntity.shortDescription),
+  );
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
   if (!quality.full.isUseful) reasons.push('missing_public_full_description');
   if (!quality.short.isUseful) reasons.push('missing_public_card_description');
+  if (!servedFullDescription && !servedShortDescription) {
+    reasons.push('blank_served_public_description');
+  }
 
   return {
     entity: sanitizedEntity,

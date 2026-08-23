@@ -50,7 +50,11 @@ describe('buildPublicDescriptionAuditReport', () => {
       expect.objectContaining({
         recordId: 'entity-invalid',
         leadMemberNames: ['Correct Person'],
-        reasons: ['missing_public_full_description', 'missing_public_card_description'],
+        reasons: [
+          'missing_public_full_description',
+          'missing_public_card_description',
+          'blank_served_public_description',
+        ],
       }),
     ]);
     expect(JSON.stringify(report)).not.toContain("Wrong Person's expertise");
