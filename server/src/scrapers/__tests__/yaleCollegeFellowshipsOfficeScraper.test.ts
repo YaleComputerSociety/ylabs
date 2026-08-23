@@ -86,7 +86,9 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
 
     expect(candidates).toHaveLength(1);
-    expect(candidates[0].description).toMatch(/provides support for original undergraduate research/);
+    expect(candidates[0].description).toMatch(
+      /provides support for original undergraduate research/,
+    );
   });
 
   it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
