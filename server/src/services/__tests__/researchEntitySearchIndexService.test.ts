@@ -10,6 +10,8 @@ import {
   buildStudentSearchTerms,
   fetchResearchEntitySearchMemberNames,
   getResearchEntitySearchIndexSettings,
+  invalidateResearchEntitySearchEmbedderCache,
+  isResearchEntitySearchEmbedderConfigured,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL,
   RESEARCH_ENTITY_SEARCH_INDEX_NAME,
   RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
@@ -396,6 +398,58 @@ describe('researchEntitySearchIndexService', () => {
     ).rejects.toThrow('--page-size must be a safe positive integer');
 
     expect(getIndexCalls).toBe(0);
+  });
+});
+
+describe('isResearchEntitySearchEmbedderConfigured', () => {
+  beforeEach(() => {
+    invalidateResearchEntitySearchEmbedderCache();
+  });
+
+  it('returns true when the running index reports the default embedder', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => ({ default: { source: 'openAi' } }),
+    });
+    expect(configured).toBe(true);
+  });
+
+  it('returns false when the running index has no embedders configured', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => ({}),
+    });
+    expect(configured).toBe(false);
+  });
+
+  it('returns false when the index client does not support getEmbedders', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({});
+    expect(configured).toBe(false);
+  });
+
+  it('fails closed to false when checking the embedder throws', async () => {
+    const configured = await isResearchEntitySearchEmbedderConfigured({
+      getEmbedders: async () => {
+        throw new Error('meili unreachable');
+      },
+    });
+    expect(configured).toBe(false);
+  });
+
+  it('caches the result until the cache is invalidated', async () => {
+    let calls = 0;
+    const index = {
+      getEmbedders: async () => {
+        calls += 1;
+        return { default: {} };
+      },
+    };
+
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(calls).toBe(1);
+
+    invalidateResearchEntitySearchEmbedderCache();
+    expect(await isResearchEntitySearchEmbedderConfigured(index)).toBe(true);
+    expect(calls).toBe(2);
   });
 });
 

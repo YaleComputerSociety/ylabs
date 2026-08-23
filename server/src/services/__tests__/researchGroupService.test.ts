@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 const mocks = vi.hoisted(() => ({
   search: vi.fn(),
+  getEmbedders: vi.fn(),
   listingDistinct: vi.fn(),
   listingFind: vi.fn(),
   researchEntityFindOne: vi.fn(),
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../utils/meiliClient', () => ({
   getMeiliIndex: vi.fn(async () => ({
     search: mocks.search,
+    getEmbedders: mocks.getEmbedders,
   })),
 }));
 
@@ -121,6 +123,7 @@ import {
   resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
+import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -151,7 +154,10 @@ const validPublicDescriptions = {
 };
 
 beforeEach(() => {
+  invalidateResearchEntitySearchEmbedderCache();
   mocks.search.mockReset();
+  mocks.getEmbedders.mockReset();
+  mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
   mocks.listingDistinct.mockReset();
   mocks.listingFind.mockReset();
   mocks.researchEntityFindOne.mockReset();
@@ -319,8 +325,99 @@ describe('searchResearchGroupsViaMeili', () => {
     ).toBeUndefined();
   });
 
-  it('falls back to keyword search when a local Meili index lacks the hybrid embedder', async () => {
+  it('never requests hybrid search when no embedder is configured on the live index', async () => {
     const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      'reilly',
+      expect.not.objectContaining({ hybrid: expect.anything() }),
+    );
+    expect(result).toMatchObject({
+      estimatedTotalHits: 1,
+      page: 1,
+      pageSize: 1,
+      degraded: false,
+      researchEntities: [{ _id: 'reilly-lab', slug: 'reilly-lab', name: 'Reilly Lab' }],
+    });
+  });
+
+  it('requests hybrid search when the live index reports a configured embedder', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'reilly-lab',
+          name: 'Reilly Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+    expect(mocks.search).toHaveBeenCalledWith(
+      'reilly',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      }),
+    );
+    expect(result.degraded).toBe(false);
+  });
+
+  it('falls back to keyword search when Meili rejects hybrid despite a configured embedder (config-drift safety net)', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
     mocks.search
       .mockRejectedValueOnce({
         cause: {

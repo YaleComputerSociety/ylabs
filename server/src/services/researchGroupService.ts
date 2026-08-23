@@ -34,6 +34,7 @@ import { Signal } from '../models/signal';
 import { StudentTracking } from '../models/studentTracking';
 import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { isResearchEntitySearchEmbedderConfigured } from './researchEntitySearchIndexService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import {
@@ -725,9 +726,9 @@ const isInvalidSearchAttributesToSearchOnError = (error: unknown): boolean => {
 };
 
 /**
- * Hybrid Meilisearch query for ResearchEntity. Mirrors the pattern used in
- * listingService — keyword-only when no query, hybrid (semanticRatio 0.8) when
- * a non-empty query is provided.
+ * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
+ * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
+ * is actually configured on the running index.
  */
 export async function searchResearchGroupsViaMeili(
   query: string,
@@ -824,22 +825,24 @@ export async function searchResearchGroupsViaMeili(
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
   }
+
+  const index = await getMeiliIndex('researchentities');
   if (trimmedQuery !== '') {
-    searchParams.hybrid = {
-      semanticRatio: 0.8,
-      embedder: 'default',
-    };
     if (normalizedQuery.isTopicAliasQuery) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
-      delete searchParams.hybrid;
+    } else if (await isResearchEntitySearchEmbedderConfigured(index)) {
+      searchParams.hybrid = {
+        semanticRatio: 0.8,
+        embedder: 'default',
+      };
     }
   }
 
-  const index = await getMeiliIndex('researchentities');
   // Search, degrading gracefully on recoverable errors: drop the semantic
-  // embedder if it is not configured, and drop the browseRankScore sort key if
-  // the running index has not yet had it added to sortableAttributes. Each
-  // degradation is applied at most once; anything else propagates.
+  // embedder if a config-drift race made it unavailable after the check above,
+  // and drop the browseRankScore sort key if the running index has not yet had
+  // it added to sortableAttributes. Each degradation is applied at most once;
+  // anything else propagates.
   const searchWithFallbacks = async (): Promise<{
     result: {
       hits?: any[];

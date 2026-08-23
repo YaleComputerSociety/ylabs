@@ -466,6 +466,48 @@ export const buildResearchEntitySearchEmbedderConfig = (apiKey: string) => ({
   },
 });
 
+const RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let embedderConfiguredCache: boolean | null = null;
+let embedderConfiguredCacheAt = 0;
+
+export const invalidateResearchEntitySearchEmbedderCache = (): void => {
+  embedderConfiguredCache = null;
+  embedderConfiguredCacheAt = 0;
+};
+
+interface ResearchEntitySearchIndexLike {
+  getEmbedders?: () => Promise<Record<string, unknown> | null | undefined>;
+}
+
+export async function isResearchEntitySearchEmbedderConfigured(
+  index: ResearchEntitySearchIndexLike,
+): Promise<boolean> {
+  const now = Date.now();
+  if (
+    embedderConfiguredCache !== null &&
+    now - embedderConfiguredCacheAt < RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS
+  ) {
+    return embedderConfiguredCache;
+  }
+
+  let configured = false;
+  try {
+    const embedders = typeof index.getEmbedders === 'function' ? await index.getEmbedders() : null;
+    configured = Boolean(
+      embedders &&
+      typeof embedders === 'object' &&
+      RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME in embedders,
+    );
+  } catch {
+    configured = false;
+  }
+
+  embedderConfiguredCache = configured;
+  embedderConfiguredCacheAt = now;
+  return configured;
+}
+
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
