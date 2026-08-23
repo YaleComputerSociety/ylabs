@@ -622,8 +622,9 @@ const CURATION_RATIONALE_PATTERNS: RegExp[] = [
   /\boperators?\s+should\b/i,
   /\bshould not be described as\b/i,
   /\btreat it as (?:a |an )?(?:restrained|broad)\b/i,
-  /\buntil a (?:more specific )?(?:current )?(?:award|fellowship|program|funding) page is attached\b/i,
-  /\bkeep public copy restrained\b/i,
+  /\buntil a (?:[\w-]+\s+){0,3}(?:award|fellowship|program|funding|source) page is attached\b/i,
+  /\b(?:keep|kept|keeps|keeping|stay|stays|staying|remain|remains|remaining)\s+restrained\b/i,
+  /\bthis (?:record|row|entry|listing) should\b/i,
   /\bclear student audience\b/i,
   /\b(?:should|must)\s+be\s+(?:shown|displayed|surfaced|rendered)\s+as\b/i,
 ];
@@ -631,9 +632,10 @@ const CURATION_RATIONALE_PATTERNS: RegExp[] = [
 /**
  * Internal curation / reviewer-rationale prose: an LLM or operator suitability
  * assessment written *about the record* ("is source-backed", "safe to show
- * prominently", "operators should refresh", "keep public copy restrained until
- * ... is attached", or a display-routing directive "it should be shown as
- * funding/project support rather than a research home") instead of a
+ * prominently", "operators should refresh", a "keep/stay/remain restrained
+ * until ... page is attached" restraint directive, a record-referential "this
+ * record/row should ..." instruction, or a display-routing directive "it should
+ * be shown as funding/project support rather than a research home") instead of a
  * student-facing description of the program. These phrases are internal review
  * vocabulary that never appears in genuine source prose, so a single marker is
  * enough to fail closed (#671, #1053).

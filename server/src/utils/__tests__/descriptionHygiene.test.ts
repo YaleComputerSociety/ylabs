@@ -292,6 +292,30 @@ describe('descriptionHygiene staff-contact-block fail-closed (#926)', () => {
   });
 });
 
+const CURATION_RATIONALE_COVERAGE_GAP_DESCRIPTIONS = [
+  'The Josef Albers Traveling Fellowship Fund supports travel for study. Because the audience is mixed, this should remain restrained for undergraduate browsing.',
+  'The Howard Topol Travel Fellowships support residential-college travel. Because the source supports residential-college travel funding rather than a direct research placement, this record should stay restrained until a richer program page is attached.',
+  'The Harvey Geiger Fellowships in Architecture support architecture research travel. The available Yale source confirms undergraduate architecture research travel use, but this row should stay restrained until a current standing program page is attached.',
+  'The Schmidt Program on Artificial Intelligence, Emerging Technologies, and National Power lists student initiatives and travel among its funding opportunities. This record should be used for projects aligned with the Schmidt Program research areas.',
+];
+
+describe('descriptionHygiene curation-rationale coverage-gap fail-closed (#671)', () => {
+  it.each(CURATION_RATIONALE_COVERAGE_GAP_DESCRIPTIONS)(
+    'flags restrained-directive and record-referential rationale prose: %s',
+    (description) => {
+      expect(isCurationRationaleText(description)).toBe(true);
+      expect(sanitizeCatalogDescription(description)).toBe('');
+    },
+  );
+
+  it('keeps genuine program prose that merely reads as measured or references its own records', () => {
+    const clean =
+      'Applicants submit a research proposal and two letters of recommendation. The program keeps a record of past awardees and publishes an annual report.';
+    expect(isCurationRationaleText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
 describe('descriptionHygiene provenance-hedge strip (#1053)', () => {
   it.each([
     ['$20/hour when source-confirmed', '$20/hour'],
