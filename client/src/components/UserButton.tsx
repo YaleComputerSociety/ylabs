@@ -10,6 +10,7 @@ import MenuItem from '@mui/material/MenuItem';
 import UserContext from '../contexts/UserContext';
 import { buildApiUrl } from '../utils/apiBaseUrl';
 import { safeRouteSegment } from '../utils/url';
+import { navFocusRingSx } from './navFocusRing';
 
 const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
 
@@ -96,10 +97,7 @@ const UserButton = () => {
           '&:hover': {
             backgroundColor: '#004B93',
           },
-          '&:focus-visible': {
-            outline: '2px solid #1876D1',
-            outlineOffset: '2px',
-          },
+          ...navFocusRingSx,
         }}
         disableRipple
       >

@@ -3,6 +3,8 @@
  */
 import Button from '@mui/material/Button';
 
+import { navFocusRingSx } from './navFocusRing';
+
 const FeedbackButton = () => {
   return (
     <Button
@@ -18,6 +20,7 @@ const FeedbackButton = () => {
         fontWeight: 450,
         fontSize: '14px',
         minHeight: '44px',
+        ...navFocusRingSx,
       }}
       disableRipple={true}
     >

@@ -4,6 +4,8 @@
 import Button from '@mui/material/Button';
 import { Link, useLocation } from 'react-router-dom';
 
+import { navFocusRingSx } from './navFocusRing';
+
 const AboutButton = () => {
   const location = useLocation();
   const isActive = location.pathname === '/about';
@@ -31,10 +33,7 @@ const AboutButton = () => {
           backgroundColor: 'transparent',
           color: '#1876D1',
         },
-        '&:focus-visible': {
-          outline: '2px solid #1876D1',
-          outlineOffset: '2px',
-        },
+        ...navFocusRingSx,
       }}
       disableRipple={true}
     >

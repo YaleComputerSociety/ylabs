@@ -30,6 +30,7 @@ import ViewModeToggle from './shared/ViewModeToggle';
 import { getColorForResearchArea } from '../utils/researchAreas';
 import { useConfig } from '../hooks/useConfig';
 import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
+import { navFocusRingSx } from './navFocusRing';
 import { safeRouteSegment } from '../utils/url';
 
 import { ThemeProvider } from '@mui/material/styles';
@@ -323,6 +324,7 @@ export default function Navbar() {
               width: 44,
               padding: '8px',
               '&:hover': { backgroundColor: 'transparent' },
+              ...navFocusRingSx,
             }}
           >
             <CloseIcon />
@@ -346,6 +348,7 @@ export default function Navbar() {
                         minHeight: 44,
                         width: '100%',
                         pl: 1,
+                        ...navFocusRingSx,
                       }}
                     >
                       {link.label}
@@ -374,6 +377,7 @@ export default function Navbar() {
                       minHeight: 44,
                       width: '100%',
                       pl: 1,
+                      ...navFocusRingSx,
                     }}
                   >
                     Edit Profile
@@ -394,6 +398,7 @@ export default function Navbar() {
                       minHeight: 44,
                       width: '100%',
                       pl: 1,
+                      ...navFocusRingSx,
                     }}
                   >
                     Public Profile
@@ -495,10 +500,7 @@ export default function Navbar() {
                                 '&:hover': {
                                   backgroundColor: 'rgba(24, 74, 155, 0.05) !important',
                                 },
-                                '&:focus-visible': {
-                                  outline: '2px solid rgba(0, 53, 107, 0.45)',
-                                  outlineOffset: '2px',
-                                },
+                                ...navFocusRingSx,
                               }}
                             >
                               {link.label}
@@ -522,6 +524,7 @@ export default function Navbar() {
                         width: 44,
                         padding: '8px',
                         '&:hover': { backgroundColor: 'transparent' },
+                        ...navFocusRingSx,
                       }}
                     >
                       <SearchIcon />
@@ -542,6 +545,7 @@ export default function Navbar() {
                         width: 44,
                         padding: '8px',
                         '&:hover': { backgroundColor: 'transparent' },
+                        ...navFocusRingSx,
                       }}
                     >
                       <HamburgerIcon />

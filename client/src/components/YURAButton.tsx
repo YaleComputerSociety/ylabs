@@ -3,6 +3,8 @@
  */
 import Button from '@mui/material/Button';
 
+import { navFocusRingSx } from './navFocusRing';
+
 const YURAButton = () => {
   const handleReload = () => {
     window.location.reload();
@@ -12,7 +14,7 @@ const YURAButton = () => {
     <Button
       onClick={handleReload}
       disableRipple={true}
-      sx={{ textTransform: 'none', minHeight: '44px' }}
+      sx={{ textTransform: 'none', minHeight: '44px', ...navFocusRingSx }}
     >
       <img
         src="/brand/yale-research-mark.svg"

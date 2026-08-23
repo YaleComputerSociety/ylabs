@@ -4,6 +4,7 @@
 import Button from '@mui/material/Button';
 
 import { buildApiUrl } from '../utils/apiBaseUrl';
+import { navFocusRingSx } from './navFocusRing';
 
 const MAX_LOGOUT_RETURN_PATH_LENGTH = 2048;
 
@@ -37,6 +38,7 @@ const SignOutButton = () => {
           backgroundColor: 'transparent',
           color: '#1876D1',
         },
+        ...navFocusRingSx,
       }}
       onClick={handleLogout}
       disableRipple={true}
