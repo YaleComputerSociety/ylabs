@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   assertRematerializeApplyAllowed,
   buildRematerializeFieldChanges,
+  observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  researchEntityFieldIsStranded,
 } from '../rematerializeResearchEntitiesCore';
 
 describe('parseRematerializeResearchEntitiesArgs', () => {
@@ -26,8 +28,10 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     expect(args.confirmRematerialize).toBe(true);
   });
 
-  it('requires --slugs', () => {
-    expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow('--slugs is required');
+  it('requires --slugs when no reclaim mode is given', () => {
+    expect(() => parseRematerializeResearchEntitiesArgs(['--apply'])).toThrow(
+      '--slugs or --reclaim-stranded is required',
+    );
   });
 
   it('rejects malformed slugs', () => {
@@ -40,6 +44,54 @@ describe('parseRematerializeResearchEntitiesArgs', () => {
     expect(() => parseRematerializeResearchEntitiesArgs(['--slugs=a', '--nope'])).toThrow(
       'Unknown rematerialize argument',
     );
+  });
+
+  it('accepts --reclaim-stranded without --slugs', () => {
+    const args = parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=methods']);
+    expect(args.reclaimStrandedField).toBe('methods');
+    expect(args.slugs).toEqual([]);
+  });
+
+  it('supports the space-separated reclaim form alongside slugs', () => {
+    const args = parseRematerializeResearchEntitiesArgs([
+      '--slugs',
+      'attridge-lab-hwa2',
+      '--reclaim-stranded',
+      'researchAreas',
+    ]);
+    expect(args.slugs).toEqual(['attridge-lab-hwa2']);
+    expect(args.reclaimStrandedField).toBe('researchAreas');
+  });
+
+  it('rejects an unsupported reclaim field', () => {
+    expect(() =>
+      parseRematerializeResearchEntitiesArgs(['--reclaim-stranded=fullDescription']),
+    ).toThrow('--reclaim-stranded only supports');
+  });
+});
+
+describe('researchEntityFieldIsStranded', () => {
+  it('treats null, undefined, empty array, and blank string as stranded', () => {
+    expect(researchEntityFieldIsStranded(undefined)).toBe(true);
+    expect(researchEntityFieldIsStranded(null)).toBe(true);
+    expect(researchEntityFieldIsStranded([])).toBe(true);
+    expect(researchEntityFieldIsStranded('   ')).toBe(true);
+  });
+
+  it('treats populated values as not stranded', () => {
+    expect(researchEntityFieldIsStranded(['Confocal Microscopy'])).toBe(false);
+    expect(researchEntityFieldIsStranded('Clinical Metabolism Research')).toBe(false);
+  });
+});
+
+describe('observationValueIsMaterializable', () => {
+  it('requires a non-empty array or string payload', () => {
+    expect(observationValueIsMaterializable(['Mouse Genotyping'])).toBe(true);
+    expect(observationValueIsMaterializable('x')).toBe(true);
+    expect(observationValueIsMaterializable([])).toBe(false);
+    expect(observationValueIsMaterializable(['   '])).toBe(false);
+    expect(observationValueIsMaterializable('')).toBe(false);
+    expect(observationValueIsMaterializable(null)).toBe(false);
   });
 });
 
