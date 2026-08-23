@@ -54,7 +54,10 @@ describe('publicProgramForReader link hygiene (#692)', () => {
         { label: 'Apply', url: 'https://engineering.yale.edu/apply' },
         { label: 'Give Back', url: 'https://engineering.yale.edu/give' },
         { label: 'Contact Us', url: 'https://engineering.yale.edu/contact-us' },
-        { label: 'Undergraduate', url: 'https://engineering.yale.edu/academic-study/undergraduate' },
+        {
+          label: 'Undergraduate',
+          url: 'https://engineering.yale.edu/academic-study/undergraduate',
+        },
         { label: 'Research Internship Program details', url: specificPage },
       ],
     });
@@ -92,7 +95,8 @@ describe('publicProgramForReader redaction placeholder hygiene (#671 residual)',
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58501',
       title: 'Example Senior Research Grant',
-      eligibility: 'If you are an international student, please contact [email redacted] in the Tax Office.',
+      eligibility:
+        'If you are an international student, please contact [email redacted] in the Tax Office.',
     });
 
     expect(payload.eligibility).toBe(

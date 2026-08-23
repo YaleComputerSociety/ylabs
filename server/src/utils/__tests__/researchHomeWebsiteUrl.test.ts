@@ -479,9 +479,9 @@ describe('isUnhelpfulProgramUrl', () => {
         'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
       ),
     ).toBe(false);
-    expect(isUnhelpfulProgramUrl('https://apply.communityforce.com/Funds/FundDetails.aspx?id=9')).toBe(
-      false,
-    );
+    expect(
+      isUnhelpfulProgramUrl('https://apply.communityforce.com/Funds/FundDetails.aspx?id=9'),
+    ).toBe(false);
   });
 
   it('exempts dedicated application-portal roots that are the real apply entry point', () => {
@@ -508,10 +508,16 @@ describe('isUnhelpfulProgramUrl', () => {
     const sourceUrl = 'https://center.example.edu/education/summer-undergraduate-internships';
     expect(isUnhelpfulProgramUrl(sourceUrl, sourceUrl)).toBe(false);
     expect(
-      isUnhelpfulProgramUrl('https://apply.communityforce.com/Funds/FundDetails.aspx?id=9', sourceUrl),
+      isUnhelpfulProgramUrl(
+        'https://apply.communityforce.com/Funds/FundDetails.aspx?id=9',
+        sourceUrl,
+      ),
     ).toBe(false);
     expect(
-      isUnhelpfulProgramUrl('https://center.example.edu/education/example-research-grant', sourceUrl),
+      isUnhelpfulProgramUrl(
+        'https://center.example.edu/education/example-research-grant',
+        sourceUrl,
+      ),
     ).toBe(false);
   });
 
@@ -529,8 +535,8 @@ describe('isSameHostShallowChromeUrl', () => {
 
   it('ignores links matching program-detail keywords even when shallow', () => {
     const sourceUrl = 'https://school.example.edu/academic-study/example-program';
-    expect(
-      isSameHostShallowChromeUrl('https://school.example.edu/fellowships', sourceUrl),
-    ).toBe(false);
+    expect(isSameHostShallowChromeUrl('https://school.example.edu/fellowships', sourceUrl)).toBe(
+      false,
+    );
   });
 });

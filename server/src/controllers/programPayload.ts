@@ -1,5 +1,8 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeCatalogDescription, stripRedactionPlaceholders } from '../utils/descriptionHygiene';
+import {
+  sanitizeCatalogDescription,
+  stripRedactionPlaceholders,
+} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
