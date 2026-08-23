@@ -193,7 +193,7 @@ export const DashboardMetric = ({
 
   return (
     <div className={`rounded-lg border p-4 ${toneClass}`}>
-      <h3 className="flex items-start justify-between gap-2 text-sm font-semibold">
+      <h2 className="flex items-start justify-between gap-2 text-sm font-semibold">
         <span>{title}</span>
         {tooltip && (
           <span
@@ -204,7 +204,7 @@ export const DashboardMetric = ({
             i
           </span>
         )}
-      </h3>
+      </h2>
       <p className="mt-2 text-3xl font-bold text-gray-950">{value}</p>
       <p className="mt-2 text-sm leading-5 opacity-85">{context}</p>
     </div>

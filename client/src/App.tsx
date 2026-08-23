@@ -38,12 +38,18 @@ const App = () => {
           <FellowshipSearchContextProvider>
             <UIContextProvider>
               <div className="flex flex-col h-full overflow-hidden">
+                <a
+                  href="#main-content"
+                  className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-[var(--yr-blue)] focus:px-4 focus:py-2 focus:text-white focus:outline-none focus:ring-2 focus:ring-white"
+                >
+                  Skip to main content
+                </a>
                 <div className="flex-shrink-0 flex-grow-0">
                   <Navbar />
                 </div>
                 <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
                   <HttpStatusNotifier />
-                  <main className="flex-grow">
+                  <main id="main-content" tabIndex={-1} className="flex-grow">
                     <Routes>
                       <Route
                         path="/"
