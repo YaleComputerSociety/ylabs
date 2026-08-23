@@ -414,22 +414,69 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
   );
 }
 
+const leadingPageChromePattern =
+  /^(?:(?:Bio Website|Bio|Website|Home|Overview|Profile)\s+)+(?=[A-Z])/;
+
+/**
+ * Strip a leading page-navigation label (`Bio`, `Bio Website`, `Website`,
+ * `Home`, `Overview`, `Profile`) glued to the front of a scraped
+ * shortDescription (#1077). Gated on a following capitalized word so the label
+ * is only removed when it precedes real content, leaving a genuine sentence
+ * that merely opens with one of these words (lower-cased mid-prose) untouched.
+ */
+export function stripLeadingPageChrome(text: string): string {
+  return normalizeHygieneWhitespace(String(text || '').replace(leadingPageChromePattern, ''));
+}
+
+const firstPersonPronounVoicePattern =
+  /\bI['’](?:m|ve|d|ll)\b|\bI\s+(?:am|have|had|study|studies|studied|investigate|examine|explore|use|focus|focused|work|research|develop|lead|direct|analyze|apply|combine|seek|aim|began|started|joined|received|earned|hold|teach|remain|became)\b/;
+
+const firstPersonPossessiveVoicePattern =
+  /\b(?:my|My|our|Our)\s+(?:lab|laboratory|research|group|team|work|studies)\b/;
+
+const firstPersonPluralVoicePattern =
+  /\b(?:we|We)\s+(?:study|investigate|examine|explore|use|focus|develop|seek|aim|are|have|had|ask|address|analyze|apply|combine|build|model|show|report|hypothesize)\b/;
+
+/**
+ * Raw first-person source-bio voice in a student-facing shortDescription: a
+ * personal pronoun clause (`I am`, `I study`, `I've`), a lab/research
+ * possessive (`my research`, `our lab`), or a first-person-plural research
+ * clause (`we study`, `in the laboratory we study`). The card/detail summary
+ * must read as neutral third person, so any of these fails the shortDescription
+ * closed and the read-time fallback (fullDescription, then researchAreas/
+ * department framing) supplies cleaner copy (#1077). Scoped to shortDescription
+ * only; the fullDescription first-person bio case remains tracked by #964.
+ */
+export function isFirstPersonResearchVoiceText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return (
+    firstPersonPronounVoicePattern.test(normalized) ||
+    firstPersonPossessiveVoicePattern.test(normalized) ||
+    firstPersonPluralVoicePattern.test(normalized)
+  );
+}
+
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
  * research summary phrased as a question is not wrongly blanked, while a
- * chrome-only blurb collapses to empty (#808). Two intentional fail-closed
+ * chrome-only blurb collapses to empty (#808). Intentional fail-closed
  * exceptions apply: a leaked research-areas heading fragment in a synthesized
- * topic blurb (#816), and the narrow institutional-center-blurb check (#893),
- * which blanks a promotional center/council landing blurb grafted onto an
- * unrelated entity.
+ * topic blurb (#816), the narrow institutional-center-blurb check (#893) that
+ * blanks a promotional center/council landing blurb grafted onto an unrelated
+ * entity, and raw first-person source-bio voice that a student-facing card must
+ * never carry (#1077). A leading page-navigation label is stripped before the
+ * voice check so a bare keyword list behind a `Bio` label survives (#1077).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
   const cleaned = collapseDoubledSynthesisVerb(
     stripGluedProfileRoleLabel(
-      stripTrailingContactAddress(
-        stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+      stripLeadingPageChrome(
+        stripTrailingContactAddress(
+          stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+        ),
       ),
     ),
   );
@@ -437,6 +484,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (isInstitutionalCenterBlurbText(cleaned)) return '';
   if (isCtaNewsTickerDumpText(cleaned)) return '';
   if (isStudiesTemplateGlueMalformed(cleaned)) return '';
+  if (isFirstPersonResearchVoiceText(cleaned)) return '';
   if (containsHtmlTagMarkup(cleaned)) return '';
   return cleaned;
 }
