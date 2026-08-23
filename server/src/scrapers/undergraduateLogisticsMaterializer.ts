@@ -6,7 +6,7 @@ import {
   type SignalStatus as UndergraduateLogisticsClaimStatus,
   type UndergraduateLogisticsSignalType as UndergraduateLogisticsClaimType,
 } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELDS: Record<
@@ -694,7 +694,7 @@ export function validateUndergraduateLogisticsObservation(
       normalizedValue: JSON.stringify(value),
       sourceName,
       sourceUrl,
-      evidenceExcerpt: redactDirectContactInfo(quote),
+      evidenceExcerpt: sanitizeEvidenceExcerpt(quote),
       observedAt,
       expiresAt: expiryForObservation(claimType, observedAt, raw.validThrough),
     },

@@ -98,6 +98,26 @@ describe('undergraduate logistics materialization', () => {
     expect(resolution.missingClaimTypes).toContain('TIME_COMMITMENT');
   });
 
+  it('sanitizes the stored evidence excerpt, dropping a contact-marker sentence (#1112)', () => {
+    const resolution = resolveUndergraduateLogisticsClaims(
+      [
+        observation(
+          'undergraduateLogisticsCompensation',
+          'COMPENSATION',
+          { modes: ['PAID'] },
+          'Undergraduate research assistants are paid $18 per hour. Email ada@yale.edu to apply.',
+        ),
+      ],
+      NOW,
+    );
+
+    expect(resolution.patches).toHaveLength(1);
+    const excerpt = resolution.patches[0].evidenceExcerpt;
+    expect(excerpt).toMatch(/Undergraduate research assistants are paid \$18 per hour/i);
+    expect(excerpt).not.toContain('ada@yale.edu');
+    expect(excerpt).not.toMatch(/redacted/i);
+  });
+
   it.each([
     ['PAID', 'Undergraduate research assistants receive hourly pay.'],
     ['STIPEND', 'Undergraduate students receive a stipend for their research role.'],

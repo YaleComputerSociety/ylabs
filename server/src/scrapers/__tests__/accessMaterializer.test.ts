@@ -387,7 +387,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual([]);
   });
 
-  it('redacts direct contact details from public signal excerpts', () => {
+  it('drops marker-only contact quotes from derived signal excerpts (#1112)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -415,16 +415,33 @@ describe('deriveAccessArtifactsFromObservations', () => {
 
     expect(result.accessSignals).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          type: 'REACH_OUT_PLAUSIBLE',
-          excerpt: 'Email [email redacted] to apply.',
-        }),
-        expect.objectContaining({
-          type: 'CONTACT_INSTRUCTIONS_EXIST',
-          excerpt: 'Call [phone redacted] or email [email redacted].',
-        }),
+        expect.objectContaining({ type: 'REACH_OUT_PLAUSIBLE', excerpt: undefined }),
+        expect.objectContaining({ type: 'CONTACT_INSTRUCTIONS_EXIST', excerpt: undefined }),
       ]),
     );
+    const serialized = JSON.stringify(result.accessSignals);
+    expect(serialized).not.toContain('ada@yale.edu');
+    expect(serialized).not.toContain('203-432-1234');
+    expect(serialized).not.toMatch(/redacted/i);
+  });
+
+  it('keeps a substantive contact quote while dropping its marker sentence (#1112)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'contactInstructionsQuote',
+        value:
+          'Prospective students should review current projects before writing. Email ada@yale.edu with a short note.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+    ]);
+
+    const contactSignal = result.accessSignals.find(
+      (signal) => signal.type === 'CONTACT_INSTRUCTIONS_EXIST',
+    );
+    expect(contactSignal?.excerpt).toMatch(/Prospective students should review current projects/i);
+    expect(contactSignal?.excerpt ?? '').not.toContain('ada@yale.edu');
+    expect(contactSignal?.excerpt ?? '').not.toMatch(/redacted/i);
   });
 
   it('derives contact-instruction signals from contact observations', () => {
