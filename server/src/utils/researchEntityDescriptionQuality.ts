@@ -314,6 +314,12 @@ const hasFragmentaryCardCopy = (value: string): boolean =>
   (/^[^()]*\)/.test(value) && !/\([^)]*\)/.test(value)) ||
   /\b[A-Z]\.$/.test(value);
 
+const endsWithCardCompletionMarker = (value: string): boolean =>
+  /(?:[.!?…]|\p{L}\))["'”’)\]]*$/u.test(value);
+
+const isTruncatedCardCopy = (value: string): boolean =>
+  !endsWithCardCompletionMarker(value) && !isConciseSpecificResearchDescription(value);
+
 function hasDuplicatedLongFragment(value: string): boolean {
   const sentences = sentenceList(value)
     .map((sentence) => sentence.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim())
@@ -616,6 +622,7 @@ export function shortDescriptionQuality(value: unknown, fullDescription: unknown
   if (text && isLocationOnlyLabDescription(text)) flags.push('generic-lead');
   if (text && hasGenericMissionStatementLead(text)) flags.push('generic-lead');
   if (text && hasFragmentaryCardCopy(text)) flags.push('incomplete-sentence');
+  if (text && isTruncatedCardCopy(text)) flags.push('incomplete-sentence');
   if (
     text &&
     full &&
