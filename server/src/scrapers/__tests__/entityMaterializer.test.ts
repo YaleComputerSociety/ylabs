@@ -53,6 +53,16 @@ describe('materializedFieldValue research-entity name hygiene', () => {
     );
     expect(materializedFieldValue('researchEntity', 'name', 'Example Lab')).toBe('Example Lab');
   });
+
+  it('normalizes shouty person-name casing on user fname/lname (#834)', () => {
+    expect(materializedFieldValue('user', 'fname', 'AZA')).toBe('Aza');
+    expect(materializedFieldValue('user', 'lname', 'BUDNITCKIY')).toBe('Budnitckiy');
+    expect(materializedFieldValue('user', 'fname', 'TJ')).toBe('TJ');
+  });
+
+  it('does not casing-normalize research-entity displayName (preserves lab acronyms)', () => {
+    expect(materializedFieldValue('researchEntity', 'displayName', 'PTSD Lab')).toBe('PTSD Lab');
+  });
 });
 
 describe('entityMaterializer post-materialization metrics', () => {

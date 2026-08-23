@@ -39,6 +39,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
+import { normalizePersonNameCasing } from './utils/personNameCasing';
 import {
   isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
@@ -313,6 +314,9 @@ export function materializedFieldValue(
   }
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);
+  }
+  if (entityType === 'user' && (field === 'fname' || field === 'lname') && typeof value === 'string') {
+    return normalizePersonNameCasing(value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
     return rosterEnrichmentWithRetainedSuccessfulSnapshot(value, existingValue);
