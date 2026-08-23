@@ -1,5 +1,8 @@
 import { isDirectoryIndexChromeText } from '../utils/researchEntityDescriptionText';
-import { stripResearchAreaSourceChrome } from '../scrapers/researchAreaCanonicalization';
+import {
+  isResearchAreaLabelLeakage,
+  stripResearchAreaSourceChrome,
+} from '../scrapers/researchAreaCanonicalization';
 
 const DESCRIPTION_FIELDS = ['fullDescription', 'shortDescription'] as const;
 
@@ -50,6 +53,10 @@ export function cleanResearchAreaChrome(areas: unknown): ResearchAreaCleanupResu
     const parts = stripResearchAreaSourceChrome(entry);
     if (parts.length !== 1 || parts[0] !== entry) removedChrome = true;
     for (const part of parts) {
+      if (isResearchAreaLabelLeakage(part)) {
+        removedChrome = true;
+        continue;
+      }
       const key = part.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
