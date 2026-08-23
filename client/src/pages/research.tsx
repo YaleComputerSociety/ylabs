@@ -1,4 +1,4 @@
-import { FormEvent, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { isCancel } from 'axios';
 import { useLocation, useSearchParams } from 'react-router-dom';
 
@@ -12,6 +12,7 @@ import axios from '../utils/axios';
 import {
   buildGroupedSearchResults,
   GroupedResearchResults,
+  ResearchCluster,
 } from '../utils/researchDiscoveryAdapters';
 import {
   normalizeResearchEntitySearchResponse,
@@ -54,7 +55,6 @@ type ResearchSearchFilters = PathwaySearchFilters & {
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
 type ResearchTrustTierFilter = StudentVisibilityTier;
 
-const DEFAULT_RESEARCH_HOME_LABEL = 'all Yale research';
 const FILTERED_RESULT_QUERY_LABEL = 'filtered research';
 const DEFAULT_RESEARCH_HOME_LIMIT = 24;
 const QUICK_START_PROMPTS = [
@@ -650,7 +650,9 @@ const Research = () => {
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(false);
-    setSearchResultResearchEntities([]);
+    if (!options.preserveResults) {
+      setSearchResultResearchEntities([]);
+    }
     setActiveSearchRequest({
       searchQuery: searchQuery.trim(),
       filters,
@@ -1173,14 +1175,28 @@ const Research = () => {
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
   const activeResults = useMemo(() => groupedResults, [groupedResults]);
-  const defaultGroupedResults = useMemo(
-    () =>
-      buildGroupedSearchResults({
-        query: DEFAULT_RESEARCH_HOME_LABEL,
-        researchEntities: defaultResearchEntities,
+  const clusterByEntityRef = useRef(new WeakMap<ResearchEntity, ResearchCluster>());
+  const clustersForEntities = useCallback((entities: ResearchEntity[]): ResearchCluster[] => {
+    const cache = clusterByEntityRef.current;
+    return entities.map((entity) => {
+      const cached = cache.get(entity);
+      if (cached) return cached;
+      const [cluster] = buildGroupedSearchResults({
+        query: '',
+        researchEntities: [entity],
         pathways: [],
-      }),
-    [defaultResearchEntities],
+      }).clusters;
+      cache.set(entity, cluster);
+      return cluster;
+    });
+  }, []);
+  const activeClusters = useMemo(
+    () => clustersForEntities(searchResultResearchEntities),
+    [clustersForEntities, searchResultResearchEntities],
+  );
+  const defaultClusters = useMemo(
+    () => clustersForEntities(defaultResearchEntities),
+    [clustersForEntities, defaultResearchEntities],
   );
   const defaultSentinelRef = useInfiniteScroll({
     searchExhausted: hasSubmittedSearch || defaultSearchExhausted,
@@ -1259,22 +1275,23 @@ const Research = () => {
       preserveResults: true,
     });
   };
-  const runDepartmentSearch = (target: DepartmentSearchTarget) =>
-    runSearch(target.label, {
-      searchQuery: '',
-      filters: { departments: target.filters.departments },
-      hasFilterSelections: true,
-      departmentSearch: target,
-    });
-  const exploreHome = (label: string) => {
-    scrollResearchViewportToTop();
-    const target = departmentSearchTargetByLabel.get(label.toLowerCase());
-    if (target) {
-      runDepartmentSearch(target);
-      return;
-    }
-    runSearch(label);
-  };
+  const exploreHome = useCallback(
+    (label: string) => {
+      scrollResearchViewportToTop();
+      const target = departmentSearchTargetByLabel.get(label.toLowerCase());
+      if (target) {
+        void runSearchRef.current(target.label, {
+          searchQuery: '',
+          filters: { departments: target.filters.departments },
+          hasFilterSelections: true,
+          departmentSearch: target,
+        });
+        return;
+      }
+      void runSearchRef.current(label);
+    },
+    [departmentSearchTargetByLabel],
+  );
   const toggleQualityFilter = (filter: ResearchQualityFilter) => {
     setQualityFilters((current) => {
       const next = current.includes(filter)
@@ -1524,17 +1541,17 @@ const Research = () => {
                     })}
                   </div>
                 )}
-                {defaultSearchLoading && defaultGroupedResults.clusters.length === 0 ? (
+                {defaultSearchLoading && defaultClusters.length === 0 ? (
                   <div className="grid gap-3">
                     {Array.from({ length: 3 }).map((_, index) => (
                       <ClusterLoadingCard key={index} />
                     ))}
                   </div>
-                ) : defaultGroupedResults.clusters.length > 0 ? (
+                ) : defaultClusters.length > 0 ? (
                   <div className="grid gap-5">
                     <div>
                       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                        {defaultGroupedResults.clusters.map((cluster) => (
+                        {defaultClusters.map((cluster) => (
                           <ResearchHomeCard
                             key={cluster.id}
                             home={cluster}
@@ -1544,7 +1561,7 @@ const Research = () => {
                           />
                         ))}
                       </div>
-                      {defaultSearchLoading && defaultGroupedResults.clusters.length > 0 && (
+                      {defaultSearchLoading && defaultClusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!defaultSearchExhausted && (
@@ -1591,13 +1608,13 @@ const Research = () => {
 
                 <section className="mt-5">
                   <SectionHeading>Research profiles</SectionHeading>
-                  {searchLoading && activeResults.clusters.length === 0 ? (
+                  {searchLoading && activeClusters.length === 0 ? (
                     <div className="grid gap-3">
                       {Array.from({ length: 3 }).map((_, index) => (
                         <ClusterLoadingCard key={index} />
                       ))}
                     </div>
-                  ) : activeResults.clusters.length > 0 ? (
+                  ) : activeClusters.length > 0 ? (
                     <>
                       <div
                         aria-busy={isApplyingFilters}
@@ -1606,7 +1623,7 @@ const Research = () => {
                         }`}
                       >
                         <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-[repeat(3,minmax(0,1fr))]">
-                          {activeResults.clusters.map((cluster) => (
+                          {activeClusters.map((cluster) => (
                             <ResearchHomeCard
                               key={cluster.id}
                               home={cluster}
@@ -1616,7 +1633,7 @@ const Research = () => {
                           ))}
                         </div>
                       </div>
-                      {isLoadingMore && activeResults.clusters.length > 0 && (
+                      {isLoadingMore && activeClusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
