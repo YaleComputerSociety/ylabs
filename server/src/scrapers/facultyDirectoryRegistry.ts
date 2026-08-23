@@ -298,13 +298,13 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of the Environment',
     department: 'Faculty',
     rendering: 'static',
-    status: 'gap',
+    status: 'covered',
     studentImpactTier: 4,
-    coveredBy: ['yse-centers-index'],
+    coveredBy: ['yse-centers-index', 'yse-faculty-directory'],
     approxFacultyCount: 150,
     paginated: true,
     notes:
-      'yse-centers-index covers YSE centers/programs, not the faculty roster. A dedicated YSE faculty scraper is in flight (#550).',
+      'The YSE faculty roster is covered by the bespoke yse-faculty-directory scraper (#550, merged). yse-centers-index separately covers YSE centers and programs, not the roster.',
   },
   {
     url: 'https://economics.yale.edu/people',
