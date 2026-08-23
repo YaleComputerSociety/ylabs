@@ -231,7 +231,8 @@ const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
 const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
 const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
 
-const STREET_SUFFIX = 'Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Way|Lane|Ln|Place|Pl|Court|Ct|Circle|Cir';
+const STREET_SUFFIX_WORD = 'Street|Avenue|Road|Boulevard|Drive|Way|Lane|Place|Court|Circle';
+const STREET_SUFFIX_ABBREVIATION = 'St|Ave|Rd|Blvd|Dr|Ln|Pl|Ct|Cir';
 const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
 
 /**
@@ -242,9 +243,9 @@ const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
  * detected on shape alone (#798).
  */
 const bareStreetAddressPattern = new RegExp(
-  `\\b\\d{1,5}\\s+[A-Za-z][A-Za-z.'-]*(?:\\s+[A-Za-z][A-Za-z.'-]*){0,3}\\s+(?:${STREET_SUFFIX})\\b` +
+  `\\b\\d{1,5}\\s+[A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3}\\s+` +
+    `(?:(?:${STREET_SUFFIX_WORD})\\b|(?:${STREET_SUFFIX_ABBREVIATION})\\.)` +
     `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*`,
-  'i',
 );
 
 /**
