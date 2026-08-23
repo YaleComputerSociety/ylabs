@@ -449,6 +449,8 @@ const Research = () => {
   const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
+  const fetchedSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
+  const fetchedDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
   const [searchLoading, setSearchLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
@@ -580,6 +582,7 @@ const Research = () => {
   }, [isAdmin, showWeakestProfilesFirst, qualityFilters.length, trustTierFilters.length]);
 
   const runDefaultResearchHomeSearch = async (page = 1) => {
+    if (page === 1) fetchedDefaultSearchPageRef.current = 1;
     const requestId = ++defaultSearchRequestIdRef.current;
     const browseLoadAnalyticsKey = `${browseAnalyticsSessionRef.current}:${requestId}:${page}`;
     const controller = new AbortController();
@@ -695,6 +698,7 @@ const Research = () => {
     searchAbortRef.current = controller;
 
     setDefaultSearchExhausted(true);
+    fetchedSearchPageRef.current = 1;
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(false);
@@ -1221,12 +1225,16 @@ const Research = () => {
   ]);
 
   useEffect(() => {
-    if (hasSubmittedSearch || defaultSearchPage <= 1) return;
+    if (hasSubmittedSearch || defaultSearchPage <= fetchedDefaultSearchPageRef.current) return;
+    fetchedDefaultSearchPageRef.current = defaultSearchPage;
     void runDefaultResearchHomeSearchRef.current(defaultSearchPage);
   }, [defaultSearchPage, hasSubmittedSearch]);
 
   useEffect(() => {
-    if (!hasSubmittedSearch || searchPage <= 1 || !activeSearchRequest) return;
+    if (!hasSubmittedSearch || !activeSearchRequest || searchPage <= fetchedSearchPageRef.current) {
+      return;
+    }
+    fetchedSearchPageRef.current = searchPage;
     void runSearchResultsPageRef.current(searchPage);
   }, [activeSearchRequest, hasSubmittedSearch, searchPage]);
 
