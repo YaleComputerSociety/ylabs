@@ -107,6 +107,20 @@ function accessSignalLabel(signalType: string): string {
   return ACCESS_SIGNAL_LABELS[signalType] || signalType.replace(/_/g, ' ').toLowerCase();
 }
 
+const HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS: RegExp[] = [
+  /\bformer(?:ly)?\b/i,
+  /\balumn(?:i|us|ae|a)\b/i,
+  /\bgraduated\b/i,
+  /\bpast\s+(?:undergrad|student|lab\s+member|member|researcher|advisee|trainee)/i,
+  /\bnow\s+(?:a\b|an\b|the\b|at\b|works?\b|working\b|pursuing\b|studying\b|senior\b|director\b|profess|assistant\b|associate\b|research\b|md\b|phd\b|dr\b)/i,
+  /\b(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}\b/,
+];
+
+export function isHistoricalUndergradEvidence(text?: string | null): boolean {
+  if (!text) return false;
+  return HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult | null {
   const summary = group.accessSummary;
   if (!summary || summary.status === 'unknown') return null;
@@ -138,12 +152,23 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
       .values(),
   ];
 
-  const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => ({
-    kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
-    label: accessSignalLabel(item.signalType),
-    detail: item.excerpt || item.sourceUrl || undefined,
-    strength: item.confidence === 'HIGH' ? 'strong' : 'moderate',
-  }));
+  const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => {
+    const excerptIsHistorical = isHistoricalUndergradEvidence(item.excerpt);
+    const label =
+      item.signalType === 'CURRENT_UNDERGRADS' && excerptIsHistorical
+        ? accessSignalLabel('PAST_UNDERGRADS')
+        : accessSignalLabel(item.signalType);
+    const detail =
+      item.signalType === 'REACH_OUT_PLAUSIBLE' && excerptIsHistorical
+        ? item.sourceUrl || undefined
+        : item.excerpt || item.sourceUrl || undefined;
+    return {
+      kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
+      label,
+      detail,
+      strength: item.confidence === 'HIGH' ? 'strong' : 'moderate',
+    };
+  });
 
   if (evidence.length === 0) {
     evidence.push({
@@ -179,12 +204,21 @@ export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdic
 
   if (typeof group.currentUndergradCount === 'number' && group.currentUndergradCount > 0) {
     const n = group.currentUndergradCount;
-    evidence.push({
-      kind: 'lab-lists-undergrads',
-      label: n === 1 ? 'Lists 1 undergrad' : `Lists ${n} undergrads`,
-      detail: 'Current undergrads named on the lab roster.',
-      strength: 'strong',
-    });
+    if (isHistoricalUndergradEvidence(group.undergradEvidenceQuote)) {
+      evidence.push({
+        kind: 'past-advisees',
+        label: n === 1 ? 'Formerly listed 1 undergrad' : `Formerly listed ${n} undergrads`,
+        detail: 'Roster evidence names past or alumni undergrads, not current members.',
+        strength: 'moderate',
+      });
+    } else {
+      evidence.push({
+        kind: 'lab-lists-undergrads',
+        label: n === 1 ? 'Lists 1 undergrad' : `Lists ${n} undergrads`,
+        detail: 'Current undergrads named on the lab roster.',
+        strength: 'strong',
+      });
+    }
   }
 
   if (group.offersIndependentStudy === true) {

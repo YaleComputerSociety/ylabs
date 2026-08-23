@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeAcceptanceVerdict,
+  isHistoricalUndergradEvidence,
   verdictBadgeStyles,
   verdictLabel,
   TrustVerdict,
@@ -212,6 +213,112 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
     );
     expect(result.evidence[0].label).toBe('1 past advisee');
     expect(result.evidence[0].detail).toBe('(2020)');
+  });
+});
+
+describe('isHistoricalUndergradEvidence', () => {
+  it('flags clear alumni/historical markers', () => {
+    expect(
+      isHistoricalUndergradEvidence(
+        'Amber Anders 2009 Undergraduate student, now Senior Director Commercial BizOps, Illumina',
+      ),
+    ).toBe(true);
+    expect(
+      isHistoricalUndergradEvidence('Yale Undergraduate student (2008-2010), now a medical student'),
+    ).toBe(true);
+    expect(isHistoricalUndergradEvidence('Former undergraduate researchers: Megan Sullivan')).toBe(
+      true,
+    );
+    expect(isHistoricalUndergradEvidence('Lab alumni now pursuing PhDs elsewhere')).toBe(true);
+  });
+
+  it('does not flag present-tense roster prose or empty input', () => {
+    expect(isHistoricalUndergradEvidence('Three undergraduates are currently on the roster.')).toBe(
+      false,
+    );
+    expect(isHistoricalUndergradEvidence('Undergraduate researchers welcome to apply.')).toBe(false);
+    expect(isHistoricalUndergradEvidence('')).toBe(false);
+    expect(isHistoricalUndergradEvidence(undefined)).toBe(false);
+  });
+});
+
+describe('computeAcceptanceVerdict — historical undergrad evidence guard (#1209)', () => {
+  it('downgrades a current-undergrad count to a moderate "formerly listed" chip when the evidence quote is historical', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        currentUndergradCount: 10,
+        undergradEvidenceQuote:
+          'Amber Anders 2009 Undergraduate student, now Senior Director Commercial BizOps, Illumina',
+      }),
+    );
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toEqual({
+      kind: 'past-advisees',
+      label: 'Formerly listed 10 undergrads',
+      detail: 'Roster evidence names past or alumni undergrads, not current members.',
+      strength: 'moderate',
+    });
+    expect(result.verdict).toBe('likely-accepting');
+  });
+
+  it('keeps the strong current-undergrad chip when the evidence quote is present-tense', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        currentUndergradCount: 3,
+        undergradEvidenceQuote: 'Three undergraduates are currently listed on the lab members page.',
+      }),
+    );
+    expect(result.evidence[0]).toEqual({
+      kind: 'lab-lists-undergrads',
+      label: 'Lists 3 undergrads',
+      detail: 'Current undergrads named on the lab roster.',
+      strength: 'strong',
+    });
+  });
+
+  it('relabels a historical CURRENT_UNDERGRADS access-summary chip as past participation', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.6,
+          evidence: [
+            {
+              signalType: 'CURRENT_UNDERGRADS',
+              confidence: 'MEDIUM',
+              excerpt: 'Former undergraduate researchers: A. Sample (2010-2012), now a PhD student.',
+            },
+          ],
+          signalTypes: ['CURRENT_UNDERGRADS'],
+          bestNextStep: 'Review the roster.',
+        },
+      }),
+    );
+    expect(result.evidence[0].label).toBe('Past undergrads');
+    expect(result.evidence[0].strength).toBe('moderate');
+  });
+
+  it('suppresses a historical alum quote from the reach-out-plausible excerpt', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.7,
+          evidence: [
+            {
+              signalType: 'REACH_OUT_PLAUSIBLE',
+              confidence: 'HIGH',
+              excerpt: 'Amber Anders 2009 Undergraduate student, now Senior Director, Illumina',
+              sourceUrl: 'https://example.edu/lab',
+            },
+          ],
+          signalTypes: ['REACH_OUT_PLAUSIBLE'],
+          bestNextStep: 'Review the profile.',
+        },
+      }),
+    );
+    expect(result.evidence[0].label).toBe('Reach-out plausible');
+    expect(result.evidence[0].detail).toBe('https://example.edu/lab');
   });
 });
 
