@@ -18,3 +18,32 @@ export function normalizedProgramTitleKey(title: string): string {
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '');
 }
+
+const AND_CONCATENATION_SPLIT = /\s+AND\s+/;
+
+/**
+ * Splits a source-corrupted "X AND Y" title (two fellowship names joined by a
+ * literal all-caps "AND", distinct from the word "and" inside a normal title)
+ * into normalized component keys, or [] when the title has no such join (#655).
+ */
+export function andConcatenationComponentKeys(title: string): string[] {
+  const raw = String(title || '');
+  if (!AND_CONCATENATION_SPLIT.test(raw)) return [];
+  return raw
+    .split(AND_CONCATENATION_SPLIT)
+    .map((part) => normalizedProgramTitleKey(part))
+    .filter(Boolean);
+}
+
+/**
+ * True when two AND-concatenated titles share a component key, so title drift
+ * on the *other* component (e.g. a prefix/qualifier rename) does not stop
+ * them from resolving to the same underlying joint program (#655).
+ */
+export function shareAndConcatenatedTitleComponent(titleA: string, titleB: string): boolean {
+  if (normalizedProgramTitleKey(titleA) === normalizedProgramTitleKey(titleB)) return false;
+  const keysA = andConcatenationComponentKeys(titleA);
+  const keysB = andConcatenationComponentKeys(titleB);
+  if (keysA.length === 0 || keysB.length === 0) return false;
+  return keysA.some((key) => keysB.includes(key));
+}
