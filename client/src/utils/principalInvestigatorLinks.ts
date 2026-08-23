@@ -151,6 +151,18 @@ export const principalInvestigatorLinkFromMemberUser = (
   );
 };
 
+export const officialProfileUrlFromMemberUser = (
+  user: Record<string, unknown> | undefined,
+): string | undefined => {
+  if (!user) return undefined;
+  return profileUrlFromCandidates([
+    ...profileUrlMapValues(user.profileUrls),
+    ...profileUrlMapValues(user.profile_urls),
+    user.websiteUrl,
+    user.website,
+  ])?.href;
+};
+
 export const principalInvestigatorLinkFromResearchEntity = (
   entity: object | undefined,
 ): PrincipalInvestigatorLink | undefined => {

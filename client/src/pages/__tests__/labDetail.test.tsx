@@ -344,6 +344,40 @@ describe('LabDetail page', () => {
     expect(screen.queryByText('Evidence')).toBeNull();
   });
 
+  it('surfaces the lead PI official profile as the open-profile CTA when the entity site is a lab page', async () => {
+    const LAB_WEBSITE_URL = 'https://medicine.yale.edu/lab/fixture-steele/';
+    const LEAD_OFFICIAL_PROFILE_URL = 'https://medicine.yale.edu/profile/fixture-steele/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: LAB_WEBSITE_URL,
+        sourceUrls: [LAB_WEBSITE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.steele',
+            fname: 'Fixture',
+            lname: 'Steele',
+            displayName: 'Fixture Steele',
+            primary_department: 'Psychiatry',
+            profileUrls: { official: LEAD_OFFICIAL_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('How to get involved')).toBeTruthy();
+    expect(screen.getByText(/Open the official profile to find contact details/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open official profile' }).getAttribute('href')).toBe(
+      LEAD_OFFICIAL_PROFILE_URL,
+    );
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,

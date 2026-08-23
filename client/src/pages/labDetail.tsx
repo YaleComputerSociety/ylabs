@@ -40,6 +40,7 @@ import {
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
+import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigatorLinks';
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
   computeAcceptanceVerdict,
@@ -839,19 +840,25 @@ const LabDetail = () => {
       ? group.websiteUrl
       : undefined;
   const fallbackSourceUrl = primaryWebsiteUrl || sources[0]?.url;
-  const decisionProfileUrl = resolveDecisionProfileUrl(fallbackSourceUrl, group);
-  const officialWebsiteUrl = primaryWebsiteUrl;
   const leadIdentityUnderReview = group.leadIdentityStatus === 'under_review';
-  const outreachOfficialSource = resolveOutreachOfficialSource(
-    sources,
-    [decisionProfileUrl, officialWebsiteUrl],
-    leadIdentityUnderReview,
-  );
   const principalInvestigators = dedupeLeadMembers(members);
   const singlePrincipalInvestigator =
     !leadIdentityUnderReview && principalInvestigators.length === 1
       ? principalInvestigators[0]
       : undefined;
+  const leadOfficialProfileUrl = leadIdentityUnderReview
+    ? undefined
+    : officialProfileUrlFromMemberUser(
+        singlePrincipalInvestigator?.user as Record<string, unknown> | undefined,
+      );
+  const decisionProfileUrl =
+    resolveDecisionProfileUrl(fallbackSourceUrl, group) || leadOfficialProfileUrl;
+  const officialWebsiteUrl = primaryWebsiteUrl;
+  const outreachOfficialSource = resolveOutreachOfficialSource(
+    sources,
+    [decisionProfileUrl, officialWebsiteUrl],
+    leadIdentityUnderReview,
+  );
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
