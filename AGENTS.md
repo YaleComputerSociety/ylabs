@@ -58,6 +58,37 @@ Use synthetic or redacted values, and write ephemeral test files under `/tmp` wh
 - Track substantive repository work in GitHub issues and link the issue from the implementation pull request.
 GitHub issues are repository-wide; open pull requests against the `beta` base branch unless explicitly directed otherwise.
 
+## Commit, Issue, and Merge Protocol
+
+This is the canonical protocol for landing work.
+Every thread that opens a PR or merges is responsible for following it directly, without waiting for an orchestrator to restate it.
+
+### What needs an issue
+
+- Substantive work needs a GitHub issue: a feature, a bug fix, a schema or API change, a data operation, a refactor, or anything a reviewer would want to track.
+Open the issue first, then link it from the PR with a closing keyword (`Closes #<n>`).
+- Trivial work does not need an issue: a typo, a comment, a tiny formatting or doc tweak, or a one-line follow-up to an already-tracked change.
+- When unsure, prefer opening an issue.
+
+### Commit and PR title format
+
+- Use Conventional Commits for every commit subject and PR title: `type(scope): summary`.
+- Allowed types: `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`.
+- Write the summary in the imperative mood, lower case, no trailing period, under about 70 characters.
+- Never use em dashes and never auto-add the agent name as a co-author.
+
+### Opening the PR
+
+- Base the PR on the `beta` branch unless explicitly directed otherwise.
+- Give the PR a Conventional-Commit title and link its issue with `Closes #<n>` in the body.
+
+### Merging
+
+- Merge only when CI checks are all green and the PR is mergeable on its current head.
+- Squash-merge with a clean Conventional-Commit message derived from the PR title: `gh pr merge <n> --squash --admin --delete-branch`.
+- The `Closes #<n>` link auto-closes the linked issue on merge; confirm it closed.
+- After merging, remove the worktree with `git worktree remove <path>` and prune stale entries with `git worktree prune`.
+
 ## Implementation Rules
 
 - Default to making the requested change after inspecting the code.
