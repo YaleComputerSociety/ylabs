@@ -17,7 +17,7 @@ describe('personProfileNameTokensFromUrl', () => {
   });
 
   it('returns null for netid, single-token, listing, and non-Yale URLs', () => {
-    expect(personProfileNameTokensFromUrl('https://medicine.yale.edu/profile/br574/')).toBeNull();
+    expect(personProfileNameTokensFromUrl('https://medicine.yale.edu/profile/zz000/')).toBeNull();
     expect(personProfileNameTokensFromUrl('https://physics.yale.edu/people/faculty')).toBeNull();
     expect(personProfileNameTokensFromUrl('https://brownlab.yale.edu/')).toBeNull();
     expect(personProfileNameTokensFromUrl('https://example.com/people/keith-baker')).toBeNull();
@@ -96,9 +96,9 @@ describe('personProfileSourceMatchesEntity', () => {
       }),
     ).toBe(true);
     expect(
-      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/br574/', {
-        slug: 'nih-pi-bhaskar-roy',
-        name: 'Bhaskar Roy Lab',
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/zz000/', {
+        slug: 'nih-pi-fixture-person',
+        name: 'Fixture Person Lab',
       }),
     ).toBe(true);
     expect(
