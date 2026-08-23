@@ -363,6 +363,14 @@ const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
 // topical matches score well above this, so pure-semantic ranking is untouched.
 // See #929.
 const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
+// Meilisearch hybrid fusion re-ranks the whole candidate set as the requested
+// page size grows: a larger `hitsPerPage` pulls more semantic neighbors into the
+// fused/scored pool, which shifts the relative order of results that already
+// cleared `rankingScoreThreshold`, so the #1 result becomes a function of the
+// requested page size. To make ordering deterministic, every thresholded hybrid
+// query fetches a fixed candidate pool of this size (independent of the requested
+// page size) and paginates locally against the already-stable ordering. See #1064.
+export const HYBRID_CANDIDATE_POOL_SIZE = 200;
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -1077,9 +1085,14 @@ export async function searchResearchGroupsViaMeili(
   // report that inflated estimate until the requested depth happens to be
   // large enough to force an exhaustive scan (see the companion count query
   // below, which forces that scan on every request). See #885.
-  if (searchParams.rankingScoreThreshold !== undefined) {
-    searchParams.page = safePage;
-    searchParams.hitsPerPage = safePageSize;
+  const paginateHybridPoolLocally = searchParams.rankingScoreThreshold !== undefined;
+  if (paginateHybridPoolLocally) {
+    const hybridCandidatePoolSize = Math.min(
+      RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+      Math.max(HYBRID_CANDIDATE_POOL_SIZE, offset + safePageSize),
+    );
+    searchParams.page = 1;
+    searchParams.hitsPerPage = hybridCandidatePoolSize;
     delete searchParams.limit;
     delete searchParams.offset;
   }
@@ -1235,10 +1248,17 @@ export async function searchResearchGroupsViaMeili(
 
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
     dropCoincidentalTypoOnlyHits(hits || []);
-  const orderedHits = promoteExactAliasFieldMatches(
+  const reorderedPool = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
   );
+  // The reorder helpers run across the whole fixed candidate pool so the ordering
+  // is stable, then the requested page window is sliced locally. Non-thresholded
+  // queries already come back pre-paginated from Meilisearch, so they are used
+  // as-is. See #1064.
+  const orderedHits = paginateHybridPoolLocally
+    ? reorderedPool.slice(offset, offset + safePageSize)
+    : reorderedPool;
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
