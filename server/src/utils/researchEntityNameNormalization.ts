@@ -26,3 +26,22 @@ export function stripTrailingResearchHomeDescription(value: string): string {
 export function hasTrailingResearchHomeDescription(value: string): boolean {
   return typeof value === 'string' && stripTrailingResearchHomeDescription(value) !== value;
 }
+
+const RESEARCH_HOME_SUFFIX_WORD = `${RESEARCH_HOME_HEAD_NOUN}|research`;
+
+const DUPLICATE_RESEARCH_HOME_SUFFIX_RE = new RegExp(
+  `\\b(${RESEARCH_HOME_SUFFIX_WORD})(?:\\s+\\1\\b)+\\s*$`,
+  'i',
+);
+
+export function collapseDuplicateResearchHomeSuffix(value: string): string {
+  if (typeof value !== 'string') return value;
+  return value
+    .replace(DUPLICATE_RESEARCH_HOME_SUFFIX_RE, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trimEnd();
+}
+
+export function hasDuplicateResearchHomeSuffix(value: string): boolean {
+  return typeof value === 'string' && collapseDuplicateResearchHomeSuffix(value) !== value;
+}

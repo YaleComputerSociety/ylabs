@@ -21,6 +21,7 @@ import {
 } from '../utils/groundedCardSynthesis';
 import { normalizedProgramTitleKey } from '../utils/programTitle';
 import {
+  collapseDuplicateResearchHomeSuffix,
   normalizeResearchEntityNameDashes,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
@@ -312,7 +313,9 @@ export function materializedFieldValue(
     (field === 'name' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return normalizeResearchEntityNameDashes(stripTrailingResearchHomeDescription(value));
+    return normalizeResearchEntityNameDashes(
+      collapseDuplicateResearchHomeSuffix(stripTrailingResearchHomeDescription(value)),
+    );
   }
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);

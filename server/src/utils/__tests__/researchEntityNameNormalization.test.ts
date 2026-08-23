@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collapseDuplicateResearchHomeSuffix,
+  hasDuplicateResearchHomeSuffix,
   hasTrailingResearchHomeDescription,
   normalizeResearchEntityNameDashes,
   stripTrailingResearchHomeDescription,
@@ -87,5 +89,48 @@ describe('hasTrailingResearchHomeDescription', () => {
     expect(hasTrailingResearchHomeDescription('Fineberg Lab')).toBe(false);
     expect(hasTrailingResearchHomeDescription('Yale Cancer Center')).toBe(false);
     expect(hasTrailingResearchHomeDescription(undefined as unknown as string)).toBe(false);
+  });
+});
+
+describe('collapseDuplicateResearchHomeSuffix', () => {
+  it('collapses a doubled trailing head-noun suffix (#1081)', () => {
+    expect(collapseDuplicateResearchHomeSuffix('Jane Taylor Lab Lab')).toBe('Jane Taylor Lab');
+  });
+
+  it('collapses doubled suffixes across head-noun categories and casing', () => {
+    expect(collapseDuplicateResearchHomeSuffix('Example Laboratory Laboratory')).toBe(
+      'Example Laboratory',
+    );
+    expect(collapseDuplicateResearchHomeSuffix('Yale Cancer Center Center')).toBe(
+      'Yale Cancer Center',
+    );
+    expect(collapseDuplicateResearchHomeSuffix('Doe Faculty Research Research')).toBe(
+      'Doe Faculty Research',
+    );
+    expect(collapseDuplicateResearchHomeSuffix('Example Lab lab')).toBe('Example Lab');
+    expect(collapseDuplicateResearchHomeSuffix('Example Lab Lab Lab')).toBe('Example Lab');
+  });
+
+  it('preserves legitimate repeated personal-name tokens', () => {
+    expect(collapseDuplicateResearchHomeSuffix('Lu Lu Lab')).toBe('Lu Lu Lab');
+    expect(collapseDuplicateResearchHomeSuffix('Yang Yang Research')).toBe('Yang Yang Research');
+    expect(collapseDuplicateResearchHomeSuffix('Liang Liang Research')).toBe('Liang Liang Research');
+  });
+
+  it('leaves clean names and non-string input untouched', () => {
+    expect(collapseDuplicateResearchHomeSuffix('Example Lab')).toBe('Example Lab');
+    expect(collapseDuplicateResearchHomeSuffix('Institute for the Study of Global Affairs')).toBe(
+      'Institute for the Study of Global Affairs',
+    );
+    expect(collapseDuplicateResearchHomeSuffix(undefined as unknown as string)).toBe(undefined);
+  });
+});
+
+describe('hasDuplicateResearchHomeSuffix', () => {
+  it('detects doubled suffixes and ignores clean or repeated-name inputs', () => {
+    expect(hasDuplicateResearchHomeSuffix('Jane Taylor Lab Lab')).toBe(true);
+    expect(hasDuplicateResearchHomeSuffix('Lu Lu Lab')).toBe(false);
+    expect(hasDuplicateResearchHomeSuffix('Example Lab')).toBe(false);
+    expect(hasDuplicateResearchHomeSuffix(undefined as unknown as string)).toBe(false);
   });
 });
