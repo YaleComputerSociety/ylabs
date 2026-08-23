@@ -219,6 +219,16 @@ function splitAreaItems(value: string): string[] {
 }
 
 /**
+ * Site-chrome removed before any text scan. Beyond semantic `nav`/`footer` tags,
+ * several Yale CMS templates (e.g. medicine.yale.edu) render their global mega-menu
+ * as a `div`-based panel that is CSS-hidden until toggled rather than wrapped in a
+ * `<nav>` element, so its link text (unrelated to the page's subject) would otherwise
+ * leak into the prose scan and produce false-positive approved-area matches.
+ */
+const CHROME_REMOVAL_SELECTOR =
+  'script, style, noscript, svg, iframe, nav, footer, [aria-hidden="true"], [hidden], [class*="--hidden"], [class*="navigation-panel"]';
+
+/**
  * Reads discrete research-area strings declared under an explicit label on the
  * page (heading + following list/paragraph, definition list, or inline
  * "Research Interests: a, b, c"). Returns raw candidate strings; canonicalization
@@ -228,7 +238,7 @@ function splitAreaItems(value: string): string[] {
 export function extractLabeledResearchAreaItems(html: string): string[] {
   if (!html) return [];
   const $ = cheerio.load(html);
-  $('script, style, noscript, svg, iframe, nav, footer').remove();
+  $(CHROME_REMOVAL_SELECTOR).remove();
   const items: string[] = [];
 
   $('*').each((_, el) => {
@@ -273,7 +283,7 @@ export function extractLabeledResearchAreaItems(html: string): string[] {
 function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
-  $('script, style, noscript, svg, iframe, nav, footer').remove();
+  $(CHROME_REMOVAL_SELECTOR).remove();
   return textValue($('body').text() || $.root().text()).slice(0, MAX_SCAN_CHARS);
 }
 
