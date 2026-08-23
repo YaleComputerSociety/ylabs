@@ -387,7 +387,7 @@ describe('deriveAccessArtifactsFromObservations', () => {
     expect(result.accessSignals).toEqual([]);
   });
 
-  it('redacts direct contact details from public signal excerpts', () => {
+  it('drops a bare contact-directive quote from stored excerpts instead of baking a redaction marker (#1112)', () => {
     const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
       obs({
         field: 'undergradAccessEvidence',
@@ -413,18 +413,43 @@ describe('deriveAccessArtifactsFromObservations', () => {
       }),
     ]);
 
-    expect(result.accessSignals).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'REACH_OUT_PLAUSIBLE',
-          excerpt: 'Email [email redacted] to apply.',
-        }),
-        expect.objectContaining({
-          type: 'CONTACT_INSTRUCTIONS_EXIST',
-          excerpt: 'Call [phone redacted] or email [email redacted].',
-        }),
-      ]),
+    const reachOut = result.accessSignals.find((signal) => signal.type === 'REACH_OUT_PLAUSIBLE');
+    const contactInstructions = result.accessSignals.find(
+      (signal) => signal.type === 'CONTACT_INSTRUCTIONS_EXIST',
     );
+
+    expect(reachOut).toBeDefined();
+    expect(contactInstructions).toBeDefined();
+    expect(reachOut?.excerpt).toBeUndefined();
+    expect(contactInstructions?.excerpt).toBeUndefined();
+    for (const signal of result.accessSignals) {
+      expect(signal.excerpt ?? '').not.toMatch(/\[(?:email|phone) redacted\]/i);
+    }
+  });
+
+  it('keeps substantive quote prose while dropping the marker sentence in a stored excerpt (#1112)', () => {
+    const result = deriveAccessArtifactsFromObservations('64f000000000000000000001', [
+      obs({
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceSource: 'explicit_text',
+          evidenceQuote: 'We welcome undergraduate researchers each term.',
+        },
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+      obs({
+        field: 'undergradEvidenceQuote',
+        value: 'We welcome undergraduate researchers each term. Email ada@yale.edu to apply.',
+        sourceName: 'lab-microsite-undergrad-llm',
+        confidence: 0.5,
+      }),
+    ]);
+
+    const reachOut = result.accessSignals.find((signal) => signal.type === 'REACH_OUT_PLAUSIBLE');
+    expect(reachOut?.excerpt).toBe('We welcome undergraduate researchers each term.');
+    expect(reachOut?.excerpt ?? '').not.toMatch(/\[(?:email|phone) redacted\]/i);
   });
 
   it('derives contact-instruction signals from contact observations', () => {

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Signal } from '../models/signal';
 import { findReviewLockedRecord, omitReviewLockedFields } from './reviewLockUtils';
-import { publicAccessHttpUrl, publicAccessText } from '../utils/publicAccessArtifact';
+import { publicAccessExcerpt, publicAccessHttpUrl } from '../utils/publicAccessArtifact';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { mutateAndRefreshAdminAccessReviewProjection } from './adminAccessReviewProjectionService';
 import type { SignalConfidence, SignalType } from '../models/researchAccessTypes';
@@ -88,7 +88,7 @@ export async function upsertSignal(
         'source.evidenceIds': sourceEvidenceId ? [sourceEvidenceId] : undefined,
         'source.name': input.sourceName,
         'source.url': publicAccessHttpUrl(input.sourceUrl),
-        'source.excerpt': publicAccessText(input.excerpt),
+        'source.excerpt': publicAccessExcerpt(input.excerpt),
         confidence: input.confidence,
         confidenceScore: input.confidenceScore ?? input.originalConfidence,
         observedAt: input.observedAt,

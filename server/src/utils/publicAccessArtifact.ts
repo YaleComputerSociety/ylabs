@@ -1,10 +1,11 @@
 import { publicContactEmail } from './contactEmail';
-import { redactDirectContactInfo } from './contactRedaction';
+import { sanitizeEvidenceExcerpt } from './descriptionHygiene';
 import { isPublicHttpUrl } from './urlSafety';
 
-export const publicAccessText = (value: unknown): string | undefined => {
+export const publicAccessExcerpt = (value: unknown): string | undefined => {
   const text = String(value || '').trim();
-  return text ? redactDirectContactInfo(text) : undefined;
+  if (!text) return undefined;
+  return sanitizeEvidenceExcerpt(text) || undefined;
 };
 
 export const publicAccessEmail = (value: unknown): string | undefined => publicContactEmail(value);

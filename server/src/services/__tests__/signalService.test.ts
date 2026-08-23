@@ -49,6 +49,55 @@ describe('signalService', () => {
     expect(capturedUpdate.$set).not.toHaveProperty('observationId');
   });
 
+  it('drops a stored excerpt whose only content is a redaction-marker directive (#1112)', async () => {
+    let capturedUpdate: any;
+    const model = {
+      findOne: () => ({ select: () => ({ lean: async () => null }) }),
+      findOneAndUpdate: (_filter: any, update: any) => {
+        capturedUpdate = update;
+        return { lean: async () => ({ _id: 'signal-1' }) };
+      },
+    };
+
+    await upsertSignal(
+      {
+        researchEntityId: 'entity-1',
+        type: 'CONTACT_INSTRUCTIONS_EXIST',
+        confidence: 'HIGH',
+        observedAt: new Date('2026-06-11T00:00:00.000Z'),
+        excerpt: 'Email us at intake@example.edu',
+      },
+      { model: model as any },
+    );
+
+    expect(capturedUpdate.$set).not.toHaveProperty('source.excerpt');
+  });
+
+  it('keeps clean prose but strips a trailing marker sentence from a stored excerpt (#1112)', async () => {
+    let capturedUpdate: any;
+    const model = {
+      findOne: () => ({ select: () => ({ lean: async () => null }) }),
+      findOneAndUpdate: (_filter: any, update: any) => {
+        capturedUpdate = update;
+        return { lean: async () => ({ _id: 'signal-1' }) };
+      },
+    };
+
+    await upsertSignal(
+      {
+        researchEntityId: 'entity-1',
+        type: 'CONTACT_INSTRUCTIONS_EXIST',
+        confidence: 'HIGH',
+        observedAt: new Date('2026-06-11T00:00:00.000Z'),
+        excerpt: 'We host undergraduates each summer. Email us at intake@example.edu',
+      },
+      { model: model as any },
+    );
+
+    expect(capturedUpdate.$set['source.excerpt']).toBe('We host undergraduates each summer.');
+    expect(capturedUpdate.$set['source.excerpt']).not.toMatch(/\[(?:email|phone) redacted\]/i);
+  });
+
   it('does not stringify object-shaped returned signal ids', async () => {
     const unsafeId = {
       toString: () => {

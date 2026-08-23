@@ -9,6 +9,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
@@ -183,6 +184,7 @@ function makeSignal(input: {
 }): DerivedAccessSignal {
   const obs = bestObservation(input.observations);
   const sourceEvidenceId = obs ? observationId(obs) : undefined;
+  const excerpt = input.excerpt ? sanitizeEvidenceExcerpt(input.excerpt) || undefined : undefined;
   return {
     researchEntityId: input.researchEntityId,
     derivationKey: input.derivationKey,
@@ -191,7 +193,7 @@ function makeSignal(input: {
     confidenceScore: input.score,
     sourceEvidenceId: sourceEvidenceId || '',
     observedAt: latestObservedAt(input.observations),
-    excerpt: input.excerpt,
+    excerpt,
     sourceName: obs?.sourceName,
     sourceUrl: obs?.sourceUrl,
     originalConfidence: obs?.confidence,
