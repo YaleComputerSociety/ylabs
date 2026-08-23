@@ -13,6 +13,13 @@ import { resolveUserForPi as resolveNsfUserForPi } from '../scrapers/sources/nsf
 import { resolveUserForPi as resolveNihUserForPi } from '../scrapers/sources/nihReporterScraper';
 import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import { materializeCanonicalMembership } from '../scrapers/canonicalMembershipMaterializer';
+import {
+  classifyDisposition,
+  isApplyable,
+  tallyDispositions,
+  type Disposition,
+  type MatchResult,
+} from './grantShellRelinkCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,12 +38,6 @@ const CANONICAL_LEAD_ROLES = LEAD_ROLES.map((role) => canonicalRoleForLegacy(rol
 const piNameFromEntity = (name: string): string =>
   normalizeName((name || '').replace(/\s+lab$/i, '').trim());
 
-type Disposition =
-  | 'newly-linked'
-  | 'already-linked'
-  | 'still-ambiguous'
-  | 'still-unmatched';
-
 interface ShellDoc {
   _id: mongoose.Types.ObjectId;
   slug: string;
@@ -53,17 +54,19 @@ interface Plan {
   disposition: Disposition;
 }
 
-async function hasCurrentLeadAssignment(
-  personId: mongoose.Types.ObjectId,
-  entityId: mongoose.Types.ObjectId,
-): Promise<boolean> {
-  const count = await RoleAssignment.countDocuments({
-    personId,
-    'target.kind': 'RESEARCH_ENTITY',
-    'target.id': entityId,
-    state: { $ne: 'HISTORICAL' },
-  });
-  return count > 0;
+async function activeLeadPersonIds(entityId: mongoose.Types.ObjectId): Promise<string[]> {
+  const leads = await RoleAssignment.find(
+    {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': entityId,
+      role: { $in: CANONICAL_LEAD_ROLES },
+      state: { $ne: 'HISTORICAL' },
+    },
+    { personId: 1 },
+  ).lean();
+  return leads
+    .map((lead: any) => (lead.personId ? String(lead.personId) : ''))
+    .filter((personId): personId is string => Boolean(personId));
 }
 
 async function matchUser(shell: ShellDoc): Promise<string | 'ambiguous' | null> {
@@ -82,20 +85,23 @@ async function matchUser(shell: ShellDoc): Promise<string | 'ambiguous' | null> 
 async function buildPlan(shell: ShellDoc): Promise<Plan> {
   const source: 'nsf' | 'nih' = /^nsf/i.test(shell.slug) ? 'nsf' : 'nih';
   const base = { entityId: shell._id, slug: shell.slug, name: shell.name, source };
-  const matched = await matchUser(shell);
-  if (matched === 'ambiguous') {
-    return { ...base, matchedUserId: null, personId: null, disposition: 'still-ambiguous' };
+  const matched: MatchResult = await matchUser(shell);
+  if (matched === 'ambiguous' || matched === null) {
+    return {
+      ...base,
+      matchedUserId: null,
+      personId: null,
+      disposition: classifyDisposition({ matched, canonicalPersonId: null, activeLeadPersonIds: [] }),
+    };
   }
-  if (!matched) {
-    return { ...base, matchedUserId: null, personId: null, disposition: 'still-unmatched' };
-  }
-  const personId = await resolveResearcherIdForLegacyUser(matched);
-  const alreadyLinked = personId ? await hasCurrentLeadAssignment(personId, shell._id) : false;
+  const resolvedPersonId = await resolveResearcherIdForLegacyUser(matched);
+  const canonicalPersonId = resolvedPersonId ? String(resolvedPersonId) : null;
+  const activeLeads = await activeLeadPersonIds(shell._id);
   return {
     ...base,
     matchedUserId: matched,
-    personId: personId ? String(personId) : null,
-    disposition: alreadyLinked ? 'already-linked' : 'newly-linked',
+    personId: canonicalPersonId,
+    disposition: classifyDisposition({ matched, canonicalPersonId, activeLeadPersonIds: activeLeads }),
   };
 }
 
@@ -154,14 +160,15 @@ async function applyLink(plan: Plan): Promise<boolean> {
 }
 
 function tally(plans: Plan[]): Record<Disposition, number> {
-  const t: Record<Disposition, number> = {
-    'newly-linked': 0,
-    'already-linked': 0,
-    'still-ambiguous': 0,
-    'still-unmatched': 0,
-  };
-  for (const p of plans) t[p.disposition] += 1;
-  return t;
+  return tallyDispositions(plans.map((plan) => plan.disposition));
+}
+
+async function leadFlippedToCurrent(plan: Plan): Promise<boolean> {
+  if (!plan.matchedUserId) return false;
+  const resolvedPersonId = await resolveResearcherIdForLegacyUser(plan.matchedUserId);
+  if (!resolvedPersonId) return false;
+  const activeLeads = await activeLeadPersonIds(plan.entityId);
+  return activeLeads.includes(String(resolvedPersonId));
 }
 
 async function main(): Promise<void> {
@@ -211,19 +218,28 @@ async function main(): Promise<void> {
     return;
   }
 
-  const toLink = plans.filter((p) => p.disposition === 'newly-linked');
-  let applied = 0;
+  const toLink = plans.filter((p) => isApplyable(p.disposition));
+  let appliedLinks = 0;
+  let materializedButNotFlipped = 0;
   for (const plan of toLink) {
-    if (await applyLink(plan)) applied += 1;
+    if (!(await applyLink(plan))) continue;
+    if (await leadFlippedToCurrent(plan)) {
+      appliedLinks += 1;
+    } else {
+      materializedButNotFlipped += 1;
+    }
   }
 
+  const personIdDivergentShells = plans.filter((p) => p.disposition === 'personid-divergent').length;
   const linkedAfter = await countLinkedShells(shells);
   console.log(
     JSON.stringify(
       {
         mode: 'APPLY-RESULT',
         plannedNewLinks: toLink.length,
-        appliedLinks: applied,
+        appliedLinks,
+        materializedButNotFlipped,
+        personIdDivergentShells,
         linkedShellsBefore: linkedBefore,
         linkedShellsAfter: linkedAfter,
         shellsRemainingUnlinked: shells.length - linkedAfter,
