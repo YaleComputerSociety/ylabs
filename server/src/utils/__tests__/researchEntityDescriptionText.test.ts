@@ -130,6 +130,23 @@ describe('sanitizeFacultyResearchEntityText', () => {
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
   });
+
+  it('strips a bare trailing "Research" name suffix instead of doubling it', () => {
+    const facultyResearch = {
+      name: 'Anne Chiang Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Anne Chiang Lab focuses on thoracic oncology, particularly small cell and non-small cell lung cancer.',
+        facultyResearch,
+      ),
+    ).toBe(
+      "Anne Chiang's research focuses on thoracic oncology, particularly small cell and non-small cell lung cancer.",
+    );
+  });
 });
 
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {
