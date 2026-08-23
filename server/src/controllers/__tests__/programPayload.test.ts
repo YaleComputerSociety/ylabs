@@ -97,6 +97,28 @@ describe('publicProgramForReader link hygiene (#692)', () => {
     expect(payload.links).toEqual([{ label: 'Research Internship Program', url: specificPage }]);
   });
 
+  it('strips the internal "when source-confirmed" provenance hedge from compensationSummary (#1053)', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b192',
+      title: 'Tobin Undergraduate Research Assistantships',
+      compensationSummary: '$17/hour when source-confirmed',
+      links: [],
+    });
+
+    expect(payload.compensationSummary).toBe('$17/hour');
+  });
+
+  it('keeps a hedge-free compensationSummary intact', () => {
+    const payload = publicProgramForReader({
+      _id: '6a6f84d074dd496b1d43b193',
+      title: 'Some Program',
+      compensationSummary: 'Stipend available',
+      links: [],
+    });
+
+    expect(payload.compensationSummary).toBe('Stipend available');
+  });
+
   it('caps the links list as a backstop against bloated arrays (#633)', () => {
     const links = Array.from({ length: 40 }, (_, index) => ({
       label: `Program Page ${index}`,

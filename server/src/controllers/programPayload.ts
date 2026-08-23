@@ -3,6 +3,7 @@ import {
   sanitizeCatalogDescription,
   stripRedactionPlaceholders,
 } from '../utils/descriptionHygiene';
+import { stripProvenanceHedge } from '../utils/provenanceHedge';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { humanizeProgramLinkLabel } from '../utils/programLinkLabel';
 import { publicHttpUrl } from '../utils/urlSafety';
@@ -60,6 +61,11 @@ const publicProgramDescription = (value: unknown): unknown =>
     ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
     : value;
 
+const publicCompensationSummary = (value: unknown): unknown => {
+  const cleaned = publicProgramDescription(value);
+  return typeof cleaned === 'string' ? stripProvenanceHedge(cleaned) : cleaned;
+};
+
 const publicProgramTextArray = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
@@ -78,7 +84,7 @@ export const publicProgramForReader = (program: any) => {
     mentorMatching: program.mentorMatching,
     undergraduateOnly: program.undergraduateOnly,
     yaleCollegeOnly: program.yaleCollegeOnly,
-    compensationSummary: publicProgramDescription(program.compensationSummary),
+    compensationSummary: publicCompensationSummary(program.compensationSummary),
     hoursPerWeek: program.hoursPerWeek,
     programDates: publicProgramText(program.programDates),
     bestNextStep: publicProgramDescription(program.bestNextStep),
