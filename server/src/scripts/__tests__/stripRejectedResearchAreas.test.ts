@@ -42,7 +42,11 @@ describe('parseStripRejectedResearchAreaArgs', () => {
 
   it('parses apply, confirm, and explicit limit', () => {
     expect(
-      parseStripRejectedResearchAreaArgs(['--apply', '--confirm-strip-rejected-areas', '--limit=50']),
+      parseStripRejectedResearchAreaArgs([
+        '--apply',
+        '--confirm-strip-rejected-areas',
+        '--limit=50',
+      ]),
     ).toMatchObject({ dryRun: false, confirm: true, explicitLimit: true, limit: 50 });
   });
 

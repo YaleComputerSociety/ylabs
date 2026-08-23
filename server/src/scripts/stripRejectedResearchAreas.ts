@@ -119,10 +119,7 @@ export async function runStripRejectedResearchAreas(options: {
         result.samples.push({ slug: String(entity.slug ?? ''), removed: plan.removed });
       }
       if (!options.dryRun) {
-        await ResearchEntity.updateOne(
-          { _id: entity._id },
-          { $set: { researchAreas: plan.kept } },
-        );
+        await ResearchEntity.updateOne({ _id: entity._id }, { $set: { researchAreas: plan.kept } });
         updatedIds.push(entity._id as mongoose.Types.ObjectId);
       }
       result.entitiesUpdated += 1;
