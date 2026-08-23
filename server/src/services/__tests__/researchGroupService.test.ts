@@ -123,7 +123,10 @@ import {
   resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
 } from '../researchGroupService';
-import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
+import {
+  invalidateResearchEntitySearchEmbedderCache,
+  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+} from '../researchEntitySearchIndexService';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -376,20 +379,23 @@ describe('searchResearchGroupsViaMeili', () => {
   it('requests hybrid search when the live index reports a configured embedder', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
-    mocks.search.mockResolvedValueOnce({
-      hits: [
-        {
-          id: entityId,
-          slug: 'reilly-lab',
-          name: 'Reilly Lab',
-          kind: 'lab',
-          departments: ['Chemistry'],
-          researchAreas: [],
-          sourceUrls: [],
-        },
-      ],
-      estimatedTotalHits: 1,
-    });
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [
+          {
+            id: entityId,
+            slug: 'reilly-lab',
+            name: 'Reilly Lab',
+            kind: 'lab',
+            departments: ['Chemistry'],
+            researchAreas: [],
+            sourceUrls: [],
+          },
+        ],
+        estimatedTotalHits: 1,
+        totalHits: 1,
+      })
+      .mockResolvedValueOnce({ hits: [], totalHits: 1 });
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
         {
@@ -407,11 +413,21 @@ describe('searchResearchGroupsViaMeili', () => {
 
     const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 1);
 
-    expect(mocks.search).toHaveBeenCalledTimes(1);
-    expect(mocks.search).toHaveBeenCalledWith(
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search).toHaveBeenNthCalledWith(
+      1,
       'reilly',
       expect.objectContaining({
         hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      }),
+    );
+    expect(mocks.search).toHaveBeenNthCalledWith(
+      2,
+      'reilly',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+        page: 1,
+        hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
       }),
     );
     expect(result.degraded).toBe(false);
@@ -632,21 +648,23 @@ describe('searchResearchGroupsViaMeili', () => {
 
   it('reports the exhaustive threshold-aware totalHits for a thresholded hybrid query, not the inflated estimate', async () => {
     const entityId = '67d8928150621bcef434a1d5';
-    mocks.search.mockResolvedValueOnce({
-      hits: [
-        {
-          id: entityId,
-          slug: 'bruce-lab',
-          name: 'Bruce Lab',
-          kind: 'lab',
-          departments: ['Neuroscience'],
-          researchAreas: [],
-          sourceUrls: [],
-        },
-      ],
-      estimatedTotalHits: 1686,
-      totalHits: 74,
-    });
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [
+          {
+            id: entityId,
+            slug: 'bruce-lab',
+            name: 'Bruce Lab',
+            kind: 'lab',
+            departments: ['Neuroscience'],
+            researchAreas: [],
+            sourceUrls: [],
+          },
+        ],
+        estimatedTotalHits: 1686,
+        totalHits: 74,
+      })
+      .mockResolvedValueOnce({ hits: [], totalHits: 74 });
     mocks.researchEntityFind.mockReturnValue(
       queryResult([
         {
@@ -673,8 +691,55 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(74);
   });
 
+  it('does not let a shallow first page fall back to Meilisearch\'s pre-threshold estimate (#885)', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [
+          {
+            id: entityId,
+            slug: 'bruce-lab',
+            name: 'Bruce Lab',
+            kind: 'lab',
+            departments: ['Neuroscience'],
+            researchAreas: [],
+            sourceUrls: [],
+          },
+        ],
+        estimatedTotalHits: 1746,
+        totalHits: 1746,
+      })
+      .mockResolvedValueOnce({ hits: [], totalHits: 326 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'bruce-lab',
+          name: 'Bruce Lab',
+          kind: 'lab',
+          departments: ['Neuroscience'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 50);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[1][1]).toMatchObject({
+      rankingScoreThreshold: 0.15,
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      page: 1,
+      hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+    });
+    expect(result.estimatedTotalHits).toBe(326);
+  });
+
   it('maps page/pageSize to finite pagination for a deeper thresholded hybrid page', async () => {
-    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 74 });
+    mocks.search
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 74 })
+      .mockResolvedValueOnce({ hits: [], totalHits: 74 });
 
     const result = await searchResearchGroupsViaMeili('neuroscience', {}, 3, 18);
 
@@ -684,6 +749,10 @@ describe('searchResearchGroupsViaMeili', () => {
     });
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
+    expect(mocks.search.mock.calls[1][1]).toMatchObject({
+      page: 1,
+      hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+    });
     expect(result.estimatedTotalHits).toBe(74);
   });
 
