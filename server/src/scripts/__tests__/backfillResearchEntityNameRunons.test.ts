@@ -16,11 +16,7 @@ describe('parseResearchEntityNameRunonBackfillArgs', () => {
 
   it('parses apply, confirm, and explicit limit', () => {
     expect(
-      parseResearchEntityNameRunonBackfillArgs([
-        '--apply',
-        '--confirm-name-runons',
-        '--limit=50',
-      ]),
+      parseResearchEntityNameRunonBackfillArgs(['--apply', '--confirm-name-runons', '--limit=50']),
     ).toMatchObject({ dryRun: false, confirm: true, explicitLimit: true, limit: 50 });
   });
 

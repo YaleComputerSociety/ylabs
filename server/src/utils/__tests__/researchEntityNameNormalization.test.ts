@@ -75,9 +75,9 @@ describe('stripTrailingResearchHomeDescription', () => {
 
 describe('hasTrailingResearchHomeDescription', () => {
   it('detects run-on descriptions across head-noun categories', () => {
-    expect(
-      hasTrailingResearchHomeDescription('Fineberg Lab The Fineberg Lab investigates'),
-    ).toBe(true);
+    expect(hasTrailingResearchHomeDescription('Fineberg Lab The Fineberg Lab investigates')).toBe(
+      true,
+    );
     expect(hasTrailingResearchHomeDescription('Laboratory We study X')).toBe(true);
     expect(hasTrailingResearchHomeDescription('Consortium We advance Y')).toBe(true);
     expect(hasTrailingResearchHomeDescription('Program The program supports Z')).toBe(true);
