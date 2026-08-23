@@ -647,9 +647,75 @@ function upsertCandidate(
   byKey.set(key, existing ? mergeCandidates(existing, candidate) : candidate);
 }
 
+const SUMMARY_NON_DESCRIPTIVE_TOKENS = new Set([
+  'the',
+  'a',
+  'an',
+  'of',
+  'for',
+  'in',
+  'to',
+  'and',
+  'at',
+  'on',
+  'or',
+  'with',
+  'yc',
+  'ay',
+  'academic',
+  'year',
+  'program',
+  'term',
+  'semester',
+  'session',
+  'cycle',
+  'spring',
+  'summer',
+  'fall',
+  'autumn',
+  'winter',
+]);
+
+function singularizeToken(word: string): string {
+  return word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word;
+}
+
+function descriptiveTokens(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+      .map(singularizeToken),
+  );
+}
+
+// A catalog row whose only content beyond the program name is its deadline (e.g.
+// "<Program> Deadline: Thursday, February 12, 2026 at 11:00pm ET.") carries no
+// descriptive value as a summary - the deadline is surfaced separately in KEY
+// DATES - so it must not be served as the card/modal BRIEF DESCRIPTION (issue
+// #1066). It qualifies as bare when, after removing the deadline clause, every
+// remaining token is either part of the title or a generic program/temporal word.
+function isBareDeadlineRowContext(text: string, title: string): boolean {
+  const withoutDeadline = text
+    .replace(/\b(?:application\s+)?deadlines?\b[^.]*\.?/gi, ' ')
+    .replace(/\bapplications?\s+(?:are\s+)?due\b[^.]*\.?/gi, ' ');
+  const titleTokens = descriptiveTokens(title);
+  const residual = withoutDeadline
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .filter((word) => !/^\d/.test(word))
+    .map(singularizeToken)
+    .filter((word) => !titleTokens.has(word) && !SUMMARY_NON_DESCRIPTIVE_TOKENS.has(word));
+  return residual.length === 0;
+}
+
 function summaryFromRowContext(rowContext: string, title: string): string | undefined {
   const safe = sanitizeStoredCatalogDescription(rowContext);
-  return safe && safe !== title ? safe : undefined;
+  if (!safe || safe === title) return undefined;
+  if (isBareDeadlineRowContext(safe, title)) return undefined;
+  return safe;
 }
 
 function candidateFromLink(
