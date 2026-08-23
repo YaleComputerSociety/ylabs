@@ -7,15 +7,15 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { syncEntity } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { stripTrailingResearchHomeDescription } from '../utils/researchEntityNameNormalization';
+import {
+  hasTrailingResearchHomeDescription,
+  stripTrailingResearchHomeDescription,
+} from '../utils/researchEntityNameNormalization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
-export const RESEARCH_HOME_HEAD_NOUN_PREFILTER =
-  /\b(?:labs?|laborator|cent(?:er|re)s?|institutes?|programme?s?|initiatives?|groups?|projects?|collaboratives?|consorti|networks?|clinics?|cores?)\b\s+\S/i;
 
 export interface ResearchEntityNameRunonBackfillOptions {
   dryRun: boolean;
@@ -98,15 +98,16 @@ export async function runResearchEntityNameRunonBackfill(options: {
   dryRun: boolean;
   limit?: number;
 }): Promise<ResearchEntityNameRunonBackfillResult> {
-  const entities = await ResearchEntity.find(
-    {
-      $or: [
-        { name: RESEARCH_HOME_HEAD_NOUN_PREFILTER },
-        { displayName: RESEARCH_HOME_HEAD_NOUN_PREFILTER },
-      ],
-    },
+  const allEntities = await ResearchEntity.find(
+    {},
     { _id: 1, slug: 1, name: 1, displayName: 1 },
   ).lean();
+
+  const entities = (allEntities as Array<Record<string, unknown>>).filter(
+    (entity) =>
+      hasTrailingResearchHomeDescription(entity.name as string) ||
+      hasTrailingResearchHomeDescription(entity.displayName as string),
+  );
 
   const result: ResearchEntityNameRunonBackfillResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',

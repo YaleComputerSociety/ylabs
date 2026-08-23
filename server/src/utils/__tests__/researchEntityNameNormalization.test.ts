@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasTrailingResearchHomeDescription,
   normalizeResearchEntityNameDashes,
   stripTrailingResearchHomeDescription,
 } from '../researchEntityNameNormalization';
@@ -69,5 +70,22 @@ describe('stripTrailingResearchHomeDescription', () => {
 
   it('returns non-string input unchanged', () => {
     expect(stripTrailingResearchHomeDescription(undefined as unknown as string)).toBe(undefined);
+  });
+});
+
+describe('hasTrailingResearchHomeDescription', () => {
+  it('detects run-on descriptions across head-noun categories', () => {
+    expect(
+      hasTrailingResearchHomeDescription('Fineberg Lab The Fineberg Lab investigates'),
+    ).toBe(true);
+    expect(hasTrailingResearchHomeDescription('Laboratory We study X')).toBe(true);
+    expect(hasTrailingResearchHomeDescription('Consortium We advance Y')).toBe(true);
+    expect(hasTrailingResearchHomeDescription('Program The program supports Z')).toBe(true);
+  });
+
+  it('returns false for clean names and non-string input', () => {
+    expect(hasTrailingResearchHomeDescription('Fineberg Lab')).toBe(false);
+    expect(hasTrailingResearchHomeDescription('Yale Cancer Center')).toBe(false);
+    expect(hasTrailingResearchHomeDescription(undefined as unknown as string)).toBe(false);
   });
 });
