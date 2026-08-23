@@ -1568,3 +1568,100 @@ describe('YaleCollegeFellowshipsOfficeScraper bare-deadline summary suppression 
     }
   });
 });
+
+describe('YaleCollegeFellowshipsOfficeScraper cbey funding-opportunities catalog (#675)', () => {
+  const cbeyPageUrl = 'https://cbey.yale.edu/funding-opportunities';
+
+  const cbeyCatalogHtml = `
+    <main>
+      <div class="view__rows">
+        <article class="node-teaser node-teaser--program node-teaser--card-vertical" data-node="6739">
+          <header class="node-teaser__header">
+            <div class="node-teaser__title"><a href="/programs/climate-innovation-grants">Climate Innovation Grants</a></div>
+          </header>
+          <div class="node-teaser__metadata"><span class="node-teaser__label">Funding Opportunity</span></div>
+          <div class="node-teaser__image"><a href="/programs/climate-innovation-grants"><img alt="Fires" /></a></div>
+        </article>
+        <article class="node-teaser node-teaser--program node-teaser--card-vertical" data-node="6740">
+          <header class="node-teaser__header">
+            <div class="node-teaser__title"><a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=71">Sobotka Seed Prize for Sustainable Ventures</a></div>
+          </header>
+          <div class="node-teaser__metadata"><span class="node-teaser__label">Funding Opportunity</span></div>
+        </article>
+      </div>
+    </main>
+  `;
+
+  it('extracts program-card candidates with clean titles and same-host detail links', () => {
+    const candidates = parseFellowshipCatalogPage(
+      cbeyCatalogHtml,
+      cbeyPageUrl,
+      new Date('2026-08-23T00:00:00.000Z'),
+    );
+
+    expect(candidates.map((candidate) => candidate.title)).toEqual([
+      'Climate Innovation Grants',
+      'Sobotka Seed Prize for Sustainable Ventures',
+    ]);
+
+    const grants = candidates.find((candidate) => candidate.title === 'Climate Innovation Grants');
+    expect(grants?.sourcePageKind).toBe('catalog');
+    expect(grants?.reviewRequired).toBe(true);
+    expect(grants?.applicationLink).toBeUndefined();
+    expect(grants?.links).toEqual([
+      { label: 'Climate Innovation Grants', url: 'https://cbey.yale.edu/programs/climate-innovation-grants' },
+    ]);
+    expect(grants?.contactOffice).toBe('Yale Center for Business and the Environment');
+
+    const prize = candidates.find((candidate) =>
+      candidate.title.startsWith('Sobotka Seed Prize'),
+    );
+    expect(prize?.applicationLink).toBe(
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=71',
+    );
+  });
+
+  const cbeyKeywordlessCardHtml = `
+    <main>
+      <article class="node-teaser node-teaser--program">
+        <header class="node-teaser__header">
+          <div class="node-teaser__title"><a href="/programs/fixture-innovation-cohort">Fixture Innovation Cohort</a></div>
+        </header>
+        <div class="node-teaser__metadata"><span class="node-teaser__label">Funding Opportunity</span></div>
+      </article>
+    </main>
+  `;
+
+  it('surfaces a funding card whose title carries no funding keyword on the cbey host', () => {
+    const candidates = parseFellowshipCatalogPage(
+      cbeyKeywordlessCardHtml,
+      cbeyPageUrl,
+      new Date('2026-08-23T00:00:00.000Z'),
+    );
+
+    expect(candidates.map((candidate) => candidate.title)).toEqual(['Fixture Innovation Cohort']);
+  });
+
+  it('does not apply the cbey program adapter on a non-cbey host', () => {
+    const candidates = parseFellowshipCatalogPage(
+      cbeyKeywordlessCardHtml,
+      'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
+      new Date('2026-08-23T00:00:00.000Z'),
+    );
+
+    expect(candidates).toHaveLength(0);
+  });
+
+  it('emits observations for a cbey program candidate', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      cbeyCatalogHtml,
+      cbeyPageUrl,
+      new Date('2026-08-23T00:00:00.000Z'),
+    );
+    const observations = candidateToObservations(candidate);
+    expect(observations.find((obs) => obs.field === 'title')?.value).toBe('Climate Innovation Grants');
+    expect(observations.find((obs) => obs.field === 'sourceName')?.value).toBe(
+      'yale-college-fellowships-office',
+    );
+  });
+});

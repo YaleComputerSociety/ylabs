@@ -21,6 +21,8 @@ export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-
 
 const MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL = 'https://macmillan.yale.edu/fellowships-and-grants';
 
+const CBEY_FUNDING_OPPORTUNITIES_URL = 'https://cbey.yale.edu/funding-opportunities';
+
 const DEFAULT_PAGE_URLS = [
   'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
   'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
@@ -36,6 +38,7 @@ const DEFAULT_PAGE_URLS = [
   `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=1`,
   `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=2`,
   `${MACMILLAN_FELLOWSHIPS_AND_GRANTS_URL}?page=3`,
+  CBEY_FUNDING_OPPORTUNITIES_URL,
 ];
 
 const PUBLIC_YALE_HOSTS = new Set([
@@ -49,6 +52,7 @@ const PUBLIC_YALE_HOSTS = new Set([
   'economics.yale.edu',
   'engineering.yale.edu',
   'macmillan.yale.edu',
+  'cbey.yale.edu',
 ]);
 
 const MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS: Record<string, string> = {
@@ -854,6 +858,61 @@ function candidatesFromMacmillanOpportunityPage(
     .filter((candidate): candidate is FellowshipCatalogCandidate => !!candidate);
 }
 
+function candidateFromCbeyProgramRow(
+  $: cheerio.CheerioAPI,
+  row: Parameters<cheerio.CheerioAPI>[0],
+  pageUrl: string,
+): FellowshipCatalogCandidate | undefined {
+  const $row = $(row);
+  const $link = $row.find('.node-teaser__title a').first();
+  const title = normalizedCandidateTitle($link.text());
+  if (!title || isGenericCatalogTitle(title)) return undefined;
+
+  const rawHref = absoluteUrl($link.attr('href'), pageUrl);
+  const href = rawHref ? normalizeLinkUrl(rawHref) : undefined;
+  if (!href) return undefined;
+
+  const applicationLink = isCommunityForceUrl(href) ? href : undefined;
+  const links = [{ label: applicationLink ? 'Application' : title, url: href }];
+
+  return finalizeCandidate({
+    sourceKey: sourceKeyForTitle(title),
+    title,
+    summary: undefined,
+    description: undefined,
+    applicationInformation: undefined,
+    applicationMaterials: [],
+    researchFocused: isResearchFocused(title),
+    researchFocusExplicitNegative: hasExplicitNegativeResearchFocus(title),
+    sourcePageKind: 'catalog',
+    sourceUrl: pageUrl,
+    applicationLink,
+    links,
+    deadline: undefined,
+    applicationOpenDate: undefined,
+    contactOffice: 'Yale Center for Business and the Environment',
+    contactEmail: undefined,
+    yearOfStudy: [],
+    termOfAward: inferTerm(title),
+    purpose: inferPurpose(title),
+    globalRegions: [],
+    citizenshipStatus: [],
+    isAcceptingApplications: false,
+    reviewRequired: true,
+  });
+}
+
+function candidatesFromCbeyFundingPage(
+  $: cheerio.CheerioAPI,
+  pageUrl: string,
+): FellowshipCatalogCandidate[] {
+  if (hostnameOf(pageUrl) !== 'cbey.yale.edu') return [];
+  return $('.node-teaser--program')
+    .toArray()
+    .map((row) => candidateFromCbeyProgramRow($, row, pageUrl))
+    .filter((candidate): candidate is FellowshipCatalogCandidate => !!candidate);
+}
+
 function candidateFromDetailPage(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -1031,6 +1090,12 @@ export function parseFellowshipCatalogPage(
   );
   if (opportunityRowCandidates.length > 0) {
     for (const candidate of opportunityRowCandidates) upsertCandidate(byKey, candidate);
+    return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  const cbeyProgramCandidates = candidatesFromCbeyFundingPage($, pageUrl);
+  if (cbeyProgramCandidates.length > 0) {
+    for (const candidate of cbeyProgramCandidates) upsertCandidate(byKey, candidate);
     return Array.from(byKey.values()).sort((a, b) => a.title.localeCompare(b.title));
   }
 
