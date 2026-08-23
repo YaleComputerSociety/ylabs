@@ -907,7 +907,7 @@ function specializationSectionSummary(full: string): string {
 }
 
 const PERSON_NAME_SUBJECT_PREDICATE =
-  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,3}\s+(?:specializes?|works?|holds?|serves?|pursues?|engages?|received|earned|joined|directs?|leads?|writes?|wrote|edits?|edited|teaches?|taught|studies|investigates|examines|explores|focuses|focused|develops?|researches|analyzes|models?|measures?|is|are|was|were|has|have|had)\b/u;
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,3}\s+(?:specializes?|works?|holds?|held|serves?|pursues?|engages?|received|earned|joined|directs?|directed|leads?|chairs?|chaired|founds?|founded|maintains?|maintained|oversees?|oversaw|writes?|wrote|edits?|edited|teaches?|taught|studies|investigates|examines|explores|focuses|focused|develops?|researches|analyzes|models?|measures?|is|are|was|were|has|have|had)\b/u;
 
 const startsWithPersonNameSubjectPredicate = (value: string): boolean =>
   PERSON_NAME_SUBJECT_PREDICATE.test(value);
