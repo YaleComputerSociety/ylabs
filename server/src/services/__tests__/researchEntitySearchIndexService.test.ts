@@ -329,6 +329,74 @@ describe('researchEntitySearchIndexService', () => {
     else delete process.env.OPENAI_API_KEY;
   });
 
+  it('surfaces a failed updateEmbedders task instead of swallowing it', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => ({ taskUid: 2 }),
+      tasks: {
+        waitForTask: async (taskUid: number) =>
+          taskUid === 2
+            ? {
+                status: 'failed',
+                error: { code: 'invalid_document_fields', message: 'missing field in document' },
+              }
+            : { status: 'succeeded' },
+      },
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).rejects.toThrow(/updateEmbedders task 2 did not succeed.*invalid_document_fields/s);
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
+  it('surfaces a failed updateSettings task instead of swallowing it', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      tasks: {
+        waitForTask: async () => ({ status: 'failed', error: { code: 'index_not_found' } }),
+      },
+    };
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+      }),
+    ).rejects.toThrow(/updateSettings task 1 did not succeed.*index_not_found/s);
+  });
+
+  it('does not wait on a task when the index client has no task-status support', async () => {
+    const fakeIndex = {
+      updateSettings: async () => ({ taskUid: 1 }),
+      updateEmbedders: async () => ({ taskUid: 2 }),
+    };
+    const prev = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    await expect(
+      rebuildResearchEntitySearchIndex({
+        pageSize: 5,
+        getIndex: async () => fakeIndex as any,
+        fetchPage: async () => [],
+        fetchMemberNames: async () => new Map(),
+      }),
+    ).resolves.toMatchObject({ fetchedDocumentCount: 0 });
+
+    if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    else delete process.env.OPENAI_API_KEY;
+  });
+
   it('enriches rebuilt research entity documents with searchable professor names', async () => {
     const entityId = '6a0567977c6d4fba869fc03d';
     const calls: Array<{ kind: string; payload?: unknown }> = [];
