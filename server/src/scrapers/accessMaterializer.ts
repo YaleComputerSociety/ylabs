@@ -13,6 +13,10 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
 import {
+  IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
+  ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY,
+} from '../services/accessAcceptanceLevel';
+import {
   validateAccessArtifactBundle,
   type AccessArtifactCandidate,
 } from '../services/claimValidation/accessClaims';
@@ -321,11 +325,18 @@ export function deriveAccessArtifactsFromObservations(
     ...acceptingObservations.filter(isPositiveBoolean),
     ...positiveAccessEvidence,
   ];
-  if (positiveAccepting.length > 0) {
+  const undergradAccessQuote =
+    publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
+    publicExcerpt(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value);
+  const independentPositiveSources = new Set(
+    positiveAccepting.map((obs) => obs.sourceName).filter(Boolean),
+  );
+  const hasCorroboratedUndergradAccess =
+    positiveAccessEvidence.length > 0 ||
+    Boolean(undergradAccessQuote) ||
+    independentPositiveSources.size >= 2;
+  if (positiveAccepting.length > 0 && hasCorroboratedUndergradAccess) {
     const score = maxConfidence(positiveAccepting);
-    const quote =
-      publicExcerpt(bestObservation(byField.get('undergradRoleEvidenceQuote') || [])?.value) ||
-      publicExcerpt(bestObservation(byField.get('undergradEvidenceQuote') || [])?.value);
     accessSignals.push(
       makeSignal({
         researchEntityId,
@@ -333,7 +344,7 @@ export function deriveAccessArtifactsFromObservations(
         type: 'REACH_OUT_PLAUSIBLE',
         score,
         observations: positiveAccepting,
-        excerpt: quote || undefined,
+        excerpt: undergradAccessQuote || undefined,
       }),
     );
   }
@@ -546,8 +557,8 @@ export function deriveIdentifiedLeadWaysIn(
     makeSignal({
       researchEntityId: input.researchEntityId,
       derivationKey: organizational
-        ? 'signal:REACH_OUT_PLAUSIBLE:ORGANIZATIONAL_HOME'
-        : 'signal:REACH_OUT_PLAUSIBLE:IDENTIFIED_FACULTY_LEAD',
+        ? ORGANIZATIONAL_HOME_WAYS_IN_DERIVATION_KEY
+        : IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
       type: 'REACH_OUT_PLAUSIBLE',
       score,
       observations: input.supportingObservations,
