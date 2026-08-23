@@ -903,6 +903,81 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
   );
 }
 
+const administrativeLeadershipClausePattern =
+  /\b(?:(?:is|are|was|were)\s+)?(?:led|directed|headed|run|overseen|managed|chaired)\s+by\b/i;
+
+const physicalLocationClausePattern =
+  /\b(?:[Ll]ocated|[Hh]oused|[Bb]ased|[Ss]ituated|[Hh]eadquartered)\s+(?:in|at|on|within)\s+(?:the\s+)?(?:[A-Z][A-Za-z.'&-]+(?:\s+[A-Za-z.'&-]+){0,5}\s+(?:Hall|Building|Bldg|Center|Centre|Wing|Tower|Complex|Laboratory|Library|House|Plaza|Institute|Annex|Pavilion)|(?:Room|Rm|Suite|Ste|Floor|Fl|Unit)\.?\s*\d+[A-Za-z]?|[A-Z]{2,5}\s?\d{1,4})/;
+
+const researchActivitySignalPattern =
+  /\b(?:focus(?:es|ed|ing)?\s+on|studies|study|studying|investigat(?:es|ed|ing|ion|ions)?|examin(?:es|ed|ing)|explor(?:es|ed|ing|ation)?|develop(?:s|ed|ing|ment|ments)?|design(?:s|ed|ing)?|analyz(?:es|ed|ing)|model(?:s|ed|ing)?|measur(?:es|ed|ing|ement)?|specializ(?:es|ed|ing)|dedicated\s+to|interested\s+in|work(?:s|ing)?\s+on|aims?\s+to|seeks?\s+to|advanc(?:es|ed|ing)|our\s+(?:research|work|lab)|we\s+(?:study|develop|investigate|build|design|explore|examine|focus|research|use|create|model))\b/i;
+
+const NAME_INITIAL_TAIL = /(?:^|\s)[A-Z]\.\s*$/;
+
+function partitionSentencesForLeadStrip(value: string): string[] {
+  const merged: string[] = [];
+  for (const segment of partitionSentencesLossless(value)) {
+    const previousIndex = merged.length - 1;
+    if (
+      previousIndex >= 0 &&
+      (PROTECTED_ABBREVIATION_TAIL.test(merged[previousIndex]) ||
+        NAME_INITIAL_TAIL.test(merged[previousIndex]))
+    ) {
+      merged[previousIndex] += segment;
+    } else {
+      merged.push(segment);
+    }
+  }
+  return merged;
+}
+
+function isAdministrativeOrLocationLeadSentence(sentence: string): boolean {
+  const normalized = normalizeHygieneWhitespace(sentence);
+  if (!normalized) return false;
+  if (researchActivitySignalPattern.test(normalized)) return false;
+  return (
+    administrativeLeadershipClausePattern.test(normalized) ||
+    physicalLocationClausePattern.test(normalized)
+  );
+}
+
+/**
+ * Drop leading sentences that are purely administrative / physical-location
+ * framing ("The X Lab is led by Prof. Y and is located in Watson Hall.", "The
+ * research laboratory is located in AKW 408.") when genuine research prose
+ * follows, so "what this lab studies" opens on the research rather than on who
+ * runs it or which room it occupies (#1178). This also subsumes the duplicated
+ * building/room restatement in that report, since both consecutive location
+ * sentences fall in the leading run. A sentence that carries any research-activity
+ * signal is never treated as a lead sentence, so a location clause fused to real
+ * content ("... located in Watson Hall and studies quantum materials.") is kept
+ * whole; the location arm requires a named building/room so a vague "located in
+ * New Haven" is left alone. Sentence tiling merges name initials ("Arthur K.")
+ * and title abbreviations so a proper name is never split mid-sentence. Fails
+ * closed - returns the original text - unless at least one research-prose
+ * sentence survives the strip.
+ */
+export function stripLeadingAdministrativeLocationSentences(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value) return value;
+  if (
+    !administrativeLeadershipClausePattern.test(value) &&
+    !physicalLocationClausePattern.test(value)
+  ) {
+    return value;
+  }
+  const segments = partitionSentencesForLeadStrip(value);
+  if (segments.length < 2) return value;
+  let index = 0;
+  while (index < segments.length && isAdministrativeOrLocationLeadSentence(segments[index])) {
+    index += 1;
+  }
+  if (index === 0 || index >= segments.length) return value;
+  const kept = segments.slice(index);
+  if (!kept.some((sentence) => researchActivitySignalPattern.test(sentence))) return value;
+  return normalizeHygieneWhitespace(kept.join(''));
+}
+
 /**
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
@@ -919,8 +994,10 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = stripGluedProfileRoleLabel(
-    stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+  const stripped = stripLeadingAdministrativeLocationSentences(
+    stripGluedProfileRoleLabel(
+      stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+    ),
   );
   if (!stripped) return '';
   if (

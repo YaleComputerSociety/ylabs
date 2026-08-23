@@ -28,6 +28,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripDeadAnchorCtaSentences,
+  stripLeadingAdministrativeLocationSentences,
   stripLeadingPageChrome,
   stripPageLayoutReferentialSentences,
   stripProvenanceHedge,
@@ -1428,5 +1429,55 @@ describe('stripUrlTopicsFromCardSummary + shortDescription URL-topic leak (#1079
   it('leaves ordinary prose without a URL untouched', () => {
     const prose = 'The lab studies auditory neuroscience and cochlear regeneration.';
     expect(stripUrlTopicsFromCardSummary(prose)).toBe(prose);
+  });
+});
+
+describe('stripLeadingAdministrativeLocationSentences (#1178)', () => {
+  const ECL =
+    'The Efficient Computing Lab (ECL) is led by Prof. Lin Zhong and is located in Arthur K. Watson Hall. ' +
+    'The research laboratory is located in AKW 408. ' +
+    'Our current research focuses on designing low-latency, high-throughput systems in the context of AI and Quantum Computing.';
+
+  const ECL_RESEARCH_LEAD =
+    'Our current research focuses on designing low-latency, high-throughput systems in the context of AI and Quantum Computing.';
+
+  it('drops the administrative + duplicated building/room lead, keeping the research prose', () => {
+    expect(stripLeadingAdministrativeLocationSentences(ECL)).toBe(ECL_RESEARCH_LEAD);
+  });
+
+  it('cleans the ECL record through the served research-entity description path', () => {
+    expect(sanitizeResearchEntityDescription(ECL)).toBe(ECL_RESEARCH_LEAD);
+  });
+
+  it('keeps a location clause that is fused to real research content', () => {
+    const prose =
+      'The Smith Lab is located in Sterling Hall and studies the folding kinetics of membrane proteins.';
+    expect(stripLeadingAdministrativeLocationSentences(prose)).toBe(prose);
+  });
+
+  it('leaves a vague, non-building location lead untouched', () => {
+    const prose =
+      'The lab is located in New Haven. We investigate the population genetics of migratory birds.';
+    expect(stripLeadingAdministrativeLocationSentences(prose)).toBe(prose);
+  });
+
+  it('fails closed when stripping would leave no research prose', () => {
+    const adminOnly =
+      'The lab is led by Prof. Dana Reed and is located in Watson Hall. The lab is located in AKW 408.';
+    expect(stripLeadingAdministrativeLocationSentences(adminOnly)).toBe(adminOnly);
+  });
+
+  it('is a no-op for clean research prose with no administrative lead', () => {
+    const prose =
+      'The lab develops soft robots that adapt their shape to changing tasks and environments.';
+    expect(stripLeadingAdministrativeLocationSentences(prose)).toBe(prose);
+  });
+
+  it('does not treat "research laboratory" naming as a research-activity signal', () => {
+    const prose =
+      'The research laboratory is located in Kline Biology Tower. We study circadian rhythms in fungi.';
+    expect(stripLeadingAdministrativeLocationSentences(prose)).toBe(
+      'We study circadian rhythms in fungi.',
+    );
   });
 });
