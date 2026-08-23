@@ -206,6 +206,29 @@ export const isNonContactableDocumentSourceUrl = (url?: string | null): boolean 
   }
 };
 
+const FILE_SHARE_HOSTS = new Set([
+  'drive.google.com',
+  'docs.google.com',
+  'dropbox.com',
+  'onedrive.live.com',
+  '1drv.ms',
+  'box.com',
+  'app.box.com',
+  'wetransfer.com',
+]);
+
+export const isFileShareSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.replace(/^www\./, '').toLowerCase();
+    return FILE_SHARE_HOSTS.has(host);
+  } catch {
+    return false;
+  }
+};
+
 const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|$)/i;
 
 export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
@@ -348,7 +371,9 @@ export const isBoilerplatePlatformSourceUrl = (url?: string | null): boolean => 
 export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean =>
   isFacetedOrSectionIndexSourceUrl(url) ||
   isBoilerplatePlatformSourceUrl(url) ||
-  isDirectoryRosterRootUrl(url);
+  isDirectoryRosterRootUrl(url) ||
+  isNonContactableDocumentSourceUrl(url) ||
+  isFileShareSourceUrl(url);
 
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);

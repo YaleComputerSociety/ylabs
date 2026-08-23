@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildResearchDetailSources,
+  isFileShareSourceUrl,
   isIdentifierOrGrantDbSourceUrl,
   isLikelyOfficialPersonProfileUrl,
   isLikelyUnavailableSourceLink,
@@ -495,6 +496,41 @@ describe('isSuppressedResearchWebsiteCtaUrl', () => {
       false,
     );
   });
+
+  it('suppresses file-share and document URLs as a website CTA (#730)', () => {
+    expect(isSuppressedResearchWebsiteCtaUrl('https://drive.google.com/open/')).toBe(true);
+    expect(
+      isSuppressedResearchWebsiteCtaUrl('https://drive.google.com/open?id=abc123&usp=drive_copy'),
+    ).toBe(true);
+    expect(
+      isSuppressedResearchWebsiteCtaUrl('https://docs.google.com/document/d/abc123/edit'),
+    ).toBe(true);
+    expect(
+      isSuppressedResearchWebsiteCtaUrl(
+        'https://history.yale.edu/sites/default/files/files/2010-rankin-suburbs.pdf',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps Google Sites and navigable lab pages as a website CTA (#730)', () => {
+    expect(isSuppressedResearchWebsiteCtaUrl('https://sites.google.com/view/example-lab')).toBe(
+      false,
+    );
+    expect(isSuppressedResearchWebsiteCtaUrl('https://chemistry.yale.edu/research/davis-lab')).toBe(
+      false,
+    );
+  });
+});
+
+describe('isFileShareSourceUrl (#730)', () => {
+  it('flags cloud file-share hosts but keeps Google Sites', () => {
+    expect(isFileShareSourceUrl('https://drive.google.com/open/')).toBe(true);
+    expect(isFileShareSourceUrl('https://docs.google.com/document/d/abc123/edit')).toBe(true);
+    expect(isFileShareSourceUrl('https://www.dropbox.com/s/abc123/file')).toBe(true);
+    expect(isFileShareSourceUrl('https://sites.google.com/view/example-lab')).toBe(false);
+    expect(isFileShareSourceUrl('https://example-computing-lab.example.org/')).toBe(false);
+    expect(isFileShareSourceUrl(undefined)).toBe(false);
+  });
 });
 
 describe('buildResearchDetailSources directory-roster roots (#569)', () => {
@@ -749,7 +785,9 @@ describe('isLikelyOfficialPersonProfileUrl (#646)', () => {
   });
 
   it('rejects roster, index, and listing pages', () => {
-    expect(isLikelyOfficialPersonProfileUrl('https://medicine.yale.edu/people/faculty')).toBe(false);
+    expect(isLikelyOfficialPersonProfileUrl('https://medicine.yale.edu/people/faculty')).toBe(
+      false,
+    );
     expect(
       isLikelyOfficialPersonProfileUrl(
         'https://medicine.yale.edu/research-and-faculty/faculty-directory/',
