@@ -65,6 +65,7 @@
     "data:materialize-inferred-pi-leads": "tsx src/scripts/backfillInferredPiLeadMaterialization.ts",
     "programs:backfill-classification": "tsx src/scripts/backfillProgramClassifications.ts",
     "programs:backfill-official-sources": "tsx src/scripts/backfillProgramOfficialSources.ts",
+    "programs:backfill-link-labels": "tsx src/scripts/backfillProgramLinkLabels.ts",
     "programs:accept-formalization-exceptions": "tsx src/scripts/acceptFormalizationReviewExceptions.ts",
     "programs:audit-research-relevance": "tsx src/scripts/auditProgramResearchRelevance.ts",
     "fellowships:refresh": "tsx src/scripts/fellowshipRefresh.ts",

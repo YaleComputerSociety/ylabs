@@ -13,6 +13,7 @@ import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
+import { humanizeProgramLinkLabel } from '../../utils/programLinkLabel';
 import { normalizedProgramTitleKey, primaryConcatenatedAwardTitle } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 
@@ -825,7 +826,8 @@ function candidateFromDetailPage(
       .map((link) => {
         const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
         const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
-        const label = normalizeWhitespace($(link).text()) || 'Link';
+        const rawText = normalizeWhitespace($(link).text());
+        const label = url ? humanizeProgramLinkLabel(rawText, url) || rawText || 'Link' : 'Link';
         return url ? { label, url } : undefined;
       })
       .filter((item): item is { label: string; url: string } => !!item)
