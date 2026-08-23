@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchHomeCard from '../ResearchHomeCard';
 import type { ResearchCluster } from '../../../utils/researchDiscoveryAdapters';
-import { sanitizeFacultyResearchCopy } from '../../../utils/researchEntityCopy';
+import { sanitizeResearchEntityCopy } from '../../../utils/researchEntityCopy';
 
 vi.mock('../../../utils/researchEntityCopy', async () => {
   const actual = await vi.importActual<typeof import('../../../utils/researchEntityCopy')>(
@@ -13,11 +13,11 @@ vi.mock('../../../utils/researchEntityCopy', async () => {
   );
   return {
     ...actual,
-    sanitizeFacultyResearchCopy: vi.fn(actual.sanitizeFacultyResearchCopy),
+    sanitizeResearchEntityCopy: vi.fn(actual.sanitizeResearchEntityCopy),
   };
 });
 
-const renderSpy = vi.mocked(sanitizeFacultyResearchCopy);
+const renderSpy = vi.mocked(sanitizeResearchEntityCopy);
 
 afterEach(() => {
   cleanup();
