@@ -68,6 +68,32 @@ describe('backfillPersonDisplayFields core', () => {
     });
   });
 
+  it('drops an issue #708 nav-menu chrome title while keeping other display fields', () => {
+    const composed = composeDisplayProfileFromLegacy({
+      user: {
+        title:
+          'About the InstituteMission & HistoryCommunity ValuesOur membersAnnual ReportsJoin the InstituteYQI in the MediaLocation & ContactsPrograms & Events',
+        primaryDepartment: 'Chemistry',
+      },
+    });
+    expect(composed.title).toBeUndefined();
+    expect(composed.primaryDepartment).toBe('Chemistry');
+  });
+
+  it('drops a title carrying a leaked raw email address', () => {
+    const composed = composeDisplayProfileFromLegacy({
+      user: { title: 'Professor of Immunobiology larry.hammer@yale.edu' },
+    });
+    expect(composed.title).toBeUndefined();
+  });
+
+  it('keeps a legitimate endowed-chair title through the composer', () => {
+    const composed = composeDisplayProfileFromLegacy({
+      user: { title: 'The William K. Lanman, Jr. Professor of Molecular Biophysics' },
+    });
+    expect(composed.title).toBe('The William K. Lanman, Jr. Professor of Molecular Biophysics');
+  });
+
   it('truncates oversize display values to their schema bounds', () => {
     const composed = composeDisplayProfileFromLegacy({
       user: {

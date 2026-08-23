@@ -102,9 +102,9 @@ describe('isBioProseTitle', () => {
   });
 
   it('keeps an endowed-chair title carrying a personal name with initials', () => {
-    expect(
-      isBioProseTitle('The William K. Lanman, Jr. Professor of Molecular Biophysics'),
-    ).toBe(false);
+    expect(isBioProseTitle('The William K. Lanman, Jr. Professor of Molecular Biophysics')).toBe(
+      false,
+    );
   });
 
   it('keeps a long but single-phrase endowed-chair title', () => {
