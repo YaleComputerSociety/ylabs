@@ -763,6 +763,62 @@ const profileLinkedWaxmanCenterWebsiteHtml = `
   </html>
 `;
 
+const profileLinkedLabWithDescriptionSentenceHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/marlow-fixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Marlow Fixture",
+            "email": "marlow.fixture@yale.edu",
+            "jobTitle": "Professor"
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">Marlow Fixture Lab</h3>
+          <p>The Marlow Fixture Lab investigates synthetic signaling pathways in fictional model organisms and related questions.</p>
+          <a href="https://medicine.yale.edu/marlow-fixture-lab/"><span>View Lab Website</span></a>
+        </article>
+      </main>
+    </body>
+  </html>
+`;
+
+const profileLinkedLabWithFirstPersonBlurbHtml = `
+  <html>
+    <head>
+      <link rel="canonical" href="https://medicine.yale.edu/profile/quill-fixture/" />
+      <script type="application/ld+json" data-schema="ProfilePage">
+        {
+          "@type": "ProfilePage",
+          "mainEntity": {
+            "@type": "Person",
+            "name": "Quill Fixture",
+            "email": "quill.fixture@yale.edu",
+            "jobTitle": "Professor"
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <main>
+        <article class="profile-details-lab">
+          <h3 class="profile-details-lab__title">Quill Fixture Lab</h3>
+          <p>We study how fictional cells decide when to divide and when to rest.</p>
+          <a href="https://medicine.yale.edu/quill-fixture-lab/"><span>View Lab Website</span></a>
+        </article>
+      </main>
+    </body>
+  </html>
+`;
+
 const profileLinkedDaycareWebsiteHtml = `
   <html>
     <head>
@@ -3797,6 +3853,28 @@ describe('officialProfilePiBackfillScraper', () => {
       kind: 'center',
       entityType: 'CENTER',
     });
+  });
+
+  it('truncates a trailing description sentence from a linked lab website name', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedLabWithDescriptionSentenceHtml,
+      'https://medicine.yale.edu/profile/marlow-fixture/',
+    );
+
+    expect(homes[0]?.name).toBe('Marlow Fixture Lab');
+    expect(homes[0]?.name).not.toMatch(/investigat/i);
+    expect(homes[0]?.name).not.toMatch(/[.]/);
+  });
+
+  it('truncates a first-person research blurb from a linked lab website name', () => {
+    const homes = extractOfficialProfileResearchHomes(
+      profileLinkedLabWithFirstPersonBlurbHtml,
+      'https://medicine.yale.edu/profile/quill-fixture/',
+    );
+
+    expect(homes[0]?.name).toBe('Quill Fixture Lab');
+    expect(homes[0]?.name).not.toMatch(/\bwe\b/i);
+    expect(homes[0]?.name).not.toMatch(/divide/i);
   });
 
   it('does not promote daycare or kindergarten profile cards as research homes', () => {

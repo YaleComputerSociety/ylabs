@@ -1426,12 +1426,13 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
         lifetimeVisitorsByType: [
           {
             $group: {
-              _id: { netid: '$netid', userType: '$userType' },
+              _id: '$netid',
+              userType: { $first: '$userType' },
             },
           },
           {
             $group: {
-              _id: '$_id.userType',
+              _id: '$userType',
               count: { $sum: 1 },
             },
           },
@@ -1470,12 +1471,13 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
           {
             $group: {
-              _id: { netid: '$netid', userType: '$userType' },
+              _id: '$netid',
+              userType: { $first: '$userType' },
             },
           },
           {
             $group: {
-              _id: '$_id.userType',
+              _id: '$userType',
               count: { $sum: 1 },
             },
           },
@@ -1514,12 +1516,13 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
           },
           {
             $group: {
-              _id: { netid: '$netid', userType: '$userType' },
+              _id: '$netid',
+              userType: { $first: '$userType' },
             },
           },
           {
             $group: {
-              _id: '$_id.userType',
+              _id: '$userType',
               count: { $sum: 1 },
             },
           },

@@ -19,6 +19,7 @@ import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
+export const FELLOWSHIP_TAG_CAP = 2;
 export const DESCRIPTION_CLAMP_CLASS = 'line-clamp-3';
 
 export function getOrderedDepartments(
@@ -116,6 +117,19 @@ interface TagInfo {
   text: string;
 }
 
+const normalizeTagLabel = (label: string) => label.trim().toLowerCase();
+
+function dedupeTags(tags: TagInfo[]): TagInfo[] {
+  const kept: TagInfo[] = [];
+  for (const tag of tags) {
+    const norm = normalizeTagLabel(tag.label);
+    if (!norm) continue;
+    if (kept.some((k) => normalizeTagLabel(k.label) === norm)) continue;
+    kept.push(tag);
+  }
+  return kept;
+}
+
 export function getItemTags(
   item: BrowsableItem,
   getColor: (area: string) => { bg: string; text: string },
@@ -129,7 +143,13 @@ export function getItemTags(
     const areas = item.data.researchAreas || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
-  return [
+  const categoryLabel = item.data.studentFacingCategory;
+  const categoryNorm = categoryLabel ? normalizeTagLabel(categoryLabel) : '';
+  const entryModeChipLabel = item.data.entryMode ? entryModeLabel(item.data.entryMode) : '';
+  const entryModeNorm = normalizeTagLabel(entryModeChipLabel);
+  const entryModeImpliedByCategory =
+    !!entryModeNorm && !!categoryNorm && categoryNorm.includes(entryModeNorm);
+  return dedupeTags([
     ...(item.data.undergraduateOnly === false
       ? [
           {
@@ -139,19 +159,19 @@ export function getItemTags(
           },
         ]
       : []),
-    ...(item.data.studentFacingCategory
+    ...(categoryLabel
       ? [
           {
-            label: item.data.studentFacingCategory,
+            label: categoryLabel,
             bg: 'bg-sky-50',
             text: 'text-sky-700',
           },
         ]
       : []),
-    ...(item.data.entryMode
+    ...(entryModeChipLabel && !entryModeImpliedByCategory
       ? [
           {
-            label: entryModeLabel(item.data.entryMode),
+            label: entryModeChipLabel,
             bg: 'bg-emerald-50',
             text: 'text-emerald-700',
           },
@@ -167,7 +187,7 @@ export function getItemTags(
       bg: 'bg-purple-50',
       text: 'text-purple-700',
     })),
-  ];
+  ]);
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
