@@ -4,6 +4,7 @@ import {
   clampDescriptionLength,
   collapseDoubledSynthesisVerb,
   collapseDuplicatedProseBlock,
+  collapseRepeatedSentences,
   containsHtmlTagMarkup,
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
@@ -26,6 +27,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripDeadAnchorCtaSentences,
+  stripPageLayoutReferentialSentences,
   stripProvenanceHedge,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
@@ -403,9 +405,11 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
 
 describe('sanitizeResearchEntityDescription word-boundary clamp (#897)', () => {
   it('clamps an over-long research-entity description to a complete sentence', () => {
-    const body = `${'The laboratory studies how cities shape regional climate and biodiversity. '.repeat(
-      40,
-    )}Recent work extends this to coastal megacities and the lack of diver`;
+    const body = `${Array.from(
+      { length: 40 },
+      (_, i) =>
+        `The laboratory studies how cities shape regional climate and biodiversity across study region ${i}.`,
+    ).join(' ')} Recent work extends this to coastal megacities and the lack of diver`;
     const cleaned = sanitizeResearchEntityDescription(body);
     expect(cleaned.length).toBeLessThanOrEqual(2000);
     expect(cleaned.endsWith('.')).toBe(true);
@@ -647,9 +651,11 @@ describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', 
   });
 
   it('clamps an over-long description to a complete sentence', () => {
-    const body = `${'The program pairs undergraduates with faculty mentors for original research. '.repeat(
-      40,
-    )}Applicants identify up to three potential mentors before the deadline`;
+    const body = `${Array.from(
+      { length: 40 },
+      (_, i) =>
+        `The program pairs undergraduates with faculty mentors for original research in cohort ${i}.`,
+    ).join(' ')} Applicants identify up to three potential mentors before the deadline`;
     const cleaned = sanitizeStoredCatalogDescription(body);
     expect(cleaned.length).toBeLessThanOrEqual(2000);
     expect(cleaned.endsWith('.')).toBe(true);
@@ -1166,5 +1172,102 @@ describe('stripDeadAnchorCtaSentences lossless sentence walk (#1020)', () => {
     ]) {
       expect(partitionSentencesLossless(value).join('')).toBe(value);
     }
+  });
+});
+
+describe('descriptionHygiene page-layout-referential caveat strip (#994)', () => {
+  const WEIZMANN =
+    'Please note, the application opening and closing dates listed on the right are not correct. ' +
+    'Please contact Prof. Jordan Rivera for further information. ' +
+    'This program supports Yale undergraduates who undertake summer research at the Weizmann Institute of Science in Rehovot, Israel, outside Tel Aviv. ' +
+    'Contact Prof. Jordan Rivera for further information.';
+
+  it('drops the layout-referential caveat sentence', () => {
+    const out = stripPageLayoutReferentialSentences(WEIZMANN);
+    expect(out).not.toMatch(/listed on the right/i);
+    expect(out).toContain('This program supports Yale undergraduates');
+  });
+
+  it('drops an "as listed above" / "in the sidebar" caveat', () => {
+    expect(
+      stripPageLayoutReferentialSentences(
+        'Deadlines are shown in the sidebar. The award funds summer research.',
+      ),
+    ).toBe('The award funds summer research.');
+    expect(
+      stripPageLayoutReferentialSentences(
+        'The eligibility criteria are listed above. Applicants must be sophomores.',
+      ),
+    ).toBe('Applicants must be sophomores.');
+  });
+
+  it('leaves ordinary research prose untouched', () => {
+    const clean =
+      'The lab studies protein folding and left-handed helices in structural biology.';
+    expect(stripPageLayoutReferentialSentences(clean)).toBe(clean);
+    const rightHand =
+      'The study measured activity in the right hemisphere of the brain.';
+    expect(stripPageLayoutReferentialSentences(rightHand)).toBe(rightHand);
+  });
+
+  it('is a no-op when no layout reference is present', () => {
+    expect(stripPageLayoutReferentialSentences('A clean program description.')).toBe(
+      'A clean program description.',
+    );
+    expect(stripPageLayoutReferentialSentences('')).toBe('');
+  });
+});
+
+describe('descriptionHygiene repeated-sentence collapse (#994)', () => {
+  it('collapses a repeated contact instruction modulo leading politeness/case', () => {
+    const text =
+      'Please contact Prof. Jordan Rivera for further information. ' +
+      'This program supports Yale undergraduates undertaking summer research abroad. ' +
+      'Contact Prof. Jordan Rivera for further information.';
+    const out = collapseRepeatedSentences(text);
+    expect(out.match(/contact Prof\. Jordan Rivera for further information/gi)?.length).toBe(1);
+    expect(out).toContain('This program supports Yale undergraduates');
+  });
+
+  it('keeps an abbreviation-containing sentence whole rather than splitting it', () => {
+    const text =
+      'Applicants should email Prof. Smith by the deadline. ' +
+      'Applicants should email Prof. Smith by the deadline.';
+    expect(collapseRepeatedSentences(text)).toBe(
+      'Applicants should email Prof. Smith by the deadline.',
+    );
+  });
+
+  it('does not deduplicate short repeated phrases', () => {
+    const text = 'Apply now. Read the guide. Apply now.';
+    expect(collapseRepeatedSentences(text)).toBe(text);
+  });
+
+  it('leaves distinct sentences untouched', () => {
+    const text = 'The program funds travel. The program funds housing.';
+    expect(collapseRepeatedSentences(text)).toBe(text);
+  });
+
+  it('is a no-op for empty or single-sentence input', () => {
+    expect(collapseRepeatedSentences('')).toBe('');
+    expect(collapseRepeatedSentences('Only one sentence here.')).toBe(
+      'Only one sentence here.',
+    );
+  });
+});
+
+describe('sanitizeCatalogDescription end-to-end #994 Weizmann record', () => {
+  it('removes both the layout caveat and the duplicated contact instruction', () => {
+    const stored =
+      'Please note, the application opening and closing dates listed on the right are not correct. ' +
+      'Please contact Prof. Jordan Rivera for further information. ' +
+      'This program supports Yale undergraduates who undertake summer research at the Weizmann Institute of Science in Rehovot, Israel, outside Tel Aviv. ' +
+      'Contact Prof. Jordan Rivera for further information.';
+    const out = sanitizeCatalogDescription(stored);
+    expect(out).not.toMatch(/listed on the right/i);
+    expect(out.match(/contact Prof\. Jordan Rivera for further information/gi)?.length).toBe(1);
+    expect(out).toContain(
+      'This program supports Yale undergraduates who undertake summer research at the Weizmann Institute of Science',
+    );
   });
 });
