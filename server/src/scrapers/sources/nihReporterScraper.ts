@@ -158,11 +158,12 @@ export function canonicalPiName(raw: string | undefined | null): string {
 
 function titleCaseToken(token: string): string {
   if (!token) return '';
-  if (/^[A-Z]+$/.test(token)) {
-    // ALL-CAPS token like "TABACHNIKOVA" -> "Tabachnikova"
-    return token.charAt(0) + token.slice(1).toLowerCase();
-  }
-  return token;
+  // Title-case each letter run around a hyphen/apostrophe separately, e.g.
+  // "OHNO-MACHADO" -> "Ohno-Machado", "D'SOUZA" -> "D'Souza".
+  return token
+    .split(/([-'‘’])/)
+    .map((part) => (/^[A-Z]+$/.test(part) ? part.charAt(0) + part.slice(1).toLowerCase() : part))
+    .join('');
 }
 
 /**
