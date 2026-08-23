@@ -237,6 +237,18 @@ const emptyResearchPlanView = (): ResearchPlanView => ({
   },
 });
 
+const clearedResearchPlanFields = (): Record<string, unknown> => ({
+  stage: 'SAVED',
+  privateNotes: '',
+  checklist: [],
+  deadlines: [],
+  exportPreferences: {
+    includePrivateNotes: false,
+    includeChecklist: false,
+    includeDeadlines: false,
+  },
+});
+
 export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
     typeof doc.stage === 'string' && researchPlanStageSet.has(doc.stage as ResearchPlanStage)
@@ -484,7 +496,7 @@ export const removeSavedResearchEntities = async (
         'target.kind': RESEARCH_ENTITY_TARGET_KIND,
         'target.id': { $in: ids },
       },
-      { $set: { archived: true } },
+      { $set: { archived: true, ...clearedResearchPlanFields() } },
       { runValidators: true },
     );
   }
@@ -532,19 +544,7 @@ export const deleteSavedResearchEntityPlan = async (
       'target.id': targetId,
       archived: { $ne: true },
     },
-    {
-      $set: {
-        stage: 'SAVED',
-        privateNotes: '',
-        checklist: [],
-        deadlines: [],
-        exportPreferences: {
-          includePrivateNotes: false,
-          includeChecklist: false,
-          includeDeadlines: false,
-        },
-      },
-    },
+    { $set: clearedResearchPlanFields() },
     { runValidators: true },
   );
   return getSavedResearchEntityPlans(netid);
@@ -672,7 +672,7 @@ export const removeWatchedPrograms = async (netid: any, values: unknown[]): Prom
         'target.kind': PROGRAM_TARGET_KIND,
         'target.id': { $in: ids },
       },
-      { $set: { archived: true } },
+      { $set: { archived: true, ...clearedResearchPlanFields() } },
       { runValidators: true },
     );
   }
@@ -704,6 +704,25 @@ export const updateWatchedProgramPlan = async (
   if (!result.matchedCount) {
     throw new NotFoundError('Watched program not found');
   }
+  return getWatchedProgramPlans(netid);
+};
+
+export const deleteWatchedProgramPlan = async (
+  netid: any,
+  programId: string,
+): Promise<Record<string, ResearchPlanView>> => {
+  const accountId = await resolveAccountIdByNetid(netid);
+  const targetId = new mongoose.Types.ObjectId(normalizeObjectIdString(programId, 'program'));
+  await ResearchPlan.updateOne(
+    {
+      accountId,
+      'target.kind': PROGRAM_TARGET_KIND,
+      'target.id': targetId,
+      archived: { $ne: true },
+    },
+    { $set: clearedResearchPlanFields() },
+    { runValidators: true },
+  );
   return getWatchedProgramPlans(netid);
 };
 
