@@ -1244,9 +1244,7 @@ describe('YaleCollegeFellowshipsOfficeScraper bare-root link hygiene (#692)', ()
 
     const observations = candidateToObservations(candidate);
     expect(observations.find((obs) => obs.field === 'applicationLink')).toBeUndefined();
-    expect(observations.find((obs) => obs.field === 'links')?.value).toEqual(
-      candidate.links,
-    );
+    expect(observations.find((obs) => obs.field === 'links')?.value).toEqual(candidate.links);
   });
 });
 
@@ -1309,7 +1307,9 @@ describe('YaleCollegeFellowshipsOfficeScraper macmillan opportunity catalog (#67
     expect(prize?.deadline?.toISOString()).toBe('2027-03-15T23:59:59.999Z');
     expect(prize?.reviewRequired).toBe(false);
     expect(prize?.applicationLink).toBeUndefined();
-    expect(prize?.links).toEqual([{ label: 'Albert Bildner Travel Prize', url: 'https://bit.ly/3rzeOaf' }]);
+    expect(prize?.links).toEqual([
+      { label: 'Albert Bildner Travel Prize', url: 'https://bit.ly/3rzeOaf' },
+    ]);
     expect(prize?.contactOffice).toBe('MacMillan Center');
 
     const grant = candidates.find((candidate) =>
