@@ -109,6 +109,7 @@
     "research-homes:backfill-center-directors": "tsx src/scripts/backfillCenterDirectors.ts",
     "research-homes:backfill-source-link-health": "tsx src/scripts/backfillSourceLinkHealth.ts",
     "sources:strip-directory-loaders": "tsx src/scripts/stripDirectoryLoaderSourceUrls.ts",
+    "sources:repair-ysm-atoz-index-url": "tsx src/scripts/repairYsmAtozIndexSourceUrl.ts",
     "profiles:backfill-bios-from-official-urls": "tsx src/scripts/backfillProfileBiosFromOfficialUrls.ts",
     "scrape": "tsx src/scrapers/cli.ts",
     "scrape:sweep": "tsx src/scripts/runScraperSweep.ts",

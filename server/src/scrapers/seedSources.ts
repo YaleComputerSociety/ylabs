@@ -193,7 +193,7 @@ const SOURCES: SourceSeed[] = [
     name: 'ysm-atoz-index',
     displayName: 'YSM A-to-Z Lab Index',
     description: 'Yale School of Medicine centralized labs index.',
-    baseUrl: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+    baseUrl: 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/',
     defaultWeight: 0.8,
     cadence: 'weekly',
   },
