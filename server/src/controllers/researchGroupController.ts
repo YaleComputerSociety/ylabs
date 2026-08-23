@@ -87,6 +87,10 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
     filters.acceptanceLevel = r.acceptanceLevel;
   }
 
+  if (r.hostsUndergrads === true) {
+    filters.hostsUndergrads = true;
+  }
+
   return filters;
 };
 

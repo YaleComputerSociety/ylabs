@@ -15,6 +15,7 @@ import { accessSignalTypes as ACCESS_SIGNAL_TYPES } from '../models/researchAcce
 import { computeResearchEntityBrowseRank } from './researchEntityBrowseRank';
 import {
   canonicalAcceptanceLevelFromSignals,
+  hasUndergradHostingEvidenceFromSignals,
   type AccessAcceptanceLevel,
   type AccessSignalConfidenceInput,
 } from './accessAcceptanceLevel';
@@ -131,16 +132,25 @@ export async function recomputeBrowseRankForEntities(
     scoresByEntityId.set(id, score);
     const acceptanceLevel = canonicalAcceptanceLevelFromSignals(entitySignals);
     acceptanceLevelsByEntityId.set(id, acceptanceLevel);
+    const undergradHostingEvidence = hasUndergradHostingEvidenceFromSignals(entitySignals);
 
     const scoreUnchanged = (entity.browseRankScore ?? 0) === score;
     const levelUnchanged = (entity.accessAcceptanceLevel ?? 'none') === acceptanceLevel;
-    if (scoreUnchanged && levelUnchanged) continue;
+    const hostingUnchanged =
+      (entity.hasUndergradHostingEvidence ?? false) === undergradHostingEvidence;
+    if (scoreUnchanged && levelUnchanged && hostingUnchanged) continue;
     updated += 1;
     if (options.dryRun) continue;
 
     await ResearchEntity.updateOne(
       { _id: entity._id },
-      { $set: { browseRankScore: score, accessAcceptanceLevel: acceptanceLevel } },
+      {
+        $set: {
+          browseRankScore: score,
+          accessAcceptanceLevel: acceptanceLevel,
+          hasUndergradHostingEvidence: undergradHostingEvidence,
+        },
+      },
       { timestamps: false },
     );
     if (sync) {

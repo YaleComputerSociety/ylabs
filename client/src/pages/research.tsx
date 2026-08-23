@@ -52,7 +52,7 @@ interface DepartmentSearchTarget {
 type ResearchSearchFilters = PathwaySearchFilters & {
   kind?: string[];
   school?: string[];
-  acceptanceLevel?: 'verified' | 'verified-or-likely' | 'all';
+  hostsUndergrads?: boolean;
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -736,7 +736,7 @@ const Research = () => {
           school: filters.school?.[0],
           department: filters.departments?.[0],
           researchAreas: filters.researchAreas,
-          hostsUndergrads: filters.acceptanceLevel === 'verified-or-likely',
+          hostsUndergrads: filters.hostsUndergrads === true,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -917,7 +917,7 @@ const Research = () => {
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(areas.length ? { researchAreas: areas } : {}),
-    ...(undergrads ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
+    ...(undergrads ? { hostsUndergrads: true } : {}),
   });
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1057,7 +1057,7 @@ const Research = () => {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
       ...(urlResearchAreas.length ? { researchAreas: urlResearchAreas } : {}),
-      ...(urlHostsUndergrads ? { acceptanceLevel: 'verified-or-likely' as const } : {}),
+      ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
     };
 
     const urlDepartmentSearch = urlDepartmentLabel

@@ -13,6 +13,7 @@ export interface ResearchGroupFilterInput {
   departments?: string[];
   researchAreas?: string[];
   acceptanceLevel?: AcceptanceLevelInput;
+  hostsUndergrads?: boolean;
   studentVisibilityTier?: string[];
 }
 
@@ -69,6 +70,10 @@ export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput
 
   for (const clause of acceptanceLevelClauses(filters.acceptanceLevel)) {
     parts.push(clause);
+  }
+
+  if (filters.hostsUndergrads === true) {
+    parts.push('hasUndergradHostingEvidence = true');
   }
 
   const studentVisibilityClause = filters.studentVisibilityTier

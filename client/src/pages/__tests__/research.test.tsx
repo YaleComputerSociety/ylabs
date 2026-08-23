@@ -813,7 +813,7 @@ describe('Research page', () => {
     });
 
     const toggleSearches = searchFilters.slice(beforeToggle);
-    expect(toggleSearches).toEqual([{ acceptanceLevel: 'verified-or-likely' }]);
+    expect(toggleSearches).toEqual([{ hostsUndergrads: true }]);
     expect(screen.getByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
   });
 
@@ -919,7 +919,7 @@ describe('Research page', () => {
       expect.objectContaining({
         filters: {
           researchAreas: ['Genomics'],
-          acceptanceLevel: 'verified-or-likely',
+          hostsUndergrads: true,
         },
       }),
     );
@@ -937,7 +937,7 @@ describe('Research page', () => {
           return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
         }
         if (url === '/research/search') {
-          if (body.filters?.acceptanceLevel === 'verified-or-likely') {
+          if (body.filters?.hostsUndergrads === true) {
             return filteredResponse.promise;
           }
           return Promise.resolve(researchSearchResponse([researchEntity]));
@@ -989,8 +989,7 @@ describe('Research page', () => {
     const filteredCall = mockedAxios.post.mock.calls.find(
       ([url, body]) =>
         url === '/research/search' &&
-        (body as { filters?: Record<string, unknown> }).filters?.acceptanceLevel ===
-          'verified-or-likely',
+        (body as { filters?: Record<string, unknown> }).filters?.hostsUndergrads === true,
     );
     expect(filteredCall).toBeTruthy();
   });
