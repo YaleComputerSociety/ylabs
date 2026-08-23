@@ -34,6 +34,12 @@ const ROSTER_FULL =
 const GROUNDED_CARD =
   'Studies how immune cell populations respond to cancer immunotherapy using single-cell RNA sequencing and machine learning.';
 
+const GROUP_PROSE_LAB_FULL =
+  'The Kang Laboratory is dedicated to understanding the fundamental mechanisms that govern how epithelial tissues maintain their architecture and regenerate after injury, bringing together cell biologists, geneticists, and computational modelers who combine live-imaging, single-cell sequencing, and organoid systems to dissect the signaling circuits that coordinate collective cell behavior across developing and adult tissues.';
+
+const GROUP_PROSE_CARD =
+  'Studies how epithelial tissues maintain their architecture and regenerate after injury using live-imaging, single-cell sequencing, and organoid systems.';
+
 type PersistedEntity = { fullDescription?: string; shortDescription?: string };
 
 describe('materializeEntity sanitizes description text at the write step (#670/#671, #682 grounding)', () => {
@@ -86,14 +92,16 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
     });
   };
 
-  const capturingSynthesizer = (calls: string[]) => (fullDescription: string) => {
-    calls.push(fullDescription);
-    return synthesizeGroundedCardDescription({
-      fullDescription,
-      entityName: 'Immunotherapy Research Home',
-      callLLM: async () => GROUNDED_CARD,
-    });
-  };
+  const capturingSynthesizer =
+    (calls: string[], card: string = GROUNDED_CARD) =>
+    (fullDescription: string) => {
+      calls.push(fullDescription);
+      return synthesizeGroundedCardDescription({
+        fullDescription,
+        entityName: 'Immunotherapy Research Home',
+        callLLM: async () => card,
+      });
+    };
 
   it('strips page chrome from the winning observation before writing and grounds synthesis on the clean text', async () => {
     await seedEntity();
@@ -149,5 +157,23 @@ describe('materializeEntity sanitizes description text at the write step (#670/#
     expect(persisted?.fullDescription).toBe(CLEAN_FULL);
     expect(calls).toEqual([CLEAN_FULL]);
     expect(persisted?.shortDescription).toBe(GROUNDED_CARD);
+  });
+
+  it('keeps legitimate group-prose lab descriptions (no bio-gate false-empty) and grounds synthesis on them', async () => {
+    await seedEntity({ name: 'Kang Laboratory' });
+    await seedFullDescription(GROUP_PROSE_LAB_FULL);
+
+    const calls: string[] = [];
+    await materializeEntity(
+      'researchEntity',
+      { entityKey: 'desc-sanitize-fixture' },
+      { synthesizeCardDescription: capturingSynthesizer(calls, GROUP_PROSE_CARD) },
+    );
+
+    const persisted = await ResearchEntity.findOne({ slug: 'desc-sanitize-fixture' }).lean<PersistedEntity>();
+
+    expect(persisted?.fullDescription).toBe(GROUP_PROSE_LAB_FULL);
+    expect(calls).toEqual([GROUP_PROSE_LAB_FULL]);
+    expect(persisted?.shortDescription).toBe(GROUP_PROSE_CARD);
   });
 });
