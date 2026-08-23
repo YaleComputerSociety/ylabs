@@ -670,6 +670,53 @@ describe('Research page', () => {
     expect(screen.queryByLabelText('Undergraduate participation documented')).toBeNull();
   });
 
+  it('collapses the result count to a lightweight total-first status line without a banner heading', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity], { estimatedTotalHits: 29 })
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.getByRole('status').textContent).toMatch(
+      /^29 research homes for 'machine learning'/,
+    );
+    expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
+    expect(screen.queryByRole('heading', { name: /Showing research matches/ })).toBeNull();
+  });
+
+  it('applies a filter toggle in place without re-running the previous query', async () => {
+    const searchFilters: Array<Record<string, unknown>> = [];
+    mockedAxios.post.mockImplementation((url: string, body: { filters?: Record<string, unknown> }) => {
+      if (url === '/analytics/research' || url === '/analytics/research/batch') {
+        return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
+      }
+      if (url !== '/research/search') return Promise.reject(unexpectedSearchEndpoint(url));
+      searchFilters.push(body.filters || {});
+      return Promise.resolve(researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }));
+    });
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    const beforeToggle = searchFilters.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByLabelText('Has hosted undergrads before'));
+
+    await waitFor(() => {
+      expect(searchFilters.length).toBeGreaterThan(beforeToggle);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const toggleSearches = searchFilters.slice(beforeToggle);
+    expect(toggleSearches).toEqual([{ acceptanceLevel: 'verified-or-likely' }]);
+    expect(screen.getByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
+  });
+
   it('restores active filters when their distribution disappears and never invents counts', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
@@ -832,7 +879,7 @@ describe('Research page', () => {
     });
 
     renderResearch(departments, ['/research?q=machine+learning']);
-    expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(await screen.findByText(/Searching Yale Research for machine learning/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     expect(
       within(screen.getByRole('dialog', { name: 'Research filters' })).getByRole('status'),
@@ -934,7 +981,7 @@ describe('Research page', () => {
     await screen.findByRole('heading', { name: 'Default Research Home' });
     fireEvent.click(screen.getByRole('button', { name: 'Quantum materials' }));
 
-    await screen.findByText("Showing research matches for 'quantum materials'");
+    await screen.findByText(/research homes? for 'quantum materials'/);
     expect(await screen.findByRole('heading', { name: 'Quantum Materials Example' })).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Search Yale research'), {
@@ -943,7 +990,7 @@ describe('Research page', () => {
 
     expect(await screen.findByText('Research homes to explore')).toBeTruthy();
     expect(screen.queryByLabelText('Search results')).toBeNull();
-    expect(screen.queryByText("Showing research matches for 'quantum materials'")).toBeNull();
+    expect(screen.queryByText(/research homes? for 'quantum materials'/)).toBeNull();
     expect(await screen.findByRole('heading', { name: 'Default Research Home' })).toBeTruthy();
   });
 
@@ -1406,7 +1453,7 @@ describe('Research page', () => {
 
     renderResearch(departments, ['/research?q=protein+folding']);
 
-    await screen.findByText("Showing research matches for 'protein folding'");
+    await screen.findByText(/research homes? for 'protein folding'/);
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     await waitFor(() => {
       expect(intersectionCallback).toBeDefined();
@@ -1483,7 +1530,7 @@ describe('Research page', () => {
     renderResearch(departments, ['/research?q=protein+folding']);
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
-    await screen.findByText('Showing 1 of 25 research homes', { exact: false });
+    await screen.findByText("25 research homes for 'protein folding'", { exact: false });
     await waitFor(() => {
       expect(intersectionCallback).toBeDefined();
     });
@@ -1503,7 +1550,7 @@ describe('Research page', () => {
       );
     });
 
-    expect(screen.getByText('Showing 1 of 25 research homes', { exact: false })).toBeTruthy();
+    expect(screen.getByText("25 research homes for 'protein folding'", { exact: false })).toBeTruthy();
     expect(screen.queryByText(/Searching Yale Research for/)).toBeNull();
     const searchButton = screen.getByRole('button', { name: 'Search' });
     expect(searchButton).toBeTruthy();
@@ -1514,7 +1561,7 @@ describe('Research page', () => {
     );
 
     await screen.findByRole('heading', { name: 'Wright Lab' });
-    await screen.findByText('Showing 2 of 25 research homes', { exact: false });
+    expect(screen.getByText("25 research homes for 'protein folding'", { exact: false })).toBeTruthy();
   });
 
   it('preserves facet availability when loading more search results fails', async () => {
@@ -1637,7 +1684,7 @@ describe('Research page', () => {
     expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe(
       'machine learning',
     );
-    expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(await screen.findByText(/research homes? for 'machine learning'/)).toBeTruthy();
     expect(mockedAxios.post).toHaveBeenCalledWith(
       '/research/search',
       expect.objectContaining({
@@ -1694,12 +1741,12 @@ describe('Research page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     view.rerender(researchTree([...departments]));
 
-    expect(screen.getByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(screen.getByText(/Searching Yale Research for machine learning/)).toBeTruthy();
     expect(input.value).toBe('machine learning');
 
     searchResponse.resolve(researchSearchResponse([researchEntity]));
 
-    expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(await screen.findByText(/research homes? for 'machine learning'/)).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
   });
 
@@ -1733,12 +1780,12 @@ describe('Research page', () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("Showing research matches for 'machine learning'");
+    await screen.findByText(/Searching Yale Research for machine learning/);
     fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
-      expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
+      expect(screen.queryByText(/Searching Yale Research for machine learning/)).toBeNull();
       expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
     });
 
@@ -1779,12 +1826,12 @@ describe('Research page', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Navigate to second query' }));
     });
 
-    expect(await screen.findByText("Showing research matches for 'second query'")).toBeTruthy();
+    expect(await screen.findByText(/Searching Yale Research for second query/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Clear research location' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
-      expect(screen.queryByText("Showing research matches for 'second query'")).toBeNull();
+      expect(screen.queryByText(/Searching Yale Research for second query/)).toBeNull();
       expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
     });
 
@@ -1824,7 +1871,7 @@ describe('Research page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('location').textContent).toBe('/research');
-      expect(screen.queryByText("Showing research matches for 'machine learning'")).toBeNull();
+      expect(screen.queryByText(/research homes? for 'machine learning'/)).toBeNull();
       expect((screen.getByLabelText('Search Yale research') as HTMLInputElement).value).toBe('');
     });
 
@@ -1842,7 +1889,7 @@ describe('Research page', () => {
 
     renderResearchStrict(departments, ['/research?q=machine+learning']);
 
-    expect(await screen.findByText("Showing research matches for 'machine learning'")).toBeTruthy();
+    expect(await screen.findByText(/research homes? for 'machine learning'/)).toBeTruthy();
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
     expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
       1,
@@ -1951,10 +1998,12 @@ describe('Research page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    await screen.findByText("Showing research matches for 'protein folding'");
+    await screen.findByText(/research homes? for 'protein folding'/);
 
     await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toContain('1 research home, 1 contact');
+      expect(screen.getByRole('status').textContent).toContain(
+        "1 research home for 'protein folding', 1 contact",
+      );
     });
     expect(screen.getAllByRole('status')[0].textContent).not.toContain('verified way in');
     expect(screen.queryByRole('link', { name: /Compare .*pathway/i })).toBeNull();
@@ -2023,10 +2072,10 @@ describe('Research page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    await screen.findByText("Showing research matches for 'ai'");
+    await screen.findByText(/research homes? for 'ai'/);
 
     await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toContain('Showing 1 of 81 research homes');
+      expect(screen.getByRole('status').textContent).toContain("81 research homes for 'ai'");
     });
   });
 
@@ -2101,7 +2150,7 @@ describe('Research page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    await screen.findByText("Showing research matches for 'machine learning'");
+    await screen.findByText(/research homes? for 'machine learning'/);
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     expect(screen.queryByRole('button', { name: 'Open roles' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Paid/funded' })).toBeNull();
@@ -2141,7 +2190,7 @@ describe('Research page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    await screen.findByText("Showing research matches for 'machine learning'");
+    await screen.findByText(/research homes? for 'machine learning'/);
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
 
     expect(screen.queryByText('No pathways indexed yet')).toBeNull();
@@ -2223,7 +2272,7 @@ describe('Research page', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    await screen.findByText("Showing research matches for 'protein folding'");
+    await screen.findByText(/research homes? for 'protein folding'/);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(await screen.findByRole('heading', { name: 'AI Safety Lab' })).toBeTruthy();
   });
