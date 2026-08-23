@@ -117,6 +117,36 @@ describe('getProfileByNetid research homes from canonical RoleAssignment', () =>
     expect(names).toEqual(['Current Lab', 'Unknown Lab']);
   });
 
+  it('returns null for a non-faculty account so the route responds 404', async () => {
+    await User.create({
+      netid: 'ugrad01',
+      email: 'ugrad01@example.test',
+      fname: 'Under',
+      lname: 'Grad',
+      userType: 'undergraduate',
+    });
+
+    const profile = await getProfileByNetid('ugrad01');
+
+    expect(profile).toBeNull();
+  });
+
+  it('returns a profile for a faculty account (faculty alias normalizes to professor)', async () => {
+    await User.create({
+      netid: 'fac01',
+      email: 'fac01@example.test',
+      fname: 'Fac',
+      lname: 'Ulty',
+      userType: 'faculty',
+    });
+
+    const profile: any = await getProfileByNetid('fac01');
+
+    expect(profile).not.toBeNull();
+    expect(profile.netid).toBe('fac01');
+    expect(profile.userType).toBe('professor');
+  });
+
   it('fails closed with no research homes when the user resolves to no canonical researcher', async () => {
     await User.create({
       netid: 'ghost01',

@@ -58,6 +58,7 @@ const shouldHideBroadSchoolLabel = (label: string, labels: string[]): boolean =>
 const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
   const { departments } = useConfig();
   const fullName = `${profile.fname} ${profile.lname}`;
+  const kicker = profile.userType === 'professor' ? 'Faculty profile' : 'Profile';
   const initials =
     `${profile.fname?.charAt(0) || ''}${profile.lname?.charAt(0) || ''}`.toUpperCase();
   const orcidProfileHref = orcidHref(profile.orcid, profile.profile_urls?.orcid);
@@ -97,7 +98,7 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="yr-kicker mb-2">Faculty profile</p>
+        <p className="yr-kicker mb-2">{kicker}</p>
         <h1 className="text-2xl font-semibold text-slate-950">{fullName}</h1>
         {profile.title && <p className="mt-1 text-base text-slate-600">{profile.title}</p>}
 
