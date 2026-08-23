@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import ResearchAreaTypeahead from './ResearchAreaTypeahead';
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
@@ -112,7 +113,7 @@ const ResearchFilterDisclosure = ({
   const getFocusableElements = () =>
     Array.from(
       panelRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ) || [],
     );
 
@@ -210,31 +211,11 @@ const ResearchFilterDisclosure = ({
         <span>Has hosted undergrads before</span>
       </label>
       {showResearchAreas && (
-        <label className="block min-w-0 text-sm font-medium text-slate-800">
-          Research area
-          <select
-            aria-label="Filter by research area"
-            value=""
-            onChange={(event) => {
-              const value = event.target.value;
-              if (!value) return;
-              onResearchAreasChange([...selectedResearchAreas, value]);
-            }}
-            className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
-          >
-            <option value="">
-              {selectedResearchAreas.length > 0
-                ? 'Add another research area'
-                : 'All research areas'}
-            </option>
-            {availableResearchAreas.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.value}
-                {option.count !== undefined ? ` (${option.count})` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ResearchAreaTypeahead
+          options={availableResearchAreas}
+          hasSelections={selectedResearchAreas.length > 0}
+          onSelect={(value) => onResearchAreasChange([...selectedResearchAreas, value])}
+        />
       )}
       {showSchool && (
         <label className="block min-w-0 text-sm font-medium text-slate-800">
