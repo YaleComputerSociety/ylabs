@@ -742,27 +742,34 @@ export function clampDescriptionLength(text: string, maxLength = 2000): string {
 
 const terminalPunctuationTailPattern = /[.!?]["'’)\]]?$/;
 
-const MID_SENTENCE_TRUNCATION_MIN_LENGTH = 1500;
+export const MID_SENTENCE_TRUNCATION_MIN_LENGTH = 1500;
 
 /**
- * Repair a stored description that a legacy producer hard-cut at its length cap
- * mid-sentence, leaving a dangling fragment with no terminal punctuation
- * ("...Projects may", "...STARS II H", #671). A well-formed description ends on
- * terminal punctuation, so a value this long that does not is treated as
- * truncated and trimmed back to its last complete sentence; when no sentence
- * boundary sits in the retained span the trailing partial word is dropped with
- * an ellipsis. Applied at read time so already-stored cut records are repaired
- * on every serve without a backfill. The length gate keeps a short curated
- * field that legitimately ends without a period untouched (the confirmed cut
- * records store the full 2000-char cap); a no-op for any value that already
- * ends on terminal punctuation.
+ * Repair a stored description that a legacy producer hard-cut mid-sentence,
+ * leaving a dangling fragment with no terminal punctuation ("...Projects may",
+ * "...STARS II H", #671/#1240). A well-formed description ends on terminal
+ * punctuation, so a value that does not is treated as truncated: when a
+ * complete sentence already covers most of the text (>= 60%) it is trimmed back
+ * to that last sentence boundary. Applied at read time so already-stored cut
+ * records are repaired on every serve without a backfill.
+ *
+ * This sentence-boundary trim runs regardless of length so that the many
+ * confirmed sub-cap cuts (a faculty/roster slice hard-cut well under 2000
+ * chars, #1240) are repaired, not only the full 2000-char-cap cuts. When no
+ * complete sentence covers the leading text there is nothing safe to trim to,
+ * so the trailing partial word is dropped with an ellipsis only for a value
+ * long enough to be a confirmed length-cap cut; a shorter value with no
+ * sentence structure (a curated one-liner, or a CV/role-list remnant that
+ * genuinely needs a rescrape rather than a trim) is left untouched rather than
+ * have a misleading ellipsis fabricated onto it. A no-op for any value that
+ * already ends on terminal punctuation.
  */
 export function repairMidSentenceTruncation(text: string): string {
   const value = normalizeHygieneWhitespace(text);
-  if (value.length < MID_SENTENCE_TRUNCATION_MIN_LENGTH) return value;
-  if (terminalPunctuationTailPattern.test(value)) return value;
+  if (!value || terminalPunctuationTailPattern.test(value)) return value;
   const sentenceEnd = lastSentenceBoundary(value);
   if (sentenceEnd >= value.length * 0.6) return value.slice(0, sentenceEnd).trim();
+  if (value.length < MID_SENTENCE_TRUNCATION_MIN_LENGTH) return value;
   const lastSpace = value.lastIndexOf(' ');
   const cut = lastSpace > 0 ? value.slice(0, lastSpace) : value;
   return `${cut.trim()}…`;
