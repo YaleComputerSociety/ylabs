@@ -20,7 +20,10 @@ import {
   synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
 import { normalizedProgramTitleKey } from '../utils/programTitle';
-import { normalizeResearchEntityNameDashes } from '../utils/researchEntityNameNormalization';
+import {
+  normalizeResearchEntityNameDashes,
+  stripTrailingResearchHomeDescription,
+} from '../utils/researchEntityNameNormalization';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
 import { syncEntity, isSyncableEntityType } from '../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
@@ -271,7 +274,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
   );
 }
 
-function materializedFieldValue(
+export function materializedFieldValue(
   entityType: ObservedEntityType,
   field: string,
   value: unknown,
@@ -306,7 +309,7 @@ function materializedFieldValue(
     (field === 'name' || field === 'displayName') &&
     typeof value === 'string'
   ) {
-    return normalizeResearchEntityNameDashes(value);
+    return normalizeResearchEntityNameDashes(stripTrailingResearchHomeDescription(value));
   }
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);

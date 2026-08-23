@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeResearchEntityNameDashes } from '../researchEntityNameNormalization';
+import {
+  normalizeResearchEntityNameDashes,
+  stripTrailingResearchHomeDescription,
+} from '../researchEntityNameNormalization';
 
 describe('normalizeResearchEntityNameDashes', () => {
   it('converts an em-dash faculty-research suffix to a plain hyphen (#519)', () => {
@@ -24,5 +27,47 @@ describe('normalizeResearchEntityNameDashes', () => {
 
   it('collapses doubled spaces left by dash removal but preserves single spacing', () => {
     expect(normalizeResearchEntityNameDashes('Example  —  Research')).toBe('Example - Research');
+  });
+});
+
+describe('stripTrailingResearchHomeDescription', () => {
+  it('strips a description sentence glued onto a lab name (#797)', () => {
+    expect(
+      stripTrailingResearchHomeDescription(
+        'Example Lab We study how immune cells and metabolic networks restore tissue health.',
+      ),
+    ).toBe('Example Lab');
+  });
+
+  it('strips description prose from center, institute, and program names', () => {
+    expect(
+      stripTrailingResearchHomeDescription(
+        'Example Center The center focuses on the intersection of energy and economics.',
+      ),
+    ).toBe('Example Center');
+    expect(
+      stripTrailingResearchHomeDescription(
+        'Example Institute Our research investigates population dynamics.',
+      ),
+    ).toBe('Example Institute');
+    expect(
+      stripTrailingResearchHomeDescription(
+        'Example Program This program develops open teaching resources.',
+      ),
+    ).toBe('Example Program');
+  });
+
+  it('leaves clean research-home names untouched', () => {
+    expect(stripTrailingResearchHomeDescription('Example Lab')).toBe('Example Lab');
+    expect(stripTrailingResearchHomeDescription('Jordan Example - Research')).toBe(
+      'Jordan Example - Research',
+    );
+    expect(stripTrailingResearchHomeDescription('Institute for the Study of Global Affairs')).toBe(
+      'Institute for the Study of Global Affairs',
+    );
+  });
+
+  it('returns non-string input unchanged', () => {
+    expect(stripTrailingResearchHomeDescription(undefined as unknown as string)).toBe(undefined);
   });
 });
