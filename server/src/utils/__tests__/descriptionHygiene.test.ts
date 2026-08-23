@@ -586,14 +586,18 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
   });
 
   it('fails closed on a Studies-template blurb that leaked a research-areas heading (#816)', () => {
-    expect(isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.')).toBe(
-      true,
-    );
-    expect(sanitizeResearchEntityShortDescription('Studies soft robotics, actuators, and research areas:.')).toBe(
-      '',
-    );
     expect(
-      sanitizeResearchEntityShortDescription('Research fields include ecology, evolution, and research interests:.'),
+      isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.'),
+    ).toBe(true);
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies soft robotics, actuators, and research areas:.',
+      ),
+    ).toBe('');
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Research fields include ecology, evolution, and research interests:.',
+      ),
     ).toBe('');
     expect(sanitizeResearchEntityShortDescription('Studies research topics:')).toBe('');
   });
