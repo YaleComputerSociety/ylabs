@@ -22,6 +22,7 @@ import {
   isRosterShapedText,
   isStaffContactBlockText,
   partitionSentencesLossless,
+  repairMidSentenceTruncation,
   sanitizeCatalogDescription,
   sanitizeEvidenceExcerpt,
   sanitizeResearchEntityDescription,
@@ -435,6 +436,67 @@ describe('descriptionHygiene display-directive fail-closed (#1053)', () => {
       'Fellows are shown as a cohort on the program page, and each receives a summer research stipend.';
     expect(isCurationRationaleText(clean)).toBe(false);
     expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene present-as display-routing directive fail-closed (#671)', () => {
+  it('rejects a "should be presented as X ... not as a general Y" record-framing directive', () => {
+    const directive =
+      'The Daniel Merriman - Ted Bensinger III Fellowship for Juniors is listed by Davenport College among its fellowship and award options. It should be presented as residential-college funding that may support a concrete summer plan, not as a general Yale-wide research placement.';
+    expect(isCurationRationaleText(directive)).toBe(true);
+    expect(sanitizeCatalogDescription(directive)).toBe('');
+  });
+
+  it('keeps a genuine description asking that student work be presented at a symposium', () => {
+    const clean =
+      'Fellows conduct original summer research and their findings should be presented as a poster at the fall symposium.';
+    expect(isCurationRationaleText(clean)).toBe(false);
+    expect(sanitizeCatalogDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene read-time mid-sentence truncation repair (#671)', () => {
+  const buildLongTruncatedTail = (tail: string): string =>
+    `${Array.from(
+      { length: 18 },
+      (_, i) =>
+        `The program pairs undergraduates with faculty mentors for original summer research in cohort ${i}.`,
+    ).join(' ')} ${tail}`;
+
+  it('trims a long value cut mid-sentence back to its last complete sentence', () => {
+    const cut = buildLongTruncatedTail(
+      'Applications are accepted on a rolling basis from Monday, August 31 until Friday, September 11 at 4:30pm. Projects may',
+    );
+    expect(cut.length).toBeGreaterThan(1500);
+    const repaired = repairMidSentenceTruncation(cut);
+    expect(repaired.endsWith('4:30pm.')).toBe(true);
+    expect(repaired).not.toMatch(/Projects may$/);
+  });
+
+  it('drops a mid-word tail with an ellipsis when no sentence boundary remains in span', () => {
+    const cut = `${'programresearchmentorshipfundingcohort '.repeat(60)}STARS II H`;
+    const repaired = repairMidSentenceTruncation(cut);
+    expect(repaired.endsWith('…')).toBe(true);
+    expect(repaired).not.toMatch(/STARS II H$/);
+  });
+
+  it('is a no-op on a long value that already ends on terminal punctuation', () => {
+    const clean = buildLongTruncatedTail('Applicants identify up to three mentors before the deadline.');
+    expect(repairMidSentenceTruncation(clean)).toBe(clean.replace(/\s+/g, ' ').trim());
+  });
+
+  it('leaves a short curated field that ends without a period untouched', () => {
+    const short = 'Summer stipend plus housing';
+    expect(repairMidSentenceTruncation(short)).toBe(short);
+  });
+
+  it('repairs a stored mid-word cut end-to-end through sanitizeCatalogDescription', () => {
+    const cut = buildLongTruncatedTail(
+      'Accepted students will join the program immediately after acceptance. STARS II H',
+    );
+    const cleaned = sanitizeCatalogDescription(cut);
+    expect(cleaned.endsWith('acceptance.')).toBe(true);
+    expect(cleaned).not.toMatch(/STARS II H$/);
   });
 });
 
