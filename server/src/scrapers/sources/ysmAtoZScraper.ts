@@ -26,6 +26,7 @@ import {
 } from '../../utils/researchHomeDescriptionSelection';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import { canonicalPersonName } from '../utils/personNameCasing';
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
@@ -362,8 +363,8 @@ function nameHintFromProfileName(name: string): PiNameHint | null {
   const lastName = tokens.at(-1) || '';
   if (!/^[A-Z][\p{L}'’-]+$/u.test(lastName)) return null;
   return {
-    firstName: tokens.slice(0, -1).join(' '),
-    lastName,
+    firstName: canonicalPersonName(tokens.slice(0, -1).join(' ')),
+    lastName: canonicalPersonName(lastName),
   };
 }
 
