@@ -1250,6 +1250,57 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(1741);
   });
 
+  it('tokenizes a symbol-heavy term down to single-character remnants (#1228)', () => {
+    expect(normalizeResearchSearchQuery('C++')).toMatchObject({
+      raw: 'C++',
+      tokens: ['c'],
+    });
+    expect(normalizeResearchSearchQuery('R&D')).toMatchObject({
+      raw: 'R&D',
+      tokens: ['r', 'd'],
+    });
+    expect(normalizeResearchSearchQuery('C#')).toMatchObject({
+      raw: 'C#',
+      tokens: ['c'],
+    });
+  });
+
+  it('returns an empty result set for a symbol-heavy query that collapses to single-character tokens instead of matching name initials (#1228)', async () => {
+    const cPlusPlusResult = await searchResearchGroupsViaMeili('C++', {}, 1, 24);
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(cPlusPlusResult.estimatedTotalHits).toBe(0);
+    expect(cPlusPlusResult.researchEntities).toEqual([]);
+
+    const rAndDResult = await searchResearchGroupsViaMeili('R&D', {}, 1, 24);
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(rAndDResult.estimatedTotalHits).toBe(0);
+    expect(rAndDResult.researchEntities).toEqual([]);
+
+    const cSharpResult = await searchResearchGroupsViaMeili('C#', {}, 1, 24);
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(cSharpResult.estimatedTotalHits).toBe(0);
+    expect(cSharpResult.researchEntities).toEqual([]);
+  });
+
+  it('still runs a real keyword search for a bare single letter with no stripped symbols (#1228 regression guard)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 358 });
+
+    const result = await searchResearchGroupsViaMeili('C', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalled();
+    expect(result.estimatedTotalHits).toBe(358);
+  });
+
+  it('still matches the spelled-out topic when symbols are absent (#1228 regression guard)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 5 });
+
+    const result = await searchResearchGroupsViaMeili('programming language', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalled();
+    expect(mocks.search.mock.calls[0][0]).toBe('programming language');
+    expect(result.estimatedTotalHits).toBe(5);
+  });
+
   it('reports the exhaustive threshold-aware totalHits for a thresholded hybrid query, not the inflated estimate', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
