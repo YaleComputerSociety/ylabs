@@ -13,6 +13,7 @@ import {
   archiveCanonicalRoleAssignmentsForPersons,
   archiveSupersededCanonicalRoleAssignments,
   buildCanonicalRoleAssignmentUpsert,
+  identityIsOrganizationalMailbox,
   materializeCanonicalMembership,
   resolveCanonicalResearcherId,
 } from '../canonicalMembershipMaterializer';
@@ -65,6 +66,25 @@ describe('canonical membership mapping (pure)', () => {
         'CANONICAL_SOURCE_REFERENCE',
       ),
     ).toBe('UNREVIEWED');
+  });
+
+  it('flags organizational and department mailbox identities but not individuals (#887)', () => {
+    expect(identityIsOrganizationalMailbox({ netid: 'physics', email: 'physics@yale.edu' })).toBe(
+      true,
+    );
+    expect(identityIsOrganizationalMailbox({ email: 'info@yale.edu' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'no-reply@yale.edu' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ netid: 'chemistry' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'econ-dept@yale.edu' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'smith-lab@yale.edu' })).toBe(true);
+
+    expect(identityIsOrganizationalMailbox({ netid: 'ab123', email: 'ab123@yale.edu' })).toBe(
+      false,
+    );
+    expect(identityIsOrganizationalMailbox({ netid: 'jbaden', email: 'joel.baden@yale.edu' })).toBe(
+      false,
+    );
+    expect(identityIsOrganizationalMailbox({ displayName: 'Physics Person' })).toBe(false);
   });
 
   it('builds an idempotent role-assignment upsert and toggles endedAt by state', () => {
@@ -187,6 +207,31 @@ describe('canonical membership materialization (integration)', () => {
     expect(assignments).toHaveLength(1);
     expect(assignments[0].role).toBe('PI');
     expect(assignments[0].state).toBe('CURRENT');
+  });
+
+  it('fails closed: never mints an Account/Researcher for a department-mailbox identity (#887)', async () => {
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'pi',
+        displayName: 'Physics',
+        evidenceStatus: 'verified',
+        isCurrentMember: true,
+        confidence: 0.9,
+      },
+      {
+        netid: 'physics',
+        email: 'physics@example.test',
+        displayName: 'Physics',
+        hasCanonicalSourceReference: true,
+      },
+    );
+    expect(await Account.countDocuments({})).toBe(0);
+    expect(await Researcher.countDocuments({})).toBe(0);
+    expect(
+      await RoleAssignment.countDocuments({ 'target.id': new mongoose.Types.ObjectId(id) }),
+    ).toBe(0);
   });
 
   it('never treats a separator-bearing shell key as an account netid', async () => {
