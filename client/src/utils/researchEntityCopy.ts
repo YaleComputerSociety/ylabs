@@ -9,6 +9,21 @@ const KIND_LABELS: Record<string, string> = {
   solo: 'Faculty Research',
 };
 
+const ENTITY_TYPE_TO_KIND: Record<string, string> = {
+  LAB: 'lab',
+  CENTER: 'center',
+  INSTITUTE: 'institute',
+  PROGRAM: 'program',
+  RA_PROGRAM: 'program',
+  FELLOWSHIP_PROGRAM: 'program',
+  COURSE_SEQUENCE: 'program',
+  INITIATIVE: 'initiative',
+  COLLECTIONS_INITIATIVE: 'initiative',
+  GROUP: 'group',
+  INDIVIDUAL_RESEARCH: 'individual',
+  FACULTY_RESEARCH_AREA: 'individual',
+};
+
 export type ResearchEntityCopyInput = {
   displayName?: string | null;
   name?: string | null;
@@ -17,8 +32,11 @@ export type ResearchEntityCopyInput = {
   descriptionSource?: string | null;
 };
 
+const effectiveEntityKind = (entity?: ResearchEntityCopyInput | null): string =>
+  ENTITY_TYPE_TO_KIND[entity?.entityType || ''] || entity?.kind || '';
+
 const researchHomeLabel = (entity?: ResearchEntityCopyInput | null): string =>
-  KIND_LABELS[entity?.kind || '']?.toLowerCase() || 'research home';
+  KIND_LABELS[effectiveEntityKind(entity)]?.toLowerCase() || 'research home';
 
 const RELATIONSHIP_TYPE_LABELS: Record<string, string> = {
   AFFILIATED_LAB: 'Affiliated lab',
@@ -49,7 +67,7 @@ export const researchEntityDisplayName = (entity?: ResearchEntityCopyInput | nul
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isFacultyResearchEntity(entity)) return 'Faculty Research';
-  return KIND_LABELS[entity?.kind || ''] || 'Research Home';
+  return KIND_LABELS[effectiveEntityKind(entity)] || 'Research Home';
 };
 
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string =>
