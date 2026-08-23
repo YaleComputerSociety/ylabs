@@ -419,7 +419,7 @@ const CURATION_RATIONALE_PATTERNS: RegExp[] = [
   /\buntil a (?:more specific )?(?:current )?(?:award|fellowship|program|funding) page is attached\b/i,
   /\bkeep public copy restrained\b/i,
   /\bclear student audience\b/i,
-  /\b(?:should|must)\s+be\s+(?:shown|displayed|surfaced|treated|classified|labell?ed|rendered)\s+as\b/i,
+  /\b(?:should|must)\s+be\s+(?:shown|displayed|surfaced|rendered)\s+as\b/i,
 ];
 
 /**
