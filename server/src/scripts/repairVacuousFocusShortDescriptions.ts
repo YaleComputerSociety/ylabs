@@ -62,7 +62,8 @@ export function parseVacuousFocusRepairArgs(argv: string[]): VacuousFocusRepairC
     else if (arg === '--dry-run' || arg === '--mode=dry-run') options.dryRun = true;
     else if (arg === '--confirm-vacuous-focus-repair') options.confirm = true;
     else if (arg === '--no-sync') options.syncMeili = false;
-    else if (arg.startsWith('--limit=')) options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
+    else if (arg.startsWith('--limit='))
+      options.limit = parsePositiveInt(arg.slice('--limit='.length), '--limit');
     else if (arg === '--limit') {
       options.limit = parsePositiveInt(argv[i + 1], '--limit');
       i += 1;
@@ -196,7 +197,9 @@ async function main(): Promise<void> {
       fs.writeFileSync(safeOutput, JSON.stringify(payload, null, 2));
       console.log(`Saved vacuous-focus repair report to ${safeOutput}`);
     }
-    console.log(JSON.stringify({ summary: result.summary, meiliSynced: result.meiliSynced }, null, 2));
+    console.log(
+      JSON.stringify({ summary: result.summary, meiliSynced: result.meiliSynced }, null, 2),
+    );
   } finally {
     await mongoose.disconnect();
   }

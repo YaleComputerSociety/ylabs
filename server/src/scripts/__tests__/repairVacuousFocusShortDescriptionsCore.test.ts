@@ -14,7 +14,9 @@ describe('planVacuousFocusRepairRow', () => {
       researchAreas: ['Biostatistics', 'Public Health', 'Cancer Research', 'Clinical Trials'],
     });
     expect(row.changed).toBe(true);
-    expect(row.after).toBe('Studies Biostatistics, Public Health, Cancer Research, and Clinical Trials.');
+    expect(row.after).toBe(
+      'Studies Biostatistics, Public Health, Cancer Research, and Clinical Trials.',
+    );
   });
 
   it('leaves a genuinely specific short description untouched', () => {
