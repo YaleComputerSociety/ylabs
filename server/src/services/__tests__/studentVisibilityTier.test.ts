@@ -40,6 +40,37 @@ describe('computeResearchEntityStudentVisibility', () => {
     );
   });
 
+  it('suppresses a deceased-PI in-memoriam page even with an otherwise reach-out-ready lab', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'demarque-lab-fixture',
+        name: 'Demarque Lab',
+        slug: 'demarque-lab',
+        kind: 'lab',
+        entityType: 'LAB',
+        shortDescription:
+          'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus, studied stellar evolution and astrophysics.',
+        fullDescription:
+          'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus of Natural Philosophy and Astronomy, studied stellar evolution, asteroseismology, and the modeling of stellar interiors.',
+        sourceUrls: ['https://astronomy.yale.edu/people/pierre-demarque-1932-2025'],
+        leadProfessorNames: ['Pierre Demarque 1932-2025'],
+      },
+      leadMembers: [
+        {
+          role: 'pi',
+          userId: 'pierre-demarque',
+          user: { fname: 'Pierre', lname: 'Demarque 1932-2025' },
+        },
+      ],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.computedTier).toBe('suppressed');
+    expect(result.reasons).toContain('deceased_lead_memorial');
+  });
+
   it('does not let a student-ready override bypass the public description invariant', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {

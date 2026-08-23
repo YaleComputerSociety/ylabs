@@ -10,6 +10,7 @@ import { buildResearchEntityQualitySummary } from './researchEntityQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk } from './leadProfileIdentity';
+import { isDeceasedMemorialResearchHome } from './deceasedMemorialResearchHome';
 
 export const STUDENT_VISIBILITY_VERSION = 'student-visibility-v1';
 
@@ -344,8 +345,10 @@ export function computeResearchEntityStudentVisibility({
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
+  const deceasedLeadMemorial = isDeceasedMemorialResearchHome(entity);
 
   if (entity.activeAtYaleCache === false) reasons.push('inactive_at_yale');
+  if (deceasedLeadMemorial) reasons.push('deceased_lead_memorial');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
     textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
@@ -381,6 +384,7 @@ export function computeResearchEntityStudentVisibility({
     genericDirectoryShell ||
     profileBiographyShell ||
     nonOwnerGrantShell ||
+    deceasedLeadMemorial ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';

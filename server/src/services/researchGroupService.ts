@@ -75,6 +75,7 @@ import {
 } from '../scripts/profileImageQualityAuditCore';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import { isDeceasedMemorialResearchHome } from './deceasedMemorialResearchHome';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -640,8 +641,12 @@ const isPublicVisibilityScope = (
 // an entity that fails this name-agnostic invariant necessarily also fails the
 // detail path's stricter (roster-name-aware) invariant. Dropping it can never
 // hide a card the detail page would actually serve.
+// A deceased-PI in-memoriam page materialized as a live reach-out lab (#982)
+// must never be surfaced to students: the detail resolver applies the same
+// guard, so excluding it here keeps browse and detail as one source of truth.
 const servesPublicResearchDetail = (entity: Record<string, any>): boolean =>
-  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass;
+  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
+  !isDeceasedMemorialResearchHome(entity);
 
 const withServablePublicResearchEntities = <T extends Record<string, any>>(
   entities: T[],
@@ -2769,6 +2774,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   }).lean();
   if (!group) return null;
+  if (isDeceasedMemorialResearchHome(group as Record<string, any>)) return null;
 
   const ROLE_PRIORITY: Record<string, number> = {
     pi: 0,
