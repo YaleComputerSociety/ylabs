@@ -91,6 +91,27 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('redacts a real contact email out of a detail-page description instead of storing it raw (#773)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Fixture Tax Office Research Grant</h1>
+            <p>The grant supports senior essays and independent study. If you are an international student, please contact jordan.taylor@yale.edu in the International Tax Office.</p>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-contact`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.description ?? '').not.toContain('jordan.taylor@yale.edu');
+    expect(candidate.description ?? '').not.toMatch(/\[email redacted\]/i);
+    expect(candidate.description).toMatch(/supports senior essays and independent study/);
+  });
+
   it('does not dump an FAQ + eligibility-form detail page as the description (#669)', () => {
     const candidates = parseFellowshipCatalogPage(
       `
@@ -175,6 +196,29 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     expect(candidate.summary ?? '').not.toMatch(/\.red\s*\{/);
     expect(candidate.summary ?? '').not.toMatch(/deadlineLabel|markFilled/);
     expect(candidate.summary).toMatch(/Applications reviewed on a rolling basis/);
+  });
+
+  it('redacts a real contact email out of a catalog-row summary instead of storing it raw (#773)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <h3>Summer Fellowships for Yale College Students</h3>
+        <h5>Research*</h5>
+        <ul>
+          <li>
+            <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=773">Fixture Richter Summer Fellowship</a>
+            Send your recommendation letter and funding confirmation to jordan.taylor@yale.edu.
+          </li>
+        </ul>
+      `,
+      fundingPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.summary ?? '').not.toContain('jordan.taylor@yale.edu');
+    expect(candidate.summary ?? '').not.toMatch(/\[email redacted\]/i);
+    expect(candidate.summary).toMatch(/Send your recommendation letter/);
   });
 
   it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
