@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { getResearchEntityBestNextStep, getItemTags, isItemOpen, BrowsableItem } from '../browsable';
+import {
+  getResearchEntityBestNextStep,
+  getItemTags,
+  isItemOpen,
+  BrowsableItem,
+} from '../browsable';
 import { ResearchEntity } from '../researchEntity';
 import { Fellowship } from '../types';
 
