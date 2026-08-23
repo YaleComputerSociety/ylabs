@@ -112,6 +112,7 @@ import {
   buildResearchActivityLinkPayload,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
+  dropCoincidentalTypoOnlyHits,
   dropUncorroboratedPhantomLeads,
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
@@ -914,6 +915,149 @@ describe('searchResearchGroupsViaMeili', () => {
     );
     expect(result.estimatedTotalHits).toBe(0);
     expect(result.degraded).toBe(false);
+  });
+
+  it('drops a lone coincidental single-typo keyword hit for a real zero-coverage query (#1015)', async () => {
+    const historianId = '67d8928150621bcef434a1f7';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: historianId,
+          slug: 'keith-wrightson-research',
+          name: 'Keith Wrightson - Research',
+          kind: 'lab',
+          departments: ['History'],
+          researchAreas: ['British history 1500-1750'],
+          sourceUrls: [],
+          _rankingScoreDetails: {
+            words: { matchingWords: 1, maxMatchingWords: 2, score: 0.5 },
+            proximity: { score: 1 },
+            attribute: { score: 0.37 },
+            exactness: { matchType: 'noExactMatch', score: 0.167 },
+            typo: { typoCount: 1, score: 0.5 },
+          },
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: historianId,
+          slug: 'keith-wrightson-research',
+          name: 'Keith Wrightson - Research',
+          kind: 'lab',
+          departments: ['History'],
+          researchAreas: ['British history 1500-1750'],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('coral reefs', {}, 1, 24);
+
+    expect(result.researchEntities).toEqual([]);
+    expect(result.estimatedTotalHits).toBe(0);
+  });
+
+  it('keeps a partial-coverage hit that still has an exact word match (#1015)', async () => {
+    const realMatchId = '67d8928150621bcef434a1f8';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: realMatchId,
+          slug: 'machine-learning-lab',
+          name: 'Machine Learning Lab',
+          kind: 'lab',
+          departments: ['Computer Science'],
+          researchAreas: [],
+          sourceUrls: [],
+          _rankingScoreDetails: {
+            words: { matchingWords: 1, maxMatchingWords: 2, score: 0.5 },
+            exactness: { matchType: 'exactMatch', score: 1 },
+            typo: { typoCount: 0, score: 1 },
+          },
+        },
+      ],
+      estimatedTotalHits: 1,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: realMatchId,
+          slug: 'machine-learning-lab',
+          name: 'Machine Learning Lab',
+          kind: 'lab',
+          departments: ['Computer Science'],
+          researchAreas: [],
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('machine metabolism', {}, 1, 24);
+
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'machine-learning-lab',
+    ]);
+    expect(result.estimatedTotalHits).toBe(1);
+  });
+
+  describe('dropCoincidentalTypoOnlyHits', () => {
+    const coincidentalTypoHit = {
+      id: 'a',
+      _rankingScoreDetails: {
+        words: { matchingWords: 1, maxMatchingWords: 2 },
+        exactness: { matchType: 'noExactMatch' },
+        typo: { typoCount: 1 },
+      },
+    };
+
+    it('drops a partial-coverage, no-exact-match, typo-driven keyword hit', () => {
+      const { hits, dropped } = dropCoincidentalTypoOnlyHits([coincidentalTypoHit]);
+      expect(hits).toEqual([]);
+      expect(dropped).toBe(1);
+    });
+
+    it('keeps a hit that matched every query word', () => {
+      const fullCoverage = {
+        id: 'b',
+        _rankingScoreDetails: {
+          words: { matchingWords: 2, maxMatchingWords: 2 },
+          exactness: { matchType: 'noExactMatch' },
+          typo: { typoCount: 1 },
+        },
+      };
+      const { hits, dropped } = dropCoincidentalTypoOnlyHits([fullCoverage]);
+      expect(hits).toEqual([fullCoverage]);
+      expect(dropped).toBe(0);
+    });
+
+    it('keeps a hit with a genuine exact match despite partial coverage', () => {
+      const exactMatch = {
+        id: 'c',
+        _rankingScoreDetails: {
+          words: { matchingWords: 1, maxMatchingWords: 2 },
+          exactness: { matchType: 'exactMatch' },
+          typo: { typoCount: 0 },
+        },
+      };
+      const { hits, dropped } = dropCoincidentalTypoOnlyHits([exactMatch]);
+      expect(hits).toEqual([exactMatch]);
+      expect(dropped).toBe(0);
+    });
+
+    it('keeps a purely semantic hit carrying only vectorSort details', () => {
+      const semanticOnly = {
+        id: 'd',
+        _rankingScoreDetails: { vectorSort: { similarity: 0.18 } },
+      };
+      const { hits, dropped } = dropCoincidentalTypoOnlyHits([semanticOnly]);
+      expect(hits).toEqual([semanticOnly]);
+      expect(dropped).toBe(0);
+    });
   });
 
   it('normalizes non-Latin-script input to an empty ASCII query while preserving the raw text (#958)', () => {
