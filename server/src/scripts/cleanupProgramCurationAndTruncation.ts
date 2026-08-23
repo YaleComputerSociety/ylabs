@@ -51,8 +51,11 @@ type Verdict = 'curation-rejected' | 'email-token-stripped' | 'truncation-repair
 
 const endsOnCompleteSentence = (text: string): boolean => /[.!?]["')\]]?$/.test(text.trim());
 
+const hasContactToRedact = (before: string): boolean =>
+  /\[(?:email|phone) redacted\]/i.test(before) || redactDirectContactInfo(before) !== before;
+
 const deriveDescription = (before: string): { after: string; verdict: Verdict } => {
-  const curation = isCurationRationaleText(sanitizeCatalogDescription(before));
+  const curation = isCurationRationaleText(before);
   let after = sanitizeCatalogDescription(redactDirectContactInfo(before));
   const wasHardCapped =
     before.length === LEGACY_TRUNCATION_CAP && after.length > 0 && !endsOnCompleteSentence(after);
@@ -61,7 +64,7 @@ const deriveDescription = (before: string): { after: string; verdict: Verdict } 
     ? 'curation-rejected'
     : wasHardCapped
       ? 'truncation-repaired'
-      : /redacted/i.test(before)
+      : hasContactToRedact(before)
         ? 'email-token-stripped'
         : 'chrome-stripped';
   return { after, verdict };
