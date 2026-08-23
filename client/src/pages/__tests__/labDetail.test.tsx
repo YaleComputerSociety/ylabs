@@ -278,6 +278,27 @@ describe('LabDetail page', () => {
     expect(within(healthyArticle as HTMLElement).queryByText('may be unavailable')).toBeNull();
   });
 
+  it('gates the primary Visit official website CTA on a dead source link and falls back to the Yale Directory (#934)', async () => {
+    const DEAD_PRIMARY_SITE = 'https://deadlab.example.test/lab';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: DEAD_PRIMARY_SITE,
+        sourceUrls: [DEAD_PRIMARY_SITE],
+        sourceLinkHealth: [{ url: DEAD_PRIMARY_SITE, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 }],
+      },
+      members: [],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('link', { name: 'Visit official website' })).toBeNull();
+    expect(screen.getByText(/does not have a direct link for this research home/)).toBeTruthy();
+    const directoryLink = screen.getByRole('link', { name: 'Search the Yale Directory' });
+    expect(directoryLink.getAttribute('href')).toBe('https://directory.yale.edu/');
+  });
+
   it('emits the server-owned category for a matching qualified route without its URL', async () => {
     mockedAxios.post.mockResolvedValue({ status: 202 });
     renderLabDetail({
