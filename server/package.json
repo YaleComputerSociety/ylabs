@@ -95,6 +95,7 @@
     "research-homes:backfill-website-urls": "tsx src/scripts/backfillResearchEntityWebsiteUrls.ts",
     "research-homes:backfill-name-dashes": "tsx src/scripts/backfillResearchEntityNameDashes.ts",
     "research-entity:backfill-person-name-casing": "tsx src/scripts/backfillPersonNameCasing.ts",
+    "research-homes:backfill-name-runons": "tsx src/scripts/backfillResearchEntityNameRunons.ts",
     "research-homes:backfill-descriptions": "tsx src/scripts/backfillResearchDescriptions.ts",
     "research-homes:backfill-browse-rank": "tsx src/scripts/backfillBrowseRank.ts",
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
