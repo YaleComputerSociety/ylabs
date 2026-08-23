@@ -53,6 +53,26 @@ describe('getItemTags fellowship audience', () => {
       getItemTags(fellowshipItem({ undergraduateOnly: null }), neutralColor).map((t) => t.label),
     ).not.toContain('Graduate');
   });
+
+  it('collapses an entry-mode chip already implied by the student-facing category', () => {
+    const labels = getItemTags(
+      fellowshipItem({
+        studentFacingCategory: 'Faculty matching program',
+        entryMode: 'DIRECT_FACULTY_MATCHING',
+      }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels).toContain('Faculty matching program');
+    expect(labels).not.toContain('Faculty matching');
+  });
+
+  it('drops exact duplicate labels across facets', () => {
+    const labels = getItemTags(
+      fellowshipItem({ studentFacingCategory: 'Research', purpose: ['Research'] }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels.filter((label) => label === 'Research')).toHaveLength(1);
+  });
 });
 
 describe('isItemOpen for research entities', () => {

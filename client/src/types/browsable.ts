@@ -19,6 +19,7 @@ import { entryModeLabel, programKindLabel } from '../utils/programJourney';
 
 export const DEPT_CAP = 3;
 export const TAG_CAP = 3;
+export const FELLOWSHIP_TAG_CAP = 2;
 export const DESCRIPTION_CLAMP_CLASS = 'line-clamp-3';
 
 export function getOrderedDepartments(
@@ -116,6 +117,23 @@ interface TagInfo {
   text: string;
 }
 
+function dedupeTags(tags: TagInfo[]): TagInfo[] {
+  const normalize = (label: string) => label.trim().toLowerCase();
+  const kept: TagInfo[] = [];
+  for (const tag of tags) {
+    const norm = normalize(tag.label);
+    if (!norm) continue;
+    if (kept.some((k) => normalize(k.label) === norm)) continue;
+    const impliedByMoreSpecific = tags.some((other) => {
+      const otherNorm = normalize(other.label);
+      return otherNorm.length > norm.length && otherNorm.includes(norm);
+    });
+    if (impliedByMoreSpecific) continue;
+    kept.push(tag);
+  }
+  return kept;
+}
+
 export function getItemTags(
   item: BrowsableItem,
   getColor: (area: string) => { bg: string; text: string },
@@ -129,7 +147,7 @@ export function getItemTags(
     const areas = item.data.researchAreas || [];
     return areas.map((a) => ({ label: a, ...getColor(a) }));
   }
-  return [
+  return dedupeTags([
     ...(item.data.undergraduateOnly === false
       ? [
           {
@@ -167,7 +185,7 @@ export function getItemTags(
       bg: 'bg-purple-50',
       text: 'text-purple-700',
     })),
-  ];
+  ]);
 }
 
 export function getItemSubtitle(item: BrowsableItem): string {
