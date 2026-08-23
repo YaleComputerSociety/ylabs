@@ -351,8 +351,11 @@ function yaleEmailFromElement(
 
 /**
  * Legacy Drupal Views rows used by interdisciplinary programs such as ER&M
- * and WGSS. The email field is sometimes written by an inline script with
- * numeric HTML entities; decode the local markup rather than executing it.
+ * and WGSS, and by department people-grids such as MBB whose degree-suffixed
+ * name links point at medicine.yale.edu profiles. The email field is sometimes
+ * written by an inline script with numeric HTML entities (decode the local
+ * markup rather than executing it) and sometimes exposed as a plain
+ * `.views-field-mail` mailto; read whichever the row provides.
  */
 export const viewsRowPersonExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
@@ -375,7 +378,9 @@ export const viewsRowPersonExtractor: FacultyExtractor = (html, ctx) => {
           .first()
           .text(),
       ) || undefined;
-    const email = yaleEmailFromElement($, row.find('.views-field-field-email').first());
+    const email =
+      yaleEmailFromElement($, row.find('.views-field-field-email').first()) ||
+      yaleEmailFromElement($, row.find('.views-field-mail').first());
     const imageHref = row.find('.views-field-picture img').first().attr('src') || '';
     const imageUrl = imageHref ? absolutize(imageHref, ctx.pageUrl) : undefined;
 
@@ -717,6 +722,46 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: mcdbExtractor,
     emitPersonalResearchEntities: false,
     officialProfileOnly: true,
+  },
+  {
+    deptKey: 'mbb',
+    deptName: 'Molecular Biophysics & Biochemistry',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://mbb.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'black-studies',
+    deptName: 'Black Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://blackstudies.yale.edu/people',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'classics',
+    deptName: 'Classics',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://classics.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'nelc',
+    deptName: 'Near Eastern Languages & Civilizations',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://nelc.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
+  },
+  {
+    deptKey: 'german',
+    deptName: 'Germanic Languages & Literatures',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: 'https://german.yale.edu/people/faculty',
+    paginated: false,
+    extractor: viewsRowPersonExtractor,
   },
 ];
 

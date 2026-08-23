@@ -274,6 +274,33 @@ const ERM_VIEWS_ROW_HTML = `
 </body></html>
 `;
 
+const MBB_VIEWS_ROW_HTML = `
+<html><body>
+  <div class="views-row">
+    <div class="views-field views-field-picture">
+      <div class="field-content picture">
+        <a href="https://medicine.yale.edu/profile/avery-sloan-fixture/">
+          <img src="https://mbb.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/sloan-fixture.jpg" alt="Avery Sloan's picture" />
+        </a>
+      </div>
+    </div>
+    <div class="views-field views-field-name">
+      <h4 class="field-content name">
+        <a href="https://medicine.yale.edu/profile/avery-sloan-fixture/" class="username">Avery Sloan, MD, PhD</a>
+      </h4>
+    </div>
+    <div class="views-field views-field-field-title">
+      <div class="field-content position">Professor of Molecular Biophysics and Biochemistry</div>
+    </div>
+    <div class="views-field views-field-mail">
+      <span class="field-content">
+        <a href="mailto:avery.sloan@yale.edu">avery.sloan@yale.edu</a>
+      </span>
+    </div>
+  </div>
+</body></html>
+`;
+
 const MACMILLAN_PERSON_HTML = `
 <html><body>
   <article class="node-teaser node-teaser--person node-teaser--image-size-sm">
@@ -415,6 +442,10 @@ describe('normalizeName', () => {
   it('strips trailing Ph.D. credentials', () => {
     expect(normalizeName('Riley Roster, Ph.D.')).toBe('Riley Roster');
     expect(normalizeName('Jane Doe, M.D.')).toBe('Jane Doe');
+  });
+  it('strips stacked trailing credentials', () => {
+    expect(normalizeName('Avery Sloan, MD, PhD')).toBe('Avery Sloan');
+    expect(normalizeName('Riley Roster, M.D., Ph.D., M.P.H.')).toBe('Riley Roster');
   });
   it('strips leading honorifics', () => {
     expect(normalizeName('Prof. Foo Bar')).toBe('Foo Bar');
@@ -762,6 +793,23 @@ describe('psychExtractor', () => {
 });
 
 describe('viewsRowPersonExtractor', () => {
+  it('falls back to a plain .views-field-mail mailto for MBB-style rows linking medicine.yale.edu profiles', () => {
+    const out = viewsRowPersonExtractor(MBB_VIEWS_ROW_HTML, {
+      pageUrl: 'https://mbb.yale.edu/people/faculty',
+    });
+
+    expect(out).toEqual([
+      {
+        name: 'Avery Sloan, MD, PhD',
+        profileUrl: 'https://medicine.yale.edu/profile/avery-sloan-fixture/',
+        title: 'Professor of Molecular Biophysics and Biochemistry',
+        email: 'avery.sloan@yale.edu',
+        imageUrl:
+          'https://mbb.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/sloan-fixture.jpg',
+      },
+    ]);
+  });
+
   it('extracts old Drupal views-row faculty rows with obfuscated Yale email addresses', () => {
     const out = viewsRowPersonExtractor(ERM_VIEWS_ROW_HTML, {
       pageUrl: 'https://erm.yale.edu/people/faculty',
