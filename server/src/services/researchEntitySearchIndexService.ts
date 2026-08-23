@@ -183,6 +183,24 @@ const STUDENT_TOPIC_ALIASES: Record<string, string[]> = {
   psychology: ['psych', 'psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
 };
 
+const AMBIGUOUS_ABBREVIATION_TRIGGERS = new Set(['ai', 'ml', 'cv']);
+
+const curatedAliasFields = (doc: any): unknown[] => [
+  doc?.departments,
+  doc?.researchAreas,
+  doc?.keywords,
+  doc?.kind,
+  doc?.entityType,
+];
+
+const freeTextAliasFields = (doc: any): unknown[] => [
+  doc?.name,
+  doc?.displayName,
+  doc?.summary,
+  doc?.shortDescription,
+  doc?.fullDescription,
+];
+
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'pi',
   'co-pi',
@@ -268,23 +286,17 @@ const addUniqueSearchTerm = (terms: string[], seen: Set<string>, term: string) =
 };
 
 export function buildStudentSearchTerms(doc: any): string[] {
-  const haystack = normalizedAliasHaystack([
-    doc?.name,
-    doc?.displayName,
-    doc?.summary,
-    doc?.shortDescription,
-    doc?.fullDescription,
-    doc?.departments,
-    doc?.researchAreas,
-    doc?.keywords,
-    doc?.kind,
-    doc?.entityType,
+  const curatedHaystack = normalizedAliasHaystack(curatedAliasFields(doc));
+  const fullHaystack = normalizedAliasHaystack([
+    ...freeTextAliasFields(doc),
+    ...curatedAliasFields(doc),
   ]);
-  if (!haystack) return [];
+  if (!fullHaystack) return [];
 
   const terms: string[] = [];
   const seen = new Set<string>();
   for (const [trigger, aliases] of Object.entries(STUDENT_TOPIC_ALIASES)) {
+    const haystack = AMBIGUOUS_ABBREVIATION_TRIGGERS.has(trigger) ? curatedHaystack : fullHaystack;
     const triggerPattern = new RegExp(`(^|\\s)${trigger.replace(/\s+/g, '\\s+')}(\\s|$)`, 'i');
     if (!triggerPattern.test(haystack)) continue;
     for (const alias of aliases) {

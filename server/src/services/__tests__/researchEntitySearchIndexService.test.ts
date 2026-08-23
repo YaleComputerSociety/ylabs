@@ -94,6 +94,31 @@ describe('researchEntitySearchIndexService', () => {
     expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
   });
 
+  it('does not inject the computer-vision cluster from a free-text "cv" abbreviation (#899)', () => {
+    const terms = buildStudentSearchTerms({
+      name: 'Neuroimmunology Lab',
+      fullDescription: 'Please email a cv and cover letter to the lab director.',
+      researchAreas: ['Autoimmunity', 'T cell biology'],
+      departments: ['Neurology'],
+    });
+
+    expect(terms).not.toContain('cv');
+    expect(terms).not.toContain('computer vision');
+    expect(terms).not.toContain('computational vision');
+  });
+
+  it('still tags computer-vision labs whose curated research areas contain the abbreviation (#899)', () => {
+    const terms = buildStudentSearchTerms({
+      name: 'Vision Systems Lab',
+      fullDescription: 'Applicants should email a cv.',
+      researchAreas: ['Computer Vision'],
+    });
+
+    expect(terms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'computational vision']),
+    );
+  });
+
   it('surfaces computational-vision labs under the "computer vision" bigram query (#787)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-computational-vision',
