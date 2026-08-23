@@ -176,11 +176,13 @@ export const DashboardMetric = ({
   value,
   context,
   tone = 'blue',
+  tooltip,
 }: {
   title: string;
   value: number | string;
   context: string;
   tone?: 'blue' | 'green' | 'amber' | 'red';
+  tooltip?: string;
 }) => {
   const toneClass = {
     blue: 'border-blue-200 bg-[var(--yr-blue-soft)] text-blue-800',
@@ -191,7 +193,18 @@ export const DashboardMetric = ({
 
   return (
     <div className={`rounded-lg border p-4 ${toneClass}`}>
-      <h3 className="text-sm font-semibold">{title}</h3>
+      <h3 className="flex items-start justify-between gap-2 text-sm font-semibold">
+        <span>{title}</span>
+        {tooltip && (
+          <span
+            aria-hidden="true"
+            title={tooltip}
+            className="mt-0.5 flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-current text-[10px] font-semibold leading-none opacity-70"
+          >
+            i
+          </span>
+        )}
+      </h3>
       <p className="mt-2 text-3xl font-bold text-gray-950">{value}</p>
       <p className="mt-2 text-sm leading-5 opacity-85">{context}</p>
     </div>

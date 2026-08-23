@@ -584,9 +584,10 @@ const Analytics = () => {
               tone={searchSuccessRate !== null && searchSuccessRate < 0.75 ? 'amber' : 'green'}
             />
             <DashboardMetric
-              title="Student action funnel"
+              title="Official next-step rate"
               value={formatPercent(funnel?.overallConversionRate)}
-              context="Share of logged-in visitors using a currently qualified route."
+              context={`Share of logged-in students who reached an official next step (application, open position, or reviewed route) in ${selectedRangeLabel}.`}
+              tooltip="Distinct students who reached an official next step, divided by distinct logged-in students, for the selected range."
               tone="blue"
             />
             <DashboardMetric
@@ -605,27 +606,31 @@ const Analytics = () => {
 
           <div className="grid grid-cols-1 gap-4 border-t border-[var(--yr-line)] p-5 sm:grid-cols-2 lg:grid-cols-4">
             <DashboardMetric
-              title="Source inspections"
+              title="Source reviewers"
               value={formatNumber(journeyMetrics.sourceInspections)}
-              context="Profile, publication, website, ORCID, and evidence review. Never conversion."
+              context={`Students who opened a profile, publication, website, ORCID, or evidence record in ${selectedRangeLabel}.`}
+              tooltip="Distinct students who opened at least one source detail (profile, publication, website, ORCID, or evidence). Research reads, not applications."
               tone="blue"
             />
             <DashboardMetric
-              title="Official-route attempts"
+              title="Official-route reach"
               value={formatNumber(journeyMetrics.officialRouteAttempts)}
-              context="Open-position, official-application, and reviewed-route clicks re-qualified by the server. Excludes qualified-participation."
+              context={`Students who clicked an application, open-position, or reviewed-route link in ${selectedRangeLabel}.`}
+              tooltip="Distinct students who clicked at least one official-route link: application, open position, or reviewed route."
               tone="blue"
             />
             <DashboardMetric
               title="Application opens"
               value={formatNumber(journeyMetrics.applicationOpens)}
-              context="Qualified open-position and official-application routes only."
+              context={`Students who opened an application or open-position link in ${selectedRangeLabel}.`}
+              tooltip="Distinct students who opened an application or open-position link. A subset of official-route reach."
               tone="green"
             />
             <DashboardMetric
               title="Confirmed outcomes"
               value={formatNumber(journeyMetrics.confirmedOutcomes)}
-              context="Self-reported outcomes remain separate from route attempts."
+              context={`Students who self-reported an outcome (such as contacted or accepted) in ${selectedRangeLabel}.`}
+              tooltip="Distinct students who reported an outcome themselves. Tracked separately from link clicks, so not a subset of the counts above."
               tone="green"
             />
           </div>
@@ -634,12 +639,12 @@ const Analytics = () => {
             <h2 className="text-lg font-semibold text-gray-900">Decision Readout</h2>
             <div className="mt-3 space-y-3 text-sm leading-6 text-gray-600">
               <p>
-                Start with search success and funnel movement: they show whether discovery intent
-                becomes visible next-step behavior.
+                Start with search success and the official next-step rate: they show whether
+                discovery intent becomes visible next-step behavior.
               </p>
               <p>Treat low-result queries and action cards as the work queue, not just warnings.</p>
               <p>
-                See the full funnel breakdown and zero- or low-result queries in{' '}
+                See the full student action counts and zero- or low-result queries in{' '}
                 <a
                   href="#high-impact-diagnostics"
                   className="font-medium text-blue-700 underline-offset-2 hover:underline"

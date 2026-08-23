@@ -299,7 +299,7 @@ describe('Analytics page', () => {
     expect(screen.getByText(/Are students finding credible research next steps/)).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Decision Readout' })).toBeTruthy();
     expect(screen.getByText('Search success')).toBeTruthy();
-    expect(screen.getByText('Student action funnel')).toBeTruthy();
+    expect(screen.getAllByText('Official next-step rate').length).toBeGreaterThan(0);
     expect(screen.getByText('Items to review')).toBeTruthy();
     expect(screen.getByText('Supporting Detail')).toBeTruthy();
     const detailNav = screen.getByRole('navigation', { name: 'Analytics detail sections' });
