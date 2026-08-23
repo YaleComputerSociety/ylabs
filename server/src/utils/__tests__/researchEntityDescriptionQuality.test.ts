@@ -998,4 +998,48 @@ describe('fullDescriptionQuality', () => {
     expect(fullDescriptionQuality(fullDescription).isUseful).toBe(true);
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
+
+  it('rejects card copy that is cut off mid-word with no terminal punctuation', () => {
+    const fullDescription =
+      'Designs and analyzes distributed algorithms for networked systems, studying protocol efficiency, privacy guarantees, and the computational power of theoretical and algorithmic models.';
+    const shortDescription =
+      'Designs and analyzes distributed algorithms for networked systems, studying protocol efficiency, privacy guarantees, and computational power using theoretical and algorithmi';
+
+    const quality = shortDescriptionQuality(shortDescription, fullDescription);
+    expect(quality.flags).toContain('incomplete-sentence');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects card copy that dangles mid-sentence with no terminal punctuation', () => {
+    const fullDescription =
+      'Investigates chronic pulmonary diseases including fibrosis, emphysema, and asthma, developing new approaches to diagnosis and treatment.';
+    const shortDescription =
+      'Investigates chronic pulmonary diseases including fibrosis, emphysema, and asthma. His';
+
+    const quality = shortDescriptionQuality(shortDescription, fullDescription);
+    expect(quality.flags).toContain('incomplete-sentence');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('accepts the same card copy once it ends in terminal punctuation', () => {
+    const fullDescription =
+      'Investigates chronic pulmonary diseases including fibrosis, emphysema, and asthma, developing new approaches to diagnosis and treatment.';
+    const shortDescription =
+      'Investigates chronic pulmonary diseases including fibrosis, emphysema, and asthma.';
+
+    const quality = shortDescriptionQuality(shortDescription, fullDescription);
+    expect(quality.flags).not.toContain('incomplete-sentence');
+    expect(quality.isUseful).toBe(true);
+  });
+
+  it('does not flag a complete phrase that ends in a balanced parenthetical', () => {
+    const fullDescription =
+      'Studies the epidemiology of chronic obstructive pulmonary disease and the environmental and behavioral factors that drive it.';
+    const shortDescription =
+      'Studies the epidemiology of chronic obstructive pulmonary disease and its leading risk factors (smoking, air pollution)';
+
+    const quality = shortDescriptionQuality(shortDescription, fullDescription);
+    expect(quality.flags).not.toContain('incomplete-sentence');
+    expect(quality.isUseful).toBe(true);
+  });
 });
