@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import type { MouseEvent } from 'react';
+import { memo, type MouseEvent } from 'react';
 
 import {
   buildWayInBadges,
@@ -438,4 +438,4 @@ const ResearchHomeCard = ({
   );
 };
 
-export default ResearchHomeCard;
+export default memo(ResearchHomeCard);
