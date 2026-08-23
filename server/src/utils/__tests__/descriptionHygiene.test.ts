@@ -151,6 +151,31 @@ describe('descriptionHygiene', () => {
   });
 });
 
+const SYNTHETIC_DONOR_PROVENANCE_PROSE = [
+  'The Class of ’60 endowment was established by graduates who wanted to honor their shared undergraduate years.',
+  'Members of the Class of ’86 later expanded the fund to support summer study and travel abroad.',
+  'Sophomores and juniors in the residential college are eligible to apply for these awards each spring.',
+  'The Class of ’92 reunion gift broadened eligibility further to include independent research projects.',
+].join(' ');
+
+const SYNTHETIC_CLASS_YEAR_ROSTER = [
+  '2025 Fellows: Casey Parker ’28, Jordan Taylor ’27, Dana Robin ’26, Rowan Sage ’25, Sky Vale ’24',
+].join(' ');
+
+describe('descriptionHygiene class-year roster arm sentence-gating (#925)', () => {
+  it('keeps multi-sentence donor-provenance prose that merely mentions class years', () => {
+    expect(isRosterShapedText(SYNTHETIC_DONOR_PROVENANCE_PROSE)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_DONOR_PROVENANCE_PROSE)).toBe(
+      SYNTHETIC_DONOR_PROVENANCE_PROSE,
+    );
+  });
+
+  it('still rejects a sentence-sparse class-year roster with no mentor markers', () => {
+    expect(isRosterShapedText(SYNTHETIC_CLASS_YEAR_ROSTER)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_CLASS_YEAR_ROSTER)).toBe('');
+  });
+});
+
 describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
   it('drops a "click here" dead-anchor sentence but keeps the surrounding prose', () => {
     const text =
