@@ -352,6 +352,7 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: ['Chemistry'],
           researchAreas: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -399,6 +400,7 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: ['Chemistry'],
           researchAreas: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -449,6 +451,7 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: ['Chemistry'],
           researchAreas: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -566,6 +569,7 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: [],
           researchAreas: ['Machine Learning'],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -748,21 +752,21 @@ describe('searchResearchGroupsViaMeili', () => {
           _id: '67d8928150621bcef434a1d5',
           slug: 'ailong-lab',
           name: 'Ailong Lab',
-          shortDescription: 'Studies airway inflammation.',
           departments: [],
           researchAreas: [],
           keywords: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
         {
           _id: '67d8928150621bcef434a1d6',
           slug: 'actual-ai-lab',
           name: 'Actual AI Lab',
-          shortDescription: 'Builds artificial intelligence systems.',
           departments: [],
           researchAreas: ['Machine Learning'],
           keywords: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -786,6 +790,7 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: ['Chemistry'],
           researchAreas: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -880,6 +885,7 @@ describe('searchResearchGroupsViaMeili', () => {
           departments: ['Chemistry'],
           researchAreas: [],
           sourceUrls: [],
+          ...validPublicDescriptions,
         },
       ]),
     );
@@ -898,6 +904,55 @@ describe('searchResearchGroupsViaMeili', () => {
         name: 'Current Lab',
       }),
     ]);
+  });
+
+  it('drops a stale student_ready hit whose live public-description invariant fails so browse never serves a card the detail page would 404', async () => {
+    const deadCardId = '67d8928150621bcef434a1d5';
+    const liveCardId = '67d8928150621bcef434a1d6';
+    const hits = [
+      { id: deadCardId, slug: 'yse-climate-change-communication', name: 'Dead Card' },
+      { id: liveCardId, slug: 'live-lab', name: 'Live Lab' },
+    ];
+    mocks.search.mockResolvedValue({ hits, estimatedTotalHits: 2 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: deadCardId,
+          slug: 'yse-climate-change-communication',
+          name: 'Yale Program on Climate Change Communication',
+          entityType: 'PROGRAM',
+          kind: 'program',
+          departments: [],
+          researchAreas: [],
+          sourceUrls: [],
+          studentVisibilityTier: 'student_ready',
+          fullDescription:
+            'Anthony Leiserowitz, PhD is the JoshAni-TomKat Professor of Climate Communication and Director of the program.',
+          shortDescription: '',
+        },
+        {
+          _id: liveCardId,
+          slug: 'live-lab',
+          name: 'Live Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+          studentVisibilityTier: 'student_ready',
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const publicResult = await searchResearchGroupsViaMeili('', {}, 1, 24);
+    expect(publicResult.researchEntities.map((entity: any) => entity.slug)).toEqual(['live-lab']);
+
+    const operatorResult = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
+      includeNonPublic: true,
+    });
+    expect(operatorResult.researchEntities.map((entity: any) => entity.slug).sort()).toEqual(
+      ['live-lab', 'yse-climate-change-communication'].sort(),
+    );
   });
 
   it('caps search page before computing Meili offsets', async () => {
@@ -2183,6 +2238,7 @@ describe('listResearchEntityRelationshipPayload', () => {
           entityType: 'INSTITUTE',
           studentVisibilityTier: 'student_ready',
           archived: false,
+          ...validPublicDescriptions,
         },
         {
           _id: reviewInstituteId,
@@ -2262,7 +2318,8 @@ describe('listResearchEntityRelationshipPayload', () => {
         name: `Entity ${index}`,
         kind: 'center',
         departments: ['Physics'],
-        shortDescription: `Safe summary ${index} hidden${index}@example.edu`,
+        ...validPublicDescriptions,
+        shortDescription: `Safe summary ${index} hidden${index}@example.edu describing the group's ongoing research program in depth.`,
         studentVisibilityTier: 'student_ready',
         privateNotes: 'operator only',
         sourceUrls: ['https://example.edu/private'],
@@ -2277,7 +2334,7 @@ describe('listResearchEntityRelationshipPayload', () => {
     const result = await listResearchEntityRelationshipPayload(currentEntityId);
 
     expect(select).toHaveBeenCalledWith(
-      '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier',
+      '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl',
     );
     expect(result.relatedResearchEntities).toHaveLength(50);
     expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 50, truncated: true });
@@ -2325,6 +2382,7 @@ describe('listResearchEntityRelationshipPayload', () => {
           departments: ['Physics'],
           studentVisibilityTier: 'student_ready',
           archived: false,
+          ...validPublicDescriptions,
         },
       ]),
     );

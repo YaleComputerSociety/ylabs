@@ -596,6 +596,35 @@ const mongoVisibilityFilter = (
   return includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
 };
 
+const isPublicVisibilityScope = (
+  filters: ResearchGroupFilterInput,
+  includeNonPublic?: boolean,
+): boolean => !includeNonPublic && !filters.studentVisibilityTier?.length;
+
+// The stored `studentVisibilityTier` is a materialized snapshot, but the detail
+// resolver (getResearchGroupDetail) recomputes the public-description invariant
+// live and returns null (-> 404) when it fails. A stored `student_ready` tier
+// can therefore go stale relative to that live invariant (e.g. after a hygiene
+// change that empties a person-bio description) and leave a browse card that
+// 404s on click. Enforcing the same live invariant on the public browse
+// hydration path keeps the browse index and the detail serve gate as one source
+// of truth. This is safe to run without the roster-derived lead names the detail
+// path uses: lead-name self-reference stripping only ever removes more text, so
+// an entity that fails this name-agnostic invariant necessarily also fails the
+// detail path's stricter (roster-name-aware) invariant. Dropping it can never
+// hide a card the detail page would actually serve.
+const servesPublicResearchDetail = (entity: Record<string, any>): boolean =>
+  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass;
+
+const withServablePublicResearchEntities = <T extends Record<string, any>>(
+  entities: T[],
+  filters: ResearchGroupFilterInput,
+  includeNonPublic?: boolean,
+): T[] =>
+  isPublicVisibilityScope(filters, includeNonPublic)
+    ? entities.filter(servesPublicResearchDetail)
+    : entities;
+
 const applyVisibilityScopeToFilters = (
   filters: ResearchGroupFilterInput,
   includeNonPublic?: boolean,
@@ -774,9 +803,13 @@ export async function searchResearchGroupsViaMeili(
   const normalizedQuery = normalizeResearchSearchQuery(query);
   const trimmedQuery = normalizedQuery.query;
   if (trimmedQuery === '' && safeOptions.lowQualityFirst) {
-    const candidates = await ResearchEntity.find(
-      mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
-    ).lean();
+    const candidates = withServablePublicResearchEntities(
+      (await ResearchEntity.find(
+        mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
+      ).lean()) as any[],
+      safeFilters,
+      safeOptions.includeNonPublic,
+    );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
     const filteredCandidates = candidatesWithQuality
       .filter((entity) => matchesQualityFilters(entity.qualitySummary, safeOptions.qualityFilters))
@@ -987,14 +1020,17 @@ export async function searchResearchGroupsViaMeili(
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
     .filter((id): id is string => Boolean(id));
-  const visibleEntities =
+  const visibleEntities = withServablePublicResearchEntities(
     hitIds.length > 0
-      ? await ResearchEntity.find({
+      ? ((await ResearchEntity.find({
           _id: { $in: hitIds },
           archived: { $ne: true },
           ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
-        }).lean()
-      : [];
+        }).lean()) as any[])
+      : [],
+    safeFilters,
+    safeOptions.includeNonPublic,
+  );
   const visibleEntitiesById = new Map(
     (visibleEntities as any[]).map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
@@ -1159,8 +1195,10 @@ const searchResearchGroupsViaMongoFallback = async (
   const candidates = await ResearchEntity.find(
     mongoFilterFromResearchFilters(filters, options.includeNonPublic),
   ).lean();
-  const visibleCandidates = (candidates as any[]).filter((entity) =>
-    researchEntityMatchesQuery(entity, trimmedQuery),
+  const visibleCandidates = withServablePublicResearchEntities(
+    (candidates as any[]).filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery)),
+    filters,
+    options.includeNonPublic,
   );
   const facetDistribution = {
     school: facetCounts(visibleCandidates, 'schools'),
@@ -1614,7 +1652,7 @@ const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
 const PUBLIC_RELATED_ENTITY_PROJECTION =
-  '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier';
+  '_id slug name displayName kind entityType departments shortDescription fullDescription studentVisibilityTier descriptionSource sourceUrls website websiteUrl';
 
 export interface PublicRelationshipCollectionMeta {
   returned: number;
@@ -1720,8 +1758,12 @@ export async function listResearchEntityRelationshipPayload(entityId: unknown): 
           .select(PUBLIC_RELATED_ENTITY_PROJECTION)
           .lean()
       : [];
-  const publicRelatedEntities = (relatedEntities as any[]).filter((entity) =>
-    publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
+  const publicRelatedEntities = withServablePublicResearchEntities(
+    (relatedEntities as any[]).filter((entity) =>
+      publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
+    ),
+    {},
+    false,
   );
 
   const publicEntitiesByInternalId = new Map(
