@@ -34,7 +34,10 @@ import { Signal } from '../models/signal';
 import { StudentTracking } from '../models/studentTracking';
 import { StudentOutreach } from '../models/studentOutreach';
 import { getMeiliIndex } from '../utils/meiliClient';
-import { isResearchEntitySearchEmbedderConfigured } from './researchEntitySearchIndexService';
+import {
+  isResearchEntitySearchEmbedderConfigured,
+  RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+} from './researchEntitySearchIndexService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 import {
@@ -899,8 +902,10 @@ export async function searchResearchGroupsViaMeili(
   // query is a windowed estimate over the whole k-NN candidate pool, so it
   // reports (near) the full corpus size for broad topical queries even though
   // only a small set clears `rankingScoreThreshold`. Finite pagination
-  // (`page`/`hitsPerPage`) returns an exhaustive, threshold-aware `totalHits`
-  // instead, capped at the index's `pagination.maxTotalHits`. See #885.
+  // (`page`/`hitsPerPage`) fetches this page's hits and can itself still
+  // report that inflated estimate until the requested depth happens to be
+  // large enough to force an exhaustive scan (see the companion count query
+  // below, which forces that scan on every request). See #885.
   if (searchParams.rankingScoreThreshold !== undefined) {
     searchParams.page = safePage;
     searchParams.hitsPerPage = safePageSize;
@@ -921,6 +926,7 @@ export async function searchResearchGroupsViaMeili(
       facetDistribution?: Record<string, Record<string, number>>;
     };
     degraded: boolean;
+    params: Record<string, any>;
   }> => {
     // Each attempt uses an immutable params object; degrading clones rather than
     // mutating, so already-issued calls keep the params they were sent.
@@ -931,6 +937,7 @@ export async function searchResearchGroupsViaMeili(
         return {
           result: await index.search(trimmedQuery, params),
           degraded,
+          params,
         };
       } catch (error) {
         if (params.hybrid && isMissingMeiliEmbedderError(error)) {
@@ -978,10 +985,12 @@ export async function searchResearchGroupsViaMeili(
     facetDistribution?: Record<string, Record<string, number>>;
   };
   let degraded = false;
+  let finalSearchParams: Record<string, any> = searchParams;
   try {
     const outcome = await searchWithFallbacks();
     searchResult = outcome.result;
     degraded = outcome.degraded;
+    finalSearchParams = outcome.params;
   } catch (error) {
     console.error(
       'ResearchEntity Meilisearch failed; falling back to Mongo search:',
@@ -996,6 +1005,34 @@ export async function searchResearchGroupsViaMeili(
       safeOptions,
     );
   }
+
+  // The per-page totalHits above only becomes exhaustive once Meilisearch has
+  // scanned deep enough to have examined every candidate that could pass
+  // rankingScoreThreshold, so a shallow first page can still report the
+  // pre-threshold estimate over the whole k-NN candidate pool. Run one
+  // companion query deep enough to force the exhaustive, threshold-aware count
+  // regardless of which page was actually requested. See #885.
+  if (finalSearchParams.rankingScoreThreshold !== undefined) {
+    try {
+      const exhaustiveCountResult = await index.search(trimmedQuery, {
+        filter: filterString,
+        hybrid: finalSearchParams.hybrid,
+        rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
+        page: 1,
+        hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+        attributesToRetrieve: ['id'],
+      });
+      if (typeof exhaustiveCountResult?.totalHits === 'number') {
+        searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
+      }
+    } catch (error) {
+      console.error(
+        'Optional exhaustive hybrid total-hits count failed:',
+        sanitizeLogValue(error),
+      );
+    }
+  }
+
   const {
     hits,
     estimatedTotalHits,
