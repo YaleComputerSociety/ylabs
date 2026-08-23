@@ -2,6 +2,7 @@
  * Logo button for unauthenticated users that reloads the page on click.
  */
 import Button from '@mui/material/Button';
+import { navFocusRingSx } from '../utils/focusRing';
 
 const YURAButton = () => {
   const handleReload = () => {
@@ -12,7 +13,7 @@ const YURAButton = () => {
     <Button
       onClick={handleReload}
       disableRipple={true}
-      sx={{ textTransform: 'none', minHeight: '44px' }}
+      sx={{ textTransform: 'none', minHeight: '44px', ...navFocusRingSx }}
     >
       <img
         src="/brand/yale-research-mark.svg"
