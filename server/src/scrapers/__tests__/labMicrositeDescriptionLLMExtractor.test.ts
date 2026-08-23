@@ -508,6 +508,26 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     );
   });
 
+  it('preserves the description when the model returns non-array topics or methods', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The Rivera Lab investigates comparative historical sociology and the formation of early modern states.',
+        shortDescription: 'The Rivera Lab studies comparative historical sociology.',
+        topics: 'sociology, political theory',
+        methods: null,
+      } as unknown as DescriptionExtraction,
+      { entityKey: 'rivera-lab', sourceUrl: 'https://www.rivera-lab.org/' },
+    );
+
+    expect(observations.find((obs) => obs.field === 'fullDescription')?.value).toContain(
+      'Rivera Lab',
+    );
+    expect(observations.find((obs) => obs.field === 'shortDescription')?.value).toBeDefined();
+    expect(observations.find((obs) => obs.field === 'researchAreas')).toBeUndefined();
+    expect(observations.find((obs) => obs.field === 'methods')).toBeUndefined();
+  });
+
   it('drops thin descriptions and rejected hosts', () => {
     expect(
       descriptionExtractionToObservations(
