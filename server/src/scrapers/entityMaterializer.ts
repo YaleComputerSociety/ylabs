@@ -131,6 +131,8 @@ interface MaterializeResult {
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
   skipped?: string;
+  plannedSet?: Record<string, unknown>;
+  plannedUnset?: Record<string, ''>;
 }
 
 const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
@@ -2227,6 +2229,8 @@ export async function materializeEntity(
       conflicts,
       created: !entityDoc,
       resolved,
+      plannedSet: set,
+      plannedUnset: unset,
     };
   }
 
