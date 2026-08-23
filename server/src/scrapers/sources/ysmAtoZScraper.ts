@@ -26,7 +26,11 @@ import {
 } from '../../utils/researchHomeDescriptionSelection';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
-import { isLikelyPersonSpecificYaleEmail, netidFromEmail } from '../utils/scraperHelpers';
+import {
+  isLikelyPersonSpecificYaleEmail,
+  netidFromEmail,
+  normalizeInitialSpacing,
+} from '../utils/scraperHelpers';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const PAGE_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
@@ -390,7 +394,32 @@ export function extractSoleResearchFacultyProfile(
   return profiles.length === 1 ? profiles[0] : null;
 }
 
-function parseLabs(html: string): RawLab[] {
+function labUrlNameParts(url: string): string[] {
+  try {
+    const segment = new URL(url).pathname.match(/\/lab\/([^/]+)/i)?.[1];
+    return segment ? segment.toLowerCase().split('-').filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function recoverLabDisplayName(rawName: string, url: string): string {
+  const spaced = normalizeInitialSpacing(rawName);
+  const glued = spaced.match(/^([A-Za-z])([A-Z][a-z].*)$/);
+  if (!glued) return spaced;
+  const parts = labUrlNameParts(url);
+  if (
+    parts.length >= 2 &&
+    parts[0].length === 1 &&
+    parts[0] === glued[1].toLowerCase() &&
+    glued[2].toLowerCase().startsWith(parts[1])
+  ) {
+    return `${glued[1]}. ${glued[2]}`;
+  }
+  return spaced;
+}
+
+export function parseLabs(html: string): RawLab[] {
   const $ = cheerio.load(html);
   const labs: RawLab[] = [];
 
@@ -413,6 +442,7 @@ function parseLabs(html: string): RawLab[] {
     if (!name || !url) return;
     if (!/^https?:\/\//i.test(url)) return;
 
+    name = recoverLabDisplayName(name, url);
     const slug = slugifyFromUrl(url) || slugifyFromName(name);
     labs.push({ name, url, slug });
   });

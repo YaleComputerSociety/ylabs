@@ -140,6 +140,23 @@ export function normalizeName(name: string | undefined | null): string {
 }
 
 /**
+ * Ensure a single-letter initial that is immediately followed by a period keeps
+ * a space before the next word, so "X.Liu" and "J.R.R. Example" render as
+ * "X. Liu" and "J. R. R. Example". Whitespace runs are collapsed to single
+ * spaces and the result is trimmed. An already-spaced initial ("X. Liu") is left
+ * unchanged, and multi-word names without initials only have their whitespace
+ * normalized.
+ */
+export function normalizeInitialSpacing(name: string | undefined | null): string {
+  if (!name) return '';
+  return String(name)
+    .replace(/\s+/g, ' ')
+    .replace(/\b([A-Za-z])\.(?=[A-Za-z])/g, '$1. ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Best-effort split of a normalized name into { first, last }.
  *
  * Handles single-word names (returns first only), suffixes like "Jr." / "III"
