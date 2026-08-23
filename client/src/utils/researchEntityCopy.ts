@@ -156,6 +156,11 @@ export const stripLeadingPageChrome = (value: string): string => {
   return out;
 };
 
+const LEADING_GREETING =
+  /^Welcome\s+to\s+[^.!?]{0,80}?\b(?:web\s*pages?|websites?|home\s*pages?|homepages?|sites?|pages?)\s*[.!]+\s*/i;
+
+export const stripLeadingGreeting = (value: string): string => value.replace(LEADING_GREETING, '');
+
 const capitalizeSentenceStarts = (value: string): string =>
   value.replace(/(^|[.!?]\s+)([a-z])/g, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
 
@@ -172,6 +177,7 @@ export const neutralizeFirstPersonResearchCopy = (value: string): string =>
       .replace(/\bmy research\b/gi, 'this research')
       .replace(/\bmy lab(?:'|’)?s?\b/gi, 'this research')
       .replace(/\bmy work\b/gi, 'this research')
+      .replace(/\bmy group(?:'|’)?s?\b/gi, 'this research')
       .replace(/\bour lab(?:'|’)?s?\b/gi, 'this research')
       .replace(/\bour research\b/gi, 'this research')
       .replace(/\bour work\b/gi, 'this research')
@@ -192,8 +198,42 @@ export const neutralizeFirstPersonResearchCopy = (value: string): string =>
       .replace(/\bI use\b/g, 'this research uses')
       .replace(/\bI am interested in\b/g, 'this research examines')
       .replace(/\bI have been interested in\b/g, 'this researcher has been interested in')
+      .replace(/\bI['’]ve been interested in\b/g, 'this researcher has been interested in')
+      .replace(/\bI teach and research\b/g, 'this researcher teaches and researches')
+      .replace(/\bI research\b/g, 'this research examines')
+      .replace(/\bI teach\b/g, 'this researcher teaches')
+      .replace(/\bI lead\b/g, 'this researcher leads')
+      .replace(/\bI co-?founded\b/g, 'this researcher co-founded')
+      .replace(/\bI founded\b/g, 'this researcher founded')
+      .replace(/\bI co-?authored\b/g, 'this researcher co-authored')
+      .replace(/\bI authored\b/g, 'this researcher authored')
+      .replace(/\bI direct\b/g, 'this researcher directs')
+      .replace(/\bI directed\b/g, 'this researcher directed')
+      .replace(/\bI mentor\b/g, 'this researcher mentors')
+      .replace(/\bI supervise\b/g, 'this researcher supervises')
+      .replace(/\bI collaborate\b/g, 'this researcher collaborates')
+      .replace(/\bI aim to\b/g, 'this researcher aims to')
+      .replace(/\bI seek to\b/g, 'this researcher seeks to')
+      .replace(/\bI led\b/g, 'this researcher led')
+      .replace(/\bI received\b/g, 'this researcher received')
+      .replace(/\bI earned\b/g, 'this researcher earned')
+      .replace(/\bI completed\b/g, 'this researcher completed')
+      .replace(/\bI joined\b/g, 'this researcher joined')
+      .replace(/\bI served\b/g, 'this researcher served')
+      .replace(/\bI wrote\b/g, 'this researcher wrote')
+      .replace(/\bI edited\b/g, 'this researcher edited')
+      .replace(/\bI developed\b/g, 'this researcher developed')
+      .replace(/\bI created\b/g, 'this researcher created')
+      .replace(/\bI was\b/g, 'this researcher was')
+      .replace(/\bI had\b/g, 'this researcher had')
+      .replace(/\bI will\b/g, 'this researcher will')
+      .replace(/\bI['’]m\b/g, 'this researcher is')
+      .replace(/\bI['’]ve\b/g, 'this researcher has')
+      .replace(/\bI['’]ll\b/g, 'this researcher will')
+      .replace(/\bI['’]d\b/g, 'this researcher would')
       .replace(/\bI have\b/g, 'this researcher has')
-      .replace(/\bI am\b/g, 'this researcher is'),
+      .replace(/\bI am\b/g, 'this researcher is')
+      .replace(/\bmy\b/gi, "this researcher's"),
   );
 
 export const sanitizeResearchEntityCopy = (
@@ -202,7 +242,7 @@ export const sanitizeResearchEntityCopy = (
 ): string =>
   neutralizeFirstPersonResearchCopy(
     sanitizeResearchHomeSelfReferenceCopy(
-      sanitizeFacultyResearchCopy(stripLeadingPageChrome(value), entity),
+      sanitizeFacultyResearchCopy(stripLeadingGreeting(stripLeadingPageChrome(value)), entity),
       entity,
     ),
   );

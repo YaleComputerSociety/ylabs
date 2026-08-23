@@ -13,6 +13,7 @@ import {
   sanitizeFacultyResearchCopy,
   sanitizeResearchHomeSelfReferenceCopy,
   stripLeadingPageChrome,
+  stripLeadingGreeting,
   neutralizeFirstPersonResearchCopy,
   sanitizeResearchEntityCopy,
 } from '../researchEntityCopy';
@@ -306,6 +307,47 @@ describe('neutralizeFirstPersonResearchCopy', () => {
       'Studies systems neuroscience.',
     );
   });
+
+  it('re-voices first-person PI-bio prose served as a lab description (#964)', () => {
+    expect(
+      neutralizeFirstPersonResearchCopy(
+        'I am a physician-scientist with specialized training in immunology. My career is dedicated to integrating immunology with dermatology.',
+      ),
+    ).toBe(
+      "This researcher is a physician-scientist with specialized training in immunology. This researcher's career is dedicated to integrating immunology with dermatology.",
+    );
+    expect(
+      neutralizeFirstPersonResearchCopy(
+        'I founded the field of Gerontological Biostatistics. I lead the Design and Statistics Core. I co-authored a paper on health disparities.',
+      ),
+    ).toBe(
+      'This researcher founded the field of Gerontological Biostatistics. This researcher leads the Design and Statistics Core. This researcher co-authored a paper on health disparities.',
+    );
+    expect(
+      neutralizeFirstPersonResearchCopy(
+        'I teach and research on comparative politics, where I’m also associated with the MacMillan Center. This is where you can find out about my research and my graduate teaching.',
+      ),
+    ).toBe(
+      "This researcher teaches and researches on comparative politics, where this researcher is also associated with the MacMillan Center. This is where you can find out about this research and this researcher's graduate teaching.",
+    );
+  });
+});
+
+describe('stripLeadingGreeting', () => {
+  it('drops a leading page-greeting sentence (#964)', () => {
+    expect(stripLeadingGreeting('Welcome to my web page! Studies neurons.')).toBe(
+      'Studies neurons.',
+    );
+    expect(stripLeadingGreeting('Welcome to the Smith Lab website. Studies cells.')).toBe(
+      'Studies cells.',
+    );
+  });
+
+  it('leaves a greeting that is real research content untouched', () => {
+    expect(stripLeadingGreeting('Welcome to a new era of genomics.')).toBe(
+      'Welcome to a new era of genomics.',
+    );
+  });
 });
 
 describe('sanitizeResearchEntityCopy', () => {
@@ -338,6 +380,12 @@ describe('sanitizeResearchEntityCopy', () => {
     expect(sanitizeResearchEntityCopy('Studies systems neuroscience.', lab)).toBe(
       'Studies systems neuroscience.',
     );
+  });
+
+  it('strips a leading web-page greeting and re-voices the remaining first-person body (#964)', () => {
+    expect(
+      sanitizeResearchEntityCopy('Welcome to my web page! I teach comparative politics.', lab),
+    ).toBe('This researcher teaches comparative politics.');
   });
 });
 
