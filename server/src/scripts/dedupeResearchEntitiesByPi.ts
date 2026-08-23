@@ -32,6 +32,7 @@ import {
 } from './repairArchivedEntityArtifactsCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { deleteFromIndex } from '../services/meiliSyncService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -1673,6 +1674,7 @@ export async function applyResearchEntityDedupeMergeGroup(
       scalarRelink: {},
       arrayRelink: {},
       remainingReferencesBeforeDelete: {},
+      removedFromSearchIndex: 0,
     };
   }
   const now = new Date();
@@ -1800,6 +1802,16 @@ export async function applyResearchEntityDedupeMergeGroup(
       ? await ResearchEntity.deleteMany({ _id: { $in: duplicateIds } })
       : { deletedCount: 0 };
 
+  // Every duplicate leaving the live ResearchEntity set (whether archived just
+  // now, deleted just now, or already archived by a prior dedupe pass) must
+  // never leave a "ghost" doc searchable in Meilisearch. Skip cleanup only
+  // when deleteDuplicates left the duplicates untouched due to remaining refs.
+  const idsToRemoveFromIndex =
+    options.deleteDuplicates && (deleted.deletedCount || 0) === 0 ? [] : group.duplicateEntityIds;
+  await Promise.all(
+    idsToRemoveFromIndex.map((id) => deleteFromIndex('researchEntity', id)),
+  );
+
   return {
     canonicalEntityId: group.canonicalEntityId,
     duplicateEntityIds: group.duplicateEntityIds,
@@ -1812,6 +1824,7 @@ export async function applyResearchEntityDedupeMergeGroup(
     scalarRelink,
     arrayRelink,
     remainingReferencesBeforeDelete,
+    removedFromSearchIndex: idsToRemoveFromIndex.length,
   };
 }
 
