@@ -17,6 +17,7 @@ import {
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
+  stripDeadAnchorCtaSentences,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
 } from '../descriptionHygiene';
@@ -145,6 +146,35 @@ describe('descriptionHygiene', () => {
       'This award honors Robin Sage, a longtime supporter of undergraduate research at the university.';
     expect(isRosterShapedText(blurb)).toBe(false);
     expect(sanitizeCatalogDescription(blurb)).toBe(blurb);
+  });
+});
+
+describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
+  it('drops a "click here" dead-anchor sentence but keeps the surrounding prose', () => {
+    const text =
+      'Applicants may propose research at an approved international site. For a sample list of past locations, click here. Recipients must submit a final report at the end of the summer.';
+    expect(stripDeadAnchorCtaSentences(text)).toBe(
+      'Applicants may propose research at an approved international site. Recipients must submit a final report at the end of the summer.',
+    );
+  });
+
+  it('drops a "click this link" dead-anchor sentence through sanitizeCatalogDescription', () => {
+    const text =
+      'Applicants are expected to present a well-developed proposal for a research project. Click this link for a list of upcoming summer fellowship information sessions. Award recipients will perform research during the summer.';
+    expect(sanitizeCatalogDescription(text)).toBe(
+      'Applicants are expected to present a well-developed proposal for a research project. Award recipients will perform research during the summer.',
+    );
+  });
+
+  it('leaves ordinary prose that never contains a dead anchor unchanged', () => {
+    const prose =
+      'The program supports undergraduate research in the sciences and pairs each student with a faculty mentor for the summer.';
+    expect(stripDeadAnchorCtaSentences(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
+  });
+
+  it('collapses a description that is only dead-anchor CTAs to empty', () => {
+    expect(sanitizeCatalogDescription('Click here. Click this link.')).toBe('');
   });
 });
 

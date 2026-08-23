@@ -39,6 +39,26 @@ export const leadingSectionHeadingPattern = new RegExp(
 export const sourceChromeTextPattern =
   /\b(?:show all breadcrumbs|expand all|homeabout|home academics|calendar|applyprizes|recipient|copyright|privacy|click here|learn more|read more|for more information|more information|apply now|back to top|sign up)\b/i;
 
+export const deadAnchorCtaSentencePattern =
+  /\bclick\s+(?:here|below|(?:on\s+)?(?:this|the|the following)\s+link)\b/i;
+
+/**
+ * Drop whole sentences whose only purpose is an inert click/anchor CTA
+ * ("click here", "click this link") where the scraper kept the visible link
+ * label but dropped the href, leaving a dead instruction with no destination
+ * (#915). Gated to a no-op when no such fragment is present, so clean prose is
+ * returned untouched; a description that is nothing but dead CTAs collapses to
+ * empty. Deliberately narrower than sourceChromeTextPattern so a legitimate
+ * sentence ("Award recipients will perform research...") is never removed.
+ */
+export function stripDeadAnchorCtaSentences(text: string): string {
+  const value = String(text || '');
+  if (!deadAnchorCtaSentencePattern.test(value)) return normalizeHygieneWhitespace(value);
+  const sentences = value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+  const kept = sentences.filter((sentence) => !deadAnchorCtaSentencePattern.test(sentence));
+  return normalizeHygieneWhitespace(kept.join(' '));
+}
+
 export function stripInlineUrls(text: string): string {
   return text
     .replace(/https?:\/\/\S+/gi, ' ')
@@ -379,7 +399,7 @@ export function isResearchAreaEchoDescription(text: string): boolean {
  * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
-  const stripped = stripCatalogChrome(text);
+  const stripped = stripDeadAnchorCtaSentences(stripCatalogChrome(text));
   if (!stripped) return '';
   if (
     isRosterShapedText(stripped) ||
