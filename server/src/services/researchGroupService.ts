@@ -75,6 +75,10 @@ import {
 } from '../scripts/profileImageQualityAuditCore';
 import { sanitizeResearchEntityPublicDescriptionFields } from '../utils/researchEntityDescriptionText';
 import { buildResearchEntityPublicDescriptionRepresentation } from './researchEntityPublicDescription';
+import {
+  researchEntityHasDeceasedLead,
+  stripTrailingPersonNameLifespan,
+} from '../utils/researchEntityDeceasedLead';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -640,8 +644,15 @@ const isPublicVisibilityScope = (
 // an entity that fails this name-agnostic invariant necessarily also fails the
 // detail path's stricter (roster-name-aware) invariant. Dropping it can never
 // hide a card the detail page would actually serve.
+//
+// A confirmed-deceased sole/lead PI is also dropped here (#982): an entity whose
+// only lead is a memorialized/emeritus professor with a birth-death lifespan must
+// not be surfaced as a live "reach out" research opportunity. Detection is
+// name-agnostic (entity name/description signals only) and mirrored in
+// getResearchGroupDetail so browse and detail stay one source of truth.
 const servesPublicResearchDetail = (entity: Record<string, any>): boolean =>
-  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass;
+  buildResearchEntityPublicDescriptionRepresentation({ entity }).invariant.pass &&
+  !researchEntityHasDeceasedLead(entity);
 
 const withServablePublicResearchEntities = <T extends Record<string, any>>(
   entities: T[],
@@ -1778,16 +1789,15 @@ const canonicalProfileLinkUrl = (
 };
 
 function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry): any {
-  const [fallbackFirstName = '', ...rest] = String(entry.name || '')
-    .trim()
-    .split(/\s+/);
+  const displayName = stripTrailingPersonNameLifespan(entry.name || '');
+  const [fallbackFirstName = '', ...rest] = displayName.split(/\s+/).filter(Boolean);
   const publicUser: Record<string, any> = {};
   const imageUrl = entry.imageUrl || '';
   const primaryDepartment = entry.primaryDepartment || '';
 
   addPublicMemberField(publicUser, 'fname', fallbackFirstName || undefined);
   addPublicMemberField(publicUser, 'lname', rest.join(' ') || undefined);
-  addPublicMemberField(publicUser, 'displayName', entry.name || undefined);
+  addPublicMemberField(publicUser, 'displayName', displayName || undefined);
   addPublicMemberField(publicUser, 'title', sanitizePersonTitle(entry.title));
   publicUser.imageUrl = imageUrl;
   publicUser.image_url = imageUrl;
@@ -2769,6 +2779,7 @@ export async function getResearchGroupDetail(slug: string): Promise<{
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
   }).lean();
   if (!group) return null;
+  if (researchEntityHasDeceasedLead(group as Record<string, any>)) return null;
 
   const ROLE_PRIORITY: Record<string, number> = {
     pi: 0,
