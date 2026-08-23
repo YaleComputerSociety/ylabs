@@ -645,6 +645,10 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
     new URL('../client/src/components/fellowship/FellowshipModal.tsx', import.meta.url),
     'utf8',
   );
+  const programLinks = fs.readFileSync(
+    new URL('../client/src/utils/programLinks.ts', import.meta.url),
+    'utf8',
+  );
 
   assert.match(
     adminAccessReview,
@@ -660,10 +664,15 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   );
   assert.doesNotMatch(fellowshipModal, /safeUrl\(fellowship\.applicationLink\)/);
   assert.match(fellowshipModal, /const linkHref = safeHttpUrl\(match\[2\]\)/);
-  assert.match(fellowshipModal, /href: safeHttpUrl\(link\.url\)/);
+  assert.match(fellowshipModal, /const safeLinks = buildSafeProgramLinks\(fellowship\.links\)/);
+  assert.match(fellowshipModal, /href=\{link\.href\}/);
   assert.doesNotMatch(fellowshipModal, /const linkHref = safeUrl\(match\[2\]\)/);
-  assert.doesNotMatch(fellowshipModal, /href: safeUrl\(link\.url\)/);
+  assert.doesNotMatch(fellowshipModal, /href=\{link\.url\}/);
   assert.match(fellowshipModal, /safeMailtoHref\(fellowship\.contactEmail\)/);
+
+  assert.match(programLinks, /href: safeHttpUrl\(link\.url\)/);
+  assert.doesNotMatch(programLinks, /href: safeUrl\(link\.url\)/);
+  assert.doesNotMatch(programLinks, /href: link\.url/);
 });
 
 test('public research detail queries cap unauthenticated fan-out before serialization', () => {
