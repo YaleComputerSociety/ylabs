@@ -473,6 +473,12 @@ const DEPARTMENT_SHORTHAND_ALIASES: Record<string, string[]> = {
   'mech eng': ['mechanical engineering'],
   bme: ['biomedical engineering'],
   biomed: ['biomedical engineering'],
+  eeb: ['ecology and evolutionary biology'],
+  mcdb: ['molecular cellular and developmental biology'],
+  mbb: ['molecular biophysics and biochemistry'],
+  eall: ['east asian languages and literatures'],
+  nelc: ['near eastern languages and civilizations'],
+  wgss: ['women gender and sexuality studies'],
 };
 
 const QUERY_TOPIC_ALIASES: Record<string, string[]> = {

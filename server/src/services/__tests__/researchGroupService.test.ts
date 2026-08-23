@@ -291,6 +291,40 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('resolves canonical Yale department abbreviations to their full department name (#928)', () => {
+    expect(normalizeResearchSearchQuery('EEB')).toMatchObject({
+      query: 'ecology and evolutionary biology',
+      tokens: ['eeb'],
+      isTopicAliasQuery: true,
+      aliasTerms: ['ecology and evolutionary biology'],
+    });
+    expect(normalizeResearchSearchQuery('MCDB')).toMatchObject({
+      query: 'molecular cellular and developmental biology',
+      tokens: ['mcdb'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('mbb')).toMatchObject({
+      query: 'molecular biophysics and biochemistry',
+      tokens: ['mbb'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('eall')).toMatchObject({
+      query: 'east asian languages and literatures',
+      tokens: ['eall'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('nelc')).toMatchObject({
+      query: 'near eastern languages and civilizations',
+      tokens: ['nelc'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('wgss')).toMatchObject({
+      query: 'women gender and sexuality studies',
+      tokens: ['wgss'],
+      isTopicAliasQuery: true,
+    });
+  });
+
   it('topic-scopes department shorthand even when paired with a filler word', () => {
     expect(normalizeResearchSearchQuery('cs labs')).toMatchObject({
       query: 'computer science',
