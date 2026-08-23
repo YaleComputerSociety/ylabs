@@ -8,6 +8,10 @@ import {
   sanitizeResearchHomeSelfReferenceCopyFields,
 } from '../utils/researchEntityDescriptionText';
 import { researchEntityHasDeceasedLead } from '../utils/researchEntityDeceasedLead';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 
 export interface ResearchEntityPublicDescriptionRepresentation {
   entity: Record<string, any>;
@@ -25,6 +29,29 @@ export interface ResearchEntityPublicDescriptionRepresentation {
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+
+// toPublicResearchEntityDto re-runs these serve-layer hygiene passes on the
+// description fields, so a value that survives the copy-field chain above can
+// still be emptied before it reaches the client (homepage news-ticker / CTA /
+// research-area-echo dumps). The invariant must reflect the text the DTO
+// actually renders, or a stored student_ready card serves blank prose (#1202).
+// This is kept separate from `quality` so operator-tier classification, which
+// reads `quality.descriptionState`, is unaffected.
+function servedDescriptionText(sanitizedEntity: Record<string, any>): {
+  servedShortDescription: string;
+  servedFullDescription: string;
+} {
+  return {
+    servedShortDescription:
+      typeof sanitizedEntity.shortDescription === 'string'
+        ? sanitizeResearchEntityShortDescription(sanitizedEntity.shortDescription)
+        : '',
+    servedFullDescription:
+      typeof sanitizedEntity.fullDescription === 'string'
+        ? sanitizeResearchEntityDescription(sanitizedEntity.fullDescription)
+        : '',
+  };
+}
 
 function memberDisplayName(member: Record<string, any>): string {
   const candidates = [
@@ -75,9 +102,12 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     website: sanitizedEntity.website,
     websiteUrl: sanitizedEntity.websiteUrl,
   });
+  const { servedShortDescription, servedFullDescription } = servedDescriptionText(sanitizedEntity);
+  const fullDescriptionUseful = quality.full.isUseful && Boolean(servedFullDescription.trim());
+  const cardDescriptionUseful = quality.short.isUseful && Boolean(servedShortDescription.trim());
   const reasons: ResearchEntityPublicDescriptionRepresentation['invariant']['reasons'] = [];
-  if (!quality.full.isUseful) reasons.push('missing_public_full_description');
-  if (!quality.short.isUseful) reasons.push('missing_public_card_description');
+  if (!fullDescriptionUseful) reasons.push('missing_public_full_description');
+  if (!cardDescriptionUseful) reasons.push('missing_public_card_description');
 
   return {
     entity: sanitizedEntity,
@@ -87,8 +117,8 @@ export function buildResearchEntityPublicDescriptionRepresentation({
     cardDescription: quality.short.text,
     invariant: {
       pass: reasons.length === 0,
-      fullDescriptionUseful: quality.full.isUseful,
-      cardDescriptionUseful: quality.short.isUseful,
+      fullDescriptionUseful,
+      cardDescriptionUseful,
       reasons,
     },
   };
