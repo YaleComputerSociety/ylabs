@@ -310,12 +310,17 @@ function entityCorroboratesPersonProfile(
  * `dept-physics-charles-brown`) is rejected so its content never keys onto the
  * wrong entity, unless the entity's own recorded evidence independently names that
  * same person (a topic-named grant shell whose PI never appears in its name/slug,
- * issue #1110). Ambiguous partial matches (a shared first name or surname) are
- * allowed and left to identity/dedupe resolution, so the guard never fabricates a
- * conflation from a name it cannot rule out. A URL whose Yale school subdomain
- * contradicts the entity's own recorded school is always rejected first, so an
- * exact full-name homonym at a different Yale school (issue #1045) is ruled out
- * even when every name token matches.
+ * issue #1110). A shared family name (any URL name token after the leading given
+ * name) is a strong enough match to attribute; a shared given name alone is not,
+ * because unrelated people routinely share a first name ("Benjamin" Polak vs
+ * "Benjamin" Kelmendi, issue #981), so a given-name-only overlap falls through to
+ * the same full-person corroboration the no-token case uses and is rejected unless
+ * the entity's own evidence independently names that person. A surname collision
+ * (a shared family name with differing given names) stays allowed and is left to
+ * identity/dedupe resolution. A URL whose Yale school subdomain contradicts the
+ * entity's own recorded school is always rejected first, so an exact full-name
+ * homonym at a different Yale school (issue #1045) is ruled out even when every
+ * name token matches.
  */
 export function personProfileSourceMatchesEntity(
   value: unknown,
@@ -326,8 +331,9 @@ export function personProfileSourceMatchesEntity(
   if (!urlTokens) return true;
   const identityTokens = researchEntityIdentityTokens(entity);
   if (identityTokens.length === 0) return true;
+  const familyNameTokens = urlTokens.slice(1);
   if (
-    urlTokens.some((urlToken) =>
+    familyNameTokens.some((urlToken) =>
       identityTokens.some((identityToken) => tokensOverlap(urlToken, identityToken)),
     )
   ) {

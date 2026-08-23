@@ -60,10 +60,10 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
         },
         {
           _id: 'entity-a',
-          slug: 'first-lab',
-          displayName: 'First Lab',
-          website: 'https://medicine.yale.edu/profile/first-person/',
-          sourceUrls: ['https://medicine.yale.edu/research/first-lab/'],
+          slug: 'ashford-lab',
+          displayName: 'Ashford Lab',
+          website: 'https://medicine.yale.edu/profile/jane-ashford/',
+          sourceUrls: ['https://medicine.yale.edu/research/ashford-lab/'],
         },
       ],
       { queueOrder: ['entity-a', 'entity-b'] },
@@ -72,11 +72,11 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(candidates).toEqual([
       expect.objectContaining({
         _id: 'entity-a',
-        name: 'First Lab',
-        websiteUrl: 'https://medicine.yale.edu/research/first-lab/',
+        name: 'Ashford Lab',
+        websiteUrl: 'https://medicine.yale.edu/research/ashford-lab/',
         sourceUrls: [
-          'https://medicine.yale.edu/research/first-lab/',
-          'https://medicine.yale.edu/profile/first-person/',
+          'https://medicine.yale.edu/research/ashford-lab/',
+          'https://medicine.yale.edu/profile/jane-ashford/',
         ],
       }),
       expect.objectContaining({
