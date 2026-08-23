@@ -10,6 +10,7 @@ import {
   approachHeadingLabel,
   relationshipTypeLabel,
   sanitizeFacultyResearchCopy,
+  sanitizeResearchHomeSelfReferenceCopy,
 } from '../researchEntityCopy';
 
 describe('researchEntityCopy', () => {
@@ -135,6 +136,43 @@ describe('researchEntityCopy', () => {
         bareSuffixEntity,
       ),
     ).toBe("Ada Lovelace's research focuses on analytical engines.");
+  });
+});
+
+describe('sanitizeResearchHomeSelfReferenceCopy', () => {
+  it('rewrites stray "the lab" body copy to the center noun for CENTER entities (#807)', () => {
+    const center = {
+      name: 'Yale Center for Genome Analysis',
+      kind: 'center',
+      entityType: 'CENTER',
+    };
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy('The lab offers DNA sequencing services.', center),
+    ).toBe('The center offers DNA sequencing services.');
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy("the lab's members present findings.", center),
+    ).toBe("the center's members present findings.");
+  });
+
+  it('resolves the noun from canonical entityType even when kind is stale', () => {
+    const staleCenter = { name: 'A Center', kind: 'lab', entityType: 'CENTER' };
+    expect(sanitizeResearchHomeSelfReferenceCopy('The lab convenes yearly.', staleCenter)).toBe(
+      'The center convenes yearly.',
+    );
+  });
+
+  it('leaves real lab and faculty-research copy untouched', () => {
+    const copy = 'The lab studies neurons. The lab offers rotations.';
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy(copy, { name: 'Smith Lab', kind: 'lab', entityType: 'LAB' }),
+    ).toBe(copy);
+    expect(
+      sanitizeResearchHomeSelfReferenceCopy(copy, {
+        name: 'Jane Doe Faculty Research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe(copy);
   });
 });
 

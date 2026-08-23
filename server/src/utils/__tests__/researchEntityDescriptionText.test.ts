@@ -5,6 +5,8 @@ import {
   publicResearchEntityDescriptionText,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
+  sanitizeResearchHomeSelfReferenceCopyFields,
+  sanitizeResearchHomeSelfReferenceText,
 } from '../researchEntityDescriptionText';
 
 describe('isDirectoryIndexChromeText', () => {
@@ -188,5 +190,93 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.profileSynthesisDescription).toBe(
       'This lab studies how humans process complex sound patterns.',
     );
+  });
+});
+
+describe('sanitizeResearchHomeSelfReferenceText', () => {
+  it('rewrites stray "the lab" body copy to the center noun for CENTER entities (#807)', () => {
+    const center = { name: 'Yale Center for Genome Analysis', entityType: 'CENTER', kind: 'center' };
+    expect(
+      sanitizeResearchHomeSelfReferenceText(
+        'The Yale Center for Genome Analysis specializes in genomics. The lab offers DNA sequencing services.',
+        center,
+      ),
+    ).toBe(
+      'The Yale Center for Genome Analysis specializes in genomics. The center offers DNA sequencing services.',
+    );
+    expect(
+      sanitizeResearchHomeSelfReferenceText('this lab provides research opportunities.', center),
+    ).toBe('this center provides research opportunities.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText("the lab's members present findings.", center),
+    ).toBe("the center's members present findings.");
+  });
+
+  it('uses the correct noun for other non-lab entity types', () => {
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab convenes annually.', {
+        name: 'Some Institute',
+        entityType: 'INSTITUTE',
+        kind: 'institute',
+      }),
+    ).toBe('The institute convenes annually.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab trains fellows.', {
+        name: 'Some Program',
+        entityType: 'PROGRAM',
+        kind: 'program',
+      }),
+    ).toBe('The program trains fellows.');
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The lab runs shared instruments.', {
+        name: 'Some Core',
+        entityType: 'CORE_FACILITY',
+      }),
+    ).toBe('The core facility runs shared instruments.');
+  });
+
+  it('leaves LAB and faculty-research entities untouched', () => {
+    const labText = 'The lab studies neurons. The lab offers rotations.';
+    expect(
+      sanitizeResearchHomeSelfReferenceText(labText, { name: 'Smith Lab', entityType: 'LAB', kind: 'lab' }),
+    ).toBe(labText);
+    expect(
+      sanitizeResearchHomeSelfReferenceText(labText, {
+        name: 'Jane Doe Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+      }),
+    ).toBe(labText);
+  });
+
+  it('does not rewrite a named lab embedded inside a center description', () => {
+    const center = { name: 'A Center', entityType: 'CENTER', kind: 'center' };
+    expect(
+      sanitizeResearchHomeSelfReferenceText('The center collaborates with the Smith Lab.', center),
+    ).toBe('The center collaborates with the Smith Lab.');
+  });
+});
+
+describe('sanitizeResearchHomeSelfReferenceCopyFields', () => {
+  it('normalizes shortDescription and fullDescription for CENTER entities', () => {
+    const sanitized = sanitizeResearchHomeSelfReferenceCopyFields({
+      entityType: 'CENTER',
+      kind: 'center',
+      shortDescription: 'The lab offers sequencing.',
+      fullDescription: 'Yale Forests manages forestland. The lab provides educational opportunities.',
+    });
+    expect(sanitized.shortDescription).toBe('The center offers sequencing.');
+    expect(sanitized.fullDescription).toBe(
+      'Yale Forests manages forestland. The center provides educational opportunities.',
+    );
+  });
+
+  it('returns the entity unchanged for LAB entities', () => {
+    const entity = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription: 'The lab studies neurons.',
+    };
+    expect(sanitizeResearchHomeSelfReferenceCopyFields(entity)).toBe(entity);
   });
 });
