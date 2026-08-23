@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isBareDomainRootUrl,
   isBoilerplatePlatformHostUrl,
   isDirectoryLoaderUrl,
   isDisallowedResearchEntitySourceUrl,
@@ -7,6 +8,7 @@ import {
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
+  isUnhelpfulProgramUrl,
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
 
@@ -391,5 +393,54 @@ describe('sourceUrlToResearchHomeWebsiteUrl', () => {
     expect(sourceUrlToResearchHomeWebsiteUrl('http://wordpress.org/')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://www.wordpress.com/')).toBe('');
     expect(sourceUrlToResearchHomeWebsiteUrl('https://squarespace.com/')).toBe('');
+  });
+});
+
+describe('isBareDomainRootUrl', () => {
+  it('flags a bare domain root with no path or query (#692)', () => {
+    expect(isBareDomainRootUrl('https://engineering.yale.edu/')).toBe(true);
+    expect(isBareDomainRootUrl('https://engineering.yale.edu')).toBe(true);
+    expect(isBareDomainRootUrl('http://example.org///')).toBe(true);
+  });
+
+  it('keeps a specific page path or a query-bearing root', () => {
+    expect(
+      isBareDomainRootUrl(
+        'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      ),
+    ).toBe(false);
+    expect(isBareDomainRootUrl('https://engineering.yale.edu/apply')).toBe(false);
+    expect(isBareDomainRootUrl('https://apply.example.com/?fund=123')).toBe(false);
+  });
+
+  it('ignores non-http and malformed values', () => {
+    expect(isBareDomainRootUrl('mailto:someone@example.edu')).toBe(false);
+    expect(isBareDomainRootUrl('not a url')).toBe(false);
+    expect(isBareDomainRootUrl(undefined)).toBe(false);
+  });
+});
+
+describe('isUnhelpfulProgramUrl', () => {
+  it('rejects bare roots, listing/index pages, and boilerplate hosts (#692)', () => {
+    expect(isUnhelpfulProgramUrl('https://engineering.yale.edu/')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://physics.example.edu/people?page=2')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://squarespace.com/')).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://www.yalelabs.io/')).toBe(true);
+  });
+
+  it('keeps a specific official/apply program page', () => {
+    expect(
+      isUnhelpfulProgramUrl(
+        'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      ),
+    ).toBe(false);
+    expect(isUnhelpfulProgramUrl('https://apply.communityforce.com/Funds/FundDetails.aspx?id=9')).toBe(
+      false,
+    );
+  });
+
+  it('exempts dedicated application-portal roots that are the real apply entry point', () => {
+    expect(isUnhelpfulProgramUrl('http://studentgrants.yale.edu/')).toBe(false);
+    expect(isUnhelpfulProgramUrl('https://yale.communityforce.com/')).toBe(false);
   });
 });

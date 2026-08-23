@@ -14,6 +14,7 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
 import { normalizedProgramTitleKey } from '../../utils/programTitle';
+import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -548,9 +549,15 @@ function fingerprintCandidate(
 function finalizeCandidate(
   candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>,
 ): FellowshipCatalogCandidate {
+  const applicationLink =
+    candidate.applicationLink && !isUnhelpfulProgramUrl(candidate.applicationLink)
+      ? candidate.applicationLink
+      : undefined;
+  const links = candidate.links.filter((link) => !isUnhelpfulProgramUrl(link.url));
+  const sanitized = { ...candidate, applicationLink, links };
   return {
-    ...candidate,
-    sourceFingerprint: fingerprintCandidate(candidate),
+    ...sanitized,
+    sourceFingerprint: fingerprintCandidate(sanitized),
   };
 }
 

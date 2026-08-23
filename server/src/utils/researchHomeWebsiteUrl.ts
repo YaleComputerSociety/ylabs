@@ -137,6 +137,33 @@ export function isDisallowedResearchEntitySourceUrl(value: unknown): boolean {
   );
 }
 
+export function isBareDomainRootUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const hasPath = url.pathname.replace(/\/+$/, '').length > 0;
+  const hasQuery = url.search.replace(/^\?/, '').trim().length > 0;
+  return !hasPath && !hasQuery;
+}
+
+const PROGRAM_APPLICATION_PORTAL_HOST =
+  /(?:^|\.)(?:communityforce\.com|studentgrants\.yale\.edu)$/i;
+
+export function isProgramApplicationPortalUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  return PROGRAM_APPLICATION_PORTAL_HOST.test(url.hostname);
+}
+
+export function isUnhelpfulProgramUrl(value: unknown): boolean {
+  if (isProgramApplicationPortalUrl(value)) return false;
+  return (
+    isBareDomainRootUrl(value) ||
+    isListingOrIndexUrl(value) ||
+    isBoilerplatePlatformHostUrl(value) ||
+    isSelfReferentialUrl(value)
+  );
+}
+
 export const genericYaleWebsiteSubdomains = new Set([
   'african',
   'americanstudies',

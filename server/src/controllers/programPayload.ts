@@ -2,13 +2,20 @@ import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
+import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
+
+const publicSpecificProgramUrl = (value: unknown): string | undefined => {
+  const url = publicHttpUrl(value);
+  if (!url || isUnhelpfulProgramUrl(url)) return undefined;
+  return url;
+};
 
 const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string }> =>
   Array.isArray(links)
     ? links.flatMap((link) => {
         if (!link || typeof link !== 'object') return [];
         const record = link as Record<string, unknown>;
-        const url = publicHttpUrl(record.url);
+        const url = publicSpecificProgramUrl(record.url);
         if (!url) return [];
         const label =
           typeof record.label === 'string' && record.label.trim()
@@ -60,7 +67,7 @@ export const publicProgramForReader = (program: any) => {
     restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramText(program.additionalInformation),
     links: publicProgramLinks(program.links),
-    applicationLink: publicHttpUrl(program.applicationLink),
+    applicationLink: publicSpecificProgramUrl(program.applicationLink),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
