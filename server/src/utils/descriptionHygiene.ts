@@ -778,6 +778,41 @@ export function stripTrailingContactAddress(text: string): string {
   return stripped === value ? value : normalizeHygieneWhitespace(stripped);
 }
 
+const poBoxAddressPattern = /\bP\.?\s*O\.?\s+Box\s+\d+\b/i;
+
+const cityStateZipPattern = /,\s*[A-Z][A-Za-z.]*(?:\s+[A-Z][A-Za-z.]*){0,2}\s+\d{5}(?:-\d{4})?\b/;
+
+const staffContactCredentialPattern =
+  /\b(?:Ph|Ed|D)\.?\s?D\.?|\bM\.?\s?D\.?|\bJ\.?\s?D\.?|\bM\.?\s?B\.?\s?A\.?|\bM\.?\s?S\.?\s?W\.?/;
+
+const namedStaffTitlePattern =
+  /^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){1,3},?\s+(?:(?:Assistant|Associate|Deputy|Senior|Executive|Program)\s+)?(?:Director|Coordinator|Administrator|Manager|Registrar|Dean|Officer)\b/;
+
+/**
+ * A staff contact block scraped in place of a program description: a named
+ * person with an academic credential ("Ph.D.") or a staff title ("Assistant
+ * Director", "Program Coordinator") glued onto a mailing address (a `P.O. Box`
+ * or a city/state/ZIP), carrying nothing about what the program funds or who is
+ * eligible (#926). `hasContactBlockResidue` misses this because its address arm
+ * requires a street-suffix line, not a `P.O. Box`, and the roster/dump arms key
+ * on lists, not a single-person contact line.
+ *
+ * Both a full mailing address and a person-contact signal are required so an
+ * ordinary description that merely names a director, or an application step that
+ * cites a mailing address for submissions, is not blanked - only the contact
+ * block that carries both at once fails closed.
+ */
+export function isStaffContactBlockText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  const hasMailingAddress =
+    poBoxAddressPattern.test(normalized) || cityStateZipPattern.test(normalized);
+  if (!hasMailingAddress) return false;
+  return (
+    staffContactCredentialPattern.test(normalized) || namedStaffTitlePattern.test(normalized)
+  );
+}
+
 const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
 
 /**
@@ -850,8 +885,8 @@ export function stripProvenanceHedge(text: string): string {
  * Clean a scraped catalog description: strip chrome and the internal
  * provenance hedge, then fail closed to an empty string when the remainder is
  * roster/PII-shaped, a navigation dump, an FAQ/Q&A dump, an eligibility-form
- * label dump, internal curation/reviewer-rationale prose, or a homepage
- * news-ticker / CTA dump.
+ * label dump, internal curation/reviewer-rationale prose, a staff-contact /
+ * mailing-address block, or a homepage news-ticker / CTA dump.
  *
  * Redaction placeholder tokens ([email redacted]/[phone redacted]) are the
  * intended safe rendering of contact info at read time and are left in place
@@ -875,6 +910,7 @@ export function sanitizeCatalogDescription(text: string): string {
     isFaqDumpText(stripped) ||
     isFormFieldDumpText(stripped) ||
     isCurationRationaleText(stripped) ||
+    isStaffContactBlockText(stripped) ||
     isCtaNewsTickerDumpText(stripped)
   ) {
     return '';
