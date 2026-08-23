@@ -976,10 +976,10 @@ describe('profileService profile shaping', () => {
   it('strips a leading email plus nav-label chrome so the bio opens on its subject', () => {
     expect(
       cleanPublicProfileBio({
-        bio: 'polak@yale.edu Website Professor Polak studies decision theory, game theory, and the economics of information.',
+        bio: 'faculty@yale.edu Website Professor Doe studies decision theory, game theory, and the economics of information.',
       }),
     ).toBe(
-      'Professor Polak studies decision theory, game theory, and the economics of information.',
+      'Professor Doe studies decision theory, game theory, and the economics of information.',
     );
   });
 
