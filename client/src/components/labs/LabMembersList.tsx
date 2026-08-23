@@ -10,6 +10,7 @@ import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl } from '../../utils/url';
 import { useConfig } from '../../hooks/useConfig';
 import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
 import { DepartmentNameRecord } from '../../utils/departmentNames';
+import { isTraineeLevelTitle } from '../../utils/leadRoleDisplay';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -54,17 +55,8 @@ const LEAD_ROLES: ReadonlySet<LabMemberRole> = new Set([
   'co-director',
 ]);
 
-const TRAINEE_TITLE_PATTERN = /\b(post-?doctoral|post-?doc|research assistant)\b/i;
-
 const NEUTRAL_TRAINEE_ROLE_LABEL = 'Researcher';
 const NEUTRAL_TRAINEE_ROLE_PILL = 'bg-[var(--yr-panel-muted)] text-gray-600';
-
-const isTraineeLevelTitle = (title?: string): boolean => {
-  const normalized = (title || '').trim();
-  if (!normalized) return false;
-  if (/\bprofessor\b/i.test(normalized)) return false;
-  return TRAINEE_TITLE_PATTERN.test(normalized);
-};
 
 // Lower index = more prominent. Sort members so leaders come first.
 const ROLE_ORDER: Record<LabMemberRole, number> = {
