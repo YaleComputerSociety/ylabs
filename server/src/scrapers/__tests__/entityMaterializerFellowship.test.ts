@@ -106,4 +106,108 @@ describe('fellowship materialization', () => {
     expect(result.created).toBe(false);
     expect(result.entityId).toBe('existing-dean-fellowship-id');
   });
+
+  it('resolves a re-scrape whose title dropped a qualifier to the existing record via sourceUrl (#609)', async () => {
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue([
+        {
+          field: 'title',
+          value: 'Undergraduate Fellowships',
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-02-01T00:00:00Z'),
+        },
+        {
+          field: 'sourceName',
+          value: 'yale-college-fellowships-office',
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-02-01T00:00:00Z'),
+        },
+        {
+          field: 'sourceUrl',
+          value: 'https://wti.yale.edu/initiatives/undergraduate',
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-02-01T00:00:00Z'),
+        },
+      ]),
+    } as any);
+
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const existing = {
+      _id: 'existing-wu-tsai-fellowship-id',
+      title: 'Wu Tsai Undergraduate Fellowships',
+      sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+      archived: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    const find = vi
+      .spyOn(Fellowship, 'find')
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([]) } as any)
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([existing]) } as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'yale-college-fellowships-office:undergraduate-fellowships' },
+      { dryRun: true },
+    );
+
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(result.created).toBe(false);
+    expect(result.entityId).toBe('existing-wu-tsai-fellowship-id');
+  });
+
+  it('does not resolve two distinct fellowships that merely share a listing sourceUrl (#609)', async () => {
+    vi.spyOn(Observation, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue([
+        {
+          field: 'title',
+          value: 'CMES Ganzfried Family Travel Fellowship',
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-02-01T00:00:00Z'),
+        },
+        {
+          field: 'sourceName',
+          value: 'yale-college-fellowships-office',
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-02-01T00:00:00Z'),
+        },
+        {
+          field: 'sourceUrl',
+          value: 'https://macmillan.yale.edu/middleeast/grants',
+          sourceName: 'yale-college-fellowships-office',
+          confidence: 0.95,
+          observedAt: new Date('2026-02-01T00:00:00Z'),
+        },
+      ]),
+    } as any);
+
+    vi.spyOn(Fellowship, 'findOne').mockReturnValue({
+      lean: vi.fn().mockResolvedValue(null),
+    } as any);
+    const unrelatedListingMate = {
+      _id: 'existing-libby-rouse-fellowship-id',
+      title: 'CMES Libby Rouse Fund for Peace Fellowships',
+      sourceUrl: 'https://macmillan.yale.edu/middleeast/grants',
+      archived: false,
+      updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+    vi.spyOn(Fellowship, 'find')
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([]) } as any)
+      .mockReturnValueOnce({ lean: vi.fn().mockResolvedValue([unrelatedListingMate]) } as any);
+
+    const result = await materializeEntity(
+      'fellowship',
+      { entityKey: 'yale-college-fellowships-office:cmes-ganzfried-family-travel-fellowship' },
+      { dryRun: true },
+    );
+
+    expect(result.created).toBe(true);
+    expect(result.entityId).not.toBe('existing-libby-rouse-fellowship-id');
+  });
 });

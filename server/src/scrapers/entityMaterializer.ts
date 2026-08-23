@@ -20,7 +20,7 @@ import {
   resolveGroundedCardDescription,
   synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
-import { normalizedProgramTitleKey } from '../utils/programTitle';
+import { isProgramTitleQualifierDrift, normalizedProgramTitleKey } from '../utils/programTitle';
 import {
   collapseDuplicateResearchHomeSuffix,
   normalizeResearchEntityNameDashes,
@@ -2015,6 +2015,41 @@ async function findFellowshipByNormalizedTitle(
   return matches[0];
 }
 
+/**
+ * Re-scrape dedupe fallback: a fellowship whose title drifted by more than
+ * punctuation (an inserted/dropped qualifier, e.g. "Wu Tsai Undergraduate
+ * Fellowships" vs "Undergraduate Fellowships") still shares its sourceUrl
+ * with the existing record and slips past findFellowshipByNormalizedTitle
+ * (#609). Only fires when the sourceUrl resolves to exactly one active
+ * record whose title is a qualifier-drift match (isProgramTitleQualifierDrift):
+ * institutional catalog pages (e.g. funding.yale.edu/find-funding/...) are
+ * shared by dozens of genuinely distinct named fellowships, including pairs
+ * that share a page but have unrelated names (a college's "Richter Summer
+ * Fellowship" and "Mellon Senior Research Grant"), so sourceUrl equality
+ * alone is never treated as a dedupe signal.
+ */
+async function findFellowshipBySourceUrl(
+  Model: mongoose.Model<any>,
+  obs: any[],
+): Promise<any | null> {
+  const sourceUrlObs = obs.find((o) => o.field === 'sourceUrl' && typeof o.value === 'string');
+  const sourceNameObs = obs.find((o) => o.field === 'sourceName' && typeof o.value === 'string');
+  const titleObs = obs.find((o) => o.field === 'title' && typeof o.value === 'string');
+  const sourceUrl = String(sourceUrlObs?.value || '').trim();
+  const sourceName = String(sourceNameObs?.value || '');
+  const title = String(titleObs?.value || '');
+  if (!sourceUrl || !sourceName || !title) return null;
+
+  const candidates = await Model.find({
+    sourceUrl,
+    archived: { $ne: true },
+    $or: [{ sourceName }, { sourceName: { $in: ['', null] } }, { sourceName: { $exists: false } }],
+  }).lean();
+  if (candidates.length !== 1) return null;
+  const candidate = candidates[0];
+  return isProgramTitleQualifierDrift(title, String(candidate.title || '')) ? candidate : null;
+}
+
 async function findEntityDocByIdentifier(
   Model: mongoose.Model<any>,
   entityType: ObservedEntityType,
@@ -2045,6 +2080,8 @@ async function findEntityDocByIdentifier(
   if (entityType === 'fellowship') {
     const byTitle = await findFellowshipByNormalizedTitle(Model, obs);
     if (byTitle) return byTitle;
+    const bySourceUrl = await findFellowshipBySourceUrl(Model, obs);
+    if (bySourceUrl) return bySourceUrl;
   }
 
   if (entityType === 'user') {
