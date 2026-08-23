@@ -347,7 +347,7 @@ const ResearchFilterDisclosure = ({
     return (
       <section aria-label="Research filters" aria-busy={isApplying} className="min-w-0 max-w-full">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <h3 className="text-base font-semibold text-slate-950">Research filters</h3>
+          <h2 className="text-base font-semibold text-slate-950">Research filters</h2>
           {activeCount > 0 && (
             <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
               {activeCount}
