@@ -10,11 +10,6 @@ const studentEngagementEventSchema = new mongoose.Schema(
       ref: 'StudentProfile',
       required: false,
     },
-    researchGroupId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'ResearchEntity',
-      required: false,
-    },
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
@@ -40,7 +35,6 @@ const studentEngagementEventSchema = new mongoose.Schema(
   },
 );
 
-studentEngagementEventSchema.index({ researchGroupId: 1, eventType: 1, occurredAt: -1 });
 studentEngagementEventSchema.index({ researchEntityId: 1, eventType: 1, occurredAt: -1 });
 studentEngagementEventSchema.index({ studentProfileId: 1, occurredAt: -1 });
 studentEngagementEventSchema.index({ occurredAt: -1 });
