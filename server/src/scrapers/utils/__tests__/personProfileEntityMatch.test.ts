@@ -89,7 +89,7 @@ describe('personProfileSourceMatchesEntity', () => {
     ).toBe(true);
   });
 
-  it('allows non-person URLs and ambiguous shared-name partial matches', () => {
+  it('allows non-person URLs and non-name-shaped person slugs', () => {
     expect(
       personProfileSourceMatchesEntity('https://brownlab.yale.edu/research.html', {
         slug: 'dept-physics-charles-brown',
@@ -102,12 +102,30 @@ describe('personProfileSourceMatchesEntity', () => {
         name: 'Fixture Person Lab',
       }),
     ).toBe(true);
+  });
+
+  it('allows a surname collision (shared family name, differing given name) for identity resolution', () => {
     expect(
-      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/gunjan-kamdar/', {
-        slug: 'nih-pi-gunjan-tiyyagura',
-        name: 'Gunjan Tiyyagura Lab',
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/frances-lowell/', {
+        slug: 'nih-pi-perry-lowell',
+        name: 'Perry Lowell Faculty Research',
       }),
     ).toBe(true);
+  });
+
+  it('rejects a shared-first-name graft of a different person (#981)', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://medicine.yale.edu/profile/benjamin-mercer/', {
+        slug: 'dept-econ-benjamin-lowell',
+        name: 'Benjamin Lowell Faculty Research',
+      }),
+    ).toBe(false);
+    expect(
+      personProfileSourceMatchesEntity('https://economics.yale.edu/people/benjamin-carter', {
+        slug: 'nih-pi-benjamin-tiyyagura',
+        name: 'Benjamin Tiyyagura Lab',
+      }),
+    ).toBe(false);
   });
 
   it('keeps a topic-named grant shell PI page corroborated by the entity own evidence (#1110)', () => {
