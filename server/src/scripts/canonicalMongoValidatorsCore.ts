@@ -8,6 +8,17 @@ import {
 export const CANONICAL_VALIDATION_LEVEL = 'moderate' as const;
 export const CANONICAL_VALIDATION_ACTION = 'error' as const;
 
+/**
+ * Per-collection validation level/action are opt-in overrides of the shared
+ * moderate/error defaults above. Flipping one canonical collection to strict
+ * must never change the default for every other collection sharing this
+ * planner (see docs/canonical-mongodb-validator-runbook.md).
+ */
+export const CANONICAL_VALIDATION_LEVELS = ['off', 'moderate', 'strict'] as const;
+export const CANONICAL_VALIDATION_ACTIONS = ['warn', 'error'] as const;
+export type CanonicalValidationLevel = (typeof CANONICAL_VALIDATION_LEVELS)[number];
+export type CanonicalValidationAction = (typeof CANONICAL_VALIDATION_ACTIONS)[number];
+
 export type MongoJsonSchemaProperty = Record<string, unknown>;
 
 export interface CanonicalCollectionValidatorSpec {
@@ -15,6 +26,10 @@ export interface CanonicalCollectionValidatorSpec {
   schemaVersion: CanonicalSchemaVersionContract;
   requiredFields?: readonly string[];
   properties?: Readonly<Record<string, MongoJsonSchemaProperty>>;
+  /** Defaults to CANONICAL_VALIDATION_LEVEL when omitted. */
+  validationLevel?: CanonicalValidationLevel;
+  /** Defaults to CANONICAL_VALIDATION_ACTION when omitted. */
+  validationAction?: CanonicalValidationAction;
 }
 
 export interface CanonicalCollectionValidator {
@@ -26,8 +41,8 @@ export interface CanonicalCollectionValidator {
       properties: Record<string, MongoJsonSchemaProperty>;
     };
   };
-  validationLevel: typeof CANONICAL_VALIDATION_LEVEL;
-  validationAction: typeof CANONICAL_VALIDATION_ACTION;
+  validationLevel: CanonicalValidationLevel;
+  validationAction: CanonicalValidationAction;
 }
 
 export interface CurrentMongoCollectionValidation {
@@ -119,8 +134,8 @@ export function buildCanonicalCollectionValidator(
         },
       },
     },
-    validationLevel: CANONICAL_VALIDATION_LEVEL,
-    validationAction: CANONICAL_VALIDATION_ACTION,
+    validationLevel: spec.validationLevel ?? CANONICAL_VALIDATION_LEVEL,
+    validationAction: spec.validationAction ?? CANONICAL_VALIDATION_ACTION,
   };
 }
 

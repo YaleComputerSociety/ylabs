@@ -17,8 +17,30 @@ It fails closed on a missing environment, a target mismatch, an invalid reviewed
 
 The desired registry is limited to the canonical collections explicitly declared in [`canonicalMongoValidatorRegistry.ts`](../server/src/scripts/canonicalMongoValidatorRegistry.ts).
 Collections outside that registry are read only as part of MongoDB collection discovery and are never planned for modification.
-During migration, desired validators use `validationLevel: moderate` and `validationAction: error`.
+During migration, desired validators default to `validationLevel: moderate` and `validationAction: error`.
 This protects new and modified conforming writes without claiming that legacy documents have been backfilled or that references are valid.
+
+## Per-collection strict flips
+
+`moderate` grandfathers any pre-existing document that does not match its collection's `$jsonSchema` until that document is next written.
+`strict` removes the grandfathering, so every future update to any document in the collection must conform immediately.
+A collection may set `validationLevel: 'strict'` (still `validationAction: 'error'`) in its registry contract only after its own audit comes back clean.
+Flip collections one at a time; never change the shared `CANONICAL_VALIDATION_LEVEL` default, because that would flip every collection at once.
+
+Two read-only audits gate a safe flip and must both be clean for the target collection:
+
+```bash
+yarn --cwd server model-refactor:strict-readiness --environment development \
+  --output /tmp/ylabs-strict-readiness-development.json
+yarn --cwd server model-refactor:reference-integrity --environment development --include-samples \
+  --output /tmp/ylabs-canonical-reference-integrity-development.json
+```
+
+`model-refactor:strict-readiness` counts documents that already fail the desired `$jsonSchema`; a collection with `nonConformingCount: 0` is `strictReady`.
+`model-refactor:reference-integrity` counts dangling and missing-required references on the canonical relationship edges; a dangling ObjectId is bson-valid and therefore invisible to the readiness audit, so both audits are required.
+`model-refactor:legacy-writer-scan` is the companion dual-write verification that no runtime code path still writes retired legacy storage.
+After a clean readiness result, set `validationLevel: 'strict'` for that collection in the registry, review the fingerprint change, then apply through the standard dry-run and apply flow below.
+Carrying a verified-clean Development flip forward to Beta or Production is a separate live-database change on those environments and requires its own review.
 
 ## Required review and recovery
 
