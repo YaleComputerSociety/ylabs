@@ -661,6 +661,7 @@ export const ORG_NAME_DEDUPE_ENTITY_TYPES = [
   'INSTITUTE',
   'INITIATIVE',
   'CORE_FACILITY',
+  'PROGRAM',
 ] as const;
 
 const ORG_NAME_STOPWORDS = new Set([
@@ -761,6 +762,10 @@ function orgGroupSharesDistinctiveHost(entities: OrgNameDedupeEntity[]): boolean
   return Array.from(counts.values()).some((count) => count >= 2);
 }
 
+function hasPiFreeOrgNameAnchor(entities: OrgNameDedupeEntity[]): boolean {
+  return entities.some((entity) => !entity.hasAttachedPi);
+}
+
 export function isOrgNameDedupeGroupCorroborated(entities: OrgNameDedupeEntity[]): boolean {
   if (orgGroupSharesDistinctiveHost(entities)) return true;
   const representativeName = entities[0]?.name || entities[0]?.displayName;
@@ -814,7 +819,10 @@ function buildOrgNameDedupeGroup(
 ): ResearchEntityPiDedupeGroup | null {
   if (entities.length <= 1) return null;
 
-  const canonical = [...entities].sort((a, b) => {
+  const canonicalPool = hasPiFreeOrgNameAnchor(entities)
+    ? entities.filter((entity) => !entity.hasAttachedPi)
+    : entities;
+  const canonical = [...canonicalPool].sort((a, b) => {
     const byScore = orgCanonicalScore(b) - orgCanonicalScore(a);
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
@@ -861,7 +869,6 @@ export function buildOrgNameResearchEntityDedupePlan(
   const byKey = new Map<string, OrgNameDedupeEntity[]>();
   for (const entity of entities) {
     if (!entity.id) continue;
-    if (entity.hasAttachedPi) continue;
     if (!entity.entityType || !orgTypes.has(entity.entityType)) continue;
     const normalizedName = normalizeOrgDedupeName(entity.name || entity.displayName);
     if (!normalizedName) continue;
@@ -872,6 +879,7 @@ export function buildOrgNameResearchEntityDedupePlan(
   const groups: ResearchEntityPiDedupeGroup[] = [];
   for (const [key, groupEntities] of byKey) {
     if (groupEntities.length < 2) continue;
+    if (!hasPiFreeOrgNameAnchor(groupEntities)) continue;
     if (!isOrgNameDedupeGroupCorroborated(groupEntities)) continue;
     const group = buildOrgNameDedupeGroup(key, groupEntities);
     if (group) groups.push(group);
