@@ -156,8 +156,37 @@ describe('isResearchAreaLabelLeakage', () => {
       'Public Health',
       'Condensed Matter Physics',
       'Art History',
+      'Child and Adolescent Psychosocial and Emotional Development',
+      'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+      'Interstitial Lung Diseases and Idiopathic Pulmonary Fibrosis',
+      'Mesoscopic Physics / Nanoscience (Condensed Matter Physics)',
+      'C. elegans Genetics',
+      'Cognitive Neuroscience: Graduate Program',
+      'Global Health: Certificate Program',
+      'mRNA vaccine development platforms and delivery systems',
+      'iPSC-derived cardiomyocytes for disease modeling and drug screening',
+      'Keyword Extraction',
+      'in vivo imaging of tumor microenvironment dynamics',
+      'de novo protein design and directed evolution',
+      'Health policy in the U.S.',
     ]) {
       expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+
+  it('rejects non-topic chips: award lines, protocol ids, names, sentences, and label prefixes', () => {
+    for (const junk of [
+      '2019 Robin Testcase: NIH Extramural Clinical Loan Repayment Scholarship',
+      'HIC ID9999999',
+      'IRB Protocol #2019-0000',
+      'Fields of Interest Econometrics Public Economics',
+      'Research Areas: I am an ecologist interested in the fate of synthetic organisms',
+      'understanding the fictional dynamics that underlie invented macroeconomic events',
+      'Development of imaginary cardiac methods for placeholder dysfunction.',
+      'Others are versatile, capable of mediating two of these mechanisms.',
+      'https://www.ncbi.nlm.nih.gov/myncbi/fake.person.1/bibliography/public/',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
     }
   });
 });

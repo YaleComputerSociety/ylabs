@@ -61,6 +61,19 @@ describe('cleanResearchAreaChrome', () => {
     expect(result.removedChrome).toBe(false);
     expect(result.cleaned).toEqual(['Immunology', 'Cell Biology']);
   });
+
+  it('drops non-topic chips (award line, protocol id, sentence) while keeping real topics', () => {
+    const result = cleanResearchAreaChrome([
+      'Vascular Biology',
+      '2019 Robin Testcase: NIH Extramural Clinical Loan Repayment Scholarship',
+      'HIC ID9999999',
+      'Development of imaginary cardiac methods for placeholder dysfunction.',
+      'Cell Biology',
+    ]);
+    expect(result.removedChrome).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.cleaned).toEqual(['Vascular Biology', 'Cell Biology']);
+  });
 });
 
 describe('planDirectoryIndexCleanup', () => {
