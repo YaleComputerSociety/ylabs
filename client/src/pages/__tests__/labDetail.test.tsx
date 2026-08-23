@@ -921,6 +921,47 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('heading', { name: 'Principal Investigator' })).toBeNull();
   });
 
+  it('prefers the org get-involved page over a director profile for an umbrella home (#657)', async () => {
+    const GET_INVOLVED_URL = 'https://institute.example.yale.edu/get-involved';
+    const DIRECTOR_PROFILE_URL = 'https://institute.example.yale.edu/profile/fixture-director';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+        websiteUrl: '',
+        sourceUrls: [GET_INVOLVED_URL],
+      },
+      members: [
+        {
+          role: 'director',
+          user: {
+            publicKey: 'fixture-director',
+            fname: 'Fixture',
+            lname: 'Director',
+            displayName: 'Fixture Director',
+            title: 'Professor and Director',
+            profileUrls: { official: DIRECTOR_PROFILE_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText('How to get involved')).toBeTruthy();
+    expect(screen.getByText(/coordinates involvement at the organization level/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'See how to get involved' }).getAttribute('href')).toBe(
+      GET_INVOLVED_URL,
+    );
+    expect(
+      screen.getByRole('link', { name: 'Contact Fixture Director' }).getAttribute('href'),
+    ).toBe(DIRECTOR_PROFILE_URL);
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Email/ })).toBeNull();
+  });
+
   it('does not choose an arbitrary lead professor when no PI matches the official profile', async () => {
     renderLabDetail({
       ...basePayload,

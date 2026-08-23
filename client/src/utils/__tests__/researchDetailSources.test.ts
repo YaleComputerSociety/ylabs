@@ -7,6 +7,7 @@ import {
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
+  prefersOrgEngagementOutreach,
   resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../researchDetailSources';
@@ -709,6 +710,31 @@ describe('resolveOutreachOfficialSource', () => {
     );
 
     expect(source).toBeUndefined();
+  });
+});
+
+describe('prefersOrgEngagementOutreach', () => {
+  const engagementSource = makeSource('https://institute.example.yale.edu/get-involved');
+  const profileSource = makeSource('https://institute.example.yale.edu/people/director');
+
+  it('prefers the org get-involved page for an umbrella home with no genuine PI lead', () => {
+    expect(prefersOrgEngagementOutreach('INSTITUTE', engagementSource, false)).toBe(true);
+    expect(prefersOrgEngagementOutreach('CENTER', engagementSource, false)).toBe(true);
+    expect(prefersOrgEngagementOutreach('INITIATIVE', engagementSource, false)).toBe(true);
+  });
+
+  it('defers to a genuine single PI lead even on an umbrella home', () => {
+    expect(prefersOrgEngagementOutreach('INSTITUTE', engagementSource, true)).toBe(false);
+  });
+
+  it('does not fire for a non-umbrella entity type', () => {
+    expect(prefersOrgEngagementOutreach('LAB', engagementSource, false)).toBe(false);
+    expect(prefersOrgEngagementOutreach(undefined, engagementSource, false)).toBe(false);
+  });
+
+  it('does not fire when the official source is not an org engagement page', () => {
+    expect(prefersOrgEngagementOutreach('INSTITUTE', profileSource, false)).toBe(false);
+    expect(prefersOrgEngagementOutreach('INSTITUTE', undefined, false)).toBe(false);
   });
 });
 
