@@ -12,7 +12,13 @@ import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
-import { deriveShortDescriptionFromFullDescription } from '../utils/researchEntityDescriptionQuality';
+import { shortDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  CARD_SYNTHESIS_MODEL,
+  defaultCardSynthesisLLM,
+  resolveGroundedCardDescription,
+  synthesizeGroundedCardDescription,
+} from '../utils/groundedCardSynthesis';
 import { normalizedProgramTitleKey } from '../utils/programTitle';
 import { normalizeResearchEntityNameDashes } from '../utils/researchEntityNameNormalization';
 import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
@@ -58,6 +64,45 @@ import { RoleAssignment, type RoleAssignmentRosterProvenance } from '../models/r
 interface MaterializeOptions {
   dryRun?: boolean;
   syncMeilisearch?: boolean;
+  synthesizeCardDescription?: (fullDescription: string) => Promise<string>;
+}
+
+function defaultMaterializerCardSynthesizer(
+  entityName: string,
+): (fullDescription: string) => Promise<string> {
+  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
+  if (!apiKey) return () => Promise.resolve('');
+  return (fullDescription) =>
+    synthesizeGroundedCardDescription({
+      fullDescription,
+      entityName,
+      callLLM: (llmInput) =>
+        defaultCardSynthesisLLM({ ...llmInput, apiKey, model: CARD_SYNTHESIS_MODEL }),
+    });
+}
+
+export interface MaterializedShortDescriptionInput {
+  fullDescription?: unknown;
+  currentShortDescription?: unknown;
+  manuallyLocked?: boolean;
+  synthesize: (fullDescription: string) => Promise<string>;
+}
+
+export async function resolveMaterializedShortDescription(
+  input: MaterializedShortDescriptionInput,
+): Promise<string | null> {
+  if (input.manuallyLocked) return null;
+  if (shortDescriptionQuality(input.currentShortDescription, input.fullDescription).isUseful) {
+    return null;
+  }
+  const grounded = await resolveGroundedCardDescription({
+    fullDescription: input.fullDescription,
+    synthesize: input.synthesize,
+  });
+  if (grounded && shortDescriptionQuality(grounded, input.fullDescription).isUseful) {
+    return grounded;
+  }
+  return null;
 }
 
 interface MaterializeResult {
@@ -2027,15 +2072,19 @@ export async function materializeEntity(
     if (r.hasConflict) conflicts++;
     fieldsWritten++;
   }
-  if (
-    isResearchEntityObservationType(entityType) &&
-    !manuallyLockedFields.includes('shortDescription') &&
-    !set.shortDescription
-  ) {
+  if (isResearchEntityObservationType(entityType)) {
     const fullDescription = set.fullDescription || entityDoc?.fullDescription;
-    const derivedShortDescription = deriveShortDescriptionFromFullDescription(fullDescription);
-    if (derivedShortDescription) {
-      set.shortDescription = derivedShortDescription;
+    const entityName = textValue(
+      set.name ?? set.displayName ?? entityDoc?.name ?? entityDoc?.displayName,
+    );
+    const groundedShortDescription = await resolveMaterializedShortDescription({
+      fullDescription,
+      currentShortDescription: set.shortDescription ?? entityDoc?.shortDescription,
+      manuallyLocked: manuallyLockedFields.includes('shortDescription'),
+      synthesize: options.synthesizeCardDescription ?? defaultMaterializerCardSynthesizer(entityName),
+    });
+    if (groundedShortDescription) {
+      set.shortDescription = groundedShortDescription;
       const fullDescriptionConfidence = resolved.fullDescription?.confidence;
       if (typeof fullDescriptionConfidence === 'number') {
         confidenceByField.shortDescription = fullDescriptionConfidence;
