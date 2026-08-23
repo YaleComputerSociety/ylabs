@@ -136,13 +136,17 @@ function timeValue(value: Date | string | null | undefined): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
+function isAreaShellSlug(slug: string | undefined): boolean {
+  return (slug || '').toLowerCase().startsWith('faculty-research-area-');
+}
+
+function isFundingShellSlug(slug: string | undefined): boolean {
   const value = (slug || '').toLowerCase();
-  return (
-    value.startsWith('faculty-research-area-') ||
-    value.startsWith('nih-pi-') ||
-    value.startsWith('nsf-pi-')
-  );
+  return value.startsWith('nih-pi-') || value.startsWith('nsf-pi-');
+}
+
+function isLowTrustAreaShellSlug(slug: string | undefined): boolean {
+  return isAreaShellSlug(slug) || isFundingShellSlug(slug);
 }
 
 function canonicalScore(entity: ResearchEntityPiDedupeRow['entities'][number]): number {
@@ -966,14 +970,29 @@ function clusterEntitiesBySharedLeadPersonName(
   return Array.from(components.values()).filter((cluster) => cluster.length > 1);
 }
 
+function isDistinctiveNonFundingWebsiteHost(value: string | undefined): boolean {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return false;
+  if (isFundingSourceUrl(trimmed)) return false;
+  try {
+    return isDistinctiveOrgHost(new URL(trimmed));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Clusters non-archived entities that share an identical (scheme/slash/www
  * normalized) websiteUrl and agree on a person lead-name. The canonical survivor
  * is the entity with an active PI RoleAssignment and the richer evidence, so a
  * newer PI-bio clone folds into the established lab. Groups that involve a
- * low-trust funding/area shell (nih-pi-/nsf-pi-/faculty-research-area-) are left
- * to the funding-only and profile-area lanes, and shared group/center sites are
- * excluded by the lead-name gate (issue #1130).
+ * low-trust `faculty-research-area-` shell are left to the profile-area lane,
+ * and shared group/center sites are excluded by the lead-name gate (issue
+ * #1130). A `nih-pi-`/`nsf-pi-` funding shell is excluded too unless the shared
+ * websiteUrl is a distinctive non-funding host - a real personal lab site,
+ * rather than shared Yale evidence a funding-only shell could carry on its own
+ * (issue #1147) - since the lead-name gate and the funding-slug canonical-score
+ * penalty already keep the merge person-scoped and the concrete home canonical.
  */
 export function buildWebsiteUrlResearchEntityDedupePlan(
   rows: WebsiteUrlDedupeRow[],
@@ -987,7 +1006,9 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
     if (!key) continue;
     const entities = row.entities.filter((entity) => entity.id);
     if (entities.length <= 1) continue;
-    if (entities.some((entity) => isLowTrustAreaShellSlug(entity.slug))) continue;
+    if (entities.some((entity) => isAreaShellSlug(entity.slug))) continue;
+    const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
+    if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 
     for (const cluster of clusterEntitiesBySharedLeadPersonName(entities)) {
       const group = buildGroupFromCluster(
