@@ -71,15 +71,16 @@ Confirm the student research-detail page, browse trust-filter, and admin access 
 
 ## Step 4: handle stranded saved-pathway account data
 
-The favPathways feature was removed, but the `favPathways` and `savedPathwayPlans` fields on `users` were intentionally left in place so no account data is destroyed by the code cutover.
-Decide per environment whether to drop these fields or backfill them into saved research entities before dropping the `entry_pathways` collection.
-Dropping the fields is the default when no product decision requires preserving legacy saved pathways.
+The favPathways feature was removed, but the `favPathways` field on `users` was intentionally left in place so no account data is destroyed by the code cutover.
+The `savedPathwayPlans` declaration was later dropped from the User schema; clearing its stale stored values is owned by the Dev-only `retire:stale-saved-plan-fields` script, not this runbook.
+Decide per environment whether to drop `favPathways` or backfill it into saved research entities before dropping the `entry_pathways` collection.
+Dropping the field is the default when no product decision requires preserving legacy saved pathways.
 
 ```bash
 # Optional, reviewed field cleanup in a mongosh session:
 db.users.updateMany(
-  { $or: [{ favPathways: { $exists: true } }, { savedPathwayPlans: { $exists: true } }] },
-  { $unset: { favPathways: '', savedPathwayPlans: '' } },
+  { favPathways: { $exists: true } },
+  { $unset: { favPathways: '' } },
 )
 ```
 

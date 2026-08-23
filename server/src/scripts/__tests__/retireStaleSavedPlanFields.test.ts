@@ -14,10 +14,7 @@ describe('retireStaleSavedPlanFields CLI helpers', () => {
       confirmRetireStaleSavedPlanFields: false,
     });
     expect(
-      parseRetireStaleSavedPlanFieldsArgs([
-        '--apply',
-        '--confirm-retire-stale-saved-plan-fields',
-      ]),
+      parseRetireStaleSavedPlanFieldsArgs(['--apply', '--confirm-retire-stale-saved-plan-fields']),
     ).toEqual({
       apply: true,
       confirmRetireStaleSavedPlanFields: true,

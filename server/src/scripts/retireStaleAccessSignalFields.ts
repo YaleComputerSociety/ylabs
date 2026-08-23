@@ -10,7 +10,10 @@ import {
   databaseNameFromMongoUrl,
 } from './operatorDatabaseEnvironment';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { STALE_ACCESS_SIGNAL_FIELDS, assertStaleAccessSignalFieldsFullyUnset } from './retireStaleAccessSignalFieldsCore';
+import {
+  STALE_ACCESS_SIGNAL_FIELDS,
+  assertStaleAccessSignalFieldsFullyUnset,
+} from './retireStaleAccessSignalFieldsCore';
 
 dotenv.config();
 
@@ -110,10 +113,12 @@ export async function retireStaleAccessSignalFields(options: {
 
   if (options.apply && presentBefore > 0) {
     const unset = Object.fromEntries(STALE_ACCESS_SIGNAL_FIELDS.map((field) => [field, '']));
-    const result = await db.collection(COLLECTION).updateMany(
-      { $or: STALE_ACCESS_SIGNAL_FIELDS.map((field) => ({ [field]: { $exists: true } })) },
-      { $unset: unset },
-    );
+    const result = await db
+      .collection(COLLECTION)
+      .updateMany(
+        { $or: STALE_ACCESS_SIGNAL_FIELDS.map((field) => ({ [field]: { $exists: true } })) },
+        { $unset: unset },
+      );
     matched = result.matchedCount || 0;
     modified = result.modifiedCount || 0;
   }
