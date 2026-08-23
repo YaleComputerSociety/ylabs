@@ -189,6 +189,19 @@ describe('LabMembersList', () => {
     expect(container.textContent).toContain('Principal Investigator');
   });
 
+  it('renders the department pill text at an AA-contrast gray on the muted panel', () => {
+    const { container } = renderMembers([member('')]);
+
+    const departmentPill = Array.from(container.querySelectorAll('span')).find(
+      (element) => element.textContent === 'Computer Science',
+    );
+
+    expect(departmentPill).toBeTruthy();
+    expect(departmentPill?.className).toContain('bg-[var(--yr-panel-muted)]');
+    expect(departmentPill?.className).toContain('text-gray-700');
+    expect(departmentPill?.className).not.toContain('text-gray-500');
+  });
+
   it('renders no department pill when the HR org unit is administrative chrome', () => {
     const { container } = renderMembersWithConfig([
       member('', {
