@@ -859,6 +859,62 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(74);
   });
 
+  it('reports the exhaustive threshold-aware facetDistribution for a thresholded hybrid query, not the candidate-pool distribution (#941)', async () => {
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 1649,
+        totalHits: 1649,
+        facetDistribution: {
+          schools: { 'School of Medicine': 768, 'Faculty of Arts and Sciences': 614 },
+          departments: { 'Internal Medicine': 81 },
+          researchAreas: { Oncology: 900 },
+        },
+      })
+      .mockResolvedValueOnce({
+        hits: [],
+        totalHits: 313,
+        facetDistribution: {
+          schools: { 'School of Medicine': 210, 'Faculty of Arts and Sciences': 90 },
+          departments: { Oncology: 120 },
+          researchAreas: { Oncology: 300 },
+        },
+      });
+
+    const result = await searchResearchGroupsViaMeili('cancer', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[1][1]).toMatchObject({
+      rankingScoreThreshold: 0.15,
+      page: 1,
+      hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+      facets: ['schools', 'departments', 'researchAreas'],
+    });
+    expect(result.estimatedTotalHits).toBe(313);
+    expect(result.facetDistribution).toEqual({
+      school: { 'School of Medicine': 210, 'Faculty of Arts and Sciences': 90 },
+      departments: { Oncology: 120 },
+      researchAreas: { Oncology: 300 },
+    });
+  });
+
+  it('falls back to the candidate-pool facetDistribution when the exhaustive companion query returns none', async () => {
+    mocks.search
+      .mockResolvedValueOnce({
+        hits: [],
+        estimatedTotalHits: 1649,
+        totalHits: 1649,
+        facetDistribution: {
+          schools: { 'School of Medicine': 768 },
+        },
+      })
+      .mockResolvedValueOnce({ hits: [], totalHits: 313 });
+
+    const result = await searchResearchGroupsViaMeili('cancer', {}, 1, 24);
+
+    expect(result.estimatedTotalHits).toBe(313);
+    expect(result.facetDistribution).toEqual({ school: { 'School of Medicine': 768 } });
+  });
+
   it('does not let a shallow first page fall back to Meilisearch\'s pre-threshold estimate (#885)', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
