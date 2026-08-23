@@ -126,17 +126,6 @@ const UserButton = () => {
           },
         }}
       >
-        {isProfessorUser && (
-          <MenuItem
-            component={Link}
-            to="/account"
-            onClick={handleClose}
-            sx={menuItemStyle}
-            disableRipple
-          >
-            Edit Profile
-          </MenuItem>
-        )}
         {isProfessorUser && user?.netId && (
           <MenuItem
             component={Link}

@@ -115,12 +115,12 @@ describe('Navbar', () => {
     expect(screen.queryByRole('menuitem', { name: 'Analytics' })).toBeNull();
   });
 
-  it('gives professor users direct profile actions from the account menu', () => {
+  it('gives professor users a public-profile link but no stale edit-profile duplicate of Dashboard', () => {
     renderNavbar({ userType: 'professor', netId: 'prof1' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Open user menu' }));
 
-    expect(screen.getByRole('menuitem', { name: 'Edit Profile' }).getAttribute('href')).toBe('/account');
+    expect(screen.queryByRole('menuitem', { name: 'Edit Profile' })).toBeNull();
     expect(screen.getByRole('menuitem', { name: 'Public Profile' }).getAttribute('href')).toBe(
       '/profile/prof1',
     );
