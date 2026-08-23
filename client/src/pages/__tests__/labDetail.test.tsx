@@ -1841,4 +1841,123 @@ describe('LabDetail display name unification', () => {
     expect(heading.textContent).toBe('Fallback Research Home');
     await waitFor(() => expect(document.title).toContain('Fallback Research Home'));
   });
+
+  it('offers a Visit official website action for a website-only research home', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: MATERIALS_LAB_WEBSITE_URL,
+        sourceUrls: [MATERIALS_LAB_WEBSITE_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByText(/Visit the official website to find contact details/)).toBeTruthy();
+    const websiteLink = screen.getByRole('link', { name: 'Visit official website' });
+    expect(websiteLink.getAttribute('href')).toBe(MATERIALS_LAB_WEBSITE_URL);
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('normalizes a schemeless website-only home url to an absolute external link', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: 'lab-home.example.test/materials',
+        sourceUrls: ['lab-home.example.test/materials'],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const websiteLink = screen.getByRole('link', { name: 'Visit official website' });
+    expect(websiteLink.getAttribute('href')).toBe('https://lab-home.example.test/materials');
+  });
+
+  it('renders the polished NotFound page when the research profile 404s', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url === `/research/${DEFAULT_SLUG}`) {
+        return Promise.reject({ response: { status: 404 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: /we couldn't find that yale research page/i }),
+    ).toBeTruthy();
+    const exploreLink = screen.getByRole('link', { name: /explore yale research/i });
+    expect(exploreLink.getAttribute('href')).toBe('/research');
+    await waitFor(() => expect(document.title).toContain('Page not found'));
+  });
+
+  it('offers an Explore Research recovery CTA when the profile fails to load for a non-404 reason', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/savedResearchEntityIds') {
+        return Promise.resolve({ data: { savedResearchEntityIds: [] } });
+      }
+      if (url === `/research/${DEFAULT_SLUG}`) {
+        return Promise.reject({ response: { status: 500 } });
+      }
+      return Promise.reject(new Error(`Unexpected GET ${url}`));
+    });
+
+    render(
+      <UserContext.Provider
+        value={{ ...defaultUserContext, isLoading: false, isAuthenticated: true }}
+      >
+        <MemoryRouter initialEntries={[`/research/${DEFAULT_SLUG}`]}>
+          <Routes>
+            <Route path="/research/:slug" element={<LabDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </UserContext.Provider>,
+    );
+
+    expect(
+      await screen.findByText(/Something went wrong loading this research profile/),
+    ).toBeTruthy();
+    const exploreLink = screen.getByRole('link', { name: /explore yale research/i });
+    expect(exploreLink.getAttribute('href')).toBe('/research');
+  });
 });

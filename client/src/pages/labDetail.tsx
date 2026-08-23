@@ -18,6 +18,7 @@ import axios from '../utils/axios';
 import { createInitialLabDetailState, labDetailReducer } from '../reducers/labDetailReducer';
 import LabHeader from '../components/labs/LabHeader';
 import LabMembersList from '../components/labs/LabMembersList';
+import NotFound from './notFound';
 import ResearchTeamSection from '../components/labs/ResearchTeamSection';
 import LongText from '../components/shared/LongText';
 import FirstSaveCallout from '../components/shared/FirstSaveCallout';
@@ -67,6 +68,7 @@ import { UndergraduateLogisticsSection } from '../components/research/Undergradu
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
+const RESEARCH_PROFILE_NOT_FOUND_ERROR = 'Research profile not found.';
 
 const SectionHeading = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">{children}</h2>
@@ -572,7 +574,11 @@ const DecisionSummary = ({
             <div className="py-4 first:pt-0 last:pb-0">
               <SectionHeading>Principal Investigator</SectionHeading>
               <div>
-                <LabMembersList members={[principalInvestigator]} singleColumn />
+                <LabMembersList
+                  members={[principalInvestigator]}
+                  singleColumn
+                  entityDepartments={group.departments}
+                />
               </div>
             </div>
           )}
@@ -618,7 +624,18 @@ const DecisionSummary = ({
                   </a>
                 )}
               </div>
-            ) : websiteUrl ? null : officialSource ? (
+            ) : websiteUrl ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <a
+                  href={websiteUrl}
+                  target="_blank"
+                  rel={EXTERNAL_LINK_REL}
+                  className="inline-flex min-h-11 items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  Visit official website
+                </a>
+              </div>
+            ) : officialSource ? (
               <div className="mt-3 flex flex-col gap-2">
                 <a
                   href={officialSource.url}
@@ -738,7 +755,12 @@ const LabDetail = () => {
   const { favIds: savedResearchPlanIds, setFavorite: setSavedResearchPlanFavorite } =
     useFavorites('researchPlans');
   const documentTitleGroup = payload ? (payload.group ?? payload.researchEntity) : null;
-  useDocumentTitle(researchEntityDisplayName(documentTitleGroup) || 'Research profile');
+  const isNotFound = error === RESEARCH_PROFILE_NOT_FOUND_ERROR && !payload;
+  useDocumentTitle(
+    isNotFound
+      ? 'Page not found'
+      : researchEntityDisplayName(documentTitleGroup) || 'Research profile',
+  );
 
   useEffect(() => {
     if (!slug) return;
@@ -767,7 +789,7 @@ const LabDetail = () => {
       .catch((err) => {
         if (isCancel(err) || requestId !== requestIdRef.current) return;
         if (err?.response?.status === 404) {
-          dispatch({ type: 'FETCH_FAILURE', payload: 'Research profile not found.' });
+          dispatch({ type: 'FETCH_FAILURE', payload: RESEARCH_PROFILE_NOT_FOUND_ERROR });
         } else {
           dispatch({ type: 'FETCH_FAILURE', payload: 'Failed to load this research profile.' });
         }
@@ -797,12 +819,24 @@ const LabDetail = () => {
   }
 
   if (error && !payload) {
+    if (error === RESEARCH_PROFILE_NOT_FOUND_ERROR) {
+      return <NotFound />;
+    }
     return (
-      <div className="max-w-6xl mx-auto px-4 py-16 text-center">
-        <h2 className="text-xl font-semibold text-gray-800">{error}</h2>
-        <p className="text-gray-600 mt-2">
-          The research profile you're looking for may not exist or may have been removed.
-        </p>
+      <div className="yr-page flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-14">
+        <div className="yr-panel max-w-md rounded-md p-6 text-center">
+          <h2 className="mb-4 text-2xl font-semibold leading-tight text-slate-950">{error}</h2>
+          <p className="mb-8 text-slate-600">
+            Something went wrong loading this research profile. Please try again, or head back to
+            Explore Research to keep looking.
+          </p>
+          <Link
+            to="/research"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-md bg-[var(--yr-blue)] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          >
+            Explore Yale Research
+          </Link>
+        </div>
       </div>
     );
   }
@@ -853,7 +887,7 @@ const LabDetail = () => {
       );
   const decisionProfileUrl =
     resolveDecisionProfileUrl(fallbackSourceUrl, group) || leadOfficialProfileUrl;
-  const officialWebsiteUrl = primaryWebsiteUrl;
+  const officialWebsiteUrl = safeHttpUrl(primaryWebsiteUrl) || undefined;
   const outreachOfficialSource = resolveOutreachOfficialSource(
     sources,
     [decisionProfileUrl, officialWebsiteUrl],
@@ -978,7 +1012,10 @@ const LabDetail = () => {
                   </p>
                 </div>
               ) : (
-                <LabMembersList members={principalInvestigators} />
+                <LabMembersList
+                  members={principalInvestigators}
+                  entityDepartments={group.departments}
+                />
               )}
             </section>
           )}

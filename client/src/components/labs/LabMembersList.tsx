@@ -1,15 +1,20 @@
 /**
  * Grid of public lead-investigator cards for a research entity: photo, name,
- * role pill, and department.
- *
- * Pure presentational — receives the member list as a prop.
+ * role pill, and department. Reads the department config to canonicalize each
+ * lead's raw HR org-unit affiliation, and falls back to an initials avatar when
+ * a member headshot is missing or fails to load.
  */
+import { useState } from 'react';
 import { LabMember, LabMemberRole } from '../../types/labDetail';
 import { EXTERNAL_IMAGE_REFERRER_POLICY, safeHttpUrl } from '../../utils/url';
+import { useConfig } from '../../hooks/useConfig';
+import { canonicalizeResearcherDepartmentLabel } from '../../utils/researcherDepartmentLabel';
+import { DepartmentNameRecord } from '../../utils/departmentNames';
 
 interface LabMembersListProps {
   members: LabMember[];
   singleColumn?: boolean;
+  entityDepartments?: Array<string | undefined | null>;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -58,7 +63,89 @@ const ROLE_ORDER: Record<LabMemberRole, number> = {
   affiliate: 11,
 };
 
-const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) => {
+const LabMemberCard = ({
+  user,
+  role,
+  singleColumn,
+  departmentTable,
+  entityDepartments,
+}: {
+  user: LabMember['user'];
+  role: LabMemberRole;
+  singleColumn: boolean;
+  departmentTable: DepartmentNameRecord[];
+  entityDepartments: Array<string | undefined | null>;
+}) => {
+  const [imageFailed, setImageFailed] = useState(false);
+  const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
+  const initials = `${user.fname?.charAt(0) || ''}${user.lname?.charAt(0) || ''}`.toUpperCase();
+  const profileImageHref = safeHttpUrl(user.image_url);
+  const departmentLabel = canonicalizeResearcherDepartmentLabel(
+    user.primary_department || user.primaryDepartment,
+    departmentTable,
+    entityDepartments,
+  );
+  const className = `flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
+  // Lead-investigator cards are intentionally non-interactive: the
+  // professor's official profile is reached via the decision-summary
+  // action buttons, so the card name is not a duplicate link.
+  return (
+    <div className={className}>
+      <div className="flex-shrink-0">
+        {profileImageHref && !imageFailed ? (
+          <img
+            src={profileImageHref}
+            alt={fullName}
+            referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
+            onError={() => setImageFailed(true)}
+            className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
+          />
+        ) : (
+          <div
+            className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 font-semibold text-blue-700`}
+          >
+            {initials || fullName.charAt(0).toUpperCase() || '?'}
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p
+          className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900`}
+        >
+          {fullName}
+        </p>
+        {user.title && (
+          <p
+            className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-gray-500`}
+          >
+            {user.title}
+          </p>
+        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span
+            className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${ROLE_PILL_CLASSES[role]}`}
+          >
+            {ROLE_LABELS[role]}
+          </span>
+          {departmentLabel && (
+            <span
+              className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-gray-500`}
+            >
+              {departmentLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LabMembersList = ({
+  members,
+  singleColumn = false,
+  entityDepartments = [],
+}: LabMembersListProps) => {
+  const { departments } = useConfig();
   if (!members || members.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 py-6 text-center">
@@ -95,67 +182,16 @@ const LabMembersList = ({ members, singleColumn = false }: LabMembersListProps) 
     >
       {sorted.map(({ user, role }) => {
         const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
-        const initials = `${user.fname?.charAt(0) || ''}${
-          user.lname?.charAt(0) || ''
-        }`.toUpperCase();
-        const profileImageHref = safeHttpUrl(user.image_url);
-        const content = (
-          <>
-            <div className="flex-shrink-0">
-              {profileImageHref ? (
-                <img
-                  src={profileImageHref}
-                  alt={fullName}
-                  referrerPolicy={EXTERNAL_IMAGE_REFERRER_POLICY}
-                  className={`${singleColumn ? 'h-11 w-11' : 'h-14 w-14'} rounded-full object-cover`}
-                />
-              ) : (
-                <div
-                  className={`${singleColumn ? 'h-11 w-11 text-sm' : 'h-14 w-14'} flex items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-blue-200 font-semibold text-blue-700`}
-                >
-                  {initials || fullName.charAt(0).toUpperCase() || '?'}
-                </div>
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p
-                className={`${singleColumn ? 'text-xs leading-snug' : 'truncate text-sm'} font-semibold text-gray-900`}
-              >
-                {fullName}
-              </p>
-              {user.title && (
-                <p
-                  className={`${singleColumn ? 'text-[11px] leading-snug' : 'truncate text-xs'} text-gray-500`}
-                >
-                  {user.title}
-                </p>
-              )}
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span
-                  className={`${singleColumn ? 'text-[9px]' : 'text-[10px]'} rounded-full px-1.5 py-0.5 font-medium ${ROLE_PILL_CLASSES[role]}`}
-                >
-                  {ROLE_LABELS[role]}
-                </span>
-                {user.primary_department && (
-                  <span
-                    className={`${singleColumn ? 'max-w-full whitespace-normal text-[9px] leading-snug' : 'max-w-[10rem] truncate text-[10px]'} rounded-full bg-[var(--yr-panel-muted)] px-1.5 py-0.5 text-gray-500`}
-                  >
-                    {user.primary_department}
-                  </span>
-                )}
-              </div>
-            </div>
-          </>
-        );
-        const className = `flex items-center rounded-lg border border-[var(--yr-line)] bg-[var(--yr-panel)] p-3 transition ${singleColumn ? 'gap-2' : 'gap-3'}`;
         const key = `${user.publicKey || fullName}-${role}`;
-        // Lead-investigator cards are intentionally non-interactive: the
-        // professor's official profile is reached via the decision-summary
-        // action buttons, so the card name is not a duplicate link.
         return (
-          <div key={key} className={className}>
-            {content}
-          </div>
+          <LabMemberCard
+            key={key}
+            user={user}
+            role={role}
+            singleColumn={singleColumn}
+            departmentTable={departments}
+            entityDepartments={entityDepartments}
+          />
         );
       })}
     </div>
