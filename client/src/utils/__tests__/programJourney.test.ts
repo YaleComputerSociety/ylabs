@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROGRAM_JOURNEY_CATEGORIES,
+  getMentorGuidance,
   getProgramJourneyStatus,
   summarizeProgramJourney,
   programCategoryLabel,
@@ -142,5 +143,40 @@ describe('programCategoryLabel', () => {
 
   it('falls back to a lowercased spaced form for unknown enums instead of the raw key', () => {
     expect(programCategoryLabel('SOME_NEW_KIND')).toBe('some new kind');
+  });
+});
+
+describe('getMentorGuidance', () => {
+  it('does not contradict itself when a program matches mentors without requiring one first', () => {
+    const guidance = getMentorGuidance(
+      baseFellowship({ requiresMentorBeforeApply: false, mentorMatching: true }),
+    );
+    expect(guidance.answer).toBe('No, matched through the program');
+    expect(guidance.answer).not.toMatch(/^(yes|not usually)$/i);
+    expect(guidance.detail).toContain('do not need to secure one first');
+  });
+
+  it('answers "Not usually" with no extra line when no mentor is required or matched', () => {
+    const guidance = getMentorGuidance(
+      baseFellowship({ requiresMentorBeforeApply: false, mentorMatching: false }),
+    );
+    expect(guidance.answer).toBe('Not usually');
+    expect(guidance.detail).toBeUndefined();
+  });
+
+  it('answers "Yes" and tells the student to line up a mentor when one is required', () => {
+    const guidance = getMentorGuidance(
+      baseFellowship({ requiresMentorBeforeApply: true, mentorMatching: false }),
+    );
+    expect(guidance.answer).toBe('Yes');
+    expect(guidance.detail).toBe('Line up a mentor before applying.');
+  });
+
+  it('keeps a single coherent answer when a program both requires and matches mentors', () => {
+    const guidance = getMentorGuidance(
+      baseFellowship({ requiresMentorBeforeApply: true, mentorMatching: true }),
+    );
+    expect(guidance.answer).toBe('Yes');
+    expect(guidance.detail).toContain('can help match you with one');
   });
 });

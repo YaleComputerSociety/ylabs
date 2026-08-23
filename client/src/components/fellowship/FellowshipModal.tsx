@@ -12,7 +12,7 @@ import {
   getFellowshipApplicationStatus,
   getStructuredEligibilityDetails,
 } from '../../utils/fellowshipStatus';
-import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
+import { entryModeLabel, getMentorGuidance, programKindLabel } from '../../utils/programJourney';
 import { buildSafeProgramLinks } from '../../utils/programLinks';
 import { labelizeResearchDetailValue } from '../../utils/researchDetailSources';
 import { trackResearchEvent } from '../../utils/researchAnalytics';
@@ -201,6 +201,7 @@ const FellowshipModal = ({
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
+  const mentorGuidance = getMentorGuidance(fellowship);
 
   const handleFilterClick = (
     filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
@@ -462,15 +463,11 @@ const FellowshipModal = ({
                     </div>
                     <div>
                       <span className="text-xs text-slate-500">Do you need a mentor first?</span>
-                      <p className="text-sm font-medium text-slate-900">
-                        {fellowship.requiresMentorBeforeApply ? 'Yes' : 'Not usually'}
-                      </p>
+                      <p className="text-sm font-medium text-slate-900">{mentorGuidance.answer}</p>
+                      {mentorGuidance.detail && (
+                        <p className="mt-1 text-xs text-slate-600">{mentorGuidance.detail}</p>
+                      )}
                     </div>
-                    {fellowship.mentorMatching && (
-                      <p className="rounded-md bg-[var(--yr-panel)] px-2.5 py-2 text-xs font-medium text-slate-700">
-                        This source suggests a mentor-matching or mentored program route.
-                      </p>
-                    )}
                   </div>
                 </section>
 

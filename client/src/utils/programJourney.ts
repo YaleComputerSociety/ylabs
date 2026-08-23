@@ -147,6 +147,29 @@ export function entryModeLabel(mode: string): string {
   return labels[mode] || mode.replace(/_/g, ' ').toLowerCase();
 }
 
+export interface MentorGuidance {
+  answer: string;
+  detail?: string;
+}
+
+export function getMentorGuidance(fellowship: Fellowship): MentorGuidance {
+  if (fellowship.requiresMentorBeforeApply) {
+    return {
+      answer: 'Yes',
+      detail: fellowship.mentorMatching
+        ? 'Line up a mentor before applying; this source can help match you with one.'
+        : 'Line up a mentor before applying.',
+    };
+  }
+  if (fellowship.mentorMatching) {
+    return {
+      answer: 'No, matched through the program',
+      detail: 'This program helps match you with a mentor, so you do not need to secure one first.',
+    };
+  }
+  return { answer: 'Not usually' };
+}
+
 export function programCategoryLabel(category: string): string {
   const labels: Record<string, string> = {
     CENTER_INTERNSHIP: 'Center internship',
