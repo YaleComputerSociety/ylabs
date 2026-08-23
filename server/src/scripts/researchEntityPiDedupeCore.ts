@@ -32,6 +32,7 @@ export interface ResearchEntityPiDedupeRow {
     recentGrantCount?: number;
     fundingAgencies?: string[];
     piRoleCorroborated?: boolean;
+    studentVisibilityTier?: string;
   }>;
 }
 
@@ -97,9 +98,7 @@ function grantRecordStartTime(grant: unknown): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-export function mergedGrantEvidenceFromEntities(
-  entities: ResearchEntityPiDedupeRow['entities'],
-): {
+export function mergedGrantEvidenceFromEntities(entities: ResearchEntityPiDedupeRow['entities']): {
   mergedRecentGrants: unknown[];
   mergedRecentGrantCount: number;
   mergedFundingAgencies: string[];
@@ -117,7 +116,9 @@ export function mergedGrantEvidenceFromEntities(
   const mergedRecentGrants = [...grants.values()]
     .sort((left, right) => grantRecordStartTime(right) - grantRecordStartTime(left))
     .slice(0, MAX_MERGED_RECENT_GRANTS);
-  const mergedFundingAgencies = uniqueStrings(entities.flatMap((entity) => entity.fundingAgencies || []));
+  const mergedFundingAgencies = uniqueStrings(
+    entities.flatMap((entity) => entity.fundingAgencies || []),
+  );
   return {
     mergedRecentGrants,
     mergedRecentGrantCount: recentGrantCount,
@@ -825,6 +826,127 @@ export function buildOfficialLabUrlResearchEntityDedupePlan(
       ),
     )
     .filter((group): group is ResearchEntityPiDedupeGroup => !!group);
+}
+
+const WEBSITE_URL_UMBRELLA_KEYS = new Set(['yale.edu', 'www.yale.edu', 'research.yale.edu']);
+
+const PERSON_NAME_ROLE_WORDS = new Set([
+  'the',
+  'lab',
+  'labs',
+  'laboratory',
+  'laboratories',
+  'research',
+  'faculty',
+  'group',
+  'center',
+  'centre',
+  'institute',
+  'program',
+  'programme',
+  'initiative',
+  'core',
+  'facility',
+  'project',
+  'and',
+  'of',
+  'for',
+  'a',
+  'an',
+]);
+
+export function normalizeWebsiteUrlIdentityKey(value: string | undefined): string {
+  const trimmed = (value || '').trim().toLowerCase();
+  if (!trimmed) return '';
+  const withoutScheme = trimmed.replace(/^https?:\/\//, '');
+  const withoutTrailingSlash = withoutScheme.replace(/\/+$/, '');
+  return withoutTrailingSlash;
+}
+
+function personNameTokensFromEntityName(name: string | undefined): string[] {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !PERSON_NAME_ROLE_WORDS.has(token));
+}
+
+/**
+ * Two lab entities that point at the identical distinctive website are a
+ * near-certain same-lab clone, but the same signature also covers shared
+ * group/center sites where several distinct faculty list one home
+ * (het.yale.edu, rhig.physics.yale.edu). Merging must therefore be gated on
+ * lead-name agreement: every entity must resolve to the same surname and carry
+ * no contradicting first name, so a same-person clone merges while a
+ * multi-faculty group home never collapses.
+ */
+export function websiteUrlIdentityGroupIsLeadNameAgreed(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): boolean {
+  if (entities.length < 2) return false;
+  const tokenSets = entities.map((entity) => personNameTokensFromEntityName(entity.name));
+  if (tokenSets.some((tokens) => tokens.length === 0)) return false;
+
+  const surnames = tokenSets.map((tokens) => tokens[tokens.length - 1]);
+  const surname = surnames[0];
+  if (surname.length < 2) return false;
+  if (!surnames.every((value) => value === surname)) return false;
+
+  const leadFirstNames = tokenSets.map((tokens) => tokens.slice(0, -1)[0]).filter(Boolean);
+  for (let left = 0; left < leadFirstNames.length; left += 1) {
+    for (let right = left + 1; right < leadFirstNames.length; right += 1) {
+      const first = leadFirstNames[left];
+      const second = leadFirstNames[right];
+      if (first === second) continue;
+      if (first.startsWith(second) || second.startsWith(first)) continue;
+      return false;
+    }
+  }
+  return true;
+}
+
+function websiteUrlIdentityCanonicalScore(
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+): number {
+  const cappedResearchAreas = Math.min(entity.researchAreas?.length || 0, 6);
+  return (
+    (entity.studentVisibilityTier === 'student_ready' ? 1000 : 0) +
+    (entity.sourceUrls?.length || 0) * 4 +
+    (entity.departments?.length || 0) * 3 +
+    cappedResearchAreas * 2 +
+    (hasYaleEvidence(entity) ? 20 : 0) +
+    ((entity.websiteUrl || '').trim() ? 5 : 0) +
+    (entityCarriesConcreteWebsite(entity) ? 6 : 0) +
+    ((entity.fullDescription || '').trim() ? 18 : 0) +
+    ((entity.shortDescription || '').trim() ? 8 : 0)
+  );
+}
+
+export function buildWebsiteUrlIdentityResearchEntityDedupePlan(
+  rows: OfficialLabUrlDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  return dedupePlanGroupsByEntitySet(
+    rows
+      .filter((row) => {
+        const key = normalizeWebsiteUrlIdentityKey(row.url);
+        return Boolean(key) && !WEBSITE_URL_UMBRELLA_KEYS.has(key);
+      })
+      .filter((row) => websiteUrlIdentityGroupIsLeadNameAgreed(row.entities))
+      .map((row) =>
+        buildGroupFromCluster(
+          {
+            userId: `website-url:${normalizeWebsiteUrlIdentityKey(row.url)}`,
+            normalizedName: `website-url:${normalizeWebsiteUrlIdentityKey(row.url)}`,
+            entities: row.entities,
+          },
+          row.entities,
+          websiteUrlIdentityCanonicalScore,
+        ),
+      )
+      .filter((group): group is ResearchEntityPiDedupeGroup => !!group),
+  );
 }
 
 export interface OrgNameDedupeEntity {

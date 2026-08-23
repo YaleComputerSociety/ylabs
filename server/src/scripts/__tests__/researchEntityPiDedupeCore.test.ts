@@ -11,6 +11,9 @@ import {
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  buildWebsiteUrlIdentityResearchEntityDedupePlan,
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityGroupIsLeadNameAgreed,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -1219,6 +1222,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      websiteUrlOnly: false,
       orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
@@ -1234,6 +1238,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      websiteUrlOnly: false,
       orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
@@ -1255,6 +1260,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: false,
       officialLabUrlOnly: false,
+      websiteUrlOnly: false,
       orgNameOnly: false,
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
@@ -1270,6 +1276,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: false,
       fullPlan: true,
       officialLabUrlOnly: false,
+      websiteUrlOnly: false,
       orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
@@ -1794,6 +1801,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fundingOnly: true,
       fullPlan: false,
       officialLabUrlOnly: false,
+      websiteUrlOnly: false,
       orgNameOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
@@ -1886,6 +1894,152 @@ describe('buildOfficialLabUrlResearchEntityDedupePlan', () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe('buildWebsiteUrlIdentityResearchEntityDedupePlan', () => {
+  const zimmermanSurvivor = {
+    id: 'dept-seas-julie-zimmerman',
+    slug: 'dept-seas-julie-zimmerman',
+    name: 'The Zimmerman Lab',
+    kind: 'lab',
+    websiteUrl: 'https://zimmermanlab.yale.edu/',
+    sourceUrls: [
+      'https://engineering.yale.edu/research-and-faculty/faculty-directory/julie-zimmerman',
+      'https://zimmermanlab.yale.edu/',
+    ],
+    departments: ['Chemical Engineering'],
+    researchAreas: ['Sustainability', 'Green Chemistry'],
+    fullDescription: 'The Zimmerman lab integrates engineering design and policy strategies.',
+    shortDescription: 'The Zimmerman lab integrates engineering design and policy strategies.',
+    studentVisibilityTier: 'student_ready',
+  };
+  const zimmermanClone = {
+    id: 'yse-faculty-julie-zimmerman',
+    slug: 'yse-faculty-julie-zimmerman',
+    name: 'Julie Zimmerman Lab',
+    kind: 'lab',
+    websiteUrl: 'https://zimmermanlab.yale.edu/',
+    sourceUrls: [
+      'https://environment.yale.edu/directory/faculty/julie-zimmerman',
+      'https://zimmermanlab.yale.edu/',
+    ],
+    departments: [],
+    researchAreas: ['Circular Economy', 'Corporate Sustainability', 'Sustainability'],
+    fullDescription: "Dr. Julie Zimmerman's lab studies sustainable technologies.",
+    shortDescription: "Dr. Julie Zimmerman's lab studies sustainable technologies.",
+    studentVisibilityTier: 'operator_review',
+  };
+
+  it('merges a same-person lab clone into the student-ready survivor and unions its distinct areas', () => {
+    const plan = buildWebsiteUrlIdentityResearchEntityDedupePlan([
+      { url: 'zimmermanlab.yale.edu', entities: [zimmermanClone, zimmermanSurvivor] },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('dept-seas-julie-zimmerman');
+    expect(plan[0].duplicateEntityIds).toEqual(['yse-faculty-julie-zimmerman']);
+    expect(plan[0].mergedResearchAreas).toEqual(
+      expect.arrayContaining([
+        'Sustainability',
+        'Green Chemistry',
+        'Circular Economy',
+        'Corporate Sustainability',
+      ]),
+    );
+    expect(plan[0].mergedDepartments).toEqual(['Chemical Engineering']);
+  });
+
+  it('never collapses a shared group site listing several distinct faculty', () => {
+    expect(
+      buildWebsiteUrlIdentityResearchEntityDedupePlan([
+        {
+          url: 'het.yale.edu',
+          entities: [
+            {
+              id: 'skiba',
+              slug: 'dept-physics-witold-skiba',
+              name: 'Witold Skiba Lab',
+              kind: 'lab',
+            },
+            {
+              id: 'appelquist',
+              slug: 'dept-physics-thomas-appelquist',
+              name: 'Thomas Appelquist Lab',
+              kind: 'lab',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('rejects a shared group site when one entity is not a person-named lab', () => {
+    expect(
+      buildWebsiteUrlIdentityResearchEntityDedupePlan([
+        {
+          url: 'rhig.physics.yale.edu',
+          entities: [
+            {
+              id: 'ullrich',
+              slug: 'dept-physics-thomas-ullrich',
+              name: 'Thomas Ullrich Lab',
+              kind: 'lab',
+            },
+            {
+              id: 'havener',
+              slug: 'dept-physics-laura-havener',
+              name: 'Relativistic Heavy Ion Group (RHIG)',
+              kind: 'lab',
+            },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('rejects a shared surname when first names contradict', () => {
+    expect(
+      buildWebsiteUrlIdentityResearchEntityDedupePlan([
+        {
+          url: 'smithlab.yale.edu',
+          entities: [
+            { id: 'john', slug: 'dept-john-smith', name: 'John Smith Lab', kind: 'lab' },
+            { id: 'jane', slug: 'dept-jane-smith', name: 'Jane Smith Lab', kind: 'lab' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('ignores bare umbrella hosts that identify no single lab', () => {
+    expect(
+      buildWebsiteUrlIdentityResearchEntityDedupePlan([
+        {
+          url: 'yale.edu',
+          entities: [
+            { id: 'a', slug: 'dept-a-lee', name: 'Alice Lee Lab', kind: 'lab' },
+            { id: 'b', slug: 'dept-b-lee', name: 'Alice Lee Lab', kind: 'lab' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it('agrees on lead name across abbreviated and full first names', () => {
+    expect(
+      websiteUrlIdentityGroupIsLeadNameAgreed([
+        { id: 'a', name: 'The Zimmerman Lab' },
+        { id: 'b', name: 'Julie Zimmerman Lab' },
+      ]),
+    ).toBe(true);
+  });
+
+  it('normalizes scheme and trailing slash for the identity key', () => {
+    expect(normalizeWebsiteUrlIdentityKey('HTTPS://Zimmermanlab.Yale.edu/')).toBe(
+      'zimmermanlab.yale.edu',
+    );
+    expect(normalizeWebsiteUrlIdentityKey('http://het.yale.edu')).toBe('het.yale.edu');
   });
 });
 
@@ -2248,7 +2402,12 @@ describe('buildFundingResearchEntityDedupePlan', () => {
             recentGrantCount: 1,
             fundingAgencies: ['NSF'],
             recentGrants: [
-              { id: 'nsf-0000001', agency: 'NSF', title: 'Existing NSF award', startDate: '2024-01-01' },
+              {
+                id: 'nsf-0000001',
+                agency: 'NSF',
+                title: 'Existing NSF award',
+                startDate: '2024-01-01',
+              },
             ],
           },
           {
@@ -2286,11 +2445,9 @@ describe('buildFundingResearchEntityDedupePlan', () => {
     expect(plan[0]?.duplicateEntityIds).toEqual(['nih-fixture-oakley']);
     expect(plan[0]?.mergedRecentGrantCount).toBe(3);
     expect(plan[0]?.mergedFundingAgencies).toEqual(['NSF', 'NIH']);
-    expect((plan[0]?.mergedRecentGrants as Array<{ id: string }>).map((grant) => grant.id)).toEqual([
-      'nsf-0000001',
-      '10000001',
-      '10000002',
-    ]);
+    expect((plan[0]?.mergedRecentGrants as Array<{ id: string }>).map((grant) => grant.id)).toEqual(
+      ['nsf-0000001', '10000001', '10000002'],
+    );
   });
 
   it('does not add merged grant fields when neither the canonical entity nor its duplicates carry grant data', () => {
