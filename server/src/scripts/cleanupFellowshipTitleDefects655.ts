@@ -26,6 +26,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
+import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
@@ -73,6 +74,11 @@ const normalizeUrl = (value: unknown): string =>
     .replace(/\/+$/, '')
     .toLowerCase();
 
+const THIN_DESCRIPTION_MAX = 200;
+
+const sanitizedLength = (doc: any): number =>
+  sanitizeCatalogDescription(typeof doc.description === 'string' ? doc.description : '').length;
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   await initializeConnections();
@@ -109,6 +115,7 @@ async function main() {
   }
 
   const archiveIds: string[] = [];
+  const descriptionPorts: Array<{ keepId: string; text: string; from: number; to: number }> = [];
   console.log('\n=== Pass B: semantic near-duplicate archives ===');
   for (const pair of NEAR_DUPLICATE_PAIRS) {
     const keepMatches = byTitle.get(pair.keepTitle) || [];
@@ -133,10 +140,19 @@ async function main() {
     console.log(`  KEEP    id=${keepId} title="${keep.title}" sourceUrl=${keep.sourceUrl}`);
     console.log(`  ARCHIVE id=${dropId} title="${drop.title}" sourceUrl=${drop.sourceUrl}`);
     archiveIds.push(dropId);
+
+    const keepLen = sanitizedLength(keep);
+    const portable = sanitizeCatalogDescription(typeof drop.description === 'string' ? drop.description : '');
+    if (keepLen < THIN_DESCRIPTION_MAX && portable.length > keepLen) {
+      descriptionPorts.push({ keepId, text: portable, from: keepLen, to: portable.length });
+      console.log(`  DESC-PORT keep=${keepId} thin desc ${keepLen}c <- archived sanitized ${portable.length}c (#574)`);
+    } else {
+      console.log(`  DESC-KEEP keep=${keepId} desc adequate (${keepLen}c); no port`);
+    }
   }
 
   console.log(
-    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
+    `\nSummary: title corrections=${titleUpdates.length}, near-duplicate archives=${archiveIds.length}, description ports=${descriptionPorts.length}. Mode: ${options.apply ? 'APPLY' : 'DRY-RUN'}.`,
   );
 
   if (!options.apply) {
@@ -157,6 +173,16 @@ async function main() {
     titlesWritten += result.modifiedCount;
   }
   console.log(`Corrected ${titlesWritten} title(s).`);
+
+  let descriptionsPorted = 0;
+  for (const port of descriptionPorts) {
+    const result = await Fellowship.updateOne(
+      { _id: port.keepId },
+      { $set: { description: port.text } },
+    );
+    descriptionsPorted += result.modifiedCount;
+  }
+  console.log(`Ported ${descriptionsPorted} description(s) onto kept records.`);
 
   if (archiveIds.length > 0) {
     const result = await Fellowship.updateMany(
