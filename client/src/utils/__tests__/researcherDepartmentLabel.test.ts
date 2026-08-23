@@ -77,15 +77,13 @@ describe('canonicalizeResearcherDepartmentLabel', () => {
   });
 
   it('trusts an all-caps remainder that matches one of the entity clean departments', () => {
-    expect(
-      canonicalizeResearcherDepartmentLabel('MEDNSC MRI', departmentTable, ['MRI']),
-    ).toBe('MRI');
+    expect(canonicalizeResearcherDepartmentLabel('MEDNSC MRI', departmentTable, ['MRI'])).toBe(
+      'MRI',
+    );
   });
 
   it('drops an org code whose all-caps remainder resolves to no real department', () => {
-    expect(
-      canonicalizeResearcherDepartmentLabel('MEDCSC TS/OCD/ADHD', departmentTable),
-    ).toBeNull();
+    expect(canonicalizeResearcherDepartmentLabel('MEDCSC TS/OCD/ADHD', departmentTable)).toBeNull();
     expect(canonicalizeResearcherDepartmentLabel('FASMCD MCDB', departmentTable)).toBeNull();
   });
 
