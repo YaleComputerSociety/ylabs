@@ -45,6 +45,7 @@ export function createFellowship(data: any): Fellowship {
     citizenshipStatus: data.citizenshipStatus || [],
     sourceName: data.sourceName || '',
     sourceUrl: data.sourceUrl || '',
+    sourceLinkHealth: data.sourceLinkHealth || undefined,
     sourceKey: data.sourceKey || '',
     sourceFingerprint: data.sourceFingerprint || '',
     sourceLastVerifiedAt: data.sourceLastVerifiedAt || null,

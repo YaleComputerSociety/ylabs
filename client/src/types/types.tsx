@@ -55,6 +55,12 @@ export type FellowshipLink = {
   url: string;
 };
 
+export type FellowshipSourceLinkHealth = {
+  url: string;
+  healthStatus: string;
+  httpStatusCode?: number;
+};
+
 export type Fellowship = {
   id: string;
   programCategory: string;
@@ -97,6 +103,7 @@ export type Fellowship = {
   citizenshipStatus: string[];
   sourceName: string;
   sourceUrl: string;
+  sourceLinkHealth?: FellowshipSourceLinkHealth;
   sourceKey: string;
   sourceFingerprint: string;
   sourceLastVerifiedAt: string | null;

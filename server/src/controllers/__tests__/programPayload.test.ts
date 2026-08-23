@@ -406,3 +406,67 @@ describe('publicProgramForReader provenance-hedge and directive hygiene (#1053)'
     );
   });
 });
+
+describe('publicProgramForReader sourceLinkHealth (#1022)', () => {
+  it('serializes a stored unavailable source-link-health record', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58565',
+      title: 'Yale Women Faculty Forum Seed Grant',
+      sourceUrl: 'https://wff.yale.edu/grants-awards/seed-grants/seed-grant-application',
+      sourceLinkHealth: {
+        url: 'https://wff.yale.edu/grants-awards/seed-grants/seed-grant-application',
+        healthStatus: 'UNAVAILABLE',
+        httpStatusCode: 404,
+        checkedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    });
+
+    expect(payload.sourceLinkHealth).toEqual({
+      url: 'https://wff.yale.edu/grants-awards/seed-grants/seed-grant-application',
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 404,
+    });
+  });
+
+  it('serializes a healthy record without an http status code', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58510',
+      title: 'Example Program',
+      sourceUrl: 'https://example.edu/program',
+      sourceLinkHealth: {
+        url: 'https://example.edu/program',
+        healthStatus: 'HEALTHY',
+      },
+    });
+
+    expect(payload.sourceLinkHealth).toEqual({
+      url: 'https://example.edu/program',
+      healthStatus: 'HEALTHY',
+    });
+  });
+
+  it('omits the field when no health record is stored', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58511',
+      title: 'Example Program',
+      sourceUrl: 'https://example.edu/program',
+    });
+
+    expect(payload.sourceLinkHealth).toBeUndefined();
+  });
+
+  it('drops a health record whose url is not a public http(s) url', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58512',
+      title: 'Example Program',
+      sourceUrl: 'https://example.edu/program',
+      sourceLinkHealth: {
+        url: 'javascript:alert(1)',
+        healthStatus: 'UNAVAILABLE',
+        httpStatusCode: 404,
+      },
+    });
+
+    expect(payload.sourceLinkHealth).toBeUndefined();
+  });
+});
