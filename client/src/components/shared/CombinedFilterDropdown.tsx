@@ -15,6 +15,7 @@ export interface FilterTabConfig {
   selected: string[];
   setSelected: React.Dispatch<React.SetStateAction<string[]>>;
   searchable?: boolean;
+  labelFn?: (item: string) => string;
   colorFn?: (item: string) => { bg: string; text: string };
   maxDisplay?: number;
   filterMode?: FilterMode;
@@ -95,7 +96,10 @@ const CombinedFilterDropdown = ({
   const getFilteredOptions = (tab: FilterTabConfig) => {
     const search = getSearch(tab.key).toLowerCase();
     const filtered = search
-      ? tab.options.filter((o) => o.toLowerCase().includes(search))
+      ? tab.options.filter((o) => {
+          const label = tab.labelFn ? tab.labelFn(o) : o;
+          return o.toLowerCase().includes(search) || label.toLowerCase().includes(search);
+        })
       : tab.options;
 
     const sorted = [
@@ -258,6 +262,7 @@ const CombinedFilterDropdown = ({
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);
                 const colors = activeTab.colorFn?.(option);
+                const optionLabel = activeTab.labelFn ? activeTab.labelFn(option) : option;
 
                 return (
                   <label
@@ -306,10 +311,10 @@ const CombinedFilterDropdown = ({
                       <span
                         className={`${colors.bg} ${colors.text} text-xs rounded px-2 py-1 truncate`}
                       >
-                        {option}
+                        {optionLabel}
                       </span>
                     ) : (
-                      <span className="truncate">{option}</span>
+                      <span className="truncate">{optionLabel}</span>
                     )}
                   </label>
                 );
