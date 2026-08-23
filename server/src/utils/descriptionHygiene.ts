@@ -457,6 +457,44 @@ export function isFirstPersonResearchVoiceText(text: string): boolean {
   );
 }
 
+const cardSummaryVerbLeadPattern =
+  /^(?:Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\b/i;
+
+/**
+ * A raw URL leaked in as a "topic" inside a synthesized "Studies A, B, and C."
+ * card summary (#1079: a stale bibliography URL glued into the topic list before
+ * the researchAreas cleanup regenerated the source list). The generator now
+ * rejects URL topics, but records written before that cleanup still carry the
+ * URL in their persisted shortDescription, so this repairs it at read/index time
+ * rather than requiring a corpus-wide backfill. Strips the URL and repairs the
+ * orphaned list punctuation so the remaining clean topics survive; blanks the
+ * blurb only when the URL was its sole topic. A no-op when no URL is present, so
+ * ordinary summaries are untouched; for non-synthesis prose it just drops the
+ * inline URL without list-repair.
+ */
+export function stripUrlTopicsFromCardSummary(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value) return '';
+  if (!/https?:\/\/|\bwww\./i.test(value)) return value;
+  const base = normalizeHygieneWhitespace(stripInlineUrls(value)).replace(/\s+([,;.])/g, '$1');
+  if (!cardSummaryVerbLeadPattern.test(base)) return base;
+  const repaired = base
+    .replace(/([,;])(?=\s*[,;])/g, '')
+    .replace(/([,;])(?=\s*\.)/g, '')
+    .replace(/(^\S+)\s*[,;]\s*/i, '$1 ')
+    .replace(/[,;]?\s*\band\b\s*(?=\.|$)/i, '')
+    .replace(/[\s,;]+\.$/, '.')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const topicBody = repaired
+    .replace(cardSummaryVerbLeadPattern, '')
+    .replace(/^[\s,;.]+/, '')
+    .replace(/[.\s]+$/, '')
+    .trim();
+  if (!topicBody) return '';
+  return repaired.replace(/[.\s]*$/, '.');
+}
+
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
@@ -471,11 +509,13 @@ export function isFirstPersonResearchVoiceText(text: string): boolean {
  * voice check so a bare keyword list behind a `Bio` label survives (#1077).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  const cleaned = collapseDoubledSynthesisVerb(
-    stripGluedProfileRoleLabel(
-      stripLeadingPageChrome(
-        stripTrailingContactAddress(
-          stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+  const cleaned = stripUrlTopicsFromCardSummary(
+    collapseDoubledSynthesisVerb(
+      stripGluedProfileRoleLabel(
+        stripLeadingPageChrome(
+          stripTrailingContactAddress(
+            stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+          ),
         ),
       ),
     ),

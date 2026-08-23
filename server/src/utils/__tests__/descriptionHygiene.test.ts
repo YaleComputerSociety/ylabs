@@ -33,6 +33,7 @@ import {
   stripProvenanceHedge,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
+  stripUrlTopicsFromCardSummary,
 } from '../descriptionHygiene';
 
 const SYNTHETIC_ROSTER = [
@@ -1347,5 +1348,54 @@ describe('descriptionHygiene shortDescription first-person voice fail-closed (#1
         'My research is focused on the genetic basis of lung disease.',
       ),
     ).toBe('My research is focused on the genetic basis of lung disease.');
+  });
+});
+
+describe('stripUrlTopicsFromCardSummary + shortDescription URL-topic leak (#1079)', () => {
+  const REPORTED =
+    'Studies https://www.ncbi.nlm.nih.gov/myncbi/hong-bo.zhao.1/bibliography/public/, Hearing, Cochlea, Tinnitus, Genetics, and Connexins and lens biology.';
+  const REPAIRED =
+    'Studies Hearing, Cochlea, Tinnitus, Genetics, and Connexins and lens biology.';
+
+  it('strips a leading URL topic and preserves the remaining clean topics', () => {
+    expect(stripUrlTopicsFromCardSummary(REPORTED)).toBe(REPAIRED);
+    expect(sanitizeResearchEntityShortDescription(REPORTED)).toBe(REPAIRED);
+  });
+
+  it('strips a mid-list URL topic and repairs the oxford list', () => {
+    expect(
+      stripUrlTopicsFromCardSummary('Studies Hearing, https://x.com/foo/bar, Cochlea, and Genetics.'),
+    ).toBe('Studies Hearing, Cochlea, and Genetics.');
+  });
+
+  it('strips a trailing URL topic and re-terminates the sentence', () => {
+    expect(
+      stripUrlTopicsFromCardSummary('Studies Hearing, Cochlea, and https://x.com/foo.'),
+    ).toBe('Studies Hearing, Cochlea.');
+    expect(stripUrlTopicsFromCardSummary('Studies Hearing and https://x.com/foo.')).toBe(
+      'Studies Hearing.',
+    );
+  });
+
+  it('strips a bare www topic', () => {
+    expect(stripUrlTopicsFromCardSummary('Studies www.intro2r.info, Hearing, Cochlea.')).toBe(
+      'Studies Hearing, Cochlea.',
+    );
+  });
+
+  it('blanks the blurb when the URL was the only topic', () => {
+    expect(stripUrlTopicsFromCardSummary('Studies https://x.com/foo.')).toBe('');
+    expect(sanitizeResearchEntityShortDescription('Studies https://x.com/foo.')).toBe('');
+  });
+
+  it('leaves a clean topic summary untouched', () => {
+    const clean = 'Studies Hearing, Cochlea, Tinnitus, and Genetics.';
+    expect(stripUrlTopicsFromCardSummary(clean)).toBe(clean);
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+  });
+
+  it('leaves ordinary prose without a URL untouched', () => {
+    const prose = 'The lab studies auditory neuroscience and cochlear regeneration.';
+    expect(stripUrlTopicsFromCardSummary(prose)).toBe(prose);
   });
 });
