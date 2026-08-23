@@ -44,6 +44,26 @@ describe('BarChart', () => {
     expect((bars[1] as HTMLElement).style.width).toBe('50%');
   });
 
+  it('normalizes bars to share of total and labels each row with count and percent', () => {
+    const { container } = render(
+      <BarChart
+        ariaLabel="Entities by type"
+        showShareOfTotal
+        valueFormatter={(value) => `${value}`}
+        data={[
+          { label: 'Lab', value: 75 },
+          { label: 'Center', value: 25 },
+        ]}
+      />,
+    );
+
+    const bars = container.querySelectorAll('.yr-chart-bar');
+    expect((bars[0] as HTMLElement).style.width).toBe('75%');
+    expect((bars[1] as HTMLElement).style.width).toBe('25%');
+    expect(screen.getByText('75.0%')).toBeTruthy();
+    expect(screen.getByText('25.0%')).toBeTruthy();
+  });
+
   it('shows an empty message when there is no data', () => {
     render(<BarChart ariaLabel="Empty" data={[]} emptyMessage="Nothing yet." />);
     expect(screen.getByText('Nothing yet.')).toBeTruthy();
