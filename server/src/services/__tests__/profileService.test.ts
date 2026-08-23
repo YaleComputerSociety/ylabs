@@ -973,6 +973,58 @@ describe('profileService profile shaping', () => {
     );
   });
 
+  it('strips a leading email plus nav-label chrome so the bio opens on its subject', () => {
+    expect(
+      cleanPublicProfileBio({
+        bio: 'faculty@yale.edu Website Professor Doe studies decision theory, game theory, and the economics of information.',
+      }),
+    ).toBe(
+      'Professor Doe studies decision theory, game theory, and the economics of information.',
+    );
+  });
+
+  it('strips a leading redacted-contact placeholder plus nav-label chrome', () => {
+    expect(
+      cleanPublicProfileBio({
+        bio: '[email redacted] Website Dr. Doe studies the political economy of development and comparative institutions across regions.',
+      }),
+    ).toBe(
+      'Dr. Doe studies the political economy of development and comparative institutions across regions.',
+    );
+  });
+
+  it('strips trailing "Click here" call-to-action chrome from bios', () => {
+    expect(
+      cleanPublicProfileBio({
+        bio: 'Professor Example studies the philosophical thought and writings of Plato and Aristotle. Click here for CV and further information.',
+      }),
+    ).toBe(
+      'Professor Example studies the philosophical thought and writings of Plato and Aristotle.',
+    );
+  });
+
+  it('recovers a bio when a leading dangling fragment precedes a subject-bearing sentence', () => {
+    expect(
+      cleanPublicProfileBio({
+        bio: 'at the Betty Irene Moore School of Nursing at University of California Davis. Dr. Poghosyan studies the nursing workforce, primary care delivery, and health outcomes.',
+      }),
+    ).toBe(
+      'Dr. Poghosyan studies the nursing workforce, primary care delivery, and health outcomes.',
+    );
+  });
+
+  it('drops subject-less sentence-fragment bios with no recoverable subject', () => {
+    const fragments = [
+      'focus is the philosophical thought and writings of Plato and later Platonism through late antiquity.',
+      'to move beyond the political borders of the nation-state to study South Asia and its diasporas.',
+      'engage questions related to empire, colonialism, and the making of the modern Middle East.',
+      'focuses on the norms, aspirations, and practices of scientists. My first book examined outer space.',
+    ];
+    for (const bio of fragments) {
+      expect(cleanPublicProfileBio({ bio })).toBe('');
+    }
+  });
+
   it('does not turn stored official research-area blocks into public bios', () => {
     const rawProfile = {
       fname: 'Sam',
