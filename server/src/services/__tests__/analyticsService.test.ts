@@ -295,9 +295,7 @@ describe('getAnalytics research coverage and range scoping', () => {
     await getAnalytics();
 
     const visitorFacetCall = mocks.analyticsAggregate.mock.calls.find((call) =>
-      call[0].some(
-        (stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors,
-      ),
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors),
     );
     expect(visitorFacetCall).toBeDefined();
     const facet = visitorFacetCall![0].find(
@@ -354,10 +352,30 @@ describe('getAnalytics research coverage and range scoping', () => {
 
       const now = new Date();
       await collection.insertMany([
-        { eventType: AnalyticsEventType.LOGIN, netid: 'clean_undergrad', userType: 'undergraduate', timestamp: now },
-        { eventType: AnalyticsEventType.LOGIN, netid: 'clean_grad', userType: 'graduate', timestamp: now },
-        { eventType: AnalyticsEventType.LOGIN, netid: 'drifting_visitor', userType: 'undergraduate', timestamp: now },
-        { eventType: AnalyticsEventType.VISITOR, netid: 'drifting_visitor', userType: 'graduate', timestamp: now },
+        {
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'clean_undergrad',
+          userType: 'undergraduate',
+          timestamp: now,
+        },
+        {
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'clean_grad',
+          userType: 'graduate',
+          timestamp: now,
+        },
+        {
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'drifting_visitor',
+          userType: 'undergraduate',
+          timestamp: now,
+        },
+        {
+          eventType: AnalyticsEventType.VISITOR,
+          netid: 'drifting_visitor',
+          userType: 'graduate',
+          timestamp: now,
+        },
       ]);
 
       const [result] = await collection.aggregate(visitorFacetPipeline).toArray();
@@ -366,7 +384,10 @@ describe('getAnalytics research coverage and range scoping', () => {
 
       for (const window of ['lifetime', 'last7Days', 'today'] as const) {
         const headline = result[`${window}Visitors`][0]?.total ?? 0;
-        const byType = result[`${window}VisitorsByType`] as Array<{ userType: string; count: number }>;
+        const byType = result[`${window}VisitorsByType`] as Array<{
+          userType: string;
+          count: number;
+        }>;
         const byTypeSum = byType.reduce((sum, bucket) => sum + bucket.count, 0);
 
         expect(headline).toBe(distinctNetids);
@@ -375,7 +396,9 @@ describe('getAnalytics research coverage and range scoping', () => {
 
       const buggyByType = await collection
         .aggregate([
-          { $match: { eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] } } },
+          {
+            $match: { eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] } },
+          },
           { $group: { _id: { netid: '$netid', userType: '$userType' } } },
           { $group: { _id: '$_id.userType', count: { $sum: 1 } } },
         ])
