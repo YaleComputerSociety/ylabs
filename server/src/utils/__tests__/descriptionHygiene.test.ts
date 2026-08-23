@@ -635,6 +635,31 @@ describe('sanitizeResearchEntityDescription word-boundary clamp (#897)', () => {
   });
 });
 
+describe('sanitizeResearchEntityDescription sub-cap mid-sentence truncation repair (#1240)', () => {
+  const buildTruncatedBio = (tail: string): string =>
+    `${Array.from(
+      { length: 13 },
+      (_, i) =>
+        `The laboratory investigates how coastal ecosystems respond to warming across estuary site ${i}.`,
+    ).join(' ')} ${tail}`;
+
+  it('repairs a long-form bio cut mid-sentence below the 2000-char cap', () => {
+    const cut = buildTruncatedBio('Recent work extends this to the history of slavery and the geogr');
+    expect(cut.length).toBeGreaterThan(500);
+    expect(cut.length).toBeLessThan(1500);
+    const cleaned = sanitizeResearchEntityDescription(cut);
+    expect(cleaned.endsWith('.')).toBe(true);
+    expect(cleaned).not.toMatch(/the geogr$/);
+    expect(cleaned).not.toMatch(/Recent work extends/);
+  });
+
+  it('leaves a short curated blurb that ends without a period untouched', () => {
+    const short = 'The Chen Lab studies cancer metabolism. Undergraduates are welcome to join';
+    expect(short.length).toBeLessThan(500);
+    expect(sanitizeResearchEntityDescription(short)).toBe(short);
+  });
+});
+
 const SYNTHETIC_CONTACT_HEADER_PROSE =
   'Avery Sloane, Ph.D. Professor Email: [email redacted]: 203-555-0142 Dr. Avery Sloane is a Tenure Professor of Cell Biology whose laboratory investigates how signaling networks coordinate tissue regeneration after injury across model organisms.';
 

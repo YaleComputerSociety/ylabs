@@ -753,13 +753,21 @@ const MID_SENTENCE_TRUNCATION_MIN_LENGTH = 1500;
  * boundary sits in the retained span the trailing partial word is dropped with
  * an ellipsis. Applied at read time so already-stored cut records are repaired
  * on every serve without a backfill. The length gate keeps a short curated
- * field that legitimately ends without a period untouched (the confirmed cut
- * records store the full 2000-char cap); a no-op for any value that already
- * ends on terminal punctuation.
+ * field that legitimately ends without a period untouched; a no-op for any
+ * value that already ends on terminal punctuation.
+ *
+ * `minLength` is the length above which a no-terminal-punctuation value is
+ * treated as truncated. The catalog path keeps the conservative 1500-char
+ * default because it also serves short curated program/fellowship fields, while
+ * the research-entity path passes a lower floor since its long-form prose is
+ * never a short curated field (#1240).
  */
-export function repairMidSentenceTruncation(text: string): string {
+export function repairMidSentenceTruncation(
+  text: string,
+  minLength = MID_SENTENCE_TRUNCATION_MIN_LENGTH,
+): string {
   const value = normalizeHygieneWhitespace(text);
-  if (value.length < MID_SENTENCE_TRUNCATION_MIN_LENGTH) return value;
+  if (value.length < minLength) return value;
   if (terminalPunctuationTailPattern.test(value)) return value;
   const sentenceEnd = lastSentenceBoundary(value);
   if (sentenceEnd >= value.length * 0.6) return value.slice(0, sentenceEnd).trim();
@@ -1064,6 +1072,8 @@ export function stripLeadingAdministrativeLocationSentences(text: string): strin
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
+const RESEARCH_ENTITY_TRUNCATION_MIN_LENGTH = 500;
+
 /**
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
@@ -1076,7 +1086,10 @@ export function stripLeadingAdministrativeLocationSentences(text: string): strin
  * The clean remainder is finally clamped through clampDescriptionLength so an
  * over-long or mid-word-truncated faculty/roster slice is trimmed to a sentence
  * or word boundary rather than served cut mid-word (#897), mirroring the same
- * final step in sanitizeStoredCatalogDescription (#671).
+ * final step in sanitizeStoredCatalogDescription (#671), then run through
+ * repairMidSentenceTruncation at a lower length floor than the catalog path so a
+ * long-form bio stored cut mid-sentence below the 2000-char cap (crane-lab at
+ * 1381c, #1240) is repaired at read time instead of served as truncated.
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
@@ -1095,5 +1108,8 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
   ) {
     return '';
   }
-  return clampDescriptionLength(stripped, maxLength);
+  return repairMidSentenceTruncation(
+    clampDescriptionLength(stripped, maxLength),
+    RESEARCH_ENTITY_TRUNCATION_MIN_LENGTH,
+  );
 }
