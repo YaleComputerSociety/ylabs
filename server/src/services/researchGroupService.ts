@@ -1069,12 +1069,13 @@ export async function searchResearchGroupsViaMeili(
     );
   }
 
-  // The per-page totalHits above only becomes exhaustive once Meilisearch has
-  // scanned deep enough to have examined every candidate that could pass
-  // rankingScoreThreshold, so a shallow first page can still report the
-  // pre-threshold estimate over the whole k-NN candidate pool. Run one
-  // companion query deep enough to force the exhaustive, threshold-aware count
-  // regardless of which page was actually requested. See #885.
+  // The per-page totalHits and facetDistribution above only become exhaustive
+  // once Meilisearch has scanned deep enough to have examined every candidate
+  // that could pass rankingScoreThreshold, so a shallow first page can still
+  // report the pre-threshold estimate/distribution over the whole k-NN
+  // candidate pool. Run one companion query deep enough to force the
+  // exhaustive, threshold-aware count and facet distribution regardless of
+  // which page was actually requested. See #885, #941.
   if (finalSearchParams.rankingScoreThreshold !== undefined) {
     try {
       const exhaustiveCountResult = await index.search(trimmedQuery, {
@@ -1084,9 +1085,16 @@ export async function searchResearchGroupsViaMeili(
         page: 1,
         hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
         attributesToRetrieve: ['id'],
+        facets: ['schools', 'departments', 'researchAreas'],
       });
       if (typeof exhaustiveCountResult?.totalHits === 'number') {
         searchResult = { ...searchResult, totalHits: exhaustiveCountResult.totalHits };
+      }
+      if (exhaustiveCountResult?.facetDistribution) {
+        searchResult = {
+          ...searchResult,
+          facetDistribution: exhaustiveCountResult.facetDistribution,
+        };
       }
     } catch (error) {
       console.error(
