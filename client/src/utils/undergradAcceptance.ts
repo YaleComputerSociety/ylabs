@@ -46,6 +46,41 @@ export interface AcceptanceVerdictResult {
 
 export const REACH_OUT_PLAUSIBLE_LABEL = 'Reach-out plausible';
 
+const HISTORICAL_UNDERGRAD_PHRASE =
+  /\b(former(ly)?|alumni|alumn[aei]|alum|graduated|no\s+longer|went\s+on\s+to|past\s+(under\s?grad(uate)?s?|lab|research(er)?s?|member|student)s?)\b/i;
+
+const TRANSITIONED_AWAY =
+  /\bnow\s+(a|an|the|at|works?|working|pursuing|studying|based|serving|completing|lead(s|ing)?|senior|junior|director|professor|assistant|associate|principal|postdoctoral|postdoc|post-doc|ph\.?d\.?|m\.?d\.?|m\.?s\.?|mba|ceo|cto|vp|vice)\b/i;
+
+const COMPLETED_YEAR_RANGE = /\b(19|20)\d{2}\s*[–—-]\s*(19|20)\d{2}\b/;
+
+const RECENCY_CUE =
+  /\b(current(ly)?|since|present|ongoing|active|this\s+(year|semester|term|fall|spring)|class\s+of)\b/i;
+
+/**
+ * True when an undergrad-access evidence quote describes historical / alumni
+ * trainees rather than current ones. Guards the student-facing "current
+ * undergrads" signal so a roster of past advisees never renders as live
+ * evidence that a lab currently hosts undergraduates (#1209).
+ */
+export function isHistoricalUndergradEvidence(
+  quote: string | undefined,
+  currentYear: number = new Date().getFullYear(),
+): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  if (
+    HISTORICAL_UNDERGRAD_PHRASE.test(text) ||
+    TRANSITIONED_AWAY.test(text) ||
+    COMPLETED_YEAR_RANGE.test(text)
+  ) {
+    return true;
+  }
+  if (RECENCY_CUE.test(text)) return false;
+  const years = [...text.matchAll(/\b(19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+  return years.length > 0 && years.every((year) => year <= currentYear - 3);
+}
+
 const ACCESS_SIGNAL_LABELS: Record<string, string> = {
   POSTED_OPENING: 'Posted opening',
   RECURRING_PROGRAM: 'Recurring pathway',
@@ -126,8 +161,16 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
     };
   }
 
+  const currentEvidence = summary.evidence.filter((item) => {
+    if (item.signalType !== 'CURRENT_UNDERGRADS') return true;
+    return (
+      !isHistoricalUndergradEvidence(group.undergradEvidenceQuote) &&
+      !isHistoricalUndergradEvidence(item.excerpt)
+    );
+  });
+
   const uniqueEvidence = [
-    ...summary.evidence
+    ...currentEvidence
       .reduce((bySignalType, item) => {
         const existing = bySignalType.get(item.signalType);
         if (!existing || (existing.confidence !== 'HIGH' && item.confidence === 'HIGH')) {
@@ -177,7 +220,11 @@ export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdic
     evidence.push({ kind: 'past-advisees', label, detail, strength: 'strong' });
   }
 
-  if (typeof group.currentUndergradCount === 'number' && group.currentUndergradCount > 0) {
+  if (
+    typeof group.currentUndergradCount === 'number' &&
+    group.currentUndergradCount > 0 &&
+    !isHistoricalUndergradEvidence(group.undergradEvidenceQuote)
+  ) {
     const n = group.currentUndergradCount;
     evidence.push({
       kind: 'lab-lists-undergrads',

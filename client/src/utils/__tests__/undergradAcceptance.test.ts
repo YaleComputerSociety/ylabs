@@ -7,6 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeAcceptanceVerdict,
+  isHistoricalUndergradEvidence,
+  REACH_OUT_PLAUSIBLE_LABEL,
   verdictBadgeStyles,
   verdictLabel,
   TrustVerdict,
@@ -212,6 +214,107 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
     );
     expect(result.evidence[0].label).toBe('1 past advisee');
     expect(result.evidence[0].detail).toBe('(2020)');
+  });
+});
+
+describe('isHistoricalUndergradEvidence — recency classifier (#1209)', () => {
+  const NOW = 2026;
+
+  it('flags "former" / alumni roster prose', () => {
+    expect(
+      isHistoricalUndergradEvidence(
+        'Former undergraduate researchers: Megan Sullivan (OSU), Lisa Miller (OSU)',
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('flags "now <role>" transitioned-away alumni', () => {
+    expect(
+      isHistoricalUndergradEvidence(
+        'Amber Anders 2009 Undergraduate student, now Senior Director Commercial BizOps, Illumina',
+        NOW,
+      ),
+    ).toBe(true);
+    expect(
+      isHistoricalUndergradEvidence(
+        'Grant Senyei, Yale Undergraduate student (2008-2010), now a medical student at Northwestern',
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a quote whose only years are several years stale', () => {
+    expect(
+      isHistoricalUndergradEvidence(
+        'Dustin Morado, Georgia Tech, Visiting Undergraduate in Research 2010, 2011',
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag current rosters, recency cues, or empty quotes', () => {
+    expect(isHistoricalUndergradEvidence(undefined, NOW)).toBe(false);
+    expect(isHistoricalUndergradEvidence('', NOW)).toBe(false);
+    expect(
+      isHistoricalUndergradEvidence('Current undergraduate researchers: Jane Doe, John Smith', NOW),
+    ).toBe(false);
+    expect(
+      isHistoricalUndergradEvidence('Undergraduate researcher on the team since 2022', NOW),
+    ).toBe(false);
+  });
+});
+
+describe('computeAcceptanceVerdict — historical undergrad rosters do not count as current', () => {
+  it('suppresses the current-undergrad chip when the evidence quote is historical', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        currentUndergradCount: 10,
+        undergradEvidenceQuote:
+          'Amber Anders 2009 Undergraduate student, now Senior Director Commercial BizOps, Illumina',
+      }),
+    );
+    expect(result.evidence.some((e) => e.kind === 'lab-lists-undergrads')).toBe(false);
+    expect(result.verdict).toBe('unknown');
+  });
+
+  it('still counts current undergrads when the evidence quote is not historical', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        currentUndergradCount: 3,
+        undergradEvidenceQuote: 'Current undergraduate researchers on the team.',
+      }),
+    );
+    expect(result.evidence.some((e) => e.kind === 'lab-lists-undergrads')).toBe(true);
+    expect(result.verdict).toBe('likely-accepting');
+  });
+
+  it('drops the CURRENT_UNDERGRADS access-summary chip when its quote is historical', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        undergradEvidenceQuote: 'Former undergraduate researchers who have since graduated.',
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.6,
+          evidence: [
+            {
+              signalType: 'CURRENT_UNDERGRADS',
+              confidence: 'MEDIUM',
+              excerpt: '10 current undergraduate(s) listed',
+            },
+            {
+              signalType: 'REACH_OUT_PLAUSIBLE',
+              confidence: 'HIGH',
+              excerpt: 'The official lab page provides contact instructions.',
+            },
+          ],
+          signalTypes: ['CURRENT_UNDERGRADS', 'REACH_OUT_PLAUSIBLE'],
+          bestNextStep: 'Review the official profile.',
+        },
+      }),
+    );
+    expect(result.evidence.some((e) => e.label === 'Current undergrads')).toBe(false);
+    expect(result.evidence.some((e) => e.label === REACH_OUT_PLAUSIBLE_LABEL)).toBe(true);
   });
 });
 
