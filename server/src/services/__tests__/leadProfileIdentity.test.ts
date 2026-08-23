@@ -20,6 +20,23 @@ describe('isLikelyOfficialPersonProfileUrl', () => {
       false,
     );
   });
+
+  it('rejects department roster/listing pages whose category segment is a hyphenated compound (#1203)', () => {
+    expect(isLikelyOfficialPersonProfileUrl('https://ling.yale.edu/people/linguistics-faculty')).toBe(
+      false,
+    );
+    expect(isLikelyOfficialPersonProfileUrl('https://english.yale.edu/people/ladder-faculty')).toBe(
+      false,
+    );
+    expect(isLikelyOfficialPersonProfileUrl('https://french.yale.edu/people/professors')).toBe(
+      false,
+    );
+    expect(
+      isLikelyOfficialPersonProfileUrl(
+        'https://english.yale.edu/people/tenured-and-tenure-track-faculty-assistant-professors/marta-figlerowicz',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('entityOfficialPersonProfileDestinations', () => {
@@ -333,6 +350,21 @@ describe('detectProfileIdentityRisk', () => {
         leadMembers: [{ user: { netid: 'dougrae', fname: 'Doug', lname: 'Rae' } }],
       }),
     ).toBe(true);
+  });
+
+  it('does not flag a correctly-attached PI whose only resolvable destination is a department roster page (#1203)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'http://campuspress.yale.edu/jasonshaw/',
+          sourceUrls: [
+            'https://ling.yale.edu/people/linguistics-faculty',
+            'http://campuspress.yale.edu/jasonshaw/',
+          ],
+        },
+        leadMembers: [{ user: { netid: 'jas454', fname: 'Jason', lname: 'Shaw' } }],
+      }),
+    ).toBe(false);
   });
 
   it('does not clear a surname-only slug when a competing same-surname lead exists (#1060)', () => {
