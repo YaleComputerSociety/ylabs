@@ -373,7 +373,9 @@ describe('Analytics page', () => {
 
     const tile = await waitFor(() => {
       const heading = screen.getByText('Needs attention');
-      return heading.closest('div') as HTMLElement;
+      const container = heading.closest('div') as HTMLElement;
+      expect(container.querySelector('.text-3xl')?.textContent).toBe('6');
+      return container;
     });
 
     expect(tile).toBeTruthy();
