@@ -161,6 +161,55 @@ describe('canonical membership materialization (integration)', () => {
     expect(assignments[0].reviewStatus).toBe('APPROVED');
   });
 
+  it('materializes a lead for a vanity netid that is not the letters-then-digits shape', async () => {
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'pi',
+        displayName: 'Zeta Vanity',
+        evidenceStatus: 'verified',
+        isCurrentMember: true,
+        confidence: 0.9,
+      },
+      {
+        netid: 'zvanity',
+        email: 'zvanity@example.test',
+        displayName: 'Zeta Vanity',
+        hasCanonicalSourceReference: true,
+      },
+    );
+    const account = await Account.findOne({ netid: 'zvanity' }).lean<WithObjectId<AccountRecord>>();
+    expect(account).toBeTruthy();
+    const assignments = await RoleAssignment.find({
+      'target.id': new mongoose.Types.ObjectId(id),
+    }).lean();
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].role).toBe('PI');
+    expect(assignments[0].state).toBe('CURRENT');
+  });
+
+  it('never treats a separator-bearing shell key as an account netid', async () => {
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'pi',
+        displayName: 'Shell Key Person',
+        evidenceStatus: 'verified',
+        isCurrentMember: true,
+        confidence: 0.5,
+      },
+      {
+        netid: 'dept:econ:shell-key',
+        email: 'shell-key@example.test',
+        displayName: 'Shell Key Person',
+        hasCanonicalSourceReference: true,
+      },
+    );
+    expect(await Account.countDocuments({ netid: 'dept:econ:shell-key' })).toBe(0);
+  });
+
   it('surfaces a continuously-written member through getResearchEntityRoster without the batch', async () => {
     const id = entityId();
     await materializeCanonicalMembership(
