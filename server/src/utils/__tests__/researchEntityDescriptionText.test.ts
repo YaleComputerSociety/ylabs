@@ -4,6 +4,7 @@ import {
   isDirectoryIndexChromeText,
   isPersonBiographyOrAdvisingDescription,
   publicResearchEntityDescriptionText,
+  repairSubjectlessResearchLead,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
@@ -232,6 +233,63 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
 
     expect(sanitized.fullDescription).toBe(PROGRAM_DIRECTOR_BIO);
+  });
+
+  it('repairs a subject-less "Research {verb}..." fullDescription on a LAB entity (#999)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription: 'Research investigates the mechanics of soft robotic materials.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe('Investigates the mechanics of soft robotic materials.');
+  });
+
+  it('repairs a subject-less "Research {verb}..." fullDescription on an individual-research entity (#999)', () => {
+    const individual = {
+      entityType: 'INDIVIDUAL_RESEARCH',
+      kind: 'individual',
+      fullDescription:
+        'Research examines musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(individual);
+
+    expect(sanitized.fullDescription).toBe(
+      'Examines musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.',
+    );
+  });
+});
+
+describe('repairSubjectlessResearchLead', () => {
+  it('rewrites each subject-less "Research {verb}" lead to the verb-led canonical form (#999)', () => {
+    expect(repairSubjectlessResearchLead('Research examines X.')).toBe('Examines X.');
+    expect(repairSubjectlessResearchLead('Research investigates X.')).toBe('Investigates X.');
+    expect(repairSubjectlessResearchLead('Research focuses on X.')).toBe('Focuses on X.');
+    expect(repairSubjectlessResearchLead('Research studies X.')).toBe('Studies X.');
+    expect(repairSubjectlessResearchLead('Research explores X.')).toBe('Explores X.');
+  });
+
+  it('only repairs the leading fragment, leaving later "Research interests include" sentences intact', () => {
+    expect(
+      repairSubjectlessResearchLead(
+        'Research focuses on econometric theory. Research interests include inference under partial identification.',
+      ),
+    ).toBe(
+      'Focuses on econometric theory. Research interests include inference under partial identification.',
+    );
+  });
+
+  it('does not touch a noun-led "Research interests..." lead or a subjected sentence', () => {
+    expect(repairSubjectlessResearchLead('Research interests include machine learning.')).toBe(
+      'Research interests include machine learning.',
+    );
+    expect(
+      repairSubjectlessResearchLead("The Kramer-Bottiglio Lab's research investigates soft robots."),
+    ).toBe("The Kramer-Bottiglio Lab's research investigates soft robots.");
+    expect(repairSubjectlessResearchLead('Research in the Altman Lab centers on catalysis.')).toBe(
+      'Research in the Altman Lab centers on catalysis.',
+    );
   });
 });
 
