@@ -194,13 +194,21 @@ function cleanMergedResearchAreas(
   return sanitizeProfileResearchTerms(unique);
 }
 
+function trustedAreaShellEntities(
+  entities: ResearchEntityPiDedupeRow['entities'],
+): ResearchEntityPiDedupeRow['entities'] {
+  const trustedEntities = entities.filter((entity) => !isLowTrustAreaShellSlug(entity.slug));
+  return trustedEntities.length > 0 ? trustedEntities : entities;
+}
+
 function mergedResearchAreasFromEntities(
   entities: ResearchEntityPiDedupeRow['entities'],
   options: { sanitizeProfileChrome?: boolean } = {},
 ): string[] {
-  const trustedEntities = entities.filter((entity) => !isLowTrustAreaShellSlug(entity.slug));
-  const source = trustedEntities.length > 0 ? trustedEntities : entities;
-  return cleanMergedResearchAreas(source.flatMap((entity) => entity.researchAreas || []), options);
+  return cleanMergedResearchAreas(
+    trustedAreaShellEntities(entities).flatMap((entity) => entity.researchAreas || []),
+    options,
+  );
 }
 
 function normalizedWords(value: string | undefined): string[] {
@@ -338,7 +346,7 @@ function buildGroupFromCluster(
   const duplicates = entities.filter((entity) => entity.id !== canonical.id);
   if (duplicates.length === 0) return null;
   const { canonicalName, canonicalWebsiteUrl } = carriedCanonicalIdentity(canonical, entities, row);
-  const descriptionCarry = bestDescriptionCarry(canonical, entities);
+  const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
   return {
     userId: row.userId,
     normalizedName: row.normalizedName,
@@ -488,6 +496,13 @@ function bestDescriptionCarry(
   return carry;
 }
 
+function bestDescriptionCarryFromEntities(
+  canonical: ResearchEntityPiDedupeRow['entities'][number],
+  entities: ResearchEntityPiDedupeRow['entities'],
+): { canonicalFullDescription?: string; canonicalShortDescription?: string } {
+  return bestDescriptionCarry(canonical, trustedAreaShellEntities(entities));
+}
+
 function entityPersonIdSets(rows: ResearchEntityPiDedupeRow[]): Map<string, Set<string>> {
   const byEntity = new Map<string, Set<string>>();
   for (const row of rows) {
@@ -574,7 +589,7 @@ function buildFundingGroupFromCluster(
     if (byScore !== 0) return byScore;
     return (a.slug || a.id).localeCompare(b.slug || b.id);
   })[0];
-  const descriptionCarry = bestDescriptionCarry(canonical, entities);
+  const descriptionCarry = bestDescriptionCarryFromEntities(canonical, entities);
 
   return {
     userId: row.userId,

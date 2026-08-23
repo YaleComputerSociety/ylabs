@@ -1783,7 +1783,12 @@ describe('buildFundingResearchEntityDedupePlan', () => {
     expect(plan[0]?.mergedResearchAreas).toEqual(['soft robotics', 'materials']);
   });
 
-  it('carries the fullest description across a funding merge onto a thin canonical', () => {
+  it('carries the fullest correct description from a trusted sibling and never from a longer low-trust funding shell', () => {
+    const trustedSiblingDescription =
+      'A fuller correct description of the soft-robotics research program grounded in the Yale lab site.';
+    const hallucinatedShellDescription =
+      'Optics and photonics hallucinated program that is wrong-domain filler. '.repeat(10);
+
     const plan = buildFundingResearchEntityDedupePlan([
       {
         userId: 'name:fixture-thin-canonical',
@@ -1796,7 +1801,10 @@ describe('buildFundingResearchEntityDedupePlan', () => {
             slug: 'dept-seas-fixture-thin',
             name: 'Fixture Thin Lab',
             websiteUrl: 'https://seas.yale.edu/fixture-thin-lab/',
-            sourceUrls: ['https://seas.yale.edu/fixture-thin-lab/'],
+            sourceUrls: [
+              'https://seas.yale.edu/fixture-thin-lab/',
+              'https://medicine.yale.edu/lab/fixture-thin/',
+            ],
             fullDescription: 'Short thin blurb.',
           },
           {
@@ -1804,16 +1812,22 @@ describe('buildFundingResearchEntityDedupePlan', () => {
             slug: 'nih-pi-fixture-thin',
             name: 'Fixture Thin Lab',
             sourceUrls: ['https://reporter.nih.gov/project-details/2'],
-            fullDescription:
-              'A much fuller, source-grounded description of the actual research program that should replace the thin canonical description.',
+            fullDescription: hallucinatedShellDescription,
+          },
+          {
+            id: 'seas-thin-detail',
+            slug: 'dept-seas-fixture-thin-detail',
+            name: 'Fixture Thin Lab',
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-thin/'],
+            fullDescription: trustedSiblingDescription,
           },
         ],
       },
     ]);
 
-    expect(plan[0]?.canonicalFullDescription).toBe(
-      'A much fuller, source-grounded description of the actual research program that should replace the thin canonical description.',
-    );
+    expect(plan[0]?.canonicalEntityId).toBe('ysm-thin');
+    expect(plan[0]?.canonicalFullDescription).toBe(trustedSiblingDescription);
+    expect(plan[0]?.canonicalFullDescription).not.toContain('hallucinated');
   });
 });
 
@@ -1860,7 +1874,7 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
     expect(group.canonicalSlug).toBe('yse-faculty-sparkle-malone');
     expect(group.duplicateEntityIds).toEqual(['shell']);
     expect(group.dedupeCategory).toBe('shared_person_id');
-    expect(group.canonicalFullDescription).toBe('A'.repeat(528));
+    expect(group.canonicalFullDescription).toBeUndefined();
   });
 
   it('does not carry a description when the canonical already has the fullest one', () => {
@@ -1888,6 +1902,49 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
     const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
     expect(group.canonicalEntityId).toBe('rich');
     expect(group.canonicalFullDescription).toBeUndefined();
+  });
+
+  it('never carries a longer low-trust shell description over a thin canonical, but does carry a fuller trusted sibling', () => {
+    const trustedSiblingDescription =
+      'A fuller correct account of the lab research program grounded in Yale sources.';
+    const hallucinatedShellDescription =
+      'Wrong-domain hallucinated optics and photonics filler description. '.repeat(12);
+
+    const rows = [
+      {
+        userId: 'person-shell-guard',
+        normalizedName: 'same-pi:person-shell-guard',
+        entities: [
+          {
+            id: 'home',
+            slug: 'ysm-fixture-home',
+            name: 'Fixture Home Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-home/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-home/'],
+            fullDescription: 'Short correct blurb.',
+          },
+          {
+            id: 'shell',
+            slug: 'nih-pi-fixture-home',
+            name: 'Fixture Home Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/9'],
+            fullDescription: hallucinatedShellDescription,
+          },
+          {
+            id: 'sibling',
+            slug: 'dept-seas-fixture-home',
+            name: 'Fixture Home Lab',
+            sourceUrls: ['https://seas.yale.edu/profile/fixture-home/'],
+            fullDescription: trustedSiblingDescription,
+          },
+        ],
+      },
+    ];
+
+    const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(group.canonicalEntityId).toBe('home');
+    expect(group.canonicalFullDescription).toBe(trustedSiblingDescription);
+    expect(group.canonicalFullDescription).not.toContain('hallucinated');
   });
 
   it('produces no group for a lone-entity person row', () => {
