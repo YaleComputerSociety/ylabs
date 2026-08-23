@@ -44,6 +44,37 @@ const formatConfidence = (value?: number | string): string => {
   return `${labelize(value)} confidence`;
 };
 
+const REDACTION_MARKER = /\[(?:email|phone) redacted\]/i;
+const CONTACT_LABEL = '(?:e-?mail|phone|tel(?:ephone)?|fax|mobile|cell|contact(?:\\s+info(?:rmation)?)?)';
+const LABELED_MARKER = new RegExp(
+  `(?:\\b${CONTACT_LABEL}\\b\\s*[:\\-]?\\s*)?[<(]*\\[(?:email|phone) redacted\\][)>\\].]*`,
+  'gi',
+);
+const LEADING_CONTACT_LABEL = new RegExp(`^\\s*${CONTACT_LABEL}\\b\\s*[:\\-]?\\s*`, 'i');
+const EDGE_PUNCTUATION = /^[\s:;,.\-–—/|<>()[\]"'`]+|[\s:;,.\-–—/|<>()[\]"'`]+$/g;
+const EVIDENCE_STOPWORDS = new Set([
+  'a', 'an', 'and', 'are', 'at', 'call', 'cell', 'contact', 'email', 'e-mail', 'fax', 'for',
+  'in', 'info', 'information', 'inquiries', 'inquiry', 'is', 'mail', 'me', 'mobile', 'of', 'on',
+  'or', 'out', 'phone', 'please', 'question', 'questions', 'reach', 'send', 'tel', 'telephone',
+  'the', 'to', 'us', 'via', 'write',
+]);
+
+const displayExcerpt = (value?: string): string => {
+  const trimmed = (value || '').trim();
+  if (!trimmed || !REDACTION_MARKER.test(trimmed)) return trimmed;
+  const stripped = trimmed
+    .replace(LABELED_MARKER, ' ')
+    .replace(LEADING_CONTACT_LABEL, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(EDGE_PUNCTUATION, '')
+    .trim();
+  const contentWords = stripped
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((word) => word.length >= 2 && !EVIDENCE_STOPWORDS.has(word));
+  return contentWords.length >= 3 ? stripped : '';
+};
+
 const EvidenceSourceRow = ({
   evidence,
   compact = false,
@@ -65,6 +96,7 @@ const EvidenceSourceRow = ({
         const observedDate = compact ? '' : formatDate(item.observedDate);
         const sourceType = compact ? '' : formatSourceType(item.sourceType);
         const sourceUrl = safeHttpUrl(item.url);
+        const excerpt = displayExcerpt(item.excerpt);
         return (
           <div
             key={`${item.claim}-${index}`}
@@ -78,8 +110,8 @@ const EvidenceSourceRow = ({
                 {observedDate && <span>Observed {observedDate}</span>}
               </div>
             )}
-            {item.excerpt && (
-              <p className="mt-1 text-sm leading-relaxed text-gray-600">{item.excerpt}</p>
+            {excerpt && (
+              <p className="mt-1 text-sm leading-relaxed text-gray-600">{excerpt}</p>
             )}
             {sourceUrl && (
               <a

@@ -84,7 +84,7 @@ describe('accessSummaryService', () => {
       {
         signalType: 'REACH_OUT_PLAUSIBLE',
         confidence: 'HIGH',
-        excerpt: 'Questions: [email redacted] or [phone redacted].',
+        excerpt: undefined,
         sourceUrl: undefined,
       },
       {
@@ -98,6 +98,46 @@ describe('accessSummaryService', () => {
     expect(JSON.stringify(summary)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(summary)).not.toContain('203-432-1234');
     expect(JSON.stringify(summary)).not.toContain('mailto:');
+    expect(JSON.stringify(summary)).not.toContain('redacted');
+  });
+
+  it('keeps substantive context around a redacted contact detail and never emits the marker token', async () => {
+    const entityId = new Types.ObjectId();
+    mocks.accessSignalFind.mockReturnValue(
+      queryMany([
+        {
+          researchEntityId: entityId,
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          source: {
+            excerpt:
+              'Contact Info: Laura Newburgh Assistant Professor of Physics email: laura@example.edu phone: (203-432-1234',
+            url: 'https://physics.example.test/newburgh',
+          },
+        },
+        {
+          researchEntityId: entityId,
+          type: 'CONTACT_INSTRUCTIONS_EXIST',
+          confidence: 'MEDIUM',
+          source: {
+            excerpt: 'Email us at labcontact@example.edu',
+            url: 'https://lab.example.test',
+          },
+        },
+      ]),
+    );
+
+    const summaries = await listAccessSummariesForResearchEntities([entityId]);
+    const summary = summaries.get(entityId.toString());
+
+    expect(summary?.evidence[0].excerpt).toBe(
+      'Laura Newburgh Assistant Professor of Physics',
+    );
+    expect(summary?.evidence[1].excerpt).toBeUndefined();
+    expect(JSON.stringify(summary)).not.toContain('redacted');
+    expect(JSON.stringify(summary)).not.toContain('laura@example.edu');
+    expect(JSON.stringify(summary)).not.toContain('labcontact@example.edu');
   });
 
   it('bounds public summary shaping without stringifying polluted record values', async () => {

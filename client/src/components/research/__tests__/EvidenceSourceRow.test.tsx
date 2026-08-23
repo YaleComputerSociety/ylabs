@@ -90,6 +90,28 @@ describe('EvidenceSourceRow', () => {
     expect(container.textContent).not.toContain('POSTED_OPENING');
   });
 
+  it('never renders a raw redaction marker and drops marker-only excerpts', () => {
+    const { container } = render(
+      <EvidenceSourceRow
+        evidence={[
+          {
+            claim: 'Contact evidence with substantive context.',
+            excerpt:
+              'Contact Info: Laura Newburgh Assistant Professor of Physics email: [email redacted] phone: ([phone redacted]',
+          },
+          {
+            claim: 'Contact evidence that collapses to nothing.',
+            excerpt: 'Email us at [email redacted]',
+          },
+        ]}
+      />,
+    );
+
+    expect(container.textContent).not.toContain('redacted');
+    expect(container.textContent).toContain('Laura Newburgh Assistant Professor of Physics');
+    expect(container.textContent).not.toContain('Email us at');
+  });
+
   it('omits unsafe source links', () => {
     const { container } = render(
       <EvidenceSourceRow

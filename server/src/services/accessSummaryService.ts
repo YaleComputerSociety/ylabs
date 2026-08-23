@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactDirectContactInfo, sanitizeEvidenceExcerpt } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -49,6 +49,11 @@ const boundedString = (value: unknown, maxLength: number): string | undefined =>
 const publicText = (value: unknown): string | undefined => {
   const text = boundedString(value, MAX_ACCESS_SUMMARY_TEXT_LENGTH);
   return text ? redactDirectContactInfo(text) : undefined;
+};
+
+const publicExcerpt = (value: unknown): string | undefined => {
+  const text = boundedString(value, MAX_ACCESS_SUMMARY_TEXT_LENGTH);
+  return text ? sanitizeEvidenceExcerpt(redactDirectContactInfo(text)) : undefined;
 };
 
 const publicHttpUrl = (value: unknown): string | undefined => {
@@ -154,7 +159,7 @@ export async function listAccessSummariesForResearchEntities(
       evidence: entitySignals.slice(0, 5).map((signal) => ({
         signalType: boundedString(signal.type, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
         confidence: boundedString(signal.confidence, MAX_ACCESS_SUMMARY_TYPE_LENGTH) || '',
-        excerpt: publicText(signal.source?.excerpt),
+        excerpt: publicExcerpt(signal.source?.excerpt),
         sourceUrl: publicHttpUrl(signal.source?.url),
       })),
       signalTypes: Array.from(signalTypes),
