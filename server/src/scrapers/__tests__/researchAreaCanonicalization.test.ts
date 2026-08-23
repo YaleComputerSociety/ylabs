@@ -325,6 +325,29 @@ describe('isResearchAreaLabelLeakage', () => {
     }
   });
 
+  it('rejects title-case grant titles and descriptor sentences at the 10-word ceiling (#1114)', () => {
+    for (const junk of [
+      'Treatment with Mecamylamine in Smoking and Non-Smoking Alcohol Dependent Patients',
+      'Hyperglycemia and glycemic control in critically ill and hospitalized patients',
+      'The development of solid-state quantum bits (qubits) for quantum computing',
+      'The study of problems at the interface of optical and condensed matter physics',
+      'The role of central insulin sensitivity on cognition in prediabetes',
+      'Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
+  it('keeps legitimate multi-word areas just under the 10-word ceiling (#1114)', () => {
+    for (const area of [
+      'iPSC-derived cardiomyocytes for disease modeling and drug screening',
+      'Child and Adolescent Psychosocial and Emotional Development',
+      'mRNA vaccine development platforms and delivery systems',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+
   it('does not treat short topic phrases that merely contain a stop word as prose', () => {
     for (const area of [
       'Machine Learning and Optimization',
