@@ -194,7 +194,7 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc).toMatchObject({
       id: 'entity-url-safety',
-      fullDescription: 'Contact [email redacted] or [phone redacted] for research roles.',
+      fullDescription: '',
       shortDescription: 'Email [email redacted] for details.',
       websiteUrl: 'https://safe.example.edu/lab',
       sourceUrls: ['https://safe.example.edu/source'],

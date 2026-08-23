@@ -1,6 +1,10 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import {
+  sanitizeResearchEntityDescription,
+  sanitizeResearchEntityShortDescription,
+} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
@@ -379,6 +383,13 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     if (typeof out[field] === 'string') {
       out[field] = redactDirectContactInfo(out[field]);
     }
+  }
+
+  if (typeof out.fullDescription === 'string') {
+    out.fullDescription = sanitizeResearchEntityDescription(out.fullDescription);
+  }
+  if (typeof out.shortDescription === 'string') {
+    out.shortDescription = sanitizeResearchEntityShortDescription(out.shortDescription);
   }
 
   for (const field of SEARCH_INDEX_PERSON_NAME_FIELDS) {
