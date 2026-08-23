@@ -106,6 +106,30 @@ describe('descriptionHygiene', () => {
     );
   });
 
+  it('strips the YSM profile "INFORMATION FOR" section header and "Copy Link" share chrome but keeps the prose', () => {
+    const cleaned = stripCatalogChrome(
+      'INFORMATION FOR Copy Link Our lab focuses on the pathogenesis of airway diseases.',
+    );
+    expect(cleaned).not.toMatch(/INFORMATION FOR|Copy Link/);
+    expect(cleaned).toBe('Our lab focuses on the pathogenesis of airway diseases.');
+    expect(
+      sanitizeResearchEntityDescription(
+        'INFORMATION FOR My research is focused on the genetic basis of lung disease.',
+      ),
+    ).toBe('My research is focused on the genetic basis of lung disease.');
+  });
+
+  it('fails closed when the description is only YSM profile chrome', () => {
+    expect(sanitizeResearchEntityDescription('INFORMATION FOR Copy Link Copy Link')).toBe('');
+    expect(sanitizeCatalogDescription('INFORMATION FOR Copy Link')).toBe('');
+  });
+
+  it('does not strip lower-case "information for" or "copy link" from genuine prose', () => {
+    const prose =
+      'The center provides information for prospective students and lets visitors copy link references from the reading list.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+  });
+
   it('leaves ordinary multi-sentence prose unchanged', () => {
     expect(isRosterShapedText(SYNTHETIC_CLEAN_PROSE)).toBe(false);
     expect(isNavigationDumpText(SYNTHETIC_CLEAN_PROSE)).toBe(false);
