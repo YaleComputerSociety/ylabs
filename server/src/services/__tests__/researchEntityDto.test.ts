@@ -189,6 +189,22 @@ describe('researchEntityDto', () => {
     expect(dto.fullDescription).toBe('');
   });
 
+  it('strips YSM profile chrome from served descriptions and blurbs (#808)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ysm-chrome',
+      slug: 'ysm-takyar',
+      name: 'Takyar Lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+      fullDescription:
+        'INFORMATION FOR The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+    });
+
+    expect(dto.shortDescription).toBe('');
+    expect(dto.fullDescription).toBe(
+      'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+    );
+  });
+
   it('omits unsafe public research entity contact email values', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-contact-email-safety',

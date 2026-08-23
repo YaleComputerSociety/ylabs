@@ -72,12 +72,25 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\bexpand all\b/gi,
   /\bcollapse all\b/gi,
   /\bmain menu\b/gi,
+  /\bINFORMATION FOR\b/g,
+  /\bCopy Link\b/g,
 ];
 
 export function stripCatalogChrome(text: string): string {
   let out = String(text || '');
   for (const pattern of CATALOG_CHROME_PATTERNS) out = out.replace(pattern, ' ');
   return normalizeHygieneWhitespace(out);
+}
+
+/**
+ * Chrome-only cleaner for a research-entity shortDescription (card blurb and
+ * detail field): strip page chrome and redact contact info, but skip the
+ * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
+ * research summary phrased as a question is not wrongly blanked, while a
+ * chrome-only blurb collapses to empty (#808).
+ */
+export function sanitizeResearchEntityShortDescription(text: string): string {
+  return stripCatalogChrome(redactDirectContactInfo(String(text || '')));
 }
 
 function countMatches(text: string, pattern: RegExp): number {
