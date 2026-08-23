@@ -35,11 +35,11 @@ const publicProgramText = (value: unknown): unknown =>
   typeof value === 'string' ? redactDirectContactInfo(value) : value;
 
 const publicProgramProse = (value: unknown): unknown =>
-  typeof value === 'string' ? stripRedactionPlaceholders(redactDirectContactInfo(value)) : value;
+  typeof value === 'string' ? redactDirectContactInfo(stripRedactionPlaceholders(value)) : value;
 
 const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
-    ? stripRedactionPlaceholders(redactDirectContactInfo(sanitizeCatalogDescription(value)))
+    ? redactDirectContactInfo(sanitizeCatalogDescription(stripRedactionPlaceholders(value)))
     : value;
 
 const publicProgramTextArray = (value: unknown): string[] =>
