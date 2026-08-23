@@ -1310,6 +1310,141 @@ describe('DepartmentRosterScraper.run', () => {
     getSpy.mockRestore();
   });
 
+  it('prefers grounded official-profile prose over the synthesized topic one-liner', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://physics.yale.edu/people/alex-smith" />
+      </head><body>
+        <main>
+          <p>Alex Smith is a professor of physics at Yale University. Smith studies the quantum dynamics of ultracold atomic gases and develops methods for simulating strongly correlated many-body quantum systems.</p>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://physics.yale.edu/people/alex-smith') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://physics.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Alex Smith',
+            profileUrl: 'https://physics.yale.edu/people/alex-smith',
+            labUrl: 'https://smithlab.yale.edu/',
+            topics: ['Quantum Physics', 'Cold Atoms'],
+            researchInterests: ['Quantum Physics', 'Cold Atoms'],
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    const fullDescription = entityObs.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toContain('Smith studies the quantum dynamics of ultracold atomic gases');
+    expect(fullDescription?.value).not.toContain('Studies quantum physics');
+    expect(fullDescription?.confidenceOverride).toBe(0.55);
+    expect(entityObs.find((o) => o.field === 'researchAreas')?.value).toEqual([
+      'Quantum Physics',
+      'Cold Atoms',
+    ]);
+    expect(entityObs.find((o) => o.field === 'shortDescription')?.confidenceOverride).toBe(0.55);
+  });
+
+  it('grounds a research-home description from the profile even when the roster has no topics', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://mcdb.yale.edu/profile/nora-fixture" />
+      </head><body>
+        <main>
+          <p>Nora Fixture is an assistant professor of molecular biology at Yale. Her research examines how long noncoding RNAs regulate gene expression during tumor progression in human cancers.</p>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://mcdb.yale.edu/profile/nora-fixture') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'mcdb',
+        deptName: 'Molecular, Cellular and Developmental Biology',
+        schoolName: 'FAS',
+        url: 'https://mcdb.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Nora Fixture',
+            profileUrl: 'https://mcdb.yale.edu/profile/nora-fixture',
+            labUrl: 'https://fixturelab.yale.edu/',
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    const fullDescription = entityObs.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toContain('examines how long noncoding RNAs regulate gene expression');
+    expect(fullDescription?.confidenceOverride).toBe(0.55);
+  });
+
+  it('fails closed to the synthesized one-liner when the profile has no research prose', async () => {
+    const profileHtml = `
+      <html><head>
+        <link rel="canonical" href="https://physics.yale.edu/people/pat-chrome" />
+      </head><body>
+        <nav><a href="/">Home</a><a href="/people">People</a><a href="/about">About</a></nav>
+        <main>
+          <p>Contact us to schedule a visit.</p>
+        </main>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://physics.yale.edu/people/pat-chrome') return profileHtml;
+      return '<html><body>listing</body></html>';
+    });
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'physics',
+        deptName: 'Physics',
+        schoolName: 'FAS',
+        url: 'https://physics.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Pat Chrome',
+            profileUrl: 'https://physics.yale.edu/people/pat-chrome',
+            labUrl: 'https://chromelab.yale.edu/',
+            topics: ['Condensed Matter Physics'],
+            researchInterests: ['Condensed Matter Physics'],
+          },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const entityObs = emitted.filter((o) => o.entityType === 'researchEntity');
+    const fullDescription = entityObs.find((o) => o.field === 'fullDescription');
+    expect(fullDescription?.value).toBe('Studies condensed matter physics.');
+    expect(fullDescription?.confidenceOverride).toBe(0.5);
+    expect(entityObs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
   it('honors the limit option across departments', async () => {
     const manyEntries = (count: number): FacultyEntry[] =>
       Array.from({ length: count }, (_v, i) => ({ name: `Person ${i}` }));

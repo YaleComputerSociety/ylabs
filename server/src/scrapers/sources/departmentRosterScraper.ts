@@ -51,6 +51,8 @@ import {
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
+import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
+import { sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -59,6 +61,11 @@ const MAX_PAGES_PER_DEPT = 20; // safety cap on pagination crawl
 // rank below any genuinely extracted research-home description (lab-microsite full
 // page 0.82, profile-page 0.55) during field resolution and only win as a fallback.
 const ROSTER_SYNTHESIZED_DESCRIPTION_CONFIDENCE = 0.5;
+// Grounded prose deterministically extracted from the PI's own official profile
+// page (the #481 lever) is real source text, so it must outrank the synthesized
+// one-liner while matching the shared profile-page tier used by the lab-microsite
+// extractor so a later microsite full-page description still wins.
+const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
 
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
@@ -75,6 +82,10 @@ export interface FacultyEntry {
   orcid?: string;
   /** Short bio or research summary extracted from an official Yale profile page. */
   bio?: string;
+  /** Grounded research-home description deterministically extracted from the PI's official profile page (#481 lever). */
+  researchHomeDescription?: string;
+  /** Grounded one-sentence summary paired with `researchHomeDescription`. */
+  researchHomeShortDescription?: string;
   /** Research interests extracted from official profile or roster topic fields. */
   researchInterests?: string[];
   /** Search/topic labels extracted from official profile or roster topic fields. */
@@ -1121,6 +1132,8 @@ function profileEnrichmentFromHtml(
     | 'topics'
     | 'scholarCandidateProfileUrls'
     | 'profileSourceUrl'
+    | 'researchHomeDescription'
+    | 'researchHomeShortDescription'
   >
 > {
   const $ = cheerio.load(html);
@@ -1191,6 +1204,7 @@ function profileEnrichmentFromHtml(
 
   const researchInterests = extractResearchInterestsFromHtml($);
   const bio = extractBioFromHtml($);
+  const officialProse = extractGroundedProfileDescription(html);
 
   return {
     profileUrl: canonicalUrl,
@@ -1200,6 +1214,8 @@ function profileEnrichmentFromHtml(
     labUrl,
     orcid: extractOrcidFromHtml($),
     bio,
+    researchHomeDescription: officialProse?.fullDescription,
+    researchHomeShortDescription: officialProse?.shortDescription || undefined,
     researchInterests: researchInterests.length > 0 ? researchInterests : undefined,
     topics: researchInterests.length > 0 ? researchInterests : undefined,
     scholarCandidateProfileUrls:
@@ -1207,6 +1223,24 @@ function profileEnrichmentFromHtml(
         ? uniqueStrings(scholarCandidateProfileUrls)
         : undefined,
   };
+}
+
+/**
+ * Deterministically recover a research-home's own grounded prose from the PI's
+ * official profile page (the #481 lever), then fail closed through the shared
+ * catalog-description hygiene so a roster/nav/FAQ/form/curation dump can never
+ * become a student-facing description. A profile page is person-authored, so it
+ * is scored with the `person` kind.
+ */
+function extractGroundedProfileDescription(
+  html: string,
+): { fullDescription: string; shortDescription: string } | undefined {
+  const extracted = extractOfficialResearchDescription(html, { kind: 'person' });
+  if (!extracted) return undefined;
+  const fullDescription = sanitizeCatalogDescription(extracted.fullDescription);
+  if (!fullDescription) return undefined;
+  const shortDescription = sanitizeCatalogDescription(extracted.shortDescription);
+  return { fullDescription, shortDescription };
 }
 
 function mergeProfileEnrichment(
@@ -1225,6 +1259,8 @@ function mergeProfileEnrichment(
       | 'scholarCandidateProfileUrls'
       | 'profileSourceUrl'
       | 'imageUrl'
+      | 'researchHomeDescription'
+      | 'researchHomeShortDescription'
     >
   >,
 ): FacultyEntry {
@@ -1237,6 +1273,9 @@ function mergeProfileEnrichment(
     labUrl: entry.labUrl || enrichment.labUrl,
     orcid: entry.orcid || enrichment.orcid,
     bio: entry.bio || enrichment.bio,
+    researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
+    researchHomeShortDescription:
+      entry.researchHomeShortDescription || enrichment.researchHomeShortDescription,
     researchInterests:
       uniqueStrings([...(entry.researchInterests || []), ...(enrichment.researchInterests || [])])
         .length > 0
@@ -1391,6 +1430,26 @@ function entryToResearchEntityObservations(
   ]).filter((topic) => !isTopicLabelChrome(topic));
   if (topics.length > 0) {
     observations.push({ ...base, field: 'researchAreas', value: topics });
+  }
+
+  const groundedDescription = cleanText(entry.researchHomeDescription);
+  if (groundedDescription) {
+    observations.push({
+      ...base,
+      field: 'fullDescription',
+      value: groundedDescription,
+      confidenceOverride: ROSTER_PROFILE_DESCRIPTION_CONFIDENCE,
+    });
+    const groundedShort = cleanText(entry.researchHomeShortDescription);
+    if (groundedShort) {
+      observations.push({
+        ...base,
+        field: 'shortDescription',
+        value: groundedShort,
+        confidenceOverride: ROSTER_PROFILE_DESCRIPTION_CONFIDENCE,
+      });
+    }
+  } else if (topics.length > 0) {
     const description = rosterTopicDescription(topics);
     if (description) {
       observations.push({
