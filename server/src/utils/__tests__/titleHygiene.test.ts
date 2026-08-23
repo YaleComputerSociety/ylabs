@@ -87,9 +87,9 @@ describe('hasStreetAddressFragment', () => {
 
 describe('hasPhoneContactFragment', () => {
   it('rejects an Office:/Phone: contact block label', () => {
-    expect(hasPhoneContactFragment('Professor of HistoryOffice: 320 York Phone: 203-432-0000')).toBe(
-      true,
-    );
+    expect(
+      hasPhoneContactFragment('Professor of HistoryOffice: 320 York Phone: 203-432-0000'),
+    ).toBe(true);
   });
 
   it('rejects a formatted phone number', () => {
