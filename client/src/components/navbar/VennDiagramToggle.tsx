@@ -1,7 +1,7 @@
 /**
  * Toggle for union/intersection filter matching mode.
  */
-import { FilterMode } from '../../contexts/SearchContext';
+import { FilterMode } from '../shared/CombinedFilterDropdown';
 
 interface VennDiagramToggleProps {
   mode: FilterMode;

@@ -10,7 +10,6 @@ import IconButton from '@mui/material/IconButton';
 import Drawer from '@mui/material/Drawer';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
-import Collapse from '@mui/material/Collapse';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Button from '@mui/material/Button';
 import UserButton from './UserButton';
@@ -20,15 +19,7 @@ import HomeButton from './HomeButton';
 import YURAButton from './YURAButton';
 import AnalyticsButton from './AnalyticsButton';
 import UserContext from '../contexts/UserContext';
-import SearchContext from '../contexts/SearchContext';
 import FeedbackButton from './FeebackButton';
-import NavbarSearchBar from './navbar/NavbarSearchBar';
-import NavbarSortDropdown from './navbar/NavbarSortDropdown';
-import CombinedFilterDropdown, { FilterTabConfig } from './shared/CombinedFilterDropdown';
-import ActiveFilters, { ActiveFilterChip, QuickFilterDef } from './shared/ActiveFilters';
-import ViewModeToggle from './shared/ViewModeToggle';
-import { getColorForResearchArea } from '../utils/researchAreas';
-import { useConfig } from '../hooks/useConfig';
 import { isPrimaryNavLinkActive, primaryNavLinks } from './navigationLinks';
 import { safeRouteSegment } from '../utils/url';
 import { navFocusRingSx } from '../utils/focusRing';
@@ -53,234 +44,14 @@ const CloseIcon = () => (
   </svg>
 );
 
-const SearchIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="11" cy="11" r="8" />
-    <path d="M21 21l-4.35-4.35" />
-  </svg>
-);
-
-const getAcademicDisciplineColor = (area: string): { bg: string; text: string } => {
-  switch (area) {
-    case 'Computing & AI':
-      return { bg: 'bg-blue-200', text: 'text-blue-800' };
-    case 'Life Sciences':
-      return { bg: 'bg-green-200', text: 'text-green-800' };
-    case 'Physical Sciences & Engineering':
-      return { bg: 'bg-yellow-200', text: 'text-yellow-800' };
-    case 'Health & Medicine':
-      return { bg: 'bg-red-200', text: 'text-red-800' };
-    case 'Social Sciences':
-      return { bg: 'bg-purple-200', text: 'text-purple-800' };
-    case 'Humanities & Arts':
-      return { bg: 'bg-pink-200', text: 'text-pink-800' };
-    case 'Environmental Sciences':
-      return { bg: 'bg-teal-200', text: 'text-teal-800' };
-    case 'Economics':
-      return { bg: 'bg-orange-200', text: 'text-orange-800' };
-    case 'Mathematics':
-      return { bg: 'bg-indigo-200', text: 'text-indigo-800' };
-    default:
-      return { bg: 'bg-[var(--yr-panel-muted)]', text: 'text-gray-800' };
-  }
-};
-
-const getResearchAreaChipColor = (area: string) => {
-  const m: Record<string, string> = {
-    'Computing & AI': 'bg-blue-200 text-gray-900',
-    'Life Sciences': 'bg-green-200 text-gray-900',
-    'Physical Sciences & Engineering': 'bg-yellow-200 text-gray-900',
-    'Health & Medicine': 'bg-red-200 text-gray-900',
-    'Social Sciences': 'bg-purple-200 text-gray-900',
-    'Humanities & Arts': 'bg-pink-200 text-gray-900',
-    'Environmental Sciences': 'bg-teal-200 text-gray-900',
-    Economics: 'bg-orange-200 text-gray-900',
-    Mathematics: 'bg-indigo-200 text-gray-900',
-  };
-  return m[area] || 'bg-[var(--yr-panel-muted)] text-gray-900';
-};
-
-const listingQuickFilters: QuickFilterDef[] = [
-  {
-    label: 'Open Only',
-    value: 'open',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-        <polyline points="22 4 12 14.01 9 11.01" />
-      </svg>
-    ),
-  },
-  {
-    label: 'YSM',
-    value: 'ysm',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3 21h18" />
-        <path d="M5 21V7l7-4 7 4v14" />
-        <path d="M9 21v-4h6v4" />
-      </svg>
-    ),
-  },
-  {
-    label: 'YSPH',
-    value: 'ysph',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3 21h18" />
-        <path d="M5 21V7l7-4 7 4v14" />
-        <path d="M9 21v-4h6v4" />
-      </svg>
-    ),
-  },
-  {
-    label: 'YC',
-    value: 'yc',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M3 21h18" />
-        <path d="M5 21V7l7-4 7 4v14" />
-        <path d="M9 21v-4h6v4" />
-      </svg>
-    ),
-  },
-];
-
 export default function Navbar() {
   const { isAuthenticated, user } = useContext(UserContext);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const isMobile = useMediaQuery(`(max-width:${MOBILE_BREAKPOINT})`);
-  const showPageControlsPanel = useMediaQuery('(max-width:1279px)');
   const location = useLocation();
 
   const isAdmin = user?.userType === 'admin';
   const isProfessorUser = user?.userType === 'professor' || user?.userType === 'faculty';
-  const isListingsPage = false;
-
-  const {
-    selectedDepartments,
-    setSelectedDepartments,
-    allDepartments,
-    departmentsFilterMode,
-    setDepartmentsFilterMode,
-    selectedResearchAreas,
-    setSelectedResearchAreas,
-    allResearchAreas,
-    researchAreasFilterMode,
-    setResearchAreasFilterMode,
-    selectedListingResearchAreas,
-    setSelectedListingResearchAreas,
-    allListingResearchAreas,
-    listingResearchAreasFilterMode,
-    setListingResearchAreasFilterMode,
-    quickFilter,
-    setQuickFilter,
-    totalCount,
-    isLoading: listingLoading,
-    setFilterBarHeight,
-  } = useContext(SearchContext);
-
-  const { getDepartmentColor: getColorFromConfig } = useConfig();
-
-  const listingFilterTabs: FilterTabConfig[] = [
-    {
-      key: 'departments',
-      label: 'Departments',
-      options: allDepartments,
-      selected: selectedDepartments,
-      setSelected: setSelectedDepartments,
-      searchable: true,
-      filterMode: departmentsFilterMode,
-      setFilterMode: setDepartmentsFilterMode,
-    },
-    {
-      key: 'disciplines',
-      label: 'Disciplines',
-      options: allResearchAreas,
-      selected: selectedResearchAreas,
-      setSelected: setSelectedResearchAreas,
-      colorFn: getAcademicDisciplineColor,
-      filterMode: researchAreasFilterMode,
-      setFilterMode: setResearchAreasFilterMode,
-    },
-    {
-      key: 'researchAreas',
-      label: 'Research',
-      options: allListingResearchAreas,
-      selected: selectedListingResearchAreas,
-      setSelected: setSelectedListingResearchAreas,
-      searchable: true,
-      colorFn: getColorForResearchArea,
-      maxDisplay: 100,
-      filterMode: listingResearchAreasFilterMode,
-      setFilterMode: setListingResearchAreasFilterMode,
-    },
-  ];
-
-  const listingChips: ActiveFilterChip[] = [
-    ...selectedResearchAreas.map((area) => ({
-      key: `area-${area}`,
-      label: area,
-      colorClass: `${getResearchAreaChipColor(area)} border border-[var(--yr-line-strong)]`,
-      onRemove: () => setSelectedResearchAreas((prev) => prev.filter((a) => a !== area)),
-    })),
-    ...selectedDepartments.map((dept) => ({
-      key: `dept-${dept}`,
-      label: dept,
-      colorClass: `${getColorFromConfig(dept)} text-gray-900`,
-      onRemove: () => setSelectedDepartments((prev) => prev.filter((d) => d !== dept)),
-    })),
-    ...selectedListingResearchAreas.map((area) => {
-      const colors = getColorForResearchArea(area);
-      return {
-        key: `listing-area-${area}`,
-        label: area,
-        colorClass: `${colors.bg} ${colors.text}`,
-        onRemove: () => setSelectedListingResearchAreas((prev) => prev.filter((a) => a !== area)),
-      };
-    }),
-  ];
 
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {
     if (
@@ -426,26 +197,6 @@ export default function Navbar() {
           <Toolbar sx={{ height: '68px', width: '100%', justifyContent: 'flex-start' }}>
             <Box sx={{ flexShrink: 0 }}>{isAuthenticated ? <HomeButton /> : <YURAButton />}</Box>
 
-            {isAuthenticated && isListingsPage && (
-              <Box
-                sx={{
-                  display: { xs: 'none', xl: 'flex' },
-                  gap: '12px',
-                  ml: 1,
-                  alignItems: 'center',
-                  minWidth: 0,
-                  flexShrink: 1,
-                  flexGrow: 1,
-                  overflow: 'hidden',
-                }}
-              >
-                <NavbarSearchBar />
-                <CombinedFilterDropdown tabs={listingFilterTabs} />
-                <NavbarSortDropdown />
-                <ViewModeToggle />
-              </Box>
-            )}
-
             {isAuthenticated && (
               <>
                 <Box
@@ -492,24 +243,6 @@ export default function Navbar() {
                       <UserButton />
                     </>
                   )}
-                  {isListingsPage && showPageControlsPanel && (
-                    <IconButton
-                      size="small"
-                      color="inherit"
-                      aria-label="search"
-                      onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-                      sx={{
-                        borderRadius: '4px',
-                        height: 44,
-                        width: 44,
-                        padding: '8px',
-                        '&:hover': { backgroundColor: 'transparent' },
-                        ...navFocusRingSx,
-                      }}
-                    >
-                      <SearchIcon />
-                    </IconButton>
-                  )}
                   {isMobile && (
                     <IconButton
                       size="large"
@@ -544,47 +277,6 @@ export default function Navbar() {
             )}
           </Toolbar>
         </AppBar>
-
-        {isAuthenticated && isListingsPage && showPageControlsPanel && (
-          <Collapse in={mobileSearchOpen}>
-            <Box
-              sx={{
-                bgcolor: 'var(--yr-panel)',
-                borderTop: '1px solid var(--yr-line)',
-                boxShadow: '0px 2px 4px rgba(11, 31, 58, 0.1)',
-                p: 2,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-              }}
-            >
-              <NavbarSearchBar />
-              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <CombinedFilterDropdown tabs={listingFilterTabs} />
-                <NavbarSortDropdown />
-              </Box>
-            </Box>
-          </Collapse>
-        )}
-
-        {isAuthenticated && isListingsPage && (
-          <ActiveFilters
-            quickFilters={listingQuickFilters}
-            activeQuickFilter={quickFilter}
-            onQuickFilterChange={setQuickFilter}
-            totalCount={totalCount}
-            isLoading={listingLoading}
-            chips={listingChips}
-            onClearAll={() => {
-              setSelectedDepartments([]);
-              setSelectedResearchAreas([]);
-              setSelectedListingResearchAreas([]);
-              setQuickFilter(null);
-            }}
-            onHeightChange={setFilterBarHeight}
-          />
-        )}
-
       </Box>
     </ThemeProvider>
   );

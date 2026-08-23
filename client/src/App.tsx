@@ -20,7 +20,6 @@ import Footer from './components/Footer';
 import Analytics from './pages/analytics';
 import NotFound from './pages/notFound';
 import ConfigContextProvider from './providers/ConfigContextProvider';
-import SearchContextProvider from './providers/SearchContextProvider';
 import FellowshipSearchContextProvider from './providers/FellowshipSearchContextProvider';
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
@@ -34,85 +33,83 @@ const App = () => {
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ScrollToTop />
       <ConfigContextProvider>
-        <SearchContextProvider>
-          <FellowshipSearchContextProvider>
-            <UIContextProvider>
-              <div className="flex flex-col h-full overflow-hidden">
-                <a
-                  href="#main-content"
-                  className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-blue-700 focus:px-4 focus:py-2 focus:text-white focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                  Skip to main content
-                </a>
-                <div className="flex-shrink-0 flex-grow-0">
-                  <Navbar />
-                </div>
-                <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
-                  <HttpStatusNotifier />
-                  <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
-                    <Routes>
-                      <Route
-                        path="/"
-                        element={<PrivateRoute Component={RootRedirect} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/listings"
-                        element={
-                          <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
-                        }
-                      />
-                      <Route
-                        path="/fellowships"
-                        element={
-                          <PrivateRoute
-                            Component={RetiredFellowshipsRedirect}
-                            unknownBlocked={true}
-                          />
-                        }
-                      />
-                      <Route
-                        path="/programs"
-                        element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/research"
-                        element={<PrivateRoute Component={Research} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/research/:slug"
-                        element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/about"
-                        element={<PrivateRoute Component={About} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/account"
-                        element={<PrivateRoute Component={Account} unknownBlocked={true} />}
-                      />
-                      <Route
-                        path="/profile/:netid"
-                        element={<PrivateRoute Component={Profile} unknownBlocked={true} />}
-                      />
-                      <Route path="/analytics" element={<AdminRoute Component={Analytics} />} />
-                      <Route path="/login" element={<Login />} />
-                      <Route
-                        path="/login-error"
-                        element={<UnprivateRoute Component={LoginError} />}
-                      />
-                      <Route
-                        path="/unknown"
-                        element={<PrivateRoute Component={Unknown} knownBlocked={true} />}
-                      />
-                      <Route path="*" element={<NotFound />} />
-                    </Routes>
-                  </main>
-                  <Footer />
-                </div>
+        <FellowshipSearchContextProvider>
+          <UIContextProvider>
+            <div className="flex flex-col h-full overflow-hidden">
+              <a
+                href="#main-content"
+                className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-blue-700 focus:px-4 focus:py-2 focus:text-white focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                Skip to main content
+              </a>
+              <div className="flex-shrink-0 flex-grow-0">
+                <Navbar />
               </div>
-            </UIContextProvider>
-          </FellowshipSearchContextProvider>
-        </SearchContextProvider>
+              <div className="flex-grow overflow-y-auto flex flex-col" data-scroll-container>
+                <HttpStatusNotifier />
+                <main id="main-content" tabIndex={-1} className="flex-grow focus:outline-none">
+                  <Routes>
+                    <Route
+                      path="/"
+                      element={<PrivateRoute Component={RootRedirect} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/listings"
+                      element={
+                        <PrivateRoute Component={RetiredListingsRedirect} unknownBlocked={true} />
+                      }
+                    />
+                    <Route
+                      path="/fellowships"
+                      element={
+                        <PrivateRoute
+                          Component={RetiredFellowshipsRedirect}
+                          unknownBlocked={true}
+                        />
+                      }
+                    />
+                    <Route
+                      path="/programs"
+                      element={<PrivateRoute Component={Fellowships} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/research"
+                      element={<PrivateRoute Component={Research} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/research/:slug"
+                      element={<PrivateRoute Component={ResearchDetail} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/about"
+                      element={<PrivateRoute Component={About} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/account"
+                      element={<PrivateRoute Component={Account} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/profile/:netid"
+                      element={<PrivateRoute Component={Profile} unknownBlocked={true} />}
+                    />
+                    <Route path="/analytics" element={<AdminRoute Component={Analytics} />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route
+                      path="/login-error"
+                      element={<UnprivateRoute Component={LoginError} />}
+                    />
+                    <Route
+                      path="/unknown"
+                      element={<PrivateRoute Component={Unknown} knownBlocked={true} />}
+                    />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </main>
+                <Footer />
+              </div>
+            </div>
+          </UIContextProvider>
+        </FellowshipSearchContextProvider>
       </ConfigContextProvider>
     </Router>
   );

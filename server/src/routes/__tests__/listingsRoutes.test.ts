@@ -43,7 +43,6 @@ describe('listings routes', () => {
 
   it('exposes read and student interaction routes without listing authoring routes', () => {
     expect(registeredRoutes()).toEqual([
-      { method: 'get', path: '/search' },
       { method: 'get', path: '/claims/mine' },
       { method: 'get', path: '/:id' },
       { method: 'post', path: '/:id/outreach' },

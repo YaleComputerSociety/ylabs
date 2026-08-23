@@ -32,10 +32,6 @@ vi.mock('../providers/ConfigContextProvider', () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('../providers/SearchContextProvider', () => ({
-  default: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 vi.mock('../providers/FellowshipSearchContextProvider', () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
