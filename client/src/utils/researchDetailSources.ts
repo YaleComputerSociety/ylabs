@@ -421,6 +421,16 @@ export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean 
   isNonContactableDocumentSourceUrl(url) ||
   isFileShareSourceUrl(url);
 
+export const isUnavailableResearchWebsiteCtaUrl = (
+  url: string | null | undefined,
+  sourceLinkHealth: DetailSourceLinkHealth[] = [],
+): boolean => {
+  const key = sourceLedgerKey(url);
+  if (!key) return false;
+  const health = sourceLinkHealth.find((entry) => sourceLedgerKey(entry.url) === key);
+  return isLikelyUnavailableSourceLink(health);
+};
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
