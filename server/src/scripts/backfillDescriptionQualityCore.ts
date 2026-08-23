@@ -80,6 +80,9 @@ const RESEARCH_VERB =
 
 const AZ_INDEX_PATTERN = /\bA[–-]Z index\b|\blists Yale School of Medicine lab websites\b/i;
 
+const DANGLING_RESEARCH_AREAS_SUFFIX =
+  /\s*[;,]?\s*(?:(?:and|including)\s+)?research\s+areas\s*:\s*\.?\s*$/i;
+
 const normalizeText = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
@@ -129,7 +132,7 @@ export function sanitizeDescriptionText(value: unknown): DescriptionSanitizeResu
     (input) => input.replace(/\s*\bhttps?:\/\/\S+/gi, ''),
     (input) => input.replace(/\s*\bPMC\d{4,}\b/g, ''),
     (input) => input.replace(/\s*\bPMID:?\s*\d+\b/gi, ''),
-    (input) => input.replace(/\s*[;,]?\s*research areas:\s*$/i, ''),
+    (input) => input.replace(DANGLING_RESEARCH_AREAS_SUFFIX, ''),
   ];
   for (const step of artifactSteps) {
     const next = step(text);
@@ -269,7 +272,7 @@ const rawArtifactPresent = (value: string): boolean =>
   /\bPMC\d{4,}\b/.test(value) ||
   /\bPMID:?\s*\d+\b/i.test(value) ||
   /[a-z]Researcher\b/.test(value) ||
-  /research areas:\s*$/i.test(value);
+  DANGLING_RESEARCH_AREAS_SUFFIX.test(value);
 
 interface DescriptionPair {
   shortDescription: string;
