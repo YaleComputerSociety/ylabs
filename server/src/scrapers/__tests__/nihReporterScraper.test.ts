@@ -117,6 +117,20 @@ describe('canonicalPiName', () => {
     expect(canonicalPiName('AMY ARNSTEN')).toBe('Amy Arnsten');
   });
 
+  it('title-cases each run of a hyphenated surname or given name', () => {
+    expect(canonicalPiName('OHNO-MACHADO, RILEY')).toBe('Riley Ohno-Machado');
+    expect(canonicalPiName('CHEUNG, KEI-HOI')).toBe('Kei-Hoi Cheung');
+  });
+
+  it('title-cases each run around an apostrophe', () => {
+    expect(canonicalPiName("D'SOUZA, RILEY")).toBe("Riley D'Souza");
+  });
+
+  it('leaves already-correctly-cased hyphenated/apostrophized names unchanged', () => {
+    expect(canonicalPiName('Ohno-Machado, Riley')).toBe("Riley Ohno-Machado");
+    expect(canonicalPiName("D'Souza, Riley")).toBe("Riley D'Souza");
+  });
+
   it('returns empty string on falsy input', () => {
     expect(canonicalPiName('')).toBe('');
     expect(canonicalPiName(null)).toBe('');
