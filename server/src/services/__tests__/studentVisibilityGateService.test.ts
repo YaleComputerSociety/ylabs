@@ -14,6 +14,7 @@ vi.mock('../../models/visibilityReleaseQueueItem', async (importOriginal) => ({
 }));
 
 import {
+  buildStudentVisibilityGateApplyOps,
   evaluateStudentVisibilityGateLeadResolution,
   isProfileAreaDuplicateCounterpart,
   isBlockingVisibilityReason,
@@ -541,6 +542,121 @@ describe('studentVisibilityGateService', () => {
       }),
     );
     expect(deps.resolveArchivedResearchQueueItems).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildStudentVisibilityGateApplyOps', () => {
+  const now = new Date('2026-08-23T00:00:00.000Z');
+  const alreadyPublicPlan = (overrides: Partial<StudentVisibilityGatePlan> = {}) =>
+    safePlan({
+      currentTier: 'student_ready',
+      currentComputedTier: 'student_ready',
+      currentReasons: ['source_backed_description', 'concrete_next_step'],
+      ...overrides,
+    });
+
+  it('resolves an orphaned open queue item for an already-public entity that did not materially change', () => {
+    const plan = alreadyPublicPlan();
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(queueOps).toHaveLength(1);
+    expect(queueOps[0].updateMany.filter).toMatchObject({
+      collection: 'research',
+      recordId: 'entity-safe',
+      status: 'open',
+    });
+    expect(queueOps[0].updateMany.update.$set).toMatchObject({
+      status: 'resolved',
+      resolvedByTier: 'student_ready',
+    });
+  });
+
+  it('emits no queue op for an already-public entity with no open queue item', () => {
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [alreadyPublicPlan()],
+      new Set(),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(queueOps).toHaveLength(0);
+  });
+
+  it('writes the entity doc and resolves the queue when a public plan materially changes', () => {
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [safePlan()],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(1);
+    expect(researchOps[0].updateOne.update.$set).toMatchObject({
+      studentVisibilityTier: 'student_ready',
+    });
+    expect(queueOps[0].updateMany.update.$set.status).toBe('resolved');
+  });
+
+  it('leaves an in-sync held queue item untouched when it did not materially change', () => {
+    const plan = heldPlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
+    });
+    expect(isStudentVisibilityGatePlanMateriallyChanged(plan)).toBe(false);
+
+    const { researchOps, queueOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-held']),
+      now,
+    );
+
+    expect(researchOps).toHaveLength(0);
+    expect(queueOps).toHaveLength(0);
+  });
+
+  it('creates a missing held queue item even when the plan did not materially change', () => {
+    const plan = heldPlan({
+      currentTier: 'operator_review',
+      currentComputedTier: 'operator_review',
+      currentReasons: ['missing_description', 'missing_action_evidence', 'concrete_next_step'],
+    });
+
+    const { queueOps } = buildStudentVisibilityGateApplyOps([plan], new Set(), now);
+
+    expect(queueOps).toHaveLength(1);
+    expect(queueOps[0].updateOne.upsert).toBe(true);
+    expect(queueOps[0].updateOne.update.$set).toMatchObject({
+      status: 'open',
+      recordId: 'entity-held',
+      blockerReasons: ['missing_description', 'missing_action_evidence'],
+    });
+  });
+
+  it('suppresses an orphaned open queue item for a suppressed entity', () => {
+    const plan = safePlan({
+      currentTier: 'suppressed',
+      currentComputedTier: 'suppressed',
+      computedTier: 'suppressed',
+      tier: 'suppressed',
+      reasons: ['generic_directory_shell'],
+      currentReasons: ['generic_directory_shell'],
+    });
+
+    const { queueOps } = buildStudentVisibilityGateApplyOps(
+      [plan],
+      new Set(['research:entity-safe']),
+      now,
+    );
+
+    expect(queueOps).toHaveLength(1);
+    expect(queueOps[0].updateMany.update.$set.status).toBe('suppressed');
   });
 });
 

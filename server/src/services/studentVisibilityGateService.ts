@@ -750,69 +750,88 @@ export async function runStudentVisibilityGateForPlans(
   };
 }
 
-export async function applyStudentVisibilityGatePlans(
+export interface StudentVisibilityGateApplyOps {
+  researchOps: any[];
+  programOps: any[];
+  queueOps: any[];
+}
+
+const openQueueKey = (collection: string, recordId: unknown): string =>
+  `${collection}:${String(recordId)}`;
+
+export function buildStudentVisibilityGateApplyOps(
   plans: StudentVisibilityGatePlan[],
-): Promise<void> {
-  const now = new Date();
+  openQueueKeys: Set<string>,
+  now: Date,
+): StudentVisibilityGateApplyOps {
   const researchOps: any[] = [];
   const programOps: any[] = [];
   const queueOps: any[] = [];
 
-  const changedPlans = plans.filter(isStudentVisibilityGatePlanMateriallyChanged);
+  for (const plan of plans) {
+    const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
+    if (materiallyChanged) {
+      const visibilityUpdate = {
+        studentVisibilityTier: plan.tier,
+        studentVisibilityComputedTier: plan.computedTier,
+        studentVisibilityReasons: plan.reasons,
+        studentVisibilityComputedAt: now,
+        studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
+      };
+      const recordOp = {
+        updateOne: {
+          filter: { _id: plan.recordId },
+          update: { $set: visibilityUpdate },
+        },
+      };
+      if (plan.collection === 'research') researchOps.push(recordOp);
+      else programOps.push(recordOp);
+    }
 
-  for (const plan of changedPlans) {
-    const visibilityUpdate = {
-      studentVisibilityTier: plan.tier,
-      studentVisibilityComputedTier: plan.computedTier,
-      studentVisibilityReasons: plan.reasons,
-      studentVisibilityComputedAt: now,
-      studentVisibilityVersion: STUDENT_VISIBILITY_VERSION,
-    };
-    const recordOp = {
-      updateOne: {
-        filter: { _id: plan.recordId },
-        update: { $set: visibilityUpdate },
-      },
-    };
-    if (plan.collection === 'research') researchOps.push(recordOp);
-    else programOps.push(recordOp);
+    const hasOpenQueueItem = openQueueKeys.has(openQueueKey(plan.collection, plan.recordId));
 
     if (PUBLIC_TIERS.has(plan.tier)) {
-      queueOps.push({
-        updateMany: {
-          filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
-          update: {
-            $set: {
-              status: 'resolved',
-              resolvedAt: now,
-              resolvedByTier: plan.tier,
-              lastSeenAt: now,
+      if (hasOpenQueueItem) {
+        queueOps.push({
+          updateMany: {
+            filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
+            update: {
+              $set: {
+                status: 'resolved',
+                resolvedAt: now,
+                resolvedByTier: plan.tier,
+                lastSeenAt: now,
+              },
             },
           },
-        },
-      });
+        });
+      }
       continue;
     }
 
     if (plan.tier === 'suppressed') {
-      const blockerReasons = plan.reasons.filter(isBlockingVisibilityReason);
-      queueOps.push({
-        updateMany: {
-          filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
-          update: {
-            $set: {
-              status: 'suppressed',
-              resolvedAt: now,
-              resolvedByTier: plan.tier,
-              blockerReasons,
-              remainingBlockers: blockerReasons,
-              lastSeenAt: now,
+      if (hasOpenQueueItem) {
+        const blockerReasons = plan.reasons.filter(isBlockingVisibilityReason);
+        queueOps.push({
+          updateMany: {
+            filter: { collection: plan.collection, recordId: plan.recordId, status: 'open' },
+            update: {
+              $set: {
+                status: 'suppressed',
+                resolvedAt: now,
+                resolvedByTier: plan.tier,
+                blockerReasons,
+                remainingBlockers: blockerReasons,
+                lastSeenAt: now,
+              },
             },
           },
-        },
-      });
+        });
+      }
       continue;
     }
+
+    if (!materiallyChanged && hasOpenQueueItem) continue;
 
     const blockerReasons = plan.reasons.filter(isBlockingVisibilityReason);
     queueOps.push({
@@ -844,6 +863,38 @@ export async function applyStudentVisibilityGatePlans(
       },
     });
   }
+
+  return { researchOps, programOps, queueOps };
+}
+
+async function loadOpenReleaseQueueKeys(
+  plans: StudentVisibilityGatePlan[],
+): Promise<Set<string>> {
+  const recordIds = Array.from(new Set(plans.map((plan) => plan.recordId)));
+  if (recordIds.length === 0) return new Set();
+  const openItems = await VisibilityReleaseQueueItem.find({
+    status: 'open',
+    recordId: { $in: recordIds },
+  })
+    .select('collection recordId')
+    .lean();
+  return new Set(
+    (openItems as unknown as Array<{ collection: string; recordId: unknown }>).map((item) =>
+      openQueueKey(item.collection, item.recordId),
+    ),
+  );
+}
+
+export async function applyStudentVisibilityGatePlans(
+  plans: StudentVisibilityGatePlan[],
+): Promise<void> {
+  const now = new Date();
+  const openQueueKeys = await loadOpenReleaseQueueKeys(plans);
+  const { researchOps, programOps, queueOps } = buildStudentVisibilityGateApplyOps(
+    plans,
+    openQueueKeys,
+    now,
+  );
 
   await Promise.all([
     researchOps.length > 0
