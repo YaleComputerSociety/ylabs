@@ -78,9 +78,9 @@ describe('stripResearchAreaSourceChrome', () => {
       'Sarcoma, Kaposi',
     ]);
     expect(stripResearchAreaSourceChrome('BlockchainYSM Researcher')).toEqual(['Blockchain']);
-    expect(stripResearchAreaSourceChrome('Demyelinating Autoimmune Diseases, CNSYSM Researcher')).toEqual([
-      'Demyelinating Autoimmune Diseases, CNS',
-    ]);
+    expect(
+      stripResearchAreaSourceChrome('Demyelinating Autoimmune Diseases, CNSYSM Researcher'),
+    ).toEqual(['Demyelinating Autoimmune Diseases, CNS']);
     expect(stripResearchAreaSourceChrome('SodiumYSM Researchers')).toEqual(['Sodium']);
   });
 
