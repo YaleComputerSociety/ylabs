@@ -811,6 +811,60 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('computes the school facet disjunctively so selecting a school does not collapse its own dropdown (#1080)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 6,
+      facetDistribution: {
+        schools: { 'Law School': 6 },
+        departments: {},
+      },
+    });
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 42,
+      facetDistribution: {
+        schools: {
+          'Law School': 6,
+          'School of Medicine': 12,
+          'Yale College': 24,
+        },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', { school: ['Law School'] }, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    const [conjunctiveFilter] = mocks.search.mock.calls[0];
+    const disjunctiveCall = mocks.search.mock.calls[1];
+    expect(mocks.search.mock.calls[0][1].filter).toMatch(/schools = "Law School"/);
+    expect(disjunctiveCall[1]).toEqual(
+      expect.objectContaining({ facets: ['schools'], limit: 0, offset: 0 }),
+    );
+    expect(disjunctiveCall[1].filter).not.toMatch(/schools = /);
+    expect(conjunctiveFilter).toBe('');
+    expect(result.facetDistribution?.school).toEqual({
+      'Law School': 6,
+      'School of Medicine': 12,
+      'Yale College': 24,
+    });
+  });
+
+  it('does not issue a disjunctive facet query for a field with no active filter', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'Yale College': 3 },
+        departments: { 'Computer Science': 2 },
+      },
+    });
+
+    await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(1);
+  });
+
   it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],

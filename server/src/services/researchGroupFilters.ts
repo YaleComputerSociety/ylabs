@@ -41,43 +41,56 @@ const acceptanceLevelClauses = (level: AcceptanceLevelInput | undefined): string
   return [];
 };
 
+export interface BuildResearchGroupFilterStringOptions {
+  /** Omit this field's own clause, so its facet distribution can be computed disjunctively. */
+  excludeField?: keyof ResearchGroupFilterInput;
+}
+
 /**
  * Build the Meilisearch filter string for a ResearchGroup search request.
  *
  * Always pins `archived = false`. Each provided multi-value filter behaves as
  * an OR within the field, and all fields are AND-ed together.
  */
-export function buildResearchGroupFilterString(filters: ResearchGroupFilterInput = {}): string {
+export function buildResearchGroupFilterString(
+  filters: ResearchGroupFilterInput = {},
+  options: BuildResearchGroupFilterStringOptions = {},
+): string {
+  const effectiveFilters: ResearchGroupFilterInput = options.excludeField
+    ? { ...filters, [options.excludeField]: undefined }
+    : filters;
   const parts: string[] = ['archived = false'];
 
-  const kindClause = filters.kind ? orEqualsClause('kind', filters.kind) : null;
+  const kindClause = effectiveFilters.kind ? orEqualsClause('kind', effectiveFilters.kind) : null;
   if (kindClause) parts.push(kindClause);
 
   // Filter on the multi-valued `schools` field so a cross-school lab matches
   // under every school it belongs to. The request field stays `school`.
-  const schoolClause = filters.school ? orEqualsClause('schools', filters.school) : null;
+  const schoolClause = effectiveFilters.school
+    ? orEqualsClause('schools', effectiveFilters.school)
+    : null;
   if (schoolClause) parts.push(schoolClause);
 
-  const departmentsClause = filters.departments
-    ? orEqualsClause('departments', filters.departments)
+  const departmentsClause = effectiveFilters.departments
+    ? orEqualsClause('departments', effectiveFilters.departments)
     : null;
   if (departmentsClause) parts.push(departmentsClause);
 
-  const researchAreasClause = filters.researchAreas
-    ? orEqualsClause('researchAreas', filters.researchAreas)
+  const researchAreasClause = effectiveFilters.researchAreas
+    ? orEqualsClause('researchAreas', effectiveFilters.researchAreas)
     : null;
   if (researchAreasClause) parts.push(researchAreasClause);
 
-  for (const clause of acceptanceLevelClauses(filters.acceptanceLevel)) {
+  for (const clause of acceptanceLevelClauses(effectiveFilters.acceptanceLevel)) {
     parts.push(clause);
   }
 
-  if (filters.hostsUndergrads === true) {
+  if (effectiveFilters.hostsUndergrads === true) {
     parts.push('hasUndergradHostingEvidence = true');
   }
 
-  const studentVisibilityClause = filters.studentVisibilityTier
-    ? orEqualsClause('studentVisibilityTier', filters.studentVisibilityTier)
+  const studentVisibilityClause = effectiveFilters.studentVisibilityTier
+    ? orEqualsClause('studentVisibilityTier', effectiveFilters.studentVisibilityTier)
     : null;
   if (studentVisibilityClause) parts.push(studentVisibilityClause);
 

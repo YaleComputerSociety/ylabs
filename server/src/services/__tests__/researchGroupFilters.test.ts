@@ -108,6 +108,24 @@ describe('buildResearchGroupFilterString', () => {
     });
   });
 
+  describe('excludeField option', () => {
+    it('omits the excluded field clause while keeping all other filters (#1080)', () => {
+      const filter = buildResearchGroupFilterString(
+        { school: ['Law School'], departments: ['Genetics'] },
+        { excludeField: 'school' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+
+    it('has no effect when the excluded field was not set', () => {
+      const filter = buildResearchGroupFilterString(
+        { departments: ['Genetics'] },
+        { excludeField: 'school' },
+      );
+      expect(filter).toBe('archived = false AND (departments = "Genetics")');
+    });
+  });
+
   describe('hostsUndergrads filter', () => {
     it('true → filters on undergrad-specific hosting evidence, not the broad acceptance tier', () => {
       const filter = buildResearchGroupFilterString({ hostsUndergrads: true });
