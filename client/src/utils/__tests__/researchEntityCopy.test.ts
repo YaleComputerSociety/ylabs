@@ -26,6 +26,19 @@ describe('researchEntityCopy', () => {
     expect(researchWebsiteLabel(entity)).toBe('research website');
   });
 
+  it('uses faculty research labels for FACULTY_RESEARCH entities despite stale lab kind', () => {
+    const entity = {
+      name: 'Example Researcher Faculty Research',
+      kind: 'lab',
+      entityType: 'FACULTY_RESEARCH',
+    };
+
+    expect(isFacultyResearchEntity(entity)).toBe(true);
+    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(researchWebsiteLabel(entity)).toBe('research website');
+    expect(researchWebsiteCtaLabel(entity)).toBe('Visit research website');
+  });
+
   it('keeps lab labels for real lab entities', () => {
     const entity = {
       name: 'Example Lab',
