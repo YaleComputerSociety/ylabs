@@ -33,15 +33,41 @@ function describesResearchHome(text: string): boolean {
   );
 }
 
+const ACADEMIC_CREDENTIAL = 'M\\.?D|Ph\\.?D|MBBS|MPH|D\\.?O|DVM|DDS|Sc\\.?D|Pharm\\.?D|D\\.?Phil|Dr\\.?PH';
+
+const CREDENTIAL_NAME_LEAD = new RegExp(
+  `\\b[A-Z][a-z]+(?:\\s+(?:[A-Z]\\.?|van|von|de|del|della|di|da|la|le|[A-Z][a-z]+)){1,3},\\s*(?:${ACADEMIC_CREDENTIAL})\\b`,
+);
+
+const NAME_VERB_LEAD = new RegExp(
+  `^([A-Z][\\p{L}'’.-]+(?:\\s+[A-Z][\\p{L}'’.-]+){1,3})(?:['’]s)?(?:,\\s*(?:${ACADEMIC_CREDENTIAL})\\b)*,?\\s+(?:is|was|received|earned|holds|joined|serves|completed|obtained|graduated|attended|studies|investigates|examines|explores|focuses|researches|works|has)\\b`,
+  'u',
+);
+
+const PERSONAL_QUOTE_ATTRIBUTION =
+  /[,"'”’]\s*(?:he|she|they)\s+(?:says?|said|explains?|explained|notes?|noted|adds?|added|recalls?|recalled|believes?)\b/gi;
+
+const firstSentence = (value: string): string => value.match(/^[^.!?]+[.!?]?/)?.[0] ?? value;
+
+// Only the signals that never fire on organization prose gate the fail-closed
+// path, so blanking a sole surviving candidate can never drop a real research
+// description. Do not widen this with the looser name-verb lead below.
+function isHighConfidencePersonBio(text: string): boolean {
+  const value = textValue(text);
+  if (!value) return false;
+  if (/^(?:he|she|they)\s/i.test(value)) return true;
+  if (/^(?:dr|prof|professor)\.?\s+[A-Z]/i.test(value)) return true;
+  if (CREDENTIAL_NAME_LEAD.test(firstSentence(value))) return true;
+  if ((value.match(PERSONAL_QUOTE_ATTRIBUTION) ?? []).length >= 2) return true;
+  return false;
+}
+
 function isPersonCentricLead(text: string): boolean {
   const value = textValue(text);
   if (!value) return false;
   if (/^(?:the|our|this|a|an|in|within|at)\b/i.test(value)) return false;
-  if (/^(?:he|she|they)\s/i.test(value)) return true;
-  if (/^(?:dr|prof|professor)\.?\s+[A-Z]/.test(value)) return true;
-  const lead = value.match(
-    /^([A-Z][\p{L}'’.-]+(?:\s+[A-Z][\p{L}'’.-]+){1,3})(?:['’]s)?\s+(?:is|was|received|earned|holds|joined|serves|completed|studies|investigates|examines|explores|focuses|researches|works|has)\b/u,
-  );
+  if (isHighConfidencePersonBio(value)) return true;
+  const lead = value.match(NAME_VERB_LEAD);
   if (
     lead &&
     !/\b(?:Lab|Laboratory|Center|Centre|Institute|Program|Group|Initiative|Project|Department|School|University|College|Yale)\b/.test(
@@ -95,5 +121,6 @@ export function selectResearchHomeDescription(
       bestScore = candidateScore;
     }
   }
+  if (bestScore < 0 && isHighConfidencePersonBio(best)) return null;
   return best;
 }
