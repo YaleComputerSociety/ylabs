@@ -1015,7 +1015,11 @@ const Research = () => {
       ) {
         return;
       }
-      void runSearchRef.current(urlQuery, { filters: studentFilters, syncUrl: false });
+      void runSearchRef.current(urlQuery, {
+        filters: studentFilters,
+        syncUrl: false,
+        preserveResults: submittedQuery === urlQuery.trim(),
+      });
       return;
     }
 
@@ -1030,6 +1034,7 @@ const Research = () => {
         filters: studentFilters,
         hasFilterSelections: true,
         syncUrl: false,
+        preserveResults: submittedQuery === 'filtered research',
       });
       return;
     }
