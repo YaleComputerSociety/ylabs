@@ -1489,3 +1489,82 @@ describe('YaleCollegeFellowshipsOfficeScraper macmillan opportunity catalog (#67
     );
   });
 });
+
+describe('YaleCollegeFellowshipsOfficeScraper bare-deadline summary suppression (#1066)', () => {
+  const bareDeadlineCatalogHtml = `
+    <main>
+      <h2>Fellowships administered through the Office of Science &amp; QR</h2>
+      <p>
+        <strong><a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=42">Fixture Tetelman Fellowship for International Research in the Sciences</a></strong>
+        Deadline: Thursday, February 12, 2026 at 11:00pm ET.
+      </p>
+      <p>
+        <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=43">Fixture STARS Summer Research Program</a>
+        Deadline: Friday, February 6, 2026 at 11:00pm ET. .
+      </p>
+      <p>
+        <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=44">Fixture STARS II Program</a>
+        AY 2025-26 Program Spring Term Deadline: Monday, January 5, 2026 at 11:00pm ET.
+      </p>
+      <p>
+        <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=50">Fixture Global Health Research Fellowship</a>
+        Funds mentored fieldwork in low-resource clinical settings for undergraduates.
+        Deadline: Wednesday, March 4, 2026 at 11:00pm ET.
+      </p>
+    </main>
+  `;
+
+  it('drops a summary that is only the program name plus its deadline', () => {
+    const candidates = parseFellowshipCatalogPage(
+      bareDeadlineCatalogHtml,
+      sciencePageUrl,
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+
+    const bareTitles = [
+      'Fixture Tetelman Fellowship for International Research in the Sciences',
+      'Fixture STARS Summer Research Program',
+      'Fixture STARS II Program',
+    ];
+    for (const title of bareTitles) {
+      const candidate = candidates.find((entry) => entry.title === title);
+      expect(candidate, `expected candidate for ${title}`).toBeDefined();
+      expect(candidate?.summary).toBeUndefined();
+    }
+  });
+
+  it('keeps a summary that carries descriptive prose alongside the deadline', () => {
+    const candidates = parseFellowshipCatalogPage(
+      bareDeadlineCatalogHtml,
+      sciencePageUrl,
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+
+    const descriptive = candidates.find(
+      (entry) => entry.title === 'Fixture Global Health Research Fellowship',
+    );
+    expect(descriptive?.summary).toContain('mentored fieldwork in low-resource clinical settings');
+  });
+
+  it('does not append an adjacent program block to a prior record (#1066 no cross-program bleed)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <h2>Fellowships administered through the Office of Science &amp; QR</h2>
+          <p><strong><a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=61">Fixture Tetelman Fellowship</a></strong> Deadline: Thursday, February 12, 2026 at 11:00pm ET.</p>
+          <p>Fixture Tetelman Fellowship funds international research in the sciences for undergraduates.</p>
+          <h2>Other Yale-funded Fellowship Opportunities</h2>
+          <p><strong><a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=62">Fixture HKUST Summer UG Research Program</a></strong></p>
+          <p>Is an opportunity for undergraduate students to take up a research placement for 10 weeks at HKUST.</p>
+        </main>
+      `,
+      sciencePageUrl,
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+
+    for (const candidate of candidates) {
+      expect(candidate.summary || '').not.toContain('HKUST');
+      expect(candidate.description || '').not.toContain('HKUST');
+    }
+  });
+});
