@@ -99,4 +99,14 @@ describe('publicProgramForReader redaction placeholder hygiene (#671 residual)',
       'If you are an international student, please in the Tax Office.',
     );
   });
+
+  it('strips a stray [email redacted] token out of the applicationInformation field', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58502',
+      title: 'Example Albert Bildner Travel Prize',
+      applicationInformation: 'Submit your materials and email [email redacted] with questions.',
+    });
+
+    expect(payload.applicationInformation).toBe('Submit your materials and with questions.');
+  });
 });

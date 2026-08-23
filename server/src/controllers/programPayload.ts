@@ -29,6 +29,9 @@ const publicProgramLinks = (
     : [];
 
 const publicProgramText = (value: unknown): unknown =>
+  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+
+const publicProgramProse = (value: unknown): unknown =>
   typeof value === 'string' ? stripRedactionPlaceholders(redactDirectContactInfo(value)) : value;
 
 const publicProgramDescription = (value: unknown): unknown =>
@@ -65,8 +68,8 @@ export const publicProgramForReader = (program: any) => {
     competitionType: publicProgramText(program.competitionType),
     summary: publicProgramDescription(program.summary),
     description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramText(program.applicationInformation),
-    eligibility: publicProgramText(program.eligibility),
+    applicationInformation: publicProgramProse(program.applicationInformation),
+    eligibility: publicProgramProse(program.eligibility),
     restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramText(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
