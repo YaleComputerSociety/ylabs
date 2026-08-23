@@ -12,7 +12,7 @@ import {
   getDepartmentDisplayLabel,
 } from './departmentNames';
 
-const LEADING_ORG_CODE_PATTERN = /^([A-Z][A-Z0-9]{1,6})\s+(?=.*[a-z])(.+)$/;
+const LEADING_ORG_CODE_PATTERN = /^([A-Z][A-Z0-9]{1,6})\s+(.+)$/;
 const TRAILING_BUSINESS_OPERATIONS_PATTERN = /\s+business operations\s*$/i;
 const TRAILING_ALL_QUALIFIER_PATTERN = /\s*-\s*all\s*$/i;
 
