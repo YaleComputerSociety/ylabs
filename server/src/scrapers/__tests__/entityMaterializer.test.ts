@@ -12,6 +12,7 @@ import {
   buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
   normalizeMaterializerObjectId,
+  officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
   sanitizeResearchEntitySourceUrlsForMaterialization,
   selectOfficialProfileObservationUserMatch,
@@ -807,6 +808,77 @@ describe('deriveResearchEntityWebsiteUrl', () => {
         },
       ),
     ).toEqual({ action: 'set', websiteUrl: 'https://example-computing-lab.example.org/' });
+  });
+});
+
+describe('officialLeadProfileSourceUrl', () => {
+  it('promotes the lead-identity observation source when it is an official person profile (#613)', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'websiteUrl',
+          value: 'https://medicine.yale.edu/lab/steele/',
+          sourceUrl: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+        },
+        {
+          field: 'inferredPiUserId',
+          value: 'user-123',
+          sourceUrl: 'https://medicine.yale.edu/profile/vaughn-steele/',
+          confidence: 0.78,
+        },
+      ]),
+    ).toBe('https://medicine.yale.edu/profile/vaughn-steele/');
+  });
+
+  it('prefers the highest-confidence lead-identity profile source', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'inferredPiUserKey',
+          value: 'k1',
+          sourceUrl: 'https://medicine.yale.edu/profile/first-lead/',
+          confidence: 0.5,
+        },
+        {
+          field: 'inferredPiUserId',
+          value: 'u1',
+          sourceUrl: 'https://medicine.yale.edu/profile/preferred-lead/',
+          confidence: 0.86,
+        },
+      ]),
+    ).toBe('https://medicine.yale.edu/profile/preferred-lead/');
+  });
+
+  it('ignores lead-identity observations whose source is a listing or non-profile page', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'inferredPiUserId',
+          value: 'u1',
+          sourceUrl: 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/',
+          confidence: 0.5,
+        },
+        {
+          field: 'inferredDirectorName',
+          value: 'Jane Doe',
+          sourceUrl: 'https://medicine.yale.edu/faculty',
+          confidence: 0.6,
+        },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('ignores profile source URLs on non-lead observation fields', () => {
+    expect(
+      officialLeadProfileSourceUrl([
+        {
+          field: 'contactName',
+          value: 'Vaughn Steele',
+          sourceUrl: 'https://medicine.yale.edu/profile/vaughn-steele/',
+          confidence: 0.9,
+        },
+      ]),
+    ).toBeUndefined();
   });
 });
 

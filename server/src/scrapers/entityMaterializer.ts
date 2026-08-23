@@ -37,6 +37,10 @@ import {
   isFacetedOrSectionIndexUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import {
+  isLikelyOfficialPersonProfileUrl,
+  normalizeOfficialProfileDestination,
+} from '../services/leadProfileIdentity';
+import {
   materializeUndergraduateLogisticsForResearchEntity,
   UNDERGRADUATE_LOGISTICS_OBSERVATION_FIELD_SET,
 } from './undergraduateLogisticsMaterializer';
@@ -422,6 +426,26 @@ export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknow
       !isFacetedOrSectionIndexUrl(url) &&
       !isBoilerplatePlatformHostUrl(url),
   );
+}
+
+const LEAD_IDENTITY_OBSERVATION_FIELDS = new Set([
+  'inferredPiUserId',
+  'inferredPiUserKey',
+  'inferredDirectorName',
+]);
+
+export function officialLeadProfileSourceUrl(
+  observations: MaterializerObservationLike[],
+): string | undefined {
+  const winner = observations
+    .filter(
+      (observation) =>
+        typeof observation.field === 'string' &&
+        LEAD_IDENTITY_OBSERVATION_FIELDS.has(observation.field) &&
+        isLikelyOfficialPersonProfileUrl(observation.sourceUrl),
+    )
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  return winner?.sourceUrl ? String(winner.sourceUrl).trim() : undefined;
 }
 
 export function deriveResearchEntityWebsiteUrl(
@@ -2111,6 +2135,32 @@ export async function materializeEntity(
       } else if (websiteResolution.action === 'clear') {
         set.websiteUrl = '';
         fieldsWritten++;
+      }
+    }
+    // The detail-page official-profile CTA reads only entity.sourceUrls, so a
+    // lead's official profile page must land there or the way-in disappears
+    // even though it is a known source (issue #613).
+    if (!manuallyLockedFields.includes('sourceUrls')) {
+      const leadProfileUrl = officialLeadProfileSourceUrl(materializationObs);
+      if (leadProfileUrl) {
+        const currentSourceUrls = Array.isArray(set.sourceUrls)
+          ? (set.sourceUrls as unknown[])
+          : Array.isArray(entityDoc?.sourceUrls)
+            ? (entityDoc?.sourceUrls as unknown[])
+            : [];
+        const leadDestination = normalizeOfficialProfileDestination(leadProfileUrl);
+        const alreadyPresent = currentSourceUrls.some(
+          (url) =>
+            normalizeOfficialProfileDestination(typeof url === 'string' ? url : '') ===
+            leadDestination,
+        );
+        if (!alreadyPresent) {
+          set.sourceUrls = sanitizeResearchEntitySourceUrlsForMaterialization([
+            ...currentSourceUrls,
+            leadProfileUrl,
+          ]);
+          fieldsWritten++;
+        }
       }
     }
   }
