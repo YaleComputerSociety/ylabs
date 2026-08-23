@@ -89,10 +89,7 @@ export interface ResearcherCasingModel {
     filter: Record<string, unknown>,
     projection: Record<string, unknown>,
   ) => { lean: () => Promise<Array<Record<string, unknown>>> };
-  updateOne: (
-    filter: Record<string, unknown>,
-    update: Record<string, unknown>,
-  ) => Promise<unknown>;
+  updateOne: (filter: Record<string, unknown>, update: Record<string, unknown>) => Promise<unknown>;
 }
 
 export async function runPersonNameCasingBackfill(

@@ -18,11 +18,7 @@ describe('parsePersonNameCasingBackfillArgs', () => {
 
   it('parses apply, confirm, and explicit limit', () => {
     expect(
-      parsePersonNameCasingBackfillArgs([
-        '--apply',
-        '--confirm-person-name-casing',
-        '--limit=50',
-      ]),
+      parsePersonNameCasingBackfillArgs(['--apply', '--confirm-person-name-casing', '--limit=50']),
     ).toMatchObject({ dryRun: false, confirm: true, explicitLimit: true, limit: 50 });
   });
 
@@ -73,10 +69,7 @@ describe('runPersonNameCasingBackfill', () => {
     expect(result.scanned).toBe(2);
     expect(result.errors).toBe(0);
     expect(updateOne).toHaveBeenCalledTimes(2);
-    expect(updateOne).toHaveBeenCalledWith(
-      { _id: 'a' },
-      { $set: { displayName: 'Rahel Jaeggi' } },
-    );
+    expect(updateOne).toHaveBeenCalledWith({ _id: 'a' }, { $set: { displayName: 'Rahel Jaeggi' } });
     expect(updateOne).toHaveBeenCalledWith({ _id: 'b' }, { $set: { displayName: 'Aza Allsop' } });
   });
 
