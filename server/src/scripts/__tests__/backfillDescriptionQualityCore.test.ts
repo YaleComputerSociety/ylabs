@@ -47,7 +47,9 @@ describe('sanitizeDescriptionText', () => {
   });
 
   it('strips a dangling "research areas:" clause that ends with a trailing period', () => {
-    const result = sanitizeDescriptionText('Studies condensed matter physics, including research areas:.');
+    const result = sanitizeDescriptionText(
+      'Studies condensed matter physics, including research areas:.',
+    );
     expect(result.removedArtifacts).toBe(true);
     expect(result.text).toBe('Studies condensed matter physics');
     expect(result.text.toLowerCase()).not.toContain('research areas');
