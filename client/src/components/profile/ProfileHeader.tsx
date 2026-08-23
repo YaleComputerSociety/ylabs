@@ -55,6 +55,11 @@ const shouldHideBroadSchoolLabel = (label: string, labels: string[]): boolean =>
   return /\bschool of\b/i.test(label);
 };
 
+const profileKickerLabel = (userType: string | undefined): string => {
+  const normalized = (userType || '').trim().toLowerCase();
+  return normalized === 'professor' || normalized === 'faculty' ? 'Faculty profile' : 'Profile';
+};
+
 const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
   const { departments } = useConfig();
   const fullName = `${profile.fname} ${profile.lname}`;
@@ -97,7 +102,7 @@ const ProfileHeader = ({ profile }: ProfileHeaderProps) => {
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="yr-kicker mb-2">Faculty profile</p>
+        <p className="yr-kicker mb-2">{profileKickerLabel(profile.userType)}</p>
         <h1 className="text-2xl font-semibold text-slate-950">{fullName}</h1>
         {profile.title && <p className="mt-1 text-base text-slate-600">{profile.title}</p>}
 

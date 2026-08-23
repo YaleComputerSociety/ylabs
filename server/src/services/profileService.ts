@@ -2008,8 +2008,13 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
   }
 };
 
+export const FACULTY_PROFILE_USER_TYPES = ['professor', 'faculty'] as const;
+
 export const getProfileByNetid = async (netid: string) => {
-  const user = await User.findOne({ netid }).lean();
+  const user = await User.findOne({
+    netid,
+    userType: { $in: FACULTY_PROFILE_USER_TYPES },
+  }).lean();
   if (!user) return user;
 
   const [scholarlyLinks, researchEntities] = await Promise.all([

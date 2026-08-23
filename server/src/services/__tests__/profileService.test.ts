@@ -13,6 +13,7 @@ import {
   adminUpdateProfile,
   cleanPublicProfileBio,
   dedupeProfileResearchEntities,
+  getProfileByNetid,
   isLikelySameNameContaminatedProfile,
   isPublicResearchPaperLink,
   normalizePublicProfile,
@@ -127,6 +128,17 @@ describe('profileService profile shaping', () => {
 
     expect(profile.image_url).toBe('');
     expect(profile.imageUrl).toBe('');
+  });
+
+  it('scopes public profile lookups to faculty accounts, returning nothing for non-faculty netids', async () => {
+    userModelMock.findOne.mockReturnValue({ lean: () => Promise.resolve(null) });
+
+    const profile = await getProfileByNetid('test123');
+
+    expect(profile).toBeNull();
+    const query = userModelMock.findOne.mock.calls[0][0];
+    expect(query.netid).toBe('test123');
+    expect(query.userType).toEqual({ $in: ['professor', 'faculty'] });
   });
 
   it('keeps same-person profile URLs when the URL omits a middle name', () => {
