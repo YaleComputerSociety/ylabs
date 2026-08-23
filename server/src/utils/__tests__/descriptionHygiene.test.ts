@@ -218,6 +218,58 @@ describe('descriptionHygiene name-density roster arm capitalized-token dominance
   });
 });
 
+const REAL_ROKHLIN_FULL_DESCRIPTION =
+  "Vladimir Rokhlin's research interests include fast deterministic and randomized algorithms of computational mathematics, randomized algorithms, numerical harmonic analysis, numerical linear algebra, special functions, 'fast' algorithms of numerical linear algebra. Rokhlin is a member of the National Academy of Sciences; Member of the National Academy of Engineering; recipient of the 2001 Leroy P. Steele Prize for a Seminal contribution to Research; recipient of the 2001 Rice University Distinguished Alumnus Award; recipient of the 2006 Institute of Electrical and Electronics Engineers (IEEE) Honorary Membership; 2009 SIAM Fellow; recipient of the 2011 Maxwell Prize from the ICIAM; recipient of the 2014 William Benter Prize.";
+
+const REAL_AGNEW_FULL_DESCRIPTION =
+  "Professor Agnew is the author of Worlds Apart: The Market and the Theater in Anglo-American Thought, 1550-1750 (1986) and, most recently, co-editor of A Companion To Post-1945 America (2002). His graduate courses include 'Power: Historical and Theoretical Approaches,' 'The American Century, 1941-1961,' and 'Interdisciplinary Approaches to the History of Capitalism and Culture.'";
+
+const REAL_CARLISLE_FULL_DESCRIPTION =
+  'Janice Carlisle has published books and essays on Victorian fiction, visual culture, and autobiography, including an analysis of the presentation of character in the writings of John Stuart Mill (Georgia paperback 2010); a study of novels of the 1860s, Common Scents: Comparative Encounters in High-Victorian Fiction, (Oxford 2004); and Picturing Reform in Victorian Britain, a book on art and politics from the 1830s to the 1860s, which treats the wood engravings of illustrated journalism in their relation to both Victorian painting and extensions of the franchise (Cambridge 2012; paperback 2013). She is currently working on a book-length study tentatively called “Ford Madox Brown and the Politics of Work.” In it she is applying her conception of a comparative encounter, a meeting between individuals differentiated by the cultural values associated with them, to both the street politics that Brown depicts in his epic painting and his humorous representations of institutional politics.';
+
+const REAL_STOUT_FULL_DESCRIPTION =
+  'Professor Stout is the author of several books including Upon the Altar of the Nation: A Moral History of the Civil War, a finalist for the Lincoln Prize and winner of Christianity Today’s Best History Book of 2007, the Philip Schaff Prize for best book on the history of Christianity 2006-7, and the New England Historical Association Best Book Award 2007; The New England Soul, a Pulitzer Prize finalist for history; The Divine Dramatist: George Whitefield and the Rise of Modern Evangelicalism, which received a Pulitzer Prize nomination for biography as well as the Critic’s award for History in 1991; Dictionary of Christianity in America (of which he was coeditor), which received the Book of the Year Award from Christianity Today in 1990; A Religious History of America (coauthor with Nathan Hatch); and Readings in American Religious History (coedited with Jon Butler).';
+
+describe('descriptionHygiene name-density roster arm capitalized-ratio gating (#1200)', () => {
+  it('keeps a real single-person awards/honors bio that names many institutions and prizes (Rokhlin)', () => {
+    expect(isRosterShapedText(REAL_ROKHLIN_FULL_DESCRIPTION)).toBe(false);
+    expect(sanitizeCatalogDescription(REAL_ROKHLIN_FULL_DESCRIPTION)).toBe(
+      REAL_ROKHLIN_FULL_DESCRIPTION,
+    );
+  });
+
+  it('keeps a real single-person bio that names many book/course titles (Agnew)', () => {
+    expect(isRosterShapedText(REAL_AGNEW_FULL_DESCRIPTION)).toBe(false);
+    expect(sanitizeCatalogDescription(REAL_AGNEW_FULL_DESCRIPTION)).toBe(
+      REAL_AGNEW_FULL_DESCRIPTION,
+    );
+  });
+
+  it('keeps a real single-person bio that names many book titles (Carlisle)', () => {
+    expect(isRosterShapedText(REAL_CARLISLE_FULL_DESCRIPTION)).toBe(false);
+    expect(sanitizeCatalogDescription(REAL_CARLISLE_FULL_DESCRIPTION)).toBe(
+      REAL_CARLISLE_FULL_DESCRIPTION,
+    );
+  });
+
+  it('keeps a real single-person bio that names many book/prize titles (Stout)', () => {
+    expect(isRosterShapedText(REAL_STOUT_FULL_DESCRIPTION)).toBe(false);
+    expect(sanitizeCatalogDescription(REAL_STOUT_FULL_DESCRIPTION)).toBe(
+      REAL_STOUT_FULL_DESCRIPTION,
+    );
+  });
+
+  it('still rejects a genuine mentor roster despite the added capitalized-ratio gate', () => {
+    expect(isRosterShapedText(SYNTHETIC_ROSTER)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_ROSTER)).toBe('');
+  });
+
+  it('still rejects a genuine sentence-sparse class-year roster despite the added gate', () => {
+    expect(isRosterShapedText(SYNTHETIC_CLASS_YEAR_ROSTER)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_CLASS_YEAR_ROSTER)).toBe('');
+  });
+});
+
 describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
   it('drops a "click here" dead-anchor sentence but keeps the surrounding prose', () => {
     const text =
