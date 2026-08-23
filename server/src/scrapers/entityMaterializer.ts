@@ -315,7 +315,11 @@ export function materializedFieldValue(
   if (entityType === 'user' && field === 'userType') {
     return normalizeUserType(value);
   }
-  if (entityType === 'user' && (field === 'fname' || field === 'lname') && typeof value === 'string') {
+  if (
+    entityType === 'user' &&
+    (field === 'fname' || field === 'lname') &&
+    typeof value === 'string'
+  ) {
     return normalizePersonNameCasing(value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'rosterEnrichment') {
