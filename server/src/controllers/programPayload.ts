@@ -1,5 +1,8 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
+import {
+  sanitizeCatalogDescription,
+  stripRedactionPlaceholders,
+} from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
@@ -10,28 +13,36 @@ const CHROME_LINK_LABEL =
   /^(?:accessibility|privacy(?:\s+policy)?|terms(?:\s+(?:of\s+(?:use|service)|and\s+conditions))?|give(?:\s+back|\s+now)?|giving|donate|make\s+a\s+gift|contact(?:\s+us)?|sitemap|site\s+map|faculty\s+(?:directory|openings|positions)|campus\s+life|social\s+media|our\s+mantra|log\s+in|sign\s+in|search)$/i;
 
 const isChromeLinkLabel = (label: string): boolean => {
-  const normalized = label.replace(/\s*[>›»]+\s*$/, '').replace(/\s+/g, ' ').trim();
+  const normalized = label
+    .replace(/\s*[>›»]+\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!normalized) return true;
   if (/\boverview$/i.test(normalized)) return true;
   return CHROME_LINK_LABEL.test(normalized);
 };
 
-const publicSpecificProgramUrl = (value: unknown): string | undefined => {
+const publicSpecificProgramUrl = (value: unknown, sourceUrl?: unknown): string | undefined => {
   const url = publicHttpUrl(value);
-  if (!url || isUnhelpfulProgramUrl(url)) return undefined;
+  if (!url || isUnhelpfulProgramUrl(url, sourceUrl)) return undefined;
   return url;
 };
 
-const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string }> =>
+const publicProgramLinks = (
+  links: unknown,
+  sourceUrl?: unknown,
+): Array<{ label?: string; url: string }> =>
   Array.isArray(links)
     ? links
         .flatMap((link) => {
           if (!link || typeof link !== 'object') return [];
           const record = link as Record<string, unknown>;
           const rawLabel =
-            typeof record.label === 'string' && record.label.trim() ? record.label.trim() : undefined;
+            typeof record.label === 'string' && record.label.trim()
+              ? record.label.trim()
+              : undefined;
           if (rawLabel && isChromeLinkLabel(rawLabel)) return [];
-          const url = publicSpecificProgramUrl(record.url);
+          const url = publicSpecificProgramUrl(record.url, sourceUrl);
           if (!url) return [];
           const label = rawLabel ? redactDirectContactInfo(rawLabel) : undefined;
           return [{ ...(label ? { label } : {}), url }];
@@ -42,9 +53,12 @@ const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string
 const publicProgramText = (value: unknown): unknown =>
   typeof value === 'string' ? redactDirectContactInfo(value) : value;
 
+const publicProgramProse = (value: unknown): unknown =>
+  typeof value === 'string' ? redactDirectContactInfo(stripRedactionPlaceholders(value)) : value;
+
 const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
-    ? redactDirectContactInfo(sanitizeCatalogDescription(value))
+    ? redactDirectContactInfo(sanitizeCatalogDescription(stripRedactionPlaceholders(value)))
     : value;
 
 const publicProgramTextArray = (value: unknown): string[] =>
@@ -76,12 +90,12 @@ export const publicProgramForReader = (program: any) => {
     competitionType: publicProgramText(program.competitionType),
     summary: publicProgramDescription(program.summary),
     description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramText(program.applicationInformation),
-    eligibility: publicProgramText(program.eligibility),
+    applicationInformation: publicProgramProse(program.applicationInformation),
+    eligibility: publicProgramProse(program.eligibility),
     restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramText(program.additionalInformation),
-    links: publicProgramLinks(program.links),
-    applicationLink: publicSpecificProgramUrl(program.applicationLink),
+    links: publicProgramLinks(program.links, program.sourceUrl),
+    applicationLink: publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,

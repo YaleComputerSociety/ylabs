@@ -9,6 +9,7 @@ import {
   isListingOrIndexUrl,
   isPersonProfileOrDirectoryUrl,
   isProfileOrPeopleDirectoryPath,
+  isSameHostShallowChromeUrl,
   isSiteNavigationOrFooterChromeUrl,
   isUnhelpfulProgramUrl,
   sourceUrlToResearchHomeWebsiteUrl,
@@ -479,14 +480,50 @@ describe('isUnhelpfulProgramUrl', () => {
         'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
       ),
     ).toBe(false);
-    expect(isUnhelpfulProgramUrl('https://apply.communityforce.com/Funds/FundDetails.aspx?id=9')).toBe(
-      false,
-    );
+    expect(
+      isUnhelpfulProgramUrl('https://apply.communityforce.com/Funds/FundDetails.aspx?id=9'),
+    ).toBe(false);
   });
 
   it('exempts dedicated application-portal roots that are the real apply entry point', () => {
     expect(isUnhelpfulProgramUrl('http://studentgrants.yale.edu/')).toBe(false);
     expect(isUnhelpfulProgramUrl('https://yale.communityforce.com/')).toBe(false);
+  });
+
+  it('rejects same-host site nav/footer chrome shallower than the program source page (#633)', () => {
+    const sourceUrl =
+      'https://school.example.edu/academic-study/departments/example-dept/undergraduate-study/research-internship-program';
+    expect(isUnhelpfulProgramUrl('https://school.example.edu/apply', sourceUrl)).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://school.example.edu/give', sourceUrl)).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://school.example.edu/contact-us', sourceUrl)).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://school.example.edu/campus-life', sourceUrl)).toBe(true);
+    expect(
+      isUnhelpfulProgramUrl('https://school.example.edu/academic-study/undergraduate', sourceUrl),
+    ).toBe(true);
+    expect(isUnhelpfulProgramUrl('https://school.example.edu/about/openings', sourceUrl)).toBe(
+      true,
+    );
+  });
+
+  it('keeps the same-host source page and off-host or program-specific links', () => {
+    const sourceUrl = 'https://center.example.edu/education/summer-undergraduate-internships';
+    expect(isUnhelpfulProgramUrl(sourceUrl, sourceUrl)).toBe(false);
+    expect(
+      isUnhelpfulProgramUrl(
+        'https://apply.communityforce.com/Funds/FundDetails.aspx?id=9',
+        sourceUrl,
+      ),
+    ).toBe(false);
+    expect(
+      isUnhelpfulProgramUrl(
+        'https://center.example.edu/education/example-research-grant',
+        sourceUrl,
+      ),
+    ).toBe(false);
+  });
+
+  it('does not reject a shallow link when no source page context is given', () => {
+    expect(isUnhelpfulProgramUrl('https://school.example.edu/apply')).toBe(false);
   });
 
   it('rejects same-host site nav/footer chrome links (#633)', () => {
@@ -500,6 +537,21 @@ describe('isUnhelpfulProgramUrl', () => {
   });
 });
 
+describe('isSameHostShallowChromeUrl', () => {
+  it('ignores cross-host links and missing source context', () => {
+    const sourceUrl = 'https://school.example.edu/academic-study/example-program';
+    expect(isSameHostShallowChromeUrl('https://other.example.edu/apply', sourceUrl)).toBe(false);
+    expect(isSameHostShallowChromeUrl('https://school.example.edu/apply', undefined)).toBe(false);
+  });
+
+  it('ignores links matching program-detail keywords even when shallow', () => {
+    const sourceUrl = 'https://school.example.edu/academic-study/example-program';
+    expect(isSameHostShallowChromeUrl('https://school.example.edu/fellowships', sourceUrl)).toBe(
+      false,
+    );
+  });
+});
+
 describe('isSiteNavigationOrFooterChromeUrl (#633)', () => {
   it('flags footer/utility and top-nav chrome paths', () => {
     expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/privacy')).toBe(true);
@@ -508,7 +560,9 @@ describe('isSiteNavigationOrFooterChromeUrl (#633)', () => {
     );
     expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/contact/')).toBe(true);
     expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/giving')).toBe(true);
-    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/campus-life')).toBe(true);
+    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/campus-life')).toBe(
+      true,
+    );
     expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/sitemap')).toBe(true);
   });
 
@@ -518,9 +572,9 @@ describe('isSiteNavigationOrFooterChromeUrl (#633)', () => {
         'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
       ),
     ).toBe(false);
-    expect(isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/undergraduate-study')).toBe(
-      false,
-    );
+    expect(
+      isSiteNavigationOrFooterChromeUrl('https://engineering.yale.edu/undergraduate-study'),
+    ).toBe(false);
     expect(isSiteNavigationOrFooterChromeUrl('not a url')).toBe(false);
   });
 });
