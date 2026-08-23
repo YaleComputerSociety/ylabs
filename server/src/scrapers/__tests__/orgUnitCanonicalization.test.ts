@@ -109,6 +109,18 @@ describe('createOrgUnitCanonicalizer', () => {
     ]);
   });
 
+  it('drops a school-name value that leaked into the department array', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'Psychiatry',
+      'Yale School of Medicine',
+      'School of Medicine',
+      'NSCI',
+    ]);
+    expect(result.values).toEqual(['Psychiatry', 'Neuroscience']);
+    expect(result.unmatched).toEqual(['Psychiatry']);
+    expect(result.dropped).toEqual(['Yale School of Medicine', 'School of Medicine']);
+  });
+
   it('strips an HR org-code prefix from an unresolved department instead of showing raw', () => {
     const result = canonicalizer.canonicalizeDepartments(['MEDCCC Medical Oncology']);
     expect(result.values).toEqual(['Medical Oncology']);
