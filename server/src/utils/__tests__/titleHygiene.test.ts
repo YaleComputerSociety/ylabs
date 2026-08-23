@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasPhoneContactFragment,
   hasRawEmailAddress,
   hasStreetAddressFragment,
   isBioProseTitle,
@@ -84,6 +85,30 @@ describe('hasStreetAddressFragment', () => {
   });
 });
 
+describe('hasPhoneContactFragment', () => {
+  it('rejects an Office:/Phone: contact block label', () => {
+    expect(hasPhoneContactFragment('Professor of HistoryOffice: 320 York Phone: 203-432-0000')).toBe(
+      true,
+    );
+  });
+
+  it('rejects a formatted phone number', () => {
+    expect(hasPhoneContactFragment('Associate Professor (203) 432-1234')).toBe(true);
+  });
+
+  it('keeps a plain job title', () => {
+    expect(hasPhoneContactFragment('Professor of History')).toBe(false);
+  });
+
+  it('keeps a title mentioning an office without a contact label', () => {
+    expect(hasPhoneContactFragment('Director of the Office of Undergraduate Research')).toBe(false);
+  });
+
+  it('keeps a title containing a year range', () => {
+    expect(hasPhoneContactFragment('Visiting Professor 2004-2010')).toBe(false);
+  });
+});
+
 describe('isBioProseTitle', () => {
   it('rejects a multi-sentence bio dumped into the title', () => {
     expect(
@@ -137,6 +162,28 @@ describe('sanitizePersonTitle', () => {
 
   it('drops a title carrying a raw email address', () => {
     expect(sanitizePersonTitle('Professor jane.doe@example.edu')).toBeUndefined();
+  });
+
+  it('drops the issue #740 contact block with email, office, and phone', () => {
+    expect(
+      sanitizePersonTitle(
+        'Professor of Historyjane.doe@example.eduOffice: 320 York StPhone: 203-432-0000',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('drops a title longer than a role string ever runs', () => {
+    expect(sanitizePersonTitle(`Professor of ${'Molecular Biology '.repeat(10)}`)).toBeUndefined();
+  });
+
+  it('keeps a long but single-phrase endowed-chair title under the length cap', () => {
+    expect(
+      sanitizePersonTitle(
+        'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+      ),
+    ).toBe(
+      'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+    );
   });
 
   it('drops a multi-sentence bio dumped into the title', () => {
