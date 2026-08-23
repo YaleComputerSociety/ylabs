@@ -114,7 +114,7 @@ const ActiveFilters = ({
                 <div className="w-3 h-3 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
               )}
               <span
-                className="text-xs text-gray-400 whitespace-nowrap"
+                className="text-xs text-gray-600 whitespace-nowrap"
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
@@ -145,7 +145,7 @@ const ActiveFilters = ({
             {hasAnyFilter && (
               <button
                 onClick={onClearAll}
-                className="inline-flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs text-gray-400 transition-colors hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-md px-2 text-xs text-gray-600 transition-colors hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
               >
                 <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
