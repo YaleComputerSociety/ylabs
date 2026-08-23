@@ -262,4 +262,91 @@ describe('detectProfileIdentityRisk', () => {
       }),
     ).toBe(true);
   });
+
+  it('corroborates a first-initial+surname slug with a static page extension (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://exoplanets.astro.yale.edu/people/dfischer.php',
+          sourceUrls: ['https://exoplanets.astro.yale.edu/people/dfischer.php'],
+        },
+        leadMembers: [{ user: { netid: 'df295', fname: 'Debra', lname: 'Fischer' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('corroborates a netid-slug profile home even when the page carries a file extension (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://law.yale.edu/faculty/VSchultz.htm',
+          sourceUrls: ['https://law.yale.edu/faculty/VSchultz.htm'],
+        },
+        leadMembers: [{ user: { netid: 'vschultz', fname: 'Vicki', lname: 'Schultz' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('corroborates a surname-only self-profile for a single unique lead (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://environment.yale.edu/profile/graedel',
+          sourceUrls: ['https://environment.yale.edu/profile/graedel'],
+        },
+        leadMembers: [{ user: { netid: 'teg5', fname: 'Thomas', lname: 'Graedel' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('corroborates an initials given name against the lead first name (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://psychology.yale.edu/people/la-paul',
+          sourceUrls: ['https://psychology.yale.edu/people/la-paul'],
+        },
+        leadMembers: [{ user: { netid: 'lap43', fname: 'Laurie', lname: 'Paul' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('corroborates a nickname-abbreviated given name against the lead first name (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://politicalscience.yale.edu/people/douglas-rae',
+          sourceUrls: ['https://politicalscience.yale.edu/people/douglas-rae'],
+        },
+        leadMembers: [{ user: { netid: 'dougrae', fname: 'Doug', lname: 'Rae' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('still flags a different given name sharing the surname despite the abbreviation rules (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://politicalscience.yale.edu/people/mary-rae',
+          sourceUrls: ['https://politicalscience.yale.edu/people/mary-rae'],
+        },
+        leadMembers: [{ user: { netid: 'dougrae', fname: 'Doug', lname: 'Rae' } }],
+      }),
+    ).toBe(true);
+  });
+
+  it('does not clear a surname-only slug when a competing same-surname lead exists (#1060)', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://environment.yale.edu/profile/graedel',
+          sourceUrls: ['https://environment.yale.edu/profile/graedel'],
+        },
+        leadMembers: [
+          { user: { netid: 'teg5', fname: 'Thomas', lname: 'Graedel' } },
+          { user: { netid: 'abg9', fname: 'Alice', lname: 'Graedel' } },
+        ],
+      }),
+    ).toBe(true);
+  });
 });
