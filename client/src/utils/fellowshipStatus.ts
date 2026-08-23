@@ -1,4 +1,5 @@
 import type { Fellowship } from '../types/types';
+import { isBareHostRoot, safeHttpUrl } from './url';
 
 export const CLOSING_SOON_DAYS = 30;
 
@@ -205,6 +206,84 @@ export const getFellowshipApplicationStatus = (
     detail: `Due ${formatShortFellowshipDate(fellowship.deadline)}`,
     isCurrentlyRelevant: true,
     isApplicationWindowOpen,
+  };
+};
+
+export interface FellowshipApplyCta {
+  href: string;
+  isBareHostFallback: boolean;
+  primaryLabel: string;
+  shortLabel: string;
+  sectionLabel: string;
+}
+
+export const getFellowshipApplyCta = (
+  fellowship: Pick<Fellowship, 'applicationLink' | 'sourceUrl'>,
+  status: Pick<FellowshipApplicationStatus, 'isApplicationWindowOpen' | 'kind'>,
+): FellowshipApplyCta => {
+  const applicationHref = safeHttpUrl(fellowship.applicationLink);
+  const sourceHref = safeHttpUrl(fellowship.sourceUrl);
+
+  let href = '';
+  let isBareHostFallback = false;
+  if (applicationHref && !isBareHostRoot(applicationHref)) {
+    href = applicationHref;
+  } else if (sourceHref && !isBareHostRoot(sourceHref)) {
+    href = sourceHref;
+  } else if (applicationHref) {
+    href = applicationHref;
+    isBareHostFallback = true;
+  } else if (sourceHref) {
+    href = sourceHref;
+    isBareHostFallback = true;
+  }
+
+  if (!href) {
+    return {
+      href: '',
+      isBareHostFallback: false,
+      primaryLabel: '',
+      shortLabel: '',
+      sectionLabel: '',
+    };
+  }
+
+  if (isBareHostFallback) {
+    return {
+      href,
+      isBareHostFallback: true,
+      primaryLabel: 'Visit site',
+      shortLabel: 'Visit site',
+      sectionLabel: 'Visit site',
+    };
+  }
+
+  if (status.isApplicationWindowOpen) {
+    return {
+      href,
+      isBareHostFallback: false,
+      primaryLabel: 'Apply Now',
+      shortLabel: 'Apply',
+      sectionLabel: 'Open official application',
+    };
+  }
+
+  if (status.kind === 'notOpenYet') {
+    return {
+      href,
+      isBareHostFallback: false,
+      primaryLabel: 'Track Opening Date',
+      shortLabel: 'Open source',
+      sectionLabel: 'Open official application',
+    };
+  }
+
+  return {
+    href,
+    isBareHostFallback: false,
+    primaryLabel: 'Open Fellowship Source',
+    shortLabel: 'Open source',
+    sectionLabel: 'Open official application',
   };
 };
 

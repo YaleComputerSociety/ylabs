@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  isBareHostRoot,
   openSafeUrlInNewTab,
   safeDoiUrl,
   safeHttpUrl,
@@ -81,7 +82,9 @@ describe('safeHttpUrlList', () => {
   it('rejects non-arrays and caps HTTP URL normalization work', () => {
     expect(safeHttpUrlList({ url: 'https://example.yale.edu/source' })).toEqual([]);
     expect(
-      safeHttpUrlList(Array.from({ length: 55 }, (_, index) => `https://example.yale.edu/${index}`)),
+      safeHttpUrlList(
+        Array.from({ length: 55 }, (_, index) => `https://example.yale.edu/${index}`),
+      ),
     ).toHaveLength(50);
   });
 });
@@ -118,9 +121,7 @@ describe('safeMailtoHref', () => {
 
 describe('safeDoiUrl', () => {
   it('normalizes valid DOI values to doi.org URLs', () => {
-    expect(safeDoiUrl('10.1145/3368089.3409745')).toBe(
-      'https://doi.org/10.1145/3368089.3409745',
-    );
+    expect(safeDoiUrl('10.1145/3368089.3409745')).toBe('https://doi.org/10.1145/3368089.3409745');
     expect(safeDoiUrl('https://doi.org/10.1145/3368089.3409745')).toBe(
       'https://doi.org/10.1145/3368089.3409745',
     );
@@ -158,5 +159,30 @@ describe('openSafeUrlInNewTab', () => {
     expect(openSafeUrlInNewTab('javascript:alert(1)')).toBeNull();
     expect(openSafeUrlInNewTab('mailto:advisor@yale.edu')).toBeNull();
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe('isBareHostRoot', () => {
+  it('treats scheme-plus-host URLs with no meaningful path as bare roots', () => {
+    expect(isBareHostRoot('https://engineering.yale.edu/')).toBe(true);
+    expect(isBareHostRoot('https://engineering.yale.edu')).toBe(true);
+    expect(isBareHostRoot('https://studentgrants.yale.edu///')).toBe(true);
+    expect(isBareHostRoot('engineering.yale.edu')).toBe(true);
+  });
+
+  it('does not treat deep links or links with a query or fragment as bare roots', () => {
+    expect(
+      isBareHostRoot(
+        'https://engineering.yale.edu/computer-science/undergraduate-study/research-internship-program',
+      ),
+    ).toBe(false);
+    expect(isBareHostRoot('https://studentgrants.yale.edu/?program=tetelman')).toBe(false);
+    expect(isBareHostRoot('https://studentgrants.yale.edu/#apply')).toBe(false);
+  });
+
+  it('returns false for empty or unsafe values', () => {
+    expect(isBareHostRoot('')).toBe(false);
+    expect(isBareHostRoot(null)).toBe(false);
+    expect(isBareHostRoot('javascript:alert(1)')).toBe(false);
   });
 });

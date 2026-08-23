@@ -4,6 +4,7 @@ import { Fellowship } from '../../types/types';
 import {
   getEligibilitySummary,
   getFellowshipApplicationStatus,
+  getFellowshipApplyCta,
   getStructuredEligibilityDetails,
 } from '../fellowshipStatus';
 
@@ -24,8 +25,12 @@ const makeFellowship = (overrides: Partial<Fellowship> = {}): Fellowship => ({
   programDates: '',
   bestNextStep: '',
   prepSteps: [],
-  sourceName: '', sourceUrl: '', sourceKey: '', sourceFingerprint: '',
-  sourceLastVerifiedAt: null, sourceLastChangedAt: null,
+  sourceName: '',
+  sourceUrl: '',
+  sourceKey: '',
+  sourceFingerprint: '',
+  sourceLastVerifiedAt: null,
+  sourceLastChangedAt: null,
   title: 'Fellowship',
   competitionType: '',
   summary: '',
@@ -246,5 +251,73 @@ describe('getStructuredEligibilityDetails', () => {
       purpose: [],
     });
     expect(getStructuredEligibilityDetails(fellowship)).toEqual([]);
+  });
+});
+
+describe('getFellowshipApplyCta', () => {
+  const openStatus = { isApplicationWindowOpen: true, kind: 'open' as const };
+
+  it('keeps a genuine application deep link as the Apply Now target', () => {
+    const cta = getFellowshipApplyCta(
+      {
+        applicationLink: 'https://program.example.edu/apply',
+        sourceUrl: 'https://program.example.edu/',
+      },
+      openStatus,
+    );
+    expect(cta.href).toBe('https://program.example.edu/apply');
+    expect(cta.isBareHostFallback).toBe(false);
+    expect(cta.primaryLabel).toBe('Apply Now');
+    expect(cta.shortLabel).toBe('Apply');
+    expect(cta.sectionLabel).toBe('Open official application');
+  });
+
+  it('prefers a specific sourceUrl when the application link is a bare host root', () => {
+    const cta = getFellowshipApplyCta(
+      {
+        applicationLink: 'https://engineering.yale.edu/',
+        sourceUrl:
+          'https://engineering.yale.edu/computer-science/undergraduate-study/research-internship-program',
+      },
+      openStatus,
+    );
+    expect(cta.href).toBe(
+      'https://engineering.yale.edu/computer-science/undergraduate-study/research-internship-program',
+    );
+    expect(cta.isBareHostFallback).toBe(false);
+    expect(cta.primaryLabel).toBe('Apply Now');
+  });
+
+  it('softens the label to Visit site when only a bare host root is available', () => {
+    const cta = getFellowshipApplyCta(
+      {
+        applicationLink: 'https://studentgrants.yale.edu/',
+        sourceUrl: 'https://studentgrants.yale.edu/',
+      },
+      openStatus,
+    );
+    expect(cta.href).toBe('https://studentgrants.yale.edu/');
+    expect(cta.isBareHostFallback).toBe(true);
+    expect(cta.primaryLabel).toBe('Visit site');
+    expect(cta.shortLabel).toBe('Visit site');
+    expect(cta.sectionLabel).toBe('Visit site');
+  });
+
+  it('returns no target when neither link is safe', () => {
+    const cta = getFellowshipApplyCta(
+      { applicationLink: 'javascript:alert(1)', sourceUrl: '' },
+      openStatus,
+    );
+    expect(cta.href).toBe('');
+    expect(cta.primaryLabel).toBe('');
+  });
+
+  it('labels a not-yet-open deep link as Track Opening Date', () => {
+    const cta = getFellowshipApplyCta(
+      { applicationLink: 'https://program.example.edu/apply', sourceUrl: '' },
+      { isApplicationWindowOpen: false, kind: 'notOpenYet' },
+    );
+    expect(cta.primaryLabel).toBe('Track Opening Date');
+    expect(cta.shortLabel).toBe('Open source');
   });
 });

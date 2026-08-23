@@ -645,6 +645,10 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
     new URL('../client/src/components/fellowship/FellowshipModal.tsx', import.meta.url),
     'utf8',
   );
+  const fellowshipStatus = fs.readFileSync(
+    new URL('../client/src/utils/fellowshipStatus.ts', import.meta.url),
+    'utf8',
+  );
 
   assert.match(
     adminAccessReview,
@@ -654,11 +658,16 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
 
   assert.doesNotMatch(labDetail, /const officialRouteUrl = safeUrl\(officialRoute\?\.url\)/);
 
+  assert.match(fellowshipModal, /const applicationHref = applyCta\.href/);
+  assert.match(fellowshipModal, /getFellowshipApplyCta\(fellowship, applicationStatus\)/);
+  assert.doesNotMatch(fellowshipModal, /safeUrl\(fellowship\.applicationLink\)/);
   assert.match(
-    fellowshipModal,
+    fellowshipStatus,
     /const applicationHref = safeHttpUrl\(fellowship\.applicationLink\)/,
   );
-  assert.doesNotMatch(fellowshipModal, /safeUrl\(fellowship\.applicationLink\)/);
+  assert.match(fellowshipStatus, /const sourceHref = safeHttpUrl\(fellowship\.sourceUrl\)/);
+  assert.doesNotMatch(fellowshipStatus, /safeUrl\(fellowship\.applicationLink\)/);
+  assert.doesNotMatch(fellowshipStatus, /safeUrl\(fellowship\.sourceUrl\)/);
   assert.match(fellowshipModal, /const linkHref = safeHttpUrl\(match\[2\]\)/);
   assert.match(fellowshipModal, /href: safeHttpUrl\(link\.url\)/);
   assert.doesNotMatch(fellowshipModal, /const linkHref = safeUrl\(match\[2\]\)/);

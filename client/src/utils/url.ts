@@ -123,6 +123,19 @@ export const safeHttpUrl = (raw: unknown): string => {
   }
 };
 
+export const isBareHostRoot = (raw: unknown): boolean => {
+  const href = safeHttpUrl(raw);
+  if (!href) return false;
+
+  try {
+    const parsed = new URL(href);
+    const hasMeaningfulPath = parsed.pathname.replace(/\/+$/, '') !== '';
+    return !hasMeaningfulPath && !parsed.search && !parsed.hash;
+  } catch {
+    return false;
+  }
+};
+
 export const safeImageSrc = (raw: unknown): string => {
   if (typeof raw !== 'string') return '';
   const trimmed = raw.trim();

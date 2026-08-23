@@ -10,6 +10,7 @@ import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 import {
   formatFellowshipDate,
   getFellowshipApplicationStatus,
+  getFellowshipApplyCta,
   getStructuredEligibilityDetails,
 } from '../../utils/fellowshipStatus';
 import { entryModeLabel, programKindLabel } from '../../utils/programJourney';
@@ -248,10 +249,9 @@ const FellowshipModal = ({
     'inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-[var(--yr-panel-muted)] hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
   const filterChipClass =
     'inline-flex min-h-[44px] items-center rounded-md px-3 py-2 text-xs transition-all hover:ring-2 hover:ring-offset-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200';
-  const applicationActionLabel = applicationStatus.isApplicationWindowOpen
-    ? 'Apply'
-    : 'Open source';
-  const applicationHref = safeHttpUrl(fellowship.applicationLink);
+  const applyCta = getFellowshipApplyCta(fellowship, applicationStatus);
+  const applicationActionLabel = applyCta.shortLabel;
+  const applicationHref = applyCta.href;
   const contactEmailHref = safeMailtoHref(fellowship.contactEmail);
   const safeLinks = (fellowship.links || [])
     .map((link) => ({ ...link, href: safeHttpUrl(link.url) }))
@@ -777,7 +777,7 @@ const FellowshipModal = ({
                           onClick={() => trackFellowshipApplyClick(fellowship.id, applicationHref)}
                           className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
                         >
-                          Open official application
+                          {applyCta.sectionLabel}
                         </a>
                       )}
                     </div>
@@ -886,11 +886,7 @@ const FellowshipModal = ({
                           : 'bg-gray-600 hover:bg-gray-700'
                       }`}
                     >
-                      {applicationStatus.isApplicationWindowOpen
-                        ? 'Apply Now'
-                        : applicationStatus.kind === 'notOpenYet'
-                          ? 'Track Opening Date'
-                          : 'Open Fellowship Source'}
+                      {applyCta.primaryLabel}
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="16"

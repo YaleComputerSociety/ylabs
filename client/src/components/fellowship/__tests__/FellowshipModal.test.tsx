@@ -243,6 +243,31 @@ describe('FellowshipModal', () => {
     expect(screen.queryByText(/Applications are not open yet/i)).not.toBeInTheDocument();
   });
 
+  it('routes Apply Now to the specific source page when the application link is a bare homepage', () => {
+    renderModal({
+      applicationLink: 'https://engineering.yale.edu/',
+      sourceUrl:
+        'https://engineering.yale.edu/computer-science/undergraduate-study/research-internship-program',
+    });
+
+    expect(screen.getByRole('link', { name: /Apply Now/i })).toHaveAttribute(
+      'href',
+      'https://engineering.yale.edu/computer-science/undergraduate-study/research-internship-program',
+    );
+  });
+
+  it('softens the CTA to Visit site when only a bare homepage is available', () => {
+    renderModal({
+      applicationLink: 'https://studentgrants.yale.edu/',
+      sourceUrl: 'https://studentgrants.yale.edu/',
+    });
+
+    expect(screen.queryByRole('link', { name: /Apply Now/i })).toBeNull();
+    const visitLinks = screen.getAllByRole('link', { name: /Visit site/i });
+    expect(visitLinks.length).toBeGreaterThan(0);
+    expect(visitLinks[0]).toHaveAttribute('href', 'https://studentgrants.yale.edu/');
+  });
+
   it('does not show missing eligibility copy when structured region metadata is present', () => {
     renderModal({
       eligibility: '',
