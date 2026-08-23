@@ -1436,6 +1436,21 @@ const Research = () => {
     return () => mediaQuery.removeEventListener?.('change', handleChange);
   }, []);
 
+  const [isCompactViewport, setIsCompactViewport] = useState(
+    () => window.matchMedia?.('(max-width: 639px)').matches ?? false,
+  );
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(max-width: 639px)');
+    if (!mediaQuery) return;
+    const handleChange = (event: MediaQueryListEvent) => setIsCompactViewport(event.matches);
+    setIsCompactViewport(mediaQuery.matches);
+    mediaQuery.addEventListener?.('change', handleChange);
+    return () => mediaQuery.removeEventListener?.('change', handleChange);
+  }, []);
+  const searchPlaceholder = isCompactViewport
+    ? 'Type a topic, professor, or lab'
+    : 'Type a topic, professor, lab, or research question';
+
   const researchFilterProps = {
     facetDistribution,
     selectedSchool,
@@ -1508,8 +1523,8 @@ const Research = () => {
                     }
                   }}
                   aria-describedby="research-search-context research-search-help"
-                  placeholder="Type a topic, professor, lab, or research question"
-                  className="min-h-12 min-w-0 flex-1 rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
+                  placeholder={searchPlaceholder}
+                  className="min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-md border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] px-4 text-base text-slate-950 placeholder:text-slate-400 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 sm:min-h-14"
                 />
                 <button
                   type="submit"
