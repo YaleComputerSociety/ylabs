@@ -47,11 +47,6 @@ const grantSchema = new mongoose.Schema(
       type: [mongoose.Schema.Types.ObjectId],
       default: [],
     },
-    researchGroupIds: {
-      type: [mongoose.Schema.Types.ObjectId],
-      ref: 'ResearchEntity',
-      default: [],
-    },
     researchEntityIds: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: 'ResearchEntity',
@@ -107,7 +102,6 @@ const grantSchema = new mongoose.Schema(
 );
 
 grantSchema.index({ agency: 1, externalId: 1 }, { unique: true });
-grantSchema.index({ researchGroupIds: 1 });
 grantSchema.index({ researchEntityIds: 1 });
 grantSchema.index({ piFacultyMemberId: 1 });
 grantSchema.index({ coPiFacultyMemberIds: 1 });
