@@ -92,9 +92,7 @@ describe('planLegacyListingSourceUrlStrips', () => {
   });
 
   it('ignores entities with no disallowed sourceUrls or websiteUrl', () => {
-    const { strips, orphanRisks } = planLegacyListingSourceUrlStrips([
-      { _id: 'e'.repeat(24) },
-    ]);
+    const { strips, orphanRisks } = planLegacyListingSourceUrlStrips([{ _id: 'e'.repeat(24) }]);
     expect(strips).toEqual([]);
     expect(orphanRisks).toEqual([]);
   });
