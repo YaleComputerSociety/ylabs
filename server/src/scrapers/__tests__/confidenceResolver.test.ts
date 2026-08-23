@@ -268,6 +268,79 @@ describe('resolveField', () => {
     expect(r?.value).toBe(conciseBio);
   });
 
+  it('lets a fresh lower-confidence scraper observation overtake an old high-confidence one on decay grounds alone (the general vulnerability class)', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Original Curated Name',
+          sourceName: 'official-profile-pi-backfill',
+          confidence: 1.0,
+          observedAt: D('2025-11-01'),
+        },
+        {
+          field: 'name',
+          value: 'Fresh Scraper Name',
+          sourceName: 'nih-reporter',
+          confidence: 0.9,
+          observedAt: D('2026-08-20'),
+        },
+      ],
+      { now: D('2026-08-24'), recencyHalfLifeDays: 90 },
+    );
+    expect(r?.value).toBe('Fresh Scraper Name');
+  });
+
+  it('keeps an old manual-admin-edit correction ahead of a fresh higher-recency scraper observation despite the 90-day decay half-life', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'PI-Corrected Name',
+          sourceName: 'manual-admin-edit',
+          confidence: 1.0,
+          observedAt: D('2025-11-01'),
+        },
+        {
+          field: 'name',
+          value: 'Fresh Scraper Name',
+          sourceName: 'nih-reporter',
+          confidence: 0.9,
+          observedAt: D('2026-08-20'),
+        },
+      ],
+      { now: D('2026-08-24'), recencyHalfLifeDays: 90 },
+    );
+    expect(r?.value).toBe('PI-Corrected Name');
+    expect(r?.contributingSources).toEqual(['manual-admin-edit']);
+  });
+
+  it('still lets a genuinely newer manual-admin-edit correction supersede an older one', () => {
+    const r = resolveField(
+      'name',
+      [
+        {
+          field: 'name',
+          value: 'Old Manual Correction',
+          sourceName: 'manual-admin-edit',
+          confidence: 1.0,
+          observedAt: D('2025-01-01'),
+        },
+        {
+          field: 'name',
+          value: 'Newer Manual Correction',
+          sourceName: 'manual-admin-edit',
+          confidence: 1.0,
+          observedAt: D('2026-08-20'),
+        },
+      ],
+      { now: D('2026-08-24'), recencyHalfLifeDays: 90, conflictThreshold: 0.001 },
+    );
+    expect(r?.value).toBe('Newer Manual Correction');
+  });
+
   it('respects manuallyLockedFields and returns the manual value', () => {
     const r = resolveField(
       'description',
