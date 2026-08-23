@@ -4,7 +4,7 @@
 import { Request, Response } from 'express';
 import { User } from '../models/user';
 import { getListingModel } from '../db/connections';
-import { getProfileByNetid } from '../services/profileService';
+import { getProfileByNetid, isPublicFacultyProfileUserType } from '../services/profileService';
 import { fetchCourseTableData } from '../services/courseTableService';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -83,6 +83,11 @@ export const getProfileListings = async (req: Request, res: Response) => {
   try {
     const { netid } = req.params;
 
+    const target = await User.findOne({ netid }).select('userType').lean();
+    if (!target || !isPublicFacultyProfileUserType((target as any).userType)) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
     const listings = await getListingModel()
       .find({
         $or: [{ ownerId: netid }, { professorIds: netid }],
@@ -109,9 +114,9 @@ export const getProfileCourses = async (req: Request, res: Response) => {
   try {
     const { netid } = req.params;
 
-    const user = await User.findOne({ netid }).select('fname lname').lean();
+    const user = await User.findOne({ netid }).select('fname lname userType').lean();
 
-    if (!user) {
+    if (!user || !isPublicFacultyProfileUserType((user as any).userType)) {
       return res.status(404).json({ error: 'Profile not found' });
     }
 
