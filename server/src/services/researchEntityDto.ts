@@ -7,6 +7,7 @@ import {
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
+import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
 import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
@@ -86,6 +87,13 @@ function publicDescriptionString(value: unknown): string {
 function publicShortDescriptionString(value: unknown): string {
   const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
   return sanitizeResearchEntityShortDescription(text);
+}
+
+function groundedShortDescriptionString(shortValue: unknown, fullValue: unknown): string {
+  const shortDescription = publicShortDescriptionString(shortValue);
+  if (!shortDescription) return '';
+  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) return '';
+  return shortDescription;
 }
 
 function publicResearchAreaArray(value: unknown): string[] {
@@ -173,7 +181,7 @@ export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
   const blurbSource =
-    publicShortDescriptionString(group.shortDescription || '') ||
+    groundedShortDescriptionString(group.shortDescription || '', group.fullDescription) ||
     publicDescriptionString(group.fullDescription || '');
   const blurb = blurbSource.slice(0, 280);
 
@@ -283,7 +291,7 @@ export function toPublicResearchEntityDto(
         continue;
       }
       if (field === 'shortDescription' && typeof group[field] === 'string') {
-        dto[field] = publicShortDescriptionString(group[field]);
+        dto[field] = groundedShortDescriptionString(group[field], group.fullDescription);
         continue;
       }
       if (RESEARCH_ENTITY_DESCRIPTION_FIELDS.has(field) && typeof group[field] === 'string') {

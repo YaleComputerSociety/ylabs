@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   cardGroundingScore,
   isCardGroundedInFullDescription,
+  isUngroundedSynthesizedCard,
   normalizeCardText,
   resolveGroundedCardDescription,
   synthesizeGroundedCardDescription,
@@ -34,6 +35,46 @@ describe('grounding', () => {
     expect(
       isCardGroundedInFullDescription('the biology of aging', RICH_FIRST_PERSON_FULL),
     ).toBe(true);
+  });
+});
+
+describe('isUngroundedSynthesizedCard', () => {
+  const MOROCCO_FULL =
+    'Studies the making of the modern Moroccan state, colonial state formation across North Africa, and the social history of empire in the Maghreb.';
+  const ITALIAN_PEDAGOGY_FULL =
+    'Focuses on Italian language pedagogy, literary translation, and medieval and Renaissance literature, with attention to how these texts are taught.';
+
+  it('drops a synthesized card whose topic is absent from the full description (#1212 Wyrtzen)', () => {
+    expect(isUngroundedSynthesizedCard('Studies Texas from the first.', MOROCCO_FULL)).toBe(true);
+  });
+
+  it('drops a synthesized card whose topic only partially grounds (#1212 Farina)', () => {
+    expect(isUngroundedSynthesizedCard('Studies Italian Cooking.', ITALIAN_PEDAGOGY_FULL)).toBe(
+      true,
+    );
+  });
+
+  it('keeps a synthesized card whose topics are all grounded in the full description', () => {
+    expect(
+      isUngroundedSynthesizedCard(
+        'Studies colonial state formation across North Africa.',
+        MOROCCO_FULL,
+      ),
+    ).toBe(false);
+  });
+
+  it('never touches a source-derived blurb that does not lead with a synthesis verb', () => {
+    expect(isUngroundedSynthesizedCard('The lab in Austin explores rodeo culture.', MOROCCO_FULL)).toBe(
+      false,
+    );
+  });
+
+  it('keeps a synthesized card when there is no full description to verify against', () => {
+    expect(isUngroundedSynthesizedCard('Studies Texas from the first.', '')).toBe(false);
+  });
+
+  it('keeps a synthesized card whose topic is too short to verify', () => {
+    expect(isUngroundedSynthesizedCard('Studies AI.', MOROCCO_FULL)).toBe(false);
   });
 });
 

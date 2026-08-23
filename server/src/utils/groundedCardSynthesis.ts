@@ -126,6 +126,32 @@ export function isCardGroundedInFullDescription(
   return cardGroundingScore(card, fullDescription) >= MIN_CARD_GROUNDING;
 }
 
+const SYNTHESIS_CARD_LEAD_PATTERN =
+  /^(?:Studies|Investigates|Examines|Explores|Develops|Advances|Uses|Employs|Analyzes|Analyses|Models|Measures|Researches|Creates|Builds|Designs|Combines|Conducts|Supports|Fosters|Improves|Enhances|Innovates|Seeks to|Works on|Focuses on|Focused on)\b/i;
+
+/**
+ * A stored, synthesized "Studies X." card blurb whose distinctive topic tokens
+ * are not grounded in the entity's own fullDescription. Synthesis-time grounding
+ * (isCardGroundedInFullDescription) already rejects these, but a card materialized
+ * before that guard, or against a fullDescription that later changed, can still be
+ * served with a topic that contradicts the description (#1212, e.g. "Studies Texas
+ * from the first." on a researcher whose description is about Morocco). Gated on a
+ * synthesis-verb lead so a source-derived blurb is never touched, and only fires
+ * when the card carries at least one distinctive topic token to judge, so a topic
+ * too short to verify is kept rather than dropped.
+ */
+export function isUngroundedSynthesizedCard(
+  shortDescription: unknown,
+  fullDescription: unknown,
+): boolean {
+  const card = textValue(shortDescription);
+  const full = textValue(fullDescription);
+  if (!card || !full) return false;
+  if (!SYNTHESIS_CARD_LEAD_PATTERN.test(card)) return false;
+  if (distinctiveCardTokens(card).length === 0) return false;
+  return !isCardGroundedInFullDescription(card, full);
+}
+
 function firstSentence(value: string): string {
   const match = value.match(/^[^.!?]+[.!?]/);
   return match ? match[0].trim() : value;
