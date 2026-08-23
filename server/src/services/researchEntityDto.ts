@@ -7,6 +7,7 @@ import {
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
+import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
@@ -66,6 +67,10 @@ function stringArray(value: unknown): string[] {
 function publicTextString(value: unknown): string {
   const text = String(value || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH);
   return redactDirectContactInfo(text);
+}
+
+function publicResearchEntityName(value: unknown): string {
+  return collapseDuplicateResearchHomeSuffix(publicTextString(value));
 }
 
 const RESEARCH_ENTITY_DESCRIPTION_FIELDS = new Set([
@@ -175,7 +180,7 @@ export function toPublicResearchEntitySummaryDto(
   return {
     id: publicResearchEntityId(group),
     slug: publicTextString(group.slug || ''),
-    name: publicTextString(group.name || group.displayName || ''),
+    name: publicResearchEntityName(group.name || group.displayName || ''),
     kind: group.kind === undefined ? undefined : publicTextString(group.kind),
     entityType:
       group.entityType === undefined
@@ -259,8 +264,9 @@ export function toPublicResearchEntityDto(
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name: publicTextString(group.name || group.displayName || ''),
-    displayName: group.displayName === undefined ? undefined : publicTextString(group.displayName),
+    name: publicResearchEntityName(group.name || group.displayName || ''),
+    displayName:
+      group.displayName === undefined ? undefined : publicResearchEntityName(group.displayName),
     kind,
     entityKind: kind,
     entityType,
