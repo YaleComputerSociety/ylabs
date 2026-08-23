@@ -1941,6 +1941,38 @@ describe('LabDetail display name unification', () => {
     expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
   });
 
+  it('never promotes a bare ORCID as the official-page CTA for a web-less home whose lead lacks an official profile (#651)', async () => {
+    const ORCID_URL = 'https://orcid.org/0000-0000-0000-0000';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: '',
+        sourceUrls: [ORCID_URL],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Ada',
+            lname: 'Researcher',
+            displayName: 'Ada Researcher',
+            primary_department: 'Neurology',
+            profileUrls: { orcid: ORCID_URL },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'Search the Yale Directory' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+  });
+
   it('renders the polished NotFound page when the research profile 404s', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/users/savedResearchEntityIds') {
