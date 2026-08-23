@@ -193,6 +193,19 @@ export const isIdentifierOrGrantDbSourceUrl = (url?: string | null): boolean => 
   }
 };
 
+const DOCUMENT_FILE_PATH = /\.(?:pdf|docx?|pptx?|xlsx?|csv|rtf|txt|zip)$/i;
+
+export const isNonContactableDocumentSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    return DOCUMENT_FILE_PATH.test(new URL(normalized).pathname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
 const PROFILE_LIKE_PATH = /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|$)/i;
 
 export const isProfileLikeSourceUrl = (url?: string | null): boolean =>
@@ -254,6 +267,7 @@ export const resolveOutreachOfficialSource = (
     if (source.isLikelyUnavailable) return false;
     if (!safeHttpUrl(source.url)) return false;
     if (isIdentifierOrGrantDbSourceUrl(source.url)) return false;
+    if (isNonContactableDocumentSourceUrl(source.url)) return false;
     if (leadIdentityUnderReview && isProfileLikeSourceUrl(source.url)) return false;
     const destination = normalizeActionDestination(source.url);
     return Boolean(destination) && !claimedDestinations.has(destination);

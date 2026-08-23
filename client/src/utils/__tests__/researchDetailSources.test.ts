@@ -582,6 +582,29 @@ describe('resolveOutreachOfficialSource', () => {
     expect(source).toBeUndefined();
   });
 
+  it('never promotes a downloadable document as the outreach official source', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://science.yalecollege.yale.edu/sites/default/files/2025%20Symposium.pdf')],
+      [],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('prefers a contactable page over a downloadable document', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://science.yalecollege.yale.edu/sites/default/files/2025%20Symposium.pdf'),
+        makeSource('https://lab.example.yale.edu/contact'),
+      ],
+      [],
+      false,
+    );
+
+    expect(source?.url).toBe('https://lab.example.yale.edu/contact');
+  });
+
   it('falls through to a contactable source when an identifier page is also present', () => {
     const source = resolveOutreachOfficialSource(
       [
