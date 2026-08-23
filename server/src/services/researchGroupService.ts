@@ -351,6 +351,15 @@ const MAX_FILTER_VALUES = 50;
 // topics 0.2-0.99) while pure-noise queries score ~1e-7, so this cutoff drops noise
 // without clipping legitimate weak-but-real matches. See #823.
 const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
+// At semanticRatio 0.8 a hybrid hit's blended score is 0.8*similarity for a
+// semantic-only hit but only 0.2*keywordScore for a keyword-only hit, so a weak
+// semantic-only hit (e.g. a same-first-name person at similarity ~0.27) can
+// outrank a near-perfect keyword/exact-name match (blended ~0.198). Any
+// semantic-only hit below this similarity is treated as too weak to sit above a
+// real keyword match and is floored beneath the keyword hits. Genuine broad
+// topical matches score well above this, so pure-semantic ranking is untouched.
+// See #929.
+const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -777,6 +786,52 @@ const isInvalidSearchAttributesToSearchOnError = (error: unknown): boolean => {
   );
 };
 
+const KEYWORD_RANKING_RULE_KEYS = ['words', 'typo', 'proximity', 'attribute', 'exactness'];
+
+/**
+ * True when Meilisearch retrieved this hit via the keyword leg of a hybrid
+ * search, i.e. `_rankingScoreDetails` carries at least one keyword ranking rule.
+ * A purely semantic hit only carries a `vectorSort` detail.
+ */
+const hitMatchedKeywordLeg = (hit: any): boolean => {
+  const details = hit?._rankingScoreDetails;
+  if (!details || typeof details !== 'object') return false;
+  return KEYWORD_RANKING_RULE_KEYS.some((key) => key in details);
+};
+
+/**
+ * True when the hit was retrieved only by the semantic leg with a similarity
+ * below the weak-match floor, so it should not sit above real keyword matches.
+ */
+const hitIsWeakSemanticOnly = (hit: any): boolean => {
+  const details = hit?._rankingScoreDetails;
+  if (!details || typeof details !== 'object') return false;
+  const similarity = details.vectorSort?.similarity;
+  if (typeof similarity !== 'number') return false;
+  if (hitMatchedKeywordLeg(hit)) return false;
+  return similarity < WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR;
+};
+
+/**
+ * Stable re-rank that floors weak semantic-only hits beneath every hit that
+ * matched the keyword leg (or matched semantics strongly). Only engages when the
+ * result set actually contains a keyword match to protect, so pure-semantic
+ * topical queries keep Meilisearch's native hybrid ordering untouched. Fixes the
+ * name-query mis-ordering in #929 without changing `semanticRatio`.
+ */
+export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
+  if (!Array.isArray(hits) || hits.length < 2) return hits;
+  if (!hits.some(hitMatchedKeywordLeg)) return hits;
+  const strong: T[] = [];
+  const weak: T[] = [];
+  for (const hit of hits) {
+    if (hitIsWeakSemanticOnly(hit)) weak.push(hit);
+    else strong.push(hit);
+  }
+  if (weak.length === 0 || strong.length === 0) return hits;
+  return [...strong, ...weak];
+};
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -892,6 +947,7 @@ export async function searchResearchGroupsViaMeili(
         embedder: 'default',
       };
       searchParams.rankingScoreThreshold = HYBRID_RANKING_SCORE_THRESHOLD;
+      searchParams.showRankingScoreDetails = true;
     }
   }
 
@@ -937,6 +993,7 @@ export async function searchResearchGroupsViaMeili(
           params = { ...params };
           delete params.hybrid;
           delete params.rankingScoreThreshold;
+          delete params.showRankingScoreDetails;
           degraded = true;
           continue;
         }
@@ -1016,7 +1073,8 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
-  const hitIds = (hits || [])
+  const orderedHits = floorWeakSemanticOnlyHits(hits || []);
+  const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
     .filter((id): id is string => Boolean(id));
@@ -1053,7 +1111,7 @@ export async function searchResearchGroupsViaMeili(
     listAccessSummariesForResearchEntities(visibleHitIds),
     optionalPlanningContexts(visibleHitIds),
   ]);
-  const normalizedHits = (hits || []).flatMap((hit: any) => {
+  const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
     const entity = visibleEntitiesById.get(entityId);
