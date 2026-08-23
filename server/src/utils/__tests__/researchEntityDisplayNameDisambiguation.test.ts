@@ -14,6 +14,34 @@ describe('disambiguateCollidingResearchEntityNames', () => {
     ]);
   });
 
+  it('disambiguates the displayName the client renders, not just the name', () => {
+    const entities = disambiguateCollidingResearchEntityNames([
+      { name: 'The Liu Lab', displayName: 'The Liu Lab', departments: ['Microbial Pathogenesis'] },
+      { name: 'The Liu Lab', displayName: 'The Liu Lab', departments: ['Biostatistics'] },
+    ]);
+
+    expect(entities.map((entity) => entity.displayName)).toEqual([
+      'The Liu Lab (Microbial Pathogenesis)',
+      'The Liu Lab (Biostatistics)',
+    ]);
+    expect(entities.map((entity) => entity.name)).toEqual([
+      'The Liu Lab (Microbial Pathogenesis)',
+      'The Liu Lab (Biostatistics)',
+    ]);
+  });
+
+  it('collides on the rendered displayName even when the stored name differs', () => {
+    const entities = disambiguateCollidingResearchEntityNames([
+      { name: 'ysm-jun-liu', displayName: 'The Liu Lab', departments: ['Microbial Pathogenesis'] },
+      { name: 'nih-qiao-liu', displayName: 'The Liu Lab', departments: ['Biostatistics'] },
+    ]);
+
+    expect(entities.map((entity) => entity.displayName)).toEqual([
+      'The Liu Lab (Microbial Pathogenesis)',
+      'The Liu Lab (Biostatistics)',
+    ]);
+  });
+
   it('treats names as colliding regardless of whitespace and case', () => {
     const entities = disambiguateCollidingResearchEntityNames([
       { name: 'The  Liu Lab', departments: ['Microbial Pathogenesis'] },

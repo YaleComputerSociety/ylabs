@@ -1,5 +1,6 @@
 export interface DisambiguatableResearchEntity {
   name?: unknown;
+  displayName?: unknown;
   departments?: unknown;
   school?: unknown;
   schools?: unknown;
@@ -30,35 +31,44 @@ function schoolLabel(entity: DisambiguatableResearchEntity): string {
 
 const DISAMBIGUATOR_LABEL_EXTRACTORS = [departmentLabel, schoolLabel] as const;
 
-function decoratedName(name: string, label: string): string {
-  return `${name} (${label})`;
+function titleText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function renderedTitle(entity: DisambiguatableResearchEntity): string {
+  return titleText(entity.displayName) || titleText(entity.name);
 }
 
 export function disambiguateCollidingResearchEntityNames<T extends DisambiguatableResearchEntity>(
   entities: T[],
 ): T[] {
-  const indicesByName = new Map<string, number[]>();
+  const indicesByTitle = new Map<string, number[]>();
   entities.forEach((entity, index) => {
-    const name = typeof entity.name === 'string' ? entity.name : '';
-    if (!name.trim()) return;
-    const key = normalizedNameKey(name);
-    const bucket = indicesByName.get(key);
+    const title = renderedTitle(entity);
+    if (!title) return;
+    const key = normalizedNameKey(title);
+    const bucket = indicesByTitle.get(key);
     if (bucket) bucket.push(index);
-    else indicesByName.set(key, [index]);
+    else indicesByTitle.set(key, [index]);
   });
 
-  for (const indices of indicesByName.values()) {
+  for (const indices of indicesByTitle.values()) {
     if (indices.length < 2) continue;
 
     for (const extractor of DISAMBIGUATOR_LABEL_EXTRACTORS) {
-      const decorated = indices.map((index) => {
-        const label = extractor(entities[index]);
-        return label ? decoratedName(entities[index].name as string, label) : '';
-      });
-      if (decorated.some((value) => value === '')) continue;
-      if (new Set(decorated).size !== indices.length) continue;
+      const labels = indices.map((index) => extractor(entities[index]));
+      if (labels.some((label) => !label)) continue;
+      const decoratedTitles = indices.map(
+        (index, position) => `${renderedTitle(entities[index])} (${labels[position]})`,
+      );
+      if (new Set(decoratedTitles).size !== indices.length) continue;
       indices.forEach((index, position) => {
-        entities[index].name = decorated[position];
+        const entity = entities[index];
+        const label = labels[position];
+        if (titleText(entity.name)) entity.name = `${entity.name as string} (${label})`;
+        if (titleText(entity.displayName)) {
+          entity.displayName = `${entity.displayName as string} (${label})`;
+        }
       });
       break;
     }

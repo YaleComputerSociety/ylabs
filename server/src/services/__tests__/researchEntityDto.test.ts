@@ -541,6 +541,39 @@ describe('researchEntityDto', () => {
     ]);
   });
 
+  it('disambiguates the served displayName the browse card renders (#1211)', () => {
+    const result = addResearchEntitySearchAliases({
+      hits: [
+        {
+          _id: 'ysm-jun-liu',
+          slug: 'ysm-jun-liu',
+          name: 'The Liu Lab',
+          displayName: 'The Liu Lab',
+          kind: 'lab',
+          departments: ['Microbial Pathogenesis'],
+          school: 'School of Medicine',
+        },
+        {
+          _id: 'nih-pi-qiao-liu',
+          slug: 'nih-pi-qiao-liu',
+          name: 'The Liu Lab',
+          displayName: 'The Liu Lab',
+          kind: 'lab',
+          departments: ['Biostatistics'],
+          school: 'School of Public Health',
+        },
+      ],
+      estimatedTotalHits: 2,
+      page: 1,
+      pageSize: 24,
+    });
+
+    expect(result.researchEntities.map((entity) => entity.displayName)).toEqual([
+      'The Liu Lab (Microbial Pathogenesis)',
+      'The Liu Lab (Biostatistics)',
+    ]);
+  });
+
   it('falls back to school when a shared department does not disambiguate a name collision', () => {
     const result = addResearchEntitySearchAliases({
       hits: [
