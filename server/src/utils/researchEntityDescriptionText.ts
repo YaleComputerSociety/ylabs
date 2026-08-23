@@ -279,6 +279,38 @@ export function repairSubjectlessResearchLead(value: unknown): string {
   return text;
 }
 
+const PERSONAL_PAGE_GREETING_PATTERN = /^(?:welcome to (?:my|our|the)\b[^.!?]*[.!?]+\s*)+/i;
+
+function countWords(value: string): number {
+  return value.split(/\s+/).filter(Boolean).length;
+}
+
+function stripLeadingPersonalGreeting(value: string): string {
+  const match = value.match(PERSONAL_PAGE_GREETING_PATTERN);
+  if (!match) return value;
+  const remainder = value.slice(match[0].length).trim();
+  if (countWords(remainder) < 6) return value;
+  return remainder;
+}
+
+const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^(?:I\s+am|I['’]m)\s+(an?)\s+/i, 'This researcher is $1 '],
+  [/(^|[.!?]\s+)My\s+career\b/g, "$1This researcher's career"],
+  [/(^|[.!?]\s+)My\s+research\b/gi, '$1This research'],
+  [/(^|[.!?]\s+)My\s+work\b/gi, '$1This work'],
+  [/(^|[.!?]\s+)My\s+group\b/gi, '$1This research group'],
+];
+
+export function revoiceFirstPersonResearchLead(value: unknown): string {
+  const text = typeof value === 'string' ? value : '';
+  if (!text) return text;
+  let next = stripLeadingPersonalGreeting(text);
+  for (const [pattern, replacement] of FIRST_PERSON_LEAD_REVOICE_RULES) {
+    next = next.replace(pattern, replacement);
+  }
+  return next;
+}
+
 export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<string, any>>(
   entity: T,
   leadMemberNames: readonly string[] = [],
@@ -291,8 +323,12 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
       const withResearchLeadRepair = repairSubjectlessResearchLead(next[field]);
+      const withFirstPersonReVoice =
+        rejectPersonBiography || field === 'shortDescription'
+          ? withResearchLeadRepair
+          : revoiceFirstPersonResearchLead(withResearchLeadRepair);
       const withLeadNameCorrection = sanitizeLeadingMismatchedPersonNamePrefix(
-        withResearchLeadRepair,
+        withFirstPersonReVoice,
         leadMemberNames,
       );
       const withLeadNameCorrectionIfResearch =

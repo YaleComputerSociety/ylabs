@@ -5,6 +5,7 @@ import {
   isPersonBiographyOrAdvisingDescription,
   publicResearchEntityDescriptionText,
   repairSubjectlessResearchLead,
+  revoiceFirstPersonResearchLead,
   sanitizeFacultyResearchEntityText,
   sanitizeResearchEntityPublicDescriptionFields,
   sanitizeResearchHomeSelfReferenceCopyFields,
@@ -246,6 +247,48 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe('Investigates the mechanics of soft robotic materials.');
   });
 
+  it('re-voices a raw first-person PI bio served as a LAB fullDescription to third person (#964)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      shortDescription:
+        'Investigates novel immune checkpoints and the inhibitory immune landscape in cutaneous malignancies.',
+      fullDescription:
+        'I am a physician-scientist with specialized training in immunology, molecular biology, genetics, and clinical dermatology. My career is dedicated to integrating fundamental immunology with clinical dermatology.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      "This researcher is a physician-scientist with specialized training in immunology, molecular biology, genetics, and clinical dermatology. This researcher's career is dedicated to integrating fundamental immunology with clinical dermatology.",
+    );
+    expect(sanitized.shortDescription).toBe(lab.shortDescription);
+  });
+
+  it('strips a leading personal-page greeting before re-voicing remaining lab copy (#964)', () => {
+    const lab = {
+      entityType: 'LAB',
+      kind: 'lab',
+      fullDescription:
+        'Welcome to my web page! My research studies the genetics of neurodegenerative disease across model organisms.',
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(lab);
+
+    expect(sanitized.fullDescription).toBe(
+      'This research studies the genetics of neurodegenerative disease across model organisms.',
+    );
+  });
+
+  it('does not re-voice first-person advising notes into third person (#964 stays scoped)', () => {
+    const facultyResearch = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      fullDescription: PROGRAM_DIRECTOR_BIO,
+    };
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(facultyResearch);
+
+    expect(sanitized.fullDescription).toBe(PROGRAM_DIRECTOR_BIO);
+  });
+
   it('repairs a subject-less "Research {verb}..." fullDescription on an individual-research entity (#999)', () => {
     const individual = {
       entityType: 'INDIVIDUAL_RESEARCH',
@@ -258,6 +301,48 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     expect(sanitized.fullDescription).toBe(
       'Examines musical topics within the black Atlantic cultural sphere of Africa and the African diaspora.',
     );
+  });
+});
+
+describe('revoiceFirstPersonResearchLead', () => {
+  it('re-voices a bare first-person bio opener to third person', () => {
+    expect(
+      revoiceFirstPersonResearchLead('I am an immunologist studying tumor microenvironments.'),
+    ).toBe('This researcher is an immunologist studying tumor microenvironments.');
+    expect(revoiceFirstPersonResearchLead("I'm a chemist who studies catalysis.")).toBe(
+      'This researcher is a chemist who studies catalysis.',
+    );
+  });
+
+  it('re-voices first-person possessive leads at any sentence boundary', () => {
+    expect(revoiceFirstPersonResearchLead('My research focuses on coral reefs.')).toBe(
+      'This research focuses on coral reefs.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('Studies coral reefs. My work builds ocean sensors.'),
+    ).toBe('Studies coral reefs. This work builds ocean sensors.');
+    expect(revoiceFirstPersonResearchLead('My career spans two decades of fieldwork.')).toBe(
+      "This researcher's career spans two decades of fieldwork.",
+    );
+  });
+
+  it('drops a leading personal-page greeting only when substantive copy remains', () => {
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Welcome to our lab website. This research studies quantum materials at low temperature.',
+      ),
+    ).toBe('This research studies quantum materials at low temperature.');
+    expect(revoiceFirstPersonResearchLead('Welcome to my web page!')).toBe(
+      'Welcome to my web page!',
+    );
+  });
+
+  it('leaves third-person research copy untouched', () => {
+    expect(
+      revoiceFirstPersonResearchLead('Studies immune checkpoints in cutaneous malignancies.'),
+    ).toBe('Studies immune checkpoints in cutaneous malignancies.');
+    expect(revoiceFirstPersonResearchLead('')).toBe('');
+    expect(revoiceFirstPersonResearchLead(undefined)).toBe('');
   });
 });
 
