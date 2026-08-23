@@ -5,6 +5,11 @@ import {
   isConcreteResearchHomeEntity,
   isProfileAreaShellEntity,
 } from '../utils/profileAreaDuplicateRisk';
+import {
+  isCustomYaleResearchHomeSubdomain,
+  isListingOrIndexUrl,
+  sourceUrlToResearchHomeWebsiteUrl,
+} from '../utils/researchHomeWebsiteUrl';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -607,6 +612,245 @@ export function buildOfficialLabUrlResearchEntityDedupePlan(
       ),
     )
     .filter((group): group is ResearchEntityPiDedupeGroup => !!group);
+}
+
+export interface OrgNameDedupeEntity {
+  id: string;
+  slug?: string;
+  name?: string;
+  displayName?: string;
+  entityType?: string;
+  websiteUrl?: string;
+  fullDescription?: string;
+  shortDescription?: string;
+  sourceUrls?: string[];
+  departments?: string[];
+  researchAreas?: string[];
+  memberCount?: number;
+  hasAttachedPi?: boolean;
+}
+
+export const ORG_NAME_DEDUPE_ENTITY_TYPES = [
+  'CENTER',
+  'INSTITUTE',
+  'INITIATIVE',
+  'CORE_FACILITY',
+] as const;
+
+const ORG_NAME_STOPWORDS = new Set([
+  'the',
+  'of',
+  'for',
+  'and',
+  'at',
+  'a',
+  'an',
+  'to',
+  'in',
+  'on',
+  'yale',
+]);
+
+const ORG_TYPE_NAME_TOKENS = new Set([
+  'center',
+  'centre',
+  'centers',
+  'institute',
+  'institutes',
+  'initiative',
+  'initiatives',
+  'program',
+  'programme',
+  'programs',
+  'group',
+  'groups',
+  'core',
+  'cores',
+  'facility',
+  'facilities',
+  'laboratory',
+  'lab',
+  'project',
+  'projects',
+]);
+
+const ORG_DEDUPE_UMBRELLA_HOSTS = new Set(['yale.edu', 'www.yale.edu', 'research.yale.edu']);
+
+function orgNameTokens(name: string | undefined): string[] {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((token) => !ORG_NAME_STOPWORDS.has(token));
+}
+
+export function normalizeOrgDedupeName(name: string | undefined): string {
+  return orgNameTokens(name).join(' ');
+}
+
+function significantOrgNameTokens(name: string | undefined): string[] {
+  return orgNameTokens(name).filter((token) => !ORG_TYPE_NAME_TOKENS.has(token));
+}
+
+function isDistinctiveOrgHost(url: URL): boolean {
+  const host = url.hostname.toLowerCase().replace(/^www\./, '');
+  if (ORG_DEDUPE_UMBRELLA_HOSTS.has(host)) return false;
+  if (/(^|\.)yale\.edu$/i.test(url.hostname)) return isCustomYaleResearchHomeSubdomain(url);
+  return true;
+}
+
+function isDistinctiveOrgHostUrl(value: string): boolean {
+  try {
+    return isDistinctiveOrgHost(new URL(value));
+  } catch {
+    return false;
+  }
+}
+
+function orgCorroborationHosts(entity: OrgNameDedupeEntity): string[] {
+  const hosts: string[] = [];
+  for (const value of [entity.websiteUrl, ...(entity.sourceUrls || [])]) {
+    if (!value) continue;
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      continue;
+    }
+    if (!isDistinctiveOrgHost(url)) continue;
+    hosts.push(url.hostname.toLowerCase().replace(/^www\./, ''));
+  }
+  return Array.from(new Set(hosts));
+}
+
+function orgGroupSharesDistinctiveHost(entities: OrgNameDedupeEntity[]): boolean {
+  const counts = new Map<string, number>();
+  for (const entity of entities) {
+    for (const host of orgCorroborationHosts(entity)) {
+      counts.set(host, (counts.get(host) || 0) + 1);
+    }
+  }
+  return Array.from(counts.values()).some((count) => count >= 2);
+}
+
+export function isOrgNameDedupeGroupCorroborated(entities: OrgNameDedupeEntity[]): boolean {
+  if (orgGroupSharesDistinctiveHost(entities)) return true;
+  const representativeName = entities[0]?.name || entities[0]?.displayName;
+  return significantOrgNameTokens(representativeName).length >= 2;
+}
+
+function isSecondPathShellSlug(slug: string | undefined): boolean {
+  const value = (slug || '').toLowerCase();
+  return (
+    value.startsWith('yale-research-center-') ||
+    value.startsWith('yale-research-core-') ||
+    value.startsWith('research-yale-')
+  );
+}
+
+function orgCanonicalScore(entity: OrgNameDedupeEntity): number {
+  return (
+    (entity.memberCount || 0) * 5 +
+    (entity.departments?.length || 0) * 3 +
+    (entity.researchAreas?.length || 0) * 2 +
+    (entity.sourceUrls?.length || 0) +
+    (bestDedicatedOrgWebsite(entity) ? 6 : 0) +
+    ((entity.fullDescription || '').trim() ? 10 : 0) +
+    ((entity.shortDescription || '').trim() ? 4 : 0) +
+    (isSecondPathShellSlug(entity.slug) ? -40 : 0)
+  );
+}
+
+function bestDedicatedOrgWebsite(entity: OrgNameDedupeEntity): string {
+  const website = (entity.websiteUrl || '').trim();
+  if (website && !isListingOrIndexUrl(website) && isDistinctiveOrgHostUrl(website)) {
+    return website;
+  }
+  for (const sourceUrl of entity.sourceUrls || []) {
+    const home = sourceUrlToResearchHomeWebsiteUrl(sourceUrl);
+    if (home && isDistinctiveOrgHostUrl(home)) return home;
+  }
+  return '';
+}
+
+function cleanestOrgName(entities: OrgNameDedupeEntity[]): string {
+  const names = entities.map((entity) => (entity.name || '').trim()).filter(Boolean);
+  const withoutAbbreviation = names.filter((name) => !/\([^)]*\)/.test(name));
+  const pool = withoutAbbreviation.length > 0 ? withoutAbbreviation : names;
+  return pool.sort((a, b) => a.length - b.length || a.localeCompare(b))[0] || '';
+}
+
+function buildOrgNameDedupeGroup(
+  normalizedName: string,
+  entities: OrgNameDedupeEntity[],
+): ResearchEntityPiDedupeGroup | null {
+  if (entities.length <= 1) return null;
+
+  const canonical = [...entities].sort((a, b) => {
+    const byScore = orgCanonicalScore(b) - orgCanonicalScore(a);
+    if (byScore !== 0) return byScore;
+    return (a.slug || a.id).localeCompare(b.slug || b.id);
+  })[0];
+  const duplicates = entities.filter((entity) => entity.id !== canonical.id);
+  if (duplicates.length === 0) return null;
+
+  const groupWebsite =
+    bestDedicatedOrgWebsite(canonical) ||
+    entities.map((entity) => bestDedicatedOrgWebsite(entity)).find(Boolean) ||
+    '';
+  const cleanName = cleanestOrgName(entities);
+  const descriptionCarry = bestDescriptionCarry(canonical, entities);
+
+  return {
+    userId: `org-name:${normalizedName}`,
+    normalizedName,
+    canonicalEntityId: canonical.id,
+    duplicateEntityIds: duplicates.map((entity) => entity.id),
+    canonicalSlug: canonical.slug,
+    duplicateSlugs: duplicates.map((entity) => entity.slug || entity.id),
+    mergedDepartments: uniqueStrings(entities.flatMap((entity) => entity.departments || [])),
+    mergedResearchAreas: cleanMergedResearchAreas(
+      entities.flatMap((entity) => entity.researchAreas || []),
+    ),
+    mergedSourceUrls: uniqueStrings([
+      ...entities.flatMap((entity) => entity.sourceUrls || []),
+      ...entities.map((entity) => entity.websiteUrl),
+    ]),
+    ...(cleanName && cleanName !== (canonical.name || '').trim()
+      ? { canonicalName: cleanName }
+      : {}),
+    ...(groupWebsite && groupWebsite !== (canonical.websiteUrl || '').trim()
+      ? { canonicalWebsiteUrl: groupWebsite }
+      : {}),
+    ...descriptionCarry,
+  };
+}
+
+export function buildOrgNameResearchEntityDedupePlan(
+  entities: OrgNameDedupeEntity[],
+): ResearchEntityPiDedupeGroup[] {
+  const orgTypes = new Set<string>(ORG_NAME_DEDUPE_ENTITY_TYPES);
+  const byKey = new Map<string, OrgNameDedupeEntity[]>();
+  for (const entity of entities) {
+    if (!entity.id) continue;
+    if (entity.hasAttachedPi) continue;
+    if (!entity.entityType || !orgTypes.has(entity.entityType)) continue;
+    const normalizedName = normalizeOrgDedupeName(entity.name || entity.displayName);
+    if (!normalizedName) continue;
+    const key = `${entity.entityType}::${normalizedName}`;
+    byKey.set(key, [...(byKey.get(key) || []), entity]);
+  }
+
+  const groups: ResearchEntityPiDedupeGroup[] = [];
+  for (const [key, groupEntities] of byKey) {
+    if (groupEntities.length < 2) continue;
+    if (!isOrgNameDedupeGroupCorroborated(groupEntities)) continue;
+    const group = buildOrgNameDedupeGroup(key, groupEntities);
+    if (group) groups.push(group);
+  }
+  return dedupePlanGroupsByEntitySet(groups);
 }
 
 export function shouldRetireDuplicateCurrentMembersForDedupeRun(options: {
