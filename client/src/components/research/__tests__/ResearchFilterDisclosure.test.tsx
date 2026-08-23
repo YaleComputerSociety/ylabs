@@ -121,7 +121,9 @@ describe('ResearchFilterDisclosure', () => {
     renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
 
     expect(screen.queryByRole('button', { name: /^Filters/ })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Research filters' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Research filters', level: 2 }),
+    ).toBeTruthy();
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
