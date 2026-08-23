@@ -59,7 +59,9 @@ function parseFilterValues(value: string | undefined): string[] {
 
 function parseRegions(value: string | undefined): string[] {
   const allValues = parseFilterValues(value);
-  return allValues.filter((v) => TOP_LEVEL_REGIONS.includes(v));
+  const regions = Array.from(new Set(allValues.filter((v) => TOP_LEVEL_REGIONS.includes(v))));
+  const isFullEnumeration = TOP_LEVEL_REGIONS.every((region) => regions.includes(region));
+  return isFullEnumeration ? [] : regions;
 }
 
 function cleanEmail(email: string | undefined): string {
