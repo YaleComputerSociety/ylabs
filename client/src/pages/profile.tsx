@@ -63,7 +63,7 @@ const Profile = () => {
 
   const isAdmin = user?.userType === 'admin';
   const bioText = profile?.bio || '';
-  useDocumentTitle(profile ? `${profile.fname} ${profile.lname}` : 'Faculty profile');
+  useDocumentTitle(profile ? `${profile.fname} ${profile.lname}` : 'Profile');
 
   const fetchProfile = useCallback(() => {
     if (!netid) return;

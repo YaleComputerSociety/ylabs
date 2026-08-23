@@ -160,6 +160,7 @@ export type FacultyProfile = {
   email?: string;
   fname: string;
   lname: string;
+  userType?: string;
   title?: string;
   bio?: string;
   website?: string;
