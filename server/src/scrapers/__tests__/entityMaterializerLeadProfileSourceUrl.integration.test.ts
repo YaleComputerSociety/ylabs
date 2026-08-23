@@ -20,6 +20,8 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
 
+type PersistedEntity = { sourceUrls?: string[]; websiteUrl?: string };
+
 const A_TO_Z_INDEX_URL = 'https://medicine.yale.edu/about/a-to-z-index/atoz/lab-websites/';
 const LAB_MICROSITE_URL = 'https://medicine.yale.edu/lab/steele/';
 const OFFICIAL_PROFILE_URL = 'https://medicine.yale.edu/profile/vaughn-steele/';
@@ -95,7 +97,7 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     expect(result.skipped).toBeUndefined();
 
-    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean();
+    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean<PersistedEntity>();
     const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
 
     expect(sourceUrls).toContain(OFFICIAL_PROFILE_URL);
@@ -111,7 +113,7 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
 
-    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean();
+    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean<PersistedEntity>();
     const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
 
     expect(sourceUrls.filter((url) => url === OFFICIAL_PROFILE_URL)).toHaveLength(1);
@@ -124,7 +126,7 @@ describe('materializeEntity surfaces the lead official profile as a sourceUrl (#
 
     await materializeEntity('researchEntity', { entityKey: 'ysm-steele-fixture' }, {});
 
-    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean();
+    const persisted = await ResearchEntity.findOne({ slug: 'ysm-steele-fixture' }).lean<PersistedEntity>();
     const sourceUrls = (persisted?.sourceUrls ?? []) as string[];
 
     expect(sourceUrls).not.toContain(OFFICIAL_PROFILE_URL);
