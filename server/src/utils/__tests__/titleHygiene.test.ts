@@ -86,26 +86,29 @@ describe('hasStreetAddressFragment', () => {
 });
 
 describe('hasPhoneContactFragment', () => {
-  it('rejects an Office:/Phone: contact block label', () => {
-    expect(
-      hasPhoneContactFragment('Professor of HistoryOffice: 320 York Phone: 203-432-0000'),
-    ).toBe(true);
+  it('rejects a Phone: label run into the title', () => {
+    expect(hasPhoneContactFragment('Professor of Chemistry Phone: 203-432-1234')).toBe(true);
   });
 
-  it('rejects a formatted phone number', () => {
-    expect(hasPhoneContactFragment('Associate Professor (203) 432-1234')).toBe(true);
+  it('rejects a Fax: label', () => {
+    expect(hasPhoneContactFragment('Director of the Center Fax: (203) 432-0000')).toBe(true);
+  });
+
+  it('rejects a bare ten-digit phone number in any format', () => {
+    expect(hasPhoneContactFragment('Professor of Physics (203) 432-1234')).toBe(true);
+    expect(hasPhoneContactFragment('Professor of Physics 203.432.1234')).toBe(true);
   });
 
   it('keeps a plain job title', () => {
-    expect(hasPhoneContactFragment('Professor of History')).toBe(false);
+    expect(hasPhoneContactFragment('Associate Professor of Chemistry')).toBe(false);
   });
 
-  it('keeps a title mentioning an office without a contact label', () => {
-    expect(hasPhoneContactFragment('Director of the Office of Undergraduate Research')).toBe(false);
+  it('does not treat a course number or endowed-chair year as a phone number', () => {
+    expect(hasPhoneContactFragment('The 1701 Professor of Chemistry, CHEM 502')).toBe(false);
   });
 
-  it('keeps a title containing a year range', () => {
-    expect(hasPhoneContactFragment('Visiting Professor 2004-2010')).toBe(false);
+  it('does not fire on Phone/Tel substrings inside real words', () => {
+    expect(hasPhoneContactFragment('Professor at the Hotel Management Institute')).toBe(false);
   });
 });
 
@@ -164,15 +167,18 @@ describe('sanitizePersonTitle', () => {
     expect(sanitizePersonTitle('Professor jane.doe@example.edu')).toBeUndefined();
   });
 
-  it('drops the issue #740 contact block with email, office, and phone', () => {
+  it('drops a title carrying a phone/fax contact fragment (#740)', () => {
+    expect(sanitizePersonTitle('Professor of Chemistry Phone: 203-432-1234')).toBeUndefined();
+    expect(sanitizePersonTitle('Director Fax: (203) 432-0000')).toBeUndefined();
+  });
+
+  it('drops a multi-sentence bio dumped into the title', () => {
     expect(
-      sanitizePersonTitle(
-        'Professor of Historyjane.doe@example.eduOffice: 320 York StPhone: 203-432-0000',
-      ),
+      sanitizePersonTitle('Her lab studies protein folding. She teaches. She joined in 2004.'),
     ).toBeUndefined();
   });
 
-  it('drops a title longer than a role string ever runs', () => {
+  it('drops a title longer than a role string ever runs (#740)', () => {
     expect(sanitizePersonTitle(`Professor of ${'Molecular Biology '.repeat(10)}`)).toBeUndefined();
   });
 
@@ -184,12 +190,6 @@ describe('sanitizePersonTitle', () => {
     ).toBe(
       'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
     );
-  });
-
-  it('drops a multi-sentence bio dumped into the title', () => {
-    expect(
-      sanitizePersonTitle('Her lab studies protein folding. She teaches. She joined in 2004.'),
-    ).toBeUndefined();
   });
 
   it('keeps and normalizes a real job title', () => {

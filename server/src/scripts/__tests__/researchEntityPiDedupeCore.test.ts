@@ -93,6 +93,55 @@ describe('buildResearchEntityPiDedupePlan', () => {
     ]);
   });
 
+  it('carries NIH grant funding evidence from a merged PI-derived shell in the generic dedupe lane', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-quill-user',
+        normalizedName: 'same-pi:fixture-quill-user',
+        piFirstName: 'Nadia',
+        piLastName: 'Quill',
+        entities: [
+          {
+            id: 'nih-quill-shell',
+            slug: 'nih-pi-nadia-quill',
+            name: 'Nadia Quill Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/20000001'],
+            recentGrantCount: 1,
+            fundingAgencies: ['NIH'],
+            recentGrants: [
+              {
+                id: '20000001',
+                agency: 'NIH',
+                title: 'Fixture Quill grant',
+                startDate: '2023-01-01',
+                url: 'https://reporter.nih.gov/project-details/20000001',
+              },
+            ],
+          },
+          {
+            id: 'quill-faculty-home',
+            slug: 'dept-cs-nadia-quill',
+            name: 'Nadia Quill',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://cs.yale.edu/profile/nadia-quill/',
+            sourceUrls: ['https://cs.yale.edu/profile/nadia-quill/'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'quill-faculty-home',
+        duplicateEntityIds: ['nih-quill-shell'],
+        mergedRecentGrantCount: 1,
+        mergedFundingAgencies: ['NIH'],
+      },
+    ]);
+    expect(plan[0]?.mergedRecentGrants?.[0]).toMatchObject({ id: '20000001' });
+  });
+
   it('keeps a real-website faculty home as canonical instead of archiving it into the PI-derived grant shell', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
@@ -1860,6 +1909,94 @@ describe('buildFundingResearchEntityDedupePlan', () => {
     expect(plan[0]?.canonicalEntityId).toBe('ysm-thin');
     expect(plan[0]?.canonicalFullDescription).toBe(trustedSiblingDescription);
     expect(plan[0]?.canonicalFullDescription).not.toContain('hallucinated');
+  });
+
+  it('carries recentGrants/recentGrantCount/fundingAgencies from a funding-only NIH shell onto the canonical entity', () => {
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-oakley-lab',
+        normalizedName: 'fixture oakley lab',
+        entities: [
+          {
+            id: 'ysm-fixture-oakley',
+            slug: 'ysm-fixture-oakley',
+            name: 'Fixture Oakley Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-oakley/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-oakley/'],
+            recentGrantCount: 1,
+            fundingAgencies: ['NSF'],
+            recentGrants: [
+              { id: 'nsf-0000001', agency: 'NSF', title: 'Existing NSF award', startDate: '2024-01-01' },
+            ],
+          },
+          {
+            id: 'nih-fixture-oakley',
+            slug: 'nih-pi-fixture-oakley',
+            name: 'Fixture Oakley Lab',
+            sourceUrls: [
+              'https://reporter.nih.gov/project-details/10000001',
+              'https://reporter.nih.gov/project-details/10000002',
+            ],
+            recentGrantCount: 2,
+            fundingAgencies: ['NIH'],
+            recentGrants: [
+              {
+                id: '10000001',
+                agency: 'NIH',
+                title: 'Fixture grant one',
+                startDate: '2023-06-01',
+                url: 'https://reporter.nih.gov/project-details/10000001',
+              },
+              {
+                id: '10000002',
+                agency: 'NIH',
+                title: 'Fixture grant two',
+                startDate: '2022-06-01',
+                url: 'https://reporter.nih.gov/project-details/10000002',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.canonicalEntityId).toBe('ysm-fixture-oakley');
+    expect(plan[0]?.duplicateEntityIds).toEqual(['nih-fixture-oakley']);
+    expect(plan[0]?.mergedRecentGrantCount).toBe(3);
+    expect(plan[0]?.mergedFundingAgencies).toEqual(['NSF', 'NIH']);
+    expect((plan[0]?.mergedRecentGrants as Array<{ id: string }>).map((grant) => grant.id)).toEqual([
+      'nsf-0000001',
+      '10000001',
+      '10000002',
+    ]);
+  });
+
+  it('does not add merged grant fields when neither the canonical entity nor its duplicates carry grant data', () => {
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-no-grants-lab',
+        normalizedName: 'fixture no grants lab',
+        entities: [
+          {
+            id: 'ysm-fixture-no-grants',
+            slug: 'ysm-fixture-no-grants',
+            name: 'Fixture No Grants Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-no-grants/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-no-grants/'],
+          },
+          {
+            id: 'nih-fixture-no-grants',
+            slug: 'nih-pi-fixture-no-grants',
+            name: 'Fixture No Grants Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.mergedRecentGrants).toBeUndefined();
+    expect(plan[0]?.mergedRecentGrantCount).toBeUndefined();
+    expect(plan[0]?.mergedFundingAgencies).toBeUndefined();
   });
 });
 

@@ -1145,7 +1145,7 @@ describe('getResearchGroupDetail', () => {
 
   it('renders a member card title stripped of the issue #740 email/office/phone contact block', async () => {
     seedSingleMemberDetail(
-      'Professor of Historybeverly.gage@example.eduOffice: 320 York StPhone: 203-432-0000',
+      'Professor of Historyfixture.researcher@example.eduOffice: 320 York StPhone: 203-432-0000',
     );
 
     const detail = await getResearchGroupDetail('title-hygiene-lab');

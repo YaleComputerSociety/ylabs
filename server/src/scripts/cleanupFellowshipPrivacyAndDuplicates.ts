@@ -23,7 +23,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
-import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
+import { sanitizeStoredCatalogDescription } from '../utils/descriptionHygiene';
 import { normalizedProgramTitleKey } from '../utils/programTitle';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -90,7 +90,7 @@ async function main() {
   for (const doc of docs) {
     const id = serializedDocumentId(doc._id) || '';
     const before = typeof doc.description === 'string' ? doc.description : '';
-    const after = sanitizeCatalogDescription(before);
+    const after = sanitizeStoredCatalogDescription(before);
     sanitized.set(id, after);
     if (after !== before) {
       descriptionUpdates.push({ id, slug: doc.sourceKey || '(none)', before: before.length, after: after.length });

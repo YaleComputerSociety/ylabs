@@ -48,6 +48,7 @@ const protectUrlDots = (value: string): string => {
 const protectSentenceAbbreviations = (value: string): string =>
   value
     .replace(/https?:\/\/[^\s]+/gi, protectUrlDots)
+    .replace(/\bwww\.[^\s]+/gi, protectUrlDots)
     .replace(/\be\s*\.\s*g\s*\./gi, (match) =>
       match.replace(/[ \t\n]*/g, '').replace(/\./g, ABBREVIATION_DOT),
     )
