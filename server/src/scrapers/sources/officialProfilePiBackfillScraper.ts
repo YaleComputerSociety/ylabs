@@ -2616,7 +2616,7 @@ async function selectResearchHomeProfileTargets(
       archived: { $ne: true },
       ...targetFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
@@ -2703,7 +2703,7 @@ async function selectLeadDirectWebsiteTargets(
       archived: { $ne: true },
       ...targetFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls')
+      .select('_id slug name displayName website websiteUrl sourceUrls school schools departments')
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
@@ -2798,7 +2798,9 @@ async function selectSourceUrlWebsiteTargets(
       archived: { $ne: true },
       ...targetFilter,
     })
-      .select('_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls')
+      .select(
+        '_id slug name displayName website websiteUrl sourceUrls sourceObservationUrls school schools departments',
+      )
       .sort({ lastObservedAt: -1, _id: 1 }),
     limit,
     20,
