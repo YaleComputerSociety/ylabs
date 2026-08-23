@@ -25,11 +25,6 @@ const studentTrackingSchema = new mongoose.Schema(
       ref: 'StudentProfile',
       required: true,
     },
-    researchGroupId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'ResearchEntity',
-      required: false,
-    },
     researchEntityId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'ResearchEntity',
@@ -64,17 +59,12 @@ const studentTrackingSchema = new mongoose.Schema(
 );
 
 studentTrackingSchema.index(
-  { studentProfileId: 1, researchGroupId: 1 },
-  { unique: true },
-);
-studentTrackingSchema.index(
   { studentProfileId: 1, researchEntityId: 1 },
   {
     unique: true,
     partialFilterExpression: { researchEntityId: { $exists: true } },
   },
 );
-studentTrackingSchema.index({ researchGroupId: 1, stage: 1 });
 studentTrackingSchema.index({ researchEntityId: 1, stage: 1 });
 studentTrackingSchema.index({ studentProfileId: 1, updatedAt: -1 });
 
