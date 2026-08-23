@@ -91,6 +91,39 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('does not dump an FAQ + eligibility-form detail page as the description (#669)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Research Internship Program (Computer Science)</h1>
+            <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=42">Apply Now</a>
+            <h2>FAQs</h2>
+            <h3>Can I contact a faculty member before applying?</h3>
+            <p>Yes, students are encouraged to reach out to potential mentors ahead of time.</p>
+            <h3>Does the internship pay a stipend?</h3>
+            <p>The program provides a summer stipend to selected students.</p>
+            <h3>How many hours per week are expected?</h3>
+            <p>Interns typically commit full time over the summer term.</p>
+            <h2>Eligibility Requirements</h2>
+            <p>Level: Undergraduates only Class: Sophomores and Juniors GPA: Good standing</p>
+          </article>
+        </main>
+      `,
+      'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.title).toBe('Research Internship Program (Computer Science)');
+    expect(candidate.description ?? '').toBe('');
+    const descriptionObservation = candidateToObservations(candidate).find(
+      (observation) => observation.field === 'description',
+    );
+    expect(descriptionObservation).toBeUndefined();
+  });
+
   it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
     const programUrl = `${detailPageUrl}-official`;
     const fetchPage = vi.fn(async (url: string) => {

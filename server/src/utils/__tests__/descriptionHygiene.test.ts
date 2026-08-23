@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isFaqDumpText,
+  isFormFieldDumpText,
   isNavigationDumpText,
   isRosterShapedText,
   sanitizeCatalogDescription,
@@ -31,6 +33,24 @@ const SYNTHETIC_BREADCRUMB_PROSE =
 const SYNTHETIC_CLEAN_PROSE =
   'The fellowship provides support for original undergraduate research projects abroad in the natural and applied sciences. Currently enrolled sophomores and juniors are eligible to apply. Applicants are expected to have some previous research experience.';
 
+const SYNTHETIC_FAQ_DUMP = [
+  'Apply Now FAQs',
+  'Can I contact a faculty member before I apply?',
+  'Yes, students are encouraged to reach out to potential mentors ahead of time.',
+  'Does the internship pay a stipend?',
+  'The program provides a summer stipend to selected students.',
+  'How many hours per week are expected?',
+  'Eligibility Requirements Level: Undergraduates only.',
+].join(' ');
+
+const SYNTHETIC_FORM_DUMP = [
+  'Eligibility Requirements Level: Undergraduates only Class: Sophomore Junior',
+  'Deadline: March 1 Award: Summer stipend Duration: Ten weeks Location: New Haven',
+].join(' ');
+
+const SYNTHETIC_PROSE_WITH_QUESTION =
+  'What makes this program distinctive? It pairs students with faculty mentors for a summer of original research, and applications open each spring.';
+
 const SYNTHETIC_SCRIPT_CHROME =
   '.red {color:red !important;} $(document).ready(function(){ $(".label:contains(\'filled\')").addClass("red"); }); Applications are accepted on a rolling basis each fall. The program pairs students with faculty mentors.';
 
@@ -43,6 +63,24 @@ describe('descriptionHygiene', () => {
   it('flags a navigation/menu dump and rejects it', () => {
     expect(isNavigationDumpText(SYNTHETIC_NAV_DUMP)).toBe(true);
     expect(sanitizeCatalogDescription(SYNTHETIC_NAV_DUMP)).toBe('');
+  });
+
+  it('flags an FAQ/Q&A page dump and rejects it (#669)', () => {
+    expect(isFaqDumpText(SYNTHETIC_FAQ_DUMP)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_FAQ_DUMP)).toBe('');
+  });
+
+  it('flags an eligibility-form label dump and rejects it (#669)', () => {
+    expect(isFormFieldDumpText(SYNTHETIC_FORM_DUMP)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_FORM_DUMP)).toBe('');
+  });
+
+  it('keeps ordinary prose that contains a single rhetorical question', () => {
+    expect(isFaqDumpText(SYNTHETIC_PROSE_WITH_QUESTION)).toBe(false);
+    expect(isFormFieldDumpText(SYNTHETIC_PROSE_WITH_QUESTION)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_PROSE_WITH_QUESTION)).toBe(
+      SYNTHETIC_PROSE_WITH_QUESTION,
+    );
   });
 
   it('strips leading breadcrumb chrome but keeps the real prose', () => {
