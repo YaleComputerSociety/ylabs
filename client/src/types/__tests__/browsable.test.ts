@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { getResearchEntityBestNextStep, getItemTags, isItemOpen, BrowsableItem } from '../browsable';
+import {
+  getResearchEntityBestNextStep,
+  getItemTags,
+  isItemOpen,
+  BrowsableItem,
+} from '../browsable';
 import { ResearchEntity } from '../researchEntity';
 import { Fellowship } from '../types';
 
@@ -52,6 +57,50 @@ describe('getItemTags fellowship audience', () => {
     expect(
       getItemTags(fellowshipItem({ undergraduateOnly: null }), neutralColor).map((t) => t.label),
     ).not.toContain('Graduate');
+  });
+
+  it('collapses an entry-mode chip already implied by the student-facing category', () => {
+    const labels = getItemTags(
+      fellowshipItem({
+        studentFacingCategory: 'Faculty matching program',
+        entryMode: 'DIRECT_FACULTY_MATCHING',
+      }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels).toContain('Faculty matching program');
+    expect(labels).not.toContain('Faculty matching');
+  });
+
+  it('drops exact duplicate labels across facets', () => {
+    const labels = getItemTags(
+      fellowshipItem({ studentFacingCategory: 'Research', purpose: ['Research'] }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels.filter((label) => label === 'Research')).toHaveLength(1);
+  });
+
+  it('keeps a Graduate chip when the category merely shares the substring', () => {
+    const labels = getItemTags(
+      fellowshipItem({
+        undergraduateOnly: false,
+        studentFacingCategory: 'Undergraduate research funding',
+      }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels).toContain('Graduate');
+    expect(labels).toContain('Undergraduate research funding');
+  });
+
+  it('keeps a distinct year-of-study chip alongside an unrelated longer category label', () => {
+    const labels = getItemTags(
+      fellowshipItem({
+        studentFacingCategory: 'Senior research funding',
+        yearOfStudy: ['Senior'],
+      }),
+      neutralColor,
+    ).map((t) => t.label);
+    expect(labels).toContain('Senior');
+    expect(labels).toContain('Senior research funding');
   });
 });
 

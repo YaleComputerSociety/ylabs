@@ -108,6 +108,17 @@ describe('Browse admin controls', () => {
     expect(screen.getByRole('button', { name: 'Admin edit' })).not.toBe(titleAction);
   });
 
+  it('opens program card details from the primary View details action', () => {
+    const onOpenModal = vi.fn();
+    renderAdmin(
+      <BrowseCard item={item} isFavorite={false} onOpenModal={onOpenModal} onAdminEdit={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+
+    expect(onOpenModal).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps card admin edit controls large enough for touch input', () => {
     renderAdmin(
       <BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} onAdminEdit={vi.fn()} />,
