@@ -19,6 +19,7 @@ import {
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
+  stripDeadAnchorCtaSentences,
   stripRedactionPlaceholders,
   stripTrailingContactAddress,
 } from '../descriptionHygiene';
@@ -150,6 +151,35 @@ describe('descriptionHygiene', () => {
   });
 });
 
+describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
+  it('drops a "click here" dead-anchor sentence but keeps the surrounding prose', () => {
+    const text =
+      'Applicants may propose research at an approved international site. For a sample list of past locations, click here. Recipients must submit a final report at the end of the summer.';
+    expect(stripDeadAnchorCtaSentences(text)).toBe(
+      'Applicants may propose research at an approved international site. Recipients must submit a final report at the end of the summer.',
+    );
+  });
+
+  it('drops a "click this link" dead-anchor sentence through sanitizeCatalogDescription', () => {
+    const text =
+      'Applicants are expected to present a well-developed proposal for a research project. Click this link for a list of upcoming summer fellowship information sessions. Award recipients will perform research during the summer.';
+    expect(sanitizeCatalogDescription(text)).toBe(
+      'Applicants are expected to present a well-developed proposal for a research project. Award recipients will perform research during the summer.',
+    );
+  });
+
+  it('leaves ordinary prose that never contains a dead anchor unchanged', () => {
+    const prose =
+      'The program supports undergraduate research in the sciences and pairs each student with a faculty mentor for the summer.';
+    expect(stripDeadAnchorCtaSentences(prose)).toBe(prose);
+    expect(sanitizeCatalogDescription(prose)).toBe(prose);
+  });
+
+  it('collapses a description that is only dead-anchor CTAs to empty', () => {
+    expect(sanitizeCatalogDescription('Click here. Click this link.')).toBe('');
+  });
+});
+
 const CURATION_RATIONALE_DESCRIPTIONS = [
   'The REEESNe Student Internship and Research Grant has a strong official Yale source, clear student audience, and source-backed internship/research use. It is safe to show prominently when current cycle details are present.',
   'The Herbert Scarf Summer Research Opportunities in Economics are source-backed Yale Economics summer research placements. The known source documents a current/recurring project list and faculty-mentored research structure, but operators should refresh cycle dates each year.',
@@ -230,6 +260,32 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
     expect(clamped.length).toBeLessThanOrEqual(2001);
     expect(clamped.endsWith('…')).toBe(true);
     expect(/\S…$/.test(clamped)).toBe(true);
+  });
+});
+
+describe('sanitizeResearchEntityDescription word-boundary clamp (#897)', () => {
+  it('clamps an over-long research-entity description to a complete sentence', () => {
+    const body = `${'The laboratory studies how cities shape regional climate and biodiversity. '.repeat(
+      40,
+    )}Recent work extends this to coastal megacities and the lack of diver`;
+    const cleaned = sanitizeResearchEntityDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2000);
+    expect(cleaned.endsWith('.')).toBe(true);
+    expect(cleaned).not.toMatch(/the lack of diver$/);
+  });
+
+  it('falls back to a word boundary with an ellipsis when no sentence ends in the tail', () => {
+    const body = `Introduction ${'climatebiodiversitymegacities '.repeat(120)}dive`;
+    const cleaned = sanitizeResearchEntityDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2001);
+    expect(cleaned.endsWith('…')).toBe(true);
+    expect(cleaned).not.toMatch(/dive$/);
+  });
+
+  it('leaves genuine prose at or under the cap unchanged', () => {
+    const clean =
+      'The lab investigates urban ecology and the effects of land-use change on regional climate.';
+    expect(sanitizeResearchEntityDescription(clean)).toBe(clean);
   });
 });
 

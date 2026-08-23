@@ -52,7 +52,10 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
-import { sanitizeResearchEntityDescription } from '../../utils/descriptionHygiene';
+import {
+  clampDescriptionLength,
+  sanitizeResearchEntityDescription,
+} from '../../utils/descriptionHygiene';
 import {
   isProseNotTopicPhrase,
   isResearchSectionLabel,
@@ -1229,7 +1232,7 @@ function isLikelyProfileChromeBio(value: string): boolean {
 
 function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
   const biography = extractSectionAfterHeading($, /^biography$/i);
-  if (biography) return biography.slice(0, 2000);
+  if (biography) return clampDescriptionLength(biography, 2000);
 
   const selectors = [
     '[class*="profile-body"]',
@@ -1250,7 +1253,8 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
     const text = cleanText($(selector).first().text())
       .replace(/^CV\s+/i, '')
       .replace(/\s+Office hours?:.*$/i, '');
-    if (text.length >= 40 && !isLikelyProfileChromeBio(text)) return text.slice(0, 2000);
+    if (text.length >= 40 && !isLikelyProfileChromeBio(text))
+      return clampDescriptionLength(text, 2000);
   }
   return undefined;
 }
