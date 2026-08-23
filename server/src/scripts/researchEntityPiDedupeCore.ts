@@ -521,12 +521,26 @@ function buildProfileAreaShellDuplicateGroup(
   const profileBackedSurnameShells = entities.filter((entity) =>
     isProfileBackedSurnameLabShell(entity, row),
   );
+  // Only when the row already has a concrete-website home to absorb them: a PI-named lab stub
+  // with no concrete website of its own folds into that home even when the home's name is
+  // topical, not person-shaped (issue #1113). comparablePiLabName keeps the surname match tied
+  // to the PI's real first name, so a wrong-first-name homonym still fails to cluster.
+  const hasConcreteWebsiteHome = entities.some((entity) => entityCarriesConcreteWebsite(entity));
+  const personNamedPiLabShells = hasConcreteWebsiteHome
+    ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
+    : [];
   // An entity that carries its own real (non-profile, non-funding) lab website is the
   // concrete research home, not a thin profile-area shell - never archive it into a
   // PI-derived grant "<PI> Lab" shell and discard its name/site (issue #456).
-  const duplicateShells = [...profileAreaShells, ...profileBackedSurnameShells].filter(
-    (entity) => !entityCarriesConcreteWebsite(entity),
-  );
+  const shellCandidatesById = new Map<string, ResearchEntityPiDedupeRow['entities'][number]>();
+  for (const entity of [
+    ...profileAreaShells,
+    ...profileBackedSurnameShells,
+    ...personNamedPiLabShells,
+  ]) {
+    if (!entityCarriesConcreteWebsite(entity)) shellCandidatesById.set(entity.id, entity);
+  }
+  const duplicateShells = [...shellCandidatesById.values()];
   const duplicateShellIds = new Set(duplicateShells.map((entity) => entity.id));
   const concreteHomes = entities.filter((entity) => {
     if (duplicateShellIds.has(entity.id)) return false;
