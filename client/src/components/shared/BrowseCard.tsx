@@ -17,6 +17,7 @@ import {
   getOrderedDeptAbbrs,
   DEPT_CAP,
   TAG_CAP,
+  FELLOWSHIP_TAG_CAP,
   DESCRIPTION_CLAMP_CLASS,
 } from '../../types/browsable';
 import FavoriteButton from './FavoriteButton';
@@ -94,6 +95,10 @@ const BrowseCard = React.memo(
       item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
     const fellowshipJourneySummary =
       item.type === 'fellowship' ? getFellowshipJourneySummary(item.data) : null;
+    const fellowshipNextStep =
+      item.type === 'fellowship'
+        ? item.data.bestNextStep?.trim() || fellowshipJourneySummary
+        : null;
 
     const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
@@ -249,17 +254,18 @@ const BrowseCard = React.memo(
             </>
           ) : (
             <>
-              {fellowshipCycleStatus && (
-                <div className="mb-2 pr-10">
+              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 pr-10">
+                {fellowshipCycleStatus && (
                   <span
                     className={`text-xs font-semibold px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
                   >
                     {fellowshipCycleStatus.label}
                   </span>
-                </div>
-              )}
+                )}
+                <span className={`text-xs font-semibold ${subtitleColor}`}>{subtitle}</span>
+              </div>
 
-              <h3 className="mb-1 text-base font-bold leading-tight text-gray-900">
+              <h3 className="mb-2 text-base font-bold leading-tight text-gray-900">
                 <button
                   type="button"
                   onClick={handleClick}
@@ -270,48 +276,63 @@ const BrowseCard = React.memo(
                 </button>
               </h3>
 
-              <p className={`text-sm mb-1 ${subtitleColor}`}>{subtitle}</p>
-
               {item.data.summary && !isCompact && (
                 <p className={`text-sm text-gray-500 mb-2 leading-snug ${DESCRIPTION_CLAMP_CLASS}`}>
                   {item.data.summary}
                 </p>
               )}
 
-              {(fellowshipJourneySummary || item.data.bestNextStep) && !isCompact && (
-                <div className="mb-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-2.5 py-2 text-xs text-slate-700">
-                  {fellowshipJourneySummary && (
-                    <p>
-                      <span className="font-semibold text-slate-800">Route:</span>{' '}
-                      {fellowshipJourneySummary}
-                    </p>
-                  )}
-                  {item.data.bestNextStep && (
-                    <p className={fellowshipJourneySummary ? 'mt-1' : ''}>
-                      <span className="font-semibold text-slate-800">Next:</span>{' '}
-                      {item.data.bestNextStep}
-                    </p>
-                  )}
-                </div>
+              {fellowshipNextStep && !isCompact && (
+                <p className="mb-2 line-clamp-2 text-xs leading-snug text-slate-600">
+                  <span className="font-semibold text-slate-700">Next:</span> {fellowshipNextStep}
+                </p>
               )}
 
               <div className="flex-1" />
 
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {tags.slice(0, isCompact ? tags.length : TAG_CAP).map((tag) => (
-                    <span
-                      key={tag.label}
-                      className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
-                    >
-                      {tag.label}
-                    </span>
-                  ))}
-                  {!isCompact && tags.length > TAG_CAP && (
-                    <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
-                  )}
-                </div>
-              )}
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--yr-line)] pt-3">
+                {tags.length > 0 ? (
+                  <div className="flex min-w-0 flex-wrap gap-1">
+                    {tags.slice(0, isCompact ? tags.length : FELLOWSHIP_TAG_CAP).map((tag) => (
+                      <span
+                        key={tag.label}
+                        className={`${tag.bg} ${tag.text} text-xs px-1.5 py-0.5 rounded`}
+                      >
+                        {tag.label}
+                      </span>
+                    ))}
+                    {!isCompact && tags.length > FELLOWSHIP_TAG_CAP && (
+                      <span className="self-center text-xs text-gray-400">
+                        +{tags.length - FELLOWSHIP_TAG_CAP}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span />
+                )}
+                <button
+                  type="button"
+                  onClick={handleClick}
+                  className="inline-flex flex-shrink-0 items-center gap-1 rounded-sm text-sm font-semibold text-[var(--yr-blue)] transition-colors hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  View details
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12h14" />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
             </>
           )}
         </div>

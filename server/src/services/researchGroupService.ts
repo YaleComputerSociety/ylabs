@@ -776,7 +776,7 @@ export async function searchResearchGroupsViaMeili(
     filter: filterString,
     limit: safePageSize,
     offset,
-    facets: ['schools', 'departments'],
+    facets: ['schools', 'departments', 'researchAreas'],
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
@@ -1056,6 +1056,7 @@ const searchResearchGroupsViaMongoFallback = async (
   const facetDistribution = {
     school: facetCounts(visibleCandidates, 'schools'),
     departments: facetCounts(visibleCandidates, 'departments'),
+    researchAreas: facetCounts(visibleCandidates, 'researchAreas'),
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,

@@ -1,4 +1,5 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 
@@ -19,6 +20,11 @@ const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string
 
 const publicProgramText = (value: unknown): unknown =>
   typeof value === 'string' ? redactDirectContactInfo(value) : value;
+
+const publicProgramDescription = (value: unknown): unknown =>
+  typeof value === 'string'
+    ? redactDirectContactInfo(sanitizeCatalogDescription(value))
+    : value;
 
 const publicProgramTextArray = (value: unknown): string[] =>
   Array.isArray(value)
@@ -47,8 +53,8 @@ export const publicProgramForReader = (program: any) => {
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),
     title: publicProgramText(program.title),
     competitionType: publicProgramText(program.competitionType),
-    summary: publicProgramText(program.summary),
-    description: publicProgramText(program.description),
+    summary: publicProgramDescription(program.summary),
+    description: publicProgramDescription(program.description),
     applicationInformation: publicProgramText(program.applicationInformation),
     eligibility: publicProgramText(program.eligibility),
     restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),

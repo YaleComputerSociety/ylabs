@@ -37,6 +37,60 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ]);
   });
 
+  it('does not surface a recipient roster or nav chrome as a detail-page description (#610)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <header><nav>Skip to main content Academics Advising Calendar Menu</nav></header>
+        <main>
+          <div class="breadcrumb">Show all breadcrumbs</div>
+          <article>
+            <h1>Fixture Undergraduate Research Fellowship</h1>
+            <p>Program Director: Avery Morgan</p>
+            <h2>Fellowship Recipients</h2>
+            <p>2025-2026 Fellows</p>
+            <ul>
+              <li>Casey Parker ‘28 Mentor: Dr. Riley Sawyer</li>
+              <li>Jordan Taylor ‘27 Mentor: Dr. Harper Lee</li>
+              <li>Dana Robin ’26, returning Mentor: Dr. Sloan Wren</li>
+              <li>Rowan Sage ‘25 Mentor: Dr. Skylar Drew</li>
+            </ul>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-roster`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.description ?? '').toBe('');
+    expect(candidate.summary ?? '').toBe('');
+    const descriptionObservation = candidateToObservations(candidate).find(
+      (observation) => observation.field === 'description',
+    );
+    expect(descriptionObservation).toBeUndefined();
+  });
+
+  it('keeps clean detail-page prose as the description', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Fixture International Research Fellowship</h1>
+            <p>The fellowship provides support for original undergraduate research projects abroad in the natural and applied sciences. Currently enrolled sophomores and juniors are eligible to apply. Applicants are expected to have some previous research experience.</p>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-clean`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].description).toMatch(
+      /provides support for original undergraduate research/,
+    );
+  });
+
   it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
     const programUrl = `${detailPageUrl}-official`;
     const fetchPage = vi.fn(async (url: string) => {
@@ -148,6 +202,56 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
         url: 'https://studentgrants.yale.edu/',
       },
     ]);
+  });
+
+  it('rejects site-wide nav and footer chrome when a detail page has no content container', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <h1>Tobin Undergraduate Research Assistantships</h1>
+        <p>Undergraduates complete an independent, faculty-mentored research project.</p>
+        <a href="https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=7">Apply Now</a>
+        <a href="https://college.yale.edu/campus-life">Campus Life</a>
+        <a href="https://funding.yale.edu/faculty-staff">Faculty Directory</a>
+        <a href="https://yale.edu/privacy-policy">Privacy Policy</a>
+        <a href="https://giving.yale.edu/">Give Back</a>
+        <a href="https://www.facebook.com/yale">Facebook</a>
+      `,
+      'https://economics.yale.edu/undergraduate/tobin-ra',
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.links).toEqual([
+      {
+        label: 'Apply Now',
+        url: 'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=7',
+      },
+    ]);
+    expect(candidates[0]?.applicationLink).toBe(
+      'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=7',
+    );
+  });
+
+  it('caps the number of program links captured from a link-heavy detail page', () => {
+    const relevantLinks = Array.from(
+      { length: 20 },
+      (_value, index) =>
+        `<a href="https://funding.yale.edu/find-funding/fixture-research-fellowship-${index}">Fixture Research Fellowship ${index}</a>`,
+    ).join('\n');
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <div class="node">
+            <h1>Fixture Undergraduate Research Fellowship</h1>
+            <p>Students complete an original research project.</p>
+            ${relevantLinks}
+          </div>
+        </main>
+      `,
+      detailPageUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates[0]?.links.length).toBe(12);
   });
 
   it('extracts funding.yale.edu research fellowship rows without fetching CommunityForce', () => {

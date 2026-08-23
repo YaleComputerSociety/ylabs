@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoClient } from 'mongodb';
 
 const mocks = vi.hoisted(() => ({
   analyticsAggregate: vi.fn(),
@@ -275,6 +277,139 @@ describe('getAnalytics research coverage and range scoping', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('counts visitors-by-type at the same distinct-netid grain as the visitor headline', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    await getAnalytics();
+
+    const visitorFacetCall = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors),
+    );
+    expect(visitorFacetCall).toBeDefined();
+    const facet = visitorFacetCall![0].find(
+      (stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors,
+    ).$facet;
+
+    const groupStages = (branch: any[]) =>
+      branch.filter((stage: Record<string, any>) => stage.$group);
+    const headlineGrain = (branch: any[]) => groupStages(branch)[0].$group._id;
+    const byTypeGrain = (branch: any[]) => {
+      const grouping = groupStages(branch);
+      return {
+        perNetid: grouping[0].$group._id,
+        perNetidUserType: grouping[0].$group.userType,
+        rollup: grouping[1].$group._id,
+      };
+    };
+
+    for (const window of ['lifetime', 'last7Days', 'today'] as const) {
+      const headlineBranch = facet[`${window}Visitors`];
+      const byTypeBranch = facet[`${window}VisitorsByType`];
+      expect(headlineGrain(headlineBranch)).toBe('$netid');
+      const grain = byTypeGrain(byTypeBranch);
+      expect(grain.perNetid).toBe('$netid');
+      expect(grain.perNetidUserType).toEqual({ $first: '$userType' });
+      expect(grain.rollup).toBe('$userType');
+    }
+  });
+
+  it('reconciles by-type visitor counts to the headline total against a drifting-netid dataset', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    await getAnalytics();
+
+    const visitorFacetPipeline = mocks.analyticsAggregate.mock.calls.find((call) =>
+      call[0].some((stage: Record<string, any>) => stage.$facet && stage.$facet.lifetimeVisitors),
+    )![0];
+
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri());
+    try {
+      await client.connect();
+      const collection = client.db('analytics_grain').collection('analyticsevents');
+
+      const now = new Date();
+      await collection.insertMany([
+        {
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'clean_undergrad',
+          userType: 'undergraduate',
+          timestamp: now,
+        },
+        {
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'clean_grad',
+          userType: 'graduate',
+          timestamp: now,
+        },
+        {
+          eventType: AnalyticsEventType.LOGIN,
+          netid: 'drifting_visitor',
+          userType: 'undergraduate',
+          timestamp: now,
+        },
+        {
+          eventType: AnalyticsEventType.VISITOR,
+          netid: 'drifting_visitor',
+          userType: 'graduate',
+          timestamp: now,
+        },
+      ]);
+
+      const [result] = await collection.aggregate(visitorFacetPipeline).toArray();
+
+      const distinctNetids = new Set(['clean_undergrad', 'clean_grad', 'drifting_visitor']).size;
+
+      for (const window of ['lifetime', 'last7Days', 'today'] as const) {
+        const headline = result[`${window}Visitors`][0]?.total ?? 0;
+        const byType = result[`${window}VisitorsByType`] as Array<{
+          userType: string;
+          count: number;
+        }>;
+        const byTypeSum = byType.reduce((sum, bucket) => sum + bucket.count, 0);
+
+        expect(headline).toBe(distinctNetids);
+        expect(byTypeSum).toBe(headline);
+      }
+
+      const buggyByType = await collection
+        .aggregate([
+          {
+            $match: { eventType: { $in: [AnalyticsEventType.LOGIN, AnalyticsEventType.VISITOR] } },
+          },
+          { $group: { _id: { netid: '$netid', userType: '$userType' } } },
+          { $group: { _id: '$_id.userType', count: { $sum: 1 } } },
+        ])
+        .toArray();
+      const buggySum = buggyByType.reduce((sum, bucket) => sum + bucket.count, 0);
+      expect(buggySum).toBe(4);
+      expect(buggySum).toBeGreaterThan(distinctNetids);
+    } finally {
+      await client.close();
+      await server.stop();
+    }
   });
 
   it('reports total as archived-inclusive and active as the non-archived subset', async () => {

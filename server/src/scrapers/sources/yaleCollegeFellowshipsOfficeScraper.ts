@@ -12,6 +12,8 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
+import { normalizedProgramTitleKey } from '../../utils/programTitle';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -266,6 +268,25 @@ function isInPrimaryContent($: cheerio.CheerioAPI, $link: cheerio.Cheerio<any>):
   const primaryScopes = $('main, [role="main"], article');
   if (primaryScopes.length === 0) return true;
   return $link.closest('main, [role="main"], article').length > 0;
+}
+
+const MAX_DETAIL_PROGRAM_LINKS = 12;
+
+function isProgramRelevantLink(url: string, label: string): boolean {
+  if (isCommunityForceUrl(url) || isStudentGrantsUrl(url)) return true;
+  if (/\b(?:apply|application)\b/i.test(label) && isYaleOwnedUrl(url)) return true;
+  return isLikelyPublicFellowshipDetailUrl(url);
+}
+
+function dedupeProgramLinks(
+  links: Array<{ label: string; url: string }>,
+): Array<{ label: string; url: string }> {
+  const byUrl = new Map<string, { label: string; url: string }>();
+  for (const link of links) {
+    const url = normalizeLinkUrl(link.url);
+    if (!byUrl.has(url)) byUrl.set(url, { label: link.label, url });
+  }
+  return Array.from(byUrl.values());
 }
 
 function inferTerm(text: string): string[] {
@@ -534,10 +555,7 @@ function finalizeCandidate(
 }
 
 function compactTitleIdentity(title: string): string {
-  return normalizeWhitespace(title)
-    .toLowerCase()
-    .replace(/['’]/g, '')
-    .replace(/[^a-z0-9]+/g, '');
+  return normalizedProgramTitleKey(title);
 }
 
 function existingKeyForCandidate(
@@ -610,6 +628,11 @@ function upsertCandidate(
   byKey.set(key, existing ? mergeCandidates(existing, candidate) : candidate);
 }
 
+function summaryFromRowContext(rowContext: string, title: string): string | undefined {
+  const safe = sanitizeCatalogDescription(rowContext);
+  return safe && safe !== title ? safe : undefined;
+}
+
 function candidateFromLink(
   $: cheerio.CheerioAPI,
   link: Parameters<cheerio.CheerioAPI>[0],
@@ -648,7 +671,7 @@ function candidateFromLink(
   return finalizeCandidate({
     sourceKey: sourceKeyForTitle(title),
     title,
-    summary: rowContext && rowContext !== title ? rowContext : undefined,
+    summary: summaryFromRowContext(rowContext, title),
     description: undefined,
     applicationInformation: undefined,
     applicationMaterials: APPLICATION_HEADING_RE.test(contextText)
@@ -691,24 +714,33 @@ function candidateFromDetailPage(
       : primaryContent.length > 0
         ? primaryContent
         : $('body');
-  const bodyText = normalizeWhitespace(contentRoot.text());
+  const chromeFreeRoot = contentRoot.clone();
+  chromeFreeRoot
+    .find(
+      'script, style, nav, header, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"], .breadcrumb, .breadcrumbs, .menu, .sidebar',
+    )
+    .remove();
+  const bodyText = normalizeWhitespace(chromeFreeRoot.text());
+  const safeDescription = sanitizeCatalogDescription(bodyText).slice(0, 2000);
   const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
   const applicationOpenDate = utcStartOfDay(
     parseDeadlineToUtcEndOfDay(bestApplicationOpenText(bodyText), referenceDate),
   );
-  const links = contentRoot
-    .find('a')
-    .toArray()
-    .filter((link) => !isInExcludedPageRegion($(link)))
-    .map((link) => {
-      const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
-      const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
-      const label = normalizeWhitespace($(link).text()) || 'Link';
-      return url ? { label, url } : undefined;
-    })
-    .filter((item) => item && (isYaleOwnedUrl(item.url) || isCommunityForceUrl(item.url)))
-    .filter((item): item is { label: string; url: string } => !!item);
+  const links = dedupeProgramLinks(
+    contentRoot
+      .find('a')
+      .toArray()
+      .filter((link) => !isInExcludedPageRegion($(link)))
+      .map((link) => {
+        const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
+        const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
+        const label = normalizeWhitespace($(link).text()) || 'Link';
+        return url ? { label, url } : undefined;
+      })
+      .filter((item): item is { label: string; url: string } => !!item)
+      .filter((item) => isProgramRelevantLink(item.url, item.label)),
+  ).slice(0, MAX_DETAIL_PROGRAM_LINKS);
   const applicationLink =
     links.find((link) => isCommunityForceUrl(link.url))?.url ||
     links.find((link) => isStudentGrantsUrl(link.url))?.url ||
@@ -721,7 +753,7 @@ function candidateFromDetailPage(
     sourceKey: sourceKeyForTitle(title),
     title,
     summary: undefined,
-    description: bodyText.slice(0, 2000),
+    description: safeDescription || undefined,
     applicationInformation,
     applicationMaterials: applicationInformation
       ? inferApplicationMaterials(applicationInformation)
@@ -750,13 +782,9 @@ function mergeCandidates(
   existing: FellowshipCatalogCandidate,
   incoming: FellowshipCatalogCandidate,
 ): FellowshipCatalogCandidate {
-  const links = Array.from(
-    new Map(
-      [...existing.links, ...incoming.links].map((link) => [
-        normalizeLinkUrl(link.url),
-        { ...link, url: normalizeLinkUrl(link.url) },
-      ]),
-    ).values(),
+  const links = dedupeProgramLinks([...existing.links, ...incoming.links]).slice(
+    0,
+    MAX_DETAIL_PROGRAM_LINKS,
   );
   const applicationLink = incoming.applicationLink || existing.applicationLink;
   const sourceSpecificity = (url: string): number => {
