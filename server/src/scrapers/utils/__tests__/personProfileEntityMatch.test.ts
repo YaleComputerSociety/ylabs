@@ -3,6 +3,7 @@ import {
   personProfileNameTokensFromUrl,
   personProfileSourceMatchesEntity,
   researchEntityIdentityTokens,
+  sourceUrlSchoolContradictsEntity,
 } from '../personProfileEntityMatch';
 
 describe('personProfileNameTokensFromUrl', () => {
@@ -107,5 +108,95 @@ describe('personProfileSourceMatchesEntity', () => {
         name: 'Gunjan Tiyyagura Lab',
       }),
     ).toBe(true);
+  });
+
+  it('rejects an exact full-name homonym at a contradicting Yale school', () => {
+    const medicineGrantShell = {
+      slug: 'nih-pi-jordan-avery',
+      name: 'Jordan Avery Lab',
+      school: 'School of Medicine',
+      departments: ['Internal Medicine'],
+    };
+    expect(
+      personProfileSourceMatchesEntity(
+        'https://faculty.som.yale.edu/jordanavery/',
+        medicineGrantShell,
+      ),
+    ).toBe(false);
+    expect(
+      personProfileSourceMatchesEntity('https://som.yale.edu/profile/jordan-avery/', medicineGrantShell),
+    ).toBe(false);
+  });
+
+  it('keeps the same homonym when the source school agrees with the entity', () => {
+    const medicineGrantShell = {
+      slug: 'nih-pi-jordan-avery',
+      name: 'Jordan Avery Lab',
+      school: 'School of Medicine',
+      departments: ['Internal Medicine'],
+    };
+    expect(
+      personProfileSourceMatchesEntity(
+        'https://medicine.yale.edu/profile/jordan-avery/',
+        medicineGrantShell,
+      ),
+    ).toBe(true);
+    expect(
+      personProfileSourceMatchesEntity('https://faculty.som.yale.edu/jordanavery/', {
+        slug: 'som-pi-jordan-avery',
+        name: 'Jordan Avery Faculty Research',
+        school: 'School of Management',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not gate a school contradiction when the entity records no school', () => {
+    expect(
+      personProfileSourceMatchesEntity('https://faculty.som.yale.edu/jordanavery/', {
+        slug: 'nih-pi-jordan-avery',
+        name: 'Jordan Avery Lab',
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('sourceUrlSchoolContradictsEntity', () => {
+  it('fires only when both host and entity resolve to different known schools', () => {
+    expect(
+      sourceUrlSchoolContradictsEntity('https://faculty.som.yale.edu/jordanavery/', {
+        school: 'School of Medicine',
+        departments: ['Internal Medicine'],
+      }),
+    ).toBe(true);
+    expect(
+      sourceUrlSchoolContradictsEntity('https://medicine.yale.edu/profile/jordan-avery/', {
+        school: 'School of Medicine',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not fire for unmapped hosts, non-Yale hosts, or schoolless entities', () => {
+    expect(
+      sourceUrlSchoolContradictsEntity('https://economics.yale.edu/people/jordan-avery', {
+        school: 'School of Medicine',
+      }),
+    ).toBe(false);
+    expect(
+      sourceUrlSchoolContradictsEntity('https://example.com/jordanavery', {
+        school: 'School of Medicine',
+      }),
+    ).toBe(false);
+    expect(
+      sourceUrlSchoolContradictsEntity('https://faculty.som.yale.edu/jordanavery/', {}),
+    ).toBe(false);
+  });
+
+  it('allows a source school that matches any of a multi-school entity', () => {
+    expect(
+      sourceUrlSchoolContradictsEntity('https://seas.yale.edu/profile/jordan-avery/', {
+        school: 'School of Medicine',
+        departments: ['Biomedical Engineering'],
+      }),
+    ).toBe(false);
   });
 });

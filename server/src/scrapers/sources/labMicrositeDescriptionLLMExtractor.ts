@@ -64,6 +64,9 @@ export interface CandidateDescriptionLab {
   manuallyLockedFields?: string[];
   entityType?: string;
   kind?: string;
+  school?: string;
+  schools?: string[];
+  departments?: string[];
 }
 
 export interface CandidateDescriptionLabDoc {
@@ -77,6 +80,9 @@ export interface CandidateDescriptionLabDoc {
   manuallyLockedFields?: string[];
   entityType?: string;
   kind?: string;
+  school?: string;
+  schools?: string[];
+  departments?: string[];
 }
 
 export interface FetchedDescriptionPage {
@@ -271,6 +277,9 @@ export function candidateDescriptionLabsFromDocs(
       manuallyLockedFields: doc.manuallyLockedFields || [],
       entityType: doc.entityType,
       kind: doc.kind,
+      school: doc.school,
+      schools: doc.schools,
+      departments: doc.departments,
     };
     return candidateKeyMatches(candidate, keys) ? [candidate] : [];
   });
@@ -524,6 +533,9 @@ async function defaultLabFinder(
       manuallyLockedFields: 1,
       entityType: 1,
       kind: 1,
+      school: 1,
+      schools: 1,
+      departments: 1,
     },
   ).lean();
   return candidateDescriptionLabsFromDocs(docs as CandidateDescriptionLabDoc[], {
