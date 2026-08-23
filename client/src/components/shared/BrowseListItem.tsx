@@ -178,7 +178,7 @@ const BrowseListItem = React.memo(
                   </span>
                 ))}
                 {!isCompact && tags.length > TAG_CAP && (
-                  <span className="text-xs text-gray-400">+{tags.length - TAG_CAP}</span>
+                  <span className="text-xs text-gray-600">+{tags.length - TAG_CAP}</span>
                 )}
               </div>
             )}
