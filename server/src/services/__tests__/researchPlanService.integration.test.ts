@@ -6,6 +6,7 @@ import {
   addWatchedPrograms,
   deleteSavedResearchEntityPlan,
   deleteWatchedProgramPlan,
+  exportSavedResearchEntities,
   getSavedResearchEntityPlans,
   getWatchedProgramPlans,
   removeSavedResearchEntities,
@@ -152,5 +153,61 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     await expect(
       updateSavedResearchEntityPlan(NETID, 'no-such-lab', { privateNotes: 'x' }),
     ).rejects.toThrow(/not found/i);
+  });
+
+  it('export honors each plan exportPreferences without a request-level override (#1086)', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await updateSavedResearchEntityPlan(NETID, entityId, {
+      privateNotes: 'my secret plan note',
+      checklist: plannedChecklist,
+      deadlines: [plannedDeadline],
+      exportPreferences: {
+        includePrivateNotes: true,
+        includeChecklist: true,
+        includeDeadlines: true,
+      },
+    });
+
+    const payload = await exportSavedResearchEntities(NETID);
+    expect(payload.privacy.includesPrivateNotes).toBe(true);
+    const item = payload.items.find((entry) => entry.researchEntity.id === entityId);
+    expect(item?.privateNote).toBe('my secret plan note');
+    expect(item?.checklist).toEqual([{ label: 'Read three papers', completed: false }]);
+    expect(item?.deadlines).toEqual([
+      { label: 'Submit application', dueAt: '2026-09-01T00:00:00.000Z' },
+    ]);
+  });
+
+  it('export omits notes, checklist, and deadlines when the plan opts out (#1086)', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await updateSavedResearchEntityPlan(NETID, entityId, {
+      privateNotes: 'still private',
+      checklist: plannedChecklist,
+      deadlines: [plannedDeadline],
+    });
+
+    const payload = await exportSavedResearchEntities(NETID);
+    expect(payload.privacy.includesPrivateNotes).toBe(false);
+    const item = payload.items.find((entry) => entry.researchEntity.id === entityId);
+    expect(item).toBeDefined();
+    expect(item).not.toHaveProperty('privateNote');
+    expect(item).not.toHaveProperty('checklist');
+    expect(item).not.toHaveProperty('deadlines');
+  });
+
+  it('export request-level includePrivateNotes override includes an opted-out plan note (#1086)', async () => {
+    const entityId = ENTITY_ID.toHexString();
+    await addSavedResearchEntities(NETID, [entityId]);
+    await updateSavedResearchEntityPlan(NETID, entityId, {
+      privateNotes: 'override me',
+    });
+
+    const payload = await exportSavedResearchEntities(NETID, { includePrivateNotes: true });
+    expect(payload.privacy.includesPrivateNotes).toBe(true);
+    const item = payload.items.find((entry) => entry.researchEntity.id === entityId);
+    expect(item?.privateNote).toBe('override me');
+    expect(item).not.toHaveProperty('checklist');
   });
 });

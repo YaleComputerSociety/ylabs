@@ -52,6 +52,11 @@ describe('mapLegacyPlan', () => {
     expect(fields.deadlines).toEqual([
       { label: 'Target deadline', dueAt: '2026-03-01T00:00:00.000Z' },
     ]);
+    expect(fields.exportPreferences).toEqual({
+      includePrivateNotes: false,
+      includeChecklist: true,
+      includeDeadlines: true,
+    });
     expect(droppedLegacyFields.sort()).toEqual([
       'checklistHistory',
       'followUpIntervalDays',
@@ -65,6 +70,11 @@ describe('mapLegacyPlan', () => {
     expect(fields.privateNotes).toBe('');
     expect(fields.checklist).toEqual([]);
     expect(fields.deadlines).toEqual([]);
+    expect(fields.exportPreferences).toEqual({
+      includePrivateNotes: false,
+      includeChecklist: false,
+      includeDeadlines: false,
+    });
     expect(droppedLegacyFields).toEqual([]);
   });
 });

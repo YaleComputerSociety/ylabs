@@ -136,8 +136,8 @@ export const mapLegacyPlan = (
       deadlines,
       exportPreferences: {
         includePrivateNotes: false,
-        includeChecklist: false,
-        includeDeadlines: false,
+        includeChecklist: checklist.length > 0,
+        includeDeadlines: deadlines.length > 0,
       },
     },
     droppedLegacyFields,

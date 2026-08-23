@@ -741,35 +741,55 @@ export const exportSavedResearchEntities = async (
   options: SavedResearchEntitiesExportOptions = {},
 ) => {
   const { entities, plansByEntityId } = await loadVisibleAccountPlans(netid, { withDetail: true });
-  const includePrivateNotes = options.includePrivateNotes === true;
+  const forceIncludePrivateNotes = options.includePrivateNotes === true;
+
+  let includedAnyPrivateNote = false;
+  const items = entities.map((entity) => {
+    const view = plansByEntityId.has(entity._id)
+      ? researchPlanViewFromDoc(plansByEntityId.get(entity._id) as Record<string, unknown>)
+      : emptyResearchPlanView();
+    const preferences = view.exportPreferences;
+    const includePrivateNote =
+      Boolean(view.privateNotes) && (forceIncludePrivateNotes || preferences.includePrivateNotes);
+    if (includePrivateNote) includedAnyPrivateNote = true;
+    return {
+      researchEntity: {
+        id: entity._id,
+        slug: entity.slug,
+        name: exportTextWithoutDirectContact(entity.displayName || entity.name),
+      },
+      stage: view.stage,
+      ...(preferences.includeChecklist
+        ? {
+            checklist: view.checklist.map((item) => ({
+              label: exportUserTextForSpreadsheet(item.label),
+              completed: item.completed,
+            })),
+          }
+        : {}),
+      ...(preferences.includeDeadlines
+        ? {
+            deadlines: view.deadlines.map((deadline) => ({
+              label: exportUserTextForSpreadsheet(deadline.label),
+              dueAt: deadline.dueAt,
+            })),
+          }
+        : {}),
+      ...(includePrivateNote
+        ? { privateNote: exportUserTextForSpreadsheet(view.privateNotes) }
+        : {}),
+    };
+  });
+
   return {
     schemaVersion: 2 as const,
     exportedAt: (options.exportedAt || new Date()).toISOString(),
     itemCount: entities.length,
     privacy: {
-      includesPrivateNotes: includePrivateNotes,
+      includesPrivateNotes: includedAnyPrivateNote,
       includesContactRoutes: false as const,
       includesNonPublicContactEmails: false as const,
     },
-    items: entities.map((entity) => {
-      const view = plansByEntityId.has(entity._id)
-        ? researchPlanViewFromDoc(plansByEntityId.get(entity._id) as Record<string, unknown>)
-        : emptyResearchPlanView();
-      return {
-        researchEntity: {
-          id: entity._id,
-          slug: entity.slug,
-          name: exportTextWithoutDirectContact(entity.displayName || entity.name),
-        },
-        stage: view.stage,
-        checklist: view.checklist.map((item) => ({
-          label: exportUserTextForSpreadsheet(item.label),
-          completed: item.completed,
-        })),
-        ...(includePrivateNotes && view.privateNotes
-          ? { privateNote: exportUserTextForSpreadsheet(view.privateNotes) }
-          : {}),
-      };
-    }),
+    items,
   };
 };
