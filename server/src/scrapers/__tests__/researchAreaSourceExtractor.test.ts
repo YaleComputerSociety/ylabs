@@ -164,6 +164,22 @@ describe('deriveCanonicalResearchAreasFromPage', () => {
     });
   });
 
+  it('ignores a CSS-hidden global mega-menu panel rendered outside a nav tag', () => {
+    const html = `
+      <div class="base-header__navigation-panel">
+        <div class="navigation-panel__wrapper navigation-panel__wrapper--hidden">
+          <nav class="navigation-panel__top-container" aria-label="Navigation Panel"></nav>
+          <ul>
+            <li><a href="/education">Neuroscience Symposium</a></li>
+          </ul>
+        </div>
+      </div>
+      <p>Dr. Jones is a clinical oncologist focused on cancer biology and genomics.</p>`;
+    const result = deriveCanonicalResearchAreasFromPage(canonicalizer, html);
+    expect(result.areas).toEqual(expect.arrayContaining(['Cancer Biology', 'Genomics']));
+    expect(result.areas).not.toContain('Neuroscience');
+  });
+
   it('recovers an ambiguous single-word area from a labeled item but not from bare prose', () => {
     const labeled = deriveCanonicalResearchAreasFromPage(
       canonicalizer,
