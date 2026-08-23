@@ -215,4 +215,51 @@ describe('detectProfileIdentityRisk', () => {
       }),
     ).toBe(false);
   });
+
+  it('does not flag a CENTER whose websiteUrl resolves to an unrelated person profile', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          entityType: 'CENTER',
+          name: 'Whitney Humanities Center',
+          websiteUrl: 'https://medicine.yale.edu/profile/john-smith/',
+          sourceUrls: ['https://medicine.yale.edu/profile/john-smith/'],
+        },
+        leadMembers: [{ user: { fname: 'Jane', lname: 'Doe' } }],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not flag INSTITUTE, INITIATIVE, CORE_FACILITY, or program-kind entities', () => {
+    const orgLikeEntities = [
+      { entityType: 'INSTITUTE' },
+      { entityType: 'INITIATIVE' },
+      { entityType: 'CORE_FACILITY' },
+      { entityType: 'PROGRAM' },
+      { kind: 'program' },
+    ];
+    for (const orgFields of orgLikeEntities) {
+      expect(
+        detectProfileIdentityRisk({
+          entity: {
+            ...orgFields,
+            websiteUrl: 'https://medicine.yale.edu/profile/john-smith/',
+            sourceUrls: ['https://medicine.yale.edu/profile/john-smith/'],
+          },
+          leadMembers: [{ user: { fname: 'Jane', lname: 'Doe' } }],
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('still flags a person-derived entity with no entityType/kind override', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: personDerivedEntity,
+        leadMembers: [
+          { user: { profileUrls: { official: 'https://medicine.yale.edu/profile/john-smith/' } } },
+        ],
+      }),
+    ).toBe(true);
+  });
 });
