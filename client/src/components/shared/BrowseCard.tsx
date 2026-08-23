@@ -11,7 +11,6 @@ import {
   getResearchGroupDisplayName,
   getResearchGroupKindLabel,
   getResearchEntityBestNextStep,
-  getFellowshipJourneySummary,
   getResearchGroupStatus,
   getDaysUntilDeadline,
   getOrderedDeptAbbrs,
@@ -93,12 +92,8 @@ const BrowseCard = React.memo(
     const researchBestNextStep = isResearchGroup ? getResearchEntityBestNextStep(item.data) : null;
     const fellowshipCycleStatus =
       item.type === 'fellowship' ? getFellowshipCycleStatus(item.data) : null;
-    const fellowshipJourneySummary =
-      item.type === 'fellowship' ? getFellowshipJourneySummary(item.data) : null;
     const fellowshipNextStep =
-      item.type === 'fellowship'
-        ? item.data.bestNextStep?.trim() || fellowshipJourneySummary
-        : null;
+      item.type === 'fellowship' ? item.data.bestNextStep?.trim() || null : null;
 
     const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
@@ -254,15 +249,19 @@ const BrowseCard = React.memo(
             </>
           ) : (
             <>
-              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 pr-10">
+              <div className="mb-2 flex items-center justify-between gap-2 pr-10">
                 {fellowshipCycleStatus && (
                   <span
-                    className={`text-xs font-semibold px-1.5 py-0.5 rounded ${fellowshipCycleStatus.className}`}
+                    className={`flex-shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
                   >
                     {fellowshipCycleStatus.label}
                   </span>
                 )}
-                <span className={`text-xs font-semibold ${subtitleColor}`}>{subtitle}</span>
+                {subtitle && (
+                  <span className={`min-w-0 text-right text-sm font-semibold ${subtitleColor}`}>
+                    {subtitle}
+                  </span>
+                )}
               </div>
 
               <h3 className="mb-2 text-base font-bold leading-tight text-gray-900">
