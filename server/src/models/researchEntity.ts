@@ -324,6 +324,19 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       enum: ['verified', 'likely', 'none'],
       default: 'none',
     },
+    /**
+     * True when the entity carries an undergrad-specific hosting/supervision
+     * access signal (PAST_UNDERGRADS / CURRENT_UNDERGRADS /
+     * FACULTY_SUPERVISES_STUDENT_PROJECTS), as opposed to a generic
+     * outreach-plausibility signal. Derived from Signal alongside
+     * accessAcceptanceLevel by researchEntityBrowseRankService and mirrored to
+     * the Meilisearch index as a filterable attribute so the "Has hosted
+     * undergrads before" browse filter is truthful. See #1054.
+     */
+    hasUndergradHostingEvidence: {
+      type: Boolean,
+      default: false,
+    },
     archived: {
       type: Boolean,
       default: false,
@@ -365,6 +378,7 @@ researchEntitySchema.index({ archived: 1 });
 researchEntitySchema.index({ lastObservedAt: 1 });
 researchEntitySchema.index({ archived: 1, browseRankScore: -1 });
 researchEntitySchema.index({ archived: 1, accessAcceptanceLevel: 1 });
+researchEntitySchema.index({ archived: 1, hasUndergradHostingEvidence: 1 });
 researchEntitySchema.index({ recentGrantCount: -1 });
 researchEntitySchema.index({ fundingAgencies: 1 });
 researchEntitySchema.index({ offersIndependentStudy: 1 });

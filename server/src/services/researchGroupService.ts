@@ -591,6 +591,7 @@ const sanitizeResearchGroupSearchFilters = (
   acceptanceLevel: isAcceptanceLevelInput(filters.acceptanceLevel)
     ? filters.acceptanceLevel
     : undefined,
+  hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
@@ -670,6 +671,9 @@ const mongoFilterFromResearchFilters = (
     mongoFilter.accessAcceptanceLevel = 'verified';
   } else if (filters.acceptanceLevel === 'verified-or-likely') {
     mongoFilter.accessAcceptanceLevel = { $in: ['verified', 'likely'] };
+  }
+  if (filters.hostsUndergrads === true) {
+    mongoFilter.hasUndergradHostingEvidence = true;
   }
 
   return mongoFilter;

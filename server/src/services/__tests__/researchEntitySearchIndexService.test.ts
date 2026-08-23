@@ -220,6 +220,7 @@ describe('researchEntitySearchIndexService', () => {
         'departments',
         'researchAreas',
         'accessAcceptanceLevel',
+        'hasUndergradHostingEvidence',
         'studentVisibilityTier',
       ]),
     );

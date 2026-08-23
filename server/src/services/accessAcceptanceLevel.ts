@@ -66,3 +66,24 @@ export function canonicalAcceptanceLevelFromSignals(
   const strongest = Math.max(...positive.map(signalConfidenceScore));
   return strongest >= ACCEPTANCE_VERIFIED_CONFIDENCE_FLOOR ? 'verified' : 'likely';
 }
+
+// Signals that specifically evidence a research home hosting or supervising
+// undergraduate researchers, as opposed to the generic outreach-plausibility
+// signals (REACH_OUT_PLAUSIBLE, CONTACT_INSTRUCTIONS_EXIST, ...) that lift the
+// broad `accessAcceptanceLevel` tier. These are the same signals that drive the
+// "Undergrad evidence" discovery badge, and back the "Has hosted undergrads
+// before" browse filter. See #1054.
+export const UNDERGRAD_HOSTING_SIGNAL_TYPES: ReadonlySet<string> = new Set([
+  'PAST_UNDERGRADS',
+  'CURRENT_UNDERGRADS',
+  'FACULTY_SUPERVISES_STUDENT_PROJECTS',
+]);
+
+export function hasUndergradHostingEvidenceFromSignals(
+  signals: AccessSignalConfidenceInput[],
+): boolean {
+  return signals.some(
+    (signal) =>
+      typeof signal.type === 'string' && UNDERGRAD_HOSTING_SIGNAL_TYPES.has(signal.type),
+  );
+}

@@ -42,6 +42,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'departments',
     'researchAreas',
     'accessAcceptanceLevel',
+    'hasUndergradHostingEvidence',
     'studentVisibilityTier',
   ],
   sortableAttributes: ['browseRankScore', 'lastObservedAt', 'name', 'createdAt', 'updatedAt'],

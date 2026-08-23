@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ResearchEntityRelationship } from '../../models/researchEntityRelationship';
+import { Signal } from '../../models/signal';
 import { recomputeBrowseRankForEntities } from '../researchEntityBrowseRankService';
 import { __testing } from '../researchEntityBrowseRank';
 
@@ -26,6 +27,7 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     if (!db) throw new Error('no db');
     await db.collection('research_entities').deleteMany({});
     await db.collection('research_entity_relationships').deleteMany({});
+    await db.collection('signals').deleteMany({});
   });
 
   const createEntity = async (slug: string, entityType: string) =>
@@ -91,5 +93,36 @@ describe('recomputeBrowseRankForEntities umbrella-aware demotion', () => {
     const labScore = await scoreOf(lab._id);
     expect(await scoreOf(program._id)).toBe(labScore + ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM!);
     expect(ENTITY_TYPE_RANK_ADJUSTMENT.PROGRAM!).toBeLessThan(0);
+  });
+
+  it('persists hasUndergradHostingEvidence only for undergrad-specific signals, not generic outreach (#1054)', async () => {
+    const hosting = await createEntity('lab-hosting', 'LAB');
+    const outreachOnly = await createEntity('lab-outreach-only', 'LAB');
+    const notAvailableWithOutreach = await createEntity('lab-not-available', 'LAB');
+
+    await Signal.create({ researchEntityId: hosting._id, type: 'PAST_UNDERGRADS' });
+    await Signal.create({ researchEntityId: outreachOnly._id, type: 'REACH_OUT_PLAUSIBLE' });
+    await Signal.create({
+      researchEntityId: notAvailableWithOutreach._id,
+      type: 'REACH_OUT_PLAUSIBLE',
+    });
+    await Signal.create({
+      researchEntityId: notAvailableWithOutreach._id,
+      type: 'NOT_CURRENTLY_AVAILABLE',
+    });
+
+    await recomputeBrowseRankForEntities(
+      [hosting._id, outreachOnly._id, notAvailableWithOutreach._id],
+      { sync: false },
+    );
+
+    const evidenceOf = async (id: mongoose.Types.ObjectId): Promise<boolean> => {
+      const doc = await ResearchEntity.findById(id).lean<{ hasUndergradHostingEvidence?: boolean }>();
+      return doc?.hasUndergradHostingEvidence ?? false;
+    };
+
+    expect(await evidenceOf(hosting._id)).toBe(true);
+    expect(await evidenceOf(outreachOnly._id)).toBe(false);
+    expect(await evidenceOf(notAvailableWithOutreach._id)).toBe(false);
   });
 });

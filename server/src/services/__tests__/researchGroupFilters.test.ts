@@ -107,4 +107,26 @@ describe('buildResearchGroupFilterString', () => {
       );
     });
   });
+
+  describe('hostsUndergrads filter', () => {
+    it('true → filters on undergrad-specific hosting evidence, not the broad acceptance tier', () => {
+      const filter = buildResearchGroupFilterString({ hostsUndergrads: true });
+      expect(filter).toBe('archived = false AND hasUndergradHostingEvidence = true');
+    });
+
+    it('false or unset → no extra clause', () => {
+      expect(buildResearchGroupFilterString({ hostsUndergrads: false })).toBe('archived = false');
+      expect(buildResearchGroupFilterString({})).toBe('archived = false');
+    });
+
+    it('combines with other filters via AND', () => {
+      const filter = buildResearchGroupFilterString({
+        departments: ['Genetics'],
+        hostsUndergrads: true,
+      });
+      expect(filter).toBe(
+        'archived = false AND (departments = "Genetics") AND hasUndergradHostingEvidence = true',
+      );
+    });
+  });
 });
