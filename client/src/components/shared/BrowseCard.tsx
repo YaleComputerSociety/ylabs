@@ -28,6 +28,11 @@ import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { getFellowshipCycleStatus } from '../../utils/fellowshipCycle';
 
+const ICON_BUTTON_SIZE = 44;
+const ICON_BUTTON_GAP = 4;
+const ICON_CLUSTER_OFFSET = 8;
+const CARD_PADDING = 20;
+
 interface BrowseCardProps {
   item: BrowsableItem;
   isFavorite: boolean;
@@ -97,6 +102,21 @@ const BrowseCard = React.memo(
 
     const isAudited = isAdmin && item.type !== 'researchGroup' && item.data.audited;
 
+    const iconClusterCount =
+      (hasPrerequisites ? 1 : 0) +
+      (isAdmin && onAdminEdit ? 1 : 0) +
+      (onToggleFavorite && item.type !== 'researchGroup' ? 1 : 0);
+    const iconClusterClearance =
+      iconClusterCount > 0
+        ? Math.max(
+            0,
+            ICON_CLUSTER_OFFSET +
+              iconClusterCount * ICON_BUTTON_SIZE +
+              (iconClusterCount - 1) * ICON_BUTTON_GAP -
+              CARD_PADDING,
+          )
+        : 0;
+
     const handleClick = () => {
       trackView();
       onOpenModal();
@@ -148,7 +168,10 @@ const BrowseCard = React.memo(
 
           {isResearchGroup ? (
             <>
-              <div className="flex items-center gap-2 mb-2 flex-wrap pr-10">
+              <div
+                className="flex items-center gap-2 mb-2 flex-wrap"
+                style={{ paddingRight: iconClusterClearance }}
+              >
                 <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-[var(--yr-blue-soft)] text-blue-700">
                   {getResearchGroupKindLabel(item.data.kind)}
                 </span>
@@ -249,7 +272,10 @@ const BrowseCard = React.memo(
             </>
           ) : (
             <>
-              <div className="mb-2 flex items-center justify-between gap-2 pr-10">
+              <div
+                className="mb-2 flex items-center justify-between gap-2"
+                style={{ paddingRight: iconClusterClearance }}
+              >
                 {fellowshipCycleStatus && (
                   <span
                     className={`flex-shrink-0 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-semibold ${fellowshipCycleStatus.className}`}
