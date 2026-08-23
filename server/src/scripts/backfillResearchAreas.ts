@@ -87,7 +87,9 @@ export function parseResearchAreaBackfillArgs(argv: string[]): ResearchAreaBackf
     } else if (arg === '--only-empty') {
       options.onlyEmpty = true;
     } else if (arg.startsWith('--max-areas=')) {
-      options.maxAreas = normalizeMaxAreas(parsePositiveInt(arg.slice('--max-areas='.length), '--max-areas'));
+      options.maxAreas = normalizeMaxAreas(
+        parsePositiveInt(arg.slice('--max-areas='.length), '--max-areas'),
+      );
     } else if (arg === '--max-areas') {
       options.maxAreas = normalizeMaxAreas(parsePositiveInt(argv[i + 1], '--max-areas'));
       i += 1;
