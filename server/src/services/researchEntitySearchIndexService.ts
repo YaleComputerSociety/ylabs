@@ -3,6 +3,7 @@ import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAcc
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { getMeiliIndex } from '../utils/meiliClient';
+import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 export const RESEARCH_ENTITY_SEARCH_INDEX_NAME = 'researchentities';
@@ -373,6 +374,12 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     const sourceUrls = publicHttpUrls(out.sourceUrls);
     if (sourceUrls.length > 0) out.sourceUrls = sourceUrls;
     else delete out.sourceUrls;
+  }
+
+  if (Array.isArray(out.researchAreas)) {
+    const researchAreas = normalizeResearchAreaList(out.researchAreas);
+    if (researchAreas.length > 0) out.researchAreas = researchAreas;
+    else delete out.researchAreas;
   }
 };
 

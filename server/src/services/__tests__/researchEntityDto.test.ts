@@ -142,6 +142,31 @@ describe('researchEntityDto', () => {
     );
   });
 
+  it('splits bare comma-delimited research-area blobs while preserving enumeration titles', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-area-split',
+      slug: 'nih-pi-example',
+      name: 'Example Lab',
+      departments: [],
+      researchAreas: [
+        'Stress Responses And Cortisol',
+        'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+        'Water Supply, Quality, and Scarcity',
+      ],
+      sourceUrls: [],
+    });
+
+    expect(dto.researchAreas).toEqual([
+      'Stress Responses And Cortisol',
+      'Anxiety',
+      'Depression',
+      'Psychometrics',
+      'Treatment',
+      'Cognitive Processes',
+      'Water Supply, Quality, and Scarcity',
+    ]);
+  });
+
   it('redacts direct contact details recursively from public text fields', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-recursive-redaction',
