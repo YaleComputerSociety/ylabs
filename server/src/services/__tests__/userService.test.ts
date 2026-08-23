@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import mongoose from 'mongoose';
 import {
-  MAX_SAVED_PATHWAY_NOTE_LENGTH,
   MAX_SAVED_PROGRAM_NOTE_LENGTH,
   buildCaseInsensitiveNetidFilter,
   normalizeObjectIdStringForUserMutation,
   normalizeObjectIdsForUserMutation,
   normalizeUserLookupObjectId,
-  sanitizeSavedPathwayPlanForStorage,
   sanitizeSavedProgramTrackingForResponse,
 } from '../userService';
 describe('buildCaseInsensitiveNetidFilter', () => {
@@ -85,136 +83,6 @@ describe('sanitizeSavedProgramTrackingForResponse', () => {
       revision: 0,
       updatedAt: new Date(0).toISOString(),
     });
-  });
-});
-
-describe('sanitizeSavedPathwayPlanForStorage', () => {
-  it('keeps valid date-only reminders and rejects invalid dates and intervals', () => {
-    expect(
-      sanitizeSavedPathwayPlanForStorage({
-        targetDeadline: '2026-09-30',
-        actedOnDate: '2026-02-29',
-        followUpIntervalDays: 14,
-      }),
-    ).toMatchObject({
-      targetDeadline: '2026-09-30',
-      actedOnDate: null,
-      followUpIntervalDays: 14,
-    });
-    expect(
-      sanitizeSavedPathwayPlanForStorage({
-        targetDeadline: '09/30/2026',
-        actedOnDate: '2026-07-12T00:00:00Z',
-        followUpIntervalDays: 15,
-      }),
-    ).toMatchObject({ targetDeadline: null, actedOnDate: null, followUpIntervalDays: null });
-  });
-
-  it('normalizes create/update payloads before persisting a saved pathway plan', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      intent: 'mass-email',
-      stage: 'ready',
-      note: `${'a'.repeat(MAX_SAVED_PATHWAY_NOTE_LENGTH + 1)}`,
-      checklist: {
-        'review-evidence': true,
-        'bad-value': 'yes',
-        '': true,
-      },
-    });
-
-    expect(result.intent).toBe('later');
-    expect(result.stage).toBe('ready');
-    expect(result.note).toHaveLength(MAX_SAVED_PATHWAY_NOTE_LENGTH);
-    expect(result.checklist).toEqual({
-      'review-evidence': true,
-      'bad-value': false,
-    });
-  });
-
-  it('bounds saved pathway checklist entries before storage', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      checklist: Object.fromEntries(
-        Array.from({ length: 60 }, (_, index) => [`task-${index}`, index % 2 === 0]),
-      ),
-    });
-
-    expect(Object.keys(result.checklist)).toHaveLength(50);
-    expect(result.checklist).toHaveProperty('task-0', true);
-    expect(result.checklist).toHaveProperty('task-49', false);
-    expect(result.checklist).not.toHaveProperty('task-50');
-  });
-
-  it('ignores non-object saved pathway checklists before storage', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      checklist: ['email-pi', 'draft-note'] as any,
-    });
-
-    expect(result.checklist).toEqual({});
-  });
-
-  it('stops reading saved pathway checklist keys after the storage cap', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      checklist: Object.fromEntries(
-        Array.from({ length: 10_000 }, (_, index) => [`task-${index}`, true]),
-      ),
-    });
-
-    expect(Object.keys(result.checklist)).toHaveLength(50);
-    expect(result.checklist).toHaveProperty('task-0', true);
-    expect(result.checklist).toHaveProperty('task-49', true);
-    expect(result.checklist).not.toHaveProperty('task-9999');
-  });
-
-  it('drops oversized saved pathway checklist keys before storage', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      checklist: {
-        ['a'.repeat(121)]: true,
-        'review-evidence': true,
-      },
-    });
-
-    expect(result.checklist).toEqual({ 'review-evidence': true });
-  });
-
-  it('normalizes saved pathway checklist keys before storage', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      checklist: {
-        ' review.evidence ': true,
-        $set: true,
-        constructor: true,
-        prototype: true,
-      },
-    });
-
-    expect(result.checklist).toEqual({
-      review_evidence: true,
-      _set: true,
-    });
-    expect(Object.prototype.hasOwnProperty.call(result.checklist, 'constructor')).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(result.checklist, 'prototype')).toBe(false);
-  });
-
-  it('sanitizes and bounds completed checklist history for durable storage', () => {
-    const result = sanitizeSavedPathwayPlanForStorage({
-      intent: 'credit',
-      checklistHistory: [
-        {
-          intent: 'outreach',
-          label: '  Contact the program office  ',
-          completedAt: '2026-07-11T12:00:00Z',
-        },
-        { intent: 'invalid', label: 'Dropped', completedAt: '2026-07-11T12:00:00Z' },
-        { intent: 'thesis', label: 'Bad date', completedAt: 'not-a-date' },
-      ],
-    });
-
-    expect(result.checklistHistory).toEqual([
-      {
-        intent: 'outreach',
-        label: 'Contact the program office',
-        completedAt: '2026-07-11T12:00:00.000Z',
-      },
-    ]);
   });
 });
 

@@ -136,22 +136,9 @@ const userSchema = new mongoose.Schema(
       ref: 'ResearchEntity',
       default: [],
     },
-    savedResearchEntityPlans: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
-    savedResearchEntityPlanMigrationConflicts: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-      select: false,
-    },
     savedResearchEntityMigrationCompleted: {
       type: Boolean,
       default: false,
-    },
-    savedPathwayPlans: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
     },
     savedProgramTracking: {
       type: mongoose.Schema.Types.Mixed,
