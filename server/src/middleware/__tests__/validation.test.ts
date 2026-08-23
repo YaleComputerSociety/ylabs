@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
-import { requireFields, validateObjectId, validateQuery } from '../validation';
+import {
+  requireFields,
+  validateObjectId,
+  validateQuery,
+  validateResearchEntityId,
+} from '../validation';
 
 const createResponse = () => {
   const response = {
@@ -61,6 +66,32 @@ describe('validation middleware', () => {
     expect(response.status).not.toHaveBeenCalled();
     expect(response.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('validateResearchEntityId accepts a research-entity slug or a hex id (#1051)', () => {
+    for (const entityId of ['ysm-goodman', 'nsf-pi-67d8929250621bcef434a59f', '507f1f77bcf86cd799439011']) {
+      const response = createResponse();
+      const next = vi.fn() as unknown as NextFunction;
+      const request = { params: { entityId } } as unknown as Request;
+
+      validateResearchEntityId('entityId')(request, response, next);
+
+      expect(response.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('validateResearchEntityId rejects path-traversal and injection-shaped ids (#1051)', () => {
+    for (const entityId of ['../../etc/passwd', 'a b', 'mongodb://x/y', '']) {
+      const response = createResponse();
+      const next = vi.fn() as unknown as NextFunction;
+      const request = { params: { entityId } } as unknown as Request;
+
+      validateResearchEntityId('entityId')(request, response, next);
+
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(next).not.toHaveBeenCalled();
+    }
   });
 
   it('does not echo invalid query parameter names in responses', () => {

@@ -4,6 +4,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import {
   addSavedResearchEntities,
   addWatchedPrograms,
+  deleteSavedResearchEntityPlan,
   deleteWatchedProgramPlan,
   getSavedResearchEntityPlans,
   getWatchedProgramPlans,
@@ -128,5 +129,28 @@ describe('researchPlanService unsave/unwatch clears private plan data', () => {
     const doc = await findPlan(PROGRAM_ID);
     expect(doc?.archived).not.toBe(true);
     expect(doc?.privateNotes).toBe('');
+  });
+
+  it('updates and deletes a saved-entity plan addressed by slug, not just hex id (#1051)', async () => {
+    await addSavedResearchEntities(NETID, ['test-lab']);
+
+    const savedPlans = await updateSavedResearchEntityPlan(NETID, 'test-lab', {
+      privateNotes: 'slug-addressed note',
+    });
+    const entityKey = ENTITY_ID.toHexString();
+    expect(savedPlans[entityKey].privateNotes).toBe('slug-addressed note');
+
+    const clearedPlans = await deleteSavedResearchEntityPlan(NETID, 'test-lab');
+    expect(clearedPlans[entityKey].privateNotes).toBe('');
+
+    const doc = await findPlan(ENTITY_ID);
+    expect(doc?.archived).not.toBe(true);
+    expect(doc?.privateNotes).toBe('');
+  });
+
+  it('rejects a plan update for a slug that resolves to no visible entity (#1051)', async () => {
+    await expect(
+      updateSavedResearchEntityPlan(NETID, 'no-such-lab', { privateNotes: 'x' }),
+    ).rejects.toThrow(/not found/i);
   });
 });

@@ -12,6 +12,7 @@ export {
 
 export {
   validateObjectId,
+  validateResearchEntityId,
   validateNetid,
   requireBody,
   requireFields,
