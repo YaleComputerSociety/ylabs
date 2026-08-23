@@ -224,7 +224,9 @@ const RESEARCH_HOME_DESCRIPTION_RE = new RegExp(
  * research-home name and its own prose in one string.
  */
 export function stripTrailingResearchHomeDescription(value: string): string {
-  return normalizeHygieneWhitespace(String(value || '').replace(RESEARCH_HOME_DESCRIPTION_RE, '$1'));
+  return normalizeHygieneWhitespace(
+    String(value || '').replace(RESEARCH_HOME_DESCRIPTION_RE, '$1'),
+  );
 }
 
 const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
