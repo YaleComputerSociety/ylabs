@@ -92,7 +92,7 @@ const ResearchAreaTypeahead = ({ options, hasSelections, onSelect }: ResearchAre
           onKeyDown={handleKeyDown}
           placeholder={hasSelections ? 'Add another research area' : 'Search research areas'}
           autoComplete="off"
-          className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+          className="mt-1 min-h-11 w-full min-w-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 text-base text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
         />
       </label>
 
