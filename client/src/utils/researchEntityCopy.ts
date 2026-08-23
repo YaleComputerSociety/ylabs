@@ -21,7 +21,12 @@ const ENTITY_TYPE_TO_KIND: Record<string, string> = {
   COLLECTIONS_INITIATIVE: 'initiative',
   GROUP: 'group',
   INDIVIDUAL_RESEARCH: 'individual',
+  FACULTY_RESEARCH: 'individual',
   FACULTY_RESEARCH_AREA: 'individual',
+  FACULTY_RESEARCH: 'individual',
+  FACULTY_PROJECT: 'group',
+  DIGITAL_HUMANITIES_PROJECT: 'group',
+  ARCHIVE_OR_MUSEUM_PROJECT: 'group',
 };
 
 export type ResearchEntityCopyInput = {
@@ -58,7 +63,9 @@ export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null)
     entity &&
       (entity.kind === 'individual' ||
         entity.kind === 'solo' ||
+        entity.entityType === 'FACULTY_RESEARCH' ||
         entity.entityType === 'FACULTY_RESEARCH_AREA' ||
+        entity.entityType === 'FACULTY_RESEARCH' ||
         entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 

@@ -15,6 +15,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
+  stripTrailingContactAddress,
 } from '../descriptionHygiene';
 
 const SYNTHETIC_ROSTER = [
@@ -281,6 +282,51 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
     expect(sanitizeResearchEntityDescription(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(
       SYNTHETIC_CLEAN_LAB_PROSE,
     );
+  });
+});
+
+describe('descriptionHygiene trailing office-address strip (#798)', () => {
+  const BIO_WITH_TRAILING_ADDRESS =
+    'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy. 266 Whitney Avenue, Fl 2, Rm 234';
+
+  it('strips a trailing campus office address while preserving the bio', () => {
+    expect(stripTrailingContactAddress(BIO_WITH_TRAILING_ADDRESS)).toBe(
+      'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy.',
+    );
+  });
+
+  it('strips a trailing street address with a city/state/ZIP tail', () => {
+    expect(
+      stripTrailingContactAddress(
+        'Our group studies gravitational-wave detectors and precision metrology. 217 Prospect Street, New Haven, CT 06511',
+      ),
+    ).toBe('Our group studies gravitational-wave detectors and precision metrology.');
+  });
+
+  it('leaves ordinary prose that merely names a street intact', () => {
+    const prose =
+      'The project traces how commerce reshaped daily life along Chapel Street in nineteenth-century New Haven.';
+    expect(stripTrailingContactAddress(prose)).toBe(prose);
+  });
+
+  it('leaves an address that is not the trailing fragment intact', () => {
+    const prose =
+      'The lab is at 266 Whitney Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.';
+    expect(stripTrailingContactAddress(prose)).toBe(prose);
+  });
+
+  it('served research-entity description drops the trailing address but keeps the bio', () => {
+    expect(sanitizeResearchEntityDescription(BIO_WITH_TRAILING_ADDRESS)).toBe(
+      'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy.',
+    );
+  });
+
+  it('short-description path also drops a trailing address', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies the neural basis of decision making. 2 Hillhouse Avenue, Fl 3',
+      ),
+    ).toBe('Studies the neural basis of decision making.');
   });
 });
 

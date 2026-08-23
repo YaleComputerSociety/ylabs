@@ -53,6 +53,9 @@ export interface ResearchEntityDedupeMergeGroup {
   canonicalWebsiteUrl?: string;
   canonicalFullDescription?: string;
   canonicalShortDescription?: string;
+  mergedRecentGrants?: unknown[];
+  mergedRecentGrantCount?: number;
+  mergedFundingAgencies?: string[];
 }
 
 export type ResearchEntityPiDedupeDecisionValue =
@@ -842,6 +845,9 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
           sourceUrls: '$entity.sourceUrls',
           departments: '$entity.departments',
           researchAreas: '$entity.researchAreas',
+          recentGrants: '$entity.recentGrants',
+          recentGrantCount: '$entity.recentGrantCount',
+          fundingAgencies: '$entity.fundingAgencies',
         },
       },
     },
@@ -873,7 +879,7 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
               name: { $in: exactPersonNames },
             })
               .select(
-                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas',
+                '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies',
               )
               .lean()
           : [];
@@ -898,6 +904,9 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
               sourceUrls: entity.sourceUrls,
               departments: entity.departments,
               researchAreas: entity.researchAreas,
+              recentGrants: entity.recentGrants,
+              recentGrantCount: entity.recentGrantCount,
+              fundingAgencies: entity.fundingAgencies,
             }))
             .filter((entity) => {
               if (entityIds.has(entity.id)) return false;
@@ -928,6 +937,9 @@ async function loadSinglePiNameCandidateRows(limit: number) {
           sourceUrls: '$sourceUrls',
           departments: '$departments',
           researchAreas: '$researchAreas',
+          recentGrants: '$recentGrants',
+          recentGrantCount: '$recentGrantCount',
+          fundingAgencies: '$fundingAgencies',
         },
       },
     },
@@ -1601,6 +1613,15 @@ export async function applyResearchEntityDedupeMergeGroup(
   const carriedShortDescription = String(group.canonicalShortDescription || '').trim();
   if (carriedFullDescription) canonicalIdentitySet.fullDescription = carriedFullDescription;
   if (carriedShortDescription) canonicalIdentitySet.shortDescription = carriedShortDescription;
+  if (group.mergedRecentGrants && group.mergedRecentGrants.length > 0) {
+    canonicalIdentitySet.recentGrants = group.mergedRecentGrants;
+  }
+  if (typeof group.mergedRecentGrantCount === 'number' && group.mergedRecentGrantCount > 0) {
+    canonicalIdentitySet.recentGrantCount = group.mergedRecentGrantCount;
+  }
+  if (group.mergedFundingAgencies && group.mergedFundingAgencies.length > 0) {
+    canonicalIdentitySet.fundingAgencies = group.mergedFundingAgencies;
+  }
 
   const canonicalUpdate = await ResearchEntity.updateOne(
     { _id: canonicalId, archived: { $ne: true } },

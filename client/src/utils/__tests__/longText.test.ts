@@ -85,6 +85,28 @@ describe('longTextParagraphs', () => {
     ]);
   });
 
+  it('does not split paragraphs inside bare www-prefixed URLs', () => {
+    const text = [
+      'The lab maintains an online atlas at www.SampleAtlas.org for shared use.',
+      'More information is available on the book website, www.example-lab.school.edu.',
+      'The profile-derived summary should be checked against linked sources.',
+      'Students should verify the official page before outreach.',
+      'The profile is retained as planning context.',
+    ].join(' ');
+
+    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+      [
+        'The lab maintains an online atlas at www.SampleAtlas.org for shared use.',
+        'More information is available on the book website, www.example-lab.school.edu.',
+        'The profile-derived summary should be checked against linked sources.',
+      ].join(' '),
+      [
+        'Students should verify the official page before outreach.',
+        'The profile is retained as planning context.',
+      ].join(' '),
+    ]);
+  });
+
   it('does not split paragraphs inside compact place or role abbreviations', () => {
     const text = [
       'Nicole represented the school in Washington, D.C., at an annual leadership conference.',

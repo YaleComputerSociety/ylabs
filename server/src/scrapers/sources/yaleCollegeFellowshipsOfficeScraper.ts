@@ -12,7 +12,7 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { classifyProgram } from '../../services/programClassifier';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
-import { clampDescriptionLength, sanitizeCatalogDescription } from '../../utils/descriptionHygiene';
+import { sanitizeStoredCatalogDescription } from '../../utils/descriptionHygiene';
 import { normalizedProgramTitleKey } from '../../utils/programTitle';
 import { isUnhelpfulProgramUrl } from '../../utils/researchHomeWebsiteUrl';
 
@@ -643,7 +643,7 @@ function upsertCandidate(
 }
 
 function summaryFromRowContext(rowContext: string, title: string): string | undefined {
-  const safe = sanitizeCatalogDescription(rowContext);
+  const safe = sanitizeStoredCatalogDescription(rowContext);
   return safe && safe !== title ? safe : undefined;
 }
 
@@ -807,7 +807,7 @@ function candidateFromDetailPage(
     )
     .remove();
   const bodyText = normalizeWhitespace(chromeFreeRoot.text());
-  const safeDescription = clampDescriptionLength(sanitizeCatalogDescription(bodyText), 2000);
+  const safeDescription = sanitizeStoredCatalogDescription(bodyText, 2000);
   const applicationInformation = applicationSectionText($);
   const deadline = parseDeadlineToUtcEndOfDay(bestDeadlineText(bodyText), referenceDate);
   const applicationOpenDate = utcStartOfDay(

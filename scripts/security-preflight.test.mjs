@@ -4455,29 +4455,12 @@ test('saved pathway plan checklist keys are safe before nested Mongo storage', (
     'utf8',
   );
 
-  assert.match(
-    source,
-    /const sanitizeSavedPathwayChecklistKey = \(key: unknown\): string \| undefined => \{/,
-  );
-  assert.match(source, /trimmed === '__proto__' \|\|/);
-  assert.match(source, /trimmed === 'constructor' \|\|/);
-  assert.match(source, /trimmed === 'prototype'/);
-  assert.match(source, /replace\(\/\^\\\$\+\/, '_'\)\.replace\(\/\\\.\/g, '_'\)/);
-  assert.match(source, /const normalizedKey = sanitizeSavedPathwayChecklistKey\(key\)/);
-  assert.match(source, /MAX_SAVED_PATHWAY_NOTE_LENGTH = 5000/);
-  assert.match(source, /!Array\.isArray\(candidate\.checklist\)/);
-  assert.match(source, /let checklistCount = 0/);
-  assert.match(source, /if \(checklistCount >= MAX_SAVED_PATHWAY_CHECKLIST_ITEMS\) break/);
-  assert.match(source, /checklistCount \+= 1/);
-  assert.match(source, /candidate\.note\.slice\(0, MAX_SAVED_PATHWAY_NOTE_LENGTH\)/);
-  assert.match(source, /const MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS = 100/);
-  assert.match(source, /export function sanitizeSavedPathwayPlansForResponse\(/);
-  assert.match(source, /if \(count >= MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS\) break/);
-  assert.match(
-    source,
-    /pathwayKey = normalizeObjectIdStringForUserMutation\(pathwayId, 'pathway'\)/,
-  );
-  assert.match(source, /sanitized\[pathwayKey\] = sanitizeSavedPathwayPlanForStorage\(plan\)/);
+  assert.doesNotMatch(source, /const sanitizeSavedPathwayChecklistKey =/);
+  assert.doesNotMatch(source, /export function sanitizeSavedPathwayPlansForResponse\(/);
+  assert.doesNotMatch(source, /export function sanitizeSavedPathwayPlanForStorage\(/);
+  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_NOTE_LENGTH/);
+  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_CHECKLIST_ITEMS/);
+  assert.doesNotMatch(source, /MAX_SAVED_PATHWAY_PLAN_RESPONSE_ITEMS/);
   assert.doesNotMatch(
     source,
     /Object\.entries\(candidate\.checklist \|\| \{\}\)[\s\S]*\.slice\(0, MAX_SAVED_PATHWAY_CHECKLIST_ITEMS\)/,
