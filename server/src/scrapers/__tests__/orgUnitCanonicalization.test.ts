@@ -115,6 +115,17 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.unmatched).toEqual(['Medical Oncology']);
     expect(result.dropped).toEqual([]);
   });
+
+  it('drops a school name that leaks into the department facet', () => {
+    const result = canonicalizer.canonicalizeDepartments([
+      'Psychiatry',
+      'Yale School of Medicine',
+      'School of Medicine',
+    ]);
+    expect(result.values).toEqual(['Psychiatry']);
+    expect(result.unmatched).toEqual(['Psychiatry']);
+    expect(result.dropped).toEqual(['Yale School of Medicine', 'School of Medicine']);
+  });
 });
 
 describe('denoiseOrgUnitValue', () => {
@@ -157,6 +168,16 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(set.name).toBe('Some Lab');
     expect(result.unmatchedSchool).toBeUndefined();
     expect(result.unmatchedDepartments).toEqual(['Ghost Studies']);
+  });
+
+  it('drops a leaked school name from departments during materialization', async () => {
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
+    const set: Record<string, unknown> = {
+      departments: ['Psychiatry', 'Yale School of Medicine'],
+    };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set);
+    expect(set.departments).toEqual(['Psychiatry']);
+    expect(result.droppedDepartments).toEqual(['Yale School of Medicine']);
   });
 
   it('leaves the set untouched when neither field is present', async () => {
