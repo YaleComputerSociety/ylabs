@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AnalyticsActionNeededResponse,
   AnalyticsData,
@@ -1230,7 +1231,12 @@ const AnalyticsSupportingDetail = ({
                           )}
                           {event.listingId && (
                             <p className="mt-1 text-sm text-gray-600">
-                              Opportunity: {event.listingId}
+                              Opportunity: {event.listingTitle || event.listingId}
+                            </p>
+                          )}
+                          {event.fellowshipId && (
+                            <p className="mt-1 text-sm text-gray-600">
+                              Fellowship: {event.fellowshipTitle || event.fellowshipId}
                             </p>
                           )}
                         </div>
@@ -1285,8 +1291,8 @@ const AnalyticsSupportingDetail = ({
                     key={`${item.entityType}-${item.eventType}`}
                     className="flex justify-between gap-3 text-sm"
                   >
-                    <span className="text-gray-600 capitalize">
-                      {item.entityType} / {formatEventType(item.eventType)}
+                    <span className="text-gray-600">
+                      {formatEntityType(item.entityType)} / {formatEventType(item.eventType)}
                     </span>
                     <span className="font-medium">{item.count}</span>
                   </div>
@@ -1319,19 +1325,38 @@ const AnalyticsSupportingDetail = ({
             </h3>
             <div className="space-y-2">
               {data.research.topEntities.length > 0 ? (
-                data.research.topEntities.slice(0, 8).map((item) => (
-                  <div
-                    key={`${item.entityType}-${item.entityId}`}
-                    className="flex justify-between gap-3 text-sm"
-                  >
-                    <span className="truncate text-gray-600">
-                      <span className="capitalize">{item.entityType}</span> {item.entityId}
+                data.research.topEntities.slice(0, 8).map((item) => {
+                  const label = item.name || item.entityId;
+                  const detail = (
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate">
+                        <span className="text-gray-500">{formatEntityType(item.entityType)}:</span>{' '}
+                        <span className="font-medium">{label}</span>
+                      </span>
+                      {item.name && (
+                        <span className="truncate text-xs text-gray-400">{item.entityId}</span>
+                      )}
                     </span>
-                    <span className="whitespace-nowrap font-medium">
-                      {item.views} views / {item.uniqueViewers} users
-                    </span>
-                  </div>
-                ))
+                  );
+                  return (
+                    <div
+                      key={`${item.entityType}-${item.entityId}`}
+                      className="flex items-start justify-between gap-3 text-sm"
+                    >
+                      {item.href ? (
+                        <Link to={item.href} className="min-w-0 text-blue-700 hover:underline">
+                          {detail}
+                        </Link>
+                      ) : (
+                        <span className="min-w-0 text-gray-600">{detail}</span>
+                      )}
+                      <span className="whitespace-nowrap font-medium">
+                        {item.views} {item.views === 1 ? 'view' : 'views'} / {item.uniqueViewers}{' '}
+                        {item.uniqueViewers === 1 ? 'user' : 'users'}
+                      </span>
+                    </div>
+                  );
+                })
               ) : (
                 <p className="text-sm text-gray-500">No viewed entities yet.</p>
               )}

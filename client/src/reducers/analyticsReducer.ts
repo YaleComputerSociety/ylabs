@@ -115,6 +115,8 @@ export interface AnalyticsData {
       entityId: string;
       views: number;
       uniqueViewers: number;
+      name?: string;
+      href?: string;
     }>;
   };
   listings: {
@@ -192,7 +194,9 @@ export interface AnalyticsUserEvent {
   eventType: string;
   timestamp: string;
   listingId?: string;
+  listingTitle?: string;
   fellowshipId?: string;
+  fellowshipTitle?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: Record<string, unknown>;
