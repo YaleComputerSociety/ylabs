@@ -2041,7 +2041,7 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
-  it('leaves website collisions that involve a funding/area shell to the other lanes', () => {
+  it('folds a funding shell into the same-person concrete home when the shared websiteUrl is a distinctive non-funding host (#1147, Zhou class)', () => {
     const plan = buildWebsiteUrlResearchEntityDedupePlan([
       {
         websiteUrl: 'https://stat.example.edu/~ab12/',
@@ -2052,8 +2052,13 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
             name: 'Robin Ashby Lab',
             kind: 'lab',
             websiteUrl: 'https://stat.example.edu/~ab12/',
+            sourceUrls: [
+              'https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500123',
+              'https://stat.example.edu/~ab12/',
+            ],
             researchAreas: ['Statistics'],
-            piRoleCorroborated: true,
+            recentGrantCount: 1,
+            fundingAgencies: ['NSF'],
           },
           {
             id: 'dept-stat-ashby',
@@ -2063,7 +2068,160 @@ describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
             entityType: 'FACULTY_RESEARCH_AREA',
             websiteUrl: 'http://stat.example.edu/~ab12/',
             researchAreas: ['Statistics'],
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'dept-stat-ashby',
+        duplicateEntityIds: ['nsf-pi-shell'],
+        mergedFundingAgencies: ['NSF'],
+        mergedRecentGrantCount: 1,
+      },
+    ]);
+  });
+
+  it('leaves a faculty-research-area shell to the profile-area lane even on a distinctive host', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://stat.example.edu/~ab12/',
+        entities: [
+          {
+            id: 'area-shell',
+            slug: 'faculty-research-area-robin-ashby',
+            name: 'Robin Ashby Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+          },
+          {
+            id: 'dept-stat-ashby',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('leaves a funding shell to the other lanes when the shared websiteUrl host is not distinctive', () => {
+    const genericHostPlan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://medicine.yale.edu/',
+        entities: [
+          {
+            id: 'nih-pi-shell-generic',
+            slug: 'nih-pi-abcdef',
+            name: 'Robin Ashby Lab',
+            kind: 'lab',
+            websiteUrl: 'https://medicine.yale.edu/',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-stat-ashby-generic',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://medicine.yale.edu/',
             piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+    expect(genericHostPlan).toEqual([]);
+
+    const fundingHostPlan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://reporter.nih.gov/project-details/20000099',
+        entities: [
+          {
+            id: 'nih-pi-shell-funding-host',
+            slug: 'nih-pi-abcdef',
+            name: 'Robin Ashby Lab',
+            kind: 'lab',
+            websiteUrl: 'https://reporter.nih.gov/project-details/20000099',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-stat-ashby-funding-host',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://reporter.nih.gov/project-details/20000099',
+            piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+    expect(fundingHostPlan).toEqual([]);
+  });
+
+  it('never merges a funding shell across distinct physics faculty sharing the het.yale.edu group site, even though the host is distinctive', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://het.yale.edu/',
+        entities: [
+          {
+            id: 'dept-physics-skiba',
+            slug: 'dept-physics-witold-skiba',
+            name: 'Witold Skiba Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://het.yale.edu/',
+            departments: ['Physics'],
+          },
+          {
+            id: 'dept-physics-appelquist',
+            slug: 'dept-physics-thomas-appelquist',
+            name: 'Thomas Appelquist Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://het.yale.edu/',
+            departments: ['Physics'],
+          },
+          {
+            id: 'nsf-pi-shell-het',
+            slug: 'nsf-pi-fixturehet0001',
+            name: 'Elena Voss Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://het.yale.edu/',
+            sourceUrls: ['https://www.nsf.gov/awardsearch/showAward?AWD_ID=2500456'],
+          },
+        ],
+      },
+      {
+        websiteUrl: 'https://rhig.physics.yale.edu/',
+        entities: [
+          {
+            id: 'dept-physics-goldberger',
+            slug: 'dept-physics-walter-goldberger',
+            name: 'Walter Goldberger Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://rhig.physics.yale.edu/',
+            departments: ['Physics'],
+          },
+          {
+            id: 'dept-physics-poland',
+            slug: 'dept-physics-david-poland',
+            name: 'David Poland Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'https://rhig.physics.yale.edu/',
+            departments: ['Physics'],
           },
         ],
       },
