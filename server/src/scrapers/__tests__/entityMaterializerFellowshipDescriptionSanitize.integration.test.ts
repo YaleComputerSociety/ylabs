@@ -26,7 +26,7 @@ const CHROME_AND_EMAIL_DIRTY =
   'Skip to main content Show all breadcrumbs The travel research grant supports undergraduate summer fieldwork abroad. Direct questions to grants@example.edu before applying.';
 
 const CHROME_AND_EMAIL_CLEAN =
-  'The travel research grant supports undergraduate summer fieldwork abroad. Direct questions before applying.';
+  'The travel research grant supports undergraduate summer fieldwork abroad.';
 
 type PersistedFellowship = { description?: string; summary?: string };
 

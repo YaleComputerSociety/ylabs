@@ -240,11 +240,32 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
     expect(cleaned).toBe('Submit all materials to the YSEA undergraduate grants committee.');
   });
 
-  it('removes an [email redacted] token after a colon', () => {
-    const text = 'Confirmation should be sent to: [email redacted]';
+  it('keeps surrounding sentences and cleans a trailing token in place', () => {
+    const text =
+      'Awards support summer research abroad. Submit all materials to the grants committee at [email redacted].';
     const cleaned = stripRedactionPlaceholders(text);
     expect(cleaned).not.toMatch(/redacted/i);
-    expect(cleaned).toBe('Confirmation should be sent');
+    expect(cleaned).toBe(
+      'Awards support summer research abroad. Submit all materials to the grants committee.',
+    );
+  });
+
+  it('drops a whole sentence when a mid-sentence token would strand trailing words (#774)', () => {
+    const text =
+      'Seniors must be members in good standing. If you are an international student, please contact [email redacted] in the International Tax Office.';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).not.toMatch(/please in the/i);
+    expect(cleaned).toBe('Seniors must be members in good standing.');
+  });
+
+  it('drops a trailing fragment left without terminal punctuation after the token (#774)', () => {
+    const text =
+      'Awardees must disclose other funding. The letter of recommendation should be sent to: [email redacted]';
+    const cleaned = stripRedactionPlaceholders(text);
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).not.toMatch(/should be sent$/i);
+    expect(cleaned).toBe('Awardees must disclose other funding.');
   });
 
   it('leaves the redaction token in place inside sanitizeCatalogDescription (read-time contract)', () => {
