@@ -1129,7 +1129,10 @@ function isSpecificResearchHomeWebsite(url: string): boolean {
 
 function isGenericResearchHomeDirectoryUrl(url: string): boolean {
   const normalized = url.trim().toLowerCase().replace(/\/+$/, '');
-  return normalized.includes('/about/a-to-z-index/atoz/lab-websites');
+  return (
+    normalized.includes('/about/a-to-z-index/atoz/lab-websites') ||
+    normalized.includes('/about/a-to-z-index/lab-websites')
+  );
 }
 
 function buildDuplicateEntityNameReviewPreflightSummary(
