@@ -11,8 +11,8 @@
  *
  * Dry-run-first. Apply mode requires `--confirm-research-areas`, is blocked
  * against production unless CONFIRM_PROD_SCRAPE=true, and only rewrites entities
- * whose area list actually changes. Rebuild the Meilisearch research index after
- * an apply so the facet picks up the new values.
+ * whose area list actually changes. Each applied batch is re-synced to the
+ * Meilisearch research index so the area facet never drifts from Mongo.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -22,6 +22,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchAreaCanonicalizer } from '../scrapers/researchAreaCanonicalization';
+import { syncEntities } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -121,6 +122,48 @@ export interface ResearchAreaBackfillResult {
   mode: 'dry-run' | 'apply';
   summary: ResearchAreaBackfillSummary;
   sampleChanges: ResearchAreaBackfillPlanRow[];
+  syncedToMeili: number;
+}
+
+export interface ResearchAreaApplyDeps {
+  persistBatch: (rows: ResearchAreaBackfillPlanRow[]) => Promise<void>;
+  syncBatch: (ids: string[]) => Promise<number>;
+}
+
+export async function applyResearchAreaChanges(
+  changedRows: ResearchAreaBackfillPlanRow[],
+  batchSize: number,
+  deps: ResearchAreaApplyDeps,
+): Promise<{ persisted: number; synced: number }> {
+  let persisted = 0;
+  let synced = 0;
+  for (let i = 0; i < changedRows.length; i += batchSize) {
+    const batch = changedRows.slice(i, i + batchSize);
+    await deps.persistBatch(batch);
+    persisted += batch.length;
+    synced += await deps.syncBatch(batch.map((row) => row.id));
+  }
+  return { persisted, synced };
+}
+
+function createResearchAreaApplyDeps(): ResearchAreaApplyDeps {
+  return {
+    persistBatch: async (batch) => {
+      await ResearchEntity.bulkWrite(
+        batch.map((row) => ({
+          updateOne: {
+            filter: { _id: row.id },
+            update: { $set: { researchAreas: row.after } },
+          },
+        })),
+      );
+    },
+    syncBatch: async (ids) => {
+      const fresh = await ResearchEntity.find({ _id: { $in: ids } }).lean();
+      await syncEntities('researchEntity', fresh);
+      return fresh.length;
+    },
+  };
 }
 
 interface EntityRow {
@@ -135,14 +178,17 @@ interface EntityRow {
   fullDescription?: string;
 }
 
-export async function runResearchAreaBackfill(options: {
-  dryRun: boolean;
-  onlyEmpty: boolean;
-  maxAreas: number;
-  limit?: number;
-  batchSize: number;
-  kinds?: string[];
-}): Promise<ResearchAreaBackfillResult> {
+export async function runResearchAreaBackfill(
+  options: {
+    dryRun: boolean;
+    onlyEmpty: boolean;
+    maxAreas: number;
+    limit?: number;
+    batchSize: number;
+    kinds?: string[];
+  },
+  deps: ResearchAreaApplyDeps = createResearchAreaApplyDeps(),
+): Promise<ResearchAreaBackfillResult> {
   const canonicalizer = await getResearchAreaCanonicalizer();
 
   const filter: Record<string, unknown> = { archived: { $ne: true } };
@@ -176,24 +222,17 @@ export async function runResearchAreaBackfill(options: {
 
   const changedRows = rows.filter((row) => row.changed);
 
+  let syncedToMeili = 0;
   if (!options.dryRun && changedRows.length > 0) {
-    for (let i = 0; i < changedRows.length; i += options.batchSize) {
-      const batch = changedRows.slice(i, i + options.batchSize);
-      await ResearchEntity.bulkWrite(
-        batch.map((row) => ({
-          updateOne: {
-            filter: { _id: row.id },
-            update: { $set: { researchAreas: row.after } },
-          },
-        })),
-      );
-    }
+    const applied = await applyResearchAreaChanges(changedRows, options.batchSize, deps);
+    syncedToMeili = applied.synced;
   }
 
   return {
     mode: options.dryRun ? 'dry-run' : 'apply',
     summary: summarizeResearchAreaBackfill(rows),
     sampleChanges: changedRows.slice(0, 25),
+    syncedToMeili,
   };
 }
 
@@ -246,7 +285,9 @@ async function main(): Promise<void> {
     }
     console.log(JSON.stringify(result.summary, null, 2));
     if (apply && result.summary.changed > 0) {
-      console.log('Rebuild the Meilisearch research index so the area facet picks up new values.');
+      console.log(
+        `Synced ${result.syncedToMeili} changed entities to the Meilisearch research index.`,
+      );
     }
   } finally {
     await mongoose.disconnect();
