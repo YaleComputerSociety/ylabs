@@ -179,6 +179,54 @@ describe('classifyProgram', () => {
     });
   });
 
+  it('does not let a cross-referral mention of Wu Tsai hijack a Dean/Rosenfeld record', () => {
+    const result = classifyProgram({
+      title: 'Yale College Dean’s Research Fellowship & Rosenfeld Science Scholars Program',
+      sourceUrl: 'https://science.yalecollege.yale.edu/dean-research-fellowship',
+      description:
+        'Supports Yale College students pursuing summer research with a faculty mentor. If you are interested in neuroscience, psychology, computer science, or engineering, please consider applying to the Wu Tsai Undergraduate Fellowships Program instead.',
+    });
+    expect(result).toMatchObject({
+      programKind: 'FELLOWSHIP_FUNDING',
+      studentFacingCategory: 'Funding after mentor',
+      undergraduateOnly: true,
+      yaleCollegeOnly: true,
+    });
+    expect(result.mentorMatching).toBe(false);
+    expect(result.bestNextStep).not.toMatch(/wu tsai/i);
+  });
+
+  it('does not let a cross-referral mention of Wu Tsai hijack a First-Year Summer record', () => {
+    const result = classifyProgram({
+      title: 'Yale College First-Year Summer Research Fellowship in the Sciences & Engineering',
+      sourceUrl: 'https://science.yalecollege.yale.edu/first-year-summer-research-fellowship',
+      description:
+        'A funding option for first-year students who secure a faculty mentor. Students with broader interests may also consider the Wu Tsai Undergraduate Fellowships Program.',
+    });
+    expect(result).toMatchObject({
+      programKind: 'FELLOWSHIP_FUNDING',
+      entryMode: 'SECURE_MENTOR_THEN_APPLY',
+      studentFacingCategory: 'Funding after mentor',
+    });
+    expect(result.mentorMatching).toBe(false);
+    expect(result.bestNextStep).not.toMatch(/wu tsai/i);
+  });
+
+  it('still classifies the real Wu Tsai record from its own identity fields', () => {
+    expect(
+      classifyProgram({
+        title: 'Wu Tsai Undergraduate Fellowships',
+        sourceUrl: 'https://wti.yale.edu/initiatives/undergraduate',
+        description: 'A mentored summer program for Yale College undergraduates.',
+      }),
+    ).toMatchObject({
+      programKind: 'MENTOR_MATCHING',
+      entryMode: 'DIRECT_FACULTY_MATCHING',
+      mentorMatching: true,
+      studentFacingCategory: 'Mentored summer program',
+    });
+  });
+
   it('keeps law-school common applications that say not for undergraduates hidden', () => {
     expect(
       classifyProgram({

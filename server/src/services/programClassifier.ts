@@ -51,6 +51,13 @@ function textForProgram(input: ProgramClassificationInput): string {
     .join(' ');
 }
 
+function identityTextForProgram(input: ProgramClassificationInput): string {
+  return [input.title, input.competitionType, input.sourceUrl]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ');
+}
+
 function baseFundingClassification(): ProgramClassification {
   return {
     programCategory: 'FELLOWSHIP',
@@ -98,6 +105,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
   const text = textForProgram(input);
   const lower = text.toLowerCase();
   const titleLower = title.toLowerCase();
+  const identityLower = identityTextForProgram(input).toLowerCase();
   const hasUndergraduateAudience =
     /\bundergraduate|yale college|first[- ]years?|sophomores?|juniors?|seniors?\b/.test(lower);
 
@@ -125,7 +133,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     return archiveReviewClassification();
   }
 
-  if (/\btobin\b/.test(lower) && /\bresearch assistant/i.test(text)) {
+  if (/\btobin\b/.test(identityLower) && /\bresearch assistant/i.test(text)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'RA_PROGRAM',
@@ -138,7 +146,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bstars\b/.test(lower) && /\bsummer research program\b/.test(lower)) {
+  if (/\bstars\b/.test(identityLower) && /\bsummer research program\b/.test(lower)) {
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
@@ -152,7 +160,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bwu tsai\b|\bwti\.yale\.edu\b/.test(lower)) {
+  if (/\bwu tsai\b|\bwti\.yale\.edu\b/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'SUMMER_RESEARCH_PROGRAM',
       programKind: 'MENTOR_MATCHING',
@@ -166,7 +174,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bwomen'?s health research\b|\bwhr\b/.test(lower)) {
+  if (/\bwomen'?s health research\b|\bwhr\b/.test(identityLower)) {
     return structuredProgram({
       programKind: 'MENTOR_MATCHING',
       entryMode: 'DIRECT_FACULTY_MATCHING',
@@ -180,7 +188,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\byale[- ]uc louvain\b|\buc louvain\b/.test(lower)) {
+  if (/\byale[- ]uc louvain\b|\buc louvain\b/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',
       programKind: 'CENTER_INTERNSHIP',
@@ -195,7 +203,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(lower)) {
+  if (/\bycmd\b|center for molecular discovery|summer undergraduate internships/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'CENTER_INTERNSHIP',
       programKind: 'CENTER_INTERNSHIP',
@@ -208,7 +216,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/computer science research internship|cs research internship/.test(lower)) {
+  if (/computer science research internship|cs research internship/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'MENTOR_MATCHING',
@@ -220,7 +228,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/mellon mays/.test(lower)) {
+  if (/mellon mays/.test(identityLower)) {
     return structuredProgram({
       programCategory: 'RECURRING_PROGRAM',
       programKind: 'STRUCTURED_PROGRAM',
@@ -233,7 +241,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     });
   }
 
-  if (/first[- ]year summer research fellowship/.test(lower)) {
+  if (/first[- ]year summer research fellowship/.test(identityLower)) {
     return {
       ...baseFundingClassification(),
       studentFacingCategory: 'Funding after mentor',
@@ -258,7 +266,7 @@ export function classifyProgram(input: ProgramClassificationInput): ProgramClass
     };
   }
 
-  if (/dean'?s research fellowship|rosenfeld/.test(lower)) {
+  if (/dean'?s research fellowship|rosenfeld/.test(identityLower)) {
     return {
       ...baseFundingClassification(),
       undergraduateOnly: true,

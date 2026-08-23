@@ -37,6 +37,19 @@ describe('backfillProgramClassifications CLI helpers', () => {
     ).toThrow(/--limit requires a positive integer/);
   });
 
+  it('parses a comma-separated --ids allowlist and rejects an empty one', () => {
+    expect(
+      parseBackfillProgramClassificationsArgs([
+        '--ids=6a6f84d374dd496b1d43b769, 6a6f84d474dd496b1d43b7b4 ,',
+      ]),
+    ).toMatchObject({
+      ids: ['6a6f84d374dd496b1d43b769', '6a6f84d474dd496b1d43b7b4'],
+    });
+    expect(() => parseBackfillProgramClassificationsArgs(['--ids=', '--ids= , '])).toThrow(
+      /--ids requires at least one non-empty id/,
+    );
+  });
+
   it('rejects malformed program classification output paths', () => {
     expect(() => parseBackfillProgramClassificationsArgs(['--output', '--apply'])).toThrow(
       /--output requires a path/,

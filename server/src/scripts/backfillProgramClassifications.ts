@@ -20,7 +20,19 @@ export interface BackfillProgramClassificationsCliOptions {
   apply: boolean;
   confirmProgramClassificationBackfill: boolean;
   limit: number;
+  ids?: string[];
   output?: string;
+}
+
+function parseIdList(value: string): string[] {
+  const ids = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (ids.length === 0) {
+    throw new Error('--ids requires at least one non-empty id');
+  }
+  return ids;
 }
 
 function parseRequiredOutputPath(value: string | undefined): string {
@@ -51,6 +63,10 @@ export function parseBackfillProgramClassificationsArgs(
     }
     if (arg.startsWith('--limit=')) {
       options.limit = parsePositiveInteger(arg.slice('--limit='.length), '--limit');
+      continue;
+    }
+    if (arg.startsWith('--ids=')) {
+      options.ids = parseIdList(arg.slice('--ids='.length));
       continue;
     }
     if (arg === '--output') {
@@ -140,7 +156,11 @@ async function main() {
   );
   await initializeConnections();
 
-  const query = Fellowship.find({ archived: { $ne: true } }).sort({ title: 1 });
+  const filter: Record<string, unknown> = { archived: { $ne: true } };
+  if (options.ids && options.ids.length > 0) {
+    filter._id = { $in: options.ids };
+  }
+  const query = Fellowship.find(filter).sort({ title: 1 });
   if (Number.isFinite(options.limit)) query.limit(options.limit);
   const rows = await query.lean();
   const updates: Array<{ id: string; title: string; classification: ReturnType<typeof classifyProgram> }> = [];
