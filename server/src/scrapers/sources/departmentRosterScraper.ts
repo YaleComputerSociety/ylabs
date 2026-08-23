@@ -51,6 +51,7 @@ import {
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { extractOfficialResearchDescription } from '../../utils/officialResearchDescription';
 import {
   clampDescriptionLength,
@@ -1193,6 +1194,7 @@ function isHeadingTag(node: cheerio.Cheerio<any>): boolean {
 function cleanProfileSectionText(value: string): string {
   return cleanText(value)
     .replace(/\bCopy Link\b/gi, ' ')
+    .replace(/\bDownload CV\b/gi, ' ')
     .replace(/\bLast Updated on [^.]+\.?/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1214,7 +1216,7 @@ function extractSectionAfterHeading(
     let cursor = $(heading).next();
     while (cursor.length > 0) {
       if (isHeadingTag(cursor)) break;
-      const text = cleanProfileSectionText(cursor.text());
+      const text = cleanProfileSectionText(extractElementTextWithBlockSeparators(cursor[0]));
       if (text) parts.push(text);
       cursor = cursor.next();
     }
@@ -1250,7 +1252,9 @@ function extractBioFromHtml($: cheerio.CheerioAPI): string | undefined {
   ];
 
   for (const selector of selectors) {
-    const text = cleanText($(selector).first().text())
+    const text = cleanProfileSectionText(
+      extractElementTextWithBlockSeparators($(selector).first()[0]),
+    )
       .replace(/^CV\s+/i, '')
       .replace(/\s+Office hours?:.*$/i, '');
     if (text.length >= 40 && !isLikelyProfileChromeBio(text))
