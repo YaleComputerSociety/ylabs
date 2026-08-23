@@ -1432,6 +1432,7 @@ const Research = () => {
     }
   };
 
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [isWideFilterLayout, setIsWideFilterLayout] = useState(
     () => window.matchMedia?.('(min-width: 1536px)').matches ?? false,
   );
@@ -1612,7 +1613,13 @@ const Research = () => {
                     )}
                   </div>
                 </div>
-                {!isWideFilterLayout && <ResearchFilterDisclosure {...browseFilterProps} />}
+                {!isWideFilterLayout && (
+                  <ResearchFilterDisclosure
+                    {...browseFilterProps}
+                    isOpen={isFilterPanelOpen}
+                    onOpenChange={setIsFilterPanelOpen}
+                  />
+                )}
                 {defaultSearchError && (
                   <div
                     role="alert"
@@ -1735,7 +1742,13 @@ const Research = () => {
                   </div>
                 </div>
 
-                {!isWideFilterLayout && <ResearchFilterDisclosure {...researchFilterProps} />}
+                {!isWideFilterLayout && (
+                  <ResearchFilterDisclosure
+                    {...researchFilterProps}
+                    isOpen={isFilterPanelOpen}
+                    onOpenChange={setIsFilterPanelOpen}
+                  />
+                )}
 
                 {searchError && (
                   <div
