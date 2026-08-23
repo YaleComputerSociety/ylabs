@@ -127,10 +127,10 @@ export interface LabMicrositeDescriptionLLMExtractorDeps {
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-const uniqueStrings = (values: unknown[]): string[] =>
+const uniqueStrings = (values: unknown): string[] =>
   Array.from(
     new Set(
-      values
+      (Array.isArray(values) ? values : [])
         .filter((value): value is string => typeof value === 'string')
         .map((value) => value.trim())
         .filter(Boolean),
