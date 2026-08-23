@@ -91,6 +91,27 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     );
   });
 
+  it('de-concatenates a two-award "AND"-joined detail-page heading to the primary award (#655)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Fixture Fellowship for International Research in the Sciences AND the Placeholder Summer Fellowship</h1>
+            <p>The fellowship provides support for original undergraduate research projects abroad in the natural and applied sciences.</p>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-two-award`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].title).toBe('Fixture Fellowship for International Research in the Sciences');
+    expect(candidates[0].sourceKey).toBe(
+      'yale-college-fellowships-office:fixture-fellowship-for-international-research-in-the-sciences',
+    );
+  });
+
   it('redacts a real contact email out of a detail-page description instead of storing it raw (#773)', () => {
     const candidates = parseFellowshipCatalogPage(
       `
