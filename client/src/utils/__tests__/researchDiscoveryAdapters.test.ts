@@ -10,6 +10,7 @@ import {
   getPathwayActionLabel,
   getPathwayTypeLabel,
   parseQueryInterpretationChips,
+  resolveResearchEntitySchool,
 } from '../researchDiscoveryAdapters';
 import type { ResearchEntity } from '../../types/researchEntity';
 import type { AccessSummary } from '../../types/researchGroup';
@@ -119,6 +120,69 @@ describe('pathway display helpers', () => {
         }),
       ),
     ).toBeUndefined();
+  });
+});
+
+describe('resolveResearchEntitySchool', () => {
+  it('prefers the scalar school when it is populated', () => {
+    expect(
+      resolveResearchEntitySchool(
+        entity({ school: 'School of Medicine', schools: ['School of Engineering & Applied Science'] }),
+      ),
+    ).toBe('School of Medicine');
+  });
+
+  it('falls back to the first canonical schools[] value when the scalar is empty', () => {
+    expect(
+      resolveResearchEntitySchool(
+        entity({ school: '', schools: ['School of Engineering & Applied Science'] }),
+      ),
+    ).toBe('School of Engineering & Applied Science');
+  });
+
+  it('skips blank schools[] entries and returns empty when nothing is known', () => {
+    expect(
+      resolveResearchEntitySchool(
+        entity({ school: '', schools: ['', '  ', 'Faculty of Arts and Sciences'] }),
+      ),
+    ).toBe('Faculty of Arts and Sciences');
+    expect(resolveResearchEntitySchool(entity({ school: '', schools: [] }))).toBe('');
+    expect(resolveResearchEntitySchool(undefined)).toBe('');
+  });
+});
+
+describe('browse-card school badge fallback', () => {
+  it('renders the schools[] school in the context line when the scalar is empty', () => {
+    expect(
+      buildResearchHomeContextLine(
+        entity({
+          departments: ['Computer Science'],
+          school: '',
+          schools: ['School of Engineering & Applied Science'],
+        }),
+      ),
+    ).toBe('Computer Science · School of Engineering & Applied Science');
+  });
+
+  it('surfaces the schools[] school through grouped cluster context', () => {
+    const grouped = buildGroupedSearchResults({
+      query: 'efficient computing',
+      researchEntities: [
+        entity({
+          _id: 'ecl',
+          slug: 'ecl',
+          name: 'The Efficient Computing Lab (ECL)',
+          departments: ['Computer Science'],
+          school: '',
+          schools: ['School of Engineering & Applied Science'],
+        }),
+      ],
+      pathways: [],
+    });
+
+    expect(grouped.clusters[0].contextLine).toBe(
+      'Computer Science · School of Engineering & Applied Science',
+    );
   });
 });
 

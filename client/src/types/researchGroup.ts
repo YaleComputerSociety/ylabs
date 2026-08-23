@@ -133,6 +133,12 @@ export interface ResearchGroup {
   profileResearchAreas?: string[];
   researchAreaSource?: 'PI_PROFILE_FALLBACK';
   school: string;
+  /**
+   * Canonical multi-valued school affiliation. Filtering and faceting read this
+   * field; the scalar `school` can lag empty when a write only sets departments,
+   * so display sites fall back to `schools[0]` when `school` is blank.
+   */
+  schools?: string[];
   /** Number of undergrads currently named on the lab roster, when known. */
   currentUndergradCount?: number;
   /** Verbatim quote from the source page supporting undergraduate access. */
