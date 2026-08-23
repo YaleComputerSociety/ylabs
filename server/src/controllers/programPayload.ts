@@ -8,6 +8,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { humanizeProgramLinkLabel } from '../utils/programLinkLabel';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
+import { classifyProgram, type ProgramClassificationInput } from '../services/programClassifier';
 
 const MAX_PROGRAM_LINKS = 8;
 
@@ -71,6 +72,38 @@ const publicProgramTextArray = (value: unknown): string[] =>
     ? value.flatMap((item) => (typeof item === 'string' ? [redactDirectContactInfo(item)] : []))
     : [];
 
+const asClassificationText = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
+const asClassificationTextArray = (value: unknown): string[] | undefined =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : undefined;
+
+const classificationInputFromProgram = (program: any): ProgramClassificationInput => ({
+  title: asClassificationText(program.title),
+  competitionType: asClassificationText(program.competitionType),
+  summary: asClassificationText(program.summary),
+  description: asClassificationText(program.description),
+  applicationInformation: asClassificationText(program.applicationInformation),
+  eligibility: asClassificationText(program.eligibility),
+  additionalInformation: asClassificationText(program.additionalInformation),
+  purpose: asClassificationTextArray(program.purpose),
+  termOfAward: asClassificationTextArray(program.termOfAward),
+  sourceUrl: asClassificationText(program.sourceUrl),
+});
+
+const publicBestNextStep = (program: any): unknown => {
+  const stored = publicProgramDescription(program.bestNextStep);
+  if (typeof stored === 'string' && stored.trim()) return stored;
+  const hadStoredText =
+    typeof program.bestNextStep === 'string' && program.bestNextStep.trim().length > 0;
+  if (hadStoredText) return stored;
+  return publicProgramDescription(
+    classifyProgram(classificationInputFromProgram(program)).bestNextStep,
+  );
+};
+
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   return {
@@ -87,7 +120,7 @@ export const publicProgramForReader = (program: any) => {
     compensationSummary: publicCompensationSummary(program.compensationSummary),
     hoursPerWeek: program.hoursPerWeek,
     programDates: publicProgramText(program.programDates),
-    bestNextStep: publicProgramDescription(program.bestNextStep),
+    bestNextStep: publicBestNextStep(program),
     prepSteps: publicProgramTextArray(program.prepSteps),
     researchFocused: program.researchFocused === true,
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),

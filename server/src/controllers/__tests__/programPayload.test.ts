@@ -247,7 +247,8 @@ describe('publicProgramForReader read-time redaction ordering (#774)', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58512',
       title: 'Example Travel Prize',
-      applicationInformation: 'Submit your materials and contact office@example.edu with questions.',
+      applicationInformation:
+        'Submit your materials and contact office@example.edu with questions.',
     }) as { applicationInformation: string };
 
     expect(payload.applicationInformation).not.toMatch(/redacted/i);
@@ -312,10 +313,60 @@ describe('publicProgramForReader dump/duplicate prose hygiene (#904)', () => {
       compensationSummary: 'Fellows receive a $5,000 stipend for the ten-week program.',
     });
 
-    expect(payload.eligibility).toBe('Currently enrolled sophomores and juniors are eligible to apply.');
+    expect(payload.eligibility).toBe(
+      'Currently enrolled sophomores and juniors are eligible to apply.',
+    );
     expect(payload.compensationSummary).toBe(
       'Fellows receive a $5,000 stipend for the ten-week program.',
     );
+  });
+});
+
+describe('publicProgramForReader empty bestNextStep fallback (#969)', () => {
+  it('derives a category-appropriate bestNextStep when the stored value is blank', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d5851e',
+      title: 'Solomon Research Fellowship in LGBT Studies',
+      studentFacingCategory: 'Undergraduate research fellowship',
+      bestNextStep: '',
+      prepSteps: ['Official LGBT Studies page', 'Research proposal'],
+      sourceUrl: 'https://lgbts.yale.edu/fellowships-prizes',
+    }) as { bestNextStep: string };
+
+    expect(payload.bestNextStep).toBeTruthy();
+    expect(payload.bestNextStep.trim().length).toBeGreaterThan(0);
+  });
+
+  it('derives a bestNextStep when the field is missing entirely', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d5851f',
+      title: 'Example Summer Research Program',
+      sourceUrl: 'https://example.yale.edu/summer-research',
+    }) as { bestNextStep: string };
+
+    expect(payload.bestNextStep.trim().length).toBeGreaterThan(0);
+  });
+
+  it('keeps a curated bestNextStep untouched rather than overriding with the fallback', () => {
+    const curated =
+      'Review LGBT Studies eligibility and prepare the research proposal before applying.';
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58530',
+      title: 'Solomon Research Fellowship in LGBT Studies',
+      bestNextStep: curated,
+    }) as { bestNextStep: string };
+
+    expect(payload.bestNextStep).toBe(curated);
+  });
+
+  it('does not fabricate guidance when a stored bestNextStep is scrubbed to empty by dump hygiene', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58531',
+      title: 'Example Roster-Dump Program',
+      bestNextStep: SYNTHETIC_MENTOR_ROSTER_DUMP,
+    }) as { bestNextStep: string };
+
+    expect(payload.bestNextStep).toBe('');
   });
 });
 
