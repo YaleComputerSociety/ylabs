@@ -983,7 +983,7 @@ describe('getResearchGroupDetail', () => {
   });
 
   it('renders a member card title stripped of a leaked raw email address', async () => {
-    seedSingleMemberDetail('Professor of Immunobiology larry.hammer@yale.edu');
+    seedSingleMemberDetail('Professor of Immunobiology fixture.researcher@yale.edu');
 
     const detail = await getResearchGroupDetail('title-hygiene-lab');
 

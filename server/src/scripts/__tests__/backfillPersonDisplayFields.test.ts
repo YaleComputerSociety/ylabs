@@ -82,7 +82,7 @@ describe('backfillPersonDisplayFields core', () => {
 
   it('drops a title carrying a leaked raw email address', () => {
     const composed = composeDisplayProfileFromLegacy({
-      user: { title: 'Professor of Immunobiology larry.hammer@yale.edu' },
+      user: { title: 'Professor of Immunobiology fixture.researcher@yale.edu' },
     });
     expect(composed.title).toBeUndefined();
   });
