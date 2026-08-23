@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeAcceptanceVerdict,
+  isHistoricalUndergradEvidence,
   verdictBadgeStyles,
   verdictLabel,
   TrustVerdict,
@@ -212,6 +213,88 @@ describe('computeAcceptanceVerdict — chip details and ordering', () => {
     );
     expect(result.evidence[0].label).toBe('1 past advisee');
     expect(result.evidence[0].detail).toBe('(2020)');
+  });
+});
+
+describe('isHistoricalUndergradEvidence — historical roster detection (#1209)', () => {
+  it('flags the sampled alumni/past-roster evidence quotes', () => {
+    const historical = [
+      'Amber Anders 2009 Undergraduate student ... now Senior Director Commercial BizOps, Illumina',
+      'Grant Senyei, Yale Undergraduate student (2008-2010), now a medical student at Northwestern',
+      'Dustin Morado, Georgia Tech, Visiting Undergraduate in Research 2010, 2011; Jeffery Yang 2017',
+      'Former undergraduate researchers: Megan Sullivan (OSU), Lisa Miller (OSU), Kaiyang Xu (OSU)',
+      'Jane Doe, alumna, graduated 2019',
+    ];
+    for (const quote of historical) {
+      expect(isHistoricalUndergradEvidence(quote)).toBe(true);
+    }
+  });
+
+  it('does not flag current-roster or accepting language', () => {
+    const current = [
+      'Three undergraduate students currently work in the lab.',
+      'Now accepting undergraduate applications for Fall 2025.',
+      'Undergraduate researchers (2023–present).',
+      'Our current undergraduate team includes Jane and Bob.',
+      '10 current undergraduate(s) listed',
+      '',
+      undefined,
+    ];
+    for (const quote of current) {
+      expect(isHistoricalUndergradEvidence(quote)).toBe(false);
+    }
+  });
+});
+
+describe('computeAcceptanceVerdict — historical undergrad roster guard (#1209)', () => {
+  it('downgrades a historical-quote current-undergrad roster to a moderate past signal', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        currentUndergradCount: 10,
+        undergradEvidenceQuote:
+          'Amber Anders 2009 Undergraduate student ... now Senior Director, Illumina',
+      }),
+    );
+    const chip = result.evidence.find((e) => e.kind === 'lab-lists-undergrads');
+    expect(chip?.strength).toBe('moderate');
+    expect(chip?.detail).toBe('Undergrads named on the lab roster, including past members.');
+    expect(result.verdict).toBe('likely-accepting');
+  });
+
+  it('keeps a current-quote current-undergrad roster as a strong current signal', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        currentUndergradCount: 3,
+        undergradEvidenceQuote: 'Three undergraduate students currently work in the lab.',
+      }),
+    );
+    const chip = result.evidence.find((e) => e.kind === 'lab-lists-undergrads');
+    expect(chip?.strength).toBe('strong');
+    expect(chip?.detail).toBe('Current undergrads named on the lab roster.');
+    expect(result.verdict).toBe('likely-accepting');
+  });
+
+  it('softens a CURRENT_UNDERGRADS accessSummary chip when the roster quote is historical', () => {
+    const result = computeAcceptanceVerdict(
+      baseGroup({
+        undergradEvidenceQuote: 'Former undergraduate researchers: Megan Sullivan, Lisa Miller',
+        accessSummary: {
+          status: 'reach-out-plausible',
+          confidence: 0.8,
+          evidence: [
+            {
+              signalType: 'CURRENT_UNDERGRADS',
+              confidence: 'HIGH',
+              excerpt: '2 current undergraduate(s) listed',
+            },
+          ],
+          signalTypes: ['CURRENT_UNDERGRADS'],
+          bestNextStep: 'Review the roster.',
+        },
+      }),
+    );
+    const chip = result.evidence.find((e) => e.label === 'Current undergrads');
+    expect(chip?.strength).toBe('moderate');
   });
 });
 
