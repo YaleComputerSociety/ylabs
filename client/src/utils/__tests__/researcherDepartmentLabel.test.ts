@@ -64,6 +64,31 @@ describe('canonicalizeResearcherDepartmentLabel', () => {
     ).toBe('Neurosurgery');
   });
 
+  it('strips a leading org code whose remainder is an all-caps acronym, then resolves it', () => {
+    expect(
+      canonicalizeResearcherDepartmentLabel('FASMCD MCDB', [
+        {
+          abbreviation: 'MCDB',
+          name: 'Molecular, Cellular, and Developmental Biology',
+          displayName: 'MCDB - Molecular, Cellular, and Developmental Biology',
+        },
+      ]),
+    ).toBe('Molecular, Cellular, and Developmental Biology');
+  });
+
+  it('trusts an all-caps remainder that matches one of the entity clean departments', () => {
+    expect(
+      canonicalizeResearcherDepartmentLabel('MEDNSC MRI', departmentTable, ['MRI']),
+    ).toBe('MRI');
+  });
+
+  it('drops an org code whose all-caps remainder resolves to no real department', () => {
+    expect(
+      canonicalizeResearcherDepartmentLabel('MEDCSC TS/OCD/ADHD', departmentTable),
+    ).toBeNull();
+    expect(canonicalizeResearcherDepartmentLabel('FASMCD MCDB', departmentTable)).toBeNull();
+  });
+
   it('drops bare administrative units and empty input', () => {
     expect(canonicalizeResearcherDepartmentLabel('Administration', departmentTable)).toBeNull();
     expect(canonicalizeResearcherDepartmentLabel('  ', departmentTable)).toBeNull();
