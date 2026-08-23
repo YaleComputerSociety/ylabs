@@ -67,15 +67,15 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
   it('materializes a PI lead when the matched user has an email-local-part netid and no orcid', async () => {
     const entity = await seedEntity('synthetic-recall-dotted');
     await User.create({
-      netid: 'pat.rivera',
-      email: 'pat.rivera@yale.edu',
-      fname: 'Pat',
-      lname: 'Rivera',
+      netid: 'avery.parker',
+      email: 'avery.parker@yale.edu',
+      fname: 'Avery',
+      lname: 'Parker',
       userType: 'professor',
     });
 
     await materializeInferredPiMembership(String(entity._id), [
-      inferredPiKeyObservation('pat.rivera'),
+      inferredPiKeyObservation('avery.parker'),
     ]);
 
     const leads = await leadRolesForEntity(entity._id as mongoose.Types.ObjectId);
@@ -84,7 +84,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     const researcher = await Researcher.findById(leads[0].personId).lean<{
       displayName?: string;
     }>();
-    expect(researcher?.displayName).toBe('Pat Rivera');
+    expect(researcher?.displayName).toBe('Avery Parker');
   });
 
   it('materializes a PI lead when the matched user has a synthetic key netid but a valid orcid', async () => {
