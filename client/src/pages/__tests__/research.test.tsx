@@ -465,6 +465,37 @@ describe('Research page', () => {
     );
   });
 
+  it('shortens the hero search placeholder on compact viewports so it does not clip mid-word', async () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+
+    try {
+      mockSearchResponses((url) =>
+        url === '/research/search'
+          ? researchSearchResponse([researchEntity])
+          : unexpectedSearchEndpoint(url),
+      );
+
+      renderResearch();
+
+      expect(screen.getByPlaceholderText('Type a topic, professor, or lab')).toBeTruthy();
+      expect(
+        screen.queryByPlaceholderText('Type a topic, professor, lab, or research question'),
+      ).toBeNull();
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
   it('submits quick-start prompts as research searches', async () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);
