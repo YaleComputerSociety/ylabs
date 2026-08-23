@@ -165,6 +165,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('Analytics charts and CSV export', () => {
@@ -185,7 +186,12 @@ describe('Analytics charts and CSV export', () => {
     mockEndpoints();
     const createObjectURL = vi.fn((_blob: Blob) => 'blob:fixture');
     const revokeObjectURL = vi.fn();
-    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+    class MockURL extends URL {}
+    (MockURL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL =
+      createObjectURL;
+    (MockURL as unknown as { revokeObjectURL: typeof revokeObjectURL }).revokeObjectURL =
+      revokeObjectURL;
+    vi.stubGlobal('URL', MockURL);
 
     render(<Analytics />);
 
