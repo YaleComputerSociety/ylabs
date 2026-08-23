@@ -731,7 +731,7 @@ function candidateFromDetailPage(
     contentRoot
       .find('a')
       .toArray()
-      .filter((link) => !isInExcludedPageRegion($(link)) && isInPrimaryContent($, $(link)))
+      .filter((link) => !isInExcludedPageRegion($(link)))
       .map((link) => {
         const rawUrl = absoluteUrl($(link).attr('href'), pageUrl);
         const url = rawUrl ? normalizeLinkUrl(rawUrl) : undefined;
