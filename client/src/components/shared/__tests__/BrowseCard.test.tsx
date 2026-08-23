@@ -139,3 +139,35 @@ describe('Browse admin controls', () => {
     expect(button.className).toContain('min-w-[44px]');
   });
 });
+
+describe('Program card visual hierarchy', () => {
+  const withDeadline: BrowsableItem = {
+    type: 'fellowship',
+    data: { ...fellowship, id: 'program-deadline', deadline: '2999-06-01T00:00:00.000Z' },
+  };
+
+  it('renders the deadline as a prominent primary-line element', () => {
+    renderAdmin(<BrowseCard item={withDeadline} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    const deadline = screen.getByText(/^Due /);
+    expect(deadline.className).toContain('text-sm');
+    expect(deadline.className).toContain('font-semibold');
+  });
+
+  it('omits the auto journey summary but keeps a curated best next step', () => {
+    renderAdmin(<BrowseCard item={item} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    expect(screen.getByText(/Find a mentor before applying/)).toBeTruthy();
+  });
+
+  it('drops the next-step line when no curated best next step exists', () => {
+    const withoutNextStep: BrowsableItem = {
+      type: 'fellowship',
+      data: { ...fellowship, id: 'program-no-next', bestNextStep: '' },
+    };
+    renderAdmin(<BrowseCard item={withoutNextStep} isFavorite={false} onOpenModal={vi.fn()} />);
+
+    expect(screen.queryByText('Next:')).toBeNull();
+    expect(screen.getByText('Funding after mentor')).toBeTruthy();
+  });
+});
