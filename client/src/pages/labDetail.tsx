@@ -58,6 +58,7 @@ import {
   sanitizeFacultyResearchCopy,
 } from '../utils/researchEntityCopy';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
 import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
 import {
@@ -576,7 +577,7 @@ const DecisionSummary = ({
           )}
           {principalInvestigator && (
             <div className="py-4 first:pt-0 last:pb-0">
-              <SectionHeading>Principal Investigator</SectionHeading>
+              <SectionHeading>{leadSectionHeading([principalInvestigator])}</SectionHeading>
               <div>
                 <LabMembersList
                   members={[principalInvestigator]}
@@ -1019,11 +1020,7 @@ const LabDetail = () => {
 
           {showDedicatedPrincipalInvestigatorSection && (
             <section>
-              <SectionHeading>
-                {principalInvestigators.length > 1
-                  ? 'Principal Investigators'
-                  : 'Principal Investigator'}
-              </SectionHeading>
+              <SectionHeading>{leadSectionHeading(principalInvestigators)}</SectionHeading>
               {leadIdentityUnderReview ? (
                 <div
                   className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"

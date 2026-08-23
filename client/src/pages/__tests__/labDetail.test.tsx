@@ -854,6 +854,73 @@ describe('LabDetail page', () => {
     expect(screen.getAllByText('Example Studies')).toHaveLength(1);
   });
 
+  it('renders a director-led org home under a Directors heading, not Principal Investigators (#693)', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'institute',
+        entityType: 'INSTITUTE',
+      },
+      members: [
+        {
+          role: 'director',
+          user: {
+            publicKey: 'fixture-director',
+            fname: 'Fixture',
+            lname: 'Director',
+            displayName: 'Fixture Director',
+            title: 'Sterling Professor of Applied Physics',
+          },
+        },
+        {
+          role: 'co-director',
+          user: {
+            publicKey: 'fixture-co-director',
+            fname: 'Fixture',
+            lname: 'Codirector',
+            displayName: 'Fixture Codirector',
+            title: 'Deputy Director and Professor of Physics',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('heading', { name: 'Directors' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Principal Investigators' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Principal Investigator' })).toBeNull();
+  });
+
+  it('labels a single director lead as Director in the decision summary, not Principal Investigator (#693)', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'center',
+        entityType: 'CENTER',
+      },
+      members: [
+        {
+          role: 'director',
+          user: {
+            publicKey: 'fixture-solo-director',
+            fname: 'Solo',
+            lname: 'Director',
+            displayName: 'Solo Director',
+            title: 'Professor and Director',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('heading', { name: 'Director' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Principal Investigator' })).toBeNull();
+  });
+
   it('does not choose an arbitrary lead professor when no PI matches the official profile', async () => {
     renderLabDetail({
       ...basePayload,
