@@ -147,6 +147,41 @@ describe('publicProgramForReader redaction placeholder hygiene (#671 residual)',
   });
 });
 
+describe('publicProgramForReader read-time redaction ordering (#774)', () => {
+  it('does not leave a token when a raw email is redacted at read time in the summary', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58510',
+      title: 'Example Richter Summer Fellowship',
+      summary: 'Questions about the fellowship can be directed to grants@example.edu.',
+    }) as { summary: string };
+
+    expect(payload.summary).not.toMatch(/redacted/i);
+    expect(payload.summary).not.toContain('grants@example.edu');
+  });
+
+  it('does not leave a token when a raw email is redacted at read time in the eligibility', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58511',
+      title: 'Example Mellon Senior Research Grant',
+      eligibility: 'International students should contact taxoffice@example.edu before applying.',
+    }) as { eligibility: string };
+
+    expect(payload.eligibility).not.toMatch(/redacted/i);
+    expect(payload.eligibility).not.toContain('taxoffice@example.edu');
+  });
+
+  it('does not leave a token when a raw email is redacted at read time in applicationInformation', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58512',
+      title: 'Example Travel Prize',
+      applicationInformation: 'Submit your materials and contact office@example.edu with questions.',
+    }) as { applicationInformation: string };
+
+    expect(payload.applicationInformation).not.toMatch(/redacted/i);
+    expect(payload.applicationInformation).not.toContain('office@example.edu');
+  });
+});
+
 const SYNTHETIC_MENTOR_ROSTER_DUMP = [
   'Casey Parker ‘28 Mentor: Dr. Riley Sawyer',
   'Jordan Taylor ‘27 Mentor: Dr. Harper Lee',

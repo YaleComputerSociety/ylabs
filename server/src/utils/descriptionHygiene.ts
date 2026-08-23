@@ -176,12 +176,19 @@ function countMatches(text: string, pattern: RegExp): number {
 }
 
 /**
- * A recipient roster or person list: a run of "Name '28 Mentor: ..." rows, or a
- * dense list of names with almost no sentences. Mentor markers are the strongest
- * standalone signal; the class-year and name-density arms are both gated on the
- * absence of real sentences so multi-sentence donor/eligibility prose that merely
- * mentions class years or names people is kept.
+ * A recipient roster or person list: a run of "Name '28 Mentor: ..." rows, a
+ * dense list of names with almost no sentences, or a "meet the mentors" bio
+ * roster that names many people and repeatedly invites students to reach out to
+ * or contact them individually. Mentor markers are the strongest standalone
+ * signal; the class-year and name-density arms are both gated on the absence of
+ * real sentences so multi-sentence donor/eligibility prose that merely mentions
+ * class years or names people is kept, while the contact-invitation arm catches
+ * a many-people bio dump written in full sentences (#904) that the
+ * sentence-gated arms miss.
  */
+const contactInvitationPattern =
+  /\b(?:feel free to (?:reach out|contact|email)|reach out to (?:them|him|her|us)|contact (?:him|her|them)(?:\s+(?:at|directly|via))?)\b/gi;
+
 export function isRosterShapedText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
@@ -192,7 +199,9 @@ export function isRosterShapedText(text: string): boolean {
   const mentorMarkers = countMatches(normalized, /\bmentors?\s*:/gi);
   if (mentorMarkers >= 3) return true;
   const uniqueNames = new Set(normalized.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g) || []).size;
-  return uniqueNames >= 8 && isSentenceSparse;
+  if (uniqueNames >= 8 && isSentenceSparse) return true;
+  const contactInvitations = countMatches(normalized, contactInvitationPattern);
+  return contactInvitations >= 2 && uniqueNames >= 8;
 }
 
 /**
