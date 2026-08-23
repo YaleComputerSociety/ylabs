@@ -364,26 +364,6 @@ export default function Navbar() {
                   <AnalyticsButton />
                 </ListItem>
               )}
-              {isProfessorUser && (
-                <ListItem sx={listItemStyle}>
-                  <Button
-                    component={Link}
-                    to="/account"
-                    sx={{
-                      textTransform: 'none',
-                      color: location.pathname === '/account' ? 'var(--yr-blue)' : 'var(--yr-text)',
-                      fontWeight: location.pathname === '/account' ? 600 : 400,
-                      justifyContent: 'flex-start',
-                      minHeight: 44,
-                      width: '100%',
-                      pl: 1,
-                      ...navFocusRingSx,
-                    }}
-                  >
-                    Edit Profile
-                  </Button>
-                </ListItem>
-              )}
               {isProfessorUser && user?.netId && (
                 <ListItem sx={listItemStyle}>
                   <Button
