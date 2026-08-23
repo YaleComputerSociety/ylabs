@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildResearchDetailSources,
+  isCitableAccessSignal,
   isFileShareSourceUrl,
   isIdentifierOrGrantDbSourceUrl,
   isLikelyOfficialPersonProfileUrl,
@@ -471,6 +472,80 @@ describe('buildResearchDetailSources', () => {
 
     expect(sources).toHaveLength(1);
     expect(sources[0].isLikelyUnavailable).toBe(true);
+  });
+
+  it('never cites a LOW-confidence access signal whose source belongs to an unrelated person (#997)', () => {
+    const labWebsite = 'https://medicine.yale.edu/profile/david-glahn';
+    const unrelatedPersonUrl = 'https://music.yale.edu/people/david-lang';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: labWebsite,
+        sourceUrls: [],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'LOW',
+          confidenceScore: 0.35,
+          sourceUrl: unrelatedPersonUrl,
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual([labWebsite]);
+    expect(JSON.stringify(sources)).not.toContain('music.yale.edu');
+  });
+
+  it('drops an access signal whose confidenceScore is below the citable threshold even when labelled MEDIUM', () => {
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://lab.example.test/',
+        sourceUrls: [],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'MEDIUM',
+          confidenceScore: 0.3,
+          sourceUrl: 'https://unrelated.example.test/person',
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual(['https://lab.example.test']);
+  });
+
+  it('still cites a corroborating access signal at or above the confidence threshold', () => {
+    const evidenceUrl = 'https://lab.example.test/join';
+
+    const sources = buildResearchDetailSources({
+      group: {
+        websiteUrl: 'https://lab.example.test/',
+        sourceUrls: [],
+      },
+      accessSignals: [
+        {
+          signalType: 'REACH_OUT_PLAUSIBLE',
+          confidence: 'HIGH',
+          confidenceScore: 0.9,
+          sourceUrl: evidenceUrl,
+        },
+      ],
+    });
+
+    expect(sources.map((source) => source.url)).toEqual(['https://lab.example.test', evidenceUrl]);
+  });
+});
+
+describe('isCitableAccessSignal', () => {
+  it('rejects LOW confidence and sub-threshold scores, accepts stronger or unspecified signals', () => {
+    expect(isCitableAccessSignal({ confidence: 'LOW', confidenceScore: 0.35 })).toBe(false);
+    expect(isCitableAccessSignal({ confidence: 'low' })).toBe(false);
+    expect(isCitableAccessSignal({ confidence: 'MEDIUM', confidenceScore: 0.49 })).toBe(false);
+    expect(isCitableAccessSignal({ confidence: 'MEDIUM', confidenceScore: 0.5 })).toBe(true);
+    expect(isCitableAccessSignal({ confidence: 'HIGH' })).toBe(true);
+    expect(isCitableAccessSignal({ signalType: 'REACH_OUT_PLAUSIBLE' })).toBe(true);
   });
 });
 
