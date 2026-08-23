@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 
 import Analytics from '../analytics';
 import axios from '../../utils/axios';
@@ -810,5 +811,76 @@ describe('Analytics page', () => {
     expect(screen.getAllByText('analyst01').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('nameless02').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('undefined')).toBeNull();
+  });
+
+  it('renders resolved names, entity links, and singular counts in Top Research Entities', async () => {
+    const enrichedData: AnalyticsData = {
+      ...analyticsData,
+      research: {
+        ...analyticsData.research,
+        topEntities: [
+          {
+            entityType: 'research_entity',
+            entityId: '507f1f77bcf86cd799439011',
+            views: 12,
+            uniqueViewers: 4,
+            name: 'Quantum Computing Lab',
+            href: '/research/quantum-lab',
+          },
+          {
+            entityType: 'profile',
+            entityId: 'jdoe',
+            views: 1,
+            uniqueViewers: 1,
+            name: 'Jane Doe',
+            href: '/profile/jdoe',
+          },
+        ],
+      },
+    };
+
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/analytics') {
+        return Promise.resolve({ data: enrichedData });
+      }
+      if (url === '/analytics/users') {
+        return Promise.resolve({ data: { users: [], total: 0, limit: 25 } });
+      }
+      if (url === '/admin/admin-grants') {
+        return Promise.resolve({
+          data: { activeCount: 0, grants: [], legacyAdminsWithoutGrant: [] },
+        });
+      }
+      if (url === '/analytics/search-quality') {
+        return Promise.resolve({ data: { totalSearches: 0, zeroResultSearches: 0 } });
+      }
+      if (url === '/analytics/search-queries') {
+        return Promise.resolve({ data: { queries: [] } });
+      }
+      if (url === '/analytics/funnel') {
+        return Promise.resolve({ data: { stages: [] } });
+      }
+      if (url === '/analytics/actions') {
+        return Promise.resolve({ data: { cards: [], items: [] } });
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`));
+    });
+
+    render(
+      <MemoryRouter>
+        <Analytics />
+      </MemoryRouter>,
+    );
+
+    const labLink = await screen.findByRole('link', { name: /Quantum Computing Lab/ });
+    expect(labLink.getAttribute('href')).toBe('/research/quantum-lab');
+    expect(screen.getByText('Quantum Computing Lab')).toBeTruthy();
+    expect(screen.getByText('507f1f77bcf86cd799439011')).toBeTruthy();
+
+    const profileLink = screen.getByRole('link', { name: /Jane Doe/ });
+    expect(profileLink.getAttribute('href')).toBe('/profile/jdoe');
+
+    expect(screen.getByText('12 views / 4 users')).toBeTruthy();
+    expect(screen.getByText('1 view / 1 user')).toBeTruthy();
   });
 });

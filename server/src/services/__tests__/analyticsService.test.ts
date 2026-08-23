@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   analyticsUpdateOne: vi.fn(),
   userFindOneAndUpdate: vi.fn(),
   userAggregate: vi.fn(),
+  userFind: vi.fn(),
   researchEntityAggregate: vi.fn(),
+  researchEntityFind: vi.fn(),
+  fellowshipFind: vi.fn(),
   getListingModel: vi.fn(),
 }));
 
@@ -61,9 +64,14 @@ vi.mock('../../models/index', () => ({
     findOne: vi.fn(),
     findOneAndUpdate: mocks.userFindOneAndUpdate,
     aggregate: mocks.userAggregate,
+    find: mocks.userFind,
   },
   ResearchEntity: {
     aggregate: mocks.researchEntityAggregate,
+    find: mocks.researchEntityFind,
+  },
+  Fellowship: {
+    find: mocks.fellowshipFind,
   },
 }));
 
@@ -616,6 +624,114 @@ describe('getAnalytics research coverage and range scoping', () => {
     expect(projectStage.$project.fname).toBe('$user.fname');
     expect(projectStage.$project.lname).toBe('$user.lname');
   });
+
+  it('resolves top research entity ids to human-readable names and hrefs', async () => {
+    const researchEntityId = '507f1f77bcf86cd799439011';
+    const fellowshipId = '507f1f77bcf86cd799439012';
+    const listingId = '507f1f77bcf86cd799439013';
+
+    mocks.analyticsAggregate.mockResolvedValue([
+      {
+        ...eventFacetStub,
+        topEntities: [
+          {
+            entityType: 'research_entity',
+            entityId: researchEntityId,
+            views: 12,
+            uniqueViewers: 4,
+          },
+          { entityType: 'fellowship', entityId: fellowshipId, views: 8, uniqueViewers: 2 },
+          { entityType: 'listing', entityId: listingId, views: 5, uniqueViewers: 1 },
+          { entityType: 'profile', entityId: 'prof-netid', views: 3, uniqueViewers: 1 },
+        ],
+      },
+    ]);
+    mocks.userAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 1, confirmed: 1 }],
+        byType: [],
+        newUsersLast7Days: [],
+        newUsersToday: [],
+        newUsersTodayByType: [],
+      },
+    ]);
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    const chainableFindReturning =
+      (docs: unknown[]) =>
+      () => ({
+        select: () => ({ lean: async () => docs }),
+        lean: async () => docs,
+      });
+    mocks.getListingModel.mockReturnValue({
+      aggregate: vi.fn().mockResolvedValue([listingFacetStub]),
+      find: chainableFindReturning([{ _id: listingId, title: 'Legacy Listing Title' }]),
+      collection: { name: 'listings' },
+    });
+    mocks.researchEntityFind.mockImplementation(
+      chainableFindReturning([
+        {
+          _id: researchEntityId,
+          name: 'Quantum Lab',
+          displayName: 'Quantum Computing Lab',
+          slug: 'quantum-lab',
+        },
+      ]),
+    );
+    mocks.fellowshipFind.mockImplementation(
+      chainableFindReturning([{ _id: fellowshipId, title: 'Summer Research Fellowship' }]),
+    );
+    mocks.userFind.mockImplementation(
+      chainableFindReturning([{ netid: 'prof-netid', fname: 'Jane', lname: 'Doe' }]),
+    );
+
+    const analytics = await getAnalytics({
+      start: new Date('2026-08-01T00:00:00.000Z'),
+      end: new Date('2026-08-08T00:00:00.000Z'),
+    });
+
+    expect(analytics.research.topEntities).toEqual([
+      {
+        entityType: 'research_entity',
+        entityId: researchEntityId,
+        views: 12,
+        uniqueViewers: 4,
+        name: 'Quantum Computing Lab',
+        href: '/research/quantum-lab',
+      },
+      {
+        entityType: 'fellowship',
+        entityId: fellowshipId,
+        views: 8,
+        uniqueViewers: 2,
+        name: 'Summer Research Fellowship',
+      },
+      {
+        entityType: 'listing',
+        entityId: listingId,
+        views: 5,
+        uniqueViewers: 1,
+        name: 'Legacy Listing Title',
+      },
+      {
+        entityType: 'profile',
+        entityId: 'prof-netid',
+        views: 3,
+        uniqueViewers: 1,
+        name: 'Jane Doe',
+        href: '/profile/prof-netid',
+      },
+    ]);
+  });
 });
 
 describe('shouldSuppressBetaAnalyticsEvent', () => {
@@ -704,6 +820,56 @@ describe('getUserAnalyticsDrilldown', () => {
 
     expect(mocks.analyticsAggregate).not.toHaveBeenCalled();
     expect(mocks.analyticsFind).not.toHaveBeenCalled();
+  });
+
+  it('resolves listing and fellowship ids to titles for drilldown events', async () => {
+    const listingId = '507f1f77bcf86cd799439021';
+    const fellowshipId = '507f1f77bcf86cd799439022';
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+    mocks.analyticsAggregate.mockResolvedValue([
+      { users: [{ netid: 'student1', userType: 'undergraduate', totalEvents: 2 }], total: 1 },
+    ]);
+    mocks.analyticsFind.mockReturnValue({
+      sort: () => ({
+        limit: () => ({
+          lean: async () => [
+            {
+              _id: 'evt1',
+              eventType: 'research_view',
+              userType: 'undergraduate',
+              listingId,
+              timestamp: new Date('2026-08-01T00:00:00.000Z'),
+            },
+            {
+              _id: 'evt2',
+              eventType: 'fellowship_view',
+              userType: 'undergraduate',
+              fellowshipId,
+              timestamp: new Date('2026-08-02T00:00:00.000Z'),
+            },
+          ],
+        }),
+      }),
+    });
+    const chainableFindReturning =
+      (docs: unknown[]) =>
+      () => ({
+        select: () => ({ lean: async () => docs }),
+        lean: async () => docs,
+      });
+    mocks.getListingModel.mockReturnValue({
+      find: chainableFindReturning([{ _id: listingId, title: 'Genomics Lab Position' }]),
+    });
+    mocks.fellowshipFind.mockImplementation(
+      chainableFindReturning([{ _id: fellowshipId, title: 'Summer Fellowship' }]),
+    );
+
+    const result = await getUserAnalyticsDrilldown('student1');
+
+    expect(result?.events).toEqual([
+      expect.objectContaining({ listingId, listingTitle: 'Genomics Lab Position' }),
+      expect.objectContaining({ fellowshipId, fellowshipTitle: 'Summer Fellowship' }),
+    ]);
   });
 });
 

@@ -4345,7 +4345,9 @@ test('analytics user drilldown sanitizes legacy event fields before response', (
     /const searchDepartments = sanitizeAnalyticsStringArray\(event\?\.searchDepartments\)/,
   );
   assert.match(source, /const metadata = sanitizeAnalyticsMetadata\(event\?\.metadata\)/);
-  assert.match(source, /events: events\.map\(publicAnalyticsUserEvent\)/);
+  assert.match(source, /const publicEvents = events\.map\(publicAnalyticsUserEvent\)/);
+  assert.match(source, /const enrichedEvents = publicEvents\.map\(/);
+  assert.match(source, /events: enrichedEvents/);
   assert.doesNotMatch(source, /searchQuery: event\.searchQuery/);
   assert.doesNotMatch(source, /searchDepartments: event\.searchDepartments/);
   assert.doesNotMatch(source, /metadata: event\.metadata/);

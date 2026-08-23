@@ -2,7 +2,7 @@
  * Analytics event logging and aggregation service.
  */
 import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../models/analytics';
-import { User, ResearchEntity } from '../models/index';
+import { User, ResearchEntity, Fellowship } from '../models/index';
 import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -184,7 +184,9 @@ export interface AnalyticsUserEvent {
   eventType: AnalyticsEventType;
   userType: string;
   listingId?: string;
+  listingTitle?: string;
   fellowshipId?: string;
+  fellowshipTitle?: string;
   searchQuery?: string;
   searchDepartments?: string[];
   metadata?: any;
@@ -457,6 +459,9 @@ const normalizeAnalyticsStoredObjectIdString = (value: unknown): string | undefi
   }
   return normalizeAnalyticsObjectIdString(value);
 };
+
+const toAnalyticsObjectIds = (ids: string[]): Types.ObjectId[] =>
+  ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
 
 const validateUserAnalyticsSearch = (value?: string): string | undefined => {
   if (value === undefined) {
@@ -735,9 +740,53 @@ export const getUserAnalyticsDrilldown = async (
     .limit(limit)
     .lean();
 
+  const publicEvents = events.map(publicAnalyticsUserEvent);
+  const listingIds = Array.from(
+    new Set(publicEvents.map((event) => event.listingId).filter((id): id is string => Boolean(id))),
+  );
+  const fellowshipIds = Array.from(
+    new Set(
+      publicEvents.map((event) => event.fellowshipId).filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const [drilldownListings, drilldownFellowships] = await Promise.all([
+    listingIds.length
+      ? getListingModel()
+          .find({ _id: { $in: toAnalyticsObjectIds(listingIds) } })
+          .select('title')
+          .lean()
+      : Promise.resolve([]),
+    fellowshipIds.length
+      ? Fellowship.find({ _id: { $in: toAnalyticsObjectIds(fellowshipIds) } })
+          .select('title')
+          .lean()
+      : Promise.resolve([]),
+  ]);
+  const listingTitleById = new Map(
+    (drilldownListings as Array<{ _id: unknown; title?: string }>).map(
+      (listing) => [String(listing._id), listing.title] as const,
+    ),
+  );
+  const fellowshipTitleById = new Map(
+    (drilldownFellowships as Array<{ _id: unknown; title?: string }>).map(
+      (fellowship) => [String(fellowship._id), fellowship.title] as const,
+    ),
+  );
+  const enrichedEvents = publicEvents.map((event) => {
+    const listingTitle = event.listingId ? listingTitleById.get(event.listingId) : undefined;
+    const fellowshipTitle = event.fellowshipId
+      ? fellowshipTitleById.get(event.fellowshipId)
+      : undefined;
+    return {
+      ...event,
+      ...(listingTitle ? { listingTitle } : {}),
+      ...(fellowshipTitle ? { fellowshipTitle } : {}),
+    };
+  });
+
   return {
     user,
-    events: events.map(publicAnalyticsUserEvent),
+    events: enrichedEvents,
     limit,
   };
 };
@@ -2424,6 +2473,92 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     };
   };
 
+  const topEntitiesRaw = (research.topEntities || []) as Array<{
+    entityType: string;
+    entityId: string;
+    views: number;
+    uniqueViewers: number;
+  }>;
+  const topEntityIdsFor = (entityType: string): string[] =>
+    topEntitiesRaw.filter((entity) => entity.entityType === entityType).map((entity) => entity.entityId);
+  const [topResearchEntityDocs, topFellowshipDocs, topListingDocs, topProfileDocs] =
+    await Promise.all([
+      topEntityIdsFor('research_entity').length
+        ? ResearchEntity.find({
+            _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('research_entity')) },
+          })
+            .select('name displayName slug')
+            .lean()
+        : Promise.resolve([]),
+      topEntityIdsFor('fellowship').length
+        ? Fellowship.find({ _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('fellowship')) } })
+            .select('title')
+            .lean()
+        : Promise.resolve([]),
+      topEntityIdsFor('listing').length
+        ? getListingModel()
+            .find({ _id: { $in: toAnalyticsObjectIds(topEntityIdsFor('listing')) } })
+            .select('title')
+            .lean()
+        : Promise.resolve([]),
+      topEntityIdsFor('profile').length
+        ? User.find({ netid: { $in: topEntityIdsFor('profile') } })
+            .select('netid fname lname')
+            .lean()
+        : Promise.resolve([]),
+    ]);
+  const researchEntityById = new Map(
+    (topResearchEntityDocs as Array<{ _id: unknown; name?: string; displayName?: string; slug?: string }>).map(
+      (doc) => [String(doc._id), doc] as const,
+    ),
+  );
+  const fellowshipTitleById = new Map(
+    (topFellowshipDocs as Array<{ _id: unknown; title?: string }>).map(
+      (doc) => [String(doc._id), doc.title] as const,
+    ),
+  );
+  const listingTitleById = new Map(
+    (topListingDocs as Array<{ _id: unknown; title?: string }>).map(
+      (doc) => [String(doc._id), doc.title] as const,
+    ),
+  );
+  const profileByNetid = new Map(
+    (topProfileDocs as Array<{ netid: string; fname?: string; lname?: string }>).map(
+      (doc) => [doc.netid, doc] as const,
+    ),
+  );
+  const enrichedTopEntities = topEntitiesRaw.map((entity) => {
+    let name: string | undefined;
+    let href: string | undefined;
+    switch (entity.entityType) {
+      case 'research_entity': {
+        const doc = researchEntityById.get(entity.entityId);
+        name = doc?.displayName || doc?.name;
+        if (doc?.slug) href = `/research/${doc.slug}`;
+        break;
+      }
+      case 'fellowship': {
+        name = fellowshipTitleById.get(entity.entityId);
+        break;
+      }
+      case 'listing': {
+        name = listingTitleById.get(entity.entityId);
+        break;
+      }
+      case 'profile': {
+        const doc = profileByNetid.get(entity.entityId);
+        name = [doc?.fname, doc?.lname].filter(Boolean).join(' ') || undefined;
+        href = `/profile/${entity.entityId}`;
+        break;
+      }
+    }
+    return {
+      ...entity,
+      ...(name ? { name } : {}),
+      ...(href ? { href } : {}),
+    };
+  });
+
   return {
     visitors: {
       lifetime: {
@@ -2479,7 +2614,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
       byEventType: research.byEventType || [],
       byEntityType: research.byEntityType || [],
       byUserType: combineAnalyticsUserTypeCounts(research.byUserType || []),
-      topEntities: research.topEntities || [],
+      topEntities: enrichedTopEntities,
     },
     listings: {
       overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },
