@@ -92,6 +92,26 @@ describe('researchEntitySearchIndexService', () => {
     expect(buildStudentSearchTerms({ name: 'Ailong Airway Lab' })).toEqual([]);
   });
 
+  it('surfaces computational-vision labs under the "computer vision" bigram query (#787)', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-computational-vision',
+      name: 'Zucker Faculty Research',
+      researchAreas: ['Computational Vision'],
+      archived: false,
+    });
+
+    expect(doc?.studentSearchTerms).toEqual(
+      expect.arrayContaining(['cv', 'computer vision', 'computational vision']),
+    );
+  });
+
+  it('maps "computer vision" and "computational vision" as bidirectional Meili synonyms (#787)', () => {
+    const { synonyms } = getResearchEntitySearchIndexSettings();
+
+    expect(synonyms['computer vision']).toEqual(expect.arrayContaining(['computational vision']));
+    expect(synonyms['computational vision']).toEqual(expect.arrayContaining(['computer vision']));
+  });
+
   it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
