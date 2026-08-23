@@ -5,6 +5,7 @@ import {
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
   isCurationRationaleText,
+  isInstitutionalCenterBlurbText,
   isFaqDumpText,
   isFormFieldDumpText,
   isNavigationDumpText,
@@ -557,5 +558,62 @@ describe('descriptionHygiene CTA/news-ticker dump fail-closed (#898)', () => {
   it('keeps prose with a single incidental "learn more" invitation', () => {
     expect(isCtaNewsTickerDumpText(SYNTHETIC_SINGLE_CTA_PROSE)).toBe(false);
     expect(sanitizeCatalogDescription(SYNTHETIC_SINGLE_CTA_PROSE)).toBe(SYNTHETIC_SINGLE_CTA_PROSE);
+  });
+});
+
+describe('isInstitutionalCenterBlurbText', () => {
+  const GRAFT_VARIANTS = [
+    'Welcome to the Council on Middle East Studies, a leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+    'Welcome to the Council on Middle East Studies A leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+    'The Council on Middle East Studies is a leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+    'The Council on Middle East Studies at Yale is a leading center of excellence for research and teaching on the Middle East.',
+    'A center of excellence for Middle East research and teaching, focusing on interdisciplinary dialogue.',
+    'A center dedicated to research and teaching on the Middle East, emphasizing multidisciplinary dialogue.',
+  ];
+
+  it('flags every grafted center/council landing blurb variant', () => {
+    for (const variant of GRAFT_VARIANTS) {
+      expect(isInstitutionalCenterBlurbText(variant)).toBe(true);
+    }
+  });
+
+  it('does not flag genuine lab descriptions that open with "Welcome to"', () => {
+    const legitimate = [
+      'Welcome to the Bonde Artificial Heart lab! We believe a creative and imaginative environment drives discovery.',
+      'Welcome to the Pillai Laboratory at the Section of Medical Oncology and Hematology, Yale Cancer Center.',
+      'Welcome to the Thinking Lab at Yale University! The Thinking Lab studies how people reason and make decisions.',
+      'Welcome to Prof. Fengnian Xia’s research group in the Department of Electrical Engineering at Yale.',
+    ];
+    for (const description of legitimate) {
+      expect(isInstitutionalCenterBlurbText(description)).toBe(false);
+    }
+  });
+
+  it('does not flag ordinary research prose or empty input', () => {
+    expect(isInstitutionalCenterBlurbText('')).toBe(false);
+    expect(
+      isInstitutionalCenterBlurbText(
+        'The lab studies condensed matter physics, focusing on surface science and electronic materials.',
+      ),
+    ).toBe(false);
+  });
+
+  it('fails a grafted fullDescription closed via sanitizeResearchEntityDescription', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'Welcome to the Council on Middle East Studies, a leading center of excellence for Middle East research and teaching on the local, national, and international levels.',
+      ),
+    ).toBe('');
+  });
+
+  it('fails a grafted shortDescription closed while keeping a real short blurb', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'A center dedicated to research and teaching on the Middle East, emphasizing multidisciplinary dialogue.',
+      ),
+    ).toBe('');
+    expect(
+      sanitizeResearchEntityShortDescription('Studies liver fibrosis and vascular biology.'),
+    ).toBe('Studies liver fibrosis and vascular biology.');
   });
 });

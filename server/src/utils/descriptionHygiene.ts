@@ -112,6 +112,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
     stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
   );
   if (isResearchAreaTemplateLeakText(cleaned)) return '';
+  if (isInstitutionalCenterBlurbText(cleaned)) return '';
   return cleaned;
 }
 
@@ -353,6 +354,31 @@ export function isPublicationsListDumpText(text: string): boolean {
   return publicationsListMarkerPattern.test(normalizeHygieneWhitespace(text));
 }
 
+const INSTITUTIONAL_CENTER_BLURB_PATTERNS: RegExp[] = [
+  /\bleading center of excellence\b/i,
+  /\bcenter of excellence for\b[\s\S]{0,80}\bresearch and teaching\b/i,
+  /\ba center dedicated to research and teaching\b/i,
+  /\bresearch and teaching on the local,?\s*national,?\s*and international levels\b/i,
+];
+
+/**
+ * A center/council promotional landing blurb ("... is a leading center of
+ * excellence for X research and teaching on the local, national, and
+ * international levels") scraped from an institution's own page and grafted
+ * onto a lab or individual research entity that the page merely lists (#893).
+ * The text is well-formed prose, so chrome/dump detectors miss it; it is wrong
+ * only because it describes an *organization*, not this entity's research.
+ *
+ * The "Welcome to ..." opener is deliberately NOT a marker: 44 legitimate lab
+ * descriptions open with it, so matching would blank real prose. The
+ * center-of-excellence markers below hit only the grafts.
+ */
+export function isInstitutionalCenterBlurbText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(text);
+  if (!normalized) return false;
+  return INSTITUTIONAL_CENTER_BLURB_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
 
 /**
@@ -431,7 +457,8 @@ export function sanitizeResearchEntityDescription(text: string): string {
   if (
     hasContactBlockResidue(stripped) ||
     isPublicationsListDumpText(stripped) ||
-    isResearchAreaEchoDescription(stripped)
+    isResearchAreaEchoDescription(stripped) ||
+    isInstitutionalCenterBlurbText(stripped)
   ) {
     return '';
   }
