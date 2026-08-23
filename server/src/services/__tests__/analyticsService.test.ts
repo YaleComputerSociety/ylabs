@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   analyticsUpdateOne: vi.fn(),
   userFindOneAndUpdate: vi.fn(),
   userAggregate: vi.fn(),
+  userFind: vi.fn(),
   researchEntityAggregate: vi.fn(),
+  researchEntityFind: vi.fn(),
+  fellowshipFind: vi.fn(),
   getListingModel: vi.fn(),
 }));
 
@@ -61,9 +64,14 @@ vi.mock('../../models/index', () => ({
     findOne: vi.fn(),
     findOneAndUpdate: mocks.userFindOneAndUpdate,
     aggregate: mocks.userAggregate,
+    find: mocks.userFind,
   },
   ResearchEntity: {
     aggregate: mocks.researchEntityAggregate,
+    find: mocks.researchEntityFind,
+  },
+  Fellowship: {
+    find: mocks.fellowshipFind,
   },
 }));
 
@@ -298,6 +306,9 @@ describe('getAnalytics research coverage and range scoping', () => {
       find: chainableFind,
       collection: { name: 'listings' },
     });
+    mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+    mocks.researchEntityFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
+    mocks.fellowshipFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   };
 
   afterEach(() => {
@@ -615,6 +626,81 @@ describe('getAnalytics research coverage and range scoping', () => {
     const projectStage = mostActiveStages.find((stage: Record<string, any>) => stage.$project);
     expect(projectStage.$project.fname).toBe('$user.fname');
     expect(projectStage.$project.lname).toBe('$user.lname');
+  });
+
+  it('resolves top research entity ids to human-readable names and slugs', async () => {
+    primeAnalyticsMocks();
+    mocks.researchEntityAggregate.mockResolvedValue([
+      {
+        overview: [{ total: 0, active: 0 }],
+        byType: [],
+        byVisibilityTier: [],
+        byOpenness: [],
+        freshness: [],
+        scholarly: [],
+      },
+    ]);
+
+    const researchEntityId = '507f1f77bcf86cd799439011';
+    const fellowshipId = '507f191e810c19729de860ea';
+    mocks.analyticsAggregate.mockImplementation(async (pipeline: any[]) => {
+      const hasTopEntities = pipeline.some(
+        (stage: Record<string, any>) => stage.$facet && stage.$facet.topEntities,
+      );
+      if (hasTopEntities) {
+        return [
+          {
+            ...eventFacetStub,
+            topEntities: [
+              { entityType: 'research_entity', entityId: researchEntityId, views: 9, uniqueViewers: 1 },
+              { entityType: 'fellowship', entityId: fellowshipId, views: 3, uniqueViewers: 2 },
+              { entityType: 'profile', entityId: 'abc123', views: 2, uniqueViewers: 1 },
+            ],
+          },
+        ];
+      }
+      return [eventFacetStub];
+    });
+    mocks.researchEntityFind.mockReturnValue({
+      select: () => ({
+        lean: async () => [{ _id: researchEntityId, name: 'Quantum Lab', slug: 'quantum-lab' }],
+      }),
+    });
+    mocks.fellowshipFind.mockReturnValue({
+      select: () => ({ lean: async () => [{ _id: fellowshipId, title: 'Summer Research Fellowship' }] }),
+    });
+    mocks.userFind.mockReturnValue({
+      select: () => ({ lean: async () => [{ netid: 'abc123', fname: 'Ada', lname: 'Lovelace' }] }),
+    });
+
+    const result = await getAnalytics();
+
+    expect(result.research.topEntities).toEqual([
+      {
+        entityType: 'research_entity',
+        entityId: researchEntityId,
+        views: 9,
+        uniqueViewers: 1,
+        name: 'Quantum Lab',
+        slug: 'quantum-lab',
+      },
+      {
+        entityType: 'fellowship',
+        entityId: fellowshipId,
+        views: 3,
+        uniqueViewers: 2,
+        name: 'Summer Research Fellowship',
+        slug: null,
+      },
+      {
+        entityType: 'profile',
+        entityId: 'abc123',
+        views: 2,
+        uniqueViewers: 1,
+        name: 'Ada Lovelace',
+        slug: null,
+      },
+    ]);
   });
 });
 

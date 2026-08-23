@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AnalyticsActionNeededResponse,
   AnalyticsData,
@@ -66,6 +67,20 @@ export interface AnalyticsSupportingDetailProps {
   isSelectedUserLoading: boolean;
   selectedUserError: string | null;
 }
+
+const topEntityHref = (item: {
+  entityType: string;
+  entityId: string;
+  slug?: string | null;
+}): string | null => {
+  if (item.entityType === 'research_entity' && item.slug) {
+    return `/research/${item.slug}`;
+  }
+  if (item.entityType === 'profile' && item.entityId) {
+    return `/profile/${item.entityId}`;
+  }
+  return null;
+};
 
 const AnalyticsSupportingDetail = ({
   data,
@@ -1285,8 +1300,8 @@ const AnalyticsSupportingDetail = ({
                     key={`${item.entityType}-${item.eventType}`}
                     className="flex justify-between gap-3 text-sm"
                   >
-                    <span className="text-gray-600 capitalize">
-                      {item.entityType} / {formatEventType(item.eventType)}
+                    <span className="text-gray-600">
+                      {formatEntityType(item.entityType)} / {formatEventType(item.eventType)}
                     </span>
                     <span className="font-medium">{item.count}</span>
                   </div>
@@ -1319,19 +1334,36 @@ const AnalyticsSupportingDetail = ({
             </h3>
             <div className="space-y-2">
               {data.research.topEntities.length > 0 ? (
-                data.research.topEntities.slice(0, 8).map((item) => (
-                  <div
-                    key={`${item.entityType}-${item.entityId}`}
-                    className="flex justify-between gap-3 text-sm"
-                  >
-                    <span className="truncate text-gray-600">
-                      <span className="capitalize">{item.entityType}</span> {item.entityId}
-                    </span>
-                    <span className="whitespace-nowrap font-medium">
-                      {item.views} views / {item.uniqueViewers} users
-                    </span>
-                  </div>
-                ))
+                data.research.topEntities.slice(0, 8).map((item) => {
+                  const displayName = item.name || item.entityId;
+                  const href = topEntityHref(item);
+                  const label = (
+                    <>
+                      <span className="text-gray-400">{formatEntityType(item.entityType)}:</span>{' '}
+                      {displayName}
+                    </>
+                  );
+                  return (
+                    <div
+                      key={`${item.entityType}-${item.entityId}`}
+                      className="flex justify-between gap-3 text-sm"
+                    >
+                      <span className="min-w-0 truncate text-gray-600" title={item.entityId}>
+                        {href ? (
+                          <Link className="text-blue-700 hover:underline" to={href}>
+                            {label}
+                          </Link>
+                        ) : (
+                          label
+                        )}
+                      </span>
+                      <span className="whitespace-nowrap font-medium">
+                        {item.views} {item.views === 1 ? 'view' : 'views'} /{' '}
+                        {item.uniqueViewers} {item.uniqueViewers === 1 ? 'user' : 'users'}
+                      </span>
+                    </div>
+                  );
+                })
               ) : (
                 <p className="text-sm text-gray-500">No viewed entities yet.</p>
               )}

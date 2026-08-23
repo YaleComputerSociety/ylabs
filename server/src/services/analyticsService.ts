@@ -2,7 +2,7 @@
  * Analytics event logging and aggregation service.
  */
 import { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from '../models/analytics';
-import { User, ResearchEntity } from '../models/index';
+import { User, ResearchEntity, Fellowship } from '../models/index';
 import { getListingModel } from '../db/connections';
 import { Types, type PipelineStage } from 'mongoose';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
@@ -1404,6 +1404,101 @@ export const getActionNeededAnalytics = async (
   };
 };
 
+interface RawTopEntity {
+  entityType: string;
+  entityId: string;
+  views: number;
+  uniqueViewers: number;
+}
+
+interface EnrichedTopEntity extends RawTopEntity {
+  name: string | null;
+  slug: string | null;
+}
+
+const formatFullNameOrNull = (fname?: string, lname?: string): string | null => {
+  const name = [fname, lname].filter(Boolean).join(' ').trim();
+  return name || null;
+};
+
+const resolveTopEntityNames = async (
+  topEntities: RawTopEntity[],
+): Promise<EnrichedTopEntity[]> => {
+  const idsByType = new Map<string, Set<string>>();
+  for (const entity of topEntities) {
+    const id = typeof entity.entityId === 'string' ? entity.entityId : String(entity.entityId ?? '');
+    if (!id) continue;
+    const bucket = idsByType.get(entity.entityType) ?? new Set<string>();
+    bucket.add(id);
+    idsByType.set(entity.entityType, bucket);
+  }
+
+  const objectIds = (type: string): Types.ObjectId[] =>
+    [...(idsByType.get(type) ?? [])]
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+  const nameByKey = new Map<string, { name: string | null; slug: string | null }>();
+  const key = (type: string, id: string) => `${type}:${id}`;
+
+  const profileNetids = [...(idsByType.get('profile') ?? [])];
+  const researchEntityIds = objectIds('research_entity');
+  const listingIds = objectIds('listing');
+  const fellowshipIds = objectIds('fellowship');
+
+  const [profiles, researchEntities, listings, fellowships] = await Promise.all([
+    profileNetids.length
+      ? User.find({ netid: { $in: profileNetids } }).select('netid fname lname').lean()
+      : Promise.resolve([]),
+    researchEntityIds.length
+      ? ResearchEntity.find({ _id: { $in: researchEntityIds } })
+          .select('name displayName slug')
+          .lean()
+      : Promise.resolve([]),
+    listingIds.length
+      ? getListingModel().find({ _id: { $in: listingIds } }).select('title').lean()
+      : Promise.resolve([]),
+    fellowshipIds.length
+      ? Fellowship.find({ _id: { $in: fellowshipIds } }).select('title').lean()
+      : Promise.resolve([]),
+  ]);
+
+  for (const profile of profiles as any[]) {
+    const name = formatFullNameOrNull(profile.fname, profile.lname);
+    nameByKey.set(key('profile', profile.netid), { name, slug: null });
+  }
+  for (const entity of researchEntities as any[]) {
+    const name = (entity.displayName || entity.name || '').trim() || null;
+    nameByKey.set(key('research_entity', String(entity._id)), {
+      name,
+      slug: entity.slug || null,
+    });
+  }
+  for (const listing of listings as any[]) {
+    nameByKey.set(key('listing', String(listing._id)), {
+      name: (listing.title || '').trim() || null,
+      slug: null,
+    });
+  }
+  for (const fellowship of fellowships as any[]) {
+    nameByKey.set(key('fellowship', String(fellowship._id)), {
+      name: (fellowship.title || '').trim() || null,
+      slug: null,
+    });
+  }
+
+  return topEntities.map((entity) => {
+    const id = typeof entity.entityId === 'string' ? entity.entityId : String(entity.entityId ?? '');
+    const resolved = nameByKey.get(key(entity.entityType, id));
+    return {
+      ...entity,
+      entityId: id,
+      name: resolved?.name ?? null,
+      slug: resolved?.slug ?? null,
+    };
+  });
+};
+
 const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2424,6 +2519,8 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
     };
   };
 
+  const enrichedTopEntities = await resolveTopEntityNames(research.topEntities || []);
+
   return {
     visitors: {
       lifetime: {
@@ -2479,7 +2576,7 @@ const computeAnalytics = async (range: AnalyticsDateRange = {}) => {
       byEventType: research.byEventType || [],
       byEntityType: research.byEntityType || [],
       byUserType: combineAnalyticsUserTypeCounts(research.byUserType || []),
-      topEntities: research.topEntities || [],
+      topEntities: enrichedTopEntities,
     },
     listings: {
       overview: listings.overview[0] || { total: 0, active: 0, archived: 0, unconfirmed: 0 },

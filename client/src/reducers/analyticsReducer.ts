@@ -115,6 +115,8 @@ export interface AnalyticsData {
       entityId: string;
       views: number;
       uniqueViewers: number;
+      name?: string | null;
+      slug?: string | null;
     }>;
   };
   listings: {

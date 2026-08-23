@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
+import { ReactElement } from 'react';
 
 import Analytics from '../analytics';
 import axios from '../../utils/axios';
@@ -62,10 +64,20 @@ const analyticsData: AnalyticsData = {
     byUserType: [{ userType: 'undergraduate', count: 6 }],
     topEntities: [
       {
+        entityType: 'research_entity',
+        entityId: '507f1f77bcf86cd799439011',
+        views: 9,
+        uniqueViewers: 4,
+        name: 'Quantum Fixture Lab',
+        slug: 'quantum-fixture-lab',
+      },
+      {
         entityType: 'profile',
         entityId: 'fixture-professor',
         views: 5,
-        uniqueViewers: 3,
+        uniqueViewers: 1,
+        name: 'Fixture Professor',
+        slug: null,
       },
     ],
   },
@@ -105,6 +117,8 @@ const analyticsData: AnalyticsData = {
   timestamp: '2026-05-17T00:00:00.000Z',
 };
 
+const renderWithRouter = (ui: ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -114,7 +128,7 @@ describe('Analytics page', () => {
   it('shows a recoverable error when the initial dashboard request fails', async () => {
     mockedAxios.get.mockRejectedValue(new Error('Request failed with status code 500'));
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Analytics unavailable' })).toBeTruthy();
@@ -184,7 +198,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /Research Data Coverage/ })).toBeTruthy();
@@ -203,6 +217,14 @@ describe('Analytics page', () => {
       expect(screen.getByText('machine learning')).toBeTruthy();
     });
     expect(screen.getByText(/fixture_searcher/)).toBeTruthy();
+
+    const topEntityLink = screen.getByRole('link', { name: /Quantum Fixture Lab/ });
+    expect(topEntityLink.getAttribute('href')).toBe('/research/quantum-fixture-lab');
+    const profileLink = screen.getByRole('link', { name: /Fixture Professor/ });
+    expect(profileLink.getAttribute('href')).toBe('/profile/fixture-professor');
+    expect(screen.queryByText('507f1f77bcf86cd799439011')).toBeNull();
+    expect(screen.getByText('5 views / 1 user')).toBeTruthy();
+
     expect(screen.queryByText(/Listings/i)).toBeNull();
     expect(screen.queryByText(/Favorites/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Refresh Data' }).className).toContain(
@@ -288,7 +310,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Research Discovery Health' })).toBeTruthy();
@@ -369,7 +391,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     const tile = await waitFor(() => {
       const heading = screen.getByText('Needs attention');
@@ -388,7 +410,7 @@ describe('Analytics page', () => {
   it('shows the no-action caption only when nothing drives the Needs attention count', async () => {
     mockDashboardEndpoints();
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     const tile = await waitFor(() => {
       const heading = screen.getByText('Needs attention');
@@ -459,7 +481,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Admin Access' })).toBeTruthy();
@@ -515,7 +537,7 @@ describe('Analytics page', () => {
     });
     mockedAxios.post.mockResolvedValue({ data: { grant: { netid: 'fixture-new-admin' } } });
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Admin Access' })).toBeTruthy();
@@ -589,7 +611,7 @@ describe('Analytics page', () => {
     mockedAxios.post.mockResolvedValue({ data: { grant: { netid: 'fixture-admin' } } });
     mockedSwal.mockResolvedValue(true);
 
-    render(
+    renderWithRouter(
       <UserContext.Provider
         value={{
           isLoading: false,
@@ -658,7 +680,7 @@ describe('Analytics page', () => {
   it('labels usage metrics with the selected range and threads the range to the server', async () => {
     mockDashboardEndpoints();
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByText('Visitors (30 Days)')).toBeTruthy();
@@ -697,7 +719,7 @@ describe('Analytics page', () => {
   it('marks corpus and account sections as current snapshots regardless of range', async () => {
     mockDashboardEndpoints();
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /Research Data Coverage/ })).toBeTruthy();
@@ -793,7 +815,7 @@ describe('Analytics page', () => {
       return Promise.reject(new Error(`Unexpected URL: ${url}`));
     });
 
-    render(<Analytics />);
+    renderWithRouter(<Analytics />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /Most Active Users/ })).toBeTruthy();
