@@ -255,6 +255,12 @@ describe('isPersonBiographyOrAdvisingDescription', () => {
     ).toBe(true);
   });
 
+  it('flags a biography with a slash-separated title', () => {
+    expect(
+      isPersonBiographyOrAdvisingDescription('Jane Doe is the Founding/Senior Professor of Genetics.'),
+    ).toBe(true);
+  });
+
   it('does not flag a genuine program or center description', () => {
     expect(
       isPersonBiographyOrAdvisingDescription(
