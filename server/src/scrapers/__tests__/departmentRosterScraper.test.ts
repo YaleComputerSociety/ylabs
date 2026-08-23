@@ -279,14 +279,14 @@ const MBB_VIEWS_ROW_HTML = `
   <div class="views-row">
     <div class="views-field views-field-picture">
       <div class="field-content picture">
-        <a href="https://medicine.yale.edu/profile/susan-baserga-fixture/">
-          <img src="https://mbb.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/baserga-fixture.jpg" alt="Susan Baserga's picture" />
+        <a href="https://medicine.yale.edu/profile/avery-sloan-fixture/">
+          <img src="https://mbb.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/sloan-fixture.jpg" alt="Avery Sloan's picture" />
         </a>
       </div>
     </div>
     <div class="views-field views-field-name">
       <h4 class="field-content name">
-        <a href="https://medicine.yale.edu/profile/susan-baserga-fixture/" class="username">Susan Baserga, MD, PhD</a>
+        <a href="https://medicine.yale.edu/profile/avery-sloan-fixture/" class="username">Avery Sloan, MD, PhD</a>
       </h4>
     </div>
     <div class="views-field views-field-field-title">
@@ -294,7 +294,7 @@ const MBB_VIEWS_ROW_HTML = `
     </div>
     <div class="views-field views-field-mail">
       <span class="field-content">
-        <a href="mailto:susan.baserga@yale.edu">susan.baserga@yale.edu</a>
+        <a href="mailto:avery.sloan@yale.edu">avery.sloan@yale.edu</a>
       </span>
     </div>
   </div>
@@ -444,7 +444,7 @@ describe('normalizeName', () => {
     expect(normalizeName('Jane Doe, M.D.')).toBe('Jane Doe');
   });
   it('strips stacked trailing credentials', () => {
-    expect(normalizeName('Susan Baserga, MD, PhD')).toBe('Susan Baserga');
+    expect(normalizeName('Avery Sloan, MD, PhD')).toBe('Avery Sloan');
     expect(normalizeName('Riley Roster, M.D., Ph.D., M.P.H.')).toBe('Riley Roster');
   });
   it('strips leading honorifics', () => {
@@ -800,12 +800,12 @@ describe('viewsRowPersonExtractor', () => {
 
     expect(out).toEqual([
       {
-        name: 'Susan Baserga, MD, PhD',
-        profileUrl: 'https://medicine.yale.edu/profile/susan-baserga-fixture/',
+        name: 'Avery Sloan, MD, PhD',
+        profileUrl: 'https://medicine.yale.edu/profile/avery-sloan-fixture/',
         title: 'Professor of Molecular Biophysics and Biochemistry',
-        email: 'susan.baserga@yale.edu',
+        email: 'avery.sloan@yale.edu',
         imageUrl:
-          'https://mbb.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/baserga-fixture.jpg',
+          'https://mbb.yale.edu/sites/default/files/styles/people_directory_image/public/pictures/sloan-fixture.jpg',
       },
     ]);
   });

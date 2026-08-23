@@ -129,7 +129,7 @@ export function normalizeName(name: string | undefined | null): string {
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // strip trailing credential clauses after the last comma, repeating so that
-  // stacked degrees collapse fully e.g. "Susan Baserga, MD, PhD" -> "Susan Baserga"
+  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan"
   const credentialClause =
     /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|ed\.?\s*d\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|esq\.?)\.?\s*$/i;
   let stripped = n.replace(credentialClause, '');
