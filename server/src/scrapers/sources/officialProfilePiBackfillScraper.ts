@@ -12,6 +12,7 @@ import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
+import { isNavMenuChromeTitle } from '../../utils/titleHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import {
@@ -631,7 +632,7 @@ function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
     for (const el of elements) {
       const value = cleanOfficialProfileTitle($(el).text() || $(el).attr('content') || '');
       if (!value || /^information for$/i.test(value)) continue;
-      if (officialProfileTitlePattern.test(value)) return value;
+      if (officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value)) return value;
     }
   }
   return '';
@@ -1665,7 +1666,7 @@ export function extractOfficialProfileIdentity(
 
   const title =
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      (value) => officialProfileTitlePattern.test(value),
+      (value) => officialProfileTitlePattern.test(value) && !isNavMenuChromeTitle(value),
     ) || '';
   if (!title) return null;
 
