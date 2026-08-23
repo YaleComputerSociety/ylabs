@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   addWatchedPrograms: vi.fn(),
   removeWatchedPrograms: vi.fn(),
   updateWatchedProgramPlan: vi.fn(),
+  deleteWatchedProgramPlan: vi.fn(),
 }));
 
 vi.mock('../../services/listingService', () => ({
@@ -82,6 +83,7 @@ vi.mock('../../services/researchPlanService', () => ({
   addWatchedPrograms: mocks.addWatchedPrograms,
   removeWatchedPrograms: mocks.removeWatchedPrograms,
   updateWatchedProgramPlan: mocks.updateWatchedProgramPlan,
+  deleteWatchedProgramPlan: mocks.deleteWatchedProgramPlan,
 }));
 
 import {
@@ -108,6 +110,7 @@ import {
   getWatchedPrograms,
   addWatchedPrograms,
   removeWatchedPrograms,
+  deleteWatchedProgramPlan,
 } from '../userController';
 
 const privateProgram = {
@@ -1169,5 +1172,26 @@ describe('userController', () => {
       note: 'Private note',
     });
     expect(mocks.deleteSavedResearchEntityPlan).toHaveBeenCalledWith('student123', entityId);
+  });
+
+  it('scopes watched-program plan deletes to the authenticated owner', async () => {
+    const programId = '64a000000000000000000031';
+    const owner = { netId: 'student123', userType: 'undergraduate', userConfirmed: true };
+    mocks.deleteWatchedProgramPlan.mockResolvedValue({});
+
+    const response = privateResponseDouble();
+    await deleteWatchedProgramPlan(
+      {
+        user: owner,
+        params: { programId },
+        body: { accountOwner: 'other-student' },
+      } as any,
+      response,
+    );
+
+    expect(mocks.deleteWatchedProgramPlan).toHaveBeenCalledWith('student123', programId);
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.json).toHaveBeenCalledWith({ watchedProgramPlans: {} });
+    expectPrivateNoStore(response);
   });
 });

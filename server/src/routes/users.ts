@@ -299,6 +299,13 @@ router.put(
   validateObjectId('programId'),
   userController.updateWatchedProgramPlan,
 );
+router.delete(
+  '/watchedProgramPlans/:programId',
+  writeLimit,
+  isAuthenticated,
+  validateObjectId('programId'),
+  userController.deleteWatchedProgramPlan,
+);
 
 router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
 router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);

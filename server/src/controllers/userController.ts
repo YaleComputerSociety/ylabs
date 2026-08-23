@@ -32,6 +32,7 @@ import {
   addWatchedPrograms as addWatchedProgramsService,
   removeWatchedPrograms as removeWatchedProgramsService,
   updateWatchedProgramPlan as updateWatchedProgramPlanService,
+  deleteWatchedProgramPlan as deleteWatchedProgramPlanService,
 } from '../services/researchPlanService';
 import { publicProgramForReader } from './programPayload';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -812,6 +813,21 @@ export const updateWatchedProgramPlan = async (request: Request, response: Respo
   } catch (error) {
     console.error('Watched program plan update failed:', sanitizeLogValue(error));
     sendPrivateAccountError(response, error, 'Failed to update watched program plan');
+  }
+};
+
+export const deleteWatchedProgramPlan = async (request: Request, response: Response) => {
+  try {
+    const currentUser = request.user as { netId?: string };
+    const plans = await deleteWatchedProgramPlanService(
+      currentUser.netId,
+      request.params.programId,
+    );
+    setPrivateAccountResponseHeaders(response);
+    response.status(200).json({ watchedProgramPlans: plans });
+  } catch (error) {
+    console.error('Watched program plan delete failed:', sanitizeLogValue(error));
+    sendPrivateAccountError(response, error, 'Failed to delete watched program plan');
   }
 };
 
