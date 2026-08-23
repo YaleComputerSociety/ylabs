@@ -14,6 +14,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
+  stripTrailingResearchHomeDescription,
 } from '../descriptionHygiene';
 
 const SYNTHETIC_ROSTER = [
@@ -256,6 +257,49 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
     expect(sanitizeResearchEntityDescription(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(
       SYNTHETIC_CLEAN_LAB_PROSE,
     );
+  });
+});
+
+const SYNTHETIC_OFFICE_ADDRESS_PROSE =
+  'Our lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, and single-particle electron cryo-microscopy. 100 Sample Avenue, Fl 2, Rm 234';
+
+const SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE =
+  'The center coordinates translational research across several affiliated departments. 42 Fixture Boulevard';
+
+describe('descriptionHygiene office/street address fail-closed (#798)', () => {
+  it('flags a bare office address fragment with a floor/room unit', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_OFFICE_ADDRESS_PROSE)).toBe(true);
+  });
+
+  it('flags a bare street address fragment with no unit label', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE)).toBe(true);
+  });
+
+  it('does not flag ordinary prose with no address-shaped fragment', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
+  });
+
+  it('fails closed to empty on a faculty-bio description with a glued office address', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_OFFICE_ADDRESS_PROSE)).toBe('');
+  });
+});
+
+describe('descriptionHygiene name/description glue guard (#624/#797)', () => {
+  it('strips a first-person description sentence glued onto a lab name with no punctuation', () => {
+    const glued =
+      'Sample Fixture Lab We study how immune cells, lipids, and metabolic networks end inflammation and restore tissue health.';
+    expect(stripTrailingResearchHomeDescription(glued)).toBe('Sample Fixture Lab');
+  });
+
+  it('strips a third-person description sentence glued onto a center name', () => {
+    const glued =
+      'Metabolic Health Center The center investigates insulin resistance and translational endocrinology.';
+    expect(stripTrailingResearchHomeDescription(glued)).toBe('Metabolic Health Center');
+  });
+
+  it('leaves an ordinary lab name unchanged', () => {
+    const clean = 'Sample Fixture Lab';
+    expect(stripTrailingResearchHomeDescription(clean)).toBe(clean);
   });
 });
 

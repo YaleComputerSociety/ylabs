@@ -204,22 +204,65 @@ export function clampDescriptionLength(text: string, maxLength = 2000): string {
   return `${cut.trim()}…`;
 }
 
+const RESEARCH_HOME_HEAD_NOUN =
+  'labs?|laborator(?:y|ies)|cent(?:er|re)s?|institutes?|programs?|programmes?|initiatives?|groups?|projects?|collaboratives?|consorti(?:um|a)|networks?|clinics?|cores?';
+
+const RESEARCH_HOME_DESCRIPTION_START =
+  'the|a|an|we|our|i|my|his|her|its|their|this|these|it|is|are|was|were|has|have|which|that|where|study|studies|studying|investigat\\w*|research\\w*|focus\\w*|explor\\w*|examin\\w*|develop\\w*|work\\w*|use\\w*|using|aim\\w*|seek\\w*|decod\\w*|rewir\\w*|combin\\w*|advanc\\w*|discover\\w*|understand\\w*|analyz\\w*|design\\w*|build\\w*|creat\\w*|apply\\w*|applies|generat\\w*';
+
+const RESEARCH_HOME_DESCRIPTION_RE = new RegExp(
+  `\\b(${RESEARCH_HOME_HEAD_NOUN})\\s+(?=(?:${RESEARCH_HOME_DESCRIPTION_START})\\b)[\\s\\S]*$`,
+  'i',
+);
+
+/**
+ * Strip a description sentence that a scraper or LLM extractor glued directly
+ * onto a lab/center/program name with no separating punctuation (e.g.
+ * "Libreros Lab We study how immune cells..." -> "Libreros Lab"). Shared across
+ * every name-extraction write path (#624/#649/#797) rather than re-implemented
+ * per scraper, since the glue pattern recurs on any source that hands back a
+ * research-home name and its own prose in one string.
+ */
+export function stripTrailingResearchHomeDescription(value: string): string {
+  return normalizeHygieneWhitespace(String(value || '').replace(RESEARCH_HOME_DESCRIPTION_RE, '$1'));
+}
+
 const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
 const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
 const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
 
+const STREET_SUFFIX = 'Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Way|Lane|Ln|Place|Pl|Court|Ct|Circle|Cir';
+const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
+
+/**
+ * A bare street-address fragment (`266 Whitney Avenue`), optionally followed by
+ * a floor/room/suite unit (`, Fl 2, Rm 234`), with no `office:`/`address:` label
+ * of its own. Faculty-bio scrapes sometimes merge a page's office-location line
+ * straight into the bio prose with no separating punctuation, so this must be
+ * detected on shape alone (#798).
+ */
+const bareStreetAddressPattern = new RegExp(
+  `\\b\\d{1,5}\\s+[A-Za-z][A-Za-z.'-]*(?:\\s+[A-Za-z][A-Za-z.'-]*){0,3}\\s+(?:${STREET_SUFFIX})\\b` +
+    `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*`,
+  'i',
+);
+
 /**
  * A faculty-bio contact block: a leftover `[email redacted]`/`[phone redacted]`
  * placeholder token (the read-time-safe rendering elsewhere in this module,
- * but never acceptable in a research-entity description), or an
+ * but never acceptable in a research-entity description), an
  * `Email:`/`Phone:`/`Office:`/`Fax:` label paired with a bare phone number
- * lifted straight out of a profile-page header (#676).
+ * lifted straight out of a profile-page header (#676), or a bare office/street
+ * address fragment glued onto the bio with no label at all (#798).
  */
 export function hasContactBlockResidue(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (contactRedactionTokenPattern.test(normalized)) return true;
-  return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
+  if (contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized)) {
+    return true;
+  }
+  return bareStreetAddressPattern.test(normalized);
 }
 
 const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
