@@ -294,11 +294,10 @@ function stripLeadingPersonalGreeting(value: string): string {
 }
 
 const FIRST_PERSON_LEAD_REVOICE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/^(?:I\s+am|I['’]m)\s+(an?)\s+/i, 'This researcher is $1 '],
-  [/(^|[.!?]\s+)My\s+career\b/g, "$1This researcher's career"],
-  [/(^|[.!?]\s+)My\s+research\b/gi, '$1This research'],
-  [/(^|[.!?]\s+)My\s+work\b/gi, '$1This work'],
-  [/(^|[.!?]\s+)My\s+group\b/gi, '$1This research group'],
+  [/(^|[.!?]\s+)(?:I\s+am|I['’]m)\s+(an?|the)\s+/gi, '$1This researcher is $2 '],
+  [/(^|[.!?]\s+)(?:My|Our)\s+careers?\b/gi, "$1This researcher's career"],
+  [/(^|[.!?]\s+)(?:My|Our)\s+group\b/gi, '$1This research group'],
+  [/(^|[.!?]\s+)(?:My|Our)\s+(research|laboratory|lab|team|work|mission|program)\b/gi, '$1This $2'],
 ];
 
 export function revoiceFirstPersonResearchLead(value: unknown): string {

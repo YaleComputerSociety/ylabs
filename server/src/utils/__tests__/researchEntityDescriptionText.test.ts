@@ -326,6 +326,43 @@ describe('revoiceFirstPersonResearchLead', () => {
     );
   });
 
+  it('re-voices first-person plural possessive lab self-references to third person', () => {
+    expect(
+      revoiceFirstPersonResearchLead('Our research focuses on pneumococcal disease and RSV.'),
+    ).toBe('This research focuses on pneumococcal disease and RSV.');
+    expect(
+      revoiceFirstPersonResearchLead(
+        'Decreases preventable blindness. Our team employs quantitative and qualitative methods.',
+      ),
+    ).toBe(
+      'Decreases preventable blindness. This team employs quantitative and qualitative methods.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead('Our research group seeks to understand autoimmune processes.'),
+    ).toBe('This research group seeks to understand autoimmune processes.');
+    expect(revoiceFirstPersonResearchLead('Our laboratory develops in vivo imaging.')).toBe(
+      'This laboratory develops in vivo imaging.',
+    );
+    expect(
+      revoiceFirstPersonResearchLead("My laboratory's research concerns cortical mechanisms."),
+    ).toBe("This laboratory's research concerns cortical mechanisms.");
+  });
+
+  it('re-voices a first-person "I am the" role opener at a sentence boundary', () => {
+    expect(revoiceFirstPersonResearchLead('I am the director of the imaging core.')).toBe(
+      'This researcher is the director of the imaging core.',
+    );
+  });
+
+  it('leaves idiomatic first-person-plural phrasing and unconjugated subject clauses untouched', () => {
+    expect(
+      revoiceFirstPersonResearchLead('This work advances our understanding of neurodegeneration.'),
+    ).toBe('This work advances our understanding of neurodegeneration.');
+    expect(revoiceFirstPersonResearchLead('We study gene expression in lung disease.')).toBe(
+      'We study gene expression in lung disease.',
+    );
+  });
+
   it('drops a leading personal-page greeting only when substantive copy remains', () => {
     expect(
       revoiceFirstPersonResearchLead(
