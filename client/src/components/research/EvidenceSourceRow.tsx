@@ -36,6 +36,21 @@ const formatDate = (value?: string): string => {
   }).format(date);
 };
 
+const REDACTION_TOKEN_TEST = /\[(?:email|phone) redacted\]/i;
+
+const cleanExcerpt = (value?: string): string | undefined => {
+  if (!value) return undefined;
+  if (!REDACTION_TOKEN_TEST.test(value)) return value;
+  const sentences = value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+  const cleaned = sentences
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence && !REDACTION_TOKEN_TEST.test(sentence))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || undefined;
+};
+
 const formatConfidence = (value?: number | string): string => {
   if (value === undefined || value === null || value === '') return '';
   if (typeof value === 'number') return `${Math.round(value * 100)}% confidence`;
@@ -65,6 +80,7 @@ const EvidenceSourceRow = ({
         const observedDate = compact ? '' : formatDate(item.observedDate);
         const sourceType = compact ? '' : formatSourceType(item.sourceType);
         const sourceUrl = safeHttpUrl(item.url);
+        const excerpt = cleanExcerpt(item.excerpt);
         return (
           <div
             key={`${item.claim}-${index}`}
@@ -78,8 +94,8 @@ const EvidenceSourceRow = ({
                 {observedDate && <span>Observed {observedDate}</span>}
               </div>
             )}
-            {item.excerpt && (
-              <p className="mt-1 text-sm leading-relaxed text-gray-600">{item.excerpt}</p>
+            {excerpt && (
+              <p className="mt-1 text-sm leading-relaxed text-gray-600">{excerpt}</p>
             )}
             {sourceUrl && (
               <a

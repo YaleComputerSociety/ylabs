@@ -32,7 +32,7 @@ describe('undergraduateLogisticsService public projection', () => {
       value: { modes: ['STIPEND'] },
       evidence: {
         sourceUrl: 'https://example.yale.edu/program',
-        excerpt: 'The program provides a stipend. Contact [email redacted].',
+        excerpt: 'The program provides a stipend.',
         observedAt: '2026-07-01T00:00:00.000Z',
         expiresAt: '2027-07-01T00:00:00.000Z',
       },

@@ -20,6 +20,7 @@ import {
   isRosterShapedText,
   partitionSentencesLossless,
   sanitizeCatalogDescription,
+  sanitizeEvidenceExcerpt,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
@@ -343,6 +344,34 @@ describe('descriptionHygiene redaction-placeholder strip (#671)', () => {
     expect(cleaned).not.toMatch(/redacted/i);
     expect(cleaned).toBe(
       'The grant supports undergraduate research each summer. Questions can be directed.',
+    );
+  });
+});
+
+describe('sanitizeEvidenceExcerpt redaction-marker drop (#1076)', () => {
+  it('redacts raw contact details and drops a marker-only directive entirely', () => {
+    expect(sanitizeEvidenceExcerpt('Email us at intake@example.edu')).toBe('');
+    expect(sanitizeEvidenceExcerpt('Phone: 203-432-1234 Email: intake@example.edu')).toBe('');
+    expect(sanitizeEvidenceExcerpt('Contact: <intake@example.edu>')).toBe('');
+  });
+
+  it('keeps substantive sentences and drops the marker-bearing sentence', () => {
+    expect(
+      sanitizeEvidenceExcerpt(
+        'We welcome undergraduate researchers year-round. Email us at intake@example.edu.',
+      ),
+    ).toBe('We welcome undergraduate researchers year-round.');
+  });
+
+  it('never salvages a marker-bearing sentence into a mangled label fragment', () => {
+    const cleaned = sanitizeEvidenceExcerpt('Questions: intake@example.edu or 203-432-1234.');
+    expect(cleaned).not.toMatch(/redacted/i);
+    expect(cleaned).toBe('');
+  });
+
+  it('returns clean excerpts untouched', () => {
+    expect(sanitizeEvidenceExcerpt('Undergraduates are listed on the lab page.')).toBe(
+      'Undergraduates are listed on the lab page.',
     );
   });
 });

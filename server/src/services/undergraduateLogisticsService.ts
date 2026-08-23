@@ -3,7 +3,7 @@ import {
   undergraduateLogisticsSignalTypes as undergraduateLogisticsClaimTypes,
   type UndergraduateLogisticsSignalType as UndergraduateLogisticsClaimType,
 } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { isDisallowedResearchEntitySourceUrl } from '../utils/researchHomeWebsiteUrl';
 
@@ -147,7 +147,7 @@ export function toPublicUndergraduateLogistics(
       const observedAt = validDate(row.observedAt);
       const excerpt =
         typeof row.source?.excerpt === 'string'
-          ? redactDirectContactInfo(row.source.excerpt).slice(0, 500).trim()
+          ? sanitizeEvidenceExcerpt(row.source.excerpt).slice(0, 500).trim()
           : '';
       if (!value || !sourceUrl || !observedAt || !excerpt) {
         return { claimType, state: 'unknown' };
