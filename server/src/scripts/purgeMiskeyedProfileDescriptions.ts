@@ -16,7 +16,8 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const SCRIPT_NAME = 'observations:purge-miskeyed-profile-descriptions';
 const SOURCE_NAME = 'lab-microsite-description-llm';
-const ROLLBACK_REASON = 'mis-keyed person-profile description: source names a different person than the entity (#688)';
+const ROLLBACK_REASON =
+  'mis-keyed profile description: source names a different person than the entity or contradicts its Yale school (#688, #1045)';
 
 export interface PurgeMiskeyedProfileDescriptionsArgs {
   apply: boolean;
@@ -68,7 +69,7 @@ export async function loadMiskeyedGroups(): Promise<MiskeyedGroup[]> {
     entityType: 'researchEntity',
     sourceName: SOURCE_NAME,
     superseded: { $ne: true },
-    sourceUrl: /\/(?:people|profile)\//i,
+    sourceUrl: /(^|\.)yale\.edu/i,
   })
     .select('_id entityKey entityId sourceUrl field')
     .lean();
@@ -98,7 +99,7 @@ export async function loadMiskeyedGroups(): Promise<MiskeyedGroup[]> {
     const entity = await ResearchEntity.findOne(
       group.entityKey ? { slug: group.entityKey } : { _id: group.entityId },
     )
-      .select('slug name displayName')
+      .select('slug name displayName school schools departments')
       .lean();
     if (!entity) continue;
     if (personProfileSourceMatchesEntity(group.sourceUrl, entity as any)) continue;

@@ -822,6 +822,22 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(candidates[0].sourceUrls).not.toContain('https://physics.yale.edu/people/keith-baker');
   });
 
+  it('drops an exact full-name homonym page at a contradicting Yale school', () => {
+    const candidates = candidateDescriptionLabsFromDocs([
+      {
+        _id: 'entity-nih-avery',
+        slug: 'nih-pi-jordan-avery',
+        name: 'Jordan Avery Lab',
+        school: 'School of Medicine',
+        departments: ['Internal Medicine'],
+        websiteUrl: 'https://faculty.som.yale.edu/jordanavery/',
+        sourceUrls: ['https://faculty.som.yale.edu/jordanavery/'],
+      },
+    ]);
+
+    expect(candidates).toHaveLength(0);
+  });
+
   it('keeps the entity when its own name-shaped people page corroborates it', () => {
     const candidates = candidateDescriptionLabsFromDocs([
       {
