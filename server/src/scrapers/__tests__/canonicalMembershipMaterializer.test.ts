@@ -69,21 +69,21 @@ describe('canonical membership mapping (pure)', () => {
   });
 
   it('flags organizational and department mailbox identities but not individuals (#887)', () => {
-    expect(identityIsOrganizationalMailbox({ netid: 'physics', email: 'physics@yale.edu' })).toBe(
-      true,
-    );
-    expect(identityIsOrganizationalMailbox({ email: 'info@yale.edu' })).toBe(true);
-    expect(identityIsOrganizationalMailbox({ email: 'no-reply@yale.edu' })).toBe(true);
+    expect(
+      identityIsOrganizationalMailbox({ netid: 'physics', email: 'physics@example.test' }),
+    ).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'info@example.test' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'no-reply@example.test' })).toBe(true);
     expect(identityIsOrganizationalMailbox({ netid: 'chemistry' })).toBe(true);
-    expect(identityIsOrganizationalMailbox({ email: 'econ-dept@yale.edu' })).toBe(true);
-    expect(identityIsOrganizationalMailbox({ email: 'smith-lab@yale.edu' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'econ-dept@example.test' })).toBe(true);
+    expect(identityIsOrganizationalMailbox({ email: 'sloan-lab@example.test' })).toBe(true);
 
-    expect(identityIsOrganizationalMailbox({ netid: 'ab123', email: 'ab123@yale.edu' })).toBe(
+    expect(identityIsOrganizationalMailbox({ netid: 'ab123', email: 'ab123@example.test' })).toBe(
       false,
     );
-    expect(identityIsOrganizationalMailbox({ netid: 'jbaden', email: 'joel.baden@yale.edu' })).toBe(
-      false,
-    );
+    expect(
+      identityIsOrganizationalMailbox({ netid: 'javery', email: 'jordan.avery@example.test' }),
+    ).toBe(false);
     expect(identityIsOrganizationalMailbox({ displayName: 'Physics Person' })).toBe(false);
   });
 
