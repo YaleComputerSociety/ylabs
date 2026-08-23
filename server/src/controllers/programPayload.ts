@@ -55,7 +55,7 @@ const publicProgramText = (value: unknown): unknown =>
 
 const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
-    ? redactDirectContactInfo(sanitizeCatalogDescription(stripRedactionPlaceholders(value)))
+    ? stripRedactionPlaceholders(sanitizeCatalogDescription(redactDirectContactInfo(value)))
     : value;
 
 const publicProgramTextArray = (value: unknown): string[] =>

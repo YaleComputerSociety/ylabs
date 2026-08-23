@@ -471,12 +471,18 @@ describe('programController search visibility', () => {
     await searchProgramsController({ query: {}, user: { userType: 'student' } } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
-    expect(payload.summary).toBe(
-      'Email [email redacted] or call [phone redacted] before applying.',
-    );
-    expect(payload.description).toBe('Questions: [email redacted].');
-    expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
-    expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
+    for (const field of [
+      payload.summary,
+      payload.description,
+      payload.applicationInformation,
+      payload.eligibility,
+    ]) {
+      expect(field).not.toMatch(/redacted/i);
+    }
+    expect(payload.summary).toContain('before applying');
+    expect(payload.description).toContain('Questions');
+    expect(payload.applicationInformation).toContain('the form');
+    expect(payload.eligibility).toContain('eligibility');
     expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
     expect(payload.applicationMaterials).toEqual([
       'Email [email redacted] or call [phone redacted].',
@@ -486,7 +492,9 @@ describe('programController search visibility', () => {
     expect(JSON.stringify(payload)).not.toContain('prose-contact@yale.edu');
     expect(JSON.stringify(payload)).not.toContain('prep-contact@yale.edu');
     expect(JSON.stringify(payload)).not.toContain('office@example.edu');
+    expect(JSON.stringify(payload)).not.toContain('hidden@yale.edu');
     expect(JSON.stringify(payload)).not.toContain('203-555');
+    expect(JSON.stringify(payload)).not.toContain('203.555');
   });
 
   it('allowlists public program detail payloads for normal readers', async () => {

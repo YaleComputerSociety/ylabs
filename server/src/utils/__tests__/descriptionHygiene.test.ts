@@ -720,3 +720,30 @@ describe('descriptionHygiene duplicated-block collapse (#904)', () => {
     expect(collapseDuplicatedProseBlock(prose)).toBe(prose);
   });
 });
+
+const SYNTHETIC_MENTOR_BIO_DUMP = [
+  'Apply by March 1 and email the coordinator with questions.',
+  'Meet our graduate mentors for the coming year.',
+  'Riley Sawyer grew up in Springfield and studies molecular biology. Feel free to reach out to them at [email redacted].',
+  'Harper Quinn is from Rivertown and works on genetics with Dr. Alex Monroe. Contact her at [email redacted].',
+  'Jordan Blake studies neuroscience under Dr. Sam Carter and hails from Lakeside. Contact him at [email redacted].',
+  'Morgan Lee, mentored by Dr. Casey Flynn, focuses on immunology and comes from Bayview.',
+  'Taylor Reed rounds out the cohort with work on structural biology.',
+].join(' ');
+
+const SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE =
+  'Applications open each spring and close on March 1. The program director is happy to help; feel free to reach out to them with any questions, and contact them at the main office to schedule a visit before you apply.';
+
+describe('descriptionHygiene mentor-bio contact-invitation roster (#904)', () => {
+  it('flags a many-people bio dump with repeated contact invitations as roster-shaped', () => {
+    expect(isRosterShapedText(SYNTHETIC_MENTOR_BIO_DUMP)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_MENTOR_BIO_DUMP)).toBe('');
+  });
+
+  it('keeps genuine apply prose that invites contact but names no roster of people', () => {
+    expect(isRosterShapedText(SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE)).toBe(
+      SYNTHETIC_APPLY_PROSE_WITH_CONTACT_INVITE,
+    );
+  });
+});
