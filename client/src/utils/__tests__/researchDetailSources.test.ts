@@ -2,9 +2,24 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildResearchDetailSources,
+  isIdentifierOrGrantDbSourceUrl,
   isLikelyUnavailableSourceLink,
+  isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
+  resolveOutreachOfficialSource,
+  ResearchDetailSource,
 } from '../researchDetailSources';
+
+const makeSource = (
+  url: string,
+  overrides: Partial<ResearchDetailSource> = {},
+): ResearchDetailSource => ({
+  url,
+  label: 'Official source',
+  contexts: ['Profile source'],
+  isLikelyUnavailable: false,
+  ...overrides,
+});
 
 describe('buildResearchDetailSources', () => {
   it('deduplicates repeated evidence URLs into one source row', () => {
@@ -492,6 +507,150 @@ describe('buildResearchDetailSources directory-roster roots (#569)', () => {
     expect(sources.map((source) => source.url)).toEqual([
       'https://environment.yale.edu/directory/faculty/jordan-example',
     ]);
+  });
+});
+
+describe('isIdentifierOrGrantDbSourceUrl', () => {
+  it('flags ORCID, NIH RePORTER, NSF, and other identifier/grant-DB hosts', () => {
+    expect(isIdentifierOrGrantDbSourceUrl('https://orcid.org/0000-0000-0000-0000')).toBe(true);
+    expect(
+      isIdentifierOrGrantDbSourceUrl('https://reporter.nih.gov/project-details/10000000'),
+    ).toBe(true);
+    expect(
+      isIdentifierOrGrantDbSourceUrl('https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171'),
+    ).toBe(true);
+    expect(isIdentifierOrGrantDbSourceUrl('https://scholar.google.com/citations?user=abc')).toBe(
+      true,
+    );
+    expect(isIdentifierOrGrantDbSourceUrl('https://doi.org/10.1000/example')).toBe(true);
+  });
+
+  it('does not flag a genuine research-home website', () => {
+    expect(isIdentifierOrGrantDbSourceUrl('https://lab.example.yale.edu/join')).toBe(false);
+    expect(isIdentifierOrGrantDbSourceUrl('https://quantuminstitute.yale.edu/get-involved')).toBe(
+      false,
+    );
+    expect(isIdentifierOrGrantDbSourceUrl('')).toBe(false);
+  });
+});
+
+describe('isOrgEngagementSourceUrl', () => {
+  it('recognizes get-involved, join, contact, and membership pages', () => {
+    expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/get-involved')).toBe(true);
+    expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/join-us')).toBe(true);
+    expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/about/contact')).toBe(true);
+    expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/membership')).toBe(true);
+  });
+
+  it('does not treat a person profile or plain research page as an engagement page', () => {
+    expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/people/jane-doe')).toBe(
+      false,
+    );
+    expect(isOrgEngagementSourceUrl('https://institute.example.yale.edu/research')).toBe(false);
+  });
+});
+
+describe('resolveOutreachOfficialSource', () => {
+  it('never promotes an ORCID-only home as the primary outreach CTA', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://orcid.org/0000-0000-0000-0000')],
+      [],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never promotes a NIH RePORTER-only home as the primary outreach CTA', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://reporter.nih.gov/project-details/10000000')],
+      [],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('never promotes an NSF award-only home as the primary outreach CTA', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://www.nsf.gov/awardsearch/showAward?AWD_ID=2535171')],
+      [],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('falls through to a contactable source when an identifier page is also present', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://orcid.org/0000-0000-0000-0000'),
+        makeSource('https://lab.example.yale.edu/contact'),
+      ],
+      [],
+      false,
+    );
+
+    expect(source?.url).toBe('https://lab.example.yale.edu/contact');
+  });
+
+  it('excludes an already-claimed action destination', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://lab.example.yale.edu/')],
+      ['https://lab.example.yale.edu'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('skips a profile-like source while the lead identity is under review', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://example.yale.edu/profile/jane-doe')],
+      [],
+      true,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('prefers an org-level get-involved page over a director profile for an umbrella home', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://institute.example.yale.edu/people/director'),
+        makeSource('https://institute.example.yale.edu/get-involved'),
+      ],
+      [],
+      false,
+      'INSTITUTE',
+    );
+
+    expect(source?.url).toBe('https://institute.example.yale.edu/get-involved');
+  });
+
+  it('falls back to the director profile for an umbrella home with no get-involved page', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://institute.example.yale.edu/people/director')],
+      [],
+      false,
+      'INSTITUTE',
+    );
+
+    expect(source?.url).toBe('https://institute.example.yale.edu/people/director');
+  });
+
+  it('does not reorder sources for a non-umbrella entity type', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://lab.example.yale.edu/people/pi'),
+        makeSource('https://lab.example.yale.edu/get-involved'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://lab.example.yale.edu/people/pi');
   });
 });
 
