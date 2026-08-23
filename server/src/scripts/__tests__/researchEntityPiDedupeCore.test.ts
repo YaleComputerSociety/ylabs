@@ -747,6 +747,76 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan[0]?.mergedResearchAreas).toEqual(['Cell signaling']);
   });
 
+  it('does not graft wrong-domain research areas from a low-trust funding shell and repairs a hallucinated canonical description with a fuller correct sibling (The Faboratory)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-kramer-bottiglio-user',
+        normalizedName: 'same-pi:fixture-kramer-bottiglio-user',
+        piFirstName: 'Rebecca',
+        piLastName: 'Kramer-Bottiglio',
+        entities: [
+          {
+            id: 'faboratory',
+            slug: 'kramer-bottiglio-lab-rk673',
+            name: 'Rebecca Kramer-Bottiglio Lab',
+            kind: 'lab',
+            entityType: 'LAB',
+            websiteUrl: 'https://www.eng.yale.edu/faboratory/',
+            sourceUrls: ['https://www.eng.yale.edu/faboratory/'],
+            departments: ['Mechanical Engineering'],
+            researchAreas: [
+              'fabrication',
+              'Manufacturing',
+              'materials',
+              'Robotics',
+              'soft robotics',
+            ],
+            fullDescription:
+              'The Rebecca Kramer-Bottiglio Lab focuses on research in Optical Network Technologies, Photonic and Optical Devices, and Semiconductor Lasers and Optical Devices.',
+          },
+          {
+            id: 'nsf-shell',
+            slug: 'nsf-pi-kramer-bottiglio',
+            name: 'Rebecca Kramer-Bottiglio Lab',
+            sourceUrls: ['https://www.nsf.gov/awardsearch/showAward?AWD_ID=2233445'],
+            researchAreas: ['Optics', 'Photonics'],
+          },
+          {
+            id: 'dept-home',
+            slug: 'dept-seas-rebecca-kramer-bottiglio',
+            name: 'Rebecca Kramer-Bottiglio',
+            sourceUrls: ['https://seas.yale.edu/faculty/rebecca-kramer-bottiglio'],
+            researchAreas: [
+              'soft robotics',
+              'multifunctional materials',
+              'adaptive systems',
+              'manufacturing techniques',
+            ],
+            fullDescription:
+              'The Kramer-Bottiglio Lab designs soft, multifunctional robotic materials that merge structure and function, drawing on manufacturing techniques for adaptive systems that reconfigure their shape and stiffness on demand.',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    const group = plan[0];
+    expect(group.canonicalEntityId).toBe('faboratory');
+    expect([...group.duplicateEntityIds].sort()).toEqual(['dept-home', 'nsf-shell']);
+    expect(group.mergedResearchAreas).not.toContain('Optics');
+    expect(group.mergedResearchAreas).not.toContain('Photonics');
+    expect(group.mergedResearchAreas).toEqual(
+      expect.arrayContaining([
+        'fabrication',
+        'soft robotics',
+        'multifunctional materials',
+        'adaptive systems',
+        'manufacturing techniques',
+      ]),
+    );
+    expect(group.canonicalFullDescription).toContain('soft, multifunctional robotic materials');
+  });
+
   it('keeps the strongest current member row and retires duplicate memberships', () => {
     expect(
       selectCurrentMemberIdsToRetire([
@@ -1688,6 +1758,83 @@ describe('buildFundingResearchEntityDedupePlan', () => {
       'Computational image analysis',
     ]);
   });
+
+  it('does not graft a funding shell wrong-domain research area onto the Yale-backed canonical', () => {
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-optics-lab',
+        normalizedName: 'fixture optics lab',
+        piFirstName: 'Fixture',
+        piLastName: 'Optics',
+        entities: [
+          {
+            id: 'ysm-optics',
+            slug: 'dept-seas-fixture-optics',
+            name: 'Fixture Optics Lab',
+            websiteUrl: 'https://seas.yale.edu/fixture-optics-lab/',
+            sourceUrls: ['https://seas.yale.edu/fixture-optics-lab/'],
+            researchAreas: ['soft robotics', 'materials'],
+          },
+          {
+            id: 'nih-fixture-optics',
+            slug: 'nih-pi-fixture-optics',
+            name: 'Fixture Optics Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/1'],
+            researchAreas: ['Optics', 'Photonics'],
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.mergedResearchAreas).toEqual(['soft robotics', 'materials']);
+  });
+
+  it('carries the fullest correct description from a trusted sibling and never from a longer low-trust funding shell', () => {
+    const trustedSiblingDescription =
+      'A fuller correct description of the soft-robotics research program grounded in the Yale lab site.';
+    const hallucinatedShellDescription =
+      'Optics and photonics hallucinated program that is wrong-domain filler. '.repeat(10);
+
+    const plan = buildFundingResearchEntityDedupePlan([
+      {
+        userId: 'name:fixture-thin-canonical',
+        normalizedName: 'fixture thin canonical lab',
+        piFirstName: 'Fixture',
+        piLastName: 'Thin',
+        entities: [
+          {
+            id: 'ysm-thin',
+            slug: 'dept-seas-fixture-thin',
+            name: 'Fixture Thin Lab',
+            websiteUrl: 'https://seas.yale.edu/fixture-thin-lab/',
+            sourceUrls: [
+              'https://seas.yale.edu/fixture-thin-lab/',
+              'https://medicine.yale.edu/lab/fixture-thin/',
+            ],
+            fullDescription: 'Short thin blurb.',
+          },
+          {
+            id: 'nih-fixture-thin',
+            slug: 'nih-pi-fixture-thin',
+            name: 'Fixture Thin Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/2'],
+            fullDescription: hallucinatedShellDescription,
+          },
+          {
+            id: 'seas-thin-detail',
+            slug: 'dept-seas-fixture-thin-detail',
+            name: 'Fixture Thin Lab',
+            sourceUrls: ['https://medicine.yale.edu/profile/fixture-thin/'],
+            fullDescription: trustedSiblingDescription,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan[0]?.canonicalEntityId).toBe('ysm-thin');
+    expect(plan[0]?.canonicalFullDescription).toBe(trustedSiblingDescription);
+    expect(plan[0]?.canonicalFullDescription).not.toContain('hallucinated');
+  });
 });
 
 describe('shouldRetireDuplicateCurrentMembersForDedupeRun', () => {
@@ -1733,7 +1880,7 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
     expect(group.canonicalSlug).toBe('yse-faculty-sparkle-malone');
     expect(group.duplicateEntityIds).toEqual(['shell']);
     expect(group.dedupeCategory).toBe('shared_person_id');
-    expect(group.canonicalFullDescription).toBe('A'.repeat(528));
+    expect(group.canonicalFullDescription).toBeUndefined();
   });
 
   it('does not carry a description when the canonical already has the fullest one', () => {
@@ -1761,6 +1908,49 @@ describe('buildSharedPersonIdResearchEntityDedupePlan', () => {
     const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
     expect(group.canonicalEntityId).toBe('rich');
     expect(group.canonicalFullDescription).toBeUndefined();
+  });
+
+  it('never carries a longer low-trust shell description over a thin canonical, but does carry a fuller trusted sibling', () => {
+    const trustedSiblingDescription =
+      'A fuller correct account of the lab research program grounded in Yale sources.';
+    const hallucinatedShellDescription =
+      'Wrong-domain hallucinated optics and photonics filler description. '.repeat(12);
+
+    const rows = [
+      {
+        userId: 'person-shell-guard',
+        normalizedName: 'same-pi:person-shell-guard',
+        entities: [
+          {
+            id: 'home',
+            slug: 'ysm-fixture-home',
+            name: 'Fixture Home Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fixture-home/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fixture-home/'],
+            fullDescription: 'Short correct blurb.',
+          },
+          {
+            id: 'shell',
+            slug: 'nih-pi-fixture-home',
+            name: 'Fixture Home Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/9'],
+            fullDescription: hallucinatedShellDescription,
+          },
+          {
+            id: 'sibling',
+            slug: 'dept-seas-fixture-home',
+            name: 'Fixture Home Lab',
+            sourceUrls: ['https://seas.yale.edu/profile/fixture-home/'],
+            fullDescription: trustedSiblingDescription,
+          },
+        ],
+      },
+    ];
+
+    const [group] = buildSharedPersonIdResearchEntityDedupePlan(rows);
+    expect(group.canonicalEntityId).toBe('home');
+    expect(group.canonicalFullDescription).toBe(trustedSiblingDescription);
+    expect(group.canonicalFullDescription).not.toContain('hallucinated');
   });
 
   it('produces no group for a lone-entity person row', () => {
