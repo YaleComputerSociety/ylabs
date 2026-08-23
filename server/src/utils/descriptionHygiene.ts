@@ -90,7 +90,9 @@ export function stripCatalogChrome(text: string): string {
  * chrome-only blurb collapses to empty (#808).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  return stripCatalogChrome(redactDirectContactInfo(String(text || '')));
+  return stripTrailingContactAddress(
+    stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+  );
 }
 
 function countMatches(text: string, pattern: RegExp): number {
@@ -235,6 +237,24 @@ export function hasContactBlockResidue(text: string): boolean {
   return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
 }
 
+const trailingOfficeAddressPattern =
+  /\s+\d{1,5}\s+(?:[A-Z][\w.'-]*\s+){1,5}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Way|Lane|Ln|Place|Pl|Court|Ct|Terrace|Ter|Circle|Cir|Plaza|Highway|Hwy)\.?(?:[,\s]+(?:Fl|Floor|Rm|Room|Ste|Suite|Unit|Apt|Bldg|Building)\.?\s*\d+[A-Za-z]?)*(?:[,\s]+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})?(?:,?\s+[A-Z]{2})?(?:\s+\d{5}(?:-\d{4})?)?[.\s]*$/;
+
+/**
+ * Strip a bare campus office/street-address fragment glued onto the end of a
+ * faculty-bio description (a lost-line-break scrape artifact, #798), preserving
+ * the bio prose ahead of it. Requires a street number and a street-type suffix
+ * so ordinary research prose that merely names a street is not affected; the
+ * optional unit (Fl/Rm/Suite) and city/state/ZIP tail extend coverage. Only a
+ * trailing, sentence-final fragment is removed so a mid-text mention is left
+ * intact.
+ */
+export function stripTrailingContactAddress(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(trailingOfficeAddressPattern, '');
+  return stripped === value ? value : normalizeHygieneWhitespace(stripped);
+}
+
 const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
 
 /**
@@ -302,7 +322,7 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  */
 export function sanitizeResearchEntityDescription(text: string): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = sanitizeCatalogDescription(redacted);
+  const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
   if (!stripped) return '';
   if (hasContactBlockResidue(stripped) || isPublicationsListDumpText(stripped)) {
     return '';
