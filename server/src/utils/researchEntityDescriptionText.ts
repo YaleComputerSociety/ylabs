@@ -1,3 +1,5 @@
+import { isInstitutionalCenterBlurbText } from './descriptionHygiene';
+
 const DESCRIPTION_FIELDS = ['shortDescription', 'fullDescription'] as const;
 const DESCRIPTION_AND_SYNTHESIS_FIELDS = [
   ...DESCRIPTION_FIELDS,
@@ -222,7 +224,8 @@ export function publicResearchEntityDescriptionText(value: unknown): string {
     isSyntheticResearchHomeMetadataDescription(cleaned) ||
     isBrokenResearchEntityDescriptionFragment(cleaned) ||
     isDirectoryIndexChromeText(cleaned) ||
-    isResearchEntitySourceChromeText(cleaned)
+    isResearchEntitySourceChromeText(cleaned) ||
+    isInstitutionalCenterBlurbText(cleaned)
   ) {
     return '';
   }

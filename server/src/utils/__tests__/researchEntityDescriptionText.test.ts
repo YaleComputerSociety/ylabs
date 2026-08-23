@@ -92,12 +92,31 @@ describe('publicResearchEntityDescriptionText', () => {
     ).toBe('');
   });
 
+  it('suppresses an institutional center/council promotional blurb grafted onto a lab detail description (#559)', () => {
+    expect(
+      publicResearchEntityDescriptionText(
+        'The Institute for Sample Studies is a leading center of excellence for regional research and teaching on the local, national, and international levels.',
+      ),
+    ).toBe('');
+    expect(
+      publicResearchEntityDescriptionText(
+        'The Council on Placeholder Studies is a center dedicated to research and teaching across many disciplines.',
+      ),
+    ).toBe('');
+  });
+
   it('keeps complete research descriptions with abbreviations', () => {
     expect(
       publicResearchEntityDescriptionText(
         'Dr. Jones studies U.S. health policy and vaccination programs.',
       ),
     ).toBe('Dr. Jones studies U.S. health policy and vaccination programs.');
+  });
+
+  it('keeps a genuine research description that merely mentions a center', () => {
+    const description =
+      'Studies neural circuits underlying decision-making, in collaboration with the campus imaging center.';
+    expect(publicResearchEntityDescriptionText(description)).toBe(description);
   });
 });
 
