@@ -33,6 +33,8 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../../models/researchEntity';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
+import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
 import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
@@ -743,19 +745,25 @@ export function extractionToObservations(
   }
 
   const researchSummary = cleanResearchSummary(extraction.researchSummary);
-  if (researchSummary && sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)) {
-    out.push({
-      ...base,
-      field: 'shortDescription',
-      value: researchSummary,
-      confidenceOverride: 0.55,
-    });
+  const studentReadyDescription =
+    researchSummary && sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
+      ? cleanStudentFacingDescription(researchSummary)
+      : '';
+  if (studentReadyDescription) {
     out.push({
       ...base,
       field: 'fullDescription',
-      value: researchSummary,
+      value: studentReadyDescription,
       confidenceOverride: 0.55,
     });
+    if (isCardLengthDescription(studentReadyDescription)) {
+      out.push({
+        ...base,
+        field: 'shortDescription',
+        value: studentReadyDescription,
+        confidenceOverride: 0.55,
+      });
+    }
   }
 
   const undergradRoleQuote = (extraction.undergradRoleQuote || '').trim();
@@ -854,6 +862,28 @@ export function extractionToObservations(
 
 function cleanResearchSummary(raw: string | undefined): string {
   return (raw || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+/**
+ * Fail-closed student-facing description gate. The LLM `researchSummary` is a
+ * paraphrase, so before it can become a stored fullDescription it must clear the
+ * same hygiene and quality bar the visibility census applies at read time
+ * (page chrome, academic-appointment/PI-bio prose, synthetic/meta notes,
+ * role-only fragments, recruitment boilerplate). Returns clean prose or an empty
+ * string when the summary would only produce a description hold downstream.
+ */
+function cleanStudentFacingDescription(researchSummary: string): string {
+  const cleaned = publicResearchEntityDescriptionText(researchSummary);
+  if (!cleaned || !fullDescriptionQuality(cleaned).isUseful) return '';
+  return cleaned;
+}
+
+// This source stores the same one-sentence summary as both descriptions, so
+// shortDescriptionQuality would always fire its `same-as-full` flag; the only
+// short-specific defect that still matters here is an over-long card, matching
+// shortDescriptionQuality's `too-long` thresholds (>280 chars or >44 words).
+function isCardLengthDescription(text: string): boolean {
+  return text.length <= 280 && text.trim().split(/\s+/).filter(Boolean).length <= 44;
 }
 
 function sourceSupportsResearchSummary(
