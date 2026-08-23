@@ -325,12 +325,32 @@ describe('isResearchAreaLabelLeakage', () => {
     }
   });
 
+  it('rejects title-case grant titles and descriptor sentences that exceed the topic word ceiling', () => {
+    for (const junk of [
+      'Treatment with Placebo in Smoking and Non-Smoking Example Dependent Patients',
+      'Cultural and Political Aspects of Natural Hazards, Disasters, and Resource Degradation',
+      'The development of solid-state quantum bits (qubits) for quantum computing',
+      'The study of problems at the interface of optical and condensed matter physics',
+    ]) {
+      expect(isResearchAreaLabelLeakage(junk)).toBe(true);
+    }
+  });
+
   it('does not treat short topic phrases that merely contain a stop word as prose', () => {
     for (const area of [
       'Machine Learning and Optimization',
       'Interstitial Lung Diseases and Idiopathic Pulmonary Fibrosis',
       'Optical Physics',
       'Market Design',
+    ]) {
+      expect(isResearchAreaLabelLeakage(area)).toBe(false);
+    }
+  });
+
+  it('keeps legitimate multi-word areas just under the word ceiling', () => {
+    for (const area of [
+      'iPSC-derived cardiomyocytes for disease modeling and drug screening',
+      'Child and Adolescent Psychosocial and Emotional Development',
     ]) {
       expect(isResearchAreaLabelLeakage(area)).toBe(false);
     }

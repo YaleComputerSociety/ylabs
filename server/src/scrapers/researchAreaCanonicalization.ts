@@ -146,6 +146,8 @@ const RESEARCH_AREA_LAB_BLURB_RE =
   /\b(?:is|are|has|have|been)\s+(?:currently\s+)?(?:focused|interested|working|studying|investigating)\b|\b(?:the|our|my)\s+(?:group|lab|laboratory)\b/i;
 const RESEARCH_AREA_RUN_ON_WORD_CEILING = 15;
 
+const RESEARCH_AREA_SENTENCE_WORD_CEILING = 10;
+
 function researchAreaWordCount(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
 }
@@ -165,6 +167,7 @@ function isNonTopicResearchAreaChip(raw: unknown): boolean {
   if (RESEARCH_AREA_LAB_BLURB_RE.test(value)) return true;
   if (wordCount >= RESEARCH_AREA_RUN_ON_WORD_CEILING) return true;
   const firstToken = value.split(' ')[0] ?? '';
+  if (wordCount >= RESEARCH_AREA_SENTENCE_WORD_CEILING) return true;
   if (
     /^[a-z]+$/.test(firstToken) &&
     wordCount >= 6 &&
