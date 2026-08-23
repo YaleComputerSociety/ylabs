@@ -190,6 +190,34 @@ describe('descriptionHygiene class-year roster arm sentence-gating (#925)', () =
   });
 });
 
+const SYNTHETIC_SINGLE_PERSON_AWARD_BIO = [
+  'Alex Rivera is a member of the National Academy of Sciences and a fellow of the',
+  'American Academy of Arts and Letters; over a long career the recipient won the',
+  'Pulitzer Prize, the National Book Award, and a Guggenheim Fellowship; the',
+  'acclaimed monograph Sacred Ground earned wide praise; earlier training at Rice',
+  'University and Stanford Medical School shaped a lasting commitment to teaching.',
+].join(' ');
+
+const SYNTHETIC_BARE_NAME_ROSTER = [
+  '2025 Faculty Directory: Alex Rivera, Jordan Blake, Casey Nolan, Riley Sawyer,',
+  'Harper Quinn, Sloan Drew, Rowan Vale, Skylar Reed, Dana Kwon, Morgan Ellis.',
+].join(' ');
+
+describe('descriptionHygiene name-density roster arm capitalized-token dominance (#1200)', () => {
+  it('keeps a single-person award/bio whose prizes and institutions form capitalized pairs', () => {
+    expect(isRosterShapedText(SYNTHETIC_SINGLE_PERSON_AWARD_BIO)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_SINGLE_PERSON_AWARD_BIO)).not.toBe('');
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_SINGLE_PERSON_AWARD_BIO)).toContain(
+      'National Academy of Sciences',
+    );
+  });
+
+  it('still rejects a sentence-sparse bare list of names with no other roster markers', () => {
+    expect(isRosterShapedText(SYNTHETIC_BARE_NAME_ROSTER)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_BARE_NAME_ROSTER)).toBe('');
+  });
+});
+
 describe('descriptionHygiene dead-anchor CTA fail-closed (#915)', () => {
   it('drops a "click here" dead-anchor sentence but keeps the surrounding prose', () => {
     const text =
