@@ -21,6 +21,7 @@ export const researchEntityTypes = [
   'INITIATIVE',
   'GROUP',
   'INDIVIDUAL_RESEARCH',
+  'CORE_FACILITY',
 ] as const;
 
 export type ResearchEntityType = (typeof researchEntityTypes)[number];

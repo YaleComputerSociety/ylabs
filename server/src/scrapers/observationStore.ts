@@ -7,9 +7,28 @@
  */
 import { Observation } from '../models/observation';
 import { Source } from '../models/source';
+import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
 import type { ObservationInput } from './types';
+
+const ENUM_FIELD_VALIDATORS: Record<string, ReadonlySet<string>> = {
+  kind: new Set(researchGroupKinds),
+  entityType: new Set(researchEntityTypes),
+};
+
+function normalizeObservationValue(field: string, value: unknown): unknown {
+  if (field === 'sourceUrls') {
+    if (Array.isArray(value)) return value;
+    return typeof value === 'string' && value.trim() ? [value] : [];
+  }
+  return value;
+}
+
+function isObservationValueRejected(field: string, value: unknown): boolean {
+  const allowed = ENUM_FIELD_VALIDATORS[field];
+  return !!allowed && (typeof value !== 'string' || !allowed.has(value));
+}
 
 interface AppendContext {
   scrapeRunId: string;
@@ -26,36 +45,46 @@ export async function appendObservations(
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
 
   const rejectedSelfReferential = inputs.filter((obs) => isSelfReferentialUrl(obs.sourceUrl));
-  const acceptedInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
+  const candidateInputs = inputs.filter((obs) => !isSelfReferentialUrl(obs.sourceUrl));
+  const rejectedInvalidEnum = candidateInputs.filter((obs) =>
+    isObservationValueRejected(obs.field, obs.value),
+  );
+  const acceptedInputs = candidateInputs.filter(
+    (obs) => !isObservationValueRejected(obs.field, obs.value),
+  );
+  const skippedCount = rejectedSelfReferential.length + rejectedInvalidEnum.length;
   if (acceptedInputs.length === 0) {
-    return { inserted: 0, skipped: rejectedSelfReferential.length, superseded: 0 };
+    return { inserted: 0, skipped: skippedCount, superseded: 0 };
   }
 
-  const docs = acceptedInputs.map((obs) => ({
-    entityType: obs.entityType,
-    entityId: obs.entityId || undefined,
-    entityKey: obs.entityKey || undefined,
-    field: obs.field,
-    value: obs.value,
-    sourceId: ctx.sourceId,
-    sourceName: ctx.sourceName,
-    scrapeRunId: ctx.scrapeRunId,
-    sourceUrl: obs.sourceUrl,
-    observedAt: obs.observedAt || new Date(),
-    confidence: obs.confidenceOverride ?? ctx.sourceWeight,
-    superseded: false,
-    observationFingerprint: buildObservationFingerprint({
-      sourceName: ctx.sourceName,
+  const docs = acceptedInputs.map((obs) => {
+    const value = normalizeObservationValue(obs.field, obs.value);
+    return {
       entityType: obs.entityType,
-      entityId: obs.entityId,
-      entityKey: obs.entityKey,
+      entityId: obs.entityId || undefined,
+      entityKey: obs.entityKey || undefined,
       field: obs.field,
-      value: obs.value,
-    }),
-  }));
+      value,
+      sourceId: ctx.sourceId,
+      sourceName: ctx.sourceName,
+      scrapeRunId: ctx.scrapeRunId,
+      sourceUrl: obs.sourceUrl,
+      observedAt: obs.observedAt || new Date(),
+      confidence: obs.confidenceOverride ?? ctx.sourceWeight,
+      superseded: false,
+      observationFingerprint: buildObservationFingerprint({
+        sourceName: ctx.sourceName,
+        entityType: obs.entityType,
+        entityId: obs.entityId,
+        entityKey: obs.entityKey,
+        field: obs.field,
+        value,
+      }),
+    };
+  });
 
   if (ctx.dryRun) {
-    return { inserted: 0, skipped: docs.length + rejectedSelfReferential.length, superseded: 0 };
+    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0 };
   }
 
   const result = await Observation.insertMany(docs, { ordered: false });
@@ -95,7 +124,7 @@ export async function appendObservations(
       ? (await Observation.bulkWrite(supersedeOps, { ordered: false })).modifiedCount || 0
       : 0;
 
-  return { inserted: result.length, skipped: rejectedSelfReferential.length, superseded };
+  return { inserted: result.length, skipped: skippedCount, superseded };
 }
 
 /**

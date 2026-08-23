@@ -386,6 +386,89 @@ describe('appendObservations', () => {
     expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
   });
 
+  it('coerces a bare-string sourceUrls value into a single-element array before insert (#observation-array-integrity)', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany').mockResolvedValue([
+      { _id: 'new-1', observationFingerprint: 'fp:researchEntity:sourceUrls' },
+    ] as any);
+    vi.spyOn(Observation, 'bulkWrite').mockResolvedValue({ modifiedCount: 0 } as any);
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'sourceUrls',
+          value: 'https://smith-lab.yale.edu',
+        },
+      ],
+      {
+        scrapeRunId: 'run-5',
+        sourceId: 'source-1',
+        sourceName: 'manual-admin-edit',
+        sourceWeight: 1,
+        dryRun: false,
+      },
+    );
+
+    const insertedDocs = insertMany.mock.calls[0][0] as any[];
+    expect(insertedDocs[0].value).toEqual(['https://smith-lab.yale.edu']);
+    expect(result.inserted).toBe(1);
+  });
+
+  it('rejects a kind observation value outside the researchGroupKinds enum before insert (#observation-array-integrity)', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite');
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'kind',
+          value: 'faculty_research',
+        },
+      ],
+      {
+        scrapeRunId: 'run-6',
+        sourceId: 'source-1',
+        sourceName: 'manual-admin-edit',
+        sourceWeight: 1,
+        dryRun: false,
+      },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(bulkWrite).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
+  it('rejects an entityType observation value outside the researchEntityTypes enum before insert (#observation-array-integrity)', async () => {
+    const insertMany = vi.spyOn(Observation, 'insertMany');
+    const bulkWrite = vi.spyOn(Observation, 'bulkWrite');
+
+    const result = await appendObservations(
+      [
+        {
+          entityType: 'researchEntity',
+          entityKey: 'smith-lab',
+          field: 'entityType',
+          value: 'FACULTY_RESEARCH',
+        },
+      ],
+      {
+        scrapeRunId: 'run-7',
+        sourceId: 'source-1',
+        sourceName: 'manual-admin-edit',
+        sourceWeight: 1,
+        dryRun: false,
+      },
+    );
+
+    expect(insertMany).not.toHaveBeenCalled();
+    expect(bulkWrite).not.toHaveBeenCalled();
+    expect(result).toEqual({ inserted: 0, skipped: 1, superseded: 0 });
+  });
+
   it('does not supersede anything during dry runs', async () => {
     const insertMany = vi.spyOn(Observation, 'insertMany');
     const bulkWrite = vi.spyOn(Observation, 'bulkWrite');

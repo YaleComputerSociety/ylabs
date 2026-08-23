@@ -63,6 +63,27 @@ describe('materializedFieldValue research-entity name hygiene', () => {
   it('does not casing-normalize research-entity displayName (preserves lab acronyms)', () => {
     expect(materializedFieldValue('researchEntity', 'displayName', 'PTSD Lab')).toBe('PTSD Lab');
   });
+
+  it('rejects a kind observation value outside the researchGroupKinds enum, keeping the existing value (#observation-array-integrity)', () => {
+    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', 'lab')).toBe(
+      'lab',
+    );
+    expect(materializedFieldValue('researchEntity', 'kind', 'faculty_research', undefined)).toBe(
+      undefined,
+    );
+    expect(materializedFieldValue('researchEntity', 'kind', 'individual', 'lab')).toBe(
+      'individual',
+    );
+  });
+
+  it('rejects an entityType observation value outside the researchEntityTypes enum, keeping the existing value (#observation-array-integrity)', () => {
+    expect(
+      materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH', 'LAB'),
+    ).toBe('LAB');
+    expect(
+      materializedFieldValue('researchEntity', 'entityType', 'FACULTY_RESEARCH_AREA', 'LAB'),
+    ).toBe('FACULTY_RESEARCH_AREA');
+  });
 });
 
 describe('entityMaterializer post-materialization metrics', () => {
@@ -326,7 +347,16 @@ describe('entityMaterializer post-materialization metrics', () => {
     ]);
     expect(
       sanitizeResearchEntitySourceUrlsForMaterialization('https://example.yale.edu/news'),
-    ).toBe('https://example.yale.edu/news');
+    ).toEqual([]);
+  });
+
+  it('coerces a bare-string sourceUrls observation into an array instead of passing it through as a scalar (#observation-array-integrity)', () => {
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization('https://bei-lab.com/')).toEqual([
+      'https://bei-lab.com/',
+    ]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization('')).toEqual([]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization(null)).toEqual([]);
+    expect(sanitizeResearchEntitySourceUrlsForMaterialization(undefined)).toEqual([]);
   });
 
   it('drops self-referential Yale Research URLs from materialized source URLs', () => {

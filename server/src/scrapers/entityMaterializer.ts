@@ -10,6 +10,7 @@ import { Observation, ObservedEntityType } from '../models/observation';
 import { User, normalizeUserType } from '../models/user';
 import { ResearchEntity } from '../models/researchEntity';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
+import { researchGroupKinds, researchEntityTypes } from '../models/researchAccessTypes';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import { shortDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
@@ -289,6 +290,16 @@ export function materializedFieldValue(
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
     return sanitizeResearchEntitySourceUrlsForMaterialization(value);
   }
+  if (isResearchEntityObservationType(entityType) && field === 'kind') {
+    return typeof value === 'string' && researchGroupKinds.includes(value as any)
+      ? value
+      : existingValue;
+  }
+  if (isResearchEntityObservationType(entityType) && field === 'entityType') {
+    return typeof value === 'string' && researchEntityTypes.includes(value as any)
+      ? value
+      : existingValue;
+  }
   if (
     isResearchEntityObservationType(entityType) &&
     MATERIALIZED_DESCRIPTION_FIELDS.has(field) &&
@@ -460,9 +471,15 @@ export function isResearchEntityContentPageSourceUrl(value: unknown): boolean {
 }
 
 export function sanitizeResearchEntitySourceUrlsForMaterialization(value: unknown): unknown {
-  if (!Array.isArray(value)) return value;
-  return value.filter(
+  const asArray = Array.isArray(value)
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? [value]
+      : [];
+  return asArray.filter(
     (url) =>
+      typeof url === 'string' &&
+      url.trim() &&
       !isResearchEntityContentPageSourceUrl(url) &&
       !isSelfReferentialUrl(url) &&
       !isDirectoryLoaderUrl(url) &&
