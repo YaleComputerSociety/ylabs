@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampDescriptionLength,
+  collapseDuplicatedProseBlock,
   hasContactBlockResidue,
   isCtaNewsTickerDumpText,
   isCurationRationaleText,
@@ -671,5 +672,26 @@ describe('isInstitutionalCenterBlurbText', () => {
     expect(
       sanitizeResearchEntityShortDescription('Studies liver fibrosis and vascular biology.'),
     ).toBe('Studies liver fibrosis and vascular biology.');
+  });
+});
+
+const SYNTHETIC_APPLICATION_PARAGRAPH =
+  'Applicants should submit a personal statement, an unofficial transcript, and a letter of recommendation from a faculty mentor by the March deadline.';
+
+describe('descriptionHygiene duplicated-block collapse (#904)', () => {
+  it('collapses an exact adjacent duplicate paragraph', () => {
+    const duplicated = `${SYNTHETIC_APPLICATION_PARAGRAPH} ${SYNTHETIC_APPLICATION_PARAGRAPH}`;
+    expect(collapseDuplicatedProseBlock(duplicated)).toBe(SYNTHETIC_APPLICATION_PARAGRAPH);
+  });
+
+  it('keeps the trailing chrome after collapsing the duplicate', () => {
+    const withTrailingChrome = `${SYNTHETIC_APPLICATION_PARAGRAPH} ${SYNTHETIC_APPLICATION_PARAGRAPH} Follow us on Instagram @example and Facebook!`;
+    expect(sanitizeCatalogDescription(withTrailingChrome)).toBe(SYNTHETIC_APPLICATION_PARAGRAPH);
+  });
+
+  it('leaves a short incidental adjacent repeat unchanged (below the minimum block length)', () => {
+    const prose =
+      'Thank you Thank you for applying to our summer research program, which runs for ten weeks starting in June.';
+    expect(collapseDuplicatedProseBlock(prose)).toBe(prose);
   });
 });

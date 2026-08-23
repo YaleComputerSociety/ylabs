@@ -94,12 +94,43 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\bmain menu\b/gi,
   /\bINFORMATION FOR\b/g,
   /\bCopy Link\b/g,
+  /\bfollow us on\b[^.!?]*[.!?]/gi,
 ];
 
 export function stripCatalogChrome(text: string): string {
   let out = String(text || '');
   for (const pattern of CATALOG_CHROME_PATTERNS) out = out.replace(pattern, ' ');
   return normalizeHygieneWhitespace(out);
+}
+
+/**
+ * Collapse an exact, adjacent duplicate of a prose block: a scrape defect
+ * where a paragraph is concatenated with itself (directly, or separated by
+ * the single normalized whitespace of a paragraph break), sometimes followed
+ * by unrelated trailing chrome (#904). Requires an exact match of a
+ * substantial run (>=40 normalized characters) immediately following itself,
+ * checked from the smallest candidate block up so a long run of a repeated
+ * short sentence collapses one repeat at a time rather than being mistaken
+ * for one giant duplicated block, and ordinary prose that merely repeats a
+ * short phrase is left untouched.
+ */
+export function collapseDuplicatedProseBlock(text: string): string {
+  const normalized = normalizeHygieneWhitespace(text);
+  const minBlockLength = 40;
+  const maxBlockLength = Math.floor(normalized.length / 2);
+  for (let blockLength = minBlockLength; blockLength <= maxBlockLength; blockLength += 1) {
+    const first = normalized.slice(0, blockLength);
+    if (first === normalized.slice(blockLength, blockLength * 2)) {
+      return normalizeHygieneWhitespace(first + normalized.slice(blockLength * 2));
+    }
+    if (
+      normalized[blockLength] === ' ' &&
+      first === normalized.slice(blockLength + 1, blockLength * 2 + 1)
+    ) {
+      return normalizeHygieneWhitespace(first + normalized.slice(blockLength * 2 + 1));
+    }
+  }
+  return normalized;
 }
 
 const researchAreaHeadingLeakPattern =
@@ -428,7 +459,7 @@ export function isResearchAreaEchoDescription(text: string): boolean {
  * stripRedactionPlaceholders in the #671 backfill.
  */
 export function sanitizeCatalogDescription(text: string): string {
-  const stripped = stripDeadAnchorCtaSentences(stripCatalogChrome(text));
+  const stripped = collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text)));
   if (!stripped) return '';
   if (
     isRosterShapedText(stripped) ||
