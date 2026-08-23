@@ -133,6 +133,7 @@ const CATALOG_CHROME_PATTERNS: RegExp[] = [
   /\bfollow us on\b[^.!?]*[.!?]/gi,
   /\b(?:Learn|Read) more about\s+[A-Za-z][^>»\n]{0,60}?(?:>>|»)/gi,
   /\bWatch a video with\s+[A-Za-z][^>»\n]{0,60}?(?:>>|»)/gi,
+  /\b(?:Learn|Read) more about\b[^.!?>»\n]{0,80}?[.!?]?\s*Read More\b/g,
 ];
 
 export function stripCatalogChrome(text: string): string {
