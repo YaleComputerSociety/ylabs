@@ -130,6 +130,51 @@ describe('sanitizeFacultyResearchEntityText', () => {
       ),
     ).toBe('This research includes genomic screening. This research addresses cilia.');
   });
+
+  it('drops a dash-separated "- Research" name suffix when building the possessive (#805)', () => {
+    const individualResearch = {
+      name: 'Tara Boroushaki - Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Tara Boroushaki Laboratory investigates sensing and mobile technologies.',
+        individualResearch,
+      ),
+    ).toBe("Tara Boroushaki's research investigates sensing and mobile technologies.");
+  });
+
+  it('drops a bare "Research" name suffix when building the possessive (#805)', () => {
+    const facultyResearch = {
+      name: 'Marcus Bosenberg Research',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+    };
+
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Marcus Bosenberg Lab focuses on cancer immunology.',
+        facultyResearch,
+      ),
+    ).toBe("Marcus Bosenberg's research focuses on cancer immunology.");
+  });
+
+  it('drops an en-dash "– Research" name suffix when building the possessive (#805)', () => {
+    const individualResearch = {
+      name: 'Tara Boroushaki – Research',
+      kind: 'individual',
+      entityType: 'INDIVIDUAL_RESEARCH',
+    };
+
+    expect(
+      sanitizeFacultyResearchEntityText(
+        'The Tara Boroushaki Lab studies wireless networking.',
+        individualResearch,
+      ),
+    ).toBe("Tara Boroushaki's research studies wireless networking.");
+  });
 });
 
 describe('sanitizeResearchEntityPublicDescriptionFields', () => {

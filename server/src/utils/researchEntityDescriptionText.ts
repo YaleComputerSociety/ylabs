@@ -279,7 +279,7 @@ export function isFacultyResearchTextEntity(entity?: FacultyResearchTextEntity |
 
 function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
   return textValue(entity.displayName || entity.name)
-    .replace(/\s+(?:Faculty Research|Lab|Laboratory)$/i, '')
+    .replace(/\s+[-–—]?\s*(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
 }
 
