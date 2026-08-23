@@ -176,13 +176,41 @@ export function isProgramApplicationPortalUrl(value: unknown): boolean {
   return PROGRAM_APPLICATION_PORTAL_HOST.test(url.hostname);
 }
 
-export function isUnhelpfulProgramUrl(value: unknown): boolean {
+const PROGRAM_DETAIL_PATH_KEYWORD_PATTERN =
+  /(?:fellowships?|grants?|scholars?|scholarships?|awards?|prizes?|internships?|assistantships?|research-internship-program|tobin-ra)/i;
+
+function pathSegmentCount(url: URL): number {
+  return url.pathname.split('/').filter(Boolean).length;
+}
+
+/**
+ * A same-host link that is shallower than (or as shallow as) the program's own
+ * source page, isn't the source page itself, and carries none of the
+ * program-detail path keywords is almost always leaked site nav/footer chrome
+ * (About Us, Apply, Give, Contact Us, academic section roots) rather than a
+ * program-specific resource - regardless of which host the page happens to be
+ * on (#633 residual).
+ */
+export function isSameHostShallowChromeUrl(value: unknown, sourceUrlValue: unknown): boolean {
+  const url = parseHttpUrl(value);
+  const sourceUrl = parseHttpUrl(sourceUrlValue);
+  if (!url || !sourceUrl) return false;
+  if (url.hostname.toLowerCase() !== sourceUrl.hostname.toLowerCase()) return false;
+  if (url.pathname.replace(/\/+$/, '') === sourceUrl.pathname.replace(/\/+$/, '')) return false;
+  if (PROGRAM_DETAIL_PATH_KEYWORD_PATTERN.test(url.pathname)) return false;
+  const linkDepth = pathSegmentCount(url);
+  if (linkDepth === 0) return false;
+  return linkDepth <= 2 && linkDepth <= pathSegmentCount(sourceUrl);
+}
+
+export function isUnhelpfulProgramUrl(value: unknown, sourceUrlValue?: unknown): boolean {
   if (isProgramApplicationPortalUrl(value)) return false;
   return (
     isBareDomainRootUrl(value) ||
     isListingOrIndexUrl(value) ||
     isBoilerplatePlatformHostUrl(value) ||
-    isSelfReferentialUrl(value)
+    isSelfReferentialUrl(value) ||
+    isSameHostShallowChromeUrl(value, sourceUrlValue)
   );
 }
 

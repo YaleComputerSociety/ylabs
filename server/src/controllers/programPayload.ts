@@ -1,21 +1,24 @@
 import { redactDirectContactInfo } from '../utils/contactRedaction';
-import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
+import { sanitizeCatalogDescription, stripRedactionPlaceholders } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 
-const publicSpecificProgramUrl = (value: unknown): string | undefined => {
+const publicSpecificProgramUrl = (value: unknown, sourceUrl?: unknown): string | undefined => {
   const url = publicHttpUrl(value);
-  if (!url || isUnhelpfulProgramUrl(url)) return undefined;
+  if (!url || isUnhelpfulProgramUrl(url, sourceUrl)) return undefined;
   return url;
 };
 
-const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string }> =>
+const publicProgramLinks = (
+  links: unknown,
+  sourceUrl?: unknown,
+): Array<{ label?: string; url: string }> =>
   Array.isArray(links)
     ? links.flatMap((link) => {
         if (!link || typeof link !== 'object') return [];
         const record = link as Record<string, unknown>;
-        const url = publicSpecificProgramUrl(record.url);
+        const url = publicSpecificProgramUrl(record.url, sourceUrl);
         if (!url) return [];
         const label =
           typeof record.label === 'string' && record.label.trim()
@@ -26,11 +29,11 @@ const publicProgramLinks = (links: unknown): Array<{ label?: string; url: string
     : [];
 
 const publicProgramText = (value: unknown): unknown =>
-  typeof value === 'string' ? redactDirectContactInfo(value) : value;
+  typeof value === 'string' ? stripRedactionPlaceholders(redactDirectContactInfo(value)) : value;
 
 const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
-    ? redactDirectContactInfo(sanitizeCatalogDescription(value))
+    ? stripRedactionPlaceholders(redactDirectContactInfo(sanitizeCatalogDescription(value)))
     : value;
 
 const publicProgramTextArray = (value: unknown): string[] =>
@@ -66,8 +69,8 @@ export const publicProgramForReader = (program: any) => {
     eligibility: publicProgramText(program.eligibility),
     restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),
     additionalInformation: publicProgramText(program.additionalInformation),
-    links: publicProgramLinks(program.links),
-    applicationLink: publicSpecificProgramUrl(program.applicationLink),
+    links: publicProgramLinks(program.links, program.sourceUrl),
+    applicationLink: publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
     awardAmount: program.awardAmount,
     isAcceptingApplications: program.isAcceptingApplications,
     applicationOpenDate: program.applicationOpenDate,
