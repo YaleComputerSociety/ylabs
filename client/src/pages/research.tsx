@@ -650,7 +650,9 @@ const Research = () => {
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(false);
-    setSearchResultResearchEntities([]);
+    if (!options.preserveResults) {
+      setSearchResultResearchEntities([]);
+    }
     setActiveSearchRequest({
       searchQuery: searchQuery.trim(),
       filters,
