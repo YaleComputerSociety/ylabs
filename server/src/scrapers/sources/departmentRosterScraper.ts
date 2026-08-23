@@ -1551,6 +1551,10 @@ const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
   'materials-science': 'meng-matsci',
 };
 
+function namespacedDeptKey(deptKey: string): string {
+  return SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[deptKey] || deptKey;
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -1563,8 +1567,7 @@ function entryToUserObservations(
     : undefined;
   const netid = netidFromEmail(personEmail);
   const slug = slugify(cleaned);
-  const entityKeyNamespace =
-    SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[dept.deptKey] || dept.deptKey;
+  const entityKeyNamespace = namespacedDeptKey(dept.deptKey);
   const entityKey = netid ? `netid:${netid}` : `dept:${entityKeyNamespace}:${slug || 'unknown'}`;
 
   const rosterBase = { entityType: 'user' as const, entityKey, sourceUrl };
@@ -1630,7 +1633,7 @@ function entryToResearchEntityObservations(
   if (!entry.labUrl) return [];
   const cleanedName = normalizeName(entry.name);
   const nameSlug = slugify(cleanedName) || slugify(entry.labUrl);
-  const slug = `dept-${dept.deptKey}-${nameSlug}`.slice(0, 100);
+  const slug = `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
   const isExplicitLab = isLikelyExplicitLabWebsite(entry);
   if (!isExplicitLab && dept.emitPersonalResearchEntities === false) return [];
   const entityName = cleanedName
