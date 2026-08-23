@@ -1,9 +1,23 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchHomeCard from '../ResearchHomeCard';
 import type { ResearchCluster } from '../../../utils/researchDiscoveryAdapters';
+import { sanitizeFacultyResearchCopy } from '../../../utils/researchEntityCopy';
+
+vi.mock('../../../utils/researchEntityCopy', async () => {
+  const actual = await vi.importActual<typeof import('../../../utils/researchEntityCopy')>(
+    '../../../utils/researchEntityCopy',
+  );
+  return {
+    ...actual,
+    sanitizeFacultyResearchCopy: vi.fn(actual.sanitizeFacultyResearchCopy),
+  };
+});
+
+const renderSpy = vi.mocked(sanitizeFacultyResearchCopy);
 
 afterEach(() => {
   cleanup();
@@ -440,5 +454,38 @@ describe('ResearchHomeCard', () => {
     expect(screen.getByText('Legacy Entry').getAttribute('title')).toBe(
       'Research profile link is not available yet.',
     );
+  });
+
+  it('does not re-render an unchanged home when its parent re-renders on append', () => {
+    const stableHome = researchHome();
+    const stableSelect = vi.fn();
+
+    const AppendingGrid = () => {
+      const [appendedCount, setAppendedCount] = useState(0);
+      return (
+        <>
+          <button type="button" onClick={() => setAppendedCount((count) => count + 1)}>
+            Append page
+          </button>
+          <output aria-label="Appended pages">{appendedCount}</output>
+          <ResearchHomeCard home={stableHome} onSelect={stableSelect} />
+        </>
+      );
+    };
+
+    render(
+      <MemoryRouter>
+        <AppendingGrid />
+      </MemoryRouter>,
+    );
+
+    const rendersAfterMount = renderSpy.mock.calls.length;
+    expect(rendersAfterMount).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Append page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Append page' }));
+
+    expect(screen.getByLabelText('Appended pages').textContent).toBe('2');
+    expect(renderSpy.mock.calls.length).toBe(rendersAfterMount);
   });
 });
