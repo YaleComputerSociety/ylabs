@@ -622,6 +622,30 @@ describe('LabMicrositeDescriptionLLMExtractor', () => {
     expect(nameObservation?.confidenceOverride).toBeGreaterThan(0.9);
   });
 
+  it('strips a description sentence glued onto the extracted lab name (#797)', () => {
+    const observations = descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'We study how immune cells, lipids, and metabolic networks end inflammation and restore tissue health.',
+        shortDescription: 'Studies how immune cells and metabolic networks resolve inflammation.',
+        topics: [],
+        methods: [],
+        name: 'Sample Fixture Lab We study how immune cells, lipids, and metabolic networks end inflammation and restore tissue health.',
+      },
+      {
+        entityId: 'entity-fixture',
+        entityKey: 'nih-pi-sample-fixture',
+        sourceUrl: 'https://sample-fixture-lab.example.org/',
+      },
+    );
+
+    const nameObservation = observations.find((obs) => obs.field === 'name');
+    const displayNameObservation = observations.find((obs) => obs.field === 'displayName');
+    expect(nameObservation?.value).toBe('Sample Fixture Lab');
+    expect(displayNameObservation?.value).toBe('Sample Fixture Lab');
+    expect(nameObservation?.value).not.toMatch(/\bwe study\b/i);
+  });
+
   it('does not emit a lab name from a profile page or when no proper name is extracted', () => {
     const profileObservations = descriptionExtractionToObservations(
       {

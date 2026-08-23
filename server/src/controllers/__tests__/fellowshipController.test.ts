@@ -43,7 +43,7 @@ const privateFellowship = {
   _id: '64a000000000000000000010',
   title: 'Summer Research Program',
   programCategory: 'SUMMER_RESEARCH_PROGRAM',
-  applicationLink: 'https://example.yale.edu/apply',
+  applicationLink: 'https://example.yale.edu/program/apply',
   deadline: new Date('2026-02-01T00:00:00.000Z'),
   contactEmail: 'program@yale.edu',
   sourceName: 'Official program page',
@@ -70,7 +70,7 @@ const expectPublicFellowship = (payload: any) => {
     _id: '64a000000000000000000010',
     title: 'Summer Research Program',
     programCategory: 'SUMMER_RESEARCH_PROGRAM',
-    applicationLink: 'https://example.yale.edu/apply',
+    applicationLink: 'https://example.yale.edu/program/apply',
     deadline: new Date('2026-02-01T00:00:00.000Z'),
     sourceName: 'Official program page',
     sourceUrl: 'https://example.yale.edu/program',
@@ -309,7 +309,9 @@ describe('fellowshipController', () => {
     await searchFellowshipsController({ query: {} } as any, res as any);
 
     const payload = res.json.mock.calls[0][0].results[0];
-    expect(payload.summary).toBe('Email [email redacted] or call [phone redacted] before applying.');
+    expect(payload.summary).toBe(
+      'Email [email redacted] or call [phone redacted] before applying.',
+    );
     expect(payload.description).toBe('Questions: [email redacted].');
     expect(payload.applicationInformation).toBe('Call [phone redacted] for the form.');
     expect(payload.eligibility).toBe('Ask [email redacted] about eligibility.');
@@ -397,10 +399,7 @@ describe('fellowshipController', () => {
     const res = response();
     mocks.addView.mockResolvedValue(privateFellowship);
 
-    await addViewToFellowship(
-      { params: { id: '64a000000000000000000010' } } as any,
-      res as any,
-    );
+    await addViewToFellowship({ params: { id: '64a000000000000000000010' } } as any, res as any);
 
     expectPublicFellowship(res.json.mock.calls[0][0].fellowship);
   });

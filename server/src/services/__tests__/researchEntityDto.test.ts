@@ -77,6 +77,23 @@ describe('researchEntityDto', () => {
     expect(dto.entityKind).toBe('individual');
   });
 
+  it('drops prose-sentence researchArea chips from the public DTO (#816)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-chips',
+      slug: 'mcnamara-physics',
+      name: 'Harry McNamara - Research',
+      researchAreas: [
+        'Biophysics',
+        'Synthetic Biology',
+        'We study how cells process information to make collective decisions.',
+        'research areas:',
+        'Nonlinear Dynamics',
+      ],
+    });
+
+    expect(dto.researchAreas).toEqual(['Biophysics', 'Synthetic Biology', 'Nonlinear Dynamics']);
+  });
+
   it('collapses prefixed and plain department labels in public DTOs', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-mcdb',

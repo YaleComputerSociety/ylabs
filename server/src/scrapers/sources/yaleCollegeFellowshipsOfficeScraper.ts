@@ -557,10 +557,13 @@ function finalizeCandidate(
   candidate: Omit<FellowshipCatalogCandidate, 'sourceFingerprint'>,
 ): FellowshipCatalogCandidate {
   const applicationLink =
-    candidate.applicationLink && !isUnhelpfulProgramUrl(candidate.applicationLink)
+    candidate.applicationLink &&
+    !isUnhelpfulProgramUrl(candidate.applicationLink, candidate.sourceUrl)
       ? candidate.applicationLink
       : undefined;
-  const links = candidate.links.filter((link) => !isUnhelpfulProgramUrl(link.url));
+  const links = candidate.links.filter(
+    (link) => !isUnhelpfulProgramUrl(link.url, candidate.sourceUrl),
+  );
   const sanitized = { ...candidate, applicationLink, links };
   return {
     ...sanitized,

@@ -4,6 +4,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
+import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -94,7 +95,7 @@ function publicResearchAreaArray(value: unknown): string[] {
     labels.push(cleaned);
     if (labels.length >= MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS) break;
   }
-  return labels;
+  return filterProseResearchAreaChips(labels);
 }
 
 function publicHttpUrl(value: unknown): string | undefined {

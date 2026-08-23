@@ -6,6 +6,7 @@ import {
   normalizeResearchMetadataLabels,
 } from './researchTextNormalization';
 import { getUniqueDepartmentLabels } from './departmentNames';
+import { researchEntityTitle } from './researchEntityCopy';
 import { safeHttpUrl } from './url';
 
 export interface EvidenceSourceRowData {
@@ -558,6 +559,7 @@ const buildProfileDiscoveryClusters = (
 ): ResearchCluster[] =>
   entities.map((entity) => {
     const displayName = entityDisplayName(entity);
+    const title = researchEntityTitle(entity);
     const contextSummary = buildResearchHomeContextSummary({
       shortDescription: entity.shortDescription,
       fullDescription: entity.fullDescription,
@@ -577,7 +579,7 @@ const buildProfileDiscoveryClusters = (
 
     return {
       id: entity.slug || entity.id || entity._id || slugify(displayName),
-      label: displayName,
+      label: title,
       description: contextSummary.text,
       contextState: contextSummary.state,
       contextLabel: contextSummary.label,

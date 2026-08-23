@@ -9,6 +9,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
@@ -342,7 +343,7 @@ const GOVERNANCE_ORG_NAME_RE =
   /^(?:the\s+)?(?:council|committee|consortium|commission|task\s+force|working\s+group|senate|assembly|office\s+of|board\s+of)\b/i;
 
 function usefulLabName(value: unknown): string {
-  const text = textValue(value);
+  const text = stripTrailingResearchHomeDescription(textValue(value));
   if (text.length < 2 || text.length > 120) return '';
   if (/^(?:n\/a|none|unknown|the lab|lab|laboratory|research)$/i.test(text)) return '';
   if (GOVERNANCE_ORG_NAME_RE.test(text)) return '';

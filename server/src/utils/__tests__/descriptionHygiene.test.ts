@@ -9,6 +9,7 @@ import {
   isNavigationDumpText,
   isPublicationsListDumpText,
   isResearchAreaEchoDescription,
+  isResearchAreaTemplateLeakText,
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
@@ -286,6 +287,34 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
   });
 });
 
+const SYNTHETIC_OFFICE_ADDRESS_PROSE =
+  'Our lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, and single-particle electron cryo-microscopy. 100 Sample Avenue, Fl 2, Rm 234';
+
+const SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE =
+  'The center coordinates translational research across several affiliated departments. 42 Fixture Boulevard';
+
+describe('descriptionHygiene bare office/street address residue detection (#798)', () => {
+  it('flags a bare office address fragment with a floor/room unit', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_OFFICE_ADDRESS_PROSE)).toBe(true);
+  });
+
+  it('flags a bare street address fragment with no unit label', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE)).toBe(true);
+  });
+
+  it('does not flag ordinary prose with no address-shaped fragment', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
+  });
+
+  it('fails a served description closed to empty on a non-trailing glued office address', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'The lab is at 100 Sample Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.',
+      ),
+    ).toBe('');
+  });
+});
+
 describe('descriptionHygiene trailing office-address strip (#798)', () => {
   const BIO_WITH_TRAILING_ADDRESS =
     'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy. 266 Whitney Avenue, Fl 2, Rm 234';
@@ -418,6 +447,25 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
       'How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.',
     );
     expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
+  });
+
+  it('fails closed on a Studies-template blurb that leaked a research-areas heading (#816)', () => {
+    expect(isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.')).toBe(
+      true,
+    );
+    expect(sanitizeResearchEntityShortDescription('Studies soft robotics, actuators, and research areas:.')).toBe(
+      '',
+    );
+    expect(
+      sanitizeResearchEntityShortDescription('Research fields include ecology, evolution, and research interests:.'),
+    ).toBe('');
+    expect(sanitizeResearchEntityShortDescription('Studies research topics:')).toBe('');
+  });
+
+  it('keeps a clean Studies-template blurb that has no heading leak', () => {
+    const clean = 'Studies soft robotics, compliant actuators, and human-robot interaction.';
+    expect(isResearchAreaTemplateLeakText(clean)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
   });
 });
 

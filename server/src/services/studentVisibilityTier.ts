@@ -421,6 +421,20 @@ export function computeResearchEntityStudentVisibility({
   return result;
 }
 
+const PROGRAM_DESCRIPTION_MIN_WORDS = 6;
+
+type ProgramDescriptionState = 'present' | 'thin' | 'missing';
+
+function programDescriptionState(program: ProgramStudentVisibilityInput): ProgramDescriptionState {
+  const text = [program.summary, program.description]
+    .map(textValue)
+    .reduce((longest, current) => (current.length > longest.length ? current : longest), '');
+  if (!text) return 'missing';
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words < PROGRAM_DESCRIPTION_MIN_WORDS) return 'thin';
+  return 'present';
+}
+
 export function computeProgramStudentVisibility(
   program: ProgramStudentVisibilityInput,
 ): StudentVisibilityResult {
@@ -443,6 +457,8 @@ export function computeProgramStudentVisibility(
     program.undergraduateOnly === true || program.yaleCollegeOnly === true;
   const audienceKnown = undergraduateRelevant || graduateOnly;
   const formalizationOnly = isFormalizationOnlyProgram(program);
+  const descriptionState = programDescriptionState(program);
+  const hasMeaningfulDescription = descriptionState === 'present';
   const researchRelated = classifyProgramResearchRelevance(program).researchRelated;
   const catalogOrAdmin =
     /\b(administering|alternative funding|find funding|student grants database|faculty staff)\b/i.test(
@@ -459,6 +475,8 @@ export function computeProgramStudentVisibility(
   if (undergraduateRelevant) reasons.push('undergraduate_relevant');
   if (graduateOnly) reasons.push('graduate_relevant');
   if (formalizationOnly) reasons.push('formalization_only');
+  if (descriptionState === 'missing') reasons.push('missing_description');
+  else if (descriptionState === 'thin') reasons.push('thin_description');
   if (!researchRelated) reasons.push('non_research_program');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
@@ -469,7 +487,8 @@ export function computeProgramStudentVisibility(
     audienceKnown &&
     hasOfficialSource &&
     hasApplicationRoute &&
-    !sourceIsApplicationPortal
+    !sourceIsApplicationPortal &&
+    hasMeaningfulDescription
   ) {
     // A research program with a known audience, a real (non-portal) official source, and an
     // application route is student-ready regardless of whether that audience is undergraduate
