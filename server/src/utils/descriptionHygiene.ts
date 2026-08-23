@@ -83,19 +83,32 @@ export function stripDeadAnchorCtaSentences(text: string): string {
 const PROTECTED_ABBREVIATION_TAIL =
   /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
 
+const TRAILING_NAME_INITIAL_TAIL = /(?:^|\s)[A-Z]\.\s*$/;
+
 /**
  * Re-join sentence segments that the terminal-punctuation tiling split inside a
- * common abbreviation (a title like "Prof."/"Dr.", or "Inc."/"etc."). Operating
- * on the lossless partition means the merge cannot drop or reorder any
- * character; it only removes an internal split point, so segment-level filtering
- * and deduplication downstream reason over whole sentences rather than
- * abbreviation fragments.
+ * common abbreviation (a title like "Prof."/"Dr.", or "Inc."/"etc.") or a
+ * single-capital-letter name initial ("Arthur K. Watson", "John F. Kennedy").
+ * A name initial only merges when the next segment opens with a capitalized
+ * word - the surname continuation - so a sentence that genuinely ends in a lone
+ * capital letter is not glued to the next. Operating on the lossless partition
+ * means the merge cannot drop or reorder any character; it only removes an
+ * internal split point, so segment-level filtering and deduplication downstream
+ * reason over whole sentences rather than abbreviation fragments.
  */
 function mergeAbbreviationSplitSentences(segments: string[]): string[] {
   const merged: string[] = [];
   for (const segment of segments) {
     const previousIndex = merged.length - 1;
-    if (previousIndex >= 0 && PROTECTED_ABBREVIATION_TAIL.test(merged[previousIndex])) {
+    if (previousIndex < 0) {
+      merged.push(segment);
+      continue;
+    }
+    const previous = merged[previousIndex];
+    const mergesAbbreviation = PROTECTED_ABBREVIATION_TAIL.test(previous);
+    const mergesNameInitial =
+      TRAILING_NAME_INITIAL_TAIL.test(previous) && /^\s*[A-Z]/.test(segment);
+    if (mergesAbbreviation || mergesNameInitial) {
       merged[previousIndex] += segment;
     } else {
       merged.push(segment);
@@ -939,6 +952,60 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
   );
 }
 
+const researchActivityPattern =
+  /\b(?:studies|study|studying|studied|focus(?:es|ing|ed)?\s+on|research(?:es|ing|ed)|investigat\w+|explore[sd]?|exploring|examine[sd]?|examining|analyze[sd]?|analyzing|develop(?:s|ing|ed)?|design(?:s|ing|ed)?|work(?:s|ing)?\s+on|specializ\w+|interested\s+in|aims?\s+to|seeks?\s+to|advance[sd]?|advancing|discover\w+|models?|method(?:s|ology|ologies)?)\b/i;
+
+const physicalLocationPredicatePattern =
+  /\b(?:is|are|was|were|will\s+be)\s+(?:located|housed|situated|headquartered)\b\s+(?:in|at|on|within|near)\b/i;
+
+const officeUnitLocationPattern =
+  /\b(?:Room|Rm|Suite|Ste|Floor|Fl|Building|Bldg)\.?\s*\d+[A-Za-z]?\b/i;
+
+function isAdministrativeLocationSentence(sentence: string): boolean {
+  const normalized = normalizeHygieneWhitespace(sentence);
+  if (!normalized) return false;
+  if (researchActivityPattern.test(normalized)) return false;
+  const hasLocationSignal =
+    physicalLocationPredicatePattern.test(normalized) || officeUnitLocationPattern.test(normalized);
+  if (!hasLocationSignal) return false;
+  return true;
+}
+
+/**
+ * Drop the leading run of sentences that are purely administrative /
+ * physical-location boilerplate - who runs the lab and where it sits ("The X
+ * Lab is led by Prof. Y and is located in Arthur K. Watson Hall. The research
+ * laboratory is located in AKW 408.") - when substantive research prose
+ * follows. Such an About/Contact preamble is not "what this lab studies" and,
+ * because two adjacent sentences can name the same building twice (a hall then
+ * its room number), also collapses the duplicated location restatement (#1178).
+ * A sentence is only removed when it carries a location signal (a "located/
+ * housed/situated in ..." predicate or a Room/Floor/Suite/Building unit) and
+ * no research-activity verb, so a genuine "The lab is located in the medical
+ * school and studies cancer immunology" sentence is kept. Fails closed: only a
+ * leading prefix is ever removed, and if stripping would leave nothing the
+ * original text is returned unchanged so a location-only description is never
+ * blanked. Uses the lossless, abbreviation-aware sentence tiling so "Prof."/
+ * "Dr." titles do not split a sentence mid-run.
+ */
+export function stripAdministrativeLocationLead(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value) return value;
+  if (!physicalLocationPredicatePattern.test(value) && !officeUnitLocationPattern.test(value)) {
+    return value;
+  }
+  const segments = partitionSentencesForFiltering(value);
+  if (segments.length < 2) return value;
+  let leadingToDrop = 0;
+  while (leadingToDrop < segments.length && isAdministrativeLocationSentence(segments[leadingToDrop])) {
+    leadingToDrop += 1;
+  }
+  if (leadingToDrop === 0) return value;
+  const kept = segments.slice(leadingToDrop);
+  const rejoined = normalizeHygieneWhitespace(kept.join(''));
+  return rejoined ? rejoined : value;
+}
+
 /**
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
@@ -956,7 +1023,9 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripGluedProfileRoleLabel(
-    stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+    stripTrailingContactAddress(
+      stripAdministrativeLocationLead(sanitizeCatalogDescription(redacted)),
+    ),
   );
   if (!stripped) return '';
   if (

@@ -27,6 +27,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
   sanitizeStoredCatalogDescription,
+  stripAdministrativeLocationLead,
   stripCatalogChrome,
   stripDeadAnchorCtaSentences,
   stripLeadingPageChrome,
@@ -550,6 +551,48 @@ describe('descriptionHygiene bare office/street address residue detection (#798)
         'The lab is at 100 Sample Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.',
       ),
     ).toBe('');
+  });
+});
+
+const SYNTHETIC_ADMIN_LOCATION_LEAD =
+  'The Efficient Computing Lab (ECL) is led by Prof. Lin Zhong and is located in Arthur K. Watson Hall. The research laboratory is located in AKW 408. Our current research focuses on designing low-latency, high-throughput systems in the context of AI and Quantum Computing.';
+
+const SYNTHETIC_ADMIN_LOCATION_LEAD_PROSE =
+  'Our current research focuses on designing low-latency, high-throughput systems in the context of AI and Quantum Computing.';
+
+describe('descriptionHygiene administrative/physical-location lead strip (#1178)', () => {
+  it('strips a leading administrative + duplicated-building/room preamble and keeps the research prose', () => {
+    expect(stripAdministrativeLocationLead(SYNTHETIC_ADMIN_LOCATION_LEAD)).toBe(
+      SYNTHETIC_ADMIN_LOCATION_LEAD_PROSE,
+    );
+  });
+
+  it('serves the research-first prose through sanitizeResearchEntityDescription', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_ADMIN_LOCATION_LEAD)).toBe(
+      SYNTHETIC_ADMIN_LOCATION_LEAD_PROSE,
+    );
+  });
+
+  it('keeps a leading location sentence that also carries research activity', () => {
+    const prose =
+      'The lab is located in the School of Medicine and studies how signaling networks coordinate tissue regeneration. It combines live imaging with computational modeling.';
+    expect(stripAdministrativeLocationLead(prose)).toBe(prose);
+  });
+
+  it('fails closed and keeps a location-only description with no research prose after', () => {
+    const locationOnly =
+      'The lab is led by Prof. Casey Rivera and is located in Arthur K. Watson Hall. The laboratory is located in AKW 408.';
+    expect(stripAdministrativeLocationLead(locationOnly)).toBe(locationOnly);
+  });
+
+  it('leaves a description that already leads with research prose unchanged', () => {
+    expect(stripAdministrativeLocationLead(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(SYNTHETIC_CLEAN_LAB_PROSE);
+  });
+
+  it('does not strip a non-leading administrative/location sentence', () => {
+    const prose =
+      'The Rivera Lab studies tissue regeneration across model organisms. The lab is located in AKW 408.';
+    expect(stripAdministrativeLocationLead(prose)).toBe(prose);
   });
 });
 
