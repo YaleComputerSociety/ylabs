@@ -79,6 +79,7 @@ import {
   type ResearchActivityCandidate,
 } from './researchActivityIntegrity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   getPublicUndergraduateLogistics,
@@ -1224,7 +1225,7 @@ function publicMemberUserForResearchDetail(user: any): any {
   addPublicMemberField(publicUser, 'fname', user?.fname);
   addPublicMemberField(publicUser, 'lname', user?.lname);
   addPublicMemberField(publicUser, 'displayName', user?.displayName);
-  addPublicMemberField(publicUser, 'title', user?.title);
+  addPublicMemberField(publicUser, 'title', sanitizePersonTitle(user?.title));
   publicUser.imageUrl = imageUrl;
   publicUser.image_url = imageUrl;
   addPublicMemberField(publicUser, 'primaryDepartment', primaryDepartment);
@@ -1281,7 +1282,7 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
   addPublicMemberField(publicUser, 'fname', fallbackFirstName || undefined);
   addPublicMemberField(publicUser, 'lname', rest.join(' ') || undefined);
   addPublicMemberField(publicUser, 'displayName', entry.name || undefined);
-  addPublicMemberField(publicUser, 'title', entry.title);
+  addPublicMemberField(publicUser, 'title', sanitizePersonTitle(entry.title));
   publicUser.imageUrl = imageUrl;
   publicUser.image_url = imageUrl;
   addPublicMemberField(publicUser, 'primaryDepartment', primaryDepartment || undefined);

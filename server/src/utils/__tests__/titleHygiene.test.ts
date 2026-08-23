@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { isNavMenuChromeTitle, normalizeTitleWhitespace } from '../titleHygiene';
+import {
+  hasRawEmailAddress,
+  hasStreetAddressFragment,
+  isBioProseTitle,
+  isNavMenuChromeTitle,
+  normalizeTitleWhitespace,
+  sanitizePersonTitle,
+} from '../titleHygiene';
 
 const YQI_NAV_MENU_TITLE =
   'About the InstituteMission & HistoryCommunity ValuesOur membersAnnual ReportsJoin the InstituteYQI in the MediaLocation & ContactsPrograms & EventsUpcoming EventsArtists-in-Residence ProgramColloquia and Seminar SeriesDistinguished Lecturer';
@@ -46,6 +53,108 @@ describe('isNavMenuChromeTitle', () => {
     expect(isNavMenuChromeTitle('')).toBe(false);
     expect(isNavMenuChromeTitle(null)).toBe(false);
     expect(isNavMenuChromeTitle(undefined)).toBe(false);
+  });
+});
+
+describe('hasRawEmailAddress', () => {
+  it('rejects a title carrying a raw email address', () => {
+    expect(hasRawEmailAddress('Professor of Physics jane.doe@example.edu')).toBe(true);
+  });
+
+  it('keeps a plain job title', () => {
+    expect(hasRawEmailAddress('Associate Professor of Chemistry')).toBe(false);
+  });
+});
+
+describe('hasStreetAddressFragment', () => {
+  it('rejects an Address: label run into the title', () => {
+    expect(
+      hasStreetAddressFragment(
+        'Professor of Ecology & Evolutionary BiologyAddress: 21 Sachem St. New Haven, CT 06511',
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects a bare city, state and ZIP fragment', () => {
+    expect(hasStreetAddressFragment('New Haven, CT 06520')).toBe(true);
+  });
+
+  it('keeps a plain job title', () => {
+    expect(hasStreetAddressFragment('Professor of Ecology and Evolutionary Biology')).toBe(false);
+  });
+});
+
+describe('isBioProseTitle', () => {
+  it('rejects a multi-sentence bio dumped into the title', () => {
+    expect(
+      isBioProseTitle(
+        'Her lab studies protein folding. She teaches biochemistry. She joined in 2004.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a real compound title with a trailing degree abbreviation', () => {
+    expect(isBioProseTitle('Professor of Immunobiology, Ph.D.')).toBe(false);
+  });
+
+  it('keeps an abbreviated rank title', () => {
+    expect(isBioProseTitle('Assoc. Prof. of Chemistry')).toBe(false);
+  });
+
+  it('keeps an endowed-chair title carrying a personal name with initials', () => {
+    expect(
+      isBioProseTitle('The William K. Lanman, Jr. Professor of Molecular Biophysics'),
+    ).toBe(false);
+  });
+
+  it('keeps a long but single-phrase endowed-chair title', () => {
+    expect(
+      isBioProseTitle(
+        'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('sanitizePersonTitle', () => {
+  it('drops the issue #708 Yale Quantum Institute nav-menu blob', () => {
+    expect(sanitizePersonTitle(YQI_NAV_MENU_TITLE)).toBeUndefined();
+  });
+
+  it('drops a department nav bar lifted as concatenated menu text', () => {
+    expect(
+      sanitizePersonTitle(
+        'Graduate ProgramUndergraduate MajorResearch & CollectionsMedia GalleryPeople',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('drops a title with a street address fragment', () => {
+    expect(
+      sanitizePersonTitle('Evolutionary BiologyAddress: 21 Sachem St. New Haven, CT 06511'),
+    ).toBeUndefined();
+  });
+
+  it('drops a title carrying a raw email address', () => {
+    expect(sanitizePersonTitle('Professor jane.doe@example.edu')).toBeUndefined();
+  });
+
+  it('drops a multi-sentence bio dumped into the title', () => {
+    expect(
+      sanitizePersonTitle('Her lab studies protein folding. She teaches. She joined in 2004.'),
+    ).toBeUndefined();
+  });
+
+  it('keeps and normalizes a real job title', () => {
+    expect(sanitizePersonTitle('  Associate   Professor of Chemistry ')).toBe(
+      'Associate Professor of Chemistry',
+    );
+  });
+
+  it('returns undefined for empty and nullish values', () => {
+    expect(sanitizePersonTitle('')).toBeUndefined();
+    expect(sanitizePersonTitle(null)).toBeUndefined();
+    expect(sanitizePersonTitle(undefined)).toBeUndefined();
   });
 });
 

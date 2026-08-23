@@ -33,6 +33,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { sanitizePersonTitle } from '../utils/titleHygiene';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isSelfReferentialUrl } from '../utils/urlSafety';
 import {
@@ -687,7 +688,7 @@ export function buildRosterMemberUpsert(
   const confidence = typeof roleSource?.confidence === 'number' ? roleSource.confidence : 0.5;
   const sourceUrl = textValue(roleSource?.sourceUrl);
   const sourceName = textValue(roleSource?.sourceName);
-  const title = textValue(resolved.title?.value);
+  const title = sanitizePersonTitle(textValue(resolved.title?.value)) || '';
 
   const identityFilter: Record<string, unknown> = userId ? { userId } : { membershipKey };
   const filter = {
