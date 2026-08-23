@@ -827,6 +827,50 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('does not fold a PI-named shell when the person runs several concrete-website homes (#1136)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-multi-lead-user',
+        normalizedName: 'same-pi:fixture-multi-lead-user',
+        piFirstName: 'Fixture',
+        piLastName: 'Multi',
+        entities: [
+          {
+            id: 'topical-home-one',
+            slug: 'ysm-genomics',
+            name: 'Applied Genomics Collaborative',
+            websiteUrl: 'https://medicine.yale.edu/lab/genomics/',
+            sourceUrls: ['https://medicine.yale.edu/lab/genomics/'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'topical-home-two',
+            slug: 'ysm-imaging',
+            name: 'Systems Imaging Center',
+            websiteUrl: 'https://medicine.yale.edu/lab/imaging/',
+            sourceUrls: ['https://medicine.yale.edu/lab/imaging/'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'funding-multi-shell',
+            slug: 'nih-pi-fixture-multi',
+            name: 'Fixture Multi Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10777777'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
   it('selects only planned duplicate entity ids as same-PI duplicate visibility risk', () => {
     const duplicateIds = selectSamePiDuplicateRiskEntityIds([
       {

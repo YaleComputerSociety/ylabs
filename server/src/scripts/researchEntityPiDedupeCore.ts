@@ -579,12 +579,19 @@ function buildProfileAreaShellDuplicateGroup(
   // a surname-named concrete home instead (e.g. "Townsend Lab") would cluster on a bare shared
   // surname whose personId link is uncorroborated, exactly the homonym risk #1138's guard exists
   // to reject, so a surname-only home never absorbs a person-named shell on name evidence alone.
+  // Require exactly one concrete-website home too (issue #1136): when the person runs several
+  // concrete-website labs the stub cannot be routed to the right one by name, so defer instead of
+  // mis-merging it into the highest-scoring home.
+  const concreteWebsiteHomeCount = entities.filter((entity) =>
+    entityCarriesConcreteWebsite(entity),
+  ).length;
   const hasTopicalConcreteWebsiteHome = entities.some(
     (entity) => entityCarriesConcreteWebsite(entity) && !entityNameTrailsPiSurname(entity, row),
   );
-  const personNamedPiLabShells = hasTopicalConcreteWebsiteHome
-    ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
-    : [];
+  const personNamedPiLabShells =
+    hasTopicalConcreteWebsiteHome && concreteWebsiteHomeCount === 1
+      ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
+      : [];
   // An entity that carries its own real (non-profile, non-funding) lab website is the
   // concrete research home, not a thin profile-area shell - never archive it into a
   // PI-derived grant "<PI> Lab" shell and discard its name/site (issue #456).
