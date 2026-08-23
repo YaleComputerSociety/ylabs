@@ -1458,7 +1458,7 @@ describe('LabDetail page', () => {
       ],
     });
 
-    await screen.findByText('Example Affiliate Research');
+    await screen.findByText('Example Affiliate');
 
     expect(screen.getByText('Affiliated with')).toBeTruthy();
     expect(screen.getByText('Center')).toBeTruthy();
@@ -1489,7 +1489,7 @@ describe('LabDetail page', () => {
       ],
     });
 
-    await screen.findByText('Example Affiliate Research');
+    await screen.findByText('Example Affiliate');
 
     expect(screen.getByText('Yale Quantum Institute')).toBeTruthy();
     expect(screen.queryByRole('link', { name: /Yale Quantum Institute/ })).toBeNull();
@@ -1917,7 +1917,7 @@ describe('LabDetail page', () => {
     } as LabDetailPayload);
 
     const { container } = await waitFor(() => {
-      expect(screen.getByText('Example Faculty Research')).toBeTruthy();
+      expect(screen.getByRole('heading', { level: 1, name: 'Example' })).toBeTruthy();
       return { container: document.body };
     });
 

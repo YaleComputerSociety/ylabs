@@ -9,6 +9,7 @@ import {
   decisionHeadingLabel,
   approachHeadingLabel,
   relationshipTypeLabel,
+  researchEntityTitle,
   sanitizeFacultyResearchCopy,
   sanitizeResearchHomeSelfReferenceCopy,
 } from '../researchEntityCopy';
@@ -37,6 +38,37 @@ describe('researchEntityCopy', () => {
     expect(entityKindLabel(entity)).toBe('Faculty Research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
     expect(researchWebsiteCtaLabel(entity)).toBe('Visit research website');
+  });
+
+  it('strips synthesized research-echo suffixes from faculty research titles', () => {
+    expect(
+      researchEntityTitle({
+        name: 'Diana Qiu Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Diana Qiu');
+    expect(
+      researchEntityTitle({ name: 'Scott Miller Research', entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe('Scott Miller');
+    expect(
+      researchEntityTitle({ name: 'Claudia Valeggia - Research', entityType: 'INDIVIDUAL_RESEARCH' }),
+    ).toBe('Claudia Valeggia');
+  });
+
+  it('prefers displayName and keeps natural lab titles for faculty research entities', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'Robert J. Schoelkopf Lab',
+        name: 'Robert J. Schoelkopf Faculty Research',
+        entityType: 'INDIVIDUAL_RESEARCH',
+      }),
+    ).toBe('Robert J. Schoelkopf Lab');
+  });
+
+  it('leaves non-faculty research-home titles untouched', () => {
+    expect(
+      researchEntityTitle({ name: 'Center for Genomic Research', entityType: 'CENTER' }),
+    ).toBe('Center for Genomic Research');
   });
 
   it('keeps lab labels for real lab entities', () => {

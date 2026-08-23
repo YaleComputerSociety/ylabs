@@ -52,7 +52,7 @@ import {
   decisionHeadingLabel,
   isFacultyResearchEntity,
   relationshipTypeLabel,
-  researchEntityDisplayName,
+  researchEntityTitle,
   sanitizeFacultyResearchCopy,
   sanitizeResearchHomeSelfReferenceCopy,
 } from '../utils/researchEntityCopy';
@@ -776,7 +776,7 @@ const LabDetail = () => {
   useDocumentTitle(
     isNotFound
       ? 'Page not found'
-      : researchEntityDisplayName(documentTitleGroup) || 'Research profile',
+      : researchEntityTitle(documentTitleGroup) || 'Research profile',
   );
 
   useEffect(() => {
