@@ -509,6 +509,88 @@ describe('researchEntityDto', () => {
     expect(result.estimatedTotalHits).toBe(1);
   });
 
+  it('disambiguates two student-visible entities sharing an identical name (#1211)', () => {
+    const result = addResearchEntitySearchAliases({
+      hits: [
+        {
+          _id: 'ysm-jun-liu',
+          slug: 'ysm-jun-liu',
+          name: 'The Liu Lab',
+          kind: 'lab',
+          departments: ['Microbial Pathogenesis'],
+          school: 'School of Medicine',
+        },
+        {
+          _id: 'nih-pi-qiao-liu',
+          slug: 'nih-pi-qiao-liu',
+          name: 'The Liu Lab',
+          kind: 'lab',
+          departments: ['Biostatistics'],
+          school: 'School of Public Health',
+        },
+      ],
+      estimatedTotalHits: 2,
+      page: 1,
+      pageSize: 24,
+    });
+
+    const names = result.researchEntities.map((entity) => entity.name);
+    expect(names).toEqual([
+      'The Liu Lab (Microbial Pathogenesis)',
+      'The Liu Lab (Biostatistics)',
+    ]);
+  });
+
+  it('falls back to school when a shared department does not disambiguate a name collision', () => {
+    const result = addResearchEntitySearchAliases({
+      hits: [
+        {
+          _id: 'a',
+          slug: 'chen-lab-med',
+          name: 'The Chen Lab',
+          kind: 'lab',
+          departments: ['Immunobiology'],
+          school: 'School of Medicine',
+        },
+        {
+          _id: 'b',
+          slug: 'chen-lab-fas',
+          name: 'The Chen Lab',
+          kind: 'lab',
+          departments: ['Immunobiology'],
+          school: 'Faculty of Arts and Sciences',
+        },
+      ],
+      estimatedTotalHits: 2,
+      page: 1,
+      pageSize: 24,
+    });
+
+    expect(result.researchEntities.map((entity) => entity.name)).toEqual([
+      'The Chen Lab (School of Medicine)',
+      'The Chen Lab (Faculty of Arts and Sciences)',
+    ]);
+  });
+
+  it('leaves a unique name untouched', () => {
+    const result = addResearchEntitySearchAliases({
+      hits: [
+        {
+          _id: 'solo',
+          slug: 'solo-lab',
+          name: 'The Solo Lab',
+          kind: 'lab',
+          departments: ['Physics'],
+        },
+      ],
+      estimatedTotalHits: 1,
+      page: 1,
+      pageSize: 24,
+    });
+
+    expect(result.researchEntities[0].name).toBe('The Solo Lab');
+  });
+
   it('returns canonical detail entity without legacy group', () => {
     const detail = addResearchEntityDetailAlias({
       group: {
