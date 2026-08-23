@@ -13,6 +13,11 @@ import {
   deriveShortDescriptionFromFullDescription,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
+import {
+  sourceChromeTextPattern,
+  stripInlineUrls,
+  stripLeadingSectionHeadingChrome,
+} from '../../utils/descriptionHygiene';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
@@ -256,39 +261,8 @@ const sentenceList = (text: string): string[] =>
     ?.map((sentence) => normalizeText(sentence))
     .filter(Boolean) || [];
 
-const sourceChromeTextPattern =
-  /\b(?:show all breadcrumbs|expand all|homeabout|home academics|calendar|applyprizes|recipient|copyright|privacy|click here|learn more|read more|for more information|more information|apply now|back to top|sign up)\b/i;
-
 const undergradResearchGuidancePattern =
   /\b(?:undergraduate students?|students?|majors?)\b.{0,180}\bresearch\b|\bresearch\b.{0,180}\b(?:undergraduate students?|students?|majors?|faculty|laborator(?:y|ies)|opportunit(?:y|ies)|assistantships?)\b/i;
-
-const SECTION_HEADING_CHROME = [
-  'Undergraduate Research Opportunities',
-  'Undergraduate Research Opportunity',
-  'About the Undergraduate Program',
-  'Undergraduate Research',
-  'Research Opportunities',
-  'Undergraduate Programs',
-  'Undergraduate Program',
-  'Undergraduate Studies',
-  'Overview',
-  'Introduction',
-];
-
-const leadingSectionHeadingPattern = new RegExp(
-  `^(?:(?:${SECTION_HEADING_CHROME.join('|')})\\s+)+(?=[A-Z])`,
-);
-
-function stripInlineUrls(text: string): string {
-  return text
-    .replace(/https?:\/\/\S+/gi, ' ')
-    .replace(/\bwww\.\S+/gi, ' ')
-    .replace(/\b[a-z0-9][a-z0-9-]*\.(?:gle|com|edu|org|gov|io|net|us)\b\S*/gi, ' ');
-}
-
-function stripLeadingSectionHeadingChrome(sentence: string): string {
-  return normalizeText(sentence.replace(leadingSectionHeadingPattern, ''));
-}
 
 function usefulUndergradResearchSentences(text: string): string[] {
   const seen = new Set<string>();

@@ -37,6 +37,58 @@ describe('YaleCollegeFellowshipsOfficeScraper parsing', () => {
     ]);
   });
 
+  it('does not surface a recipient roster or nav chrome as a detail-page description (#610)', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <header><nav>Skip to main content Academics Advising Calendar Menu</nav></header>
+        <main>
+          <div class="breadcrumb">Show all breadcrumbs</div>
+          <article>
+            <h1>Fixture Undergraduate Research Fellowship</h1>
+            <p>Program Director: Avery Morgan</p>
+            <h2>Fellowship Recipients</h2>
+            <p>2025-2026 Fellows</p>
+            <ul>
+              <li>Casey Parker ‘28 Mentor: Dr. Riley Sawyer</li>
+              <li>Jordan Taylor ‘27 Mentor: Dr. Harper Lee</li>
+              <li>Dana Robin ’26, returning Mentor: Dr. Sloan Wren</li>
+              <li>Rowan Sage ‘25 Mentor: Dr. Skylar Drew</li>
+            </ul>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-roster`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    const [candidate] = candidates;
+    expect(candidate.description ?? '').toBe('');
+    expect(candidate.summary ?? '').toBe('');
+    const descriptionObservation = candidateToObservations(candidate).find(
+      (observation) => observation.field === 'description',
+    );
+    expect(descriptionObservation).toBeUndefined();
+  });
+
+  it('keeps clean detail-page prose as the description', () => {
+    const candidates = parseFellowshipCatalogPage(
+      `
+        <main>
+          <article>
+            <h1>Fixture International Research Fellowship</h1>
+            <p>The fellowship provides support for original undergraduate research projects abroad in the natural and applied sciences. Currently enrolled sophomores and juniors are eligible to apply. Applicants are expected to have some previous research experience.</p>
+          </article>
+        </main>
+      `,
+      `${detailPageUrl}-clean`,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].description).toMatch(/provides support for original undergraduate research/);
+  });
+
   it('merges a catalog label into its exact detail page and keeps the detail title', async () => {
     const programUrl = `${detailPageUrl}-official`;
     const fetchPage = vi.fn(async (url: string) => {
