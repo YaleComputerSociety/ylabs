@@ -58,7 +58,7 @@ describe('LabMembersList', () => {
     expect(container.querySelector('a[href="/profile/fixture"]')).toBeNull();
   });
 
-  it('renders lead-investigator cards as non-interactive (no profile link)', () => {
+  it('renders a non-interactive card when no lead profile URL is provided', () => {
     const { container } = renderMembers([
       member('', {
         profileUrls: {
@@ -69,10 +69,50 @@ describe('LabMembersList', () => {
       }),
     ]);
 
-    // The professor's official profile is reached via the decision-summary
-    // action buttons, so the PI card itself must not be a (duplicate) link.
     expect(container.querySelector('a')).toBeNull();
     expect(container.textContent).toContain('Fixture Advisor');
+  });
+
+  it('links a single lead card to the official profile when a lead profile URL is provided', () => {
+    const { getByRole } = render(
+      <MemoryRouter>
+        <LabMembersList
+          members={[member('')]}
+          leadProfileUrl="https://medicine.yale.edu/profile/fixture-advisor/"
+        />
+      </MemoryRouter>,
+    );
+
+    const link = getByRole('link', { name: "Open Fixture Advisor's official profile" });
+    expect(link.getAttribute('href')).toBe('https://medicine.yale.edu/profile/fixture-advisor/');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+  });
+
+  it('does not link cards to a single lead profile URL when several leads render', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <LabMembersList
+          members={[
+            member('', { publicKey: 'lead-one', displayName: 'Lead One' }),
+            member('', { publicKey: 'lead-two', displayName: 'Lead Two' }),
+          ]}
+          leadProfileUrl="https://medicine.yale.edu/profile/lead-one/"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector('a')).toBeNull();
+  });
+
+  it('does not link a card to an unsafe lead profile URL', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <LabMembersList members={[member('')]} leadProfileUrl="javascript:alert(1)" />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector('a')).toBeNull();
   });
 
   it('renders safe member profile images', () => {
