@@ -751,6 +751,80 @@ describe('buildResearchEntityPiDedupePlan', () => {
     ]);
   });
 
+  it('folds a PI-named funding shell into a same-PI home whose own name is topical (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-habit-lead-user',
+        normalizedName: 'same-pi:fixture-habit-lead-user',
+        piFirstName: 'Krysten',
+        piLastName: 'Bold',
+        entities: [
+          {
+            id: 'concrete-topical-home',
+            slug: 'ysm-bold',
+            name: 'HABIT Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/bold/',
+            sourceUrls: ['https://medicine.yale.edu/lab/bold/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'funding-name-shell',
+            slug: 'nih-pi-krysten-bold',
+            name: 'Krysten Bold Lab',
+            websiteUrl: 'https://medicine.yale.edu/profile/krysten-bold/',
+            sourceUrls: ['https://medicine.yale.edu/profile/krysten-bold/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        dedupeCategory: 'profile_area_shell_with_concrete_home',
+        canonicalEntityId: 'concrete-topical-home',
+        duplicateEntityIds: ['funding-name-shell'],
+        canonicalSlug: 'ysm-bold',
+        duplicateSlugs: ['nih-pi-krysten-bold'],
+      },
+    ]);
+  });
+
+  it('never merges two same-PI entities that both carry their own concrete lab website (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'fixture-fucito-lead-user',
+        normalizedName: 'same-pi:fixture-fucito-lead-user',
+        piFirstName: 'Fixture',
+        piLastName: 'Fucito',
+        entities: [
+          {
+            id: 'branded-home',
+            slug: 'ysm-digital',
+            name: 'DIGITAL Insights Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/digital/',
+            sourceUrls: ['https://medicine.yale.edu/lab/digital/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'surname-home',
+            slug: 'ysm-fucito',
+            name: 'Fucito Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/fucito/',
+            sourceUrls: ['https://medicine.yale.edu/lab/fucito/'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
   it('selects only planned duplicate entity ids as same-PI duplicate visibility risk', () => {
     const duplicateIds = selectSamePiDuplicateRiskEntityIds([
       {
