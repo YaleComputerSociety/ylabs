@@ -747,6 +747,7 @@ describe('Analytics page', () => {
       logins: 2,
       searches: 4,
       views: 3,
+      researchViews: 2,
       fellowshipViews: 0,
       listingFavorites: 0,
       listingUnfavorites: 0,
@@ -811,6 +812,10 @@ describe('Analytics page', () => {
     expect(screen.getAllByText('analyst01').length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('nameless02').length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText('undefined')).toBeNull();
+
+    expect(screen.getAllByText(/Listing Views/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Research Views/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('button', { name: /Research Views/ })).toBeTruthy();
   });
 
   it('renders resolved names, entity links, and singular counts in Top Research Entities', async () => {

@@ -169,6 +169,7 @@ export interface AnalyticsUserActivityRow {
   logins: number;
   searches: number;
   views: number;
+  researchViews: number;
   fellowshipViews: number;
   listingFavorites: number;
   listingUnfavorites: number;
