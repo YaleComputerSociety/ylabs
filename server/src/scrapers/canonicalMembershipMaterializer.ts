@@ -30,9 +30,9 @@ const normalizedEmail = (value: unknown): string | undefined => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
 };
 
-const normalizedNetid = (value: unknown): string | undefined => {
+export const normalizedNetid = (value: unknown): string | undefined => {
   const netid = trimmed(value).toLowerCase();
-  return /^[a-z]{2,3}\d{1,6}$/.test(netid) ? netid : undefined;
+  return /^[a-z][a-z0-9]{1,15}$/.test(netid) ? netid : undefined;
 };
 
 const normalizedOrcid = (value: unknown): string | undefined => {

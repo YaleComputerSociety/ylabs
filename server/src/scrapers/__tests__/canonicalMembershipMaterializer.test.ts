@@ -14,6 +14,7 @@ import {
   archiveSupersededCanonicalRoleAssignments,
   buildCanonicalRoleAssignmentUpsert,
   materializeCanonicalMembership,
+  normalizedNetid,
   resolveCanonicalResearcherId,
 } from '../canonicalMembershipMaterializer';
 import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
@@ -159,6 +160,62 @@ describe('canonical membership materialization (integration)', () => {
     expect(assignments[0].role).toBe('PI');
     expect(assignments[0].state).toBe('CURRENT');
     expect(assignments[0].reviewStatus).toBe('APPROVED');
+  });
+
+  it('resolves vanity letters-only netids to a real account and materializes the lead', async () => {
+    const id = entityId();
+    for (const netid of ['dskelly', 'jwargo', 'schmitz', 'xhlee', 'amityd']) {
+      expect(normalizedNetid(netid)).toBe(netid);
+    }
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'pi',
+        displayName: 'Vanity Netid PI',
+        evidenceStatus: 'verified',
+        isCurrentMember: true,
+        confidence: 0.9,
+      },
+      {
+        netid: 'dskelly',
+        email: 'dskelly@example.test',
+        displayName: 'Vanity Netid PI',
+        hasCanonicalSourceReference: true,
+      },
+    );
+    const account = await Account.findOne({ netid: 'dskelly' }).lean<WithObjectId<AccountRecord>>();
+    expect(account).toBeTruthy();
+    const assignments = await RoleAssignment.find({
+      'target.id': new mongoose.Types.ObjectId(id),
+    }).lean();
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].role).toBe('PI');
+    expect(assignments[0].state).toBe('CURRENT');
+  });
+
+  it('still rejects separator- and dot-bearing junk netids so no bogus account is minted', async () => {
+    for (const junk of ['dept:econ:x', 'nih-pi:x', 'lea.brilmayer', 'a', '1abc', '']) {
+      expect(normalizedNetid(junk)).toBeUndefined();
+    }
+    const id = entityId();
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'pi',
+        displayName: 'Dotted Local Part',
+        evidenceStatus: 'verified',
+        isCurrentMember: true,
+        confidence: 0.9,
+      },
+      {
+        netid: 'lea.brilmayer',
+        email: 'lea.brilmayer@example.test',
+        displayName: 'Dotted Local Part',
+        hasCanonicalSourceReference: true,
+      },
+    );
+    const account = await Account.findOne({ netid: 'lea.brilmayer' }).lean();
+    expect(account).toBeNull();
   });
 
   it('surfaces a continuously-written member through getResearchEntityRoster without the batch', async () => {
