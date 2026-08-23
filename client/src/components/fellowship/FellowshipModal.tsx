@@ -201,6 +201,11 @@ const FellowshipModal = ({
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const applicationStatus = getFellowshipApplicationStatus(fellowship);
   const structuredEligibilityDetails = getStructuredEligibilityDetails(fellowship);
+  const mentorFirstAnswer = fellowship.requiresMentorBeforeApply
+    ? 'Yes, secure a mentor before applying'
+    : fellowship.mentorMatching
+      ? 'Not first, the program helps match you with a mentor'
+      : 'Not usually';
 
   const handleFilterClick = (
     filterType: 'yearOfStudy' | 'termOfAward' | 'purpose' | 'globalRegions' | 'citizenshipStatus',
@@ -463,14 +468,9 @@ const FellowshipModal = ({
                     <div>
                       <span className="text-xs text-slate-500">Do you need a mentor first?</span>
                       <p className="text-sm font-medium text-slate-900">
-                        {fellowship.requiresMentorBeforeApply ? 'Yes' : 'Not usually'}
+                        {mentorFirstAnswer}
                       </p>
                     </div>
-                    {fellowship.mentorMatching && (
-                      <p className="rounded-md bg-[var(--yr-panel)] px-2.5 py-2 text-xs font-medium text-slate-700">
-                        This source suggests a mentor-matching or mentored program route.
-                      </p>
-                    )}
                   </div>
                 </section>
 
