@@ -417,6 +417,9 @@ describe('descriptionHygiene raw HTML-markup fail-closed (#909)', () => {
   const MATH_PROSE =
     'We study reaction regimes where the rate expression < 0.05 dominates and yields > 100 units ' +
     'accumulate over long incubation windows in reconstituted assays.';
+  const UNSPACED_INEQUALITY_PROSE =
+    'We characterize regimes where 0<x and n>100, model p<q dynamics with thresholds q>r, ' +
+    'and track how signals scale as t<tau for stimuli s>0 across reconstituted assays.';
 
   it('detects closing tags, attributed opening tags, and anchor markup', () => {
     expect(containsHtmlTagMarkup(CITATION_MARKUP_FULL)).toBe(true);
@@ -427,6 +430,7 @@ describe('descriptionHygiene raw HTML-markup fail-closed (#909)', () => {
   it('does not flag clean prose or bare angle-bracket math comparisons', () => {
     expect(containsHtmlTagMarkup(CLEAN_PROSE)).toBe(false);
     expect(containsHtmlTagMarkup(MATH_PROSE)).toBe(false);
+    expect(containsHtmlTagMarkup(UNSPACED_INEQUALITY_PROSE)).toBe(false);
   });
 
   it('fails the fullDescription closed to empty on a citation-widget markup dump', () => {
@@ -441,6 +445,9 @@ describe('descriptionHygiene raw HTML-markup fail-closed (#909)', () => {
   it('keeps clean prose that only uses angle brackets as math comparisons', () => {
     expect(sanitizeResearchEntityDescription(MATH_PROSE)).toBe(MATH_PROSE);
     expect(sanitizeResearchEntityDescription(CLEAN_PROSE)).toBe(CLEAN_PROSE);
+    expect(sanitizeResearchEntityDescription(UNSPACED_INEQUALITY_PROSE)).toBe(
+      UNSPACED_INEQUALITY_PROSE,
+    );
   });
 });
 

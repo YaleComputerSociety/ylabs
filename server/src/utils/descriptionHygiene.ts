@@ -151,17 +151,18 @@ export function isResearchAreaTemplateLeakText(text: string): boolean {
 }
 
 const htmlTagMarkupPattern =
-  /<\/[a-z][a-z0-9]*\s*>|<[a-z][a-z0-9]*(?:\s+[a-z][\w:-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)+\s*\/?>/i;
+  /<\/[a-z][a-z0-9]*\s*>|<[a-z][a-z0-9]*(?:\s+[a-z][\w:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))+\s*\/?>/i;
 
 /**
  * A description that still carries literal HTML-element markup - a closing tag
- * (`</span>`) or an opening tag with at least one attribute (`<span data-id=
- * "...">`, `<a href="...">`, `<span data-type="title">`). Scraped "Selected
- * Publications" citation widgets render their entries as escaped-HTML text, so
- * a `.text()` extraction decodes the entities back into these literal tag
- * substrings; a field rendered as plain text (labDetail) then shows the raw tag
- * garbage (#909). Requiring a closing tag or an attribute keeps prose that uses
- * bare angle brackets as math comparisons ("expression < 0.05") from matching.
+ * (`</span>`) or an opening tag with at least one valued attribute (`<span
+ * data-id="...">`, `<a href="...">`, `<span data-type="title">`). Scraped
+ * "Selected Publications" citation widgets render their entries as escaped-HTML
+ * text, so a `.text()` extraction decodes the entities back into these literal
+ * tag substrings; a field rendered as plain text (labDetail) then shows the raw
+ * tag garbage (#909). Requiring a closing tag or a name=value attribute keeps
+ * prose that uses bare angle brackets as inequalities ("expression < 0.05",
+ * "0<x and n>100") from matching.
  */
 export function containsHtmlTagMarkup(text: unknown): boolean {
   return htmlTagMarkupPattern.test(String(text || ''));
