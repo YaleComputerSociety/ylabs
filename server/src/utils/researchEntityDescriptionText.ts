@@ -118,6 +118,8 @@ export function isResearchEntitySourceChromeText(value: unknown): boolean {
     return true;
   }
   return [
+    /\byou are here\b/i,
+    /[»›][^»›]{1,80}[»›]/,
     /\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i,
     /\bORCID\s*/i,
     /Publications\s*Timeline/i,

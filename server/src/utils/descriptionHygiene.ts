@@ -511,10 +511,12 @@ export function stripUrlTopicsFromCardSummary(text: string): string {
 export function sanitizeResearchEntityShortDescription(text: string): string {
   const cleaned = stripUrlTopicsFromCardSummary(
     collapseDoubledSynthesisVerb(
-      stripGluedProfileRoleLabel(
-        stripLeadingPageChrome(
-          stripTrailingContactAddress(
-            stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+      stripTrailingSourceLayoutLabelSection(
+        stripGluedProfileRoleLabel(
+          stripLeadingPageChrome(
+            stripTrailingContactAddress(
+              stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+            ),
           ),
         ),
       ),
@@ -832,6 +834,30 @@ export function stripTrailingContactAddress(text: string): string {
   return stripped === value ? value : normalizeHygieneWhitespace(stripped);
 }
 
+const trailingSourceLayoutLabelSectionPattern =
+  /([.!?]["'’)\]]?)\s+(?:Key\s+areas?\s+of\s+interest|Areas?\s+of\s+interest|Areas?\s+of\s+focus|Disease\s+models|Research\s+focus)\s*:\s*\S[\s\S]*$/i;
+
+/**
+ * Strip a trailing source-page layout-label section ("Key areas of interest:
+ * ...", "Disease models: ...", "Areas of focus: ...") that a faculty-profile
+ * scrape appended after the bio prose, keeping the prose ahead of it. The label
+ * must begin a fresh clause right after a sentence boundary and carry a colon,
+ * which is the tell of a bare layout label lifted verbatim from the page rather
+ * than a research clause ("...cardiovascular diseases. Key areas of interest:
+ * Vascular smooth muscle; ... Epigenetics Disease models: Atherosclerosis...",
+ * #1249). The colon list is redundant with the researchArea chips shown beside
+ * it, and cutting it also drops the missing-boundary run that follows it. Only a
+ * trailing, sentence-initial label section is removed so a mid-prose mention or
+ * an inline "our key areas of interest include ..." clause is left intact; a
+ * no-op when no such section is present.
+ */
+export function stripTrailingSourceLayoutLabelSection(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value) return value;
+  const stripped = value.replace(trailingSourceLayoutLabelSectionPattern, '$1');
+  return stripped === value ? value : normalizeHygieneWhitespace(stripped);
+}
+
 const poBoxAddressPattern = /\bP\.?\s*O\.?\s+Box\s+\d+\b/i;
 
 const cityStateZipPattern = /,\s*[A-Z][A-Za-z.]*(?:\s+[A-Z][A-Za-z.]*){0,2}\s+\d{5}(?:-\d{4})?\b/;
@@ -1088,8 +1114,10 @@ export function stripLeadingAdministrativeLocationSentences(text: string): strin
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripLeadingAdministrativeLocationSentences(
-    stripGluedProfileRoleLabel(
-      stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+    stripTrailingSourceLayoutLabelSection(
+      stripGluedProfileRoleLabel(
+        stripTrailingContactAddress(sanitizeCatalogDescription(redacted)),
+      ),
     ),
   );
   if (!stripped) return '';
