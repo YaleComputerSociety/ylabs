@@ -207,6 +207,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'ysm-faculty-directory',
+    displayName: 'YSM Faculty Directory',
+    description:
+      'Yale School of Medicine school-wide A-Z faculty directory and individual profile pages for researcher identity, lab-website discovery, governed research areas, and official profile prose.',
+    baseUrl: 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/',
+    defaultWeight: 0.8,
+    cadence: 'weekly',
+  },
+  {
     name: 'yse-centers-index',
     displayName: 'YSE Centers Index',
     description: 'Yale School of the Environment centers and programs index.',
