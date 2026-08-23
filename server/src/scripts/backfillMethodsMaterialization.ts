@@ -6,7 +6,12 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import {
+  materializedFieldValue,
+  shouldIgnoreObservationForEntityMaterialization,
+} from '../scrapers/entityMaterializer';
+import { resolveAllFields } from '../scrapers/confidenceResolver';
+import { syncEntity } from '../services/meiliSyncService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -20,6 +25,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const RESEARCH_ENTITY_OBSERVATION_TYPES = ['researchEntity', 'researchGroup'];
+const METHODS_FIELD = 'methods';
 
 function entityHasMethods(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
@@ -30,12 +36,12 @@ function buildDeps(limit?: number): MethodsMaterializationDeps {
     async findEntitiesWithLiveMethodsObservation() {
       const keys = await Observation.distinct('entityKey', {
         entityType: { $in: RESEARCH_ENTITY_OBSERVATION_TYPES },
-        field: 'methods',
+        field: METHODS_FIELD,
         superseded: false,
       });
       const ids = await Observation.distinct('entityId', {
         entityType: { $in: RESEARCH_ENTITY_OBSERVATION_TYPES },
-        field: 'methods',
+        field: METHODS_FIELD,
         superseded: false,
       });
       const slugKeys = keys.filter((value): value is string => typeof value === 'string' && value !== '');
@@ -61,9 +67,62 @@ function buildDeps(limit?: number): MethodsMaterializationDeps {
       const entities = [...byId.values()].sort((a, b) => a.entityKey.localeCompare(b.entityKey));
       return typeof limit === 'number' ? entities.slice(0, limit) : entities;
     },
-    async rematerializeEntityByKey(entityKey) {
-      const result = await materializeEntity('researchEntity', { entityKey }, { dryRun: false });
-      return { fieldsWritten: result.fieldsWritten };
+    async writeResolvedMethods(entity) {
+      const doc = (await ResearchEntity.findById(entity.entityId)
+        .select('_id methods manuallyLockedFields')
+        .lean()) as {
+        _id: unknown;
+        methods?: unknown;
+        manuallyLockedFields?: string[];
+      } | null;
+      if (!doc) return { applied: false, locked: false };
+
+      const manuallyLockedFields = Array.isArray(doc.manuallyLockedFields)
+        ? doc.manuallyLockedFields
+        : [];
+      if (manuallyLockedFields.includes(METHODS_FIELD)) {
+        return { applied: false, locked: true };
+      }
+
+      const rawObs = await Observation.find({
+        entityType: { $in: RESEARCH_ENTITY_OBSERVATION_TYPES },
+        field: METHODS_FIELD,
+        superseded: false,
+        $or: [{ entityKey: entity.entityKey }, { entityId: doc._id }],
+      })
+        .select('field value sourceName confidence observedAt')
+        .lean();
+
+      const usableObs = rawObs.filter(
+        (o) => !shouldIgnoreObservationForEntityMaterialization('researchEntity', o),
+      );
+      if (usableObs.length === 0) return { applied: false, locked: false };
+
+      const resolverObs = usableObs.map((o: any) => ({
+        field: METHODS_FIELD,
+        value: o.value,
+        sourceName: o.sourceName,
+        confidence: o.confidence,
+        observedAt: o.observedAt,
+      }));
+      const resolved = resolveAllFields(resolverObs);
+      const resolvedMethods = resolved[METHODS_FIELD];
+      if (!resolvedMethods) return { applied: false, locked: false };
+
+      const value = materializedFieldValue(
+        'researchEntity',
+        METHODS_FIELD,
+        resolvedMethods.value,
+        doc.methods,
+      );
+      await ResearchEntity.updateOne(
+        { _id: doc._id },
+        { $set: { [METHODS_FIELD]: value, 'confidenceByField.methods': resolvedMethods.confidence } },
+      );
+
+      const fresh = await ResearchEntity.findById(doc._id).lean();
+      if (fresh) await syncEntity('researchEntity', fresh);
+      return { applied: true, locked: false };
     },
     async entityHasMethodsAfter(entityKey) {
       const doc = await ResearchEntity.findOne({ slug: entityKey }).select('methods').lean();
@@ -108,6 +167,7 @@ async function main(): Promise<void> {
 
   const outputReport = {
     mode: apply ? 'apply' : 'dry-run',
+    field: METHODS_FIELD,
     limit: limit ?? null,
     environment: guard.environment,
     db: guard.dbLabel,

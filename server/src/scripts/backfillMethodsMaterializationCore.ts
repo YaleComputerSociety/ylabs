@@ -8,18 +8,25 @@ export type MethodsMaterializationDisposition =
   | 'pending-apply'
   | 'methods-materialized'
   | 'methods-still-missing'
-  | 'skipped-archived';
+  | 'skipped-archived'
+  | 'skipped-locked';
 
 export interface MethodsMaterializationRow {
   entityId: string;
   entityKey: string;
   disposition: MethodsMaterializationDisposition;
-  fieldsWritten?: number;
+}
+
+export interface WriteResolvedMethodsResult {
+  applied: boolean;
+  locked: boolean;
 }
 
 export interface MethodsMaterializationDeps {
   findEntitiesWithLiveMethodsObservation: () => Promise<MethodsMaterializationTargetEntity[]>;
-  rematerializeEntityByKey: (entityKey: string) => Promise<{ fieldsWritten: number }>;
+  writeResolvedMethods: (
+    entity: MethodsMaterializationTargetEntity,
+  ) => Promise<WriteResolvedMethodsResult>;
   entityHasMethodsAfter: (entityKey: string) => Promise<boolean>;
 }
 
@@ -42,6 +49,7 @@ function emptyTally(): Record<MethodsMaterializationDisposition, number> {
     'methods-materialized': 0,
     'methods-still-missing': 0,
     'skipped-archived': 0,
+    'skipped-locked': 0,
   };
 }
 
@@ -51,11 +59,11 @@ export async function runMethodsMaterializationBackfill(
 ): Promise<MethodsMaterializationReport> {
   const entities = await deps.findEntitiesWithLiveMethodsObservation();
   const eligible = selectMaterializableMethodEntities(entities);
-  const eligibleKeys = new Set(eligible.map((entity) => entity.entityId));
+  const eligibleIds = new Set(eligible.map((entity) => entity.entityId));
 
   const rows: MethodsMaterializationRow[] = [];
   for (const entity of entities) {
-    if (!eligibleKeys.has(entity.entityId)) {
+    if (!eligibleIds.has(entity.entityId)) {
       rows.push({
         entityId: entity.entityId,
         entityKey: entity.entityKey,
@@ -71,13 +79,20 @@ export async function runMethodsMaterializationBackfill(
       });
       continue;
     }
-    const { fieldsWritten } = await deps.rematerializeEntityByKey(entity.entityKey);
+    const { locked } = await deps.writeResolvedMethods(entity);
+    if (locked) {
+      rows.push({
+        entityId: entity.entityId,
+        entityKey: entity.entityKey,
+        disposition: 'skipped-locked',
+      });
+      continue;
+    }
     const hasMethods = await deps.entityHasMethodsAfter(entity.entityKey);
     rows.push({
       entityId: entity.entityId,
       entityKey: entity.entityKey,
       disposition: hasMethods ? 'methods-materialized' : 'methods-still-missing',
-      fieldsWritten,
     });
   }
 

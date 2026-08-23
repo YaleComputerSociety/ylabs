@@ -33,7 +33,7 @@ describe('runMethodsMaterializationBackfill', () => {
     findEntitiesWithLiveMethodsObservation: vi
       .fn()
       .mockResolvedValue([entity('a'), entity('b', true), entity('c')]),
-    rematerializeEntityByKey: vi.fn().mockResolvedValue({ fieldsWritten: 4 }),
+    writeResolvedMethods: vi.fn().mockResolvedValue({ applied: true, locked: false }),
     entityHasMethodsAfter: vi.fn().mockResolvedValue(true),
     ...overrides,
   });
@@ -44,7 +44,7 @@ describe('runMethodsMaterializationBackfill', () => {
 
     expect(report.scanned).toBe(3);
     expect(report.eligible).toBe(2);
-    expect(deps.rematerializeEntityByKey).not.toHaveBeenCalled();
+    expect(deps.writeResolvedMethods).not.toHaveBeenCalled();
     expect(report.tally['pending-apply']).toBe(2);
     expect(report.tally['skipped-archived']).toBe(1);
     expect(report.rows.map((row) => row.disposition)).toEqual([
@@ -54,19 +54,32 @@ describe('runMethodsMaterializationBackfill', () => {
     ]);
   });
 
-  it('re-materializes eligible entities and records methods landing on apply', async () => {
+  it('writes only resolved methods for eligible entities and never touches archived ones', async () => {
     const deps = baseDeps();
     const report = await runMethodsMaterializationBackfill(deps, { apply: true });
 
-    expect(deps.rematerializeEntityByKey).toHaveBeenCalledTimes(2);
-    expect(deps.rematerializeEntityByKey).toHaveBeenCalledWith('lab-a');
-    expect(deps.rematerializeEntityByKey).not.toHaveBeenCalledWith('lab-b');
+    expect(deps.writeResolvedMethods).toHaveBeenCalledTimes(2);
+    expect(deps.writeResolvedMethods).toHaveBeenCalledWith(entity('a'));
+    expect(deps.writeResolvedMethods).not.toHaveBeenCalledWith(entity('b', true));
     expect(report.tally['methods-materialized']).toBe(2);
     expect(report.tally['skipped-archived']).toBe(1);
-    expect(report.rows.find((row) => row.entityId === 'a')?.fieldsWritten).toBe(4);
   });
 
-  it('flags entities whose methods field is still missing after re-materialize', async () => {
+  it('records a manual lock as skipped without checking the resulting field', async () => {
+    const entityHasMethodsAfter = vi.fn().mockResolvedValue(true);
+    const deps = baseDeps({
+      findEntitiesWithLiveMethodsObservation: vi.fn().mockResolvedValue([entity('a')]),
+      writeResolvedMethods: vi.fn().mockResolvedValue({ applied: false, locked: true }),
+      entityHasMethodsAfter,
+    });
+    const report = await runMethodsMaterializationBackfill(deps, { apply: true });
+
+    expect(report.tally['skipped-locked']).toBe(1);
+    expect(report.tally['methods-materialized']).toBe(0);
+    expect(entityHasMethodsAfter).not.toHaveBeenCalled();
+  });
+
+  it('flags entities whose methods field is still missing after the write', async () => {
     const deps = baseDeps({
       findEntitiesWithLiveMethodsObservation: vi.fn().mockResolvedValue([entity('a')]),
       entityHasMethodsAfter: vi.fn().mockResolvedValue(false),
