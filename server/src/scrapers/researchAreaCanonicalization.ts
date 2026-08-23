@@ -137,6 +137,8 @@ const RESEARCH_AREA_PERSON_AWARD_RE =
   /^(?:\d{4}\s+)?[A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z'’.-]+\s*:\s+\S.*\b(?:[Ss]cholarship|[Ff]ellowship|[Aa]ward(?:ee)?|[Pp]rize|[Gg]rant|[Rr]epayment)\b/;
 const RESEARCH_AREA_LABEL_PREFIX_RE =
   /^(?:research\s+areas?|research\s+interests?|research\s+focus|research\s+topics?|fields?\s+of\s+(?:interest|study)|areas?\s+of\s+(?:interest|research|expertise|focus|specialization)|specializations?|keywords\s+and\s+concepts)\b[\s:]+\S/i;
+const RESEARCH_AREA_SCIENTIFIC_LATIN_RE =
+  /^(?:in\s+(?:vivo|vitro|situ|silico)|de\s+novo|ex\s+vivo)\b/i;
 
 function researchAreaWordCount(value: string): number {
   return value.split(/\s+/).filter(Boolean).length;
@@ -154,8 +156,14 @@ function isNonTopicResearchAreaChip(raw: unknown): boolean {
   if (RESEARCH_AREA_LABEL_PREFIX_RE.test(value)) return true;
   const wordCount = researchAreaWordCount(value);
   const firstToken = value.split(' ')[0] ?? '';
-  if (/^[a-z]+$/.test(firstToken) && wordCount >= 6) return true;
-  if (/[.!?]$/.test(value) && wordCount >= 5) return true;
+  if (
+    /^[a-z]+$/.test(firstToken) &&
+    wordCount >= 6 &&
+    !RESEARCH_AREA_SCIENTIFIC_LATIN_RE.test(value)
+  ) {
+    return true;
+  }
+  if (/[a-z][.!?]$/.test(value) && wordCount >= 5) return true;
   return false;
 }
 

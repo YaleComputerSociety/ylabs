@@ -166,6 +166,9 @@ describe('isResearchAreaLabelLeakage', () => {
       'mRNA vaccine development platforms and delivery systems',
       'iPSC-derived cardiomyocytes for disease modeling and drug screening',
       'Keyword Extraction',
+      'in vivo imaging of tumor microenvironment dynamics',
+      'de novo protein design and directed evolution',
+      'Health policy in the U.S.',
     ]) {
       expect(isResearchAreaLabelLeakage(area)).toBe(false);
     }
