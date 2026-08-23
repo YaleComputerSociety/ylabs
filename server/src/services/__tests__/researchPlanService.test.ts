@@ -3,6 +3,7 @@ import {
   MAX_SAVED_RESEARCH_ENTITY_SHORT_DESCRIPTION_LENGTH,
   boundSavedResearchEntitySummaryText,
   normalizeResearchPlanUpdate,
+  researchPlanViewFromDoc,
 } from '../researchPlanService';
 import {
   MAX_RESEARCH_PLAN_CHECKLIST_ITEMS,
@@ -95,5 +96,62 @@ describe('normalizeResearchPlanUpdate', () => {
 
   it('omits fields that are not present in the input', () => {
     expect(normalizeResearchPlanUpdate({})).toEqual({});
+  });
+});
+
+describe('researchPlanViewFromDoc', () => {
+  it('serializes Date-typed deadlines from a lean document instead of dropping them', () => {
+    const view = researchPlanViewFromDoc({
+      stage: 'CONTACTED',
+      deadlines: [{ label: 'app due', dueAt: new Date('2026-09-01T00:00:00.000Z') }],
+    });
+    expect(view.deadlines).toEqual([{ label: 'app due', dueAt: '2026-09-01T00:00:00.000Z' }]);
+  });
+
+  it('preserves a Date-typed completedAt on a completed checklist item', () => {
+    const view = researchPlanViewFromDoc({
+      checklist: [
+        {
+          label: 'submitted intent form',
+          completed: true,
+          completedAt: new Date('2026-01-15T00:00:00.000Z'),
+        },
+      ],
+    });
+    expect(view.checklist).toEqual([
+      {
+        label: 'submitted intent form',
+        completed: true,
+        completedAt: '2026-01-15T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('still serializes ISO-string dates from a hydrated document', () => {
+    const view = researchPlanViewFromDoc({
+      deadlines: [{ label: 'app due', dueAt: '2026-09-01T00:00:00.000Z' }],
+      checklist: [
+        { label: 'sent email', completed: true, completedAt: '2026-01-15T00:00:00.000Z' },
+      ],
+    });
+    expect(view.deadlines).toEqual([{ label: 'app due', dueAt: '2026-09-01T00:00:00.000Z' }]);
+    expect(view.checklist[0]).toMatchObject({ completedAt: '2026-01-15T00:00:00.000Z' });
+  });
+
+  it('omits completedAt rather than fabricating a timestamp when the stored value is corrupt', () => {
+    const view = researchPlanViewFromDoc({
+      checklist: [{ label: 'corrupt stamp', completed: true, completedAt: new Date('not a date') }],
+    });
+    expect(view.checklist).toEqual([{ label: 'corrupt stamp', completed: true }]);
+  });
+
+  it('drops deadlines with an unparseable stored due date', () => {
+    const view = researchPlanViewFromDoc({
+      deadlines: [
+        { label: 'valid', dueAt: new Date('2026-09-01T00:00:00.000Z') },
+        { label: 'broken', dueAt: new Date('nope') },
+      ],
+    });
+    expect(view.deadlines).toEqual([{ label: 'valid', dueAt: '2026-09-01T00:00:00.000Z' }]);
   });
 });

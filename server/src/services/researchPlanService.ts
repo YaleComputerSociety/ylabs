@@ -173,6 +173,55 @@ const normalizeExportPreferences = (value: unknown): ResearchPlanExportPreferenc
   };
 };
 
+const isoStringFromStoredDate = (value: unknown): string | null => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) {
+    return new Date(value).toISOString();
+  }
+  return null;
+};
+
+const serializeStoredChecklistItem = (value: unknown): ResearchPlanChecklistItem | null => {
+  if (!isPlainRecord(value)) return null;
+  const label = typeof value.label === 'string' ? value.label.trim() : '';
+  if (!label) return null;
+  const boundedLabel = label.slice(0, MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH);
+  if (!asBoolean(value.completed)) return { label: boundedLabel, completed: false };
+  const completedAt = isoStringFromStoredDate(value.completedAt);
+  return completedAt
+    ? { label: boundedLabel, completed: true, completedAt }
+    : { label: boundedLabel, completed: true };
+};
+
+const serializeStoredChecklist = (value: unknown): ResearchPlanChecklistItem[] => {
+  const items: ResearchPlanChecklistItem[] = [];
+  if (Array.isArray(value)) {
+    for (const raw of value) {
+      if (items.length >= MAX_RESEARCH_PLAN_CHECKLIST_ITEMS) break;
+      const item = serializeStoredChecklistItem(raw);
+      if (item) items.push(item);
+    }
+  }
+  return items;
+};
+
+const serializeStoredDeadlines = (value: unknown): ResearchPlanDeadline[] => {
+  const deadlines: ResearchPlanDeadline[] = [];
+  if (Array.isArray(value)) {
+    for (const raw of value) {
+      if (deadlines.length >= MAX_RESEARCH_PLAN_DEADLINES) break;
+      if (!isPlainRecord(raw)) continue;
+      const label = typeof raw.label === 'string' ? raw.label.trim() : '';
+      const dueAt = isoStringFromStoredDate(raw.dueAt);
+      if (!label || !dueAt) continue;
+      deadlines.push({ label: label.slice(0, MAX_RESEARCH_PLAN_ITEM_TEXT_LENGTH), dueAt });
+    }
+  }
+  return deadlines;
+};
+
 const emptyResearchPlanView = (): ResearchPlanView => ({
   stage: 'SAVED',
   privateNotes: '',
@@ -185,8 +234,7 @@ const emptyResearchPlanView = (): ResearchPlanView => ({
   },
 });
 
-const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
-  const now = new Date();
+export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView => {
   const stage =
     typeof doc.stage === 'string' && researchPlanStageSet.has(doc.stage as ResearchPlanStage)
       ? (doc.stage as ResearchPlanStage)
@@ -197,8 +245,8 @@ const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchPlanView
       typeof doc.privateNotes === 'string'
         ? doc.privateNotes.slice(0, MAX_RESEARCH_PLAN_NOTES_LENGTH)
         : '',
-    checklist: normalizeChecklistInput(doc.checklist, now),
-    deadlines: normalizeDeadlineInput(doc.deadlines),
+    checklist: serializeStoredChecklist(doc.checklist),
+    deadlines: serializeStoredDeadlines(doc.deadlines),
     exportPreferences: normalizeExportPreferences(doc.exportPreferences),
     updatedAt: doc.updatedAt ? new Date(String(doc.updatedAt)).toISOString() : undefined,
   };
