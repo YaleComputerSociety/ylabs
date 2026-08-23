@@ -146,3 +146,67 @@ describe('publicProgramForReader redaction placeholder hygiene (#671 residual)',
     expect(payload.applicationInformation).toBe('Submit your materials and with questions.');
   });
 });
+
+const SYNTHETIC_MENTOR_ROSTER_DUMP = [
+  'Casey Parker ‘28 Mentor: Dr. Riley Sawyer',
+  'Jordan Taylor ‘27 Mentor: Dr. Harper Lee',
+  'Dana Robin ’26 Mentor: Dr. Sloan Wren',
+  'Rowan Sage ‘25 Mentor: Dr. Skylar Drew',
+].join(' ');
+
+const SYNTHETIC_APPLICATION_PARAGRAPH =
+  'Applicants should submit a personal statement, an unofficial transcript, and a letter of recommendation from a faculty mentor by the March deadline.';
+
+describe('publicProgramForReader dump/duplicate prose hygiene (#904)', () => {
+  it('fails closed on a mentor-roster dump in applicationInformation instead of rendering it verbatim', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58503',
+      title: 'Example Mentored Summer Research Program',
+      applicationInformation: SYNTHETIC_MENTOR_ROSTER_DUMP,
+    });
+
+    expect(payload.applicationInformation).toBe('');
+  });
+
+  it('collapses a duplicated applicationInformation paragraph and drops trailing social chrome', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58504',
+      title: 'Example Duplicated Instructions Program',
+      applicationInformation: `${SYNTHETIC_APPLICATION_PARAGRAPH} ${SYNTHETIC_APPLICATION_PARAGRAPH} Follow us on Instagram @example and Facebook!`,
+    });
+
+    expect(payload.applicationInformation).toBe(SYNTHETIC_APPLICATION_PARAGRAPH);
+  });
+
+  it('routes eligibility, additionalInformation, restrictionsToUseOfAward, compensationSummary, and bestNextStep through the same dump hygiene', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58505',
+      title: 'Example Roster-Dump Program',
+      eligibility: SYNTHETIC_MENTOR_ROSTER_DUMP,
+      additionalInformation: SYNTHETIC_MENTOR_ROSTER_DUMP,
+      restrictionsToUseOfAward: SYNTHETIC_MENTOR_ROSTER_DUMP,
+      compensationSummary: SYNTHETIC_MENTOR_ROSTER_DUMP,
+      bestNextStep: SYNTHETIC_MENTOR_ROSTER_DUMP,
+    });
+
+    expect(payload.eligibility).toBe('');
+    expect(payload.additionalInformation).toBe('');
+    expect(payload.restrictionsToUseOfAward).toBe('');
+    expect(payload.compensationSummary).toBe('');
+    expect(payload.bestNextStep).toBe('');
+  });
+
+  it('keeps clean prose in these fields unchanged', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58506',
+      title: 'Example Clean Program',
+      eligibility: 'Currently enrolled sophomores and juniors are eligible to apply.',
+      compensationSummary: 'Fellows receive a $5,000 stipend for the ten-week program.',
+    });
+
+    expect(payload.eligibility).toBe('Currently enrolled sophomores and juniors are eligible to apply.');
+    expect(payload.compensationSummary).toBe(
+      'Fellows receive a $5,000 stipend for the ten-week program.',
+    );
+  });
+});

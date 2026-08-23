@@ -53,9 +53,6 @@ const publicProgramLinks = (
 const publicProgramText = (value: unknown): unknown =>
   typeof value === 'string' ? redactDirectContactInfo(value) : value;
 
-const publicProgramProse = (value: unknown): unknown =>
-  typeof value === 'string' ? redactDirectContactInfo(stripRedactionPlaceholders(value)) : value;
-
 const publicProgramDescription = (value: unknown): unknown =>
   typeof value === 'string'
     ? redactDirectContactInfo(sanitizeCatalogDescription(stripRedactionPlaceholders(value)))
@@ -79,10 +76,10 @@ export const publicProgramForReader = (program: any) => {
     mentorMatching: program.mentorMatching,
     undergraduateOnly: program.undergraduateOnly,
     yaleCollegeOnly: program.yaleCollegeOnly,
-    compensationSummary: publicProgramText(program.compensationSummary),
+    compensationSummary: publicProgramDescription(program.compensationSummary),
     hoursPerWeek: program.hoursPerWeek,
     programDates: publicProgramText(program.programDates),
-    bestNextStep: publicProgramText(program.bestNextStep),
+    bestNextStep: publicProgramDescription(program.bestNextStep),
     prepSteps: publicProgramTextArray(program.prepSteps),
     researchFocused: program.researchFocused === true,
     applicationMaterials: publicProgramTextArray(program.applicationMaterials),
@@ -90,10 +87,10 @@ export const publicProgramForReader = (program: any) => {
     competitionType: publicProgramText(program.competitionType),
     summary: publicProgramDescription(program.summary),
     description: publicProgramDescription(program.description),
-    applicationInformation: publicProgramProse(program.applicationInformation),
-    eligibility: publicProgramProse(program.eligibility),
-    restrictionsToUseOfAward: publicProgramText(program.restrictionsToUseOfAward),
-    additionalInformation: publicProgramText(program.additionalInformation),
+    applicationInformation: publicProgramDescription(program.applicationInformation),
+    eligibility: publicProgramDescription(program.eligibility),
+    restrictionsToUseOfAward: publicProgramDescription(program.restrictionsToUseOfAward),
+    additionalInformation: publicProgramDescription(program.additionalInformation),
     links: publicProgramLinks(program.links, program.sourceUrl),
     applicationLink: publicSpecificProgramUrl(program.applicationLink, program.sourceUrl),
     awardAmount: program.awardAmount,
