@@ -130,11 +130,15 @@ const collapseRosterEntriesByPerson = (
 ): ResearchEntityRosterEntry[] => {
   const bestByPerson = new Map<string, ResearchEntityRosterEntry>();
   const order: string[] = [];
+  const statePrecedence = (entry: ResearchEntityRosterEntry): number =>
+    entry.isCurrentMember ? 0 : entry.state === 'HISTORICAL' ? 2 : 1;
   const outranks = (
     candidate: ResearchEntityRosterEntry,
     incumbent: ResearchEntityRosterEntry,
   ): boolean => {
-    if (candidate.isCurrentMember !== incumbent.isCurrentMember) return candidate.isCurrentMember;
+    const candidateState = statePrecedence(candidate);
+    const incumbentState = statePrecedence(incumbent);
+    if (candidateState !== incumbentState) return candidateState < incumbentState;
     return canonicalRolePriority(candidate.roleCanonical) < canonicalRolePriority(incumbent.roleCanonical);
   };
   for (const entry of entries) {

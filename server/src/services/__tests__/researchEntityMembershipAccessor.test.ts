@@ -137,6 +137,47 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(roster[0].roleCanonical).toBe('PI');
     expect(roster[0].role).toBe('pi');
   });
+
+  it('surfaces a live lead over a historical assignment for the same person', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const account = await Account.create({
+      netid: 'mask01',
+      email: 'mask01@example.test',
+      status: 'ACTIVE',
+      archived: false,
+    });
+    const person = await Researcher.create({
+      displayName: 'Masked Lead',
+      accountId: account._id,
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'HISTORICAL',
+      startedAt: new Date('2026-05-15T16:58:09.000Z'),
+      endedAt: new Date('2026-05-15T18:20:55.000Z'),
+      confidence: 0.7,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'UNKNOWN',
+      startedAt: new Date('2026-05-15T16:58:25.000Z'),
+      confidence: 0.7,
+    });
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0].personId.toString()).toBe(person._id.toString());
+    expect(roster[0].state).toBe('UNKNOWN');
+    expect(roster[0].role).toBe('pi');
+  });
 });
 
 describe('resolveResearcherIdForLegacyUser canonical resolution', () => {
