@@ -841,6 +841,46 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
   return [...strong, ...weak];
 };
 
+/**
+ * True when the hit's keyword-leg relevance rests entirely on a coincidental
+ * typo: only some query words matched, none of them exactly, and the partial
+ * match was only reachable by tolerating a typo. This is the narrow-crossing
+ * garbage match that a single blended `rankingScoreThreshold` cannot separate
+ * from a genuine weak-but-real hit, so for a real zero-coverage query it leaks
+ * through as the lone, confident-looking result. Purely semantic hits carry no
+ * keyword ranking rules, so they never trip this. See #1015.
+ */
+const hitIsCoincidentalTypoOnlyMatch = (hit: any): boolean => {
+  if (!hitMatchedKeywordLeg(hit)) return false;
+  const details = hit?._rankingScoreDetails;
+  const words = details?.words;
+  const exactness = details?.exactness;
+  const typo = details?.typo;
+  if (!words || !exactness || !typo) return false;
+  const partialWordCoverage =
+    typeof words.matchingWords === 'number' &&
+    typeof words.maxMatchingWords === 'number' &&
+    words.matchingWords < words.maxMatchingWords;
+  const noExactMatch = exactness.matchType === 'noExactMatch';
+  const reliedOnTypo = typeof typo.typoCount === 'number' && typo.typoCount > 0;
+  return partialWordCoverage && noExactMatch && reliedOnTypo;
+};
+
+/**
+ * Drops keyword-leg hits whose entire match is a coincidental partial typo (see
+ * `hitIsCoincidentalTypoOnlyMatch`) and reports how many were removed so the
+ * caller can keep the total-hits count honest. Requires full word coverage or an
+ * exact match before a keyword hit counts, rather than trusting the blended
+ * score cutoff alone. See #1015.
+ */
+export const dropCoincidentalTypoOnlyHits = <T>(
+  hits: T[],
+): { hits: T[]; dropped: number } => {
+  if (!Array.isArray(hits) || hits.length === 0) return { hits, dropped: 0 };
+  const kept = hits.filter((hit) => !hitIsCoincidentalTypoOnlyMatch(hit));
+  return { hits: kept, dropped: hits.length - kept.length };
+};
+
 const normalizeExactMatchValue = (value: string): string =>
   value
     .toLowerCase()
@@ -1193,8 +1233,10 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
+  const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
+    dropCoincidentalTypoOnlyHits(hits || []);
   const orderedHits = promoteExactAliasFieldMatches(
-    floorWeakSemanticOnlyHits(hits || []),
+    floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
   );
   const hitIds = orderedHits
@@ -1249,10 +1291,15 @@ export async function searchResearchGroupsViaMeili(
     };
   });
 
+  const adjustedTotalHits =
+    typeof resolvedTotalHits === 'number'
+      ? Math.max(normalizedHits.length, resolvedTotalHits - droppedCoincidentalHits)
+      : normalizedHits.length;
+
   return addResearchEntitySearchAliases(
     {
       hits: normalizedHits,
-      estimatedTotalHits: resolvedTotalHits ?? normalizedHits.length,
+      estimatedTotalHits: adjustedTotalHits,
       page: safePage,
       pageSize: safePageSize,
       facetDistribution,
