@@ -2064,7 +2064,7 @@ describe('researchDetailLeadIdentity', () => {
     ).toEqual({ leadIdentityStatus: 'under_review' });
   });
 
-  it('stays verified when the sole lead has no official profile of its own to conflict', () => {
+  it('holds a review state when a profile-less lead shares only a surname with the entity profile home', () => {
     expect(
       researchDetailLeadIdentity(
         { sourceUrls: ['https://medicine.yale.edu/profile/vishwa-dixit/'] },
@@ -2073,6 +2073,21 @@ describe('researchDetailLeadIdentity', () => {
             role: 'pi',
             user: { displayName: 'Purushottam Dixit' },
             row: { facultyMemberId: 'faculty-purushottam' },
+          },
+        ],
+      ),
+    ).toEqual({ leadIdentityStatus: 'under_review' });
+  });
+
+  it('stays verified when a profile-less lead full name matches the entity profile home', () => {
+    expect(
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://medicine.yale.edu/profile/vishwa-dixit/'] },
+        [
+          {
+            role: 'pi',
+            user: { displayName: 'Vishwa Dixit' },
+            row: { facultyMemberId: 'faculty-vishwa' },
           },
         ],
       ),

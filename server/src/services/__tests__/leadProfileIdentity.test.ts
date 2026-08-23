@@ -144,6 +144,37 @@ describe('detectProfileIdentityRisk', () => {
     ).toBe(false);
   });
 
+  it('does not flag when the lead full name corroborates despite a differently spelled profile slug', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: personDerivedEntity,
+        leadMembers: [
+          {
+            name: 'Jane Doe',
+            user: {
+              netid: 'jd88',
+              fname: 'Jane',
+              lname: 'Doe',
+              profileUrls: { official: 'https://chem.yale.edu/profile/jane-e-doe' },
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  it('flags a surname-only collision even when the lead carries no profile URL', () => {
+    expect(
+      detectProfileIdentityRisk({
+        entity: {
+          websiteUrl: 'https://medicine.yale.edu/profile/john-smith/',
+          sourceUrls: ['https://medicine.yale.edu/profile/john-smith/'],
+        },
+        leadMembers: [{ user: { fname: 'Jane', lname: 'Smith' } }],
+      }),
+    ).toBe(true);
+  });
+
   it('does not treat a lab landing page under /people/ as a contested person profile', () => {
     expect(
       detectProfileIdentityRisk({
