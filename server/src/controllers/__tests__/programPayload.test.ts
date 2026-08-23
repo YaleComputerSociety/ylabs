@@ -296,3 +296,40 @@ describe('publicProgramForReader dump/duplicate prose hygiene (#904)', () => {
     );
   });
 });
+
+describe('publicProgramForReader provenance-hedge and directive hygiene (#1053)', () => {
+  it('strips the "when source-confirmed" hedge from compensationSummary but keeps the figure', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58520',
+      title: 'Example Undergraduate Research Assistantships',
+      compensationSummary: '$20/hour when source-confirmed',
+    });
+
+    expect(payload.compensationSummary).toBe('$20/hour');
+  });
+
+  it('strips the hedge from a longer compensation phrase', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58521',
+      title: 'Example Cohort Research Program',
+      compensationSummary: 'Academic-year and summer research support when source-confirmed',
+    });
+
+    expect(payload.compensationSummary).toBe('Academic-year and summer research support');
+  });
+
+  it('fails a classifier display-routing directive description closed', () => {
+    const payload = publicProgramForReader({
+      _id: '6982c1cf781efc3253d58522',
+      title: 'Example Summer Fellowship',
+      description:
+        'The Example Summer Fellowship has a Yale source and a clear undergraduate-facing summer use case, including research or project work when source-confirmed. It should be shown as funding/project support rather than a research home.',
+      summary: 'A summer fellowship supporting eligible projects, internships, or research abroad.',
+    });
+
+    expect(payload.description).toBe('');
+    expect(payload.summary).toBe(
+      'A summer fellowship supporting eligible projects, internships, or research abroad.',
+    );
+  });
+});
