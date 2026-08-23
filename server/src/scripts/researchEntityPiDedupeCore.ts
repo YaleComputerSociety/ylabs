@@ -390,6 +390,20 @@ function isPiRoleCorroboratedSurnameLab(
   return words.every((word, index) => word === lastNameWords[index]);
 }
 
+function entityNameTrailsPiSurname(
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+  row: ResearchEntityPiDedupeRow,
+): boolean {
+  const lastNameWords = normalizedWords(row.piLastName);
+  if (lastNameWords.length === 0) return false;
+  const words = normalizedWords(entity.name).filter(
+    (word) => !['the', 'lab', 'laboratory', 'research'].includes(word),
+  );
+  if (words.length < lastNameWords.length) return false;
+  const trailingWords = words.slice(-lastNameWords.length);
+  return trailingWords.every((word, index) => word === lastNameWords[index]);
+}
+
 function comparablePiLabName(
   entity: ResearchEntityPiDedupeRow['entities'][number],
   row: ResearchEntityPiDedupeRow,
@@ -555,12 +569,15 @@ function buildProfileAreaShellDuplicateGroup(
   const profileBackedSurnameShells = entities.filter((entity) =>
     isProfileBackedSurnameLabShell(entity, row),
   );
-  // Only when the row already has a concrete-website home to absorb them: a PI-named lab stub
-  // with no concrete website of its own folds into that home even when the home's name is
-  // topical, not person-shaped (issue #1113). comparablePiLabName keeps the surname match tied
-  // to the PI's real first name, so a wrong-first-name homonym still fails to cluster.
-  const hasConcreteWebsiteHome = entities.some((entity) => entityCarriesConcreteWebsite(entity));
-  const personNamedPiLabShells = hasConcreteWebsiteHome
+  // A PI-named lab stub with no concrete website of its own folds into a same-PI home only when
+  // that home is topical - its own name does not trail the PI surname (issue #1113). Folding into
+  // a surname-named concrete home instead (e.g. "Townsend Lab") would cluster on a bare shared
+  // surname whose personId link is uncorroborated, exactly the homonym risk #1138's guard exists
+  // to reject, so a surname-only home never absorbs a person-named shell on name evidence alone.
+  const hasTopicalConcreteWebsiteHome = entities.some(
+    (entity) => entityCarriesConcreteWebsite(entity) && !entityNameTrailsPiSurname(entity, row),
+  );
+  const personNamedPiLabShells = hasTopicalConcreteWebsiteHome
     ? entities.filter((entity) => comparablePiLabName(entity, row) !== null)
     : [];
   // An entity that carries its own real (non-profile, non-funding) lab website is the
