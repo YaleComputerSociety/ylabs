@@ -209,6 +209,47 @@ describe('FellowshipModal', () => {
     expect(container.querySelector('a[href=""]')).toBeNull();
   });
 
+  it('drops scraped site nav and footer chrome from the Links section', () => {
+    const { container } = renderModal({
+      applicationLink: '',
+      sourceUrl: '',
+      links: [
+        { label: 'Campus Life', url: 'https://engineering.yale.edu/campus-life' },
+        { label: "Dean's Message", url: 'https://engineering.yale.edu/dean' },
+        { label: 'Accessibility >', url: 'https://usability.yale.edu' },
+        { label: 'Privacy Policy >', url: 'https://privacy.yale.edu' },
+        { label: 'Give Back >', url: 'https://engineering.yale.edu/give' },
+        { label: 'Contact Us >', url: 'https://engineering.yale.edu/contact' },
+        { label: 'Apply', url: 'https://engineering.yale.edu/apply' },
+        {
+          label: 'Research Internship Program',
+          url: 'https://engineering.yale.edu/undergraduate-study/research-internship-program',
+        },
+      ],
+    });
+
+    expect(screen.queryByRole('link', { name: 'Campus Life' })).toBeNull();
+    expect(screen.queryByRole('link', { name: "Dean's Message" })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Privacy Policy >' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Give Back >' })).toBeNull();
+    expect(container.querySelector('a[href="https://engineering.yale.edu/apply"]')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Research Internship Program' })).toHaveAttribute(
+      'href',
+      'https://engineering.yale.edu/undergraduate-study/research-internship-program',
+    );
+  });
+
+  it('hides the Links section entirely when the raw set still looks like a page menu', () => {
+    renderModal({
+      links: Array.from({ length: 12 }, (_unused, index) => ({
+        label: `Program resource ${index}`,
+        url: `https://example.edu/resource-${index}`,
+      })),
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Links' })).toBeNull();
+  });
+
   it('does not render mailto actions for unsafe contact email values', () => {
     const { container } = renderModal({
       contactEmail: 'program-contact@example.edu?bcc=attacker@example.test',
