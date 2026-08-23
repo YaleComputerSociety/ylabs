@@ -11,6 +11,8 @@ import {
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
+  buildWebsiteUrlResearchEntityDedupePlan,
+  normalizeWebsiteUrlIdentityKey,
   selectSamePiDuplicateRiskEntityIds,
   selectCurrentMemberIdsToRetire,
   shouldRetireDuplicateCurrentMembersForDedupeRun,
@@ -1220,6 +1222,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1235,6 +1238,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1256,6 +1260,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: true,
       sharedPersonId: false,
       limit: 10000,
@@ -1271,6 +1276,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: true,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 10000,
@@ -1795,6 +1801,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       fullPlan: false,
       officialLabUrlOnly: false,
       orgNameOnly: false,
+      websiteUrlOnly: false,
       reviewedProfileAreaOnly: false,
       sharedPersonId: false,
       limit: 50,
@@ -1882,6 +1889,159 @@ describe('buildOfficialLabUrlResearchEntityDedupePlan', () => {
           entities: [
             { id: 'ysm-one', slug: 'ysm-one', name: 'One Lab' },
             { id: 'ysm-two', slug: 'ysm-two', name: 'Two Lab' },
+          ],
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('normalizeWebsiteUrlIdentityKey', () => {
+  it('collapses scheme, trailing slash, and www to one key', () => {
+    const key = 'marlowelab.example.edu';
+    expect(normalizeWebsiteUrlIdentityKey('http://marlowelab.example.edu/')).toBe(key);
+    expect(normalizeWebsiteUrlIdentityKey('https://marlowelab.example.edu')).toBe(key);
+    expect(normalizeWebsiteUrlIdentityKey('https://www.marlowelab.example.edu/')).toBe(key);
+  });
+
+  it('preserves a distinguishing path and drops query/fragment', () => {
+    expect(normalizeWebsiteUrlIdentityKey('https://stat.example.edu/~ab12/?x=1#top')).toBe(
+      'stat.example.edu/~ab12',
+    );
+  });
+
+  it('returns empty for blank or unparseable values', () => {
+    expect(normalizeWebsiteUrlIdentityKey('')).toBe('');
+    expect(normalizeWebsiteUrlIdentityKey('not a url')).toBe('');
+  });
+});
+
+describe('buildWebsiteUrlResearchEntityDedupePlan', () => {
+  it('folds a same-person website clone into the PI-corroborated established lab', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://marlowelab.example.edu/',
+        entities: [
+          {
+            id: 'dept-eng-marlowe',
+            slug: 'dept-eng-marlowe',
+            name: 'The Marlowe Lab',
+            kind: 'lab',
+            websiteUrl: 'https://marlowelab.example.edu/',
+            shortDescription: 'The Marlowe lab integrates design and policy for sustainability.',
+            fullDescription:
+              'The Marlowe lab studies sustainable technologies across the full life cycle of materials and processes.',
+            sourceUrls: [
+              'https://engineering.example.edu/faculty/dana-marlowe',
+              'https://marlowelab.example.edu/',
+            ],
+            departments: ['Chemical Engineering'],
+            researchAreas: ['Sustainability', 'Green Chemistry'],
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'affil-marlowe-clone',
+            slug: 'affil-faculty-dana-marlowe',
+            name: 'Dana Marlowe Lab',
+            kind: 'lab',
+            websiteUrl: 'http://www.marlowelab.example.edu',
+            shortDescription: "Dr. Dana Marlowe's lab studies sustainable technologies.",
+            fullDescription: "Dr. Dana Marlowe's research focuses on sustainable technologies.",
+            sourceUrls: [
+              'https://environment.example.edu/directory/dana-marlowe',
+              'https://marlowelab.example.edu/',
+            ],
+            departments: [],
+            researchAreas: ['Circular Economy', 'Corporate Sustainability'],
+            piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].canonicalEntityId).toBe('dept-eng-marlowe');
+    expect(plan[0].duplicateEntityIds).toEqual(['affil-marlowe-clone']);
+    expect(plan[0].mergedResearchAreas).toEqual(
+      expect.arrayContaining([
+        'Sustainability',
+        'Green Chemistry',
+        'Circular Economy',
+        'Corporate Sustainability',
+      ]),
+    );
+  });
+
+  it('never collapses a shared group site hosting several distinct faculty', () => {
+    const sharedGroupEntities = [
+      { surname: 'fenwick', first: 'Alice', scheme: 'http://' },
+      { surname: 'castellan', first: 'Bruno', scheme: 'http://' },
+      { surname: 'okafor', first: 'Chidi', scheme: 'https://' },
+      { surname: 'delgado', first: 'Diego', scheme: 'https://' },
+    ].map((person) => ({
+      id: `dept-theory-${person.surname}`,
+      slug: `dept-theory-${person.surname}`,
+      name: `${person.first} ${person.surname[0].toUpperCase()}${person.surname.slice(1)} Faculty Research`,
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      websiteUrl: `${person.scheme}theory.example.edu/`,
+      departments: ['Physics'],
+      researchAreas: ['Theory'],
+      piRoleCorroborated: true,
+    }));
+
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      { websiteUrl: 'http://theory.example.edu/', entities: sharedGroupEntities },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('leaves website collisions that involve a funding/area shell to the other lanes', () => {
+    const plan = buildWebsiteUrlResearchEntityDedupePlan([
+      {
+        websiteUrl: 'https://stat.example.edu/~ab12/',
+        entities: [
+          {
+            id: 'nsf-pi-shell',
+            slug: 'nsf-pi-abcdef',
+            name: 'Robin Ashby Lab',
+            kind: 'lab',
+            websiteUrl: 'https://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'dept-stat-ashby',
+            slug: 'dept-statistics-robin-ashby',
+            name: 'Robin Ashby Faculty Research',
+            kind: 'individual',
+            entityType: 'FACULTY_RESEARCH_AREA',
+            websiteUrl: 'http://stat.example.edu/~ab12/',
+            researchAreas: ['Statistics'],
+            piRoleCorroborated: false,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
+  it('does not cluster a solitary entity on a unique website', () => {
+    expect(
+      buildWebsiteUrlResearchEntityDedupePlan([
+        {
+          websiteUrl: 'https://lonelab.example.edu/',
+          entities: [
+            {
+              id: 'dept-lone',
+              slug: 'dept-lone',
+              name: 'The Lone Lab',
+              kind: 'lab',
+              websiteUrl: 'https://lonelab.example.edu/',
+              piRoleCorroborated: true,
+            },
           ],
         },
       ]),
