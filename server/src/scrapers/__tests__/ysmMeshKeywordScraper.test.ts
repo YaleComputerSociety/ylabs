@@ -9,6 +9,7 @@ import {
   parseYsmMeshKeywordIndex,
   parseYsmProfileResearch,
   parseYsmResultsPageFaculty,
+  selectYsmLeadProfileUrls,
   ysmMeshResearchAreaObservations,
   type FetchedYsmPage,
   type YsmFacultyDirectory,
@@ -541,5 +542,63 @@ describe('YsmMeshKeywordScraper.run', () => {
     const { ctx } = makeContext();
     await scraper.run(ctx);
     expect(directoryCalls).toBe(1);
+  });
+});
+
+describe('selectYsmLeadProfileUrls', () => {
+  it('resolves the lead profile from the joined Researcher YALE_OFFICIAL profile link', () => {
+    const urls = selectYsmLeadProfileUrls(
+      [{ personId: 'a', rosterProvenance: {} }],
+      [
+        {
+          profileLinks: [
+            { kind: 'YALE_OFFICIAL', url: 'https://medicine.yale.edu/profile/lead-alpha/' },
+          ],
+        },
+      ],
+    );
+    expect(urls).toEqual(['https://medicine.yale.edu/profile/lead-alpha/']);
+  });
+
+  it('ignores non-official links and non-YSM profile urls', () => {
+    const urls = selectYsmLeadProfileUrls(
+      [],
+      [
+        {
+          profileLinks: [
+            { kind: 'PERSONAL_SITE', url: 'https://medicine.yale.edu/profile/lead-gamma/' },
+            { kind: 'YALE_OFFICIAL', url: 'https://example.com/profile/lead-gamma/' },
+            { kind: 'YALE_OFFICIAL', url: 'https://medicine.yale.edu/lab/example-lab/' },
+          ],
+        },
+      ],
+    );
+    expect(urls).toEqual([]);
+  });
+
+  it('falls back to rosterProvenance when no Researcher profile link is present', () => {
+    const urls = selectYsmLeadProfileUrls(
+      [
+        {
+          personId: 'a',
+          rosterProvenance: { profileUrl: 'https://medicine.yale.edu/profile/lead-beta/' },
+        },
+      ],
+      [{ profileLinks: [] }],
+    );
+    expect(urls).toEqual(['https://medicine.yale.edu/profile/lead-beta/']);
+  });
+
+  it('prefers the official link first and dedupes overlapping sources', () => {
+    const shared = 'https://medicine.yale.edu/profile/lead-alpha/';
+    const urls = selectYsmLeadProfileUrls(
+      [{ personId: 'a', rosterProvenance: { profileUrl: shared } }],
+      [{ profileLinks: [{ kind: 'YALE_OFFICIAL', url: shared }] }],
+    );
+    expect(urls).toEqual([shared]);
+  });
+
+  it('returns an empty list when no valid YSM profile url exists', () => {
+    expect(selectYsmLeadProfileUrls([{ rosterProvenance: {} }], [{ profileLinks: [] }])).toEqual([]);
   });
 });
