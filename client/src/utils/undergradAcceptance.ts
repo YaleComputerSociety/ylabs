@@ -107,6 +107,30 @@ function accessSignalLabel(signalType: string): string {
   return ACCESS_SIGNAL_LABELS[signalType] || signalType.replace(/_/g, ' ').toLowerCase();
 }
 
+/**
+ * The roster scraper folds "Alumni / Former Lab Members / Past Undergraduate
+ * Researchers / Visiting Undergraduates" sections into `currentUndergradCount`
+ * with no recency gate (#1209), so a stored count can be backed by an
+ * unambiguously historical evidence quote. Detect those markers so an alumni
+ * roster never renders as a strong "currently hosts undergrads" signal.
+ */
+const HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS: RegExp[] = [
+  /\bformer(ly)?\b/i,
+  /\balumn(i|us|ae|a)\b/i,
+  /\bgraduated\b/i,
+  /\bpast\s+(under)?grad/i,
+  /\bprevious(ly)?\b/i,
+  /\bvisiting\s+(under)?grad/i,
+  /\b(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}\b/,
+  /\bnow\s+(?!accept|recruit|hir|seek|welcom|tak|open|avail|enroll|offer|host)(?:a\b|an\b|the\b|at\b|with\b|working|serv|senior|director|professor|assistant|associate|principal|chief|head|vp|ceo|cto|president|manager|scientist|research|postdoc|resident|fellow|md\b|phd\b|student|pursuing|completing|attend)/i,
+];
+
+export function isHistoricalUndergradEvidence(quote?: string): boolean {
+  const text = (quote || '').trim();
+  if (!text) return false;
+  return HISTORICAL_UNDERGRAD_EVIDENCE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult | null {
   const summary = group.accessSummary;
   if (!summary || summary.status === 'unknown') return null;
@@ -138,12 +162,18 @@ function verdictFromAccessSummary(group: ResearchGroup): AcceptanceVerdictResult
       .values(),
   ];
 
-  const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => ({
-    kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
-    label: accessSignalLabel(item.signalType),
-    detail: item.excerpt || item.sourceUrl || undefined,
-    strength: item.confidence === 'HIGH' ? 'strong' : 'moderate',
-  }));
+  const evidence = uniqueEvidence.slice(0, 4).map<EvidenceItem>((item) => {
+    const historicalCurrentUndergrads =
+      item.signalType === 'CURRENT_UNDERGRADS' &&
+      (isHistoricalUndergradEvidence(item.excerpt) ||
+        isHistoricalUndergradEvidence(group.undergradEvidenceQuote));
+    return {
+      kind: item.signalType === 'POSTED_OPENING' ? 'active-listing' : 'access-signal',
+      label: accessSignalLabel(item.signalType),
+      detail: item.excerpt || item.sourceUrl || undefined,
+      strength: item.confidence === 'HIGH' && !historicalCurrentUndergrads ? 'strong' : 'moderate',
+    };
+  });
 
   if (evidence.length === 0) {
     evidence.push({
@@ -179,11 +209,14 @@ export function computeAcceptanceVerdict(group: ResearchGroup): AcceptanceVerdic
 
   if (typeof group.currentUndergradCount === 'number' && group.currentUndergradCount > 0) {
     const n = group.currentUndergradCount;
+    const historical = isHistoricalUndergradEvidence(group.undergradEvidenceQuote);
     evidence.push({
       kind: 'lab-lists-undergrads',
       label: n === 1 ? 'Lists 1 undergrad' : `Lists ${n} undergrads`,
-      detail: 'Current undergrads named on the lab roster.',
-      strength: 'strong',
+      detail: historical
+        ? 'Undergrads named on the lab roster, including past members.'
+        : 'Current undergrads named on the lab roster.',
+      strength: historical ? 'moderate' : 'strong',
     });
   }
 
