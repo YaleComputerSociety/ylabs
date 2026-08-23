@@ -126,6 +126,7 @@ const RESEARCH_AREA_LEAKAGE_KEYS: ReadonlySet<string> = new Set([
 const RESEARCH_AREA_LEAKAGE_PATTERNS: readonly RegExp[] = [
   /^\d+\s*ysm\s+researchers?$/i,
   /^[\d.,]+$/,
+  /^[^a-z]+$/i,
 ];
 
 const RESEARCH_AREA_PROTOCOL_ID_RE =

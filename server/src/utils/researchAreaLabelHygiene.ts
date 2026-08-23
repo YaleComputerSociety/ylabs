@@ -22,6 +22,33 @@ export const isNarrativeProseResearchAreaLabel = (value: unknown): boolean => {
   return NARRATIVE_PROSE_SENTENCE_STEM_RE.test(collapsed);
 };
 
+const CONTAINS_LETTER_RE = /[A-Za-z]/;
+const CITATION_AUTHOR_YEAR_RE = /\b(?:18|19|20)\d{2}[a-z]\b/;
+const RESEARCH_AREA_LABEL_LEAK_RE =
+  /^research\s+areas?\b\s*(?::|includes?\b|included\b|are\b|comprises?\b|encompass(?:es)?\b|of\b)/i;
+const SENTENCE_CLAUSE_VERB_LEAD_RE =
+  /^(?:has|have|had|is|are|was|were|be|been|being|do|does|did)\b/i;
+const NUMBER_WORD_PHRASE_RE =
+  /^(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|and|or|to|through|[\s-])+$/i;
+
+const hasUnbalancedClosingParen = (value: string): boolean =>
+  value.includes(')') && !value.includes('(');
+
+const isLowercaseSentenceFragment = (value: string): boolean => {
+  if (!/^[a-z]/.test(value)) return false;
+  return SENTENCE_CLAUSE_VERB_LEAD_RE.test(value) || NUMBER_WORD_PHRASE_RE.test(value);
+};
+
+export const isCorruptResearchAreaLabel = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  const collapsed = value.normalize('NFKC').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return false;
+  if (!CONTAINS_LETTER_RE.test(collapsed)) return true;
+  if (RESEARCH_AREA_LABEL_LEAK_RE.test(collapsed)) return true;
+  if (hasUnbalancedClosingParen(collapsed) || CITATION_AUTHOR_YEAR_RE.test(collapsed)) return true;
+  return isLowercaseSentenceFragment(collapsed);
+};
+
 export const sanitizeResearchAreaLabel = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   const collapsed = value.replace(/\s+/g, ' ').trim();
@@ -29,6 +56,7 @@ export const sanitizeResearchAreaLabel = (value: unknown): string => {
   const stripped = stripProfileRoleLabelSuffix(collapsed).trim();
   if (!stripped) return '';
   if (isNarrativeProseResearchAreaLabel(stripped)) return '';
+  if (isCorruptResearchAreaLabel(stripped)) return '';
   return stripped;
 };
 

@@ -264,6 +264,8 @@ describe('isResearchAreaLabelLeakage', () => {
       'Keywords and Concepts',
       '42',
       'N/A',
+      '···',
+      '--',
     ]) {
       expect(isResearchAreaLabelLeakage(junk)).toBe(true);
     }
