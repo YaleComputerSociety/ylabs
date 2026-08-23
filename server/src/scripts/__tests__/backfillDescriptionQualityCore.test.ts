@@ -46,6 +46,32 @@ describe('sanitizeDescriptionText', () => {
     expect(withPmc.text).not.toContain('PMC1234567');
   });
 
+  it('strips a dangling empty "research areas:" template clause', () => {
+    const bare = sanitizeDescriptionText('Studies condensed matter physics, including research areas:.');
+    expect(bare.removedArtifacts).toBe(true);
+    expect(bare.text).toBe('Studies condensed matter physics.');
+
+    const trailing = sanitizeDescriptionText(
+      'Studies biophysics, including mechanics of motor proteins and the cytoskeleton, and research areas:.',
+    );
+    expect(trailing.removedArtifacts).toBe(true);
+    expect(trailing.text).toBe(
+      'Studies biophysics, including mechanics of motor proteins and the cytoskeleton.',
+    );
+
+    const withRealItems = sanitizeDescriptionText(
+      'Studies condensed matter physics, including quantum physics, and research areas:.',
+    );
+    expect(withRealItems.text).toBe('Studies condensed matter physics, including quantum physics.');
+  });
+
+  it('keeps a populated "research areas:" list intact', () => {
+    const populated = 'Studies X including research areas: cardiology, oncology, and immunology.';
+    const result = sanitizeDescriptionText(populated);
+    expect(result.removedArtifacts).toBe(false);
+    expect(result.text).toBe(populated);
+  });
+
   it('leaves clean text unchanged', () => {
     const result = sanitizeDescriptionText(genuineFull);
     expect(result.removedCaveat).toBe(false);
