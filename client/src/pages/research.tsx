@@ -4,6 +4,9 @@ import { useLocation, useSearchParams } from 'react-router-dom';
 
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
 import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchSortDropdown, {
+  ResearchSortField,
+} from '../components/research/ResearchSortDropdown';
 import InfiniteScrollLoadingDots from '../components/shared/InfiniteScrollLoadingDots';
 import UserContext from '../contexts/UserContext';
 import useConfig from '../hooks/useConfig';
@@ -143,7 +146,10 @@ interface ResearchPageSnapshot {
   selectedDepartment: string;
   selectedResearchAreas: string[];
   hostsUndergrads: boolean;
+  sortBy: ResearchSortField;
+  sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
+  browseFacetDistribution: Record<string, Record<string, number>>;
   groupedResults: GroupedResearchResults;
   searchResultResearchEntities: ResearchEntity[];
   searchPage: number;
@@ -164,7 +170,12 @@ interface ResearchEntitySearchOptions {
   qualityFilters?: ResearchQualityFilter[];
   trustTierFilters?: ResearchTrustTierFilter[];
   includeSuppressed?: boolean;
+  sortBy?: 'name' | 'lastObservedAt';
+  sortOrder?: 'asc' | 'desc';
 }
+
+const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
+  field === 'name' ? 'asc' : 'desc';
 
 let researchPageSnapshot: ResearchPageSnapshot | null = null;
 
@@ -191,6 +202,9 @@ const searchResearchEntities = async (
         ? { studentVisibilityTier: options.trustTierFilters }
         : {}),
       ...(options.includeSuppressed ? { includeSuppressed: true } : {}),
+      ...(options.sortBy
+        ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' }
+        : {}),
     },
     { signal },
   );
@@ -383,9 +397,29 @@ const Research = () => {
   const [hostsUndergrads, setHostsUndergrads] = useState(
     () => restoredSnapshotRef.current?.hostsUndergrads ?? searchParams.get('undergrad') === '1',
   );
+  const [sortBy, setSortBy] = useState<ResearchSortField>(
+    () => restoredSnapshotRef.current?.sortBy ?? 'relevance',
+  );
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(
+    () => restoredSnapshotRef.current?.sortOrder ?? 'asc',
+  );
+  const sortByRef = useRef(sortBy);
+  const sortOrderRef = useRef(sortOrder);
+  sortByRef.current = sortBy;
+  sortOrderRef.current = sortOrder;
+  const currentSortRequestOptions = (): Pick<
+    ResearchEntitySearchOptions,
+    'sortBy' | 'sortOrder'
+  > =>
+    sortByRef.current === 'relevance'
+      ? {}
+      : { sortBy: sortByRef.current, sortOrder: sortOrderRef.current };
   const [facetDistribution, setFacetDistribution] = useState<
     Record<string, Record<string, number>>
   >(() => restoredSnapshotRef.current?.facetDistribution ?? {});
+  const [browseFacetDistribution, setBrowseFacetDistribution] = useState<
+    Record<string, Record<string, number>>
+  >(() => restoredSnapshotRef.current?.browseFacetDistribution ?? {});
   const [groupedResults, setGroupedResults] = useState<GroupedResearchResults>(
     () => restoredSnapshotRef.current?.groupedResults ?? emptyGroupedResults(''),
   );
@@ -445,13 +479,22 @@ const Research = () => {
       ? `${pageSnapshotKey}|${String(isAdmin)}|${String(showWeakestProfilesFirst)}|${qualityFilters.join(',')}|${trustTierFilters.join(',')}`
       : null,
   );
-  const researchAreaOptions = useMemo(() => {
-    const counts = facetDistribution.researchAreas || {};
-    return Array.from(new Set(researchAreas.map((area) => area.name.trim()).filter(Boolean)))
-      .map((name) => ({ value: name, count: counts[name] }))
-      .filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0)
-      .sort((a, b) => a.value.localeCompare(b.value));
-  }, [researchAreas, facetDistribution.researchAreas]);
+  const buildResearchAreaOptions = useCallback(
+    (counts: Record<string, number> | undefined) =>
+      Array.from(new Set(researchAreas.map((area) => area.name.trim()).filter(Boolean)))
+        .map((name) => ({ value: name, count: (counts || {})[name] }))
+        .filter((option) => Number.isFinite(option.count) && (option.count ?? 0) > 0)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    [researchAreas],
+  );
+  const researchAreaOptions = useMemo(
+    () => buildResearchAreaOptions(facetDistribution.researchAreas),
+    [buildResearchAreaOptions, facetDistribution.researchAreas],
+  );
+  const browseResearchAreaOptions = useMemo(
+    () => buildResearchAreaOptions(browseFacetDistribution.researchAreas),
+    [buildResearchAreaOptions, browseFacetDistribution.researchAreas],
+  );
   const departmentSearchTargets = useMemo(
     () => buildDepartmentSearchTargets(departments),
     [departments],
@@ -561,6 +604,7 @@ const Research = () => {
           qualityFilters: isAdmin && showWeakestProfilesFirst ? qualityFilters : [],
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+          ...currentSortRequestOptions(),
         },
       );
 
@@ -571,6 +615,9 @@ const Research = () => {
       setDefaultResearchEntities((current) =>
         page === 1 ? researchEntities : [...current, ...researchEntities],
       );
+      if (page === 1) {
+        setBrowseFacetDistribution(researchEntitiesPage.facetDistribution);
+      }
       setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
       setDefaultSearchError('');
@@ -635,6 +682,7 @@ const Research = () => {
       filters,
       trustTierFilters: isAdmin ? trustTierFilters : [],
       includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+      sort: currentSortRequestOptions(),
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -659,6 +707,7 @@ const Research = () => {
       options: {
         trustTierFilters: isAdmin ? trustTierFilters : [],
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+        ...currentSortRequestOptions(),
       },
     });
     setQuery(trimmed);
@@ -702,6 +751,7 @@ const Research = () => {
         {
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+          ...currentSortRequestOptions(),
         },
       );
 
@@ -1120,7 +1170,10 @@ const Research = () => {
       selectedDepartment,
       selectedResearchAreas,
       hostsUndergrads,
+      sortBy,
+      sortOrder,
       facetDistribution,
+      browseFacetDistribution,
       groupedResults,
       searchResultResearchEntities,
       searchPage,
@@ -1148,7 +1201,10 @@ const Research = () => {
     selectedDepartment,
     selectedResearchAreas,
     hostsUndergrads,
+    sortBy,
+    sortOrder,
     facetDistribution,
+    browseFacetDistribution,
     groupedResults,
     searchResultResearchEntities,
     searchPage,
@@ -1278,6 +1334,32 @@ const Research = () => {
       preserveResults: true,
     });
   };
+  const applyResearchSort = (nextSortBy: ResearchSortField, nextSortOrder?: 'asc' | 'desc') => {
+    const order = nextSortOrder ?? defaultResearchSortOrder(nextSortBy);
+    if (nextSortBy === sortBy && order === sortOrder) return;
+    sortByRef.current = nextSortBy;
+    sortOrderRef.current = order;
+    setSortBy(nextSortBy);
+    setSortOrder(order);
+    if (hasSubmittedSearch && activeSearchRequest) {
+      void runSearchRef.current(query.trim(), {
+        searchQuery: activeSearchRequest.searchQuery,
+        filters: activeSearchRequest.filters,
+        hasFilterSelections: hasStructuredFilters(activeSearchRequest.filters),
+        departmentSearch,
+        preserveResults: true,
+        syncUrl: false,
+      });
+      return;
+    }
+    setDefaultResearchEntities([]);
+    setDefaultSearchPage(1);
+    setDefaultSearchTotal(0);
+    setDefaultSearchExhausted(false);
+    void runDefaultResearchHomeSearchRef.current(1);
+  };
+  const toggleResearchSortDirection = () =>
+    applyResearchSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc');
   const exploreHome = useCallback(
     (label: string) => {
       scrollResearchViewportToTop();
@@ -1377,6 +1459,14 @@ const Research = () => {
       }),
   };
 
+  const browseFilterProps = {
+    ...researchFilterProps,
+    facetDistribution: browseFacetDistribution,
+    researchAreaOptions: browseResearchAreaOptions,
+    isApplying: false,
+    hasFacetError: false,
+  };
+
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-screen-2xl px-5 py-5 sm:py-8 lg:px-8">
@@ -1462,6 +1552,11 @@ const Research = () => {
                 <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
               </div>
             )}
+            {!hasSubmittedSearch && isWideFilterLayout && (
+              <div className="mt-6 border-t border-[var(--yr-line)] pt-6">
+                <ResearchFilterDisclosure variant="sidebar" {...browseFilterProps} />
+              </div>
+            )}
           </header>
 
           <div className="min-w-0">
@@ -1474,18 +1569,27 @@ const Research = () => {
                       Open a profile to review people, evidence, sources, and planning context.
                     </p>
                   </div>
-                  {isAdmin && (
-                    <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={showWeakestProfilesFirst}
-                        onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
-                        className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
-                      />
-                      <span>Show weakest profiles first</span>
-                    </label>
-                  )}
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                    <ResearchSortDropdown
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSortByChange={(field) => applyResearchSort(field)}
+                      onToggleSortDirection={toggleResearchSortDirection}
+                    />
+                    {isAdmin && (
+                      <label className="yr-card inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={showWeakestProfilesFirst}
+                          onChange={(event) => setWeakestProfilesFirst(event.target.checked)}
+                          className="h-4 w-4 rounded border-[var(--yr-line-strong)] text-blue-700 focus:ring-blue-200"
+                        />
+                        <span>Show weakest profiles first</span>
+                      </label>
+                    )}
+                  </div>
                 </div>
+                {!isWideFilterLayout && <ResearchFilterDisclosure {...browseFilterProps} />}
                 {defaultSearchError && (
                   <div
                     role="alert"
@@ -1583,20 +1687,30 @@ const Research = () => {
 
             {hasSubmittedSearch && (
               <section aria-busy={searchLoading} aria-label="Search results">
-                <p
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                  className="text-sm font-medium text-slate-700"
-                >
-                  {resultSummary(
-                    activeResults,
-                    submittedQuery,
-                    searchLoading,
-                    departmentSearch?.label,
-                    searchTotal,
-                  )}
-                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                    className="min-w-0 text-sm font-medium text-slate-700"
+                  >
+                    {resultSummary(
+                      activeResults,
+                      submittedQuery,
+                      searchLoading,
+                      departmentSearch?.label,
+                      searchTotal,
+                    )}
+                  </p>
+                  <div className="shrink-0">
+                    <ResearchSortDropdown
+                      sortBy={sortBy}
+                      sortOrder={sortOrder}
+                      onSortByChange={(field) => applyResearchSort(field)}
+                      onToggleSortDirection={toggleResearchSortDirection}
+                    />
+                  </div>
+                </div>
 
                 {!isWideFilterLayout && <ResearchFilterDisclosure {...researchFilterProps} />}
 
