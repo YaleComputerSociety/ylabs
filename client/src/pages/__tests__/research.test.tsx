@@ -679,6 +679,71 @@ describe('Research page', () => {
     expect(screen.queryByLabelText('Undergraduate participation documented')).toBeNull();
   });
 
+  it('exposes browse filters on the default view without a submitted search', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          school: { 'Yale College': 8, 'School of Medicine': 4 },
+          departments: { 'Computer Science': 5, Neuroscience: 3 },
+        },
+      });
+    });
+
+    renderResearch();
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    expect(screen.queryByText(/research homes? for/)).toBeNull();
+
+    const trigger = screen.getByRole('button', { name: 'Filters' });
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: 'Research filters' })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Filter by school'), {
+      target: { value: 'Yale College' },
+    });
+
+    await waitFor(() => {
+      const lastSearch = mockedAxios.post.mock.calls
+        .filter(([url]) => url === '/research/search')
+        .at(-1)?.[1];
+      expect(lastSearch).toEqual(
+        expect.objectContaining({ q: '', filters: { school: ['Yale College'] }, page: 1 }),
+      );
+    });
+  });
+
+  it('sorts the default browse listing when a sort option is chosen', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch();
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+
+    const sortTrigger = screen.getByRole('button', { name: /Sort research homes/ });
+    fireEvent.click(sortTrigger);
+    fireEvent.click(screen.getByRole('option', { name: 'Name' }));
+
+    await waitFor(() => {
+      const lastBrowse = mockedAxios.post.mock.calls
+        .filter(([url]) => url === '/research/search')
+        .at(-1)?.[1];
+      expect(lastBrowse).toEqual(
+        expect.objectContaining({
+          q: '',
+          filters: {},
+          page: 1,
+          sortBy: 'name',
+          sortOrder: 'asc',
+        }),
+      );
+    });
+  });
+
   it('collapses the result count to a lightweight total-first status line without a banner heading', async () => {
     mockSearchResponses((url) =>
       url === '/research/search'
