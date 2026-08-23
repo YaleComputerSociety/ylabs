@@ -52,6 +52,11 @@ describe('sanitizeResearchAreaLabel', () => {
     expect(sanitizeResearchAreaLabel('How do core developmental patterns emerge during language learning')).toBe('');
   });
 
+  it('keeps short tags whose leading letter is glued to punctuation', () => {
+    expect(sanitizeResearchAreaLabel('I/O Systems')).toBe('I/O Systems');
+    expect(sanitizeResearchAreaLabel('I-V characteristics')).toBe('I-V characteristics');
+  });
+
   it('keeps legitimate multi-word topic phrases even when long', () => {
     expect(sanitizeResearchAreaLabel('Quantum Physics')).toBe('Quantum Physics');
     expect(

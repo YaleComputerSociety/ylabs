@@ -9,7 +9,7 @@ export const stripProfileRoleLabelSuffix = (value: string): string => {
 };
 
 const NARRATIVE_PROSE_MAX_TOPIC_LENGTH = 120;
-const NARRATIVE_PROSE_FIRST_PERSON_RE = /^(?:i|we|our|my)\b/i;
+const NARRATIVE_PROSE_FIRST_PERSON_RE = /^(?:i|we|our|my)\s/i;
 const NARRATIVE_PROSE_SENTENCE_STEM_RE =
   /^(?:the\s+(?:study|development|goal|aim|purpose|focus|analysis|role)\s+of\b|research\s+(?:in|at)\s+(?:the|our|my|his|her|their)\b|research\s+(?:focuses|focus\s+on|is|aims|seeks)\b|studies\s+(?:in|at)\s+(?:the|our|my|his|her|their)\b|treatment\s+with\b|how\s+(?:do|does|to|can|could|would|might|are|is|much|many)\b|wh(?:y|at|ich|ere|en)\b)/i;
 
