@@ -196,12 +196,12 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery(' Professor Zhong ')).toMatchObject({
       query: 'zhong',
       tokens: ['zhong'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('computer vision for medical imaging')).toMatchObject({
       query: 'computer vision medical imaging',
       tokens: ['computer', 'vision', 'medical', 'imaging'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
   });
 
@@ -209,19 +209,19 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('labs studying black holes')).toMatchObject({
       query: 'black holes',
       tokens: ['black', 'holes'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(
       normalizeResearchSearchQuery('where can I study machine learning for medicine'),
     ).toMatchObject({
       query: 'machine learning medicine',
       tokens: ['machine', 'learning', 'medicine'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('how do neurons communicate')).toMatchObject({
       query: 'neurons communicate',
       tokens: ['neurons', 'communicate'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
   });
 
@@ -229,17 +229,17 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('american studies')).toMatchObject({
       query: 'american studies',
       tokens: ['american', 'studies'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('environmental studies')).toMatchObject({
       query: 'environmental studies',
       tokens: ['environmental', 'studies'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
     expect(normalizeResearchSearchQuery('group theory')).toMatchObject({
       query: 'group theory',
       tokens: ['group', 'theory'],
-      isShortAliasQuery: false,
+      isTopicAliasQuery: false,
     });
   });
 
@@ -247,6 +247,62 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(normalizeResearchSearchQuery('how do i')).toMatchObject({
       query: 'how do i',
       tokens: ['how', 'do', 'i'],
+    });
+  });
+
+  it('resolves single-token department shorthand to its topic-scoped field name', () => {
+    expect(normalizeResearchSearchQuery('CS')).toMatchObject({
+      query: 'computer science',
+      tokens: ['cs'],
+      isTopicAliasQuery: true,
+      aliasTerms: ['computer science'],
+    });
+    expect(normalizeResearchSearchQuery('econ')).toMatchObject({
+      query: 'economics',
+      tokens: ['econ'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('resolves multi-token department abbreviations to the full field name', () => {
+    expect(normalizeResearchSearchQuery('comp sci')).toMatchObject({
+      query: 'computer science',
+      tokens: ['comp', 'sci'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('poli sci')).toMatchObject({
+      query: 'political science',
+      tokens: ['poli', 'sci'],
+      isTopicAliasQuery: true,
+    });
+    expect(normalizeResearchSearchQuery('polisci')).toMatchObject({
+      query: 'political science',
+      tokens: ['polisci'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('topic-scopes department shorthand even when paired with a filler word', () => {
+    expect(normalizeResearchSearchQuery('cs labs')).toMatchObject({
+      query: 'computer science',
+      tokens: ['cs'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('preserves the AI short-alias expansion and marks it a topic-alias query', () => {
+    expect(normalizeResearchSearchQuery('AI')).toMatchObject({
+      query: 'artificial intelligence machine learning deep learning ai',
+      tokens: ['ai'],
+      isTopicAliasQuery: true,
+    });
+  });
+
+  it('does not topic-scope a department shorthand buried in a longer phrase', () => {
+    expect(normalizeResearchSearchQuery('cs for medicine')).toMatchObject({
+      tokens: ['cs', 'medicine'],
+      isTopicAliasQuery: false,
+      aliasTerms: null,
     });
   });
 

@@ -432,7 +432,48 @@ const STUDENT_QUERY_ALIASES: Record<string, string[]> = {
   psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science', 'psych'],
 };
 
-const SHORT_ALIAS_QUERY_ATTRIBUTES = ['studentSearchTerms', 'researchAreas', 'departments'];
+const DEPARTMENT_SHORTHAND_ALIASES: Record<string, string[]> = {
+  cs: ['computer science'],
+  compsci: ['computer science'],
+  'comp sci': ['computer science'],
+  econ: ['economics'],
+  poli: ['political science'],
+  polisci: ['political science'],
+  'poli sci': ['political science'],
+  'pol sci': ['political science'],
+  bio: ['biology'],
+  biol: ['biology'],
+  chem: ['chemistry'],
+  math: ['mathematics'],
+  stat: ['statistics'],
+  stats: ['statistics'],
+  socio: ['sociology'],
+  anthro: ['anthropology'],
+  phil: ['philosophy'],
+  philo: ['philosophy'],
+  ling: ['linguistics'],
+  astro: ['astronomy', 'astrophysics'],
+  hist: ['history'],
+  lit: ['literature'],
+  ee: ['electrical engineering'],
+  'elec eng': ['electrical engineering'],
+  meche: ['mechanical engineering'],
+  'mech eng': ['mechanical engineering'],
+  bme: ['biomedical engineering'],
+  biomed: ['biomedical engineering'],
+};
+
+const QUERY_TOPIC_ALIASES: Record<string, string[]> = {
+  ...STUDENT_QUERY_ALIASES,
+  ...DEPARTMENT_SHORTHAND_ALIASES,
+};
+
+const resolveTopicAliasExpansion = (queryTokens: string[]): string[] | null => {
+  if (queryTokens.length === 0) return null;
+  return QUERY_TOPIC_ALIASES[queryTokens.join(' ')] ?? null;
+};
+
+const TOPIC_ALIAS_QUERY_ATTRIBUTES = ['studentSearchTerms', 'researchAreas', 'departments'];
 
 const boundedResearchSearchQuery = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -464,7 +505,8 @@ export interface NormalizedResearchSearchQuery {
   raw: string;
   query: string;
   tokens: string[];
-  isShortAliasQuery: boolean;
+  isTopicAliasQuery: boolean;
+  aliasTerms: string[] | null;
 }
 
 export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearchSearchQuery => {
@@ -472,18 +514,18 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   const tokens = tokenizeStudentResearchQuery(raw);
   const meaningfulTokens = tokens.filter((token) => !STUDENT_QUERY_STOP_WORDS.has(token));
   const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
-  const expandedTerms = queryTokens.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
+  const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
+  const expandedTerms = aliasExpansion
+    ? aliasExpansion
+    : queryTokens.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
   const normalizedTerms = uniqueQueryTerms(expandedTerms);
-  const isShortAliasQuery =
-    queryTokens.length === 1 &&
-    queryTokens[0].length <= 3 &&
-    Object.prototype.hasOwnProperty.call(STUDENT_QUERY_ALIASES, queryTokens[0]);
 
   return {
     raw,
     query: normalizedTerms.join(' ').slice(0, MAX_SEARCH_QUERY_LENGTH),
     tokens: queryTokens,
-    isShortAliasQuery,
+    isTopicAliasQuery: aliasExpansion !== null,
+    aliasTerms: aliasExpansion ? normalizedTerms : null,
   };
 };
 
@@ -786,8 +828,8 @@ export async function searchResearchGroupsViaMeili(
       semanticRatio: 0.8,
       embedder: 'default',
     };
-    if (normalizedQuery.isShortAliasQuery) {
-      searchParams.attributesToSearchOn = SHORT_ALIAS_QUERY_ATTRIBUTES;
+    if (normalizedQuery.isTopicAliasQuery) {
+      searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
       delete searchParams.hybrid;
     }
   }
@@ -977,6 +1019,9 @@ const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
   if (!normalizedQuery.query) return true;
   if (normalizedQuery.tokens.length === 0) return true;
   const haystack = researchEntitySearchText(entity);
+  if (normalizedQuery.aliasTerms) {
+    return normalizedQuery.aliasTerms.some((alias) => haystackHasTerm(haystack, alias));
+  }
   return normalizedQuery.tokens.every((token) => {
     const aliases = STUDENT_QUERY_ALIASES[token];
     if (aliases) return aliases.some((alias) => haystackHasTerm(haystack, alias));
