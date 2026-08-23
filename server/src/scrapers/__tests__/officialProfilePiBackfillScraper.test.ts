@@ -1752,6 +1752,67 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(identity?.researchInterests).toEqual(['Cancer biology', 'Translational oncology']);
   });
 
+  it('splits a Yale Economics "Fields of Interest" section into label-free topic phrases (#616)', () => {
+    const econProfileUrl = 'https://economics.yale.edu/people/john-fixture';
+    const econProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${econProfileUrl}" /></head>
+        <body><main>
+          <h1>John Fixture</h1>
+          <div class="title">James Tobin Professor of Economics</div>
+          <a href="mailto:john.fixture@yale.edu">john.fixture@yale.edu</a>
+          <div class="node__field-of-interests">
+            <div class="node__aside-label">Fields of Interest</div>
+            <a href="/people?interest=39">Economic Theory</a>
+            <a href="/people?interest=41">Financial Economics</a>
+            <a href="/people?interest=210">International Finance</a>
+            <a href="/people?interest=46">Macroeconomics</a>
+          </div>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(econProfileHtml, econProfileUrl, {
+      name: 'John Fixture Faculty Research',
+      slug: 'dept-econ-john-fixture',
+    });
+
+    expect(identity?.researchInterests).toEqual([
+      'Economic Theory',
+      'Financial Economics',
+      'International Finance',
+      'Macroeconomics',
+    ]);
+    expect(identity?.researchInterests).not.toContainEqual(
+      expect.stringMatching(/fields of interest/i),
+    );
+  });
+
+  it('rejects a section heading and paragraph prose lifted into "Fields of Interest" terms (#616)', () => {
+    const econProfileUrl = 'https://economics.yale.edu/people/pat-fixture';
+    const econProfileHtml = `
+      <html>
+        <head><link rel="canonical" href="${econProfileUrl}" /></head>
+        <body><main>
+          <h1>Pat Fixture</h1>
+          <div class="title">Professor of Economics</div>
+          <a href="mailto:pat.fixture@yale.edu">pat.fixture@yale.edu</a>
+          <div class="research-interests">
+            Research Areas: Studies fields of interest across many domains. Work spans a broad
+            range of loosely connected long-running questions and methods and applications.
+          </div>
+        </main></body>
+      </html>
+    `;
+
+    const identity = extractOfficialProfileIdentity(econProfileHtml, econProfileUrl, {
+      name: 'Pat Fixture Faculty Research',
+      slug: 'dept-econ-pat-fixture',
+    });
+
+    expect(identity?.researchInterests ?? []).toEqual([]);
+  });
+
   it('rejects a same-name profile whose netid-style slug differs from the expected lead netid', () => {
     const netidProfileUrl = 'https://medicine.yale.edu/profile/jf990/';
     const netidProfileHtml = profileHtml.replace(profileUrl, netidProfileUrl);

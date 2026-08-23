@@ -1400,18 +1400,72 @@ function extractDepartments($: cheerio.CheerioAPI): string[] {
   return uniqueStrings(values).slice(0, 5);
 }
 
+const RESEARCH_SECTION_LABELS = new Set([
+  'research area',
+  'research areas',
+  'research interest',
+  'research interests',
+  'field of interest',
+  'fields of interest',
+  'field of study',
+  'fields of study',
+  'area of interest',
+  'areas of interest',
+  'topic',
+  'topics',
+]);
+
+const RESEARCH_SECTION_LABEL_PREFIX =
+  /^(?:research\s+areas?|research\s+interests?|fields?\s+of\s+(?:study|interest)|areas?\s+of\s+interest|topics?)\s*:?\s+/i;
+
+function isResearchSectionLabel(value: string): boolean {
+  const key = textValue(value)
+    .replace(/[:\s]+$/g, '')
+    .toLowerCase();
+  return key.length === 0 || RESEARCH_SECTION_LABELS.has(key);
+}
+
+function isProseNotTopicPhrase(value: string): boolean {
+  const text = textValue(value);
+  if (!text) return true;
+  if (text.length > 80) return true;
+  if (text.split(/\s+/).filter(Boolean).length > 8) return true;
+  return /[.!?]\s+[A-Za-z]/.test(text);
+}
+
+function splitResearchInterestText(text: string): string[] {
+  return String(text || '')
+    .split(/[,;|•\n\r]+/)
+    .map((part) => textValue(part).replace(RESEARCH_SECTION_LABEL_PREFIX, ''))
+    .filter(
+      (part) => part.length > 0 && !isResearchSectionLabel(part) && !isProseNotTopicPhrase(part),
+    );
+}
+
+function researchInterestTermsFromContainer(
+  $: cheerio.CheerioAPI,
+  container: cheerio.Cheerio<any>,
+): string[] {
+  const childParts = container
+    .contents()
+    .map((_i, node) => textValue($(node).text()))
+    .get()
+    .filter(Boolean);
+  const source = childParts.length > 1 ? childParts.join('\n') : textValue(container.text());
+  return splitResearchInterestText(source);
+}
+
 function extractResearchInterests($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
   $('[class*="research-interest"], [class*="field-of-study"], [class*="interests"]').each(
     (_i, el) => {
-      const text = textValue($(el).text());
-      values.push(...text.split(/[,;|•\n\r]+/));
+      values.push(...researchInterestTermsFromContainer($, $(el)));
     },
   );
   $('h2,h3,h4,strong').each((_i, heading) => {
     const label = textValue($(heading).text()).toLowerCase();
     if (!/\b(research interests?|fields? of study|topics?)\b/.test(label)) return;
-    values.push(...textValue($(heading).next().text()).split(/[,;|•\n\r]+/));
+    values.push(...researchInterestTermsFromContainer($, $(heading).next()));
   });
   return sanitizeProfileResearchTerms(
     uniqueStrings(values)
