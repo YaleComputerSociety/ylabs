@@ -49,3 +49,101 @@ export function normalizePersonNameCasing(value: string): string {
     .map((word) => word.split(INTRA_WORD_SEPARATORS).map(normalizeNameSubToken).join(''))
     .join('');
 }
+
+const ROMAN_SUFFIXES = ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+const NAME_SUFFIXES = ['JR', 'JR.', 'SR', 'SR.', 'JNR', 'SNR'];
+
+const POST_NOMINAL_CREDENTIALS = [
+  'MD',
+  'PHD',
+  'MDPHD',
+  'MPH',
+  'MBA',
+  'MFA',
+  'DFA',
+  'DVM',
+  'DDS',
+  'MSN',
+  'RN',
+  'DO',
+  'JD',
+  'LLM',
+  'DPT',
+  'EDD',
+  'PSYD',
+  'MSW',
+  'MS',
+  'BA',
+  'BS',
+  'DSC',
+  'SCD',
+  'MDIV',
+  'STM',
+  'RD',
+  'MPA',
+  'MHS',
+  'APRN',
+  'PA',
+  'NP',
+  'FNU',
+];
+
+const RANK_ABBREVIATIONS = [
+  'LTC',
+  'COL',
+  'CPT',
+  'MAJ',
+  'SGT',
+  'GEN',
+  'CDR',
+  'CAPT',
+  'LCDR',
+  'ENS',
+  'ADM',
+  'RADM',
+  'VADM',
+  'RET',
+  'USN',
+  'USA',
+  'USAF',
+  'USMC',
+  'MG',
+  'BG',
+  'LTG',
+];
+
+export const PRESERVED_UPPERCASE_NAME_TOKENS = new Set<string>([
+  ...ROMAN_SUFFIXES,
+  ...NAME_SUFFIXES,
+  ...POST_NOMINAL_CREDENTIALS,
+  ...RANK_ABBREVIATIONS,
+]);
+
+const SUBTOKEN_SEPARATORS = /([-'‘’])/;
+
+const isAllUppercaseNameFragment = (fragment: string): boolean => /^[A-Z]{3,}$/.test(fragment);
+
+function fixNameFragmentCasing(fragment: string): string {
+  if (!isAllUppercaseNameFragment(fragment)) return fragment;
+  if (PRESERVED_UPPERCASE_NAME_TOKENS.has(fragment)) return fragment;
+  return fragment.charAt(0) + fragment.slice(1).toLowerCase();
+}
+
+function fixNameTokenCasing(token: string): string {
+  return token.split(SUBTOKEN_SEPARATORS).map(fixNameFragmentCasing).join('');
+}
+
+export function canonicalPersonName(raw: string | undefined | null): string {
+  if (typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/).map(fixNameTokenCasing).join(' ');
+}
+
+export function personNameCasingChanged(raw: string | undefined | null): boolean {
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim();
+  if (!trimmed) return false;
+  return canonicalPersonName(trimmed) !== trimmed;
+}

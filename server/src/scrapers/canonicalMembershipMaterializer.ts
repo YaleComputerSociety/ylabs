@@ -14,6 +14,7 @@ import {
   roleStateForLegacyMembership,
 } from '../models/canonicalRoleMapping';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { canonicalPersonName } from './utils/personNameCasing';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
   if (value instanceof mongoose.Types.ObjectId) return value;
@@ -338,7 +339,7 @@ async function resolveOrCreateResearcherId(
   accountId: mongoose.Types.ObjectId | undefined,
 ): Promise<mongoose.Types.ObjectId | undefined> {
   if (identityIsOrganizationalMailbox(identity)) return undefined;
-  const displayName = trimmed(identity.displayName);
+  const displayName = canonicalPersonName(trimmed(identity.displayName));
   const orcid = normalizedOrcid(identity.orcid);
 
   if (accountId) {
@@ -428,7 +429,7 @@ export async function resolveOrCreateResearcherIdForIdentity(
 export async function resolveCanonicalResearcherId(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
-  const displayName = trimmed(identity.displayName);
+  const displayName = canonicalPersonName(trimmed(identity.displayName));
   const orcid = normalizedOrcid(identity.orcid);
   const netid = normalizedNetid(identity.netid);
   if (netid) {
