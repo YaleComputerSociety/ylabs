@@ -13,6 +13,12 @@ import { resolveUserForPi as resolveNsfUserForPi } from '../scrapers/sources/nsf
 import { resolveUserForPi as resolveNihUserForPi } from '../scrapers/sources/nihReporterScraper';
 import { resolveResearcherIdForLegacyUser } from '../services/researchEntityMembershipAccessor';
 import { materializeCanonicalMembership } from '../scrapers/canonicalMembershipMaterializer';
+import {
+  classifyGrantShell,
+  tallyGrantShellDispositions,
+  type GrantShellDisposition,
+  type GrantShellMatchStatus,
+} from './grantShellRelinkCore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,12 +37,6 @@ const CANONICAL_LEAD_ROLES = LEAD_ROLES.map((role) => canonicalRoleForLegacy(rol
 const piNameFromEntity = (name: string): string =>
   normalizeName((name || '').replace(/\s+lab$/i, '').trim());
 
-type Disposition =
-  | 'newly-linked'
-  | 'already-linked'
-  | 'still-ambiguous'
-  | 'still-unmatched';
-
 interface ShellDoc {
   _id: mongoose.Types.ObjectId;
   slug: string;
@@ -50,20 +50,20 @@ interface Plan {
   source: 'nsf' | 'nih';
   matchedUserId: string | null;
   personId: string | null;
-  disposition: Disposition;
+  disposition: GrantShellDisposition;
 }
 
-async function hasCurrentLeadAssignment(
-  personId: mongoose.Types.ObjectId,
-  entityId: mongoose.Types.ObjectId,
-): Promise<boolean> {
-  const count = await RoleAssignment.countDocuments({
-    personId,
-    'target.kind': 'RESEARCH_ENTITY',
-    'target.id': entityId,
-    state: { $ne: 'HISTORICAL' },
-  });
-  return count > 0;
+async function activeLeadPersonIds(entityId: mongoose.Types.ObjectId): Promise<string[]> {
+  const rows = (await RoleAssignment.find(
+    {
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': entityId,
+      role: { $in: CANONICAL_LEAD_ROLES },
+      state: { $ne: 'HISTORICAL' },
+    },
+    { personId: 1 },
+  ).lean()) as unknown as Array<{ personId?: mongoose.Types.ObjectId }>;
+  return rows.map((row) => (row.personId ? String(row.personId) : '')).filter(Boolean);
 }
 
 async function matchUser(shell: ShellDoc): Promise<string | 'ambiguous' | null> {
@@ -83,20 +83,20 @@ async function buildPlan(shell: ShellDoc): Promise<Plan> {
   const source: 'nsf' | 'nih' = /^nsf/i.test(shell.slug) ? 'nsf' : 'nih';
   const base = { entityId: shell._id, slug: shell.slug, name: shell.name, source };
   const matched = await matchUser(shell);
-  if (matched === 'ambiguous') {
-    return { ...base, matchedUserId: null, personId: null, disposition: 'still-ambiguous' };
-  }
-  if (!matched) {
-    return { ...base, matchedUserId: null, personId: null, disposition: 'still-unmatched' };
-  }
-  const personId = await resolveResearcherIdForLegacyUser(matched);
-  const alreadyLinked = personId ? await hasCurrentLeadAssignment(personId, shell._id) : false;
-  return {
-    ...base,
-    matchedUserId: matched,
-    personId: personId ? String(personId) : null,
-    disposition: alreadyLinked ? 'already-linked' : 'newly-linked',
-  };
+  const matchStatus: GrantShellMatchStatus =
+    matched === 'ambiguous' ? 'ambiguous' : matched ? 'matched' : 'unmatched';
+  const matchedUserId = matchStatus === 'matched' ? (matched as string) : null;
+  const resolvedPersonId = matchedUserId
+    ? await resolveResearcherIdForLegacyUser(matchedUserId)
+    : undefined;
+  const personId = resolvedPersonId ? String(resolvedPersonId) : null;
+  const activeLeads = matchStatus === 'matched' ? await activeLeadPersonIds(shell._id) : [];
+  const disposition = classifyGrantShell({
+    matchStatus,
+    canonicalPersonId: personId,
+    activeLeadPersonIds: activeLeads,
+  });
+  return { ...base, matchedUserId, personId, disposition };
 }
 
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -153,15 +153,15 @@ async function applyLink(plan: Plan): Promise<boolean> {
   return true;
 }
 
-function tally(plans: Plan[]): Record<Disposition, number> {
-  const t: Record<Disposition, number> = {
-    'newly-linked': 0,
-    'already-linked': 0,
-    'still-ambiguous': 0,
-    'still-unmatched': 0,
-  };
-  for (const p of plans) t[p.disposition] += 1;
-  return t;
+async function didFlipToCurrent(plan: Plan): Promise<boolean> {
+  const personId =
+    plan.personId ??
+    (plan.matchedUserId
+      ? (await resolveResearcherIdForLegacyUser(plan.matchedUserId))?.toString() ?? null
+      : null);
+  if (!personId) return false;
+  const leads = await activeLeadPersonIds(plan.entityId);
+  return leads.includes(personId);
 }
 
 async function main(): Promise<void> {
@@ -178,7 +178,7 @@ async function main(): Promise<void> {
   ).lean()) as unknown as ShellDoc[];
 
   const plans = await mapPool(shells, CONCURRENCY, buildPlan);
-  const before = tally(plans);
+  const before = tallyGrantShellDispositions(plans.map((plan) => plan.disposition));
   const linkedBefore = await countLinkedShells(shells);
 
   console.log(
@@ -213,8 +213,11 @@ async function main(): Promise<void> {
 
   const toLink = plans.filter((p) => p.disposition === 'newly-linked');
   let applied = 0;
+  let materializedButNotFlipped = 0;
   for (const plan of toLink) {
-    if (await applyLink(plan)) applied += 1;
+    if (!(await applyLink(plan))) continue;
+    if (await didFlipToCurrent(plan)) applied += 1;
+    else materializedButNotFlipped += 1;
   }
 
   const linkedAfter = await countLinkedShells(shells);
@@ -224,6 +227,8 @@ async function main(): Promise<void> {
         mode: 'APPLY-RESULT',
         plannedNewLinks: toLink.length,
         appliedLinks: applied,
+        materializedButNotFlipped,
+        personIdDivergentShells: before['personid-divergent'],
         linkedShellsBefore: linkedBefore,
         linkedShellsAfter: linkedAfter,
         shellsRemainingUnlinked: shells.length - linkedAfter,
