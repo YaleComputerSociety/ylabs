@@ -553,6 +553,47 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
   });
 });
 
+describe('descriptionHygiene YSM profile anchor-CTA button label (#931)', () => {
+  it('strips a glued "Learn more about Dr. X>>" anchor label from surrounding prose', () => {
+    const dirty =
+      'She trained at MIT before joining the Yale faculty. Learn more about Dr. Muzumdar>> Using mouse models the lab studies cancer.';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe(
+      'She trained at MIT before joining the Yale faculty. Using mouse models the lab studies cancer.',
+    );
+  });
+
+  it('strips a spaced "Learn more about Dr. X >>" label glued onto the prior sentence', () => {
+    const dirty =
+      'She was awarded Woman Oncologist of the Year for her work in gender equity.Learn more about Dr. Kunz >>';
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe(
+      'She was awarded Woman Oncologist of the Year for her work in gender equity.',
+    );
+  });
+
+  it('strips a "Watch a video with Dr. First Last>>" multi-word-name label', () => {
+    const dirty =
+      "Medical Director of the Brain Tumor Center. Watch a video with Dr. Nicholas Blondin>> Dr. Blondin's clinical expertise is in neuro-oncology.";
+    const cleaned = stripCatalogChrome(dirty);
+    expect(cleaned).toBe(
+      "Medical Director of the Brain Tumor Center. Dr. Blondin's clinical expertise is in neuro-oncology.",
+    );
+  });
+
+  it('removes the anchor label at both the shortDescription and catalog read layers', () => {
+    const dirty = 'The lab studies airway disease. Learn more about Dr. Mehra>>';
+    expect(sanitizeResearchEntityShortDescription(dirty)).toBe('The lab studies airway disease.');
+    expect(sanitizeCatalogDescription(dirty)).toBe('The lab studies airway disease.');
+  });
+
+  it('leaves legitimate "Learn more about Dr. X" prose without the >> marker untouched', () => {
+    const prose = 'Learn more about Dr. Kunz and her oncology research on the department website.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
+    expect(sanitizeResearchEntityShortDescription(prose)).toBe(prose);
+  });
+});
+
 describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
   it('flags a bare "Research fields include <chips>." echo', () => {
     expect(
