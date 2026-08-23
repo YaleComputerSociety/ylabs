@@ -8,6 +8,7 @@ import {
   isFormFieldDumpText,
   isNavigationDumpText,
   isPublicationsListDumpText,
+  isResearchAreaEchoDescription,
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
@@ -417,5 +418,41 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
       'How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.',
     );
     expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
+  });
+});
+
+describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
+  it('flags a bare "Research fields include <chips>." echo', () => {
+    expect(
+      isResearchAreaEchoDescription('Research fields include HIV Infections, Veterans, and Aging.'),
+    ).toBe(true);
+  });
+
+  it('flags the "Research areas include" sibling template', () => {
+    expect(
+      isResearchAreaEchoDescription('Research areas include Spectroscopy, Chirality, and Signaling.'),
+    ).toBe(true);
+  });
+
+  it('keeps genuine prose that opens with the phrase and continues', () => {
+    const prose =
+      'Research fields include immunology. The lab develops single-cell assays to map how T cells respond to infection.';
+    expect(isResearchAreaEchoDescription(prose)).toBe(false);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+
+  it('does not flag a real "Studies" one-liner or a research-focus sentence', () => {
+    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(false);
+    expect(
+      isResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.'),
+    ).toBe(false);
+  });
+
+  it('collapses a served fullDescription that only echoes the chips to empty', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'Research fields include Gene Expression Regulation, Developmental, Computational Biology, and Cancer.',
+      ),
+    ).toBe('');
   });
 });
