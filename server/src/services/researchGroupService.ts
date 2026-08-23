@@ -88,6 +88,10 @@ import {
 } from './researchActivityIntegrity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
+import {
+  personNameHasLifespanSuffix,
+  stripPersonNameLifespanSuffix,
+} from '../utils/personNameLifespan';
 import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
@@ -1717,6 +1721,11 @@ const addPublicMemberField = (target: Record<string, any>, key: string, value: a
   }
 };
 
+const publicPersonNameField = (value: any): any => {
+  if (typeof value !== 'string') return value;
+  return stripPersonNameLifespanSuffix(value) || value;
+};
+
 function publicMemberKeyForResearchDetail(
   user: any,
   role?: string,
@@ -1739,9 +1748,9 @@ function publicMemberUserForResearchDetail(user: any): any {
   const imageUrl = user?.imageUrl || user?.image_url || '';
   const primaryDepartment = user?.primaryDepartment || user?.primary_department || '';
 
-  addPublicMemberField(publicUser, 'fname', user?.fname);
-  addPublicMemberField(publicUser, 'lname', user?.lname);
-  addPublicMemberField(publicUser, 'displayName', user?.displayName);
+  addPublicMemberField(publicUser, 'fname', publicPersonNameField(user?.fname));
+  addPublicMemberField(publicUser, 'lname', publicPersonNameField(user?.lname));
+  addPublicMemberField(publicUser, 'displayName', publicPersonNameField(user?.displayName));
   addPublicMemberField(publicUser, 'title', sanitizePersonTitle(user?.title));
   publicUser.imageUrl = imageUrl;
   publicUser.image_url = imageUrl;
@@ -2212,6 +2221,9 @@ export function researchDetailLeadIdentity(
 ): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
   const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
   if (leadMembers.some((member) => member.row?.reviewStatus === 'DISPUTED')) {
+    return { leadIdentityStatus: 'under_review' };
+  }
+  if (leadMembers.some((member) => personNameHasLifespanSuffix(memberDisplayName(member)))) {
     return { leadIdentityStatus: 'under_review' };
   }
   const qualitySummary = buildResearchEntityQualitySummary({

@@ -3439,6 +3439,26 @@ describe('researchDetailLeadIdentity', () => {
     });
   });
 
+  it('holds a review state when a lead name carries a birth-death lifespan (#982)', () => {
+    expect(
+      researchDetailLeadIdentity(
+        { sourceUrls: ['https://astronomy.yale.edu/people/pierre-demarque-1932-2025'] },
+        [
+          {
+            role: 'pi',
+            user: {
+              displayName: 'Pierre Demarque 1932-2025',
+              profileUrls: {
+                official: 'https://astronomy.yale.edu/people/pierre-demarque-1932-2025',
+              },
+            },
+            row: { facultyMemberId: 'faculty-demarque' },
+          },
+        ],
+      ),
+    ).toEqual({ leadIdentityStatus: 'under_review' });
+  });
+
   it('derives the public review state from canonical PI identity conflicts', () => {
     expect(
       researchDetailLeadIdentity({}, [
