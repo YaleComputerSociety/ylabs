@@ -970,6 +970,102 @@ describe('getResearchGroupDetail', () => {
     });
   });
 
+  const seedSingleMemberDetail = (profileTitle: string) => {
+    const entityId = '67d8928150621bcef434a1d5';
+    const entityObjectId = new mongoose.Types.ObjectId(entityId);
+    const personId = new mongoose.Types.ObjectId();
+    const accountId = new mongoose.Types.ObjectId();
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityObjectId,
+        slug: 'title-hygiene-lab',
+        name: 'Title Hygiene Lab',
+        ...validPublicDescriptions,
+        departments: [],
+        researchAreas: [],
+        sourceUrls: [],
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+    mocks.roleAssignmentFind.mockReturnValue(
+      queryResult([
+        {
+          _id: new mongoose.Types.ObjectId(),
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: entityObjectId },
+          role: 'PI',
+          state: 'CURRENT',
+          confidence: 0.95,
+          reviewStatus: 'APPROVED',
+          archived: false,
+        },
+      ]),
+    );
+    mocks.personFind.mockReturnValue(
+      queryResult([
+        {
+          _id: personId,
+          displayName: 'Victor Batista',
+          accountId,
+          profile: { title: profileTitle },
+        },
+      ]),
+    );
+    mocks.accountFind.mockReturnValue(
+      queryResult([{ _id: accountId, netid: 'vb1001', email: 'victor.batista@example.edu' }]),
+    );
+  };
+
+  it('renders a member card title stripped of the issue #708 nav-menu chrome', async () => {
+    seedSingleMemberDetail(
+      'About the InstituteMission & HistoryCommunity ValuesOur membersAnnual ReportsJoin the InstituteYQI in the MediaLocation & ContactsPrograms & EventsUpcoming Events',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members).toHaveLength(1);
+    expect(detail?.members[0].user.displayName).toBe('Victor Batista');
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of a street-address fragment', async () => {
+    seedSingleMemberDetail(
+      'Professor of Ecology & Evolutionary BiologyAddress: 21 Sachem St. New Haven, CT 06511',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of a leaked raw email address', async () => {
+    seedSingleMemberDetail('Professor of Immunobiology fixture.researcher@yale.edu');
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of a multi-sentence bio dump', async () => {
+    seedSingleMemberDetail(
+      'Her lab studies protein folding. She teaches biochemistry. She joined the faculty in 2004.',
+    );
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('keeps a legitimate endowed-chair title on the member card', async () => {
+    seedSingleMemberDetail('The William K. Lanman, Jr. Professor of Molecular Biophysics');
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBe(
+      'The William K. Lanman, Jr. Professor of Molecular Biophysics',
+    );
+  });
+
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
     const latestSnapshot = {
       state: 'current',
