@@ -18,18 +18,41 @@ const GENERIC_PROFILE_CATEGORY_SEGMENTS = new Set([
   'affiliated',
   'affiliate',
   'all',
+  'assistant',
+  'associate',
   'clinical',
   'emeriti',
   'emeritus',
   'instructional',
   'ladder',
+  'lecturers',
   'postdoctoral',
   'postdocs',
   'primary',
+  'professors',
   'research',
   'secondary',
+  'tenure',
+  'tenured',
+  'track',
   'visiting',
 ]);
+
+// A department roster/listing page (`/people/linguistics-faculty`,
+// `/people/professors`, `/people/tenured-and-tenure-track-faculty-assistant-professors`)
+// names a whole category of people, not one specific person, even when the
+// category is spelled as a hyphenated compound rather than one of the exact
+// generic words above. Tokenizing on hyphens catches the compound form
+// without having to enumerate every department's phrasing.
+const isGenericProfileCategorySegment = (segment: string): boolean =>
+  GENERIC_PERSON_DIRECTORY_SEGMENTS.has(segment) ||
+  GENERIC_PROFILE_CATEGORY_SEGMENTS.has(segment) ||
+  segment
+    .split('-')
+    .some(
+      (token) =>
+        GENERIC_PERSON_DIRECTORY_SEGMENTS.has(token) || GENERIC_PROFILE_CATEGORY_SEGMENTS.has(token),
+    );
 
 export const hasSpecificOfficialPersonPathSegment = (
   pathSegments: string[],
@@ -38,11 +61,7 @@ export const hasSpecificOfficialPersonPathSegment = (
   const index = pathSegments.indexOf(label);
   if (index < 0) return false;
   const nextSegment = pathSegments[index + 1] || '';
-  return (
-    Boolean(nextSegment) &&
-    !GENERIC_PERSON_DIRECTORY_SEGMENTS.has(nextSegment) &&
-    !GENERIC_PROFILE_CATEGORY_SEGMENTS.has(nextSegment)
-  );
+  return Boolean(nextSegment) && !isGenericProfileCategorySegment(nextSegment);
 };
 
 export const isLikelyOfficialPersonProfileUrl = (value: unknown): boolean => {
