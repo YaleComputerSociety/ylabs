@@ -717,7 +717,9 @@ describe('Analytics page', () => {
         params: { range: 'today' },
       });
     });
-    expect(screen.getAllByText('Current snapshot').length).toBeGreaterThanOrEqual(2);
+    await waitFor(() => {
+      expect(screen.getAllByText('Current snapshot').length).toBeGreaterThanOrEqual(2);
+    });
   });
 
   it('renders display names alongside NetIDs in the operator user tables', async () => {
