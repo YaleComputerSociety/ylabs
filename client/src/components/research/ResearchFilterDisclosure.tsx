@@ -2,12 +2,17 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 type FacetDistribution = Record<string, Record<string, number>>;
 
+interface FacetOption {
+  value: string;
+  count?: number;
+}
+
 interface ResearchFilterDisclosureProps {
   facetDistribution: FacetDistribution;
   selectedSchool: string;
   selectedDepartment: string;
   selectedResearchAreas: string[];
-  researchAreaOptions: string[];
+  researchAreaOptions: FacetOption[];
   hostsUndergrads: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
@@ -18,11 +23,6 @@ interface ResearchFilterDisclosureProps {
   onHostsUndergradsChange: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
-}
-
-interface FacetOption {
-  value: string;
-  count?: number;
 }
 
 const positiveFacetOptions = (values: Record<string, number> | undefined): FacetOption[] =>
@@ -83,12 +83,12 @@ const ResearchFilterDisclosure = ({
     [positiveDepartments, selectedDepartment],
   );
   const availableResearchAreas = useMemo(
-    () => researchAreaOptions.filter((area) => !selectedResearchAreas.includes(area)),
+    () => researchAreaOptions.filter((option) => !selectedResearchAreas.includes(option.value)),
     [researchAreaOptions, selectedResearchAreas],
   );
   const showSchool = positiveSchools.length > 1 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 1 || Boolean(selectedDepartment);
-  const showResearchAreas = researchAreaOptions.length > 0 || selectedResearchAreas.length > 0;
+  const showResearchAreas = availableResearchAreas.length > 0 || selectedResearchAreas.length > 0;
   const activeCount =
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
@@ -214,9 +214,10 @@ const ResearchFilterDisclosure = ({
                 ? 'Add another research area'
                 : 'All research areas'}
             </option>
-            {availableResearchAreas.map((area) => (
-              <option key={area} value={area}>
-                {area}
+            {availableResearchAreas.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.value}
+                {option.count !== undefined ? ` (${option.count})` : ''}
               </option>
             ))}
           </select>
