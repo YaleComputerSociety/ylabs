@@ -35,6 +35,7 @@ import {
   buildResearchDetailSources,
   isLikelyUnavailableSourceLink,
   isSuppressedResearchWebsiteCtaUrl,
+  isUnavailableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
   prefersOrgEngagementOutreach,
   resolveDecisionProfileUrl,
@@ -896,7 +897,9 @@ const LabDetail = () => {
     sourceLinkHealth: group.sourceLinkHealth,
   });
   const primaryWebsiteUrl =
-    group.websiteUrl && !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl)
+    group.websiteUrl &&
+    !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
+    !isUnavailableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
       ? group.websiteUrl
       : undefined;
   const primaryWebsiteHealthKey = sourceLedgerKey(primaryWebsiteUrl);
