@@ -862,6 +862,19 @@ export async function searchResearchGroupsViaMeili(
     }
   }
 
+  // Meilisearch's offset/limit `estimatedTotalHits` for a thresholded hybrid
+  // query is a windowed estimate over the whole k-NN candidate pool, so it
+  // reports (near) the full corpus size for broad topical queries even though
+  // only a small set clears `rankingScoreThreshold`. Finite pagination
+  // (`page`/`hitsPerPage`) returns an exhaustive, threshold-aware `totalHits`
+  // instead, capped at the index's `pagination.maxTotalHits`. See #885.
+  if (searchParams.rankingScoreThreshold !== undefined) {
+    searchParams.page = safePage;
+    searchParams.hitsPerPage = safePageSize;
+    delete searchParams.limit;
+    delete searchParams.offset;
+  }
+
   // Search, degrading gracefully on recoverable errors: drop the semantic
   // embedder if a config-drift race made it unavailable after the check above,
   // and drop the browseRankScore sort key if the running index has not yet had
@@ -871,6 +884,7 @@ export async function searchResearchGroupsViaMeili(
     result: {
       hits?: any[];
       estimatedTotalHits?: number;
+      totalHits?: number;
       facetDistribution?: Record<string, Record<string, number>>;
     };
     degraded: boolean;
@@ -927,6 +941,7 @@ export async function searchResearchGroupsViaMeili(
   let searchResult: {
     hits?: any[];
     estimatedTotalHits?: number;
+    totalHits?: number;
     facetDistribution?: Record<string, Record<string, number>>;
   };
   let degraded = false;
@@ -948,7 +963,13 @@ export async function searchResearchGroupsViaMeili(
       safeOptions,
     );
   }
-  const { hits, estimatedTotalHits, facetDistribution: rawFacetDistribution } = searchResult;
+  const {
+    hits,
+    estimatedTotalHits,
+    totalHits,
+    facetDistribution: rawFacetDistribution,
+  } = searchResult;
+  const resolvedTotalHits = totalHits ?? estimatedTotalHits;
   // The School filter now facets on the multi-valued `schools` field; expose it
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
@@ -1014,7 +1035,7 @@ export async function searchResearchGroupsViaMeili(
   return addResearchEntitySearchAliases(
     {
       hits: normalizedHits,
-      estimatedTotalHits: estimatedTotalHits ?? normalizedHits.length,
+      estimatedTotalHits: resolvedTotalHits ?? normalizedHits.length,
       page: safePage,
       pageSize: safePageSize,
       facetDistribution,

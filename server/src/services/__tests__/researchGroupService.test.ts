@@ -626,6 +626,75 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(false);
   });
 
+  it('reports the exhaustive threshold-aware totalHits for a thresholded hybrid query, not the inflated estimate', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'bruce-lab',
+          name: 'Bruce Lab',
+          kind: 'lab',
+          departments: ['Neuroscience'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1686,
+      totalHits: 74,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'bruce-lab',
+          name: 'Bruce Lab',
+          kind: 'lab',
+          departments: ['Neuroscience'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      rankingScoreThreshold: 0.15,
+      page: 1,
+      hitsPerPage: 24,
+    });
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
+    expect(result.estimatedTotalHits).toBe(74);
+  });
+
+  it('maps page/pageSize to finite pagination for a deeper thresholded hybrid page', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 74 });
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 3, 18);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      page: 3,
+      hitsPerPage: 18,
+    });
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
+    expect(result.estimatedTotalHits).toBe(74);
+  });
+
+  it('keeps offset/limit pagination for keyword-only queries that carry no ranking threshold', async () => {
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 5 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 2, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({ limit: 24, offset: 24 });
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('page');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hitsPerPage');
+    expect(result.estimatedTotalHits).toBe(5);
+  });
+
   it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
     mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
 
