@@ -4,6 +4,7 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
+import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
@@ -80,8 +81,11 @@ function publicShortDescriptionString(value: unknown): string {
   return sanitizeResearchEntityShortDescription(text);
 }
 
-function publicTextStringArray(value: unknown): string[] {
-  return stringArray(value).map(publicTextString).filter(Boolean);
+function publicResearchAreaArray(value: unknown): string[] {
+  return normalizeResearchAreaList(stringArray(value))
+    .slice(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS)
+    .map(publicTextString)
+    .filter(Boolean);
 }
 
 function publicHttpUrl(value: unknown): string | undefined {
@@ -251,7 +255,7 @@ export function toPublicResearchEntityDto(
     entityKind: kind,
     entityType,
     departments: publicDepartmentArray(group.departments),
-    researchAreas: publicTextStringArray(group.researchAreas),
+    researchAreas: publicResearchAreaArray(group.researchAreas),
     sourceUrls: publicHttpUrlArray(group.sourceUrls),
   };
 

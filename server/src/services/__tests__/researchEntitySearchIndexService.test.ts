@@ -73,6 +73,27 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('opennessLastSignalAt');
   });
 
+  it('splits bare comma-delimited research-area blobs so facets do not surface jammed lists', () => {
+    const doc = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-area-facet',
+      name: 'Milivojevic Lab',
+      archived: false,
+      researchAreas: [
+        'Anxiety, Depression, Psychometrics, Treatment, Cognitive Processes',
+        'Water Supply, Quality, and Scarcity',
+      ],
+    });
+
+    expect(doc?.researchAreas).toEqual([
+      'Anxiety',
+      'Depression',
+      'Psychometrics',
+      'Treatment',
+      'Cognitive Processes',
+      'Water Supply, Quality, and Scarcity',
+    ]);
+  });
+
   it('adds curated student topic aliases to searchable index documents', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-ai',
