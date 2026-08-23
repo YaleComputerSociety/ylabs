@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { redactDirectContactInfo } from './contactRedaction';
 import {
+  buildResearchAreasCardSummary,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  isVacuousGenericFocusSummary,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
 
@@ -224,6 +226,7 @@ export async function synthesizeGroundedCardDescription(
 
 export interface ResolveGroundedCardInput {
   fullDescription: unknown;
+  researchAreas?: unknown;
   synthesize?: (fullDescription: string) => Promise<string>;
 }
 
@@ -239,5 +242,8 @@ export async function resolveGroundedCardDescription(
     const synthesized = await input.synthesize(full);
     if (synthesized) return synthesized;
   }
+  const researchAreasSummary = buildResearchAreasCardSummary(input.researchAreas);
+  if (researchAreasSummary) return researchAreasSummary;
+  if (derived && isVacuousGenericFocusSummary(derived)) return '';
   return derived;
 }

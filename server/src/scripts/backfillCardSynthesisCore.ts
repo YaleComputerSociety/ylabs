@@ -14,6 +14,7 @@ export interface CardBackfillEntity {
   entityType?: string;
   shortDescription?: unknown;
   fullDescription?: unknown;
+  researchAreas?: unknown;
   visibilityReasons?: string[];
 }
 
@@ -62,7 +63,11 @@ export async function planCardBackfillRow(
     };
   }
 
-  const card = await resolveGroundedCardDescription({ fullDescription: full, synthesize });
+  const card = await resolveGroundedCardDescription({
+    fullDescription: full,
+    researchAreas: entity.researchAreas,
+    synthesize,
+  });
   if (!card || !shortDescriptionQuality(card, full).isUseful) {
     return { ...base, action: 'no-card', proposedShort: null, gainedCard: false, wouldPromote: false };
   }
