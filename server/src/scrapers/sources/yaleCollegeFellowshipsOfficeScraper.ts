@@ -870,6 +870,7 @@ export function parseFellowshipCatalogPage(
   referenceDate: Date = new Date(),
 ): FellowshipCatalogCandidate[] {
   const $ = cheerio.load(html);
+  $('script, style, noscript').remove();
   const byKey = new Map<string, FellowshipCatalogCandidate>();
 
   const detail = candidateFromDetailPage($, pageUrl, referenceDate);
