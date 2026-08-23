@@ -299,7 +299,7 @@ describe('Analytics page', () => {
     expect(screen.getByRole('heading', { name: 'Decision Readout' })).toBeTruthy();
     expect(screen.getByText('Search success')).toBeTruthy();
     expect(screen.getByText('Student action funnel')).toBeTruthy();
-    expect(screen.getByText('Needs attention')).toBeTruthy();
+    expect(screen.getByText('Items to review')).toBeTruthy();
     expect(screen.getByText('Supporting Detail')).toBeTruthy();
     const detailNav = screen.getByRole('navigation', { name: 'Analytics detail sections' });
     expect(detailNav).toBeTruthy();
@@ -328,7 +328,7 @@ describe('Analytics page', () => {
     );
   });
 
-  it('keeps the Needs attention count, tone, and caption self-consistent when only queries drive it', async () => {
+  it('keeps the Items to review count, tone, and caption self-consistent when only queries drive it', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/analytics') {
         return Promise.resolve({ data: analyticsData });
@@ -372,7 +372,7 @@ describe('Analytics page', () => {
     render(<Analytics />);
 
     const tile = await waitFor(() => {
-      const heading = screen.getByText('Needs attention');
+      const heading = screen.getByText('Items to review');
       const container = heading.closest('div') as HTMLElement;
       expect(container.querySelector('.text-3xl')?.textContent).toBe('6');
       return container;
@@ -385,13 +385,13 @@ describe('Analytics page', () => {
     expect(tile.textContent).not.toContain('No urgent admin action returned');
   });
 
-  it('shows the no-action caption only when nothing drives the Needs attention count', async () => {
+  it('shows the no-action caption only when nothing drives the Items to review count', async () => {
     mockDashboardEndpoints();
 
     render(<Analytics />);
 
     const tile = await waitFor(() => {
-      const heading = screen.getByText('Needs attention');
+      const heading = screen.getByText('Items to review');
       return heading.closest('div') as HTMLElement;
     });
 

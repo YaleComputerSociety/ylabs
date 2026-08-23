@@ -596,7 +596,7 @@ const Analytics = () => {
               tone="blue"
             />
             <DashboardMetric
-              title="Needs attention"
+              title="Items to review"
               value={formatNumber(attentionCount)}
               context={attentionContext}
               tone={healthTone}
