@@ -866,7 +866,29 @@ export async function searchResearchGroupsViaMeili(
 
   const normalizedQuery = normalizeResearchSearchQuery(query);
   const trimmedQuery = normalizedQuery.query;
-  if (trimmedQuery === '' && safeOptions.lowQualityFirst) {
+  // A blank search box legitimately browses the whole corpus. A query that has
+  // raw text but tokenizes to zero ASCII search terms must not silently reuse
+  // that browse-all path (#958): non-Latin-script input (CJK/Arabic/Cyrillic)
+  // is sent to Meilisearch as-is so its own tokenizer/embedder can match it,
+  // while punctuation/symbol-only input has no searchable content and returns
+  // an empty result set rather than the full directory in browse order.
+  const hasUnicodeWordContent = /[\p{L}\p{N}]/u.test(normalizedQuery.raw);
+  const isBrowseAllQuery = normalizedQuery.raw === '';
+  const isUnsearchableQuery = !isBrowseAllQuery && trimmedQuery === '' && !hasUnicodeWordContent;
+  const meiliQueryText = trimmedQuery !== '' ? trimmedQuery : normalizedQuery.raw;
+  if (isUnsearchableQuery) {
+    return addResearchEntitySearchAliases(
+      {
+        hits: [],
+        estimatedTotalHits: 0,
+        page: safePage,
+        pageSize: safePageSize,
+        degraded: false,
+      },
+      { includeOperatorFields: safeOptions.includeNonPublic },
+    );
+  }
+  if (isBrowseAllQuery && safeOptions.lowQualityFirst) {
     const candidates = withServablePublicResearchEntities(
       (await ResearchEntity.find(
         mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
@@ -922,7 +944,7 @@ export async function searchResearchGroupsViaMeili(
   if (sort.sortBy) {
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
     sortConfig.push(`${sort.sortBy}:${order}`);
-  } else if (trimmedQuery === '') {
+  } else if (isBrowseAllQuery) {
     // Default browse: surface the "best" research homes first — those with the
     // strongest completeness + undergrad-access signal — then fall back to
     // recency as a tiebreak. See services/researchEntityBrowseRank.ts.
@@ -947,7 +969,7 @@ export async function searchResearchGroupsViaMeili(
   }
 
   const index = await getMeiliIndex('researchentities');
-  if (trimmedQuery !== '') {
+  if (!isBrowseAllQuery) {
     if (normalizedQuery.isTopicAliasQuery) {
       searchParams.attributesToSearchOn = TOPIC_ALIAS_QUERY_ATTRIBUTES;
     } else if (await isResearchEntitySearchEmbedderConfigured(index)) {
@@ -997,7 +1019,7 @@ export async function searchResearchGroupsViaMeili(
     while (true) {
       try {
         return {
-          result: await index.search(trimmedQuery, params),
+          result: await index.search(meiliQueryText, params),
           degraded,
           params,
         };
@@ -1078,7 +1100,7 @@ export async function searchResearchGroupsViaMeili(
   // which page was actually requested. See #885, #941.
   if (finalSearchParams.rankingScoreThreshold !== undefined) {
     try {
-      const exhaustiveCountResult = await index.search(trimmedQuery, {
+      const exhaustiveCountResult = await index.search(meiliQueryText, {
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
         rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
@@ -1225,8 +1247,8 @@ const haystackHasTerm = (haystack: string, term: string): boolean => {
 
 const researchEntityMatchesQuery = (entity: any, query: string): boolean => {
   const normalizedQuery = normalizeResearchSearchQuery(query);
-  if (!normalizedQuery.query) return true;
-  if (normalizedQuery.tokens.length === 0) return true;
+  if (normalizedQuery.raw === '') return true;
+  if (!normalizedQuery.query || normalizedQuery.tokens.length === 0) return false;
   const haystack = researchEntitySearchText(entity);
   if (normalizedQuery.aliasTerms) {
     return normalizedQuery.aliasTerms.some((alias) => haystackHasTerm(haystack, alias));

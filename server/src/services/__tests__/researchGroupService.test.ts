@@ -814,6 +814,59 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(false);
   });
 
+  it('normalizes non-Latin-script input to an empty ASCII query while preserving the raw text (#958)', () => {
+    expect(normalizeResearchSearchQuery('东亚研究')).toMatchObject({
+      raw: '东亚研究',
+      query: '',
+      tokens: [],
+    });
+    expect(normalizeResearchSearchQuery('генетика')).toMatchObject({
+      raw: 'генетика',
+      query: '',
+      tokens: [],
+    });
+    expect(normalizeResearchSearchQuery('!!!')).toMatchObject({
+      raw: '!!!',
+      query: '',
+      tokens: [],
+    });
+  });
+
+  it('passes a non-Latin-script query through to Meili instead of degrading to browse-all (#958)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0, totalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('东亚研究', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalled();
+    expect(mocks.search.mock.calls[0][0]).toBe('东亚研究');
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      hybrid: { semanticRatio: 0.8, embedder: 'default' },
+      rankingScoreThreshold: 0.15,
+    });
+    expect(result.estimatedTotalHits).toBe(0);
+  });
+
+  it('returns an empty result set for punctuation-only input without touching Meili (#958)', async () => {
+    const result = await searchResearchGroupsViaMeili('??? $$$ ///', {}, 1, 24);
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.estimatedTotalHits).toBe(0);
+    expect(result.researchEntities).toEqual([]);
+    expect(result.degraded).toBe(false);
+  });
+
+  it('still browses the full corpus for a genuinely blank query (#958 regression guard)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 1741 });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalled();
+    expect(mocks.search.mock.calls[0][0]).toBe('');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+    expect(mocks.search.mock.calls[0][1].sort).toContain('browseRankScore:desc');
+    expect(result.estimatedTotalHits).toBe(1741);
+  });
+
   it('reports the exhaustive threshold-aware totalHits for a thresholded hybrid query, not the inflated estimate', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
