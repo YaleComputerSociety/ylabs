@@ -54,6 +54,8 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     ml: ['machine learning', 'artificial intelligence', 'deep learning'],
     nlp: ['natural language processing', 'computational linguistics'],
     cv: ['computer vision', 'medical imaging', 'image analysis'],
+    'computer vision': ['computational vision', 'visual recognition', 'image analysis'],
+    'computational vision': ['computer vision', 'visual recognition', 'image analysis'],
     neuro: ['neuroscience', 'neurology', 'neural', 'brain'],
     psych: ['psychology', 'psychiatry', 'cognitive science', 'behavioral science'],
   },

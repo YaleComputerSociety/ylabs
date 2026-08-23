@@ -172,6 +172,8 @@ describe('researchEntitySearchIndexService', () => {
     expect(getResearchEntitySearchIndexSettings().synonyms).toMatchObject({
       ai: expect.arrayContaining(['artificial intelligence', 'machine learning']),
       cv: expect.arrayContaining(['computer vision']),
+      'computer vision': expect.arrayContaining(['computational vision']),
+      'computational vision': expect.arrayContaining(['computer vision']),
     });
     expect(getResearchEntitySearchIndexSettings().filterableAttributes).not.toContain('mutated');
     expect(getResearchEntitySearchIndexSettings().sortableAttributes).toEqual(
