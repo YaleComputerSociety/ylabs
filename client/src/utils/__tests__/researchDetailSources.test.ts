@@ -9,6 +9,7 @@ import {
   isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
   prefersOrgEngagementOutreach,
+  resolveDecisionProfileUrl,
   resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../researchDetailSources';
@@ -746,6 +747,91 @@ describe('resolveOutreachOfficialSource', () => {
     );
 
     expect(source).toBeUndefined();
+  });
+});
+
+describe('resolveDecisionProfileUrl', () => {
+  it('prefers the corroborated lead profile over a mismatched entity website profile (#776)', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://medicine.yale.edu/profile/david-song/',
+      {
+        websiteUrl: 'https://medicine.yale.edu/profile/david-song/',
+        sourceUrls: [
+          'https://medicine.yale.edu/profile/david-song/',
+          'https://jackson.yale.edu/person/david-simon/',
+        ],
+      },
+      'https://jackson.yale.edu/person/david-simon/',
+    );
+
+    expect(url).toBe('https://jackson.yale.edu/person/david-simon/');
+  });
+
+  it('keeps the entity profile when the lead profile is not corroborated by an entity source', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://profile.example.test/profile/sample-faculty',
+      {
+        websiteUrl: 'https://profile.example.test/profile/sample-faculty',
+        sourceUrls: [],
+      },
+      'https://medicine.yale.edu/profile/fixture-scholar/',
+    );
+
+    expect(url).toBe('https://profile.example.test/profile/sample-faculty');
+  });
+
+  it('falls back to the corroborated lead profile when the entity has no profile source', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://medicine.yale.edu/lab/fixture-steele/',
+      {
+        websiteUrl: 'https://medicine.yale.edu/lab/fixture-steele/',
+        sourceUrls: ['https://medicine.yale.edu/lab/fixture-steele/'],
+      },
+      'https://medicine.yale.edu/profile/fixture-steele/',
+    );
+
+    expect(url).toBe('https://medicine.yale.edu/profile/fixture-steele/');
+  });
+
+  it('falls back to the entity profile source when no corroborated lead profile exists', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://lab.example.yale.edu/',
+      {
+        websiteUrl: 'https://lab.example.yale.edu/',
+        sourceUrls: ['https://example.yale.edu/faculty/jane-doe'],
+      },
+      undefined,
+    );
+
+    expect(url).toBe('https://example.yale.edu/faculty/jane-doe');
+  });
+
+  it('returns no decision profile while the lead identity is under review', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://example.yale.edu/profile/jane-doe',
+      {
+        leadIdentityStatus: 'under_review',
+        sourceUrls: ['https://example.yale.edu/profile/jane-doe'],
+      },
+      'https://example.yale.edu/profile/jane-doe',
+    );
+
+    expect(url).toBeUndefined();
+  });
+
+  it('skips a department roster provenance url when selecting the entity profile', () => {
+    const url = resolveDecisionProfileUrl(
+      'https://example.yale.edu/people/faculty',
+      {
+        sourceUrls: [
+          'https://example.yale.edu/people/faculty',
+          'https://example.yale.edu/profile/jane-doe',
+        ],
+      },
+      undefined,
+    );
+
+    expect(url).toBe('https://example.yale.edu/profile/jane-doe');
   });
 });
 

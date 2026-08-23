@@ -311,6 +311,52 @@ export const resolveOutreachOfficialSource = (
   return eligible[0];
 };
 
+interface DecisionProfileGroup {
+  leadIdentityStatus?: string;
+  websiteUrl?: string;
+  website?: string;
+  sourceUrls?: unknown;
+}
+
+export const resolveDecisionProfileUrl = (
+  fallbackSourceUrl: string | undefined,
+  group?: DecisionProfileGroup | null,
+  corroboratedLeadProfileUrl?: string,
+): string | undefined => {
+  if (group?.leadIdentityStatus === 'under_review') return undefined;
+
+  const labWebsiteDestinations = new Set(
+    [group?.websiteUrl, group?.website]
+      .filter((url) => url && !isProfileLikeSourceUrl(url))
+      .map((url) => normalizeActionDestination(url))
+      .filter(Boolean),
+  );
+  const candidateUrls = [
+    fallbackSourceUrl,
+    ...(Array.isArray(group?.sourceUrls) ? group.sourceUrls : []),
+  ];
+  const entitySourceDestinations = new Set(
+    candidateUrls
+      .filter((url): url is string => typeof url === 'string')
+      .map((url) => normalizeActionDestination(url))
+      .filter(Boolean),
+  );
+  const corroboratedDestination = normalizeActionDestination(corroboratedLeadProfileUrl);
+  if (corroboratedDestination && entitySourceDestinations.has(corroboratedDestination)) {
+    return corroboratedLeadProfileUrl;
+  }
+
+  for (const url of candidateUrls) {
+    if (typeof url !== 'string') continue;
+    if (!isProfileLikeSourceUrl(url) || isDepartmentRosterProvenanceUrl(url)) continue;
+    if (isRawDataApiSourceUrl(url) || isIdentifierOrGrantDbSourceUrl(url)) continue;
+    const destination = normalizeActionDestination(url);
+    if (!destination || labWebsiteDestinations.has(destination)) continue;
+    return normalizeSourceUrl(url) || corroboratedLeadProfileUrl;
+  }
+  return corroboratedLeadProfileUrl;
+};
+
 export const prefersOrgEngagementOutreach = (
   entityType: string | undefined,
   officialSource: ResearchDetailSource | undefined,
