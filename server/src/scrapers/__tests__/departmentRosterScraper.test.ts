@@ -1445,8 +1445,24 @@ describe('DepartmentRosterScraper.run', () => {
         name: 'Sawyer Roster',
         email: 'sawyer.roster@yale.edu',
         labUrl: 'https://campuspress.yale.edu/sawyerlab/',
-        topics: ['Condensed Matter Physics', 'Research Areas:', 'Research Interests'],
-        researchInterests: ['Condensed Matter Physics', 'Research Areas:', 'Research Interests'],
+        topics: [
+          'Condensed Matter Physics',
+          'Research Areas:',
+          'Research Interests',
+          'Topics',
+          'Topics:',
+          'Fields of Interest',
+          'Research Interests:',
+        ],
+        researchInterests: [
+          'Condensed Matter Physics',
+          'Research Areas:',
+          'Research Interests',
+          'Topics',
+          'Topics:',
+          'Fields of Interest',
+          'Research Interests:',
+        ],
       },
     ]);
     const configs: DeptConfig[] = [
