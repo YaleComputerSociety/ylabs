@@ -116,6 +116,7 @@ import {
   getResearchGroupDetail,
   listResearchEntityRelationshipPayload,
   normalizeResearchSearchQuery,
+  promoteExactAliasFieldMatches,
   normalizeResearchGroupObjectId,
   isFreshVerifiedOfficialRosterRow,
   publicRosterDisclosure,
@@ -347,6 +348,30 @@ describe('searchResearchGroupsViaMeili', () => {
       isTopicAliasQuery: false,
       aliasTerms: null,
     });
+  });
+
+  it('promoteExactAliasFieldMatches tiers exact department, then exact area, above the rest (#983)', () => {
+    const hits = [
+      { slug: 'fuzzy-only', departments: ['Computer Science'], researchAreas: ['behavioral research'] },
+      { slug: 'area-match', departments: ['Economics'], researchAreas: ['Social Psychology', 'Psychology'] },
+      { slug: 'dept-match', departments: ['Psychology'], researchAreas: ['Positive Psychology'] },
+    ];
+    expect(
+      promoteExactAliasFieldMatches(hits, ['psychology', 'psychiatry', 'psych']).map((h) => h.slug),
+    ).toEqual(['dept-match', 'area-match', 'fuzzy-only']);
+  });
+
+  it('promoteExactAliasFieldMatches is a stable no-op without alias terms or exact matches', () => {
+    const hits = [
+      { slug: 'a', departments: ['Sociology'], researchAreas: ['marketing'] },
+      { slug: 'b', departments: ['History'], researchAreas: ['medieval studies'] },
+    ];
+    expect(promoteExactAliasFieldMatches(hits, null)).toBe(hits);
+    expect(promoteExactAliasFieldMatches(hits, ['psychology']).map((h) => h.slug)).toEqual([
+      'a',
+      'b',
+    ]);
+    expect(promoteExactAliasFieldMatches([hits[0]], ['sociology'])).toEqual([hits[0]]);
   });
 
   it('normalizes research group ObjectIds without arbitrary object coercion', () => {
@@ -598,6 +623,83 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
       'weak-semantic-first',
       'weaker-semantic-second',
+    ]);
+  });
+
+  it('promotes the exact-department alias match above tangential fuzzy hits for `psych` (#983)', async () => {
+    const adrianaId = '67d8928150621bcef434b001';
+    const jamieId = '67d8928150621bcef434b002';
+    const volkmarId = '67d8928150621bcef434b003';
+    const laurieId = '67d8928150621bcef434b004';
+    const sambanisId = '67d8928150621bcef434b005';
+    const meiliOrder = [
+      {
+        id: adrianaId,
+        slug: 'adriana-germano-research',
+        name: 'Adriana Germano Faculty Research',
+        kind: 'lab',
+        departments: ['Economics'],
+        researchAreas: ['Organizational Behavior', 'Economics', 'Social Psychology', 'Psychology'],
+        sourceUrls: [],
+      },
+      {
+        id: jamieId,
+        slug: 'jamie-tucker-foltz-research',
+        name: 'Jamie Tucker-Foltz Faculty Research',
+        kind: 'lab',
+        departments: ['Computer Science'],
+        researchAreas: ['behavioral research', 'marketing', 'organizational behavior'],
+        sourceUrls: [],
+      },
+      {
+        id: volkmarId,
+        slug: 'volkmar-lab',
+        name: 'Volkmar Lab',
+        kind: 'lab',
+        departments: ['Child Study Center'],
+        researchAreas: ['Autism Spectrum Disorder Research', 'Genetics and Neurodevelopmental Disorders'],
+        sourceUrls: [],
+      },
+      {
+        id: laurieId,
+        slug: 'laurie-santos-research',
+        name: 'Laurie Santos Faculty Research',
+        kind: 'lab',
+        departments: ['Psychology'],
+        researchAreas: ['Positive Psychology', 'Subjective Well-Being', 'Psychology'],
+        sourceUrls: [],
+      },
+      {
+        id: sambanisId,
+        slug: 'nicholas-sambanis-research',
+        name: 'Nicholas Sambanis Faculty Research',
+        kind: 'lab',
+        departments: ['Political Science'],
+        researchAreas: ['Political Science', 'Social Psychology', 'Psychology'],
+        sourceUrls: [],
+      },
+    ];
+    mocks.search.mockResolvedValueOnce({ hits: meiliOrder, estimatedTotalHits: meiliOrder.length });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        meiliOrder.map((hit) => ({ ...hit, _id: hit.id, ...validPublicDescriptions })),
+      ),
+    );
+
+    const result = await searchResearchGroupsViaMeili('psych', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'psychology psychiatry cognitive science behavioral science psych',
+      expect.objectContaining({
+        attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
+      }),
+    );
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'laurie-santos-research',
+      'adriana-germano-research',
+      'nicholas-sambanis-research',
+      'jamie-tucker-foltz-research',
+      'volkmar-lab',
     ]);
   });
 

@@ -841,6 +841,53 @@ export const floorWeakSemanticOnlyHits = <T>(hits: T[]): T[] => {
   return [...strong, ...weak];
 };
 
+const normalizeExactMatchValue = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/['']/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const hitStringFieldValues = (hit: any, field: string): string[] =>
+  Array.isArray(hit?.[field])
+    ? hit[field].filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+
+const hitHasExactAliasValue = (hit: any, field: string, aliasTermSet: Set<string>): boolean =>
+  hitStringFieldValues(hit, field).some((value) => aliasTermSet.has(normalizeExactMatchValue(value)));
+
+/**
+ * Alias-expanded queries (`STUDENT_QUERY_ALIASES`, e.g. `psych`/`neuro`) hand
+ * Meilisearch a multi-term OR query whose default ranking rewards fuzzy
+ * multi-term coverage before exactness, so an entity that fuzzily matches a
+ * couple of loosely-related expansion terms can outrank one whose own
+ * `departments`/`researchAreas` field is an exact match for the aliased-from
+ * topic. This stable re-rank promotes exact `departments` matches, then exact
+ * `researchAreas` matches, above the fuzzy remainder while preserving
+ * Meilisearch's order within each tier. Engages only when at least one exact
+ * match exists, so ordinary alias result sets keep native ordering. #983.
+ */
+export const promoteExactAliasFieldMatches = <T>(
+  hits: T[],
+  aliasTerms: string[] | null,
+): T[] => {
+  if (!Array.isArray(hits) || hits.length < 2 || !aliasTerms || aliasTerms.length === 0) {
+    return hits;
+  }
+  const aliasTermSet = new Set(aliasTerms.map(normalizeExactMatchValue));
+  const exactDepartment: T[] = [];
+  const exactResearchArea: T[] = [];
+  const rest: T[] = [];
+  for (const hit of hits) {
+    if (hitHasExactAliasValue(hit, 'departments', aliasTermSet)) exactDepartment.push(hit);
+    else if (hitHasExactAliasValue(hit, 'researchAreas', aliasTermSet)) exactResearchArea.push(hit);
+    else rest.push(hit);
+  }
+  if (exactDepartment.length === 0 && exactResearchArea.length === 0) return hits;
+  return [...exactDepartment, ...exactResearchArea, ...rest];
+};
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -1146,7 +1193,10 @@ export async function searchResearchGroupsViaMeili(
     };
   })();
 
-  const orderedHits = floorWeakSemanticOnlyHits(hits || []);
+  const orderedHits = promoteExactAliasFieldMatches(
+    floorWeakSemanticOnlyHits(hits || []),
+    normalizedQuery.aliasTerms,
+  );
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
