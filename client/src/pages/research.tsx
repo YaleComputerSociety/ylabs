@@ -414,6 +414,7 @@ const Research = () => {
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
   const [searchLoading, setSearchLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(
@@ -663,6 +664,7 @@ const Research = () => {
       setFacetDistribution({});
     }
     setSearchLoading(true);
+    setIsLoadingMore(false);
     setIsApplyingFilters(Boolean(options.preserveResults));
     setSearchError('');
     setHasFacetError(false);
@@ -781,7 +783,7 @@ const Research = () => {
     searchAbortRef.current?.abort();
     searchAbortRef.current = controller;
 
-    setSearchLoading(true);
+    setIsLoadingMore(true);
 
     try {
       const researchEntitiesPage = await searchResearchEntities(
@@ -836,7 +838,7 @@ const Research = () => {
       }
     } finally {
       if (requestId === searchRequestIdRef.current && !controller.signal.aborted) {
-        setSearchLoading(false);
+        setIsLoadingMore(false);
       }
     }
   };
@@ -890,6 +892,7 @@ const Research = () => {
     setSearchError('');
     setHasFacetError(false);
     setSearchLoading(false);
+    setIsLoadingMore(false);
     setDefaultSearchExhausted(false);
     setDefaultSearchPage(1);
     writeResearchSearchParams(
@@ -1055,6 +1058,7 @@ const Research = () => {
     setSearchError('');
     setHasFacetError(false);
     setSearchLoading(false);
+    setIsLoadingMore(false);
     setDefaultResearchEntities([]);
     setDefaultSearchTotal(0);
     setDefaultSearchExhausted(false);
@@ -1167,7 +1171,7 @@ const Research = () => {
   });
   const searchSentinelRef = useInfiniteScroll({
     searchExhausted: !hasSubmittedSearch || searchExhausted,
-    isLoading: searchLoading,
+    isLoading: searchLoading || isLoadingMore,
     setPage: setSearchPage,
     totalRawCount: searchTotal,
     filteredCount: searchResultResearchEntities.length,
@@ -1599,7 +1603,7 @@ const Research = () => {
                           ))}
                         </div>
                       </div>
-                      {searchLoading && !isApplyingFilters && activeResults.clusters.length > 0 && (
+                      {isLoadingMore && activeResults.clusters.length > 0 && (
                         <InfiniteScrollLoadingDots label="Loading more research homes" />
                       )}
                       {!searchExhausted && <div ref={searchSentinelRef} className="h-10 w-full" />}
