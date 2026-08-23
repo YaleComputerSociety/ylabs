@@ -186,6 +186,20 @@ describe('ProfileHeader', () => {
     expect(container.textContent).toContain('ER');
   });
 
+  it('labels a professor account as a faculty profile', () => {
+    const { container } = renderProfileHeader({ ...baseProfile, userType: 'professor' });
+
+    expect(container.querySelector('.yr-kicker')?.textContent).toBe('Faculty profile');
+  });
+
+  it('does not label a non-faculty account as a faculty profile', () => {
+    const { container } = renderProfileHeader({ ...baseProfile, userType: 'undergraduate' });
+
+    const kicker = container.querySelector('.yr-kicker');
+    expect(kicker?.textContent).toBe('Profile');
+    expect(kicker?.textContent).not.toBe('Faculty profile');
+  });
+
   it('shows canonical CPSC profile department labels without raw Yale org-unit labels', () => {
     const { container } = renderProfileHeader({
       ...baseProfile,

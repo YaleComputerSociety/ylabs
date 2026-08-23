@@ -1,7 +1,7 @@
 /**
  * Faculty profile service for self-editing, verification, and department cascading.
  */
-import { User } from '../models/user';
+import { User, normalizeUserType } from '../models/user';
 import { getListingModel } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
@@ -2008,9 +2008,12 @@ export const cascadeDepartmentsToListings = async (netid: string) => {
   }
 };
 
+export const isPublicFacultyProfileUserType = (userType: unknown): boolean =>
+  normalizeUserType(userType) === 'professor';
+
 export const getProfileByNetid = async (netid: string) => {
   const user = await User.findOne({ netid }).lean();
-  if (!user) return user;
+  if (!user || !isPublicFacultyProfileUserType((user as any).userType)) return null;
 
   const [scholarlyLinks, researchEntities] = await Promise.all([
     loadProfileScholarlyLinks(user as any),
