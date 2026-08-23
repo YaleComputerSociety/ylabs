@@ -24,6 +24,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
+import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -199,7 +200,7 @@ function extractDescription($: cheerio.CheerioAPI): string | undefined {
   });
   const text = cleanText(parts.join(' '));
   if (text.length < 40) return undefined;
-  return text.slice(0, 2000);
+  return clampDescriptionLength(text, 2000);
 }
 
 const GENERIC_RESEARCH_SITE_LABEL =

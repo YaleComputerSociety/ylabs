@@ -472,8 +472,13 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  * citation dump, or a bare "Research fields include <chips>." area echo (#623)
  * fails the whole description closed rather than surviving as read-time-safe
  * token text, a truncated tail (#676), or a vacuous restatement of the chips.
+ *
+ * The clean remainder is finally clamped through clampDescriptionLength so an
+ * over-long or mid-word-truncated faculty/roster slice is trimmed to a sentence
+ * or word boundary rather than served cut mid-word (#897), mirroring the same
+ * final step in sanitizeStoredCatalogDescription (#671).
  */
-export function sanitizeResearchEntityDescription(text: string): string {
+export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
   const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
   if (!stripped) return '';
@@ -485,5 +490,5 @@ export function sanitizeResearchEntityDescription(text: string): string {
   ) {
     return '';
   }
-  return stripped;
+  return clampDescriptionLength(stripped, maxLength);
 }

@@ -262,6 +262,32 @@ describe('descriptionHygiene word-boundary clamp (#671)', () => {
   });
 });
 
+describe('sanitizeResearchEntityDescription word-boundary clamp (#897)', () => {
+  it('clamps an over-long research-entity description to a complete sentence', () => {
+    const body = `${'The laboratory studies how cities shape regional climate and biodiversity. '.repeat(
+      40,
+    )}Recent work extends this to coastal megacities and the lack of diver`;
+    const cleaned = sanitizeResearchEntityDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2000);
+    expect(cleaned.endsWith('.')).toBe(true);
+    expect(cleaned).not.toMatch(/the lack of diver$/);
+  });
+
+  it('falls back to a word boundary with an ellipsis when no sentence ends in the tail', () => {
+    const body = `Introduction ${'climatebiodiversitymegacities '.repeat(120)}dive`;
+    const cleaned = sanitizeResearchEntityDescription(body);
+    expect(cleaned.length).toBeLessThanOrEqual(2001);
+    expect(cleaned.endsWith('…')).toBe(true);
+    expect(cleaned).not.toMatch(/dive$/);
+  });
+
+  it('leaves genuine prose at or under the cap unchanged', () => {
+    const clean =
+      'The lab investigates urban ecology and the effects of land-use change on regional climate.';
+    expect(sanitizeResearchEntityDescription(clean)).toBe(clean);
+  });
+});
+
 const SYNTHETIC_CONTACT_HEADER_PROSE =
   'Avery Sloane, Ph.D. Professor Email: [email redacted]: 203-555-0142 Dr. Avery Sloane is a Tenure Professor of Cell Biology whose laboratory investigates how signaling networks coordinate tissue regeneration after injury across model organisms.';
 
