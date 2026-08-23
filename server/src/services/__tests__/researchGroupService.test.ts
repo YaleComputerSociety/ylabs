@@ -1765,6 +1765,55 @@ describe('searchResearchGroupsViaMeili', () => {
     );
   });
 
+  it('drops a deceased-lead in-memoriam entity from public browse but keeps it for operators (#982)', async () => {
+    const deceasedId = '67d8928150621bcef434a1e0';
+    const liveId = '67d8928150621bcef434a1e1';
+    const hits = [
+      { id: deceasedId, slug: 'demarque-lab-prd2', name: 'Demarque Lab' },
+      { id: liveId, slug: 'live-lab', name: 'Live Lab' },
+    ];
+    mocks.search.mockResolvedValue({ hits, estimatedTotalHits: 2 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: deceasedId,
+          slug: 'demarque-lab-prd2',
+          name: 'Demarque Lab',
+          kind: 'lab',
+          departments: ['Astronomy'],
+          researchAreas: [],
+          sourceUrls: ['https://astronomy.yale.edu/people/pierre-demarque-1932-2025'],
+          studentVisibilityTier: 'student_ready',
+          fullDescription:
+            'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus of Natural Philosophy and Astronomy, studied stellar structure and evolution.',
+          shortDescription:
+            'Pierre R. Demarque (1932 - 2025) studied stellar structure and evolution.',
+        },
+        {
+          _id: liveId,
+          slug: 'live-lab',
+          name: 'Live Lab',
+          kind: 'lab',
+          departments: ['Chemistry'],
+          researchAreas: [],
+          sourceUrls: [],
+          studentVisibilityTier: 'student_ready',
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const publicResult = await searchResearchGroupsViaMeili('', {}, 1, 24);
+    expect(publicResult.researchEntities.map((entity: any) => entity.slug)).toEqual(['live-lab']);
+
+    const operatorResult = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
+      includeNonPublic: true,
+    });
+    expect(operatorResult.researchEntities.map((entity: any) => entity.slug).sort()).toEqual(
+      ['demarque-lab-prd2', 'live-lab'].sort(),
+    );
+  });
+
   it('caps search page before computing Meili offsets', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
@@ -2020,6 +2069,32 @@ describe('getResearchGroupDetail', () => {
     );
 
     const detail = await getResearchGroupDetail('correct-person-research');
+
+    expect(detail).toBeNull();
+    expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
+  });
+
+  it('404s a student-ready entity whose sole lead is a deceased in-memoriam professor (#982)', async () => {
+    const entityId = '67d8928150621bcef434a1e2';
+    mocks.researchEntityFindOne.mockReturnValue(
+      leanResult({
+        _id: entityId,
+        slug: 'demarque-lab-prd2',
+        name: 'Demarque Lab',
+        kind: 'lab',
+        entityType: 'RESEARCH_GROUP',
+        departments: ['Astronomy'],
+        researchAreas: [],
+        sourceUrls: ['https://astronomy.yale.edu/people/pierre-demarque-1932-2025'],
+        fullDescription:
+          'Pierre R. Demarque (1932 - 2025), Munson Professor Emeritus of Natural Philosophy and Astronomy, studied stellar structure and evolution.',
+        shortDescription:
+          'Pierre R. Demarque (1932 - 2025) studied stellar structure and evolution.',
+        studentVisibilityTier: 'student_ready',
+      }),
+    );
+
+    const detail = await getResearchGroupDetail('demarque-lab-prd2');
 
     expect(detail).toBeNull();
     expect(mocks.entryPathwayFind).not.toHaveBeenCalled();
