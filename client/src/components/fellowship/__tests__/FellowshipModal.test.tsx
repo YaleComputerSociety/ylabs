@@ -320,6 +320,40 @@ describe('FellowshipModal', () => {
     ).toBeNull();
   });
 
+  it('renders a single Description heading when summary duplicates description (#1021)', () => {
+    const sharedText =
+      'This fellowship supports independent field research across a full summer term. ' +
+      'Awardees complete a mentored project and present written findings to the sponsoring office.';
+    renderModal({ summary: sharedText, description: sharedText });
+
+    expect(screen.getByRole('heading', { name: 'Description' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Brief Description' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Full Description' })).toBeNull();
+    expect(screen.getByText(sharedText)).toBeTruthy();
+  });
+
+  it('treats whitespace-only differences between summary and description as duplicates (#1021)', () => {
+    renderModal({
+      summary: 'Support for a mentored summer research project.\n \nApplicants present findings.',
+      description: 'Support for a mentored summer research project. Applicants present findings.',
+    });
+
+    expect(screen.getByRole('heading', { name: 'Description' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Brief Description' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Full Description' })).toBeNull();
+  });
+
+  it('keeps Brief and Full Description headings when the two fields genuinely differ (#1021)', () => {
+    renderModal({
+      summary: 'A short teaser for the program.',
+      description: 'A much longer description with substantially more detail than the teaser above.',
+    });
+
+    expect(screen.getByRole('heading', { name: 'Brief Description' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Full Description' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Description' })).toBeNull();
+  });
+
   it('falls back to the specific source page and shows legible provenance (#692)', () => {
     const specificSource =
       'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
