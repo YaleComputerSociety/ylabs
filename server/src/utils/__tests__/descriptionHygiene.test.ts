@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampDescriptionLength,
   hasContactBlockResidue,
+  isCtaNewsTickerDumpText,
   isCurationRationaleText,
   isFaqDumpText,
   isFormFieldDumpText,
@@ -478,7 +479,9 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
 
   it('flags the "Research areas include" sibling template', () => {
     expect(
-      isResearchAreaEchoDescription('Research areas include Spectroscopy, Chirality, and Signaling.'),
+      isResearchAreaEchoDescription(
+        'Research areas include Spectroscopy, Chirality, and Signaling.',
+      ),
     ).toBe(true);
   });
 
@@ -490,7 +493,9 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
   });
 
   it('does not flag a real "Studies" one-liner or a research-focus sentence', () => {
-    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(false);
+    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(
+      false,
+    );
     expect(
       isResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.'),
     ).toBe(false);
@@ -502,5 +507,55 @@ describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
         'Research fields include Gene Expression Regulation, Developmental, Computational Biology, and Cancer.',
       ),
     ).toBe('');
+  });
+});
+
+const SYNTHETIC_CTA_NEWS_TICKER_DUMP = [
+  'Our newly updated factsheet tool provides insights into public attitudes in your region.',
+  'New research highlights the intersection of two emerging topics.',
+  '76% of respondents say they are interested in stories about the subject.',
+  "On August 26th, we'll be joining local officials to talk about the work.",
+  'Sign up to join the conversation: a survey tool covering 32 questions.',
+  "Take a quiz to find out which group you're part of.",
+  'Our research and outreach are sponsored by foundations and many generous individuals.',
+  'Welcome! Here you can find our latest research and insights.',
+  'Please join the conversation on LinkedIn, Bluesky, and YouTube.',
+].join(' ');
+
+const SYNTHETIC_CLEAN_COMMS_PROSE =
+  'The center studies how the public understands emerging science and how communicators can convey complex findings. Researchers combine national surveys with message-testing experiments to map audience attitudes over time. Findings inform outreach practice across universities and nonprofits.';
+
+const SYNTHETIC_SINGLE_CTA_PROSE =
+  'The program pairs undergraduates with faculty mentors for a summer of original research. Students who want to learn more can attend an information session each spring.';
+
+describe('descriptionHygiene CTA/news-ticker dump fail-closed (#898)', () => {
+  it('flags a homepage news-ticker / CTA dump and rejects it', () => {
+    expect(isCtaNewsTickerDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(true);
+    expect(sanitizeCatalogDescription(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe('');
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe('');
+  });
+
+  it('is not defeated by the many well-formed sentences that slip past the sentence-ender gates', () => {
+    expect(isNavigationDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(false);
+    expect(isFormFieldDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(false);
+    expect(isFaqDumpText(SYNTHETIC_CTA_NEWS_TICKER_DUMP)).toBe(false);
+  });
+
+  it('fails closed on a social-platform sign-off on its own', () => {
+    expect(
+      isCtaNewsTickerDumpText('Please join the conversation on LinkedIn, Bluesky, and YouTube.'),
+    ).toBe(true);
+  });
+
+  it('keeps genuine communications-research prose that names no CTA markers', () => {
+    expect(isCtaNewsTickerDumpText(SYNTHETIC_CLEAN_COMMS_PROSE)).toBe(false);
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_CLEAN_COMMS_PROSE)).toBe(
+      SYNTHETIC_CLEAN_COMMS_PROSE,
+    );
+  });
+
+  it('keeps prose with a single incidental "learn more" invitation', () => {
+    expect(isCtaNewsTickerDumpText(SYNTHETIC_SINGLE_CTA_PROSE)).toBe(false);
+    expect(sanitizeCatalogDescription(SYNTHETIC_SINGLE_CTA_PROSE)).toBe(SYNTHETIC_SINGLE_CTA_PROSE);
   });
 });
