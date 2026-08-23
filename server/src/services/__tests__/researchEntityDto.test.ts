@@ -216,7 +216,12 @@ describe('researchEntityDto', () => {
       id: 'entity-ysm-role-label',
       slug: 'ysm-role-label-lab',
       name: 'YSM Role Label Lab',
-      researchAreas: ['MedicareYSM Researcher', 'Medicare', 'YSM Researcher', 'HistonesYSM Researcher'],
+      researchAreas: [
+        'MedicareYSM Researcher',
+        'Medicare',
+        'YSM Researcher',
+        'HistonesYSM Researcher',
+      ],
       profileResearchAreas: ['Demyelinating Autoimmune Diseases, CNSYSM Researcher'],
     });
 
@@ -518,5 +523,34 @@ describe('researchEntityDto', () => {
       leadProfessorPublicKey: 'reviewed-professor-pi',
     });
     expect(dto).not.toHaveProperty('qualitySummary');
+  });
+
+  it('collapses a doubled research-home name suffix at the read-time DTO seam (#1106)', () => {
+    const dto = toPublicResearchEntityDto({
+      slug: 'jane-taylor-lab',
+      name: 'Jane Taylor Lab Lab',
+      displayName: 'Jane Taylor Lab Lab',
+      kind: 'lab',
+    });
+    expect(dto.name).toBe('Jane Taylor Lab');
+    expect(dto.displayName).toBe('Jane Taylor Lab');
+  });
+
+  it('collapses a doubled suffix in the summary DTO name (#1106)', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      slug: 'wu-tsai-institute',
+      name: 'Wu Tsai Institute Institute',
+      kind: 'center',
+    });
+    expect(summary.name).toBe('Wu Tsai Institute');
+  });
+
+  it('preserves legitimate repeated personal-name tokens when collapsing suffixes (#1106)', () => {
+    const dto = toPublicResearchEntityDto({
+      slug: 'lu-lu-lab',
+      name: 'Lu Lu Lab',
+      kind: 'lab',
+    });
+    expect(dto.name).toBe('Lu Lu Lab');
   });
 });

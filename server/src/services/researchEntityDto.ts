@@ -7,6 +7,7 @@ import {
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
+import { collapseDuplicateResearchHomeSuffix } from '../utils/researchEntityNameNormalization';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 
 const MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
@@ -175,7 +176,9 @@ export function toPublicResearchEntitySummaryDto(
   return {
     id: publicResearchEntityId(group),
     slug: publicTextString(group.slug || ''),
-    name: publicTextString(group.name || group.displayName || ''),
+    name: publicTextString(
+      collapseDuplicateResearchHomeSuffix(group.name || group.displayName || ''),
+    ),
     kind: group.kind === undefined ? undefined : publicTextString(group.kind),
     entityType:
       group.entityType === undefined
@@ -259,8 +262,13 @@ export function toPublicResearchEntityDto(
     _id: id,
     id,
     slug: publicTextString(group.slug || ''),
-    name: publicTextString(group.name || group.displayName || ''),
-    displayName: group.displayName === undefined ? undefined : publicTextString(group.displayName),
+    name: publicTextString(
+      collapseDuplicateResearchHomeSuffix(group.name || group.displayName || ''),
+    ),
+    displayName:
+      group.displayName === undefined
+        ? undefined
+        : publicTextString(collapseDuplicateResearchHomeSuffix(group.displayName)),
     kind,
     entityKind: kind,
     entityType,
