@@ -934,7 +934,7 @@ function withResolvedFieldProvenance(
   return output;
 }
 
-async function materializeInferredPiMembership(
+export async function materializeInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<void> {
