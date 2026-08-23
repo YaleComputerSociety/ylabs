@@ -78,6 +78,21 @@ describe('stripResearchAreaSourceChrome', () => {
     expect(recovered).not.toContain('SARS-CoV-');
     expect(recovered).toEqual(['SARS-CoV-23', 'Immunology']);
   });
+
+  it('strips a glued YSM Researcher role label with no widget chrome (#742)', () => {
+    expect(stripResearchAreaSourceChrome('MedicareYSM Researcher')).toEqual(['Medicare']);
+    expect(stripResearchAreaSourceChrome('Sarcoma, KaposiYSM Researcher')).toEqual([
+      'Sarcoma, Kaposi',
+    ]);
+    expect(
+      stripResearchAreaSourceChrome('Demyelinating Autoimmune Diseases, CNSYSM Researcher'),
+    ).toEqual(['Demyelinating Autoimmune Diseases, CNS']);
+    expect(stripResearchAreaSourceChrome('HistonesYSM Researchers')).toEqual(['Histones']);
+  });
+
+  it('leaves a bare role label for the downstream leakage stop-list to drop (#742)', () => {
+    expect(stripResearchAreaSourceChrome('YSM Researcher')).toEqual(['YSM Researcher']);
+  });
 });
 
 describe('canonicalizeResearchAreas', () => {

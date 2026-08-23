@@ -145,6 +145,20 @@ describe('researchEntityDto', () => {
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
   });
 
+  it('strips glued "YSM Researcher" role-label boilerplate from researchAreas chips (#742)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ysm-role-label',
+      slug: 'ysm-role-label-lab',
+      name: 'YSM Role Label Lab',
+      researchAreas: ['MedicareYSM Researcher', 'Medicare', 'YSM Researcher', 'HistonesYSM Researcher'],
+      profileResearchAreas: ['Demyelinating Autoimmune Diseases, CNSYSM Researcher'],
+    });
+
+    expect(dto.researchAreas).toEqual(['Medicare', 'Histones']);
+    expect(dto.profileResearchAreas).toEqual(['Demyelinating Autoimmune Diseases, CNS']);
+    expect(JSON.stringify(dto)).not.toContain('YSM Researcher');
+  });
+
   it('fails a fullDescription closed to empty when it still carries a contact-block or publications dump (#676)', () => {
     const contactBlock = toPublicResearchEntityDto({
       id: 'entity-contact-block',

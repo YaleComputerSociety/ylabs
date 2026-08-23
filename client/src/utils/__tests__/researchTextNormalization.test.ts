@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { publicResearchDescriptionText } from '../researchTextNormalization';
+import {
+  normalizeResearchMetadataLabels,
+  publicResearchDescriptionText,
+} from '../researchTextNormalization';
 
 describe('publicResearchDescriptionText', () => {
   it('suppresses scraped sentence fragments that should not display as descriptions', () => {
@@ -58,5 +61,34 @@ describe('publicResearchDescriptionText', () => {
     ).toBe(
       'Throughout our bodies, human cells coexist with diverse and abundant bacteria. They exchange metabolites. To identify, understand, and modulate signaling at the human:microbe interface, our laboratory integrates leading-edge chemical biology and immunology.',
     );
+  });
+});
+
+describe('normalizeResearchMetadataLabels', () => {
+  it('repairs research-area chips with a glued "YSM Researcher" role label (#742)', () => {
+    expect(
+      normalizeResearchMetadataLabels([
+        'MedicareYSM Researcher',
+        'Demyelinating Autoimmune Diseases, CNSYSM Researcher',
+        'HistonesYSM Researchers',
+      ]),
+    ).toEqual([
+      'Medicare',
+      'Demyelinating Autoimmune Diseases, CNS',
+      'Histones',
+    ]);
+  });
+
+  it('drops a bare role label and dedupes the repaired value against a clean duplicate', () => {
+    expect(normalizeResearchMetadataLabels(['YSM Researcher', 'MedicareYSM Researcher', 'Medicare'])).toEqual([
+      'Medicare',
+    ]);
+  });
+
+  it('leaves clean labels untouched', () => {
+    expect(normalizeResearchMetadataLabels(['Immunology', 'Public Health'])).toEqual([
+      'Immunology',
+      'Public Health',
+    ]);
   });
 });

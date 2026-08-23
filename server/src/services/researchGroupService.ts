@@ -81,6 +81,7 @@ import {
 } from './researchActivityIntegrity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonTitle } from '../utils/titleHygiene';
+import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabelHygiene';
 import { listPlanningContextsForResearchEntities } from './planningContextService';
 import {
   getPublicUndergraduateLogistics,
@@ -919,8 +920,13 @@ export async function searchResearchGroupsViaMeili(
   // to clients under the existing `school` key so the API contract is unchanged.
   const facetDistribution = ((): Record<string, Record<string, number>> | undefined => {
     if (!rawFacetDistribution) return rawFacetDistribution;
-    const { schools, ...rest } = rawFacetDistribution;
-    return schools ? { ...rest, school: schools } : rest;
+    const { schools, researchAreas, ...rest } = rawFacetDistribution;
+    const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
+    return {
+      ...rest,
+      ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
+      ...(schools ? { school: schools } : {}),
+    };
   })();
 
   const hitIds = (hits || [])
@@ -1105,7 +1111,8 @@ const searchResearchGroupsViaMongoFallback = async (
   const facetDistribution = {
     school: facetCounts(visibleCandidates, 'schools'),
     departments: facetCounts(visibleCandidates, 'departments'),
-    researchAreas: facetCounts(visibleCandidates, 'researchAreas'),
+    researchAreas:
+      sanitizeResearchAreaFacetDistribution(facetCounts(visibleCandidates, 'researchAreas')) ?? {},
   };
   const sortedCandidates = sortResearchEntitiesForMongoFallback(
     visibleCandidates,
