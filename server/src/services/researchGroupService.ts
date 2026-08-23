@@ -363,6 +363,17 @@ const HYBRID_RANKING_SCORE_THRESHOLD = 0.15;
 // topical matches score well above this, so pure-semantic ranking is untouched.
 // See #929.
 const WEAK_SEMANTIC_ONLY_SIMILARITY_FLOOR = 0.5;
+// Hybrid k-NN fusion reranks over exactly the candidate pool Meilisearch
+// retrieves, and finite pagination ties that pool to the requested page window,
+// so asking for a different `hitsPerPage` pulled a different set of semantic
+// neighbours into the fused set and reordered even the #1 result for the same
+// query. Fetching a fixed, page-size-independent pool (always at least deep
+// enough to cover the requested page) and slicing it in-app makes a result's
+// position independent of how many rows the page requests. Sized well above the
+// point where hybrid ordering converges and above two full max-size pages so the
+// first pages are fully stable. See #1064.
+export const HYBRID_RANKING_CANDIDATE_POOL_SIZE = 200;
+const HYBRID_RANKING_CANDIDATE_ATTRIBUTES = ['id', 'departments', 'researchAreas'];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
   'a',
@@ -1069,17 +1080,23 @@ export async function searchResearchGroupsViaMeili(
     }
   }
 
-  // Meilisearch's offset/limit `estimatedTotalHits` for a thresholded hybrid
-  // query is a windowed estimate over the whole k-NN candidate pool, so it
-  // reports (near) the full corpus size for broad topical queries even though
-  // only a small set clears `rankingScoreThreshold`. Finite pagination
-  // (`page`/`hitsPerPage`) fetches this page's hits and can itself still
-  // report that inflated estimate until the requested depth happens to be
-  // large enough to force an exhaustive scan (see the companion count query
-  // below, which forces that scan on every request). See #885.
-  if (searchParams.rankingScoreThreshold !== undefined) {
-    searchParams.page = safePage;
-    searchParams.hitsPerPage = safePageSize;
+  // A thresholded hybrid query re-ranks over the candidate pool Meilisearch
+  // retrieves, and tying that pool to the requested page window let a bigger
+  // `hitsPerPage` pull more semantic neighbours into the fused set and reorder
+  // even the #1 result for the same query (#1064). Retrieve a fixed,
+  // page-size-independent pool - always at least deep enough to cover the
+  // requested page - re-rank it, and slice the page in-app so a result's
+  // position no longer depends on the page size. The companion count query below
+  // still forces an exhaustive scan to report the threshold-aware total and
+  // facet distribution over the whole corpus. See #885, #941, #1064.
+  const usesPooledHybridRanking = searchParams.rankingScoreThreshold !== undefined;
+  if (usesPooledHybridRanking) {
+    searchParams.page = 1;
+    searchParams.hitsPerPage = Math.max(
+      HYBRID_RANKING_CANDIDATE_POOL_SIZE,
+      offset + safePageSize,
+    );
+    searchParams.attributesToRetrieve = HYBRID_RANKING_CANDIDATE_ATTRIBUTES;
     delete searchParams.limit;
     delete searchParams.offset;
   }
@@ -1235,10 +1252,16 @@ export async function searchResearchGroupsViaMeili(
 
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
     dropCoincidentalTypoOnlyHits(hits || []);
-  const orderedHits = promoteExactAliasFieldMatches(
+  const rankedHits = promoteExactAliasFieldMatches(
     floorWeakSemanticOnlyHits(keywordFilteredHits),
     normalizedQuery.aliasTerms,
   );
+  // The pooled hybrid fetch returns the whole page-size-independent candidate
+  // pool, so the requested page is a stable slice of that re-ranked ordering.
+  // Keyword/browse queries already asked Meilisearch for just this page window.
+  const orderedHits = usesPooledHybridRanking
+    ? rankedHits.slice(offset, offset + safePageSize)
+    : rankedHits;
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)

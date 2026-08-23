@@ -124,6 +124,7 @@ import {
   researchDetailLeadIdentity,
   resolveArchivedResearchEntityCanonicalSlug,
   searchResearchGroupsViaMeili,
+  HYBRID_RANKING_CANDIDATE_POOL_SIZE,
 } from '../researchGroupService';
 import {
   invalidateResearchEntitySearchEmbedderCache,
@@ -1151,7 +1152,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
       rankingScoreThreshold: 0.15,
       page: 1,
-      hitsPerPage: 24,
+      hitsPerPage: HYBRID_RANKING_CANDIDATE_POOL_SIZE,
     });
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
@@ -1259,7 +1260,7 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.estimatedTotalHits).toBe(326);
   });
 
-  it('maps page/pageSize to finite pagination for a deeper thresholded hybrid page', async () => {
+  it('retrieves the page-size-independent candidate pool for a deeper thresholded hybrid page (#1064)', async () => {
     mocks.search
       .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 74 })
       .mockResolvedValueOnce({ hits: [], totalHits: 74 });
@@ -1267,8 +1268,8 @@ describe('searchResearchGroupsViaMeili', () => {
     const result = await searchResearchGroupsViaMeili('neuroscience', {}, 3, 18);
 
     expect(mocks.search.mock.calls[0][1]).toMatchObject({
-      page: 3,
-      hitsPerPage: 18,
+      page: 1,
+      hitsPerPage: HYBRID_RANKING_CANDIDATE_POOL_SIZE,
     });
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
@@ -1277,6 +1278,54 @@ describe('searchResearchGroupsViaMeili', () => {
       hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
     });
     expect(result.estimatedTotalHits).toBe(74);
+  });
+
+  it('slices the requested page from the re-ranked pool without changing what Meili scores (#1064)', async () => {
+    const idA = '67d8928150621bcef434a101';
+    const idB = '67d8928150621bcef434a102';
+    const idC = '67d8928150621bcef434a103';
+    const keywordDetails = {
+      words: { matchingWords: 1, maxMatchingWords: 1 },
+      exactness: { score: 1 },
+    };
+    const poolHits = [idA, idB, idC].map((id) => ({
+      id,
+      departments: [],
+      researchAreas: [],
+      _rankingScoreDetails: keywordDetails,
+    }));
+    const entityFor = (id: string, slug: string, name: string) => ({
+      _id: id,
+      slug,
+      name,
+      kind: 'lab',
+      departments: [],
+      researchAreas: [],
+      sourceUrls: [],
+      ...validPublicDescriptions,
+    });
+    mocks.getEmbedders.mockResolvedValue({ default: { source: 'openAi' } });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        entityFor(idA, 'lab-a', 'Lab A'),
+        entityFor(idB, 'lab-b', 'Lab B'),
+        entityFor(idC, 'lab-c', 'Lab C'),
+      ]),
+    );
+
+    mocks.search
+      .mockResolvedValueOnce({ hits: poolHits, estimatedTotalHits: 3, totalHits: 3 })
+      .mockResolvedValueOnce({ hits: [], totalHits: 3 });
+    const page1 = await searchResearchGroupsViaMeili('topic', {}, 1, 2);
+    expect(mocks.search.mock.calls[0][1].hitsPerPage).toBe(HYBRID_RANKING_CANDIDATE_POOL_SIZE);
+    expect(page1.researchEntities.map((entity: any) => entity.slug)).toEqual(['lab-a', 'lab-b']);
+
+    mocks.search
+      .mockResolvedValueOnce({ hits: poolHits, estimatedTotalHits: 3, totalHits: 3 })
+      .mockResolvedValueOnce({ hits: [], totalHits: 3 });
+    const page2 = await searchResearchGroupsViaMeili('topic', {}, 2, 2);
+    expect(mocks.search.mock.calls[2][1].hitsPerPage).toBe(HYBRID_RANKING_CANDIDATE_POOL_SIZE);
+    expect(page2.researchEntities.map((entity: any) => entity.slug)).toEqual(['lab-c']);
   });
 
   it('keeps offset/limit pagination for keyword-only queries that carry no ranking threshold', async () => {
