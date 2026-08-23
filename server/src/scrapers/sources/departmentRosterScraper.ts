@@ -563,6 +563,43 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
   return out;
 };
 
+/**
+ * Yale SEAS Chemical & Environmental Engineering — unlike its sibling SEAS
+ * department pages, this one renders its roster as static server-side HTML
+ * instead of hydrating a client-side `load_faculty` widget:
+ *   <a class="stories-item" href="/research-and-faculty/faculty-directory/<slug>">
+ *     <h3>Name <em class="fa fa-arrow-right"></em></h3>
+ *     <span class="font-bold">Title</span>
+ *   </a>
+ */
+export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('a.stories-item').each((_i, el) => {
+    const card = $(el);
+    const heading = card.find('h3').first();
+    const name = normalizeName(
+      cleanText(heading.contents().filter((_j, node) => node.type === 'text').text()),
+    );
+    if (!name) return;
+
+    const profileHref = card.attr('href') || '';
+    const profileUrl = profileHref ? absolutize(profileHref, ctx.pageUrl) : undefined;
+    const title = cleanText(card.find('span.font-bold').first().text()) || undefined;
+    const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
+
+    out.push({
+      name,
+      profileUrl,
+      title,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -594,6 +631,104 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     extractor: csJsRenderedStub,
     dataUrl:
       'https://engineering.yale.edu/academic-study/departments/computer-science/faculty/load_faculty/4841',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'applied-physics',
+    deptName: 'Applied Physics',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/applied-physics/people',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/applied-physics/people/load_faculty/4867',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'biomedical-engineering',
+    deptName: 'Biomedical Engineering',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/biomedical-engineering/faculty/load_faculty/4868',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'chemical-environmental-engineering',
+    deptName: 'Chemical & Environmental Engineering',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/chemical-and-environmental-engineering/faculty',
+    paginated: false,
+    extractor: chemEnvFacultyExtractor,
+  },
+  {
+    deptKey: 'electrical-computer-engineering',
+    deptName: 'Electrical & Computer Engineering',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/electrical-and-computer-engineering/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/electrical-and-computer-engineering/faculty/load_faculty/266',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'mechanical-engineering',
+    deptName: 'Mechanical Engineering & Materials Science',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/mechanical-engineering/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/mechanical-engineering/faculty/load_faculty/4870',
+    dataRequest: {
+      template: 'department',
+      maxpages: '0',
+    },
+    dataExtractor: csFacultyDataExtractor,
+    renderedExtractor: csRenderedExtractor,
+    renderWaitSelector: 'a[href*="faculty"], a[href*="profile"], main',
+    jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'materials-science',
+    deptName: 'Mechanical Engineering & Materials Science',
+    schoolName: 'Yale School of Engineering & Applied Science',
+    url: 'https://engineering.yale.edu/academic-study/departments/materials-science/faculty',
+    paginated: false,
+    extractor: csJsRenderedStub,
+    dataUrl:
+      'https://engineering.yale.edu/academic-study/departments/materials-science/faculty/load_faculty/4869',
     dataRequest: {
       template: 'department',
       maxpages: '0',

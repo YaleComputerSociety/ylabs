@@ -50,7 +50,7 @@ describe('facultyDirectoryRegistry', () => {
     expect(byUrl.get('https://english.yale.edu/people/ladder-faculty')?.status).toBe('gap');
     expect(
       byUrl.get('https://engineering.yale.edu/research-and-faculty/faculty-directory')?.status,
-    ).toBe('partial');
+    ).toBe('covered');
   });
 
   it('ranks gaps by student impact tier then faculty count', () => {

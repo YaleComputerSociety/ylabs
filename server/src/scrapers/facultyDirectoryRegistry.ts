@@ -69,12 +69,12 @@ export const FACULTY_DIRECTORY_REGISTRY: FacultyDirectoryEntry[] = [
     school: 'Yale School of Engineering & Applied Science',
     department: 'All departments (school-wide)',
     rendering: 'js-rendered',
-    status: 'partial',
+    status: 'covered',
     studentImpactTier: 1,
     coveredBy: ['dept-faculty-roster'],
     approxFacultyCount: 124,
     notes:
-      'Only Computer Science is configured (via its client-side load_faculty JSON endpoint). Applied Physics, Biomedical Engineering, Chemical & Environmental Engineering, Electrical & Computer Engineering, Mechanical Engineering, and Materials Science are not covered. JS-rendered SPA; per-department pages have no static roster.',
+      'All SEAS departments configured (#640): Computer Science, Applied Physics, Biomedical Engineering, Electrical & Computer Engineering, and Mechanical Engineering/Materials Science via their shared client-side load_faculty JSON endpoint; Chemical & Environmental Engineering via a dedicated static-HTML card extractor since that department page renders server-side instead of hydrating the load_faculty widget.',
   },
 
   // ---- Tier 2: high-density STEM / life-science departments -----------------------
