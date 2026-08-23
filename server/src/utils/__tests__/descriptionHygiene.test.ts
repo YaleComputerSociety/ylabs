@@ -21,6 +21,7 @@ import {
   isResearchAreaTemplateLeakText,
   isRosterShapedText,
   isStaffContactBlockText,
+  MID_SENTENCE_TRUNCATION_MIN_LENGTH,
   partitionSentencesLossless,
   repairMidSentenceTruncation,
   sanitizeCatalogDescription,
@@ -497,6 +498,31 @@ describe('descriptionHygiene read-time mid-sentence truncation repair (#671)', (
     const cleaned = sanitizeCatalogDescription(cut);
     expect(cleaned.endsWith('acceptance.')).toBe(true);
     expect(cleaned).not.toMatch(/STARS II H$/);
+  });
+
+  it('trims a sub-1500 stored cut with a dominant leading sentence (#1240)', () => {
+    const cut =
+      'The laboratory studies how signaling networks coordinate tissue regeneration after injury across model organisms, combining live imaging with computational modeling. Current projects extend this to coastal megacities and the lack of diver';
+    expect(cut.length).toBeLessThan(MID_SENTENCE_TRUNCATION_MIN_LENGTH);
+    const repaired = repairMidSentenceTruncation(cut);
+    expect(repaired.endsWith('computational modeling.')).toBe(true);
+    expect(repaired).not.toMatch(/lack of diver$/);
+  });
+
+  it('repairs a sub-1500 cut end-to-end through the research-entity sanitizer (#1240)', () => {
+    const cut =
+      'The Sloane Lab investigates how cells sense and repair DNA damage during development, using genetics and live imaging to map the underlying gene-regulatory circuits that drive healthy tissue formation. Recent work extends this across multiple time';
+    const cleaned = sanitizeResearchEntityDescription(cut);
+    expect(cleaned.length).toBeLessThan(cut.length);
+    expect(cleaned.endsWith('.')).toBe(true);
+    expect(cleaned).not.toMatch(/multiple time$/);
+  });
+
+  it('leaves a sub-1500 CV/role-list remnant with no complete sentence untouched (#1240)', () => {
+    const remnant =
+      'Director of the Cancer Epidemiology Research Center, Department of Veterans Affairs, Section of Medical Oncology, Yale School of Medicine';
+    expect(remnant.length).toBeLessThan(MID_SENTENCE_TRUNCATION_MIN_LENGTH);
+    expect(repairMidSentenceTruncation(remnant)).toBe(remnant);
   });
 });
 
