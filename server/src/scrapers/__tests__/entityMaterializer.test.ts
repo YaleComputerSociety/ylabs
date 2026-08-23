@@ -11,6 +11,7 @@ import {
   deriveResearchEntityWebsiteUrl,
   buildOfficialRosterArchiveFilter,
   emptyPostMaterializationMetrics,
+  materializedFieldValue,
   normalizeMaterializerObjectId,
   officialLeadProfileSourceUrl,
   officialProfileObservationMatchesUser,
@@ -24,6 +25,35 @@ import {
   userLookupValueForInferredPiUserKey,
 } from '../entityMaterializer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+
+describe('materializedFieldValue research-entity name hygiene', () => {
+  it('strips a description sentence glued onto a materialized name (#797)', () => {
+    expect(
+      materializedFieldValue(
+        'researchEntity',
+        'name',
+        'Example Lab We study how immune cells and metabolic networks restore tissue health.',
+      ),
+    ).toBe('Example Lab');
+  });
+
+  it('strips glued description prose from displayName too', () => {
+    expect(
+      materializedFieldValue(
+        'researchEntity',
+        'displayName',
+        'Example Center The center focuses on the intersection of energy and economics.',
+      ),
+    ).toBe('Example Center');
+  });
+
+  it('normalizes dashes and preserves clean names', () => {
+    expect(materializedFieldValue('researchEntity', 'name', 'Jane Doe — Research')).toBe(
+      'Jane Doe - Research',
+    );
+    expect(materializedFieldValue('researchEntity', 'name', 'Example Lab')).toBe('Example Lab');
+  });
+});
 
 describe('entityMaterializer post-materialization metrics', () => {
   it('merges cross-source grant evidence by stable grant id', () => {
