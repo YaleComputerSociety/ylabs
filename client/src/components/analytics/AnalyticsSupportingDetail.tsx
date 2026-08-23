@@ -131,6 +131,10 @@ const AnalyticsSupportingDetail = ({
   const avgResults = searchQuality?.avgResults ?? searchQuality?.avgResultsPerSearch;
   const zeroResultQueries = searchQuality?.zeroResultQueries || [];
   const lowResultQueries = searchQuality?.lowResultQueries || [];
+  const flaggedQueries = [
+    ...zeroResultQueries.map((query) => ({ query, isZeroResult: true })),
+    ...lowResultQueries.map((query) => ({ query, isZeroResult: false })),
+  ].slice(0, 5);
   const searchQueryRows = searchQueries?.queries || [];
   const actionCards = actions?.cards || [];
   const actionItems = actions?.items || [];
@@ -322,7 +326,7 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title={`Login Events (${selectedRangeLabel})`}
             value={data.visitors.loginFrequency.totalLogins}
-            subtitle="Login count in range"
+            subtitle="Total sign-ins in range; one visitor can sign in many times"
           />
           {showSevenDayBreakdown && (
             <StatCard
@@ -442,7 +446,7 @@ const AnalyticsSupportingDetail = ({
           <StatCard
             title="Avg Events Per User"
             value={data.engagement.userActivity.avgEventsPerUser.toFixed(1)}
-            subtitle={`Per active user in ${selectedRangeLabel}`}
+            subtitle={`Events (logins, searches, views, outreach clicks) per active user in ${selectedRangeLabel}`}
           />
         </div>
       </section>
@@ -608,7 +612,7 @@ const AnalyticsSupportingDetail = ({
                 </p>
               </div>
               <div>
-                <p className="text-gray-500">Zero-Result</p>
+                <p className="text-gray-500">Zero-Result rate</p>
                 <p className="text-xl font-semibold text-gray-900">
                   {formatPercent(searchQuality?.zeroResultRate)}
                 </p>
@@ -637,20 +641,36 @@ const AnalyticsSupportingDetail = ({
                 Zero or Low Result Queries
               </h4>
               <div className="space-y-2">
-                {[...zeroResultQueries, ...lowResultQueries].slice(0, 5).map((query, index) => (
-                  <div
-                    key={`${query.query}-${index}`}
-                    className="flex items-center justify-between gap-3 border-b border-[var(--yr-line)] pb-2 last:border-0 last:pb-0"
-                  >
-                    <span className="min-w-0 truncate text-gray-700">
-                      {query.query || '(empty search)'}
-                    </span>
-                    <span className="shrink-0 text-xs font-medium text-blue-600">
-                      {query.zeroResults ?? query.count} hits
-                    </span>
-                  </div>
-                ))}
-                {zeroResultQueries.length === 0 && lowResultQueries.length === 0 && (
+                {flaggedQueries.map(({ query, isZeroResult }, index) => {
+                  const searchCount =
+                    query.zeroResults ??
+                    query.zeroResultSearches ??
+                    query.count ??
+                    query.totalSearches ??
+                    0;
+                  const avgResults =
+                    query.avgResults ?? query.avgResultsPerSearch ?? query.avgResultCount;
+                  const resultLabel = isZeroResult
+                    ? '0 results'
+                    : avgResults != null
+                      ? `~${formatNumber(avgResults, 1)} results`
+                      : 'few results';
+                  return (
+                    <div
+                      key={`${query.query}-${index}`}
+                      className="flex items-center justify-between gap-3 border-b border-[var(--yr-line)] pb-2 last:border-0 last:pb-0"
+                    >
+                      <span className="min-w-0 truncate text-gray-700">
+                        {query.query || '(empty search)'}
+                      </span>
+                      <span className="shrink-0 text-right text-xs font-medium text-blue-600">
+                        {formatNumber(searchCount)} {searchCount === 1 ? 'search' : 'searches'} ·{' '}
+                        {resultLabel}
+                      </span>
+                    </div>
+                  );
+                })}
+                {flaggedQueries.length === 0 && (
                   <p className="text-gray-500">No search quality flags returned.</p>
                 )}
               </div>
