@@ -252,7 +252,9 @@ export function toPublicResearchEntityDto(
     entityKind: kind,
     entityType,
     departments: publicDepartmentArray(group.departments),
-    researchAreas: publicTextStringArray(sanitizeResearchAreasForDisplay(group.researchAreas)),
+    researchAreas: publicTextStringArray(
+      sanitizeResearchAreasForDisplay(stringArray(group.researchAreas)),
+    ),
     sourceUrls: publicHttpUrlArray(group.sourceUrls),
   };
 
