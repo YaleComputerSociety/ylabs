@@ -117,7 +117,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Status:** Superseded.
 - **Superseding boundary:** entity relevance and evidence-backed planning context may influence discovery only through their own governed contracts.
   Publication counts, scholarly-activity rollups, and paper-derived topics must not feed ranking, search content, visibility, or research-home descriptions.
-- **Validation evidence:** [`research-model-refactor.md`](./research-model-refactor.md#publication-and-professor-profile-decision) records the outbound-link-only boundary.
+- **Validation evidence:** [`decisions.md`](./decisions.md#2026-07-26-retire-the-bibliographic-paper-pipeline) records the outbound-link-only boundary.
   PRs `#220` and `#223` deregistered the bibliographic scrapers and removed them from deployment schedules and standard release gates.
 - **PRs:** [#220](https://github.com/YaleComputerSociety/ylabs/pull/220), [#223](https://github.com/YaleComputerSociety/ylabs/pull/223).
 
@@ -320,7 +320,7 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 - **Acceptance criteria:** OpenAlex, arXiv, ORCID works, Europe PMC, PubMed, and Crossref cannot run through ordinary CLI, sweep, cron, or release-gate paths; reviewed official and researcher-profile links remain bounded outbound sources; paper readers, materializers, audits, and promotion paths are removed as a hard cutover with no rollback opt-in, and stored collections remain only until a human-gated collection drop.
 - **Validation evidence:** PR `#158` provides historical attribution and contamination guards.
   PRs `#220` and `#223` completed the reversible repository foundation by deregistering bibliographic sources, removing deployment residue, and quarantining rollback-only authorship tooling.
-  [`research-model-refactor.md`](./research-model-refactor.md#migration-execution-status) records Phase 3 as partial and operational acceptance as pending.
+  [`research-model-refactor.md`](./research-model-refactor.md#landed-by-issue) records the paper retirement among the landed migration decisions.
 - **PRs:** [#158](https://github.com/YaleComputerSociety/ylabs/pull/158), [#220](https://github.com/YaleComputerSociety/ylabs/pull/220), [#223](https://github.com/YaleComputerSociety/ylabs/pull/223).
 
 #### SM-05 - Deliberate Admin Authority

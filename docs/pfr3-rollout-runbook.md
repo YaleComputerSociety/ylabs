@@ -2,7 +2,7 @@
 
 The pathway search rollout this runbook once staged was removed in issue #363.
 Access evidence is now materialized as typed `Signal` rows, browse/discovery runs on the `researchentities` Meilisearch index, and contact is a derived official-profile link-out rather than a stored `ContactRoute`.
-See [`docs/research-model-refactor.md`](./research-model-refactor.md) for the authoritative model.
+See [`docs/research-model.md`](./research-model.md) for the current model.
 For Meilisearch rebuilds and the Beta-to-Production promotion, use [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md).
 
 The remaining PFR-3 responsibility is consented outreach monitoring.

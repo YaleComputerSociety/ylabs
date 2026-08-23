@@ -14,7 +14,7 @@ Source metadata
   -> append-only Observation rows
   -> claim validation for access interpretations
   -> entity/materializer resolution
-  -> ResearchEntity / User / Grant / Fellowship records
+  -> ResearchEntity / RoleAssignment (roster) / User / Grant / Fellowship records
   -> Signal (access types) when evidence supports it
   -> Signal (logistics types) when exact official evidence supports an independent logistics claim
   -> student visibility gate promotes public-safe records or opens release queue items
@@ -22,6 +22,9 @@ Source metadata
   -> Meilisearch rebuild or sync
   -> Research, Programs, and admin/operator surfaces
 ```
+
+The materializer resolves a legacy `User` to a canonical `Researcher` (via `resolveResearcherIdForLegacyUser`) before writing roster rows, so `RoleAssignment.personId` is always a `Researcher` id even though most other identity fields still live on `User`.
+See [`docs/research-model.md`](./research-model.md) for the current collection shapes.
 
 Scrapers collect evidence. They should not create unsupported student-facing conclusions such as "accepting undergrads." Materializers derive product records from observed evidence, source confidence, stable keys, and manual locks. The student visibility gate is the public-release boundary: it promotes records that satisfy the visibility rules and holds the rest in the release queue with root repair reasons. In Beta, `operator_review` is an automatic repair state: queued records should be repaired from trusted source evidence where deterministic, then re-gated until they become `student_ready`, `limited_but_safe`, `suppressed`, or an explicit exception.
 
@@ -145,8 +148,13 @@ The public grant display is a recency-sorted, deduplicated union capped at ten r
 Runtime research discovery is centered on:
 
 - `research_entities`
+- `role_assignments` (roster, joined to `researchers`)
+- `researchers`
+- `accounts` (login principal)
 - `signals`
-- `users`
+- `research_entity_relationships`
+- `research_plans`
+- `users` (legacy identity/profile store; still the primary write target for most identity fields pending retirement, see `docs/research-model.md#legacy-user-residue`)
 - `fellowships`
 - `sources`
 - `scrape_runs`

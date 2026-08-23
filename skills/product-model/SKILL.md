@@ -43,8 +43,11 @@ Entity pages should answer:
 | Concept                      | Collection                      | Purpose                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ResearchEntity`             | `research_entities`             | What exists: lab, center, institute, faculty project, RA program, fellowship program, etc.                                                                                                                                                                                                                                             |
+| `Researcher`                 | `researchers`                   | Public research identity (a PI, grad student, or researcher), findable on its own even with no lab. Roster membership joins here, not an embedded person record.                                                                                                                                                                     |
+| `RoleAssignment`             | `role_assignments`              | The canonical roster edge: a `Researcher` in a role (`PI`, `CO_PI`, `DIRECTOR`, and similar) on a `ResearchEntity`. Replaces the retired `ResearchGroupMember`; never embedded on `ResearchEntity`.                                                                                                                                   |
 | `Signal`                     | `signals`                       | Source-attributed, typed fact about a research entity. Consolidates the former `AccessSignal` (each access type is its own `Signal.type`, keeping the confidence gradient that drives the browse trust-filter) and `UndergraduateLogisticsClaim` (student level, compensation or credit, weekly time, modality, current availability). |
 | `ResearchEntityRelationship` | `research_entity_relationships` | A source-backed affiliation, hosting, membership, or umbrella relationship between research entities.                                                                                                                                                                                                                                  |
+| `ResearchPlan`               | `research_plans`                | Private, account-owned saved planning, keyed on `accountId` plus a `ResearchEntity` or program target. The only student write surface.                                                                                                                                                                                                |
 
 ## Modeling rules
 
@@ -55,7 +58,7 @@ Entity pages should answer:
 - Scrapers emit append-only `Observation` rows.
   Materializers derive first-class access records.
 - Avoid binary fields like `acceptingUndergrads`.
-  Use `AccessSignal` with evidence strength instead.
+  Use a `Signal` row (the former `AccessSignal` model is folded into `Signal`) with evidence strength instead.
 - Keep undergraduate logistics claims independent and neutral when unknown.
   Do not infer one logistics claim from another or from generic undergraduate-access evidence.
 - Contact is fail-closed and purely derived, never a stored `ContactRoute` or surfaced scraped email.
@@ -74,4 +77,4 @@ Entity pages should answer:
 - Migrate legacy models vertically and remove each old reader and writer before deleting its storage.
 - Prefer first-class collections over embedding signals or access evidence inside `ResearchEntity`.
 
-See `docs/research-model.md` for the current runtime model and `docs/research-model-refactor.md` for the accepted target and phased migration.
+See `docs/research-model.md` for the current runtime model and `docs/research-model-refactor.md` for the historical rationale behind it.

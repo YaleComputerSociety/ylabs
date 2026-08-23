@@ -4,11 +4,17 @@ This file records durable product and architecture decisions only.
 Do not append continuation logs, security hardening transcripts, or task progress here.
 Put tactical work in `docs/tasks/priority-roadmap.md` and keep transient artifacts outside `docs/`.
 
+## 2026-08-22: Consolidate Research Model Documentation Into research-model.md
+
+The landed decisions from `research-model-refactor.md` (access-boolean retirement, research-area canonicalization option A, `OrgUnit`/`TaxonomyTerm` scope, `FacultyMember`/`Paper`/`PaperAuthor` retirement, canonical `ResearchPlan`, and the continuous canonical materializer write path) are now current-state facts in [`research-model.md`](./research-model.md), which is the single source of truth for collection shapes going forward.
+`research-model-refactor.md` is reduced to a historical decision record explaining why the model was shaped the way it was; it no longer restates current schema state.
+Earlier entries in this file that call `research-model-refactor.md` "authoritative" describe what was true when they were written; read `research-model.md` for the current model.
+
 ## 2026-08-19: Remove EntryPathway, ContactRoute, And PostedOpportunity
 
 The `EntryPathway`, `ContactRoute`, and `PostedOpportunity` models and the separate pathway search index were removed in issue #363, superseding the earlier 2026-05-11 and 2026-05-07 decisions.
 Access evidence is now materialized only as typed `Signal` rows, browse/discovery runs on the `researchentities` Meilisearch index with `Signal` driving the trust filter, and contact is a derived official-profile link-out rather than a stored contact route.
-See [`research-model-refactor.md`](./research-model-refactor.md) for the authoritative model.
+See [`research-model.md`](./research-model.md) for the current model.
 
 ## 2026-08-02: Make Research Coverage Source-Driven
 
@@ -51,8 +57,8 @@ The long-term automation target is an approved team-managed runner on the Yale n
 
 The accepted target separates accounts, public people, role assignments, research entities, evidence claims, and private research plans while retaining bounded REST projections.
 Yale Research will own evidence-backed research navigation, not a mirrored professor-profile or publication product.
-Migration will proceed through measured vertical cutovers, beginning with the read-only inventory in [`research-model-refactor.md`](./research-model-refactor.md).
-The current runtime remains authoritative until each phase completes its documented verification gates.
+Migration proceeded through measured vertical cutovers, beginning with the read-only inventory in [`research-model-refactor.md`](./research-model-refactor.md).
+See [`research-model.md`](./research-model.md) for the current, landed model.
 
 ## 2026-07-12: Bound Embedded Research Entity Summaries
 

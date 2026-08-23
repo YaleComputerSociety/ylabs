@@ -16,8 +16,8 @@ For normal coding work:
 For product, schema, or architecture decisions, also check the durable docs:
 
 - [`docs/product-context.md`](product-context.md) for stable product context.
-- [`docs/research-model.md`](research-model.md) for schema and modeling decisions.
-- [`docs/research-model-refactor.md`](research-model-refactor.md) for the accepted target model and phased migration.
+- [`docs/research-model.md`](research-model.md) for the current schema, collection shapes, and modeling rules.
+- [`docs/research-model-refactor.md`](research-model-refactor.md) for the historical rationale behind the model, not current state.
 - [`docs/decisions.md`](decisions.md) for dated product and architecture decisions.
 - [`docs/ui-ux-direction.md`](ui-ux-direction.md) for UI direction.
 
