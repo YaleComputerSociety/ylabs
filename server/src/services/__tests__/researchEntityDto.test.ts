@@ -3,9 +3,33 @@ import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
+  toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
 
 describe('researchEntityDto', () => {
+  it('strips YSM profile chrome from the served shortDescription without dropping the prose', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-chrome',
+      slug: 'ysm-chrome-lab',
+      name: 'Chrome Lab',
+      kind: 'lab',
+      shortDescription: 'INFORMATION FOR Copy Link Our lab studies airway disease.',
+    });
+    expect(dto.shortDescription).toBe('Our lab studies airway disease.');
+  });
+
+  it('drops a card blurb built from a chrome-only shortDescription and falls back to fullDescription', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-chrome-only' },
+      slug: 'ysm-chrome-only',
+      name: 'Chrome Only Lab',
+      kind: 'lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+      fullDescription: 'This laboratory investigates vascular biology in human disease.',
+    });
+    expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
+  });
+
   it('builds canonical ResearchEntity DTOs from materialized records', () => {
     const dto = toPublicResearchEntityDto({
       _id: { toString: () => 'entity-1' },

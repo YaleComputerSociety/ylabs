@@ -153,9 +153,9 @@ function publicDepartmentArray(value: unknown): string[] {
 export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
-  const blurbSource = group.shortDescription
-    ? publicShortDescriptionString(group.shortDescription)
-    : publicDescriptionString(group.fullDescription || '');
+  const blurbSource =
+    publicShortDescriptionString(group.shortDescription || '') ||
+    publicDescriptionString(group.fullDescription || '');
   const blurb = blurbSource.slice(0, 280);
 
   return {
