@@ -138,6 +138,18 @@ export function resolveOrgUnitCanonical(
   return hit;
 }
 
+function resolvesToSchool(
+  index: Map<string, OrgUnitCanonical>,
+  raw: string,
+  denoised: string,
+): boolean {
+  if (resolveOrgUnitCanonical(index, raw, SCHOOL_KINDS)) return true;
+  if (denoised && denoised !== raw && resolveOrgUnitCanonical(index, denoised, SCHOOL_KINDS)) {
+    return true;
+  }
+  return false;
+}
+
 function toRawList(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.filter((value): value is string => typeof value === 'string');
   if (typeof raw === 'string') return [raw];
@@ -184,6 +196,10 @@ export function createOrgUnitCanonicalizer(
           if (denoised && denoised !== trimmed) {
             hit = resolveOrgUnitCanonical(index, denoised, DEPARTMENT_KINDS);
             fallback = denoised;
+          }
+          if (!hit && resolvesToSchool(index, trimmed, denoised)) {
+            dropped.push(trimmed);
+            continue;
           }
         }
         if (!hit && resolveOrgUnitCanonical(index, fallback, SCHOOL_KINDS)) {
