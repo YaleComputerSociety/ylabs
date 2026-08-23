@@ -80,6 +80,103 @@ export function stripDeadAnchorCtaSentences(text: string): string {
   return normalizeHygieneWhitespace(kept.join(''));
 }
 
+const PROTECTED_ABBREVIATION_TAIL =
+  /(?:^|\s)(?:Prof|Drs?|Mr|Mrs|Ms|Mx|Sr|Jr|St|Ave|Rd|Blvd|Inc|Ltd|Co|Corp|Dept|Univ|Assoc|Vol|No|pp|Fig|vs|etc|al)\.\s*$/i;
+
+/**
+ * Re-join sentence segments that the terminal-punctuation tiling split inside a
+ * common abbreviation (a title like "Prof."/"Dr.", or "Inc."/"etc."). Operating
+ * on the lossless partition means the merge cannot drop or reorder any
+ * character; it only removes an internal split point, so segment-level filtering
+ * and deduplication downstream reason over whole sentences rather than
+ * abbreviation fragments.
+ */
+function mergeAbbreviationSplitSentences(segments: string[]): string[] {
+  const merged: string[] = [];
+  for (const segment of segments) {
+    const previousIndex = merged.length - 1;
+    if (previousIndex >= 0 && PROTECTED_ABBREVIATION_TAIL.test(merged[previousIndex])) {
+      merged[previousIndex] += segment;
+    } else {
+      merged.push(segment);
+    }
+  }
+  return merged;
+}
+
+export function partitionSentencesForFiltering(value: string): string[] {
+  return mergeAbbreviationSplitSentences(partitionSentencesLossless(value));
+}
+
+const pageLayoutReferencePattern =
+  /\b(?:listed|shown|displayed|appears?|appearing|located|found|noted|indicated|see|refer(?:red|ring)?)\b[^.!?]{0,60}?\b(?:above|below|(?:on|to)\s+the\s+(?:right|left)(?:-hand)?(?:\s+(?:side|column|panel|menu))?|in\s+the\s+(?:right|left)(?:-hand)?\s+(?:column|side|panel|menu)|in\s+the\s+sidebar|(?:right|left)-hand\s+(?:column|side|panel|menu))\b/i;
+
+/**
+ * Drop a sentence that references the *source page's* visual layout - a
+ * reference verb ("listed"/"shown"/"see"/"refer") paired with a geographic
+ * position on that page ("on the right", "in the sidebar", "above"/"below", a
+ * "right-hand column"). Such a caveat was meaningful beside the original page's
+ * dates/deadline column but is orphaned and confusing once the prose is rehosted
+ * in our card/modal, where nothing is "on the right" for a student to distrust
+ * (#994). Both a reference verb and a page-position phrase are required so
+ * ordinary research prose is never removed; gated to a no-op when neither is
+ * present. Uses the lossless, abbreviation-aware sentence tiling so only the
+ * offending sentence is dropped.
+ */
+export function stripPageLayoutReferentialSentences(text: string): string {
+  const value = String(text || '');
+  if (!pageLayoutReferencePattern.test(value)) return normalizeHygieneWhitespace(value);
+  const kept = partitionSentencesForFiltering(value).filter(
+    (sentence) => !pageLayoutReferencePattern.test(sentence),
+  );
+  return normalizeHygieneWhitespace(kept.join(''));
+}
+
+const leadingPolitenessPattern = /^(?:please\s+|kindly\s+|note[,:]?\s+(?:that\s+)?)/i;
+
+function normalizeSentenceForDedup(segment: string): string {
+  return normalizeHygieneWhitespace(segment)
+    .toLowerCase()
+    .replace(leadingPolitenessPattern, '')
+    .replace(/[.!?"'’)\]]+$/, '')
+    .trim();
+}
+
+/**
+ * Collapse a substantial sentence that verbatim-repeats an earlier one, modulo a
+ * leading politeness word ("Please"/"Kindly"/"Note that") and case: a scrape
+ * defect where a contact/instruction line is emitted twice in the same block
+ * ("Please contact Prof. X for further information. ... Contact Prof. X for
+ * further information.", #994). The first occurrence is kept and every later
+ * duplicate dropped. Broader than collapseDuplicatedProseBlock, which only folds
+ * an exact adjacent block; this reaches non-adjacent repeats. Only sentences of
+ * at least four alphabetic words are deduplicated so an ordinary short repeated
+ * phrase is left untouched, and abbreviation-aware tiling keeps whole sentences
+ * intact so a real sentence is never partially deleted.
+ */
+export function collapseRepeatedSentences(text: string): string {
+  const value = normalizeHygieneWhitespace(text);
+  if (!value) return value;
+  const segments = partitionSentencesForFiltering(value);
+  if (segments.length < 2) return value;
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  let dropped = false;
+  for (const segment of segments) {
+    const key = normalizeSentenceForDedup(segment);
+    const isSubstantial = (segment.match(/[A-Za-z]{2,}/g) || []).length >= 4;
+    if (isSubstantial && key) {
+      if (seen.has(key)) {
+        dropped = true;
+        continue;
+      }
+      seen.add(key);
+    }
+    kept.push(segment);
+  }
+  return dropped ? normalizeHygieneWhitespace(kept.join('')) : value;
+}
+
 export function stripInlineUrls(text: string): string {
   return text
     .replace(/https?:\/\/\S+/gi, ' ')
@@ -673,7 +770,13 @@ export function stripProvenanceHedge(text: string): string {
  */
 export function sanitizeCatalogDescription(text: string): string {
   const stripped = stripProvenanceHedge(
-    collapseDuplicatedProseBlock(stripDeadAnchorCtaSentences(stripCatalogChrome(text))),
+    collapseRepeatedSentences(
+      collapseDuplicatedProseBlock(
+        stripPageLayoutReferentialSentences(
+          stripDeadAnchorCtaSentences(stripCatalogChrome(text)),
+        ),
+      ),
+    ),
   );
   if (!stripped) return '';
   if (
