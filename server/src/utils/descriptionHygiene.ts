@@ -125,20 +125,22 @@ function countMatches(text: string, pattern: RegExp): number {
 
 /**
  * A recipient roster or person list: a run of "Name '28 Mentor: ..." rows, or a
- * dense list of names with almost no sentences. Class-year and mentor markers
- * are the strongest signal; the name-density arm is gated on the absence of
- * real sentences so multi-sentence prose that merely names people is kept.
+ * dense list of names with almost no sentences. Mentor markers are the strongest
+ * standalone signal; the class-year and name-density arms are both gated on the
+ * absence of real sentences so multi-sentence donor/eligibility prose that merely
+ * mentions class years or names people is kept.
  */
 export function isRosterShapedText(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
+  const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
+  const isSentenceSparse = sentenceEnders <= 3;
   const classYearMarkers = countMatches(normalized, /[‘’'`]\s?\d{2}\b/g);
-  if (classYearMarkers >= 3) return true;
+  if (isSentenceSparse && classYearMarkers >= 3) return true;
   const mentorMarkers = countMatches(normalized, /\bmentors?\s*:/gi);
   if (mentorMarkers >= 3) return true;
   const uniqueNames = new Set(normalized.match(/\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/g) || []).size;
-  const sentenceEnders = countMatches(normalized, /[.!?](?:\s|$)/g);
-  return uniqueNames >= 8 && sentenceEnders <= 3;
+  return uniqueNames >= 8 && isSentenceSparse;
 }
 
 /**
