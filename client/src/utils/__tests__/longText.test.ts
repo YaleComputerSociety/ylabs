@@ -85,6 +85,72 @@ describe('longTextParagraphs', () => {
     ]);
   });
 
+  it('does not split paragraphs inside bare www-prefixed URLs', () => {
+    const text = [
+      'The lab develops pediatric imaging methods.',
+      'More detail is available at www.cpirt.yale.edu.',
+      'His laboratory is interested in machine learning for medical images.',
+      'Students use imaging and computational approaches.',
+      'Projects connect engineering and clinical practice.',
+    ].join(' ');
+
+    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+      [
+        'The lab develops pediatric imaging methods.',
+        'More detail is available at www.cpirt.yale.edu.',
+        'His laboratory is interested in machine learning for medical images.',
+      ].join(' '),
+      [
+        'Students use imaging and computational approaches.',
+        'Projects connect engineering and clinical practice.',
+      ].join(' '),
+    ]);
+  });
+
+  it('does not split paragraphs inside bare-domain URLs without a scheme', () => {
+    const text = [
+      'The lab curates a public data atlas.',
+      'The resource is hosted at IPFCellAtlas.com for open access.',
+      'A related tool is described at cpirt.yale.edu in more detail.',
+      'Students use imaging and computation daily.',
+      'Projects connect basic science to clinical questions.',
+    ].join(' ');
+
+    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+      [
+        'The lab curates a public data atlas.',
+        'The resource is hosted at IPFCellAtlas.com for open access.',
+        'A related tool is described at cpirt.yale.edu in more detail.',
+      ].join(' '),
+      [
+        'Students use imaging and computation daily.',
+        'Projects connect basic science to clinical questions.',
+      ].join(' '),
+    ]);
+  });
+
+  it('keeps a parenthesized bare domain intact within a sentence', () => {
+    const text = [
+      'The lab studies plant ecology across tropical forests.',
+      'It has developed an online resource for teaching and learning R (www.intro2r.info).',
+      'Students combine fieldwork with statistical modeling.',
+      'Current projects span several long-term forest plots.',
+      'The group also mentors undergraduates each summer.',
+    ].join(' ');
+
+    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+      [
+        'The lab studies plant ecology across tropical forests.',
+        'It has developed an online resource for teaching and learning R (www.intro2r.info).',
+        'Students combine fieldwork with statistical modeling.',
+      ].join(' '),
+      [
+        'Current projects span several long-term forest plots.',
+        'The group also mentors undergraduates each summer.',
+      ].join(' '),
+    ]);
+  });
+
   it('does not split paragraphs inside compact place or role abbreviations', () => {
     const text = [
       'Nicole represented the school in Washington, D.C., at an annual leadership conference.',
