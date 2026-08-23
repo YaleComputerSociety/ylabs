@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildResearchDetailSources,
   isIdentifierOrGrantDbSourceUrl,
+  isLikelyOfficialPersonProfileUrl,
   isLikelyUnavailableSourceLink,
   isOrgEngagementSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
@@ -651,6 +652,78 @@ describe('resolveOutreachOfficialSource', () => {
     );
 
     expect(source?.url).toBe('https://lab.example.yale.edu/people/pi');
+  });
+
+  it('surfaces an official person profile source when no lead PI is attached (#646)', () => {
+    const source = resolveOutreachOfficialSource(
+      [
+        makeSource('https://medicine.yale.edu/lab/tumor-neuroimmunology-lab/'),
+        makeSource('https://medicine.yale.edu/profile/benjamin-lu'),
+      ],
+      [],
+      false,
+      'LAB',
+    );
+
+    expect(source?.url).toBe('https://medicine.yale.edu/profile/benjamin-lu');
+  });
+
+  it('does not surface an official person profile source while the lead identity is under review', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/benjamin-lu')],
+      [],
+      true,
+    );
+
+    expect(source).toBeUndefined();
+  });
+
+  it('excludes an already-claimed person profile so it is not surfaced twice', () => {
+    const source = resolveOutreachOfficialSource(
+      [makeSource('https://medicine.yale.edu/profile/benjamin-lu')],
+      ['https://medicine.yale.edu/profile/benjamin-lu/'],
+      false,
+    );
+
+    expect(source).toBeUndefined();
+  });
+});
+
+describe('isLikelyOfficialPersonProfileUrl (#646)', () => {
+  it('accepts an official Yale person profile', () => {
+    expect(isLikelyOfficialPersonProfileUrl('https://medicine.yale.edu/profile/benjamin-lu/')).toBe(
+      true,
+    );
+    expect(
+      isLikelyOfficialPersonProfileUrl('https://psychology.yale.edu/people/nick-turk-browne'),
+    ).toBe(true);
+  });
+
+  it('rejects roster, index, and listing pages', () => {
+    expect(isLikelyOfficialPersonProfileUrl('https://medicine.yale.edu/people/faculty')).toBe(false);
+    expect(
+      isLikelyOfficialPersonProfileUrl(
+        'https://medicine.yale.edu/research-and-faculty/faculty-directory/',
+      ),
+    ).toBe(false);
+    expect(isLikelyOfficialPersonProfileUrl('https://medicine.yale.edu/profile/')).toBe(false);
+  });
+
+  it('rejects identifier and grant-database hosts', () => {
+    expect(isLikelyOfficialPersonProfileUrl('https://orcid.org/0000-0000-0000-0000')).toBe(false);
+    expect(isLikelyOfficialPersonProfileUrl('https://scholar.google.com/citations?user=abc')).toBe(
+      false,
+    );
+    expect(
+      isLikelyOfficialPersonProfileUrl('https://reporter.nih.gov/project-details/10000000'),
+    ).toBe(false);
+    expect(
+      isLikelyOfficialPersonProfileUrl('https://www.nsf.gov/awardsearch/showAward?AWD_ID=1'),
+    ).toBe(false);
+  });
+
+  it('rejects a non-Yale profile host', () => {
+    expect(isLikelyOfficialPersonProfileUrl('https://example.com/profile/someone')).toBe(false);
   });
 });
 

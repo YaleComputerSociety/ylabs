@@ -1900,6 +1900,47 @@ describe('LabDetail display name unification', () => {
     expect(websiteLink.getAttribute('href')).toBe('https://lab-home.example.test/materials');
   });
 
+  it('surfaces an official person-profile way-in from sourceUrls with no attached lead (#646)', async () => {
+    const PERSON_PROFILE_SOURCE_URL = 'https://medicine.yale.edu/profile/example-lead/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'LAB',
+        websiteUrl: '',
+        sourceUrls: [PERSON_PROFILE_SOURCE_URL],
+      },
+      members: [],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const wayInLink = screen
+      .getAllByRole('link')
+      .find((link) => link.getAttribute('href') === 'https://medicine.yale.edu/profile/example-lead');
+    expect(wayInLink).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('falls through to the Yale Directory for an identifier-only source with no lead or website (#651)', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        entityType: 'LAB',
+        websiteUrl: '',
+        sourceUrls: ['https://orcid.org/0000-0000-0000-0000'],
+      },
+      members: [],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: 'Search the Yale Directory' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+  });
+
   it('renders the polished NotFound page when the research profile 404s', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
       if (url === '/users/savedResearchEntityIds') {

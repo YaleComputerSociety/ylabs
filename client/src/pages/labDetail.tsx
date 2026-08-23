@@ -38,6 +38,7 @@ import {
   isSuppressedResearchWebsiteCtaUrl,
   normalizeActionDestination,
   normalizeSourceUrl,
+  resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
@@ -290,23 +291,6 @@ const resolveDecisionProfileUrl = (
     return normalizeSourceUrl(url) || undefined;
   }
   return undefined;
-};
-
-const resolveOutreachOfficialSource = (
-  sources: ResearchDetailSource[],
-  claimedActionUrls: Array<string | undefined>,
-  leadIdentityUnderReview: boolean,
-): ResearchDetailSource | undefined => {
-  const claimedDestinations = new Set(
-    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
-  );
-  return sources.find((source) => {
-    if (source.isLikelyUnavailable) return false;
-    if (!safeHttpUrl(source.url)) return false;
-    if (leadIdentityUnderReview && isProfileLikeWebsiteUrl(source.url)) return false;
-    const destination = normalizeActionDestination(source.url);
-    return Boolean(destination) && !claimedDestinations.has(destination);
-  });
 };
 
 const memberDisplayName = (member: LabMember): string =>
@@ -892,6 +876,7 @@ const LabDetail = () => {
     sources,
     [decisionProfileUrl, officialWebsiteUrl],
     leadIdentityUnderReview,
+    group.entityType,
   );
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
