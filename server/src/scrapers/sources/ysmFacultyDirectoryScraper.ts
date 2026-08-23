@@ -148,11 +148,7 @@ function nameFromDirectoryText(text: string): string {
 function htmlToText(value: unknown): string {
   const raw = textValue(value);
   if (!raw) return '';
-  return cheerio
-    .load(raw)
-    .text()
-    .replace(/\s+/g, ' ')
-    .trim();
+  return cheerio.load(raw).text().replace(/\s+/g, ' ').trim();
 }
 
 function clippedText(value: string, minChars = 40, maxChars = 2000): string | undefined {
@@ -272,10 +268,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
   const meshKeywords = Array.isArray(research.meshKeywords)
     ? (research.meshKeywords as Record<string, unknown>[])
     : [];
-  const researchAreas = uniqueStrings(meshKeywords.map((k) => k.name)).slice(
-    0,
-    MAX_RESEARCH_AREAS,
-  );
+  const researchAreas = uniqueStrings(meshKeywords.map((k) => k.name)).slice(0, MAX_RESEARCH_AREAS);
   const labWebsite = extractLabWebsite(research, about);
 
   return {

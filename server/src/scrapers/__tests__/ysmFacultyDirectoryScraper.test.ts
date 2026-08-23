@@ -12,7 +12,10 @@ import type { ObservationInput, ScraperContext } from '../types';
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 
 function directoryHtml(
-  categories: Array<{ id: string; items: Array<{ url: string; text: string; isExternal?: boolean }> }>,
+  categories: Array<{
+    id: string;
+    items: Array<{ url: string; text: string; isExternal?: boolean }>;
+  }>,
 ): string {
   const pageData = {
     mainComponents: [
@@ -51,10 +54,14 @@ function profileHtml(options: {
   if (options.includeResearchSection !== false) {
     sections.push({
       sectionType: 'research',
-      researchDescription: options.researchDescription ? `<p>${options.researchDescription}</p>` : '',
+      researchDescription: options.researchDescription
+        ? `<p>${options.researchDescription}</p>`
+        : '',
       meshKeywords: (options.meshKeywords ?? []).map((name, index) => ({ id: 1000 + index, name })),
       labWebsite: options.labWebsite ?? null,
-      orcids: options.orcid ? [{ url: `https://orcid.org/${options.orcid}`, text: options.orcid }] : [],
+      orcids: options.orcid
+        ? [{ url: `https://orcid.org/${options.orcid}`, text: options.orcid }]
+        : [],
     });
   }
   sections.push({
@@ -62,9 +69,7 @@ function profileHtml(options: {
     email: options.email ?? '',
   });
   const pageData = {
-    mainComponents: [
-      { key: 'ProfileDetails', model: { fullName: options.fullName, sections } },
-    ],
+    mainComponents: [{ key: 'ProfileDetails', model: { fullName: options.fullName, sections } }],
   };
   return `<html><body><script id='page-data' type='application/json'>${JSON.stringify(
     pageData,
