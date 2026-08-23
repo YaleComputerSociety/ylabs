@@ -239,6 +239,7 @@ const AnalyticsSupportingDetail = ({
               <BarChart
                 ariaLabel="Active research entities by type"
                 emptyMessage="No research entities returned."
+                showShareOfTotal
                 valueFormatter={(value) => formatNumber(value)}
                 data={researchCoverage.byType.map((row) => ({
                   label: formatEntityType(row.entityType),
@@ -257,6 +258,7 @@ const AnalyticsSupportingDetail = ({
               <BarChart
                 ariaLabel="Research entities by visibility tier"
                 emptyMessage="No tier data returned."
+                showShareOfTotal
                 valueFormatter={(value) => formatNumber(value)}
                 data={researchCoverage.byVisibilityTier.map((row) => ({
                   label: formatVisibilityTier(row.tier),
@@ -346,6 +348,7 @@ const AnalyticsSupportingDetail = ({
             <BarChart
               ariaLabel={`Visitors by type for ${selectedRangeLabel}`}
               emptyMessage="No visitors in range."
+              showShareOfTotal
               data={data.visitors.lifetime.byType.map((item) => ({
                 label: formatUserType(item.userType),
                 value: item.count,
@@ -485,6 +488,7 @@ const AnalyticsSupportingDetail = ({
             <BarChart
               ariaLabel="Outreach outcomes"
               emptyMessage="No reported outcomes yet."
+              showShareOfTotal
               data={outreach.byOutcome.map((item) => ({
                 label: formatOutcome(item.outcome),
                 value: item.count,

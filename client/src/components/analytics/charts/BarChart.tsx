@@ -1,3 +1,5 @@
+import { formatPercent } from '../analyticsPresentation';
+
 export interface BarChartDatum {
   label: string;
   value: number;
@@ -9,6 +11,7 @@ interface BarChartProps {
   ariaLabel: string;
   valueFormatter?: (value: number) => string;
   emptyMessage?: string;
+  showShareOfTotal?: boolean;
 }
 
 const CHART_STYLES = `
@@ -70,7 +73,13 @@ const CHART_STYLES = `
 
 const defaultFormatter = (value: number): string => value.toLocaleString();
 
-const BarChart = ({ data, ariaLabel, valueFormatter, emptyMessage }: BarChartProps) => {
+const BarChart = ({
+  data,
+  ariaLabel,
+  valueFormatter,
+  emptyMessage,
+  showShareOfTotal,
+}: BarChartProps) => {
   const format = valueFormatter ?? defaultFormatter;
 
   if (data.length === 0) {
@@ -78,6 +87,8 @@ const BarChart = ({ data, ariaLabel, valueFormatter, emptyMessage }: BarChartPro
   }
 
   const maxValue = data.reduce((max, datum) => Math.max(max, datum.value), 0);
+  const total = data.reduce((sum, datum) => sum + datum.value, 0);
+  const widthBasis = showShareOfTotal ? total : maxValue;
 
   return (
     <figure className="yr-chart" role="group" aria-label={ariaLabel}>
@@ -85,11 +96,12 @@ const BarChart = ({ data, ariaLabel, valueFormatter, emptyMessage }: BarChartPro
         {CHART_STYLES}
       </style>
       {data.map((datum) => {
-        const ratio = maxValue > 0 ? datum.value / maxValue : 0;
+        const ratio = widthBasis > 0 ? datum.value / widthBasis : 0;
         const width = datum.value > 0 ? Math.max(ratio * 100, 2) : 0;
-        const valueText = datum.note
-          ? `${format(datum.value)} (${datum.note})`
-          : format(datum.value);
+        const shareText =
+          showShareOfTotal && total > 0 ? formatPercent(datum.value / total) : undefined;
+        const noteText = datum.note ?? shareText;
+        const valueText = noteText ? `${format(datum.value)} (${noteText})` : format(datum.value);
         return (
           <div className="yr-chart-row" key={datum.label}>
             <span className="yr-chart-label" title={datum.label}>
@@ -100,7 +112,7 @@ const BarChart = ({ data, ariaLabel, valueFormatter, emptyMessage }: BarChartPro
             </span>
             <span className="yr-chart-value">
               {format(datum.value)}
-              {datum.note ? <span className="yr-chart-value-note">{datum.note}</span> : null}
+              {noteText ? <span className="yr-chart-value-note">{noteText}</span> : null}
             </span>
           </div>
         );
