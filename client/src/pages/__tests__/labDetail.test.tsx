@@ -912,6 +912,60 @@ describe('LabDetail page', () => {
     expect(screen.getAllByText('Example Studies')).toHaveLength(1);
   });
 
+  it('links each PI card to its own official profile and drops the arbitrary single-profile button for multi-PI labs', async () => {
+    const firstProfile = 'https://medicine.yale.edu/profile/first-investigator/';
+    const secondProfile = 'https://medicine.yale.edu/profile/second-investigator/';
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        kind: 'lab',
+        entityType: 'LAB',
+        websiteUrl: RESEARCH_WEBSITE_URL,
+        sourceUrls: [RESEARCH_WEBSITE_URL, firstProfile, secondProfile],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            publicKey: 'fixture-first-pi',
+            fname: 'First',
+            lname: 'Investigator',
+            displayName: 'First Investigator',
+            profileUrls: { official: firstProfile },
+          },
+        },
+        {
+          role: 'pi',
+          user: {
+            publicKey: 'fixture-second-pi',
+            fname: 'Second',
+            lname: 'Investigator',
+            displayName: 'Second Investigator',
+            profileUrls: { official: secondProfile },
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const section = screen
+      .getByRole('heading', { name: 'Principal Investigators' })
+      .closest('section') as HTMLElement;
+    expect(
+      within(section)
+        .getByRole('link', { name: "Open First Investigator's official profile" })
+        .getAttribute('href'),
+    ).toBe(firstProfile);
+    expect(
+      within(section)
+        .getByRole('link', { name: "Open Second Investigator's official profile" })
+        .getAttribute('href'),
+    ).toBe(secondProfile);
+    expect(screen.queryByRole('link', { name: 'Open official profile' })).toBeNull();
+  });
+
   it('renders a director-led org home under a Directors heading, not Principal Investigators (#693)', async () => {
     renderLabDetail({
       ...basePayload,

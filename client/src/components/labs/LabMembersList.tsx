@@ -16,7 +16,7 @@ interface LabMembersListProps {
   members: LabMember[];
   singleColumn?: boolean;
   entityDepartments?: Array<string | undefined | null>;
-  leadProfileUrl?: string;
+  resolveMemberProfileUrl?: (member: LabMember) => string | undefined;
 }
 
 const ROLE_LABELS: Record<LabMemberRole, string> = {
@@ -192,7 +192,7 @@ const LabMembersList = ({
   members,
   singleColumn = false,
   entityDepartments = [],
-  leadProfileUrl,
+  resolveMemberProfileUrl,
 }: LabMembersListProps) => {
   const { departments } = useConfig();
   if (!members || members.length === 0) {
@@ -225,13 +225,12 @@ const LabMembersList = ({
     })
     .sort((a, b) => (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99));
 
-  const singleLeadProfileUrl = sorted.length === 1 ? safeHttpUrl(leadProfileUrl) : undefined;
-
   return (
     <div
       className={`grid grid-cols-1 gap-4 ${singleColumn ? '' : 'sm:grid-cols-2 lg:grid-cols-3'}`}
     >
-      {sorted.map(({ user, role }) => {
+      {sorted.map((member) => {
+        const { user, role } = member;
         const fullName = user.displayName || `${user.fname} ${user.lname}`.trim();
         const key = `${user.publicKey || fullName}-${role}`;
         return (
@@ -242,7 +241,7 @@ const LabMembersList = ({
             singleColumn={singleColumn}
             departmentTable={departments}
             entityDepartments={entityDepartments}
-            profileUrl={singleLeadProfileUrl}
+            profileUrl={safeHttpUrl(resolveMemberProfileUrl?.(member))}
           />
         );
       })}

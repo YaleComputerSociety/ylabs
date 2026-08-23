@@ -73,12 +73,12 @@ describe('LabMembersList', () => {
     expect(container.textContent).toContain('Fixture Advisor');
   });
 
-  it('links a single lead card to the official profile when a lead profile URL is provided', () => {
+  it('links a single lead card to the official profile the resolver returns', () => {
     const { getByRole } = render(
       <MemoryRouter>
         <LabMembersList
           members={[member('')]}
-          leadProfileUrl="https://medicine.yale.edu/profile/fixture-advisor/"
+          resolveMemberProfileUrl={() => 'https://medicine.yale.edu/profile/fixture-advisor/'}
         />
       </MemoryRouter>,
     );
@@ -89,26 +89,38 @@ describe('LabMembersList', () => {
     expect(link.getAttribute('rel')).toContain('noopener');
   });
 
-  it('does not link cards to a single lead profile URL when several leads render', () => {
-    const { container } = render(
+  it('links each lead card to its own official profile when several leads render', () => {
+    const { getByRole } = render(
       <MemoryRouter>
         <LabMembersList
           members={[
             member('', { publicKey: 'lead-one', displayName: 'Lead One' }),
             member('', { publicKey: 'lead-two', displayName: 'Lead Two' }),
           ]}
-          leadProfileUrl="https://medicine.yale.edu/profile/lead-one/"
+          resolveMemberProfileUrl={(m) =>
+            `https://medicine.yale.edu/profile/${(m.user.displayName || '')
+              .toLowerCase()
+              .replace(/\s+/g, '-')}/`
+          }
         />
       </MemoryRouter>,
     );
 
-    expect(container.querySelector('a')).toBeNull();
+    expect(
+      getByRole('link', { name: "Open Lead One's official profile" }).getAttribute('href'),
+    ).toBe('https://medicine.yale.edu/profile/lead-one/');
+    expect(
+      getByRole('link', { name: "Open Lead Two's official profile" }).getAttribute('href'),
+    ).toBe('https://medicine.yale.edu/profile/lead-two/');
   });
 
-  it('does not link a card to an unsafe lead profile URL', () => {
+  it('does not link a card when the resolver returns an unsafe URL', () => {
     const { container } = render(
       <MemoryRouter>
-        <LabMembersList members={[member('')]} leadProfileUrl="javascript:alert(1)" />
+        <LabMembersList
+          members={[member('')]}
+          resolveMemberProfileUrl={() => 'javascript:alert(1)'}
+        />
       </MemoryRouter>,
     );
 

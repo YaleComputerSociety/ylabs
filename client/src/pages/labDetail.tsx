@@ -433,6 +433,7 @@ const DecisionSummary = ({
   officialSource,
   preferOrgEngagementOutreach = false,
   principalInvestigator,
+  leadProfilesLinkedInline = false,
 }: {
   group: any;
   profileUrl?: string;
@@ -440,6 +441,7 @@ const DecisionSummary = ({
   officialSource?: ResearchDetailSource;
   preferOrgEngagementOutreach?: boolean;
   principalInvestigator?: LabMember;
+  leadProfilesLinkedInline?: boolean;
 }) => {
   const { departments } = useConfig();
   const topics = detailTopics(group, 5);
@@ -486,7 +488,8 @@ const DecisionSummary = ({
     : evidence.filter((item) => item.label !== REACH_OUT_PLAUSIBLE_LABEL);
   const hasEvidenceDetail =
     visibleEvidence.length > 0 || Boolean(grantSummary) || Boolean(pastAdvisees);
-  const profileNeedsOwnButton = Boolean(profileUrl) && !principalInvestigator;
+  const profileNeedsOwnButton =
+    Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
   const leadCardProfileUrl = preferOrgEngagementOutreach ? undefined : profileUrl;
   const showGetInvolvedBlock =
     (preferOrgEngagementOutreach && Boolean(officialSource)) ||
@@ -571,7 +574,7 @@ const DecisionSummary = ({
                   members={[principalInvestigator]}
                   singleColumn
                   entityDepartments={group.departments}
-                  leadProfileUrl={leadCardProfileUrl}
+                  resolveMemberProfileUrl={() => leadCardProfileUrl}
                 />
               </div>
             </div>
@@ -944,6 +947,12 @@ const LabDetail = () => {
   );
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;
+  const resolveLeadOfficialProfileUrl = (member: LabMember): string | undefined =>
+    officialProfileUrlFromMemberUser(member.user as unknown as Record<string, unknown>);
+  const leadProfilesLinkedInline =
+    showDedicatedPrincipalInvestigatorSection &&
+    !leadIdentityUnderReview &&
+    principalInvestigators.some((member) => Boolean(resolveLeadOfficialProfileUrl(member)));
   const isResearchEntitySaved = savedResearchPlanIds.includes(group._id);
   const canRequestListingReview =
     Boolean(user?.userConfirmed) &&
@@ -1051,6 +1060,7 @@ const LabDetail = () => {
             officialSource={outreachOfficialSource}
             preferOrgEngagementOutreach={preferOrgEngagementOutreach}
             principalInvestigator={singlePrincipalInvestigator}
+            leadProfilesLinkedInline={leadProfilesLinkedInline}
           />
 
           <UndergraduateLogisticsSection logistics={undergraduateLogistics} />
@@ -1073,6 +1083,7 @@ const LabDetail = () => {
                 <LabMembersList
                   members={principalInvestigators}
                   entityDepartments={group.departments}
+                  resolveMemberProfileUrl={resolveLeadOfficialProfileUrl}
                 />
               )}
             </section>
