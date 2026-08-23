@@ -13,6 +13,15 @@ const renderOverview = (props: Parameters<typeof PlanningOverview>[0]) =>
 
 afterEach(cleanup);
 
+describe('PlanningOverview workspace eyebrow', () => {
+  it('labels the shared account view with a neutral workspace eyebrow', () => {
+    renderOverview({ savedResearchCount: 1, savedFellowshipCount: 1 });
+
+    expect(screen.getByText('Your workspace')).toBeTruthy();
+    expect(screen.queryByText('Student workspace')).toBeNull();
+  });
+});
+
 describe('PlanningOverview Next up card', () => {
   it('reflects saved research plans when no program deadline is set', () => {
     renderOverview({ savedResearchCount: 3, savedFellowshipCount: 0 });
