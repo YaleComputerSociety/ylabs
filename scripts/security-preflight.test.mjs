@@ -1674,10 +1674,7 @@ test('center director backfill only filters reject object-shaped IDs', () => {
   assert.match(source, /typeof value !== 'string'/);
   assert.match(source, /const trimmed = value\.trim\(\)/);
   assert.match(source, /normalizeCenterDirectorBackfillObjectId\(value\)/);
-  assert.match(
-    source,
-    /const rosterByEntityId = await getResearchEntityRosterByEntityId\(/,
-  );
+  assert.match(source, /const rosterByEntityId = await getResearchEntityRosterByEntityId\(/);
   assert.match(source, /const withLeadSet = new Set<string>\(\)/);
   assert.match(source, /withLeadSet\.add\(entityId\)/);
   assert.match(source, /const centerId = serializedDocumentId\(doc\._id\) \|\| ''/);
@@ -3260,10 +3257,7 @@ test('self-service listing writes sanitize public URLs and bound stored payloads
   assert.match(source, /value instanceof mongoose\.Types\.ObjectId/);
   assert.match(source, /return LISTING_OBJECT_ID_RE\.test\(id\) \? id : undefined/);
   assert.match(source, /const safeResearchEntityId = normalizeListingObjectId\(researchEntityId\)/);
-  assert.match(
-    source,
-    /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id\)/,
-  );
+  assert.match(source, /const personId = await resolveResearcherIdForLegacyUser\(owner\?\._id\)/);
   assert.match(source, /'target\.id': new mongoose\.Types\.ObjectId\(safeResearchEntityId\)/);
   assert.match(source, /state: \{ \$ne: 'HISTORICAL' \}/);
   assert.match(source, /archived: \{ \$ne: true \}/);
@@ -4667,10 +4661,17 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
   assert.match(source, /MAX_PUBLIC_RESEARCH_ENTITY_OBJECT_KEYS/);
   assert.match(source, /MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH/);
   assert.match(source, /redactDirectContactInfo\(/);
-  assert.match(source, /name:\s*publicTextString\(group\.name \|\| group\.displayName \|\| ''\)/);
   assert.match(
     source,
-    /displayName:\s*group\.displayName === undefined \? undefined : publicTextString\(group\.displayName\)/,
+    /function publicResearchEntityName\(value: unknown\): string \{\s*return collapseDuplicateResearchHomeSuffix\(publicTextString\(value\)\);/,
+  );
+  assert.match(
+    source,
+    /name:\s*publicResearchEntityName\(group\.name \|\| group\.displayName \|\| ''\)/,
+  );
+  assert.match(
+    source,
+    /displayName:\s*group\.displayName === undefined\s*\?\s*undefined\s*:\s*publicResearchEntityName\(group\.displayName\)/,
   );
   assert.match(source, /researchAreas:\s*publicResearchAreaArray\(group\.researchAreas\)/);
   assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
@@ -5810,10 +5811,7 @@ test('public profile research-home loading uses safe document id serialization',
     source,
     /const profileDocumentId = \(value: unknown\): string => serializedDocumentId\(value\) \|\| ''/,
   );
-  assert.match(
-    source,
-    /const entityId = profileDocumentId\(assignment\.target\?\.id\)/,
-  );
+  assert.match(source, /const entityId = profileDocumentId\(assignment\.target\?\.id\)/);
   assert.match(source, /_id: profileDocumentId\(entity\._id\)/);
   assert.match(source, /role: roleByEntityId\.get\(profileDocumentId\(entity\._id\)\) \|\| ''/);
   assert.doesNotMatch(source, /String\(assignment\.target\?\.id\)/);
