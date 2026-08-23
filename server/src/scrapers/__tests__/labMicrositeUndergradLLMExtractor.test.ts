@@ -587,6 +587,68 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
   });
 
+  it('fails closed on an academic-appointment/PI-bio researchSummary even when source-supported', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'Jane Smith is an Associate Professor of Neuroscience and Principal Investigator at Yale.',
+      methodsQuote: 'Associate Professor of Neuroscience',
+      topicsQuote: 'Principal Investigator at Yale',
+    };
+    const obs = extractionToObservations('lab-appointment', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: [
+        'Jane Smith is an Associate Professor of Neuroscience and Principal Investigator at Yale.',
+      ],
+    });
+
+    expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
+  it('fails closed on a role-only title fragment researchSummary even when source-supported', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary: 'Director of the Yale Program in Cognitive Neuroscience.',
+      methodsQuote: 'Yale Program in Cognitive Neuroscience',
+      topicsQuote: 'Director of the Yale Program',
+    };
+    const obs = extractionToObservations('lab-role-only', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: ['Director of the Yale Program in Cognitive Neuroscience.'],
+    });
+
+    expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
+  it('emits a grounded fullDescription but drops an over-long shortDescription', () => {
+    const summary =
+      'The lab studies urban climate adaptation using satellite imagery and field sensors, and examines how heat exposure, flooding, and air quality affect neighborhoods across the region while developing computational models and open datasets that inform local resilience planning for vulnerable communities.';
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary: summary,
+      methodsQuote: 'satellite imagery and field sensors',
+      topicsQuote: 'urban climate adaptation',
+    };
+    const obs = extractionToObservations('lab-long-desc', 'https://x.example/', ext, fixedDate, {
+      sourceTexts: [summary],
+    });
+
+    expect(obs.find((o) => o.field === 'fullDescription')?.value).toBe(summary);
+    expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
   it('emits acceptingUndergrads=false on no', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'no',
