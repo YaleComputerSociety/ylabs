@@ -9,6 +9,7 @@ import {
   decisionHeadingLabel,
   approachHeadingLabel,
   relationshipTypeLabel,
+  researchEntityTitle,
   sanitizeFacultyResearchCopy,
   sanitizeResearchHomeSelfReferenceCopy,
 } from '../researchEntityCopy';
@@ -24,6 +25,50 @@ describe('researchEntityCopy', () => {
     expect(isFacultyResearchEntity(entity)).toBe(true);
     expect(entityKindLabel(entity)).toBe('Faculty Research');
     expect(researchWebsiteLabel(entity)).toBe('research website');
+  });
+
+  it('uses faculty research labels for FACULTY_RESEARCH entities despite stale lab kind', () => {
+    const entity = {
+      name: 'Example Researcher Faculty Research',
+      kind: 'lab',
+      entityType: 'FACULTY_RESEARCH',
+    };
+
+    expect(isFacultyResearchEntity(entity)).toBe(true);
+    expect(entityKindLabel(entity)).toBe('Faculty Research');
+    expect(researchWebsiteLabel(entity)).toBe('research website');
+    expect(researchWebsiteCtaLabel(entity)).toBe('Visit research website');
+  });
+
+  it('strips synthesized research-echo suffixes from faculty research titles', () => {
+    expect(
+      researchEntityTitle({
+        name: 'Diana Qiu Faculty Research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+      }),
+    ).toBe('Diana Qiu');
+    expect(
+      researchEntityTitle({ name: 'Scott Miller Research', entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe('Scott Miller');
+    expect(
+      researchEntityTitle({ name: 'Claudia Valeggia - Research', entityType: 'INDIVIDUAL_RESEARCH' }),
+    ).toBe('Claudia Valeggia');
+  });
+
+  it('prefers displayName and keeps natural lab titles for faculty research entities', () => {
+    expect(
+      researchEntityTitle({
+        displayName: 'Robert J. Schoelkopf Lab',
+        name: 'Robert J. Schoelkopf Faculty Research',
+        entityType: 'INDIVIDUAL_RESEARCH',
+      }),
+    ).toBe('Robert J. Schoelkopf Lab');
+  });
+
+  it('leaves non-faculty research-home titles untouched', () => {
+    expect(
+      researchEntityTitle({ name: 'Center for Genomic Research', entityType: 'CENTER' }),
+    ).toBe('Center for Genomic Research');
   });
 
   it('keeps lab labels for real lab entities', () => {
@@ -66,6 +111,29 @@ describe('researchEntityCopy', () => {
     expect(researchStructureLabel(staleCenter)).toBe('center');
     expect(decisionHeadingLabel(staleCenter)).toBe('What this center focuses on');
     expect(approachHeadingLabel(staleCenter)).toBe('Ways to approach this center');
+  });
+
+  it('derives Faculty Research badge and copy from entityType FACULTY_RESEARCH when kind is stale (#833)', () => {
+    const staleFacultyResearch = {
+      name: 'Nicha Dvornek Faculty Research',
+      kind: 'lab',
+      entityType: 'FACULTY_RESEARCH',
+    };
+
+    expect(isFacultyResearchEntity(staleFacultyResearch)).toBe(true);
+    expect(entityKindLabel(staleFacultyResearch)).toBe('Faculty Research');
+    expect(researchWebsiteLabel(staleFacultyResearch)).toBe('research website');
+    expect(researchWebsiteCtaLabel(staleFacultyResearch)).toBe('Visit research website');
+  });
+
+  it('derives group labels from entityType for the project entityTypes when kind is stale', () => {
+    for (const entityType of ['FACULTY_PROJECT', 'DIGITAL_HUMANITIES_PROJECT', 'ARCHIVE_OR_MUSEUM_PROJECT']) {
+      const staleProject = { name: 'Example Project', kind: 'lab', entityType };
+
+      expect(isFacultyResearchEntity(staleProject)).toBe(false);
+      expect(entityKindLabel(staleProject)).toBe('Group');
+      expect(researchWebsiteLabel(staleProject)).toBe('group website');
+    }
   });
 
   it('falls back to kind when entityType is absent', () => {

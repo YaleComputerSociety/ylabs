@@ -8,6 +8,8 @@ import {
   isFormFieldDumpText,
   isNavigationDumpText,
   isPublicationsListDumpText,
+  isResearchAreaEchoDescription,
+  isResearchAreaTemplateLeakText,
   isRosterShapedText,
   sanitizeCatalogDescription,
   sanitizeResearchEntityDescription,
@@ -15,6 +17,7 @@ import {
   sanitizeStoredCatalogDescription,
   stripCatalogChrome,
   stripRedactionPlaceholders,
+  stripTrailingContactAddress,
 } from '../descriptionHygiene';
 
 const SYNTHETIC_ROSTER = [
@@ -104,6 +107,30 @@ describe('descriptionHygiene', () => {
     expect(sanitizeCatalogDescription(SYNTHETIC_SCRIPT_CHROME)).toMatch(
       /The program pairs students with faculty mentors/,
     );
+  });
+
+  it('strips the YSM profile "INFORMATION FOR" section header and "Copy Link" share chrome but keeps the prose', () => {
+    const cleaned = stripCatalogChrome(
+      'INFORMATION FOR Copy Link Our lab focuses on the pathogenesis of airway diseases.',
+    );
+    expect(cleaned).not.toMatch(/INFORMATION FOR|Copy Link/);
+    expect(cleaned).toBe('Our lab focuses on the pathogenesis of airway diseases.');
+    expect(
+      sanitizeResearchEntityDescription(
+        'INFORMATION FOR My research is focused on the genetic basis of lung disease.',
+      ),
+    ).toBe('My research is focused on the genetic basis of lung disease.');
+  });
+
+  it('fails closed when the description is only YSM profile chrome', () => {
+    expect(sanitizeResearchEntityDescription('INFORMATION FOR Copy Link Copy Link')).toBe('');
+    expect(sanitizeCatalogDescription('INFORMATION FOR Copy Link')).toBe('');
+  });
+
+  it('does not strip lower-case "information for" or "copy link" from genuine prose', () => {
+    const prose =
+      'The center provides information for prospective students and lets visitors copy link references from the reading list.';
+    expect(stripCatalogChrome(prose)).toBe(prose);
   });
 
   it('leaves ordinary multi-sentence prose unchanged', () => {
@@ -260,6 +287,79 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
   });
 });
 
+const SYNTHETIC_OFFICE_ADDRESS_PROSE =
+  'Our lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, and single-particle electron cryo-microscopy. 100 Sample Avenue, Fl 2, Rm 234';
+
+const SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE =
+  'The center coordinates translational research across several affiliated departments. 42 Fixture Boulevard';
+
+describe('descriptionHygiene bare office/street address residue detection (#798)', () => {
+  it('flags a bare office address fragment with a floor/room unit', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_OFFICE_ADDRESS_PROSE)).toBe(true);
+  });
+
+  it('flags a bare street address fragment with no unit label', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_STREET_ADDRESS_NO_UNIT_PROSE)).toBe(true);
+  });
+
+  it('does not flag ordinary prose with no address-shaped fragment', () => {
+    expect(hasContactBlockResidue(SYNTHETIC_CLEAN_LAB_PROSE)).toBe(false);
+  });
+
+  it('fails a served description closed to empty on a non-trailing glued office address', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'The lab is at 100 Sample Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.',
+      ),
+    ).toBe('');
+  });
+});
+
+describe('descriptionHygiene trailing office-address strip (#798)', () => {
+  const BIO_WITH_TRAILING_ADDRESS =
+    'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy. 266 Whitney Avenue, Fl 2, Rm 234';
+
+  it('strips a trailing campus office address while preserving the bio', () => {
+    expect(stripTrailingContactAddress(BIO_WITH_TRAILING_ADDRESS)).toBe(
+      'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy.',
+    );
+  });
+
+  it('strips a trailing street address with a city/state/ZIP tail', () => {
+    expect(
+      stripTrailingContactAddress(
+        'Our group studies gravitational-wave detectors and precision metrology. 217 Prospect Street, New Haven, CT 06511',
+      ),
+    ).toBe('Our group studies gravitational-wave detectors and precision metrology.');
+  });
+
+  it('leaves ordinary prose that merely names a street intact', () => {
+    const prose =
+      'The project traces how commerce reshaped daily life along Chapel Street in nineteenth-century New Haven.';
+    expect(stripTrailingContactAddress(prose)).toBe(prose);
+  });
+
+  it('leaves an address that is not the trailing fragment intact', () => {
+    const prose =
+      'The lab is at 266 Whitney Avenue, Rm 234, and studies ion channel electrophysiology across model organisms.';
+    expect(stripTrailingContactAddress(prose)).toBe(prose);
+  });
+
+  it('served research-entity description drops the trailing address but keeps the bio', () => {
+    expect(sanitizeResearchEntityDescription(BIO_WITH_TRAILING_ADDRESS)).toBe(
+      'The lab employs a multidisciplinary approach that includes chemical biology, molecular biology, protein biochemistry, ion channel electrophysiology, and single-particle electron cryo-microscopy.',
+    );
+  });
+
+  it('short-description path also drops a trailing address', () => {
+    expect(
+      sanitizeResearchEntityShortDescription(
+        'Studies the neural basis of decision making. 2 Hillhouse Avenue, Fl 3',
+      ),
+    ).toBe('Studies the neural basis of decision making.');
+  });
+});
+
 describe('sanitizeStoredCatalogDescription (materialize/backfill write layer)', () => {
   it('keeps genuine clean prose verbatim', () => {
     const clean =
@@ -347,5 +447,60 @@ describe('descriptionHygiene YSM profile chrome (#808)', () => {
       'How do neurons compute? How do circuits learn? How does memory form? This lab studies the neural basis of cognition.',
     );
     expect(sanitizeResearchEntityDescription(questionSummary)).toBe('');
+  });
+
+  it('fails closed on a Studies-template blurb that leaked a research-areas heading (#816)', () => {
+    expect(isResearchAreaTemplateLeakText('Studies soft robotics, actuators, and research areas:.')).toBe(
+      true,
+    );
+    expect(sanitizeResearchEntityShortDescription('Studies soft robotics, actuators, and research areas:.')).toBe(
+      '',
+    );
+    expect(
+      sanitizeResearchEntityShortDescription('Research fields include ecology, evolution, and research interests:.'),
+    ).toBe('');
+    expect(sanitizeResearchEntityShortDescription('Studies research topics:')).toBe('');
+  });
+
+  it('keeps a clean Studies-template blurb that has no heading leak', () => {
+    const clean = 'Studies soft robotics, compliant actuators, and human-robot interaction.';
+    expect(isResearchAreaTemplateLeakText(clean)).toBe(false);
+    expect(sanitizeResearchEntityShortDescription(clean)).toBe(clean);
+  });
+});
+
+describe('descriptionHygiene research-area echo fail-closed (#623)', () => {
+  it('flags a bare "Research fields include <chips>." echo', () => {
+    expect(
+      isResearchAreaEchoDescription('Research fields include HIV Infections, Veterans, and Aging.'),
+    ).toBe(true);
+  });
+
+  it('flags the "Research areas include" sibling template', () => {
+    expect(
+      isResearchAreaEchoDescription('Research areas include Spectroscopy, Chirality, and Signaling.'),
+    ).toBe(true);
+  });
+
+  it('keeps genuine prose that opens with the phrase and continues', () => {
+    const prose =
+      'Research fields include immunology. The lab develops single-cell assays to map how T cells respond to infection.';
+    expect(isResearchAreaEchoDescription(prose)).toBe(false);
+    expect(sanitizeResearchEntityDescription(prose)).toBe(prose);
+  });
+
+  it('does not flag a real "Studies" one-liner or a research-focus sentence', () => {
+    expect(isResearchAreaEchoDescription('Studies HIV Infections, Veterans, and Aging.')).toBe(false);
+    expect(
+      isResearchAreaEchoDescription('The Takyar lab studies liver fibrosis and vascular biology.'),
+    ).toBe(false);
+  });
+
+  it('collapses a served fullDescription that only echoes the chips to empty', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'Research fields include Gene Expression Regulation, Developmental, Computational Biology, and Cancer.',
+      ),
+    ).toBe('');
   });
 });

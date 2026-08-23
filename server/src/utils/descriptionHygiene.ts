@@ -82,15 +82,37 @@ export function stripCatalogChrome(text: string): string {
   return normalizeHygieneWhitespace(out);
 }
 
+const researchAreaHeadingLeakPattern =
+  /(?:^\s*|[,;]\s*(?:and\s+)?|\b(?:Studies|include|including)\s+)research\s+(?:areas?|interests?|fields?|topics?)\s*:(?:\s|\.|$)/i;
+
+/**
+ * A synthesized topic blurb ("Studies X, Y, and research areas:.") that leaked a
+ * bare section-heading token ("research areas:", "research interests:") into its
+ * joined area list. The trailing colon on a heading word used as a list item is
+ * the tell - clean topical tags never carry it - so this stays clear of genuine
+ * summaries. Fails closed on the leak so the corrupted card blurb is dropped
+ * rather than shown (#816).
+ */
+export function isResearchAreaTemplateLeakText(text: string): boolean {
+  const normalized = normalizeHygieneWhitespace(String(text || ''));
+  if (!normalized) return false;
+  return researchAreaHeadingLeakPattern.test(normalized);
+}
+
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
  * research summary phrased as a question is not wrongly blanked, while a
- * chrome-only blurb collapses to empty (#808).
+ * chrome-only blurb collapses to empty (#808). Also fails closed on a leaked
+ * research-areas heading fragment in a synthesized topic blurb (#816).
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
-  return stripCatalogChrome(redactDirectContactInfo(String(text || '')));
+  const cleaned = stripTrailingContactAddress(
+    stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+  );
+  if (isResearchAreaTemplateLeakText(cleaned)) return '';
+  return cleaned;
 }
 
 function countMatches(text: string, pattern: RegExp): number {
@@ -221,18 +243,57 @@ const contactRedactionTokenPattern = /\[(?:email|phone) redacted\]/i;
 const contactBlockLabelPattern = /\b(?:email|phone|office|fax)\s*:/i;
 const bareLocalPhonePattern = /\b(?:\(?\d{3}\)?[\s.-]?)?\d{3}[\s.-]\d{4}\b/;
 
+const STREET_SUFFIX_WORD = 'Street|Avenue|Road|Boulevard|Drive|Way|Lane|Place|Court|Circle';
+const STREET_SUFFIX_ABBREVIATION = 'St|Ave|Rd|Blvd|Dr|Ln|Pl|Ct|Cir';
+const OFFICE_UNIT_LABEL = 'Floor|Fl|Room|Rm|Suite|Ste';
+
+/**
+ * A bare street-address fragment (`266 Whitney Avenue`), optionally followed by
+ * a floor/room/suite unit (`, Fl 2, Rm 234`), with no `office:`/`address:` label
+ * of its own. Faculty-bio scrapes sometimes merge a page's office-location line
+ * straight into the bio prose with no separating punctuation, so this must be
+ * detected on shape alone (#798).
+ */
+const bareStreetAddressPattern = new RegExp(
+  `\\b\\d{1,5}\\s+[A-Z][A-Za-z']*(?:\\s+[A-Z][A-Za-z']*){0,3}\\s+` +
+    `(?:(?:${STREET_SUFFIX_WORD})\\b|(?:${STREET_SUFFIX_ABBREVIATION})\\.)` +
+    `(?:[.,]?\\s*(?:${OFFICE_UNIT_LABEL})\\.?\\s*\\d+[A-Za-z]?)*`,
+);
+
 /**
  * A faculty-bio contact block: a leftover `[email redacted]`/`[phone redacted]`
  * placeholder token (the read-time-safe rendering elsewhere in this module,
- * but never acceptable in a research-entity description), or an
+ * but never acceptable in a research-entity description), an
  * `Email:`/`Phone:`/`Office:`/`Fax:` label paired with a bare phone number
- * lifted straight out of a profile-page header (#676).
+ * lifted straight out of a profile-page header (#676), or a bare office/street
+ * address fragment glued onto the bio with no label at all (#798).
  */
 export function hasContactBlockResidue(text: string): boolean {
   const normalized = normalizeHygieneWhitespace(text);
   if (!normalized) return false;
   if (contactRedactionTokenPattern.test(normalized)) return true;
-  return contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized);
+  if (contactBlockLabelPattern.test(normalized) && bareLocalPhonePattern.test(normalized)) {
+    return true;
+  }
+  return bareStreetAddressPattern.test(normalized);
+}
+
+const trailingOfficeAddressPattern =
+  /\s+\d{1,5}\s+(?:[A-Z][\w.'-]*\s+){1,5}(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Way|Lane|Ln|Place|Pl|Court|Ct|Terrace|Ter|Circle|Cir|Plaza|Highway|Hwy)\.?(?:[,\s]+(?:Fl|Floor|Rm|Room|Ste|Suite|Unit|Apt|Bldg|Building)\.?\s*\d+[A-Za-z]?)*(?:[,\s]+[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,3})?(?:,?\s+[A-Z]{2})?(?:\s+\d{5}(?:-\d{4})?)?[.\s]*$/;
+
+/**
+ * Strip a bare campus office/street-address fragment glued onto the end of a
+ * faculty-bio description (a lost-line-break scrape artifact, #798), preserving
+ * the bio prose ahead of it. Requires a street number and a street-type suffix
+ * so ordinary research prose that merely names a street is not affected; the
+ * optional unit (Fl/Rm/Suite) and city/state/ZIP tail extend coverage. Only a
+ * trailing, sentence-final fragment is removed so a mid-text mention is left
+ * intact.
+ */
+export function stripTrailingContactAddress(text: string): string {
+  const value = String(text || '');
+  const stripped = value.replace(trailingOfficeAddressPattern, '');
+  return stripped === value ? value : normalizeHygieneWhitespace(stripped);
 }
 
 const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
@@ -243,6 +304,20 @@ const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;
  */
 export function isPublicationsListDumpText(text: string): boolean {
   return publicationsListMarkerPattern.test(normalizeHygieneWhitespace(text));
+}
+
+const researchAreaEchoPattern = /^Research\s+(?:fields?|areas?)\s+include\b[^.!?]+[.!?]?$/i;
+
+/**
+ * A vacuous "Research fields include <A>, <B>, and <C>." description whose only
+ * content is a comma-join of the entity's own researchAreas: a bare labeled
+ * chip list carrying no prose, fully redundant with the chips already shown
+ * beside it (#623). Gated to a single sentence (the pattern admits no internal
+ * sentence terminator) so genuine prose that merely opens with the phrase and
+ * continues into a real description is kept.
+ */
+export function isResearchAreaEchoDescription(text: string): boolean {
+  return researchAreaEchoPattern.test(normalizeHygieneWhitespace(text));
 }
 
 /**
@@ -296,15 +371,20 @@ export function sanitizeStoredCatalogDescription(text: string, maxLength = 2000)
  * Research-entity description sanitizer (write- and read-time), stricter than
  * sanitizeCatalogDescription/sanitizeStoredCatalogDescription: a faculty/lab
  * fullDescription or shortDescription is the primary "what this lab studies"
- * surface, so a leftover contact-block token or a "Selected Publications:"
- * citation dump fails the whole description closed rather than surviving as
- * read-time-safe token text or a truncated tail (#676).
+ * surface, so a leftover contact-block token, a "Selected Publications:"
+ * citation dump, or a bare "Research fields include <chips>." area echo (#623)
+ * fails the whole description closed rather than surviving as read-time-safe
+ * token text, a truncated tail (#676), or a vacuous restatement of the chips.
  */
 export function sanitizeResearchEntityDescription(text: string): string {
   const redacted = redactDirectContactInfo(String(text || ''));
-  const stripped = sanitizeCatalogDescription(redacted);
+  const stripped = stripTrailingContactAddress(sanitizeCatalogDescription(redacted));
   if (!stripped) return '';
-  if (hasContactBlockResidue(stripped) || isPublicationsListDumpText(stripped)) {
+  if (
+    hasContactBlockResidue(stripped) ||
+    isPublicationsListDumpText(stripped) ||
+    isResearchAreaEchoDescription(stripped)
+  ) {
     return '';
   }
   return stripped;

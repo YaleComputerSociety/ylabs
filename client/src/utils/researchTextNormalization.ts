@@ -180,6 +180,14 @@ export const isGenericResearchMetadataLabel = (value: string): boolean => {
   return GENERIC_RESEARCH_METADATA_LABELS.has(normalized) || normalized === 'research';
 };
 
+const PROFILE_ROLE_LABEL_SUFFIX_RE = /\s*YSM\s+Researchers?\s*$/;
+
+export const stripResearchAreaRoleLabelSuffix = (value: string): string => {
+  const stripped = value.replace(PROFILE_ROLE_LABEL_SUFFIX_RE, '');
+  if (stripped === value) return value.trim();
+  return stripped.replace(/[\s,;:]+$/, '').trim();
+};
+
 export const normalizeResearchMetadataLabels = (
   values: Array<string | undefined | null> | unknown,
 ): string[] => {
@@ -187,18 +195,20 @@ export const normalizeResearchMetadataLabels = (
   const labels: string[] = [];
 
   for (const value of normalizeResearchStringArray(values)) {
-    const key = value.toLowerCase();
+    const cleaned = stripResearchAreaRoleLabelSuffix(value);
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
     if (
       seen.has(key) ||
-      value.length > 90 ||
-      /https?:\/\//i.test(value) ||
-      isGenericResearchMetadataLabel(value) ||
-      isResearchSourceChromeText(value)
+      cleaned.length > 90 ||
+      /https?:\/\//i.test(cleaned) ||
+      isGenericResearchMetadataLabel(cleaned) ||
+      isResearchSourceChromeText(cleaned)
     ) {
       continue;
     }
     seen.add(key);
-    labels.push(value);
+    labels.push(cleaned);
   }
 
   return labels;

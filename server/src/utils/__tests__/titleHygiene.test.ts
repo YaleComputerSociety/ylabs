@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasPhoneContactFragment,
   hasRawEmailAddress,
   hasStreetAddressFragment,
   isBioProseTitle,
@@ -84,6 +85,33 @@ describe('hasStreetAddressFragment', () => {
   });
 });
 
+describe('hasPhoneContactFragment', () => {
+  it('rejects a Phone: label run into the title', () => {
+    expect(hasPhoneContactFragment('Professor of Chemistry Phone: 203-432-1234')).toBe(true);
+  });
+
+  it('rejects a Fax: label', () => {
+    expect(hasPhoneContactFragment('Director of the Center Fax: (203) 432-0000')).toBe(true);
+  });
+
+  it('rejects a bare ten-digit phone number in any format', () => {
+    expect(hasPhoneContactFragment('Professor of Physics (203) 432-1234')).toBe(true);
+    expect(hasPhoneContactFragment('Professor of Physics 203.432.1234')).toBe(true);
+  });
+
+  it('keeps a plain job title', () => {
+    expect(hasPhoneContactFragment('Associate Professor of Chemistry')).toBe(false);
+  });
+
+  it('does not treat a course number or endowed-chair year as a phone number', () => {
+    expect(hasPhoneContactFragment('The 1701 Professor of Chemistry, CHEM 502')).toBe(false);
+  });
+
+  it('does not fire on Phone/Tel substrings inside real words', () => {
+    expect(hasPhoneContactFragment('Professor at the Hotel Management Institute')).toBe(false);
+  });
+});
+
 describe('isBioProseTitle', () => {
   it('rejects a multi-sentence bio dumped into the title', () => {
     expect(
@@ -139,10 +167,29 @@ describe('sanitizePersonTitle', () => {
     expect(sanitizePersonTitle('Professor jane.doe@example.edu')).toBeUndefined();
   });
 
+  it('drops a title carrying a phone/fax contact fragment (#740)', () => {
+    expect(sanitizePersonTitle('Professor of Chemistry Phone: 203-432-1234')).toBeUndefined();
+    expect(sanitizePersonTitle('Director Fax: (203) 432-0000')).toBeUndefined();
+  });
+
   it('drops a multi-sentence bio dumped into the title', () => {
     expect(
       sanitizePersonTitle('Her lab studies protein folding. She teaches. She joined in 2004.'),
     ).toBeUndefined();
+  });
+
+  it('drops a title longer than a role string ever runs (#740)', () => {
+    expect(sanitizePersonTitle(`Professor of ${'Molecular Biology '.repeat(10)}`)).toBeUndefined();
+  });
+
+  it('keeps a long but single-phrase endowed-chair title under the length cap', () => {
+    expect(
+      sanitizePersonTitle(
+        'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+      ),
+    ).toBe(
+      'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
+    );
   });
 
   it('keeps and normalizes a real job title', () => {

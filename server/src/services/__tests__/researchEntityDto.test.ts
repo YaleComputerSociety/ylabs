@@ -3,9 +3,33 @@ import {
   addResearchEntityDetailAlias,
   addResearchEntitySearchAliases,
   toPublicResearchEntityDto,
+  toPublicResearchEntitySummaryDto,
 } from '../researchEntityDto';
 
 describe('researchEntityDto', () => {
+  it('strips YSM profile chrome from the served shortDescription without dropping the prose', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-chrome',
+      slug: 'ysm-chrome-lab',
+      name: 'Chrome Lab',
+      kind: 'lab',
+      shortDescription: 'INFORMATION FOR Copy Link Our lab studies airway disease.',
+    });
+    expect(dto.shortDescription).toBe('Our lab studies airway disease.');
+  });
+
+  it('drops a card blurb built from a chrome-only shortDescription and falls back to fullDescription', () => {
+    const summary = toPublicResearchEntitySummaryDto({
+      _id: { toString: () => 'entity-chrome-only' },
+      slug: 'ysm-chrome-only',
+      name: 'Chrome Only Lab',
+      kind: 'lab',
+      shortDescription: 'INFORMATION FOR Copy Link Copy Link',
+      fullDescription: 'This laboratory investigates vascular biology in human disease.',
+    });
+    expect(summary.blurb).toBe('This laboratory investigates vascular biology in human disease.');
+  });
+
   it('builds canonical ResearchEntity DTOs from materialized records', () => {
     const dto = toPublicResearchEntityDto({
       _id: { toString: () => 'entity-1' },
@@ -51,6 +75,23 @@ describe('researchEntityDto', () => {
 
     expect(dto.entityType).toBe('FACULTY_PROJECT');
     expect(dto.entityKind).toBe('individual');
+  });
+
+  it('drops prose-sentence researchArea chips from the public DTO (#816)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-chips',
+      slug: 'mcnamara-physics',
+      name: 'Harry McNamara - Research',
+      researchAreas: [
+        'Biophysics',
+        'Synthetic Biology',
+        'We study how cells process information to make collective decisions.',
+        'research areas:',
+        'Nonlinear Dynamics',
+      ],
+    });
+
+    expect(dto.researchAreas).toEqual(['Biophysics', 'Synthetic Biology', 'Nonlinear Dynamics']);
   });
 
   it('collapses prefixed and plain department labels in public DTOs', () => {
@@ -143,6 +184,20 @@ describe('researchEntityDto', () => {
     expect(dto.searchMatch).toEqual({ snippet: 'Contact [email redacted] or [phone redacted].' });
     expect(JSON.stringify(dto)).not.toContain('hidden@example.edu');
     expect(JSON.stringify(dto)).not.toContain('203-555-1212');
+  });
+
+  it('strips glued "YSM Researcher" role-label boilerplate from researchAreas chips (#742)', () => {
+    const dto = toPublicResearchEntityDto({
+      id: 'entity-ysm-role-label',
+      slug: 'ysm-role-label-lab',
+      name: 'YSM Role Label Lab',
+      researchAreas: ['MedicareYSM Researcher', 'Medicare', 'YSM Researcher', 'HistonesYSM Researcher'],
+      profileResearchAreas: ['Demyelinating Autoimmune Diseases, CNSYSM Researcher'],
+    });
+
+    expect(dto.researchAreas).toEqual(['Medicare', 'Histones']);
+    expect(dto.profileResearchAreas).toEqual(['Demyelinating Autoimmune Diseases, CNS']);
+    expect(JSON.stringify(dto)).not.toContain('YSM Researcher');
   });
 
   it('fails a fullDescription closed to empty when it still carries a contact-block or publications dump (#676)', () => {

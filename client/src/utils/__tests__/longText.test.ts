@@ -85,6 +85,64 @@ describe('longTextParagraphs', () => {
     ]);
   });
 
+  it('does not split paragraphs inside bare www-prefixed URLs', () => {
+    const text = [
+      'The lab maintains an online atlas at www.SampleAtlas.org for shared use.',
+      'More information is available on the book website, www.example-lab.school.edu.',
+      'The profile-derived summary should be checked against linked sources.',
+      'Students should verify the official page before outreach.',
+      'The profile is retained as planning context.',
+    ].join(' ');
+
+    expect(longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 })).toEqual([
+      [
+        'The lab maintains an online atlas at www.SampleAtlas.org for shared use.',
+        'More information is available on the book website, www.example-lab.school.edu.',
+        'The profile-derived summary should be checked against linked sources.',
+      ].join(' '),
+      [
+        'Students should verify the official page before outreach.',
+        'The profile is retained as planning context.',
+      ].join(' '),
+    ]);
+  });
+
+  it('does not split paragraphs inside bare (non-http) URLs', () => {
+    const text = [
+      'Nicole is the founding director for CPIRT. www.cpirt.yale.edu. His laboratory is interested in cardiac imaging.',
+      'The lab develops novel MRI methods for probing the mechanical and electrophysiological properties of the heart.',
+      'Students may see work spanning imaging physics, computation, and cardiology.',
+      'The profile summarizes methods and current research interests.',
+      'Current work connects basic imaging science to clinical cardiology questions.',
+    ].join(' ');
+
+    const paragraphs = longTextParagraphs(text, {
+      minAutoSplitCharacters: 120,
+      sentencesPerParagraph: 3,
+    });
+
+    expect(paragraphs.join(' ')).not.toContain('www. cpirt');
+    expect(paragraphs.some((paragraph) => paragraph.includes('www.cpirt.yale.edu.'))).toBe(true);
+  });
+
+  it('does not add stray spacing inside a parenthesized bare URL', () => {
+    const text = [
+      'He has developed an online resource for teaching and learning R (www.intro2r.info).',
+      'The resource covers introductory statistics and data visualization.',
+      'Students use it alongside coursework in quantitative methods.',
+      'The group also collaborates with colleagues in ecology and evolutionary biology.',
+      'Current projects examine population dynamics under environmental change.',
+    ].join(' ');
+
+    const paragraphs = longTextParagraphs(text, {
+      minAutoSplitCharacters: 120,
+      sentencesPerParagraph: 3,
+    });
+
+    expect(paragraphs[0]).toContain('(www.intro2r.info).');
+    expect(paragraphs.join(' ')).not.toContain('www. intro2r');
+  });
+
   it('does not split paragraphs inside compact place or role abbreviations', () => {
     const text = [
       'Nicole represented the school in Washington, D.C., at an annual leadership conference.',

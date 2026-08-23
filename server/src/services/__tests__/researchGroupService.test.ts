@@ -520,6 +520,31 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('strips glued "YSM Researcher" boilerplate from the researchAreas facet and merges counts (#742)', async () => {
+    mocks.search.mockResolvedValueOnce({
+      hits: [],
+      estimatedTotalHits: 0,
+      facetDistribution: {
+        schools: { 'School of Medicine': 4 },
+        departments: { Psychiatry: 2 },
+        researchAreas: {
+          'MedicareYSM Researcher': 1,
+          Medicare: 3,
+          'YSM Researcher': 2,
+          Histones: 5,
+        },
+      },
+    });
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(result.facetDistribution).toEqual({
+      school: { 'School of Medicine': 4 },
+      departments: { Psychiatry: 2 },
+      researchAreas: { Medicare: 4, Histones: 5 },
+    });
+  });
+
   it('recovers on Meili when attributesToSearchOn references a non-searchable attribute', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     mocks.search
@@ -583,6 +608,136 @@ describe('searchResearchGroupsViaMeili', () => {
         hybrid: { semanticRatio: 0.8, embedder: 'default' },
       }),
     );
+  });
+
+  it('applies a ranking score threshold to hybrid text queries so noise queries return empty', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('zzzxxxqqq123nonsense', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledWith(
+      'zzzxxxqqq123nonsense',
+      expect.objectContaining({
+        hybrid: { semanticRatio: 0.8, embedder: 'default' },
+        rankingScoreThreshold: 0.15,
+      }),
+    );
+    expect(result.estimatedTotalHits).toBe(0);
+    expect(result.degraded).toBe(false);
+  });
+
+  it('reports the exhaustive threshold-aware totalHits for a thresholded hybrid query, not the inflated estimate', async () => {
+    const entityId = '67d8928150621bcef434a1d5';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        {
+          id: entityId,
+          slug: 'bruce-lab',
+          name: 'Bruce Lab',
+          kind: 'lab',
+          departments: ['Neuroscience'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ],
+      estimatedTotalHits: 1686,
+      totalHits: 74,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: entityId,
+          slug: 'bruce-lab',
+          name: 'Bruce Lab',
+          kind: 'lab',
+          departments: ['Neuroscience'],
+          researchAreas: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      rankingScoreThreshold: 0.15,
+      page: 1,
+      hitsPerPage: 24,
+    });
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
+    expect(result.estimatedTotalHits).toBe(74);
+  });
+
+  it('maps page/pageSize to finite pagination for a deeper thresholded hybrid page', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 1686, totalHits: 74 });
+
+    const result = await searchResearchGroupsViaMeili('neuroscience', {}, 3, 18);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({
+      page: 3,
+      hitsPerPage: 18,
+    });
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('limit');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
+    expect(result.estimatedTotalHits).toBe(74);
+  });
+
+  it('keeps offset/limit pagination for keyword-only queries that carry no ranking threshold', async () => {
+    mocks.getEmbedders.mockResolvedValue({});
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 5 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 2, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toMatchObject({ limit: 24, offset: 24 });
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('page');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hitsPerPage');
+    expect(result.estimatedTotalHits).toBe(5);
+  });
+
+  it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
+    mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
+  });
+
+  it('drops the ranking score threshold alongside hybrid when the embedder is missing', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        cause: {
+          code: 'invalid_search_embedder',
+          message: 'Cannot find embedder with name `default`.',
+        },
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('hybrid');
+    expect(result.degraded).toBe(true);
+  });
+
+  it('drops only the ranking score threshold when the running Meili version rejects it', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'bad_request',
+        message: 'Unknown field `rankingScoreThreshold`.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    const result = await searchResearchGroupsViaMeili('reilly', {}, 1, 24);
+
+    expect(mocks.search).toHaveBeenCalledTimes(2);
+    expect(mocks.search.mock.calls[0][1]).toHaveProperty('rankingScoreThreshold', 0.15);
+    expect(mocks.search.mock.calls[1][1]).not.toHaveProperty('rankingScoreThreshold');
+    expect(mocks.search.mock.calls[1][1]).toHaveProperty('hybrid');
+    expect(result.degraded).toBe(true);
   });
 
   it('does not let short AI fallback matching resolve Ailong or airway substrings', async () => {
@@ -1137,6 +1292,16 @@ describe('getResearchGroupDetail', () => {
 
   it('renders a member card title stripped of a leaked raw email address', async () => {
     seedSingleMemberDetail('Professor of Immunobiology fixture.researcher@yale.edu');
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBeUndefined();
+  });
+
+  it('renders a member card title stripped of the issue #740 email/office/phone contact block', async () => {
+    seedSingleMemberDetail(
+      'Professor of Historyfixture.researcher@example.eduOffice: 320 York StPhone: 203-432-0000',
+    );
 
     const detail = await getResearchGroupDetail('title-hygiene-lab');
 

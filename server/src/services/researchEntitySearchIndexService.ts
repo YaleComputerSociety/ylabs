@@ -508,6 +508,40 @@ export async function isResearchEntitySearchEmbedderConfigured(
   return configured;
 }
 
+const MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS = 180_000;
+
+interface MeiliTaskWaiter {
+  waitForTask: (
+    taskUid: number,
+    options?: { timeout?: number },
+  ) => Promise<{
+    status: string;
+    error?: unknown;
+  }>;
+}
+
+interface MeiliTaskAwareIndex {
+  tasks?: MeiliTaskWaiter;
+}
+
+async function assertMeiliSettingsTaskSucceeded(
+  index: MeiliTaskAwareIndex,
+  enqueued: unknown,
+  label: string,
+): Promise<void> {
+  const taskUid = (enqueued as { taskUid?: number })?.taskUid;
+  if (typeof index.tasks?.waitForTask !== 'function' || typeof taskUid !== 'number') return;
+
+  const task = await index.tasks.waitForTask(taskUid, {
+    timeout: MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
+  });
+  if (task.status !== 'succeeded') {
+    throw new Error(
+      `Meilisearch ${label} task ${taskUid} did not succeed (status: ${task.status}): ${JSON.stringify(task.error)}`,
+    );
+  }
+}
+
 export async function rebuildResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexRebuildOptions = {},
 ): Promise<ResearchEntitySearchIndexRebuildResult> {
@@ -517,10 +551,15 @@ export async function rebuildResearchEntitySearchIndex(
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
 
-  await index.updateSettings(getResearchEntitySearchIndexSettings());
+  const settingsTask = await index.updateSettings(getResearchEntitySearchIndexSettings());
+  await assertMeiliSettingsTaskSucceeded(index, settingsTask, 'updateSettings');
   const openAiApiKey = process.env.OPENAI_API_KEY;
   if (openAiApiKey && typeof (index as any).updateEmbedders === 'function') {
-    await (index as any).updateEmbedders(buildResearchEntitySearchEmbedderConfig(openAiApiKey));
+    const embedderTask = await (index as any).updateEmbedders(
+      buildResearchEntitySearchEmbedderConfig(openAiApiKey),
+    );
+    await assertMeiliSettingsTaskSucceeded(index, embedderTask, 'updateEmbedders');
+    invalidateResearchEntitySearchEmbedderCache();
   }
   if (clearExisting) {
     await index.deleteAllDocuments();

@@ -21,7 +21,11 @@ const ENTITY_TYPE_TO_KIND: Record<string, string> = {
   COLLECTIONS_INITIATIVE: 'initiative',
   GROUP: 'group',
   INDIVIDUAL_RESEARCH: 'individual',
+  FACULTY_RESEARCH: 'individual',
   FACULTY_RESEARCH_AREA: 'individual',
+  FACULTY_PROJECT: 'group',
+  DIGITAL_HUMANITIES_PROJECT: 'group',
+  ARCHIVE_OR_MUSEUM_PROJECT: 'group',
 };
 
 export type ResearchEntityCopyInput = {
@@ -58,12 +62,22 @@ export const isFacultyResearchEntity = (entity?: ResearchEntityCopyInput | null)
     entity &&
       (entity.kind === 'individual' ||
         entity.kind === 'solo' ||
+        entity.entityType === 'FACULTY_RESEARCH' ||
         entity.entityType === 'FACULTY_RESEARCH_AREA' ||
         entity.entityType === 'INDIVIDUAL_RESEARCH'),
   );
 
 export const researchEntityDisplayName = (entity?: ResearchEntityCopyInput | null): string =>
   String(entity?.displayName || entity?.name || '');
+
+const FACULTY_RESEARCH_TITLE_SUFFIX = /\s*(?:[-–—]\s*)?(?:Faculty\s+)?Research$/i;
+
+export const researchEntityTitle = (entity?: ResearchEntityCopyInput | null): string => {
+  const base = researchEntityDisplayName(entity);
+  if (!isFacultyResearchEntity(entity)) return base;
+  const normalized = base.replace(FACULTY_RESEARCH_TITLE_SUFFIX, '').trim();
+  return normalized || base;
+};
 
 export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isFacultyResearchEntity(entity)) return 'Faculty Research';

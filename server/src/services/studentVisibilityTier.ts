@@ -487,9 +487,9 @@ export function computeProgramStudentVisibility(
   if (undergraduateRelevant) reasons.push('undergraduate_relevant');
   if (graduateOnly) reasons.push('graduate_relevant');
   if (formalizationOnly) reasons.push('formalization_only');
-  if (!researchRelated) reasons.push('non_research_program');
   if (descriptionState === 'missing') reasons.push('missing_description');
-  if (descriptionState === 'thin') reasons.push('thin_description');
+  else if (descriptionState === 'thin') reasons.push('thin_description');
+  if (!researchRelated) reasons.push('non_research_program');
 
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (catalogOrAdmin || !researchRelated) {

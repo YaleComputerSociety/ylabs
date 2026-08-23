@@ -5,8 +5,12 @@
  * field, where only a short role/position string belongs. Issue #708 saw this
  * spread across shapes: a Yale Quantum Institute nav menu, a department nav bar,
  * a street address run together with the role, and a full faculty bio (in one
- * case with a raw @yale.edu email) dumped into the title. These guards fail
- * closed: title extraction and render yield a real title or nothing.
+ * case with a raw @yale.edu email) dumped into the title. Issue #740 added the
+ * PII-severity contact-block shape: an unredacted email plus a phone number
+ * ("Phone:"/"Tel:"/"Fax:") and street address concatenated into the title, and
+ * observed that any title beyond a short role string (over ~140 chars) is
+ * scraped junk. These guards fail closed: title extraction and render yield a
+ * real title or nothing.
  *
  * Deliberately separate from `descriptionHygiene`: that module governs
  * student-facing prose descriptions; this one governs the short person `title`
@@ -111,6 +115,23 @@ export function hasStreetAddressFragment(value: string | null | undefined): bool
   return streetAddressPatterns.some((pattern) => pattern.test(text));
 }
 
+const phoneNumberPattern = /(?:\+?1[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}/;
+const phoneLabelPattern = /\b(?:phone|tel|telephone|fax|mobile|cell)\s*:/i;
+
+/**
+ * A phone/fax contact fragment lifted into the title (#740's "raw
+ * email/phone/address contact block"): a `Phone:`/`Tel:`/`Fax:`/`Mobile:`/`Cell:`
+ * label, or a bare ten-digit phone number. Neither occurs in a genuine job
+ * title, and both are a student-visible contact-route leak, so either one fails
+ * the title closed. Complements `hasRawEmailAddress`/`hasStreetAddressFragment`,
+ * which already cover the email and street-address arms of the same block.
+ */
+export function hasPhoneContactFragment(value: string | null | undefined): boolean {
+  const text = normalizeTitleWhitespace(value);
+  if (!text) return false;
+  return phoneLabelPattern.test(text) || phoneNumberPattern.test(text);
+}
+
 function sentenceBoundaryCount(text: string): number {
   return (text.match(/[a-z]{4,}[.!?]["')\]]?\s+[A-Z]/g) || []).length;
 }
@@ -131,19 +152,25 @@ export function isBioProseTitle(value: string | null | undefined): boolean {
   return sentenceBoundaryCount(text) >= 2;
 }
 
+export const MAX_PERSON_TITLE_LENGTH = 140;
+
 /**
  * Fail-closed sanitizer for the short person `title` field, applied at both the
  * scraper write path and the member/PI card render path (#708). Returns a
  * normalized title, or undefined when the candidate is navigation/menu chrome,
- * a raw email, a street-address fragment, or multi-sentence bio prose, so a
- * corrupted title never lands in storage nor renders from stale data.
+ * a raw email, a street-address fragment, a phone/fax contact fragment,
+ * multi-sentence bio prose, or simply longer than a role string ever runs
+ * (#740's over-140-char scraped-junk heuristic), so a corrupted title never
+ * lands in storage nor renders from stale data (#708, #740).
  */
 export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
   const text = normalizeTitleWhitespace(value);
   if (!text) return undefined;
+  if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
   if (hasRawEmailAddress(text)) return undefined;
   if (hasStreetAddressFragment(text)) return undefined;
+  if (hasPhoneContactFragment(text)) return undefined;
   if (isBioProseTitle(text)) return undefined;
   return text;
 }

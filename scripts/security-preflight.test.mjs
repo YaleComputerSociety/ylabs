@@ -4744,7 +4744,8 @@ test('public ResearchEntity DTO recursively redacts direct-contact text', () => 
     source,
     /displayName:\s*group\.displayName === undefined \? undefined : publicTextString\(group\.displayName\)/,
   );
-  assert.match(source, /researchAreas:\s*publicTextStringArray\(group\.researchAreas\)/);
+  assert.match(source, /researchAreas:\s*publicResearchAreaArray\(group\.researchAreas\)/);
+  assert.match(source, /const cleaned = publicTextString\(sanitizeResearchAreaLabel\(raw\)\)/);
   assert.match(
     source,
     /value\s*\.slice\(0, MAX_PUBLIC_RESEARCH_ENTITY_ARRAY_ITEMS\)\s*\.map\(publicTextValue\)/,
