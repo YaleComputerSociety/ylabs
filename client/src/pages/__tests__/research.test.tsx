@@ -1428,6 +1428,95 @@ describe('Research page', () => {
     );
   });
 
+  it('keeps the result summary and search button steady while more search results load', async () => {
+    class MockIntersectionObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      takeRecords = vi.fn(() => []);
+    }
+
+    window.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    globalThis.IntersectionObserver =
+      MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    Element.prototype.getBoundingClientRect = vi.fn(() => ({
+      bottom: 2000,
+      height: 1,
+      left: 0,
+      right: 1,
+      top: 2000,
+      width: 1,
+      x: 0,
+      y: 2000,
+      toJSON: () => ({}),
+    }));
+
+    const nextResearchEntity = {
+      ...researchEntity,
+      _id: 'entity-2',
+      slug: 'wright-lab',
+      name: 'Wright Lab',
+      displayName: 'Wright Lab',
+    };
+    const nextPage = createDeferred<{
+      data: {
+        researchEntities: unknown[];
+        estimatedTotalHits: number;
+        page: number;
+        pageSize: number;
+      };
+    }>();
+
+    mockedAxios.post.mockImplementation((url: string, body: { page?: number }) => {
+      if (url !== '/research/search') return Promise.reject(unexpectedSearchEndpoint(url));
+      if (body.page === 2) return nextPage.promise;
+      return Promise.resolve(
+        researchSearchResponse([researchEntity], { estimatedTotalHits: 25, page: 1 }),
+      );
+    });
+
+    renderResearch(departments, ['/research?q=protein+folding']);
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await screen.findByText('Showing 1 of 25 research homes', { exact: false });
+    await waitFor(() => {
+      expect(intersectionCallback).toBeDefined();
+    });
+
+    await act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    await waitFor(() => {
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        '/research/search',
+        expect.objectContaining({ page: 2, pageSize: 24 }),
+        expect.any(Object),
+      );
+    });
+
+    expect(screen.getByText('Showing 1 of 25 research homes', { exact: false })).toBeTruthy();
+    expect(screen.queryByText(/Searching Yale Research for/)).toBeNull();
+    const searchButton = screen.getByRole('button', { name: 'Search' });
+    expect(searchButton).toBeTruthy();
+    expect((searchButton as HTMLButtonElement).disabled).toBe(false);
+
+    nextPage.resolve(
+      researchSearchResponse([nextResearchEntity], { estimatedTotalHits: 25, page: 2 }),
+    );
+
+    await screen.findByRole('heading', { name: 'Wright Lab' });
+    await screen.findByText('Showing 2 of 25 research homes', { exact: false });
+  });
+
   it('preserves facet availability when loading more search results fails', async () => {
     class MockIntersectionObserver {
       constructor(callback: IntersectionObserverCallback) {
