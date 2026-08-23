@@ -149,11 +149,10 @@ describe('ResearchFilterDisclosure', () => {
       ],
     });
 
-    const areaSelect = screen.getByLabelText('Filter by research area');
-    expect(within(areaSelect).getByRole('option', { name: 'Robotics (2)' })).toBeTruthy();
-    fireEvent.change(areaSelect, {
-      target: { value: 'Robotics' },
-    });
+    const areaInput = screen.getByLabelText('Filter by research area');
+    fireEvent.focus(areaInput);
+    expect(screen.getByRole('option', { name: 'Robotics (2)' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('option', { name: 'Robotics (2)' }));
     expect(props.onResearchAreasChange).toHaveBeenCalledWith(['Robotics']);
 
     const { props: selectedProps } = renderFilters({
@@ -214,9 +213,9 @@ describe('ResearchFilterDisclosure', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     await screen.findByRole('dialog', { name: 'Research filters' });
 
-    fireEvent.change(screen.getByLabelText('Filter by research area'), {
-      target: { value: 'Artificial Intelligence' },
-    });
+    const areaInput = screen.getByLabelText('Filter by research area');
+    fireEvent.focus(areaInput);
+    fireEvent.click(screen.getByRole('option', { name: 'Artificial Intelligence (23)' }));
 
     expect(screen.getByTestId('search-results')).toBeTruthy();
     expect(screen.queryByTestId('browse')).toBeNull();
