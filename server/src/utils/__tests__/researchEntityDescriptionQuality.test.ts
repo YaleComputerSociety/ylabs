@@ -198,6 +198,26 @@ describe('fullDescriptionQuality', () => {
     );
   });
 
+  it('does not glue a "Studies " prefix onto a first sentence with a leadership-verb person subject', () => {
+    const heldChaired =
+      'Marion Frank held the directorship of the Center for Language Study and chaired the Council on East Asian Studies. She also founded the Language Resource Center in 1998.';
+    expect(deriveShortDescriptionFromFullDescription(heldChaired)).not.toMatch(
+      /^Studies Marion Frank/,
+    );
+
+    const maintainsOversees =
+      'Carlos Ruiz maintains the archive of oral histories and oversees the department’s digital humanities lab. He previously oversaw a multi-year fieldwork project in Oaxaca.';
+    expect(deriveShortDescriptionFromFullDescription(maintainsOversees)).not.toMatch(
+      /^Studies Carlos Ruiz/,
+    );
+
+    const directedFounded =
+      'Priya Nair directed the Yale Center for Environmental Law and Policy from 2015 to 2019. She founded a clinic advising municipalities on climate adaptation.';
+    expect(deriveShortDescriptionFromFullDescription(directedFounded)).not.toMatch(
+      /^Studies Priya Nair/,
+    );
+  });
+
   it('still derives a "Studies " summary from a leading bare scholarly field list', () => {
     const fullDescription =
       'Comparative Literature, Philosophy, and Poetry, especially medieval Islamic thought. The seminar traces how these traditions read one another across centuries.';
