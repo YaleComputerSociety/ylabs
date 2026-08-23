@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRoster } from '../services/researchEntityMembershipAccessor';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeEvidenceExcerpt } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import type { AccessSignalConfidence, AccessSignalType } from '../models/researchAccessTypes';
 import { upsertSignal, type UpsertSignalInput } from '../services/signalService';
@@ -102,8 +102,7 @@ function firstString(value: unknown): string {
 }
 
 function publicExcerpt(value: unknown): string | undefined {
-  const text = firstString(value);
-  return text ? redactDirectContactInfo(text) : undefined;
+  return sanitizeEvidenceExcerpt(firstString(value)) || undefined;
 }
 
 function firstUrlValue(value: unknown): string {
