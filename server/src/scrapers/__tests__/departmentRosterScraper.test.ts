@@ -1044,8 +1044,7 @@ describe('chemEnvFacultyExtractor', () => {
         profileUrl:
           'https://engineering.yale.edu/research-and-faculty/faculty-directory/eric-i-altman',
         title: 'Roberto C. Goizueta Professor',
-        imageUrl:
-          'https://engineering.yale.edu/application/files/thumbnails/eric-altman.webp',
+        imageUrl: 'https://engineering.yale.edu/application/files/thumbnails/eric-altman.webp',
       },
       {
         name: 'Yuan Yao',

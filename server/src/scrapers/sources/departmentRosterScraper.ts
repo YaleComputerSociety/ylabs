@@ -580,7 +580,12 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const heading = card.find('h3').first();
     const name = normalizeName(
-      cleanText(heading.contents().filter((_j, node) => node.type === 'text').text()),
+      cleanText(
+        heading
+          .contents()
+          .filter((_j, node) => node.type === 'text')
+          .text(),
+      ),
     );
     if (!name) return;
 
