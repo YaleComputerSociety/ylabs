@@ -33,10 +33,13 @@ import { normalizeResearchEntityDetailPayload } from '../types/researchEntity';
 import {
   buildResearchDetailSources,
   isDepartmentRosterProvenanceUrl,
+  isOrgUmbrellaEntity,
+  isProfileLikeWebsiteUrl,
   isRawDataApiSourceUrl,
   isSuppressedResearchWebsiteCtaUrl,
   normalizeActionDestination,
   normalizeSourceUrl,
+  resolveOutreachOfficialSource,
   ResearchDetailSource,
 } from '../utils/researchDetailSources';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../utils/url';
@@ -208,9 +211,6 @@ const hasProfileSynthesisDescription = (group: any): boolean =>
   group.descriptionSource === 'PI_PROFILE_SYNTHESIS' &&
   Boolean((group.profileSynthesisDescription || '').trim());
 
-const isProfileLikeWebsiteUrl = (url?: string): boolean =>
-  /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|$)/i.test(url || '');
-
 const isFacultyResearchFallback = (group: any): boolean => {
   const hasOnlyProfileWebsite =
     (!group.websiteUrl || isProfileLikeWebsiteUrl(group.websiteUrl)) &&
@@ -288,23 +288,6 @@ const resolveDecisionProfileUrl = (
     return normalizeSourceUrl(url) || undefined;
   }
   return undefined;
-};
-
-const resolveOutreachOfficialSource = (
-  sources: ResearchDetailSource[],
-  claimedActionUrls: Array<string | undefined>,
-  leadIdentityUnderReview: boolean,
-): ResearchDetailSource | undefined => {
-  const claimedDestinations = new Set(
-    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
-  );
-  return sources.find((source) => {
-    if (source.isLikelyUnavailable) return false;
-    if (!safeHttpUrl(source.url)) return false;
-    if (leadIdentityUnderReview && isProfileLikeWebsiteUrl(source.url)) return false;
-    const destination = normalizeActionDestination(source.url);
-    return Boolean(destination) && !claimedDestinations.has(destination);
-  });
 };
 
 const memberDisplayName = (member: LabMember): string =>
@@ -858,6 +841,7 @@ const LabDetail = () => {
     sources,
     [decisionProfileUrl, officialWebsiteUrl],
     leadIdentityUnderReview,
+    { prefersOrgLevelPage: isOrgUmbrellaEntity(group) },
   );
   const showDedicatedPrincipalInvestigatorSection =
     leadIdentityUnderReview || principalInvestigators.length !== 1;

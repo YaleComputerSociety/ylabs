@@ -227,6 +227,113 @@ export const isSuppressedResearchWebsiteCtaUrl = (url?: string | null): boolean 
   isBoilerplatePlatformSourceUrl(url) ||
   isDirectoryRosterRootUrl(url);
 
+export const isProfileLikeWebsiteUrl = (url?: string | null): boolean =>
+  /(?:^|[/-])(?:profile|profiles|people|faculty)(?:[/-]|$)/i.test(url || '');
+
+const NSF_AWARD_PATH = /(?:^|\/)(?:awardsearch|showaward)(?:\/|$|\?)/i;
+
+const matchesHostOrSubdomain = (host: string, base: string): boolean =>
+  host === base || host.endsWith(`.${base}`);
+
+/**
+ * Identifier and grant-database pages (ORCID, NIH RePORTER, NSF award search,
+ * Google Scholar) carry no contact or outreach path, so they must never become
+ * the primary "find contact details" outreach CTA. They may still appear as
+ * secondary Sources links. See issue #651.
+ */
+export const isNonContactableIdentifierSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    if (matchesHostOrSubdomain(host, 'orcid.org')) return true;
+    if (matchesHostOrSubdomain(host, 'reporter.nih.gov')) return true;
+    if (/^scholar\.google\./.test(host)) return true;
+    if (matchesHostOrSubdomain(host, 'nsf.gov') && NSF_AWARD_PATH.test(parsed.pathname)) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+};
+
+const ORG_INVOLVEMENT_PATH =
+  /(?:^|[/-])(?:get[-_]?involved|join(?:[-_]?us)?|participate|volunteer|contact(?:[-_]?us)?|involvement|work[-_]?with[-_]?us|opportunities)(?:[/-]|$)/i;
+
+export const isOrgInvolvementSourceUrl = (url?: string | null): boolean => {
+  const normalized = normalizeSourceUrl(url);
+  if (!normalized) return false;
+  if (isProfileLikeWebsiteUrl(normalized)) return false;
+
+  try {
+    return ORG_INVOLVEMENT_PATH.test(new URL(normalized).pathname);
+  } catch {
+    return false;
+  }
+};
+
+export interface OutreachEntityLike {
+  kind?: string | null;
+  entityType?: string | null;
+}
+
+const ORG_UMBRELLA_ENTITY_TYPES = new Set([
+  'CENTER',
+  'INSTITUTE',
+  'INITIATIVE',
+  'COLLECTIONS_INITIATIVE',
+]);
+
+const ORG_UMBRELLA_KINDS = new Set(['center', 'institute', 'initiative']);
+
+export const isOrgUmbrellaEntity = (entity?: OutreachEntityLike | null): boolean =>
+  Boolean(
+    entity &&
+      ((entity.entityType && ORG_UMBRELLA_ENTITY_TYPES.has(entity.entityType)) ||
+        (entity.kind && ORG_UMBRELLA_KINDS.has(entity.kind))),
+  );
+
+export interface ResolveOutreachOfficialSourceOptions {
+  prefersOrgLevelPage?: boolean;
+}
+
+/**
+ * Pick the source that backs the primary "find contact details and introduce
+ * yourself" outreach CTA on the research detail page. Non-contactable
+ * identifier/grant-database hosts are never eligible (#651); when none of the
+ * eligible sources is contactable the caller falls through to the Yale
+ * Directory fallback. For umbrella/organizational homes an org-level
+ * get-involved/contact/join page is preferred over any other eligible source.
+ */
+export const resolveOutreachOfficialSource = (
+  sources: ResearchDetailSource[],
+  claimedActionUrls: Array<string | undefined>,
+  leadIdentityUnderReview: boolean,
+  options: ResolveOutreachOfficialSourceOptions = {},
+): ResearchDetailSource | undefined => {
+  const claimedDestinations = new Set(
+    claimedActionUrls.map((url) => normalizeActionDestination(url)).filter(Boolean),
+  );
+  const eligible = sources.filter((source) => {
+    if (source.isLikelyUnavailable) return false;
+    if (!safeHttpUrl(source.url)) return false;
+    if (isNonContactableIdentifierSourceUrl(source.url)) return false;
+    if (leadIdentityUnderReview && isProfileLikeWebsiteUrl(source.url)) return false;
+    const destination = normalizeActionDestination(source.url);
+    return Boolean(destination) && !claimedDestinations.has(destination);
+  });
+
+  if (options.prefersOrgLevelPage) {
+    const orgLevelPage = eligible.find((source) => isOrgInvolvementSourceUrl(source.url));
+    if (orgLevelPage) return orgLevelPage;
+  }
+
+  return eligible[0];
+};
+
 const titleFromPath = (path: string): string => {
   const parts = path.split('/').filter(Boolean);
   const rawLeaf = parts[parts.length - 1];
