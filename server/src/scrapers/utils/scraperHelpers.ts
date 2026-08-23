@@ -117,8 +117,9 @@ export function isLikelyPersonSpecificYaleEmail(
 }
 
 /**
- * Normalize a faculty display name: collapse whitespace, strip trailing
- * credential suffixes (", Ph.D.", ", M.D.", etc.), and remove leading honorifics.
+ * Normalize a faculty display name: collapse whitespace, drop a parenthetical
+ * nickname (e.g. "Ruby (Hsin-Fang) Tu" -> "Ruby Tu"), strip trailing credential
+ * suffixes (", Ph.D.", ", M.D.", etc.), and remove leading honorifics.
  *
  * Returns the cleaned name suitable for slugification or display. Returns an
  * empty string on falsy input.
@@ -126,6 +127,8 @@ export function isLikelyPersonSpecificYaleEmail(
 export function normalizeName(name: string | undefined | null): string {
   if (!name) return '';
   let n = String(name).replace(/\s+/g, ' ').trim();
+  // drop a complete "(...)" nickname parenthetical (both parens and contents)
+  n = n.replace(/\s*\([^()]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
   // strip leading honorifics
   n = n.replace(/^(prof(\.|essor)?|dr\.?|mr\.?|mrs\.?|ms\.?|mx\.?)\s+/i, '');
   // strip trailing credential clauses after the last comma, repeating so that

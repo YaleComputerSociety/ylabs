@@ -417,6 +417,9 @@ describe('slugify', () => {
   it('returns empty string on empty input', () => {
     expect(slugify('')).toBe('');
   });
+  it('produces a clean slug for a First (Nickname) Last source name once normalized', () => {
+    expect(slugify(normalizeName('Jane (Nickname) Doe'))).toBe('jane-doe');
+  });
 });
 
 describe('netidFromEmail', () => {
@@ -479,6 +482,16 @@ describe('normalizeName', () => {
   });
   it('collapses whitespace', () => {
     expect(normalizeName('  Foo   Bar  ')).toBe('Foo Bar');
+  });
+  it('drops a parenthetical nickname between first and last name', () => {
+    expect(normalizeName('Jane (Nickname) Doe')).toBe('Jane Doe');
+    expect(normalizeName('Jane (Preferred-Name) Doe')).toBe('Jane Doe');
+  });
+  it('drops a trailing parenthetical nickname', () => {
+    expect(normalizeName('Jane Doe (Nickname)')).toBe('Jane Doe');
+  });
+  it('drops a parenthetical nickname before stripping honorifics and credentials', () => {
+    expect(normalizeName('Dr. Jane (Nickname) Doe, Ph.D.')).toBe('Jane Doe');
   });
   it('returns empty on empty input', () => {
     expect(normalizeName('')).toBe('');
