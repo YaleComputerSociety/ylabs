@@ -678,6 +678,31 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.researchEntities).toEqual([expect.objectContaining({ slug: 'actual-ai-lab' })]);
   });
 
+  it('sanitizes glued YSM Researcher role labels out of Mongo fallback hits and facets', async () => {
+    mocks.search.mockRejectedValue(new Error('meili unavailable'));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1d5',
+          slug: 'medicare-lab',
+          name: 'Medicare Lab',
+          kind: 'lab',
+          departments: [],
+          researchAreas: ['MedicareYSM Researcher', 'Neuroscience'],
+          keywords: [],
+          sourceUrls: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('medicare', {}, 1, 24);
+
+    expect(result.degraded).toBe(true);
+    expect(result.researchEntities).toHaveLength(1);
+    expect(result.researchEntities[0].researchAreas).toEqual(['Medicare', 'Neuroscience']);
+    expect(result.facetDistribution?.researchAreas).toEqual({ Medicare: 1, Neuroscience: 1 });
+  });
+
   it('keeps base research results usable when optional planning context fails', async () => {
     const entityId = '67d8928150621bcef434a1d5';
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);

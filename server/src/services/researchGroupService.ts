@@ -1133,9 +1133,13 @@ const searchResearchGroupsViaMongoFallback = async (
   const candidates = await ResearchEntity.find(
     mongoFilterFromResearchFilters(filters, options.includeNonPublic),
   ).lean();
-  const visibleCandidates = (candidates as any[]).filter((entity) =>
-    researchEntityMatchesQuery(entity, trimmedQuery),
-  );
+  const visibleCandidates = (candidates as any[])
+    .filter((entity) => researchEntityMatchesQuery(entity, trimmedQuery))
+    .map((entity) =>
+      Array.isArray(entity?.researchAreas)
+        ? { ...entity, researchAreas: sanitizeResearchAreasForDisplay(entity.researchAreas) }
+        : entity,
+    );
   const facetDistribution = {
     school: facetCounts(visibleCandidates, 'schools'),
     departments: facetCounts(visibleCandidates, 'departments'),

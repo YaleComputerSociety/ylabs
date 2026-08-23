@@ -1,4 +1,5 @@
 import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
+import { sanitizeResearchAreasForDisplay } from '../scrapers/researchAreaCanonicalization';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import {
   sanitizeResearchEntityDescription,
@@ -251,7 +252,7 @@ export function toPublicResearchEntityDto(
     entityKind: kind,
     entityType,
     departments: publicDepartmentArray(group.departments),
-    researchAreas: publicTextStringArray(group.researchAreas),
+    researchAreas: publicTextStringArray(sanitizeResearchAreasForDisplay(group.researchAreas)),
     sourceUrls: publicHttpUrlArray(group.sourceUrls),
   };
 
