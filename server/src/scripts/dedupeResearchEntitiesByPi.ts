@@ -890,7 +890,10 @@ async function loadSamePiCandidateRows(limit: number, options: { includeRetiredM
         piFirstName: firstName,
         piLastName: lastName,
         entities: [
-          ...(row.entities || []),
+          ...(row.entities || []).map((entity: { id?: string }) => ({
+            ...entity,
+            piRoleCorroborated: true,
+          })),
           ...profileAreaEntities
             .map((entity: any) => ({
               id: serializedDocumentId(entity._id) || '',

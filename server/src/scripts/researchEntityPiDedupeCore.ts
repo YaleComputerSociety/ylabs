@@ -31,6 +31,7 @@ export interface ResearchEntityPiDedupeRow {
     recentGrants?: unknown[];
     recentGrantCount?: number;
     fundingAgencies?: string[];
+    piRoleCorroborated?: boolean;
   }>;
 }
 
@@ -362,6 +363,33 @@ function isProfileBackedSurnameLabShell(
   return words.every((word, index) => word === lastNameWords[index]);
 }
 
+/**
+ * A well-formed lab record with its own website whose name reduces to just the
+ * PI's surname (e.g. "Roy Lab") is deliberately excluded from
+ * `isProfileBackedSurnameLabShell` (that guard requires no own website, to avoid
+ * clustering two different people who merely share a surname when the personId
+ * link is uncertain). But when the entity is joined to this row's person by a
+ * direct PI `RoleAssignment` (`piRoleCorroborated`), the personId linkage is
+ * already certain, so the surname-only lab may safely cluster with the same
+ * person's first-name-bearing funding shell (issue #1113). This corroboration
+ * is set only on RoleAssignment-joined entities, never on name-only rows, so the
+ * website guard still holds where the linkage is uncertain.
+ */
+function isPiRoleCorroboratedSurnameLab(
+  entity: ResearchEntityPiDedupeRow['entities'][number],
+  row: ResearchEntityPiDedupeRow,
+): boolean {
+  if (entity.piRoleCorroborated !== true) return false;
+  if (normalizedWords(row.piFirstName).length === 0) return false;
+  const lastNameWords = normalizedWords(row.piLastName);
+  if (lastNameWords.length === 0) return false;
+  const words = normalizedWords(entity.name).filter(
+    (word) => !['the', 'lab', 'laboratory', 'research'].includes(word),
+  );
+  if (words.length !== lastNameWords.length) return false;
+  return words.every((word, index) => word === lastNameWords[index]);
+}
+
 function comparablePiLabName(
   entity: ResearchEntityPiDedupeRow['entities'][number],
   row: ResearchEntityPiDedupeRow,
@@ -382,7 +410,13 @@ function comparablePiLabName(
   if (!matchesTrailingLastName) return null;
 
   const personPrefix = words.slice(0, words.length - lastNameWords.length);
-  if (personPrefix.length === 0 && !isProfileBackedSurnameLabShell(entity, row)) return null;
+  if (
+    personPrefix.length === 0 &&
+    !isProfileBackedSurnameLabShell(entity, row) &&
+    !isPiRoleCorroboratedSurnameLab(entity, row)
+  ) {
+    return null;
+  }
   const hasUnexpectedPrefix = personPrefix.some(
     (word) => word.length > 1 && !firstNameTokens.has(word),
   );

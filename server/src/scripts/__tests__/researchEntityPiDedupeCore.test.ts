@@ -598,6 +598,81 @@ describe('buildResearchEntityPiDedupePlan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('merges a RoleAssignment-corroborated surname-only lab with its own website into the same-PI funding shell (#1113)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'townsend-person-id',
+        normalizedName: 'same-pi:townsend-person-id',
+        piFirstName: 'Jeffrey',
+        piLastName: 'Townsend',
+        entities: [
+          {
+            id: 'canonical-townsend',
+            slug: 'ysm-townsend',
+            name: 'Townsend Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/townsend/',
+            sourceUrls: ['https://medicine.yale.edu/lab/townsend/'],
+            departments: ['Biostatistics'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+          {
+            id: 'funding-shell-townsend',
+            slug: 'nsf-pi-67d8927f50621bcef434a16d',
+            name: 'Jeffrey Townsend Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
+            kind: 'lab',
+            entityType: 'LAB',
+            piRoleCorroborated: true,
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toMatchObject([
+      {
+        canonicalEntityId: 'canonical-townsend',
+        duplicateEntityIds: ['funding-shell-townsend'],
+        canonicalSlug: 'ysm-townsend',
+        duplicateSlugs: ['nsf-pi-67d8927f50621bcef434a16d'],
+      },
+    ]);
+  });
+
+  it('does not merge a surname-only lab with its own website when the person linkage is uncorroborated (#1113 guard)', () => {
+    const plan = buildResearchEntityPiDedupePlan([
+      {
+        userId: 'name:townsend',
+        normalizedName: 'name:townsend',
+        piFirstName: 'Jeffrey',
+        piLastName: 'Townsend',
+        entities: [
+          {
+            id: 'canonical-townsend',
+            slug: 'ysm-townsend',
+            name: 'Townsend Lab',
+            websiteUrl: 'https://medicine.yale.edu/lab/townsend/',
+            sourceUrls: ['https://medicine.yale.edu/lab/townsend/'],
+            departments: ['Biostatistics'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+          {
+            id: 'funding-shell-townsend',
+            slug: 'nsf-pi-67d8927f50621bcef434a16d',
+            name: 'Jeffrey Townsend Lab',
+            sourceUrls: ['https://reporter.nih.gov/project-details/10845546'],
+            kind: 'lab',
+            entityType: 'LAB',
+          },
+        ],
+      },
+    ]);
+
+    expect(plan).toEqual([]);
+  });
+
   it('merges same-PI full-name and compound-surname lab names', () => {
     const plan = buildResearchEntityPiDedupePlan([
       {
