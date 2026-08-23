@@ -73,12 +73,48 @@ export function stripLeadingSectionHeadingChrome(sentence: string): string {
 const redactionPlaceholderPattern =
   /\s*(?:\b(?:at|to|via|contact(?:ed)?|email(?:ed)?|reach(?:ed)?(?:\s+out)?|sent)\b\s*)?[:-]?\s*\[(?:email|phone) redacted\]/gi;
 
+const redactionTokenTest = /\[(?:email|phone) redacted\]/i;
+const redactionTokenGlobal = /\[(?:email|phone) redacted\]/gi;
+const splitIntoSentences = (value: string): string[] =>
+  value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
+const endsWithTerminalPunctuation = (value: string): boolean =>
+  /[.!?]["')\]]?$/.test(value.trim());
+const wordCount = (value: string): number => (value.match(/[A-Za-z]{2,}/g) || []).length;
+
+/**
+ * Remove a stored [email redacted] / [phone redacted] contact placeholder while
+ * keeping the surrounding prose grammatical. A token that trails a sentence as a
+ * removable connective phrase ("...committee at [email redacted].") is cleaned in
+ * place, but a token whose removal would strand the rest of its sentence - either
+ * orphaned words follow it mid-sentence ("please contact [email redacted] in the
+ * office" -> "please in the office"), or the strip leaves a fragment with no
+ * terminal punctuation ("...should be sent to [email redacted]" -> "...should be
+ * sent") - drops that whole sentence instead of emitting mangled copy (#774).
+ * Sentences without a token are always kept.
+ */
 export function stripRedactionPlaceholders(text: string): string {
-  return normalizeHygieneWhitespace(
-    String(text || '')
-      .replace(redactionPlaceholderPattern, ' ')
-      .replace(/\s+([.,;:!?])/g, '$1'),
-  );
+  const value = normalizeHygieneWhitespace(text);
+  if (!value || !redactionTokenTest.test(value)) return value;
+  const kept: string[] = [];
+  for (const rawSentence of splitIntoSentences(value)) {
+    const sentence = rawSentence.trim();
+    if (!sentence) continue;
+    if (!redactionTokenTest.test(sentence)) {
+      kept.push(sentence);
+      continue;
+    }
+    const matches = [...sentence.matchAll(redactionTokenGlobal)];
+    const lastMatch = matches[matches.length - 1];
+    const tail = sentence.slice((lastMatch.index ?? 0) + lastMatch[0].length);
+    if (/[A-Za-z]{2,}/.test(tail)) continue;
+    const stripped = normalizeHygieneWhitespace(
+      sentence.replace(redactionPlaceholderPattern, ' ').replace(/\s+([.,;:!?])/g, '$1'),
+    );
+    if (stripped && endsWithTerminalPunctuation(stripped) && wordCount(stripped) >= 2) {
+      kept.push(stripped);
+    }
+  }
+  return normalizeHygieneWhitespace(kept.join(' '));
 }
 
 const CATALOG_CHROME_PATTERNS: RegExp[] = [

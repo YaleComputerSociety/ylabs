@@ -112,38 +112,44 @@ describe('publicProgramForReader link hygiene (#692)', () => {
   });
 });
 
-describe('publicProgramForReader redaction placeholder hygiene (#671 residual)', () => {
-  it('strips a stray [email redacted] token out of the summary field', () => {
+describe('publicProgramForReader redaction placeholder hygiene (#671/#774)', () => {
+  it('cleans a trailing token in place and keeps the surrounding summary prose', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58500',
       title: 'Example Summer Fellowship',
-      summary: 'The confirmation should be sent to: [email redacted]',
-    });
+      summary:
+        'The fellowship supports independent summer research. Send the confirmation to the office at [email redacted].',
+    }) as { summary: string };
 
-    expect(payload.summary).toBe('The confirmation should be sent');
+    expect(payload.summary).not.toMatch(/redacted/i);
+    expect(payload.summary).toBe(
+      'The fellowship supports independent summer research. Send the confirmation to the office.',
+    );
   });
 
-  it('strips a stray [email redacted] token out of the eligibility field', () => {
+  it('drops a mid-sentence contact directive rather than emitting a mangled eligibility', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58501',
       title: 'Example Senior Research Grant',
       eligibility:
-        'If you are an international student, please contact [email redacted] in the Tax Office.',
-    });
+        'Applicants must be seniors in good standing. If you are an international student, please contact [email redacted] in the Tax Office.',
+    }) as { eligibility: string };
 
-    expect(payload.eligibility).toBe(
-      'If you are an international student, please in the Tax Office.',
-    );
+    expect(payload.eligibility).not.toMatch(/redacted/i);
+    expect(payload.eligibility).not.toMatch(/please in the/i);
+    expect(payload.eligibility).toBe('Applicants must be seniors in good standing.');
   });
 
-  it('strips a stray [email redacted] token out of the applicationInformation field', () => {
+  it('drops a trailing fragment left without terminal punctuation in applicationInformation', () => {
     const payload = publicProgramForReader({
       _id: '6982c1cf781efc3253d58502',
       title: 'Example Albert Bildner Travel Prize',
-      applicationInformation: 'Submit your materials and email [email redacted] with questions.',
-    });
+      applicationInformation:
+        'Submit a personal statement and transcript. The letter of recommendation should be sent to: [email redacted]',
+    }) as { applicationInformation: string };
 
-    expect(payload.applicationInformation).toBe('Submit your materials and with questions.');
+    expect(payload.applicationInformation).not.toMatch(/redacted/i);
+    expect(payload.applicationInformation).toBe('Submit a personal statement and transcript.');
   });
 });
 

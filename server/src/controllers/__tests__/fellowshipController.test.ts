@@ -291,10 +291,10 @@ describe('fellowshipController', () => {
       fellowships: [
         {
           ...privateFellowship,
-          summary: 'Email prose-contact@yale.edu or call 203-555-1212 before applying.',
-          description: 'Questions: office@example.edu.',
-          applicationInformation: 'Call 203.555.3434 for the form.',
-          eligibility: 'Ask hidden@yale.edu about eligibility.',
+          summary: 'Applications are reviewed each spring. Email prose-contact@yale.edu or call 203-555-1212 before applying.',
+          description: 'The grant funds summer study. Questions: office@example.edu.',
+          applicationInformation: 'Complete the online form. Call 203.555.3434 for the form.',
+          eligibility: 'Open to juniors and seniors. Ask hidden@yale.edu about eligibility.',
           prepSteps: ['Email prep-contact@yale.edu or call 203-555-7777.'],
           contactPhone: '203-555-9999',
           contactOffice: 'Office contact: office@example.edu or 203-555-0000.',
@@ -317,10 +317,10 @@ describe('fellowshipController', () => {
     ]) {
       expect(field).not.toMatch(/redacted/i);
     }
-    expect(payload.summary).toContain('before applying');
-    expect(payload.description).toContain('Questions');
-    expect(payload.applicationInformation).toContain('the form');
-    expect(payload.eligibility).toContain('eligibility');
+    expect(payload.summary).toBe('Applications are reviewed each spring.');
+    expect(payload.description).toBe('The grant funds summer study.');
+    expect(payload.applicationInformation).toBe('Complete the online form.');
+    expect(payload.eligibility).toBe('Open to juniors and seniors.');
     expect(payload.prepSteps).toEqual(['Email [email redacted] or call [phone redacted].']);
     expect(payload.contactPhone).toBeUndefined();
     expect(payload.contactOffice).toBe('Office contact: [email redacted] or [phone redacted].');
