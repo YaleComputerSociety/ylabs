@@ -344,6 +344,55 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).not.toContain('missing_alternate_access_path');
   });
 
+  it('treats a lead-less ARCHIVE_OR_MUSEUM_PROJECT as lead-exempt: held on the org-access lane, never missing_lead (#1367)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'beinecke-americana',
+        name: 'Americana',
+        slug: 'beinecke-americana',
+        entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+        shortDescription:
+          'Examines the Beinecke Library collection of Americana across the histories, languages, and materials of the Western Hemisphere.',
+        fullDescription:
+          'The Beinecke Library ever-growing collection of Americana inspires research and teaching across diverse places, histories, languages, and materials which showcase the Western Hemisphere.',
+        websiteUrl: 'https://beinecke.library.yale.edu/beinecke/collections/americana',
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).toContain('missing_alternate_access_path');
+  });
+
+  it('publishes a lead-less archive/museum home once it surfaces an access path and action evidence (#1367)', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'beinecke-americana-ready',
+        name: 'Americana',
+        slug: 'beinecke-americana-ready',
+        entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+        shortDescription:
+          'Examines the Beinecke Library collection of Americana across the histories, languages, and materials of the Western Hemisphere.',
+        fullDescription:
+          'The Beinecke Library ever-growing collection of Americana inspires research and teaching across diverse places, histories, languages, and materials which showcase the Western Hemisphere.',
+        websiteUrl: 'https://beinecke.library.yale.edu/beinecke/collections/americana',
+        sourceUrls: [
+          'https://beinecke.library.yale.edu/beinecke/collections/americana',
+          'https://beinecke.library.yale.edu/beinecke/researchers/opportunities',
+        ],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('student_ready');
+  });
+
   it('holds an organizational home with a real access path but no action evidence yet as limited_but_safe, not missing_lead', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
