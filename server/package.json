@@ -123,6 +123,7 @@
     "research-homes:backfill-browse-rank": "tsx src/scripts/backfillBrowseRank.ts",
     "research-homes:backfill-non-lab-browse-rank-debias": "tsx src/scripts/backfillNonLabBrowseRankDebias.ts",
     "research-homes:backfill-research-areas": "tsx src/scripts/backfillResearchAreas.ts",
+    "research-homes:backfill-funding-program-topics": "tsx src/scripts/backfillFundingProgramTopicMetadata.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-homes:backfill-org-units": "tsx src/scripts/backfillResearchEntityOrgUnits.ts",
     "research-homes:backfill-school-host-mismatch": "tsx src/scripts/backfillSchoolHostMismatch.ts",
