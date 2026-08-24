@@ -299,6 +299,8 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
 export interface SynthesizeGroundedCardInput {
   fullDescription: unknown;
   entityName?: string;
+  researchAreas?: unknown;
+  entityType?: unknown;
   callLLM: (input: { fullDescription: string; entityName: string }) => Promise<string>;
 }
 
@@ -321,12 +323,16 @@ export async function synthesizeGroundedCardDescription(
   const card = normalizeCardText(raw);
   if (!card) return '';
   if (!isCardGroundedInFullDescription(card, full)) return '';
-  return shortDescriptionQuality(card, full).isUseful ? card : '';
+  return shortDescriptionQuality(card, full, input.researchAreas, { entityType: input.entityType })
+    .isUseful
+    ? card
+    : '';
 }
 
 export interface ResolveGroundedCardInput {
   fullDescription: unknown;
   researchAreas?: unknown;
+  entityType?: unknown;
   isProgramLike?: boolean;
   synthesize?: (fullDescription: string) => Promise<string>;
 }
@@ -361,13 +367,25 @@ export async function resolveGroundedCardDescription(
     deriveShortDescriptionFromFullDescription(input.fullDescription),
     input.isProgramLike,
   );
-  if (derived && shortDescriptionQuality(derived, input.fullDescription).isUseful) {
+  if (
+    derived &&
+    shortDescriptionQuality(derived, input.fullDescription, input.researchAreas, {
+      entityType: input.entityType,
+    }).isUseful
+  ) {
     return derived;
   }
   const full = textValue(input.fullDescription);
   if (input.synthesize && full) {
     const synthesized = rejectStudiesLeadOnProgramLike(await input.synthesize(full), input.isProgramLike);
-    if (synthesized) return synthesized;
+    if (
+      synthesized &&
+      shortDescriptionQuality(synthesized, full, input.researchAreas, {
+        entityType: input.entityType,
+      }).isUseful
+    ) {
+      return synthesized;
+    }
   }
   const researchAreasSummary = rejectStudiesLeadOnProgramLike(
     buildResearchAreasCardSummary(input.researchAreas),

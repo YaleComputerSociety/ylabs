@@ -155,6 +155,24 @@ describe('synthesizeGroundedCardDescription', () => {
     });
     expect(card).toBe('');
   });
+
+  it('rejects a model card shaped as a bare researchArea label list when entityType is threaded (#1730/#1680)', async () => {
+    const labelListFull =
+      "Jordan Ellis's research interests include comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.";
+    const callLLM = vi
+      .fn()
+      .mockResolvedValue(
+        'Studies comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.',
+      );
+    const card = await synthesizeGroundedCardDescription({
+      fullDescription: labelListFull,
+      researchAreas: ['Political Science'],
+      entityType: 'FACULTY_RESEARCH_AREA',
+      callLLM,
+    });
+    expect(callLLM).toHaveBeenCalledOnce();
+    expect(card).toBe('');
+  });
 });
 
 describe('resolveGroundedCardDescription', () => {
@@ -194,6 +212,58 @@ describe('resolveGroundedCardDescription', () => {
       fullDescription: RICH_FIRST_PERSON_FULL,
     });
     expect(resolved).toBe('');
+  });
+});
+
+describe('resolveGroundedCardDescription topic-label-list awareness (#1730/#1680)', () => {
+  const LABEL_LIST_FULL =
+    "Jordan Ellis's research interests include comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.";
+  const LABEL_LIST_AREAS = ['Political Science'];
+  const LABEL_LIST_STUDIES_TEXT =
+    'Studies comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.';
+
+  it('does not settle for the deterministic derivation when it is itself a bare label-list restatement, and tries synthesis instead', async () => {
+    expect(
+      shortDescriptionQuality(
+        deriveShortDescriptionFromFullDescription(LABEL_LIST_FULL),
+        LABEL_LIST_FULL,
+        LABEL_LIST_AREAS,
+        { entityType: 'FACULTY_RESEARCH_AREA' },
+      ).isUseful,
+    ).toBe(false);
+
+    const synthesize = vi.fn(async () => LABEL_LIST_STUDIES_TEXT);
+    await resolveGroundedCardDescription({
+      fullDescription: LABEL_LIST_FULL,
+      researchAreas: LABEL_LIST_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+      synthesize,
+    });
+    expect(synthesize).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a synthesized candidate that only restates the researchArea chips as a "Studies" list', async () => {
+    const synthesize = vi.fn(async () => LABEL_LIST_STUDIES_TEXT);
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: LABEL_LIST_FULL,
+      researchAreas: LABEL_LIST_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+      synthesize,
+    });
+    expect(resolved).not.toBe(LABEL_LIST_STUDIES_TEXT);
+  });
+
+  it('accepts a synthesized candidate that is not shaped like the bare label-list template', async () => {
+    const rewordedCard =
+      'Examines comparative constitutional law, transnational legal governance, the history of federalist theory, judicial independence, and political risk analysis.';
+    const synthesize = vi.fn(async () => rewordedCard);
+    const resolved = await resolveGroundedCardDescription({
+      fullDescription: LABEL_LIST_FULL,
+      researchAreas: LABEL_LIST_AREAS,
+      entityType: 'FACULTY_RESEARCH_AREA',
+      synthesize,
+    });
+    expect(resolved).toBe(rewordedCard);
   });
 });
 

@@ -55,6 +55,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import {
   sanitizeResearchEntityDescription,
@@ -1008,6 +1009,7 @@ interface CardSynthesisEntityDoc {
   kind?: string;
   shortDescription?: unknown;
   fullDescription?: unknown;
+  researchAreas?: unknown;
   studentVisibilityReasons?: string[];
   websiteUrl?: unknown;
   website?: unknown;
@@ -1040,13 +1042,25 @@ export async function runCardSynthesisBackfill(options: {
   const callCardLLM = options.cardSynthesizer || defaultCardSynthesisLLM;
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   const cardModel = options.cardModel || CARD_SYNTHESIS_MODEL;
-  const synthesize: CardSynthesizeFn = (fullDescription) =>
-    apiKey
-      ? synthesizeGroundedCardDescription({
-          fullDescription,
-          callLLM: (llmInput) => callCardLLM({ ...llmInput, apiKey, model: cardModel }),
-        })
-      : Promise.resolve('');
+  // A document persisted via a raw `$set` can carry `kind` without the
+  // `entityType` the schema only backfills as a Mongoose default on document
+  // creation, so resolve it the same way the serve path does (#1732) before
+  // threading it into the synthesizer's own topic-label-list/chip-echo guard
+  // (#1730/#1680 class) - otherwise a synthesized card can pass this script's
+  // gate only to be rejected as sparse when actually served.
+  const buildSynthesize = (doc: CardSynthesisEntityDoc): CardSynthesizeFn => {
+    const resolvedEntityType =
+      doc.entityType || (doc.kind ? mapResearchGroupKindToEntityType(doc.kind) : undefined);
+    return (fullDescription) =>
+      apiKey
+        ? synthesizeGroundedCardDescription({
+            fullDescription,
+            researchAreas: doc.researchAreas,
+            entityType: resolvedEntityType,
+            callLLM: (llmInput) => callCardLLM({ ...llmInput, apiKey, model: cardModel }),
+          })
+        : Promise.resolve('');
+  };
 
   const scopedIds = (options.recordIds || []).map((id) => new mongoose.Types.ObjectId(id));
   const query: Record<string, unknown> = {
@@ -1065,6 +1079,7 @@ export async function runCardSynthesisBackfill(options: {
       kind: 1,
       shortDescription: 1,
       fullDescription: 1,
+      researchAreas: 1,
       studentVisibilityReasons: 1,
       websiteUrl: 1,
       website: 1,
@@ -1092,9 +1107,10 @@ export async function runCardSynthesisBackfill(options: {
       kind: doc.kind,
       shortDescription: doc.shortDescription,
       fullDescription: doc.fullDescription,
+      researchAreas: doc.researchAreas,
       visibilityReasons: reasonsById.get(id) ?? doc.studentVisibilityReasons,
     };
-    rows.push(await planCardBackfillRow(entity, synthesize));
+    rows.push(await planCardBackfillRow(entity, buildSynthesize(doc)));
   }
 
   const summary = summarizeCardBackfill(rows);
