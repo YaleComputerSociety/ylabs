@@ -5,6 +5,8 @@ interface PlanningOverviewProps {
   savedOpenCount?: number;
   savedFellowshipCount: number;
   nextDeadlineLabel?: string;
+  savedSearchNewMatchCount?: number;
+  onViewSavedSearchMatches?: () => void;
 }
 
 const openHomesSummary = (savedOpenCount: number): string =>
@@ -24,11 +26,16 @@ const nextUpLabel = (
   return 'Save a research home to start planning';
 };
 
+const newMatchSummary = (count: number): string =>
+  `${count} new ${count === 1 ? 'match' : 'matches'} for your saved searches`;
+
 const PlanningOverview = ({
   savedResearchCount,
   savedOpenCount = 0,
   savedFellowshipCount,
   nextDeadlineLabel,
+  savedSearchNewMatchCount = 0,
+  onViewSavedSearchMatches,
 }: PlanningOverviewProps) => (
   <section className="mb-6 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-5">
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -45,6 +52,16 @@ const PlanningOverview = ({
           <p className="mt-1 text-sm font-semibold text-emerald-800">
             {openHomesSummary(savedOpenCount)}
           </p>
+        )}
+        {savedSearchNewMatchCount > 0 && (
+          <button
+            type="button"
+            onClick={onViewSavedSearchMatches}
+            className="mt-1 text-sm font-semibold text-[var(--yr-blue)] underline underline-offset-2 hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            aria-label={`${newMatchSummary(savedSearchNewMatchCount)}. View your saved searches.`}
+          >
+            {newMatchSummary(savedSearchNewMatchCount)}
+          </button>
         )}
       </div>
       <Link

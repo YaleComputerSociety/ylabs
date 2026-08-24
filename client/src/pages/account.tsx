@@ -11,6 +11,7 @@
  * profiles are source-derived and admin-curated.
  */
 import { useRef, useState, type KeyboardEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import ResearchInterestsEditor from '../components/accounts/ResearchInterestsEditor';
@@ -30,11 +31,17 @@ const SURFACES: AccountSurface[] = ['dashboard', 'programs', 'searches', 'intere
 
 const Account = () => {
   useDocumentTitle('Dashboard');
-  const [surface, setSurface] = useState<AccountSurface>('dashboard');
+  const location = useLocation();
+  const initialSurface: AccountSurface =
+    (location.state as { surface?: AccountSurface } | null)?.surface === 'searches'
+      ? 'searches'
+      : 'dashboard';
+  const [surface, setSurface] = useState<AccountSurface>(initialSurface);
   const [savedResearchCount, setSavedResearchCount] = useState(0);
   const [savedOpenCount, setSavedOpenCount] = useState(0);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: 0 });
   const [savedSearchCount, setSavedSearchCount] = useState(0);
+  const [savedSearchNewMatchCount, setSavedSearchNewMatchCount] = useState(0);
   const tabRefs = useRef<Record<AccountSurface, HTMLButtonElement | null>>({
     dashboard: null,
     programs: null,
@@ -85,6 +92,8 @@ const Account = () => {
           savedOpenCount={savedOpenCount}
           savedFellowshipCount={programSummary.count}
           nextDeadlineLabel={programSummary.nextDeadlineLabel}
+          savedSearchNewMatchCount={savedSearchNewMatchCount}
+          onViewSavedSearchMatches={() => activateSurface('searches', true)}
         />
 
         <div className="mb-6 flex justify-center">
@@ -188,7 +197,10 @@ const Account = () => {
           tabIndex={0}
           className={surface === 'searches' ? '' : 'hidden'}
         >
-          <SavedSearches onCountChange={setSavedSearchCount} />
+          <SavedSearches
+            onCountChange={setSavedSearchCount}
+            onNewMatchCountChange={setSavedSearchNewMatchCount}
+          />
         </div>
         <div
           id="account-interests-panel"

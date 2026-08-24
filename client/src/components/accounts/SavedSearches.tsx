@@ -24,13 +24,14 @@ import {
 
 interface SavedSearchesProps {
   onCountChange?: (count: number) => void;
+  onNewMatchCountChange?: (count: number) => void;
 }
 
 type RowStatus = 'idle' | 'saving' | 'error';
 
 const MAX_SAVED_SEARCH_LABEL_LENGTH = 120;
 
-const SavedSearches = ({ onCountChange }: SavedSearchesProps) => {
+const SavedSearches = ({ onCountChange, onNewMatchCountChange }: SavedSearchesProps) => {
   const [searches, setSearches] = useState<SavedSearchView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -71,6 +72,10 @@ const SavedSearches = ({ onCountChange }: SavedSearchesProps) => {
     () => searches.reduce((sum, search) => sum + Math.max(0, search.newMatchCount ?? 0), 0),
     [searches],
   );
+
+  useEffect(() => {
+    onNewMatchCountChange?.(totalNewMatches);
+  }, [totalNewMatches, onNewMatchCountChange]);
 
   const setRowStatus = (id: string, status: RowStatus) =>
     setRowStatuses((current) => ({ ...current, [id]: status }));
