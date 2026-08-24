@@ -108,6 +108,15 @@ describe('fullDescriptionQuality', () => {
     expect(shortDescriptionQuality(shortDescription, fullDescription).isUseful).toBe(true);
   });
 
+  it('does not reject a long multi-sentence lab description as synthetic-placeholder just because it opens with an appointment sentence (#1456)', () => {
+    const fullDescription =
+      'Anjelica L. Gonzalez is Associate Professor of Biomedical Engineering. Her appointment in Biomedical Engineering, in association with the Vascular Biology and Therapeutics Program, has provided a supportive and convenient platform for her research, focused on the development of biomaterials for use as investigational tools, particularly for the investigation of immunological responses to inflammatory signals from endogenous and exogenous sources. Gonzalez has a dedicated interest in training the next generation of scientists to think with an interdisciplinary approach to problems and to have a scientifically global perspective. The Gonzalez lab combines organic chemistry, molecular biology, mathematics, computational modeling and image analysis to develop human tissue-based biomimetic scaffolds to better understand healthy and diseased states.';
+
+    expect(fullDescriptionQuality(fullDescription)).toEqual(
+      expect.objectContaining({ flags: [], isUseful: true }),
+    );
+  });
+
   it('derives third-person card copy from first-person humanities profile research statements', () => {
     const fullDescription =
       'In my work, I study practices, genres, and institutions of literature from early modernity to the modern and contemporary. The underlying assumption is that literature is not a given but undergoes changes historically and manifests in a plurality of forms culturally. My present work explores the practices, genres, and institutions of literature in broader, theoretical ways.';
