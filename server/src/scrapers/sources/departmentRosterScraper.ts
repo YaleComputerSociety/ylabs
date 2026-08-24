@@ -916,16 +916,29 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
  *   <article about="/people/<slug>" class="node node--type-person node--view-mode-card">
  *     <img alt="Name" src="...">
  */
+const nameFromPeopleSlug = (about: string): string => {
+  const match = about.match(/\/people\/([^/?#]+)/);
+  if (!match) return '';
+  const titleCased = decodeURIComponent(match[1])
+    .split('-')
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+  return normalizeName(titleCased);
+};
+
 export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const out: FacultyEntry[] = [];
 
   $('article.node--type-person').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(cleanText(card.find('img[alt]').first().attr('alt') || ''));
+    const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
+    const name =
+      normalizeName(cleanText(card.find('img[alt]').first().attr('alt') || '')) ||
+      nameFromPeopleSlug(about);
     if (!name) return;
 
-    const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
     const profileUrl = about ? absolutize(about, ctx.pageUrl) : undefined;
     const title =
       cleanText(
