@@ -957,6 +957,39 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
   return out;
 };
 
+/**
+ * Legacy Drupal field-collection person rows, used by the YIBS faculty-affiliates
+ * roster. Each affiliate is a `field-collection-item-field-person-info` block
+ * whose `.field-name-field-person-description` holds an `<h3>` name (often linked
+ * to the affiliate's home-department profile or lab site) and a photo field.
+ * Affiliates are cross-listed, so this is paired with `officialProfileOnly` to
+ * enrich existing entities rather than mint duplicates.
+ */
+export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
+  const $ = cheerio.load(html);
+  const out: FacultyEntry[] = [];
+
+  $('[class*="field-collection-item-field-person-info"]').each((_i, el) => {
+    const card = $(el);
+    const desc = card.find('.field-name-field-person-description').first();
+    const nameLink = desc.find('h3 a').first();
+    const name = normalizeName(cleanText(nameLink.text() || desc.find('h3').first().text()));
+    if (!name) return;
+
+    const href = nameLink.attr('href') || '';
+    const profileUrl = /^https?:\/\//i.test(href) ? href : undefined;
+    const title = cleanText(desc.find('p em').first().text()).replace(/[,;]\s*$/, '') || undefined;
+    const imageUrl = imageUrlFromElement(
+      card.find('.field-name-field-person-photo').first(),
+      ctx.pageUrl,
+    );
+
+    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+  });
+
+  return out;
+};
+
 // ---------------------------------------------------------------------------
 // Default config (mutable so callers can swap or extend in tests if needed,
 // though the typical add-a-dept path is just a new entry below).
@@ -1481,6 +1514,15 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     renderedExtractor: nodePersonCardExtractor,
     renderWaitSelector: 'article.node--type-person',
     jsRenderedSkip: true,
+  },
+  {
+    deptKey: 'yibs',
+    deptName: 'Biospheric Studies',
+    schoolName: 'Yale Institute for Biospheric Studies',
+    url: 'https://yibs.yale.edu/people/faculty-affiliates',
+    paginated: false,
+    extractor: fieldCollectionPersonExtractor,
+    officialProfileOnly: true,
   },
 ];
 

@@ -26,6 +26,7 @@ import {
   viewsTableRowExtractor,
   directoryListingCardExtractor,
   nodePersonCardExtractor,
+  fieldCollectionPersonExtractor,
   profileGridItemExtractor,
   nodeTeaserFacultyExtractor,
   jacksonProfileComponentExtractor,
@@ -865,6 +866,40 @@ describe('viewsRowPersonExtractor', () => {
         profileUrl: 'https://erm.yale.edu/people/jordan-winter-fixture',
         title:
           "Professor of Women's, Gender, and Sexuality Studies and of Ethnicity, Race, and Migration",
+      },
+    ]);
+  });
+});
+
+describe('fieldCollectionPersonExtractor', () => {
+  it('extracts YIBS field-collection affiliates with linked and plain-text names', () => {
+    const html = `
+      <div class="field-collection-item-field-person-info">
+        <div class="field field-name-field-person-photo"><img src="/img/robin-fixture.jpg" alt="Robin Fixture"></div>
+        <div class="field field-name-field-person-description"><div class="field-items"><div class="field-item even">
+          <h3><a href="https://environment.yale.edu/profile/robin-fixture" target="_blank">Robin Fixture</a></h3>
+          <p><em>Professor of Ecology,</em> Yale School of the Environment</p>
+        </div></div></div>
+      </div>
+      <div class="field-collection-item-field-person-info">
+        <div class="field field-name-field-person-description"><div class="field-items"><div class="field-item even">
+          <h3>Casey Fixture</h3><p><em>Lecturer</em></p>
+        </div></div></div>
+      </div>`;
+    expect(
+      fieldCollectionPersonExtractor(html, {
+        pageUrl: 'https://yibs.yale.edu/people/faculty-affiliates',
+      }),
+    ).toEqual([
+      {
+        name: 'Robin Fixture',
+        profileUrl: 'https://environment.yale.edu/profile/robin-fixture',
+        title: 'Professor of Ecology',
+        imageUrl: 'https://yibs.yale.edu/img/robin-fixture.jpg',
+      },
+      {
+        name: 'Casey Fixture',
+        title: 'Lecturer',
       },
     ]);
   });
