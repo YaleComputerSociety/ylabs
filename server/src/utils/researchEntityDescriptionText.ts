@@ -330,6 +330,9 @@ const FIRST_PERSON_ADVISING_INVITATION_PATTERN = new RegExp(
   'i',
 );
 
+const PERSON_BIOGRAPHY_OPENER_PATTERN =
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,/-]+){0,8}Professor\b/u;
+
 export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
@@ -342,9 +345,31 @@ export function isPersonBiographyOrAdvisingDescription(value: unknown): boolean 
     FIRST_PERSON_ADVISING_INVITATION_PATTERN.test(cleaned);
   if (hasFirstPersonAdvisingNote) return true;
 
-  return /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,/-]+){0,8}Professor\b/u.test(
-    cleaned,
-  );
+  return PERSON_BIOGRAPHY_OPENER_PATTERN.test(cleaned);
+}
+
+function stripPersonBiographyOpenerSentence(value: string): string {
+  const match = value.match(PERSON_BIOGRAPHY_OPENER_PATTERN);
+  if (!match || match.index === undefined) return value;
+  const openerEnd = match.index + match[0].length;
+  const sentenceTail = value.slice(openerEnd).match(/^[^.!?]*[.!?]+\s*/);
+  const consumedEnd = sentenceTail ? openerEnd + sentenceTail[0].length : value.length;
+  return value.slice(consumedEnd).trim();
+}
+
+/**
+ * Faculty/individual entities can otherwise have a genuinely good research
+ * description that simply opens with a routine appointment sentence ("Elleza
+ * Kelley is an Assistant Professor of English..."). Drop only that opening
+ * sentence and keep the remainder when it still reads as a research
+ * description on its own, instead of blanking the whole field (#1586).
+ */
+function repairFacultyBiographyOpener(value: string): string {
+  const stripped = stripPersonBiographyOpenerSentence(value);
+  if (!stripped || stripped === value) return '';
+  return isLikelyResearchFocusedText(stripped) && !isPersonBiographyOrAdvisingDescription(stripped)
+    ? stripped
+    : '';
 }
 
 const SUBJECTLESS_RESEARCH_LEAD_REPAIRS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -516,8 +541,11 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
     if (field in next) {
       if (typeof next[field] !== 'string') continue;
       if (shouldGuardPersonBiography && isPersonBiographyOrAdvisingDescription(next[field])) {
-        if (next[field] !== '') {
-          next[field] = '';
+        const repaired = isFacultyResearchTextEntity(next)
+          ? repairFacultyBiographyOpener(next[field])
+          : '';
+        if (repaired !== next[field]) {
+          next[field] = repaired;
           changed = true;
         }
         continue;
@@ -552,7 +580,9 @@ export function sanitizeResearchEntityPublicDescriptionFields<T extends Record<s
   if ('summary' in next) {
     const guardedSummary =
       shouldGuardPersonBiography && isPersonBiographyOrAdvisingDescription(next.summary)
-        ? ''
+        ? isFacultyResearchTextEntity(next)
+          ? repairFacultyBiographyOpener(next.summary)
+          : ''
         : next.summary;
     const cleaned = publicResearchEntityDescriptionText(guardedSummary);
     if (cleaned !== next.summary) {
