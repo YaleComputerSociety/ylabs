@@ -156,6 +156,7 @@ const sourceDescriptionRepairReasons = new Set([
   'missing_official_source',
   'application_source_only',
   'blank_public_description',
+  'deceased_or_emeritus_lead',
 ]);
 const piRepairReasons = new Set([
   'missing_lead',
@@ -211,6 +212,7 @@ export function isBlockingVisibilityReason(reason: string): boolean {
       'archive_review',
       'blank_public_description',
       'content_page_risk',
+      'deceased_or_emeritus_lead',
       'duplicate_name_risk',
       'duplicate_risk',
       'exact_url_duplicate_risk',

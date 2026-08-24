@@ -551,6 +551,7 @@ export function computeResearchEntityStudentVisibility({
   if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
   if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
   if (missingFacetSignal) reasons.push('missing_facet_signal');
+  if (deceasedOrEmeritusLead) reasons.push('deceased_or_emeritus_lead');
 
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
@@ -579,7 +580,8 @@ export function computeResearchEntityStudentVisibility({
     !labNameOrgTypeMismatch &&
     hasActionEvidence &&
     !duplicateRisk &&
-    !missingFacetSignal
+    !missingFacetSignal &&
+    !deceasedOrEmeritusLead
   ) {
     computedTier = 'student_ready';
   } else if (
@@ -592,7 +594,8 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('missing_source_url') &&
     !labNameOrgTypeMismatch &&
     !duplicateRisk &&
-    !missingFacetSignal
+    !missingFacetSignal &&
+    !deceasedOrEmeritusLead
   ) {
     computedTier = 'limited_but_safe';
   }
@@ -647,6 +650,20 @@ export function computeResearchEntityStudentVisibility({
       tier: 'operator_review',
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'missing_source_url'])),
+    };
+  }
+  // A lead-requiring entity whose own description opens as a memorial or
+  // emeritus biography can never be published to students, even by an
+  // explicit operator override: a student cannot be routed to contact a PI
+  // who is deceased or retired (#1638).
+  if (
+    deceasedOrEmeritusLead &&
+    (result.tier === 'student_ready' || result.tier === 'limited_but_safe')
+  ) {
+    return {
+      tier: 'operator_review',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, 'deceased_or_emeritus_lead'])),
     };
   }
   return enforceStudentReadyDescriptionInvariant(result, entity);
