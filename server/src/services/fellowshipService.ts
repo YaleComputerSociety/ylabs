@@ -15,6 +15,7 @@ import {
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { publicHttpUrl } from '../utils/urlSafety';
 import {
@@ -132,6 +133,15 @@ const PUBLIC_FELLOWSHIP_TEXT_FIELDS = new Set([
   'contactOffice',
   'sourceName',
 ]);
+
+// The two prose card fields the student-visibility gate reads through
+// sanitizeCatalogDescription (programPublicDescriptionState). Serving them
+// without the same pass let a card reach student_ready on a clean summary while
+// still displaying a description that is internal curation-rationale, a
+// staff-contact block, or chrome - text the gate rejects but the serve layer
+// only contact-redacted and length-bounded. Sanitizing here restores gate/serve
+// parity so served fellowship copy can never contain rationale/chrome/dump text.
+const CATALOG_SANITIZED_FELLOWSHIP_FIELDS = new Set(['summary', 'description']);
 
 const PUBLIC_FELLOWSHIP_FIELDS = [
   '_id',
@@ -255,9 +265,11 @@ const publicFellowshipField = (field: string, value: unknown): unknown => {
   if (field === 'links') return publicFellowshipLinks(value);
 
   if (PUBLIC_FELLOWSHIP_TEXT_FIELDS.has(field)) {
-    return typeof value === 'string'
-      ? redactDirectContactInfo(boundedPublicText(value))
-      : undefined;
+    if (typeof value !== 'string') return undefined;
+    const prose = CATALOG_SANITIZED_FELLOWSHIP_FIELDS.has(field)
+      ? sanitizeCatalogDescription(value, { evergreenizeDates: false })
+      : value;
+    return redactDirectContactInfo(boundedPublicText(prose));
   }
 
   if ((field === 'prepSteps' || field === 'applicationMaterials') && Array.isArray(value)) {

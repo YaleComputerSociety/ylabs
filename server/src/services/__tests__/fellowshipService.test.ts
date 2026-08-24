@@ -70,6 +70,22 @@ describe('fellowship public serializer', () => {
     expect(JSON.stringify(payload)).not.toContain('203-555');
   });
 
+  it('strips curation-rationale description prose the visibility gate rejects', () => {
+    const payload = publicFellowshipForStudent({
+      _id: '67d8928150621bcef434a1d5',
+      title: 'Rationale-laden fellowship',
+      description:
+        'The Example Travel Fellowships are listed by a residential college among its fellowship options. Because the source supports residential-college travel funding rather than a direct research placement, this record should stay restrained until a richer program page is attached.',
+      summary: 'Residential-college travel fellowship for students with a concrete summer research plan.',
+    });
+
+    expect(payload.description).toBe('');
+    expect(payload.summary).toBe(
+      'Residential-college travel fellowship for students with a concrete summer research plan.',
+    );
+    expect(JSON.stringify(payload)).not.toContain('should stay restrained');
+  });
+
   it('clears isAcceptingApplications when the deadline has already passed', () => {
     const now = new Date('2026-08-22T00:00:00.000Z');
     const payload = publicFellowshipForStudent(
