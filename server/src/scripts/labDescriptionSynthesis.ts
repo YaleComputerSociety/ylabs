@@ -1,5 +1,8 @@
 import axios from 'axios';
-import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
+import {
+  assessResearchEntityDescriptionQuality,
+  fullDescriptionQuality,
+} from '../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 
@@ -136,8 +139,18 @@ function dedupeJoin(parts: string[]): string {
   return unique.join('\n\n');
 }
 
+// A fullDescription that is itself a chip-restatement fallback (#1625) is not
+// real source material - re-synthesizing from it just launders the same
+// researchAreas chips into differently-worded fluent prose, feeding the same
+// hollow content back through the pipeline instead of replacing it. Treat it
+// as absent so the pipeline falls through to a grant abstract or skips the
+// entity ('no-source') rather than paraphrasing its own echo.
+const isTrustworthySynthesisSource = (text: string, researchAreas: unknown): boolean =>
+  text.length > 0 && !fullDescriptionQuality(text, researchAreas).flags.includes('area-echo-fallback');
+
 export function buildSynthesisSources(entity: LabSynthesisSourceFields): SynthesisSources {
-  const primary = sanitizeDescriptionText(entity.fullDescription).text;
+  const rawPrimary = sanitizeDescriptionText(entity.fullDescription).text;
+  const primary = isTrustworthySynthesisSource(rawPrimary, entity.researchAreas) ? rawPrimary : '';
   const secondary = sanitizeDescriptionText(entity.profileSynthesisDescription).text;
   const researchAreas = normalizeResearchAreas(entity.researchAreas);
 
