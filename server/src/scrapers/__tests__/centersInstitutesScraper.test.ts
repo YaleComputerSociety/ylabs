@@ -27,6 +27,8 @@ import {
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
   naturalCarbonCaptureExtractor,
+  customCardLabsExtractor,
+  contentSpotlightFacultyExtractor,
   fdsUsersGridExtractor,
   jacksonCentersExtractor,
   jsRenderedStub,
@@ -360,6 +362,15 @@ const YCNCC_FIXTURE = readFileSync(
   join(__dirname, 'fixtures', 'naturalCarbonCapturePeople.html'),
   'utf8',
 );
+const WC_NANOBIOLOGY_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'westCampusNanobiologyLabs.html'),
+  'utf8',
+);
+const WC_CANCER_FIXTURE = readFileSync(
+  join(__dirname, 'fixtures', 'westCampusCancerBiologyLabs.html'),
+  'utf8',
+);
+const MSI_FIXTURE = readFileSync(join(__dirname, 'fixtures', 'microbialSciencesFaculty.html'), 'utf8');
 
 describe('directoryListingCardExtractor', () => {
   it('extracts QBio members from the saved live-HTML fixture, keeping each member profile link', () => {
@@ -498,6 +509,83 @@ describe('naturalCarbonCaptureExtractor', () => {
   });
 });
 
+describe('directoryListingCardExtractor on a West Campus institute member-labs subpage', () => {
+  it('keeps each member-lab card and drops nav/footer links', () => {
+    const out = directoryListingCardExtractor(WC_NANOBIOLOGY_FIXTURE, {
+      pageUrl:
+        'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual(['James Rothman, PhD', 'Julien Berro, PhD', 'Sathish Ramakrishnan, PhD']);
+    const rothman = out.members.find((m) => m.name === 'James Rothman, PhD');
+    expect(rothman).toMatchObject({
+      profileUrl: 'https://medicine.yale.edu/lab/rothman/',
+      role: 'director',
+    });
+    // nav sibling-institute links and footer links are not member cards
+    expect(names).not.toContain('Yale Microbial Sciences Institute');
+    expect(names).not.toContain('Accessibility at Yale');
+  });
+
+  it('cites each member lab home, never the institutes index root', () => {
+    const out = directoryListingCardExtractor(WC_NANOBIOLOGY_FIXTURE, {
+      pageUrl:
+        'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    });
+    for (const member of out.members) {
+      expect(member.profileUrl).not.toMatch(/westcampus\.yale\.edu\/institutes\/?$/);
+    }
+    const sathish = out.members.find((m) => m.name === 'Sathish Ramakrishnan, PhD');
+    expect(sathish?.profileUrl).toBe('https://westcampus.yale.edu/profile/sathish-ramakrishnan-phd');
+  });
+});
+
+describe('customCardLabsExtractor', () => {
+  it('keeps only lab cards under the "Meet the labs" collection and absolutizes hrefs', () => {
+    const out = customCardLabsExtractor(WC_CANCER_FIXTURE, {
+      pageUrl: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual(['Alarcón Lab', 'Muzumdar Lab', 'Schlessinger Lab']);
+    expect(out.members.find((m) => m.name === 'Alarcón Lab')?.profileUrl).toBe(
+      'https://westcampus.yale.edu/alarcon-lab',
+    );
+    expect(out.members.find((m) => m.name === 'Schlessinger Lab')?.profileUrl).toBe(
+      'https://medicine.yale.edu/lab/schlessinger/',
+    );
+  });
+
+  it('drops sibling non-lab custom-card collections (news, events)', () => {
+    const out = customCardLabsExtractor(WC_CANCER_FIXTURE, {
+      pageUrl: 'https://westcampus.yale.edu/institutes/yale-cancer-biology-institute',
+    });
+    expect(out.members.map((m) => m.name)).not.toContain('Institute Symposium 2025');
+  });
+});
+
+describe('contentSpotlightFacultyExtractor', () => {
+  it('reads the PI (first CTA) per spotlight block and ignores non-faculty blocks', () => {
+    const out = contentSpotlightFacultyExtractor(MSI_FIXTURE, {
+      pageUrl: 'https://microbialsciences.yale.edu/faculty-research',
+    });
+    const names = out.members.map((m) => m.name);
+    expect(names).toEqual(['Andrew Goodman', 'Martina Dal Bello', 'Stavroula Hatzios']);
+    expect(out.members.find((m) => m.name === 'Andrew Goodman')?.profileUrl).toBe(
+      'https://medicine.yale.edu/profile/andrew-goodman',
+    );
+    // the lab (second CTA) and quick-links block are not emitted as members
+    expect(names).not.toContain('Goodman Lab');
+    expect(names).not.toContain('Lab Members');
+  });
+
+  it('does not misclassify faculty as directors from the research blurb', () => {
+    const out = contentSpotlightFacultyExtractor(MSI_FIXTURE, {
+      pageUrl: 'https://microbialsciences.yale.edu/faculty-research',
+    });
+    expect(out.members.every((m) => m.role === 'core-faculty')).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Observation-shaping helpers
 // ---------------------------------------------------------------------------
@@ -547,6 +635,34 @@ describe('centerToGroupObservations', () => {
     expect(fields).toContain('school');
     expect(fields).not.toContain('departments');
     expect(fields).not.toContain('affiliatedNames');
+  });
+});
+
+describe('centerToGroupObservations homeUrl override', () => {
+  const config: CenterConfig = {
+    centerKey: 'wc-nanobiology',
+    centerName: 'Yale Nanobiology Institute',
+    schoolName: '',
+    kind: 'institute',
+    url: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute/yale-nanobiology-institute-research-labs',
+    homeUrl: 'https://westcampus.yale.edu/institutes/yale-nanobiology-institute',
+    extractor: directoryListingCardExtractor,
+  };
+
+  it('emits the landing page as websiteUrl and cites both the roster crawl and the landing page', () => {
+    const { observations } = centerToGroupObservations(config, [], config.url);
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(config.homeUrl);
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      config.url,
+      config.homeUrl,
+    ]);
+  });
+
+  it('falls back to the crawl url for websiteUrl when no homeUrl is set', () => {
+    const plain: CenterConfig = { ...config, homeUrl: undefined };
+    const { observations } = centerToGroupObservations(plain, [], plain.url);
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(plain.url);
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([plain.url]);
   });
 });
 
