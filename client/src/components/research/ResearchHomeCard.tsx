@@ -9,6 +9,7 @@ import {
 } from '../../utils/researchDiscoveryAdapters';
 import { formatTitleCaseLabel } from '../../utils/displayText';
 import { sanitizeResearchEntityCopy } from '../../utils/researchEntityCopy';
+import ResearchAreaPivotChip from './ResearchAreaPivotChip';
 import { EXTERNAL_LINK_REL, safeHttpUrl, safeRouteSegment } from '../../utils/url';
 import { principalInvestigatorLinkFromResearchEntity } from '../../utils/principalInvestigatorLinks';
 
@@ -259,20 +260,20 @@ const ResearchHomeCard = ({
             </span>
           ))}
           {alwaysVisibleTopicBadges.map((label) => (
-            <span
+            <ResearchAreaPivotChip
               key={label}
-              className="yr-pill min-h-0 rounded px-2 py-0.5"
-            >
-              {formatTitleCaseLabel(label)}
-            </span>
+              label={label}
+              staticClassName="yr-pill min-h-0 rounded px-2 py-0.5"
+              interactiveClassName="yr-pill yr-focus-ring inline-flex min-h-11 items-center rounded px-2.5 text-[var(--yr-blue)] transition-colors hover:border-blue-300 hover:bg-[var(--yr-blue-soft)]"
+            />
           ))}
           {desktopOnlyTopicBadges.map((label) => (
-            <span
+            <ResearchAreaPivotChip
               key={label}
-              className="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
-            >
-              {formatTitleCaseLabel(label)}
-            </span>
+              label={label}
+              staticClassName="yr-pill hidden min-h-0 rounded px-2 py-0.5 sm:inline-flex"
+              interactiveClassName="yr-pill yr-focus-ring hidden min-h-11 items-center rounded px-2.5 text-[var(--yr-blue)] transition-colors hover:border-blue-300 hover:bg-[var(--yr-blue-soft)] sm:inline-flex"
+            />
           ))}
           {mobileMoreCount > 0 && (
             <span className="yr-pill min-h-0 rounded px-2 py-0.5 sm:hidden">
