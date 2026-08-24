@@ -4,7 +4,11 @@ import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityD
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
-import { resolveGroundedServedShortDescription } from '../utils/groundedCardSynthesis';
+import {
+  isUngroundedSynthesizedCard,
+  resolveGroundedServedShortDescription,
+} from '../utils/groundedCardSynthesis';
+import { sanitizeResearchEntityShortDescription } from '../utils/descriptionHygiene';
 import { isFullDescriptionRestatementOfShortDescription } from '../utils/researchEntityDescriptionQuality';
 import {
   resolveResearchHomeCardSummary,
@@ -120,6 +124,23 @@ function servedResearchEntityCopy(group: Record<string, any>): Record<string, an
     }
   }
   return sanitizeServedResearchEntityCopyFields(bounded);
+}
+
+/**
+ * The entity's own shortDescription, hygiene-clean and grounded in its own
+ * fullDescription - never a fallback derived from that fullDescription. Used
+ * only to decide whether a served fullDescription merely restates an
+ * authored short (#1721); comparing it against a full-derived fallback would
+ * trivially always "restate" and wrongly blank a fullDescription that has no
+ * authored short to restate in the first place (#1832).
+ */
+function groundedOwnShortDescription(shortValue: unknown, fullValue: unknown): string {
+  const shortDescription = sanitizeResearchEntityShortDescription(
+    String(shortValue || '').slice(0, MAX_PUBLIC_RESEARCH_ENTITY_TEXT_LENGTH),
+  );
+  if (!shortDescription) return '';
+  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) return '';
+  return shortDescription;
 }
 
 function publicResearchAreaArray(value: unknown): string[] {
@@ -306,6 +327,7 @@ export function toPublicResearchEntityDto(
     fullDescription: served.fullDescription,
     researchAreas: served.researchAreas,
   });
+  const groundedOwnShort = groundedOwnShortDescription(served.shortDescription, served.fullDescription);
 
   const dto: PublicResearchEntityDto = {
     _id: id,
@@ -344,8 +366,8 @@ export function toPublicResearchEntityDto(
         // and re-materialized ones.
         if (
           field === 'fullDescription' &&
-          groundedShort &&
-          isFullDescriptionRestatementOfShortDescription(served[field], groundedShort)
+          groundedOwnShort &&
+          isFullDescriptionRestatementOfShortDescription(served[field], groundedOwnShort)
         ) {
           dto[field] = '';
           continue;
