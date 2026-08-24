@@ -327,6 +327,9 @@ const selectResearchDescriptionSummary = (
   }
 
   const summaries = [
+    isWeakShortDescription(input.shortDescription)
+      ? undefined
+      : buildCompleteContextSummary(input.shortDescription),
     buildCompleteContextSummary(input.profileSynthesisDescription, 'Profile context'),
   ].filter((summary): summary is ResearchHomeContextSummary => Boolean(summary));
 
