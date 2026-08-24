@@ -144,17 +144,19 @@ const DEGREE_OR_INSTITUTION_MENTION_PATTERN = new RegExp(
 
 /**
  * A genuine name-lead sentence essentially never mentions two separate
- * institutions or degree abbreviations before its first clause boundary, so
- * two or more hits this early means the entry loop above stopped mid degree
- * list rather than at the real sentence start (#1533: chang-ksc3's shape -
+ * institutions or degree abbreviations in its opening stretch, so two or
+ * more hits this early means the entry loop above stopped mid degree list
+ * rather than at the real sentence start (#1533: chang-ksc3's shape -
  * "Institution, Degree Year, Degree Year" - reorders the degree list so the
  * entry pattern above can only consume its first token, leaving "Taiwan,
  * 1966 M.L.S., Rutgers University, 1971 M.A., ..." as a still-broken
- * remainder that happens to start with a capital letter).
+ * remainder that happens to start with a capital letter). A fixed character
+ * window, not "up to the first period", because several of these
+ * abbreviations (M.L.S., Ph.D.) contain their own periods and would
+ * otherwise truncate the window to almost nothing.
  */
 function remainderStillLooksLikeDegreeListResidue(remainder: string): boolean {
-  const clauseEnd = remainder.search(/[.!?]/);
-  const window = clauseEnd === -1 ? remainder.slice(0, 150) : remainder.slice(0, clauseEnd);
+  const window = remainder.slice(0, 150);
   const mentionCount = window.match(DEGREE_OR_INSTITUTION_MENTION_PATTERN)?.length || 0;
   return mentionCount >= 2;
 }
