@@ -23,6 +23,7 @@ import {
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
 import { extractLabHomepageDescription } from './ysmAtoZScraper';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
 import { isFacultyResearchTextEntity } from '../../utils/researchEntityDescriptionText';
 import type { DescriptionEntityKind } from '../../utils/researchHomeDescriptionSelection';
@@ -392,7 +393,8 @@ function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
-  return textValue($('body').text() || $.root().text()).slice(0, MAX_PROMPT_CHARS);
+  const body = $('body')[0] || $.root()[0];
+  return extractElementTextWithBlockSeparators(body).slice(0, MAX_PROMPT_CHARS);
 }
 
 const GOVERNANCE_ORG_NAME_RE =
