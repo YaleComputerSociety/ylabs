@@ -210,7 +210,20 @@ describe('resolveServedShortDescription entityType-aware fallback (#1616)', () =
     expect(resolved).toBe('');
   });
 
-  it('still derives a short from the same full when no entityType is passed (backward compatible)', () => {
+  it('rejects the same affiliation-list run-on even with no entityType passed (#1533: fixed at the root)', () => {
+    // #1616's entityType-aware guard used to be the only thing standing
+    // between this affiliation list and being served as a short - omitting
+    // entityType fell back to the un-derived "Studies Race, Indigeneity, and
+    // Transnational Migration, the Council of..." run-on. #1533's reopen
+    // fixed deriveShortDescriptionFromFullDescription's underlying
+    // studyOfMatch/combinedStudyOfMatch extractors to reject a capture that
+    // swallows an entire clause instead of naming a compact noun phrase, so
+    // the defect is now impossible at the root regardless of entityType -
+    // this now matches the entityType-aware test above rather than diverging
+    // from it. The chosen research-focus sentence still fails self-contained
+    // (the department names "American Studies"/"Iberian Studies" trip the
+    // bare "studies" verb match on sentence one, so no later sentence is
+    // reached), so this fails closed to '' rather than serving anything.
     const full =
       "Alicia Schmidt Camacho is a Professor of Ethnicity, Race, and Migration, and holds affiliations with the Yale Center for the Study of Race, Indigeneity, and Transnational Migration, the Council of Latin American and Iberian Studies, and the American Studies and Women's, Gender, and Sexuality Programs. Her scholarship examines migration, social movements, and cultural politics in North America.";
     const resolved = resolveServedShortDescription({
@@ -218,7 +231,7 @@ describe('resolveServedShortDescription entityType-aware fallback (#1616)', () =
       fullDescription: full,
       researchAreas: [],
     });
-    expect(resolved).not.toBe('');
+    expect(resolved).toBe('');
   });
 });
 

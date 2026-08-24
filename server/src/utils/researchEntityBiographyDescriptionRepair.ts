@@ -3,6 +3,8 @@ import {
   describesResearchFocus,
   deriveShortDescriptionFromFullDescription,
   fullDescriptionQuality,
+  isBareChairTitleFragment,
+  isCitationFragmentShort,
   shortDescriptionQuality,
 } from './researchEntityDescriptionQuality';
 import { isMidCvContinuationOpener } from './researchEntityDescriptionText';
@@ -41,7 +43,19 @@ function protectAbbreviations(value: string): string {
     protectedText = protectedText.split(abbreviation).join(withToken);
   }
   return protectedText
-    .replace(/\b(Dr|Prof|Mr|Mrs|Ms)\./g, `$1${INITIAL_DOT_TOKEN}`)
+    .replace(/\b(Dr|Prof|Mr|Mrs|Ms|Jr|Sr)\./g, `$1${INITIAL_DOT_TOKEN}`)
+    // A degree abbreviation with a space before its second initial ("Ph. D.",
+    // "M. D.", "U. S.") is otherwise invisible to every rule below, which all
+    // expect the two letters glued together - the sentence splitter then
+    // treats the lone second initial as its own one-word "sentence" that
+    // survives CV-sentence stripping intact (#1533 reopen: angluin-lab-dca3's
+    // "her Ph. D. in Engineering Science" left a bare "D." at the front of
+    // the rebuilt fullDescription once the name-lead sentence around it was
+    // stripped as a career-timeline fact).
+    .replace(
+      /\b([A-Z][a-z]{0,2})\.\s([A-Z])\.(?=\s|,|$)/g,
+      (_match, first: string, second: string) => `${first}${INITIAL_DOT_TOKEN} ${second}${INITIAL_DOT_TOKEN}`,
+    )
     .replace(/\b(?:[A-Z]\.){2,}/g, (match) => match.split('.').join(INITIAL_DOT_TOKEN))
     .replace(/\b([A-Z])\.(?=\s*[A-Z][A-Za-z.'-]*)/g, `$1${INITIAL_DOT_TOKEN}`)
     // A genuine sentence-ending period is always followed by whitespace or
@@ -234,7 +248,7 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   // Istanbul, Turkey, is the Eugene Meyer Professor...").
   /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s*born in\b/u,
   /\bmoved,?\s+as a teenager\b/i,
-  /\b(?:received|earned|obtained)\s+(?:the|his|her|their|an?)\b[^.!?]{0,80}\b(?:degrees?|Ph\.?D\.?|M\.?D\.?|MPH|MBA|MSc|M\.?S\.?|M\.?A\.?|B\.?S\.?|B\.?A\.?)\b/i,
+  /\b(?:received|earned|obtained)\s+(?:the|his|her|their|an?)\b[^.!?]{0,80}\b(?:degrees?|doctorate|Ph\.?D\.?|M\.?D\.?|MPH|MBA|MSc|M\.?S\.?|M\.?A\.?|B\.?S\.?|B\.?A\.?)\b/i,
   /\b(?:completed|did)\s+(?:his|her|their)\s+(?:graduate|undergraduate|postdoctoral|clinical|doctoral)\b/i,
   /\bdid\s+(?:his|her|their)\s+(?:ph\.?d|doctorate|postdoctoral)\b/i,
   /\bpost-?doc(?:toral)?\s+(?:work|training|fellowship|research)\s+(?:with|at|on)\b/i,
@@ -293,6 +307,21 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bI\s+am\s+a\s+recognized\s+authority\s+on\b/i,
   /\b(?:with\s+)?over\s+\d[\d,]*\s+peer-reviewed\s+(?:articles|publications)\b/i,
   /\bcontinuous\s+(?:NIH|NSF)\s+funding\s+since\s+\d{4}\b/i,
+  // Non-humanities faculty-bio CV markers (#1533 reopen: the corpus of
+  // still-live rows is 32 FAS, 6 School of Medicine, 3 School of Management,
+  // and 1 Law - the shape below covers the prior-employment, society-fellow,
+  // department-chair, and prize-list phrasings those schools' bios use that
+  // the original humanities-scoped patterns above never matched).
+  /\b(?:he|she|they)\s+previously\s+was\s+at\b/i,
+  /\bserved\s+as\s+an?\s+visiting\s+(?:assistant|associate|full)?\s*professor\b/i,
+  /\bis\s+an?\s+fellow\s+of\s+the\b[^.!?]{0,80}\bSociety\b/i,
+  /\bhas\s+chaired\b[^.!?]{0,80}\bDepartment\b/i,
+  /\bholds?\s+secondary\s+appointments?\s+in\b/i,
+  /\bis\s+the\s+author,\s*co-author\s+or\s+co-editor\s+of\s+[a-z]+\s+books?\b/i,
+  /\bis\s+the\s+faculty\s+PI\s+for\b/i,
+  /\b(?:Advisory|Editorial)\s+Committee\s+member\s+for\b/i,
+  /\bwinner\s+of\s+(?:the\s+)?\d{4}\b[^.!?]{0,80}\b(?:Prize|Award)\b/i,
+  /\bis\s+the\s+winner\s+of\s+(?:the\s+)?(?:numerous|several|many|eleven|ten|nine|eight|seven|six|five|four|three|two|one|\d+)\s+(?:book\s+)?(?:awards?|prizes?)\b/i,
 ];
 
 export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
@@ -327,14 +356,20 @@ export function hasMultipleCareerTimelineSentences(value: unknown): boolean {
  * better alternative exists to replace it with (#1533: raab-jcr42's stored
  * short "Studies, Stanford University Ph.D., Yale University Jennifer Raab
  * specializes..." and lawler-tl4's "Studies , Holy Cross, 1958 Middle
- * English..." both carry the same degree-list defect as their full).
+ * English..." both carry the same degree-list defect as their full;
+ * shirkhani-ks733's "- "Small Language and Big Men in Virginia Woolf,"
+ * Studies in the Novel." is a bare citation, not a description; jaynes-gj7's
+ * "Whitney Griswold Professor of Economics, Black Studies, and Urban
+ * Studies." is a bare chair-title clause with no subject or verb at all).
  */
-function isDefectiveShortDescription(candidate: string): boolean {
+export function isDefectiveShortDescription(candidate: string): boolean {
   if (!candidate) return true;
   if (isMidCvContinuationOpener(candidate)) return true;
   if (isEducationOrCareerTimelineSentence(candidate)) return true;
   if (DEGREE_LIST_FRAGMENT_SEARCH_PATTERN.test(candidate)) return true;
   if (/^Studies\s*,/i.test(candidate)) return true;
+  if (isCitationFragmentShort(candidate)) return true;
+  if (isBareChairTitleFragment(candidate)) return true;
   return false;
 }
 
@@ -392,7 +427,11 @@ export function repairPersonBiographyLeakedDescription({
   const strippedSentenceCount = sentences.length - keptSentences.length;
   const hadChrome = dechromed !== originalFull;
 
-  if (strippedSentenceCount === 0 && !hadChrome && !isMidCvContinuationOpener(originalShort)) {
+  // originalShort is checked only when non-empty: a blank short is a
+  // separate, already-tracked coverage gap (missing_card_description), not a
+  // defect this repair path should start populating as a side effect.
+  const hasDefectiveNonEmptyShort = Boolean(originalShort) && isDefectiveShortDescription(originalShort);
+  if (strippedSentenceCount === 0 && !hadChrome && !hasDefectiveNonEmptyShort) {
     return {
       outcome: 'unchanged',
       fullDescription: originalFull,

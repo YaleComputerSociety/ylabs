@@ -98,6 +98,16 @@ const sentenceList = (value: string): string[] => {
 
 const wordCount = (value: string): number => textValue(value).split(/\s+/).filter(Boolean).length;
 
+// A capture that opens with a bare pronoun almost never names an actual
+// research topic - it means the matched phrase ("study of its nature", "a
+// history of their work") refers back to something else in the sentence
+// (a book, an institution) rather than naming what the person studies
+// (#1533 reopen: jaynes-gj7's book-review sentence "...is widely viewed as
+// the most comprehensive study of its nature during the second half of the
+// 20th Century" otherwise passes every other short-focus-extraction guard).
+const isPronounLeadFragment = (value: string): boolean =>
+  /^(?:its|his|her|their|this|that|these|those|him|them)\b/i.test(value.trim());
+
 const uniqueFlags = (flags: DescriptionQualityFlag[]): DescriptionQualityFlag[] =>
   Array.from(new Set(flags));
 
@@ -211,8 +221,17 @@ const hasPaperFragment = (value: string): boolean =>
   ) ||
   /\b(?:arxiv|doi|journal|proceedings|abstract)\b/i.test(value);
 
+// Most alternatives below carry an optional trailing "s" so a plural-subject
+// clause ("his scholarship and teaching examine the role of...") matches the
+// same as the singular form ("he examines the role of...") - the two read
+// identically as a research-focus signal, and requiring exact 3rd-person-
+// singular agreement was rejecting genuine research sentences whose subject
+// happened to be plural (#1533 reopen: hosang-dwh39's rebuilt fullDescription
+// was otherwise entirely usable). "uses" and "studies" are left exact since
+// their bare singular forms ("use", "study") are too generic a word to gate
+// on safely.
 const hasResearchDescriptionVerb = (value: string): boolean =>
-  /\b(studies|investigates|examines|explores|focuses on|focused on|revolves? around|works on|works towards|develops|supports|advances|fosters|innovates|uses|employs|researches|analyzes|models|measures|seeks to)\b/i.test(
+  /\b(studies|investigates?|examines?|explores?|focuses on|focused on|revolves? around|works? on|works? towards|develops?|supports?|advances?|fosters?|innovates?|uses|employs?|researches?|analyzes?|models?|measures?|seeks? to)\b/i.test(
     value,
   );
 
@@ -560,6 +579,24 @@ const hasFragmentaryCardCopy = (value: string): boolean =>
   (/^[^()]*\)/.test(value) && !/\([^)]*\)/.test(value)) ||
   /\b[A-Z]\.$/.test(value) ||
   /^[a-z]{2,10}\/\s/.test(value);
+
+// A stored short that's a bare bibliography citation - a dash-quote lead
+// into a paper/article title - rather than a description of the research
+// itself (#1533 reopen: shirkhani-ks555's short is a citation fragment cut
+// from a publications list, not a summary).
+export const isCitationFragmentShort = (value: unknown): boolean =>
+  /^[-–—]\s*["“]/.test(textValue(value));
+
+// A bare chair-title clause with no subject or verb at all - the entire
+// stored short is nothing but a professorship label (#1533 reopen:
+// jaynes-gj7's stored short is "Whitney Griswold Professor of Economics,
+// Black Studies, and Urban Studies." - the leading "A." of "A. Whitney
+// Griswold" was dropped upstream, leaving a clause that reads like a first
+// name rather than a title, but is still purely a professorship label).
+export const isBareChairTitleFragment = (value: unknown): boolean =>
+  /^[\p{L}][\p{L}.'’ -]{0,80}\bProfessor\s+of\s+[\p{L}][\p{L},&'’ -]{0,120}\.?$/u.test(
+    textValue(value),
+  );
 
 const endsWithCardCompletionMarker = (value: string): boolean =>
   /(?:[.!?…]|\p{L}\))["'”’)\]]*$/u.test(value);
@@ -1184,6 +1221,8 @@ export function shortDescriptionQuality(
   }
   if (text && isAppointmentOnly(text)) flags.push('appointment-only');
   if (text && isRoleOnlyTitleFragment(text)) flags.push('role-only');
+  if (text && isBareChairTitleFragment(text)) flags.push('appointment-only');
+  if (text && isCitationFragmentShort(text)) flags.push('incomplete-sentence');
   if (text && hasFirstPersonShortLead(text)) flags.push('first-person');
   if (text && /^my lab (?:focuses|studies|investigates|examines|works) (?:on|in|with)\b/i.test(text)) {
     flags.push('generic-lead');
@@ -1442,6 +1481,37 @@ export function assessResearchEntityDescriptionQuality(
     sourceEligible: hasUsableSource(input),
     cardState: cardComplete ? 'complete' : 'sparse',
   };
+}
+
+// Requires a person-introducing verb right after the captured name so a
+// topic-list lead ("Race and Ethnicity; Immigrant Adaptation; ... Grace Kao
+// is IBM Professor...") can't have its leading capitalized noun phrase
+// ("Race") mistaken for the person's name (#1533 reopen: kao-gk363's rebuilt
+// short became "Race's research focuses on..." without this guard).
+const LEAD_SENTENCE_SUBJECT_NAME_PATTERN =
+  /^([A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3})\s+(?:is|was|holds?|received|earned|specializes?|serves?|works?|studies|investigates?|examines?|explores?|focuses?\s+on)\b/u;
+
+const DANGLING_PRONOUN_SUBJECT_PATTERN = /^(Her|His|Their|He|She|They)\b/;
+
+const possessiveName = (name: string): string => (name.endsWith('s') ? `${name}'` : `${name}'s`);
+
+/**
+ * Grounds a bare third-person pronoun opener in the name the bio's own lead
+ * sentence already gives - the same substitution a human editor would make,
+ * not new synthesis (#1533 reopen: a later sentence chosen as the
+ * research-focus lead because the actual name-lead sentence carried no
+ * research-focus phrase itself leaves a dangling "Her scholarship
+ * examines..." with no antecedent in the derived short alone).
+ */
+function restoreDanglingPronounSubject(candidate: string, leadSentence: string): string {
+  const pronounMatch = candidate.match(DANGLING_PRONOUN_SUBJECT_PATTERN);
+  if (!pronounMatch) return candidate;
+  const nameMatch = textValue(leadSentence).match(LEAD_SENTENCE_SUBJECT_NAME_PATTERN);
+  if (!nameMatch) return candidate;
+  const name = nameMatch[1];
+  const isPossessive = /^(?:Her|His|Their)$/.test(pronounMatch[1]);
+  const replacement = isPossessive ? possessiveName(name) : name;
+  return `${replacement}${candidate.slice(pronounMatch[0].length)}`;
 }
 
 function normalizeLead(sentence: string): string {
@@ -2159,7 +2229,14 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
     const studyOfMatch = sentence.match(
       /\b(?:a\s+)?(?:study|history)\s+of\s+(.+?)(?:[.!?]|$)/i,
     );
-    if (studyOfMatch?.[1]) {
+    // As with contributionsMatch above: "X's study of <focus>" only names a
+    // clean topic when <focus> is a noun phrase. A sentence with no internal
+    // period after that clause ("Jaynes' study of the reorganization of
+    // labor in the American South following slavery reshaped scholars'
+    // understanding of the rise of sharecropping.") lets this capture run to
+    // the sentence's own final verb clause instead, producing "Studies X
+    // reshaped Y." - a run-on, not a summary (#1533 reopen).
+    if (studyOfMatch?.[1] && wordCount(studyOfMatch[1]) <= 12 && !isPronounLeadFragment(studyOfMatch[1])) {
       const focus = studyOfMatch[1].replace(/[.!?]+$/g, '').trim();
       const candidate = `Studies ${focus}.`;
       if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
@@ -2204,11 +2281,20 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
     const contributionsMatch = sentence.match(
       /\bcontributions?\s+to\s+(.+?)(?:[.!?]|$)/i,
     );
-    if (contributionsMatch?.[1]) {
+    // A genuine "contributions to X" clause names a compact noun phrase - a
+    // capture this long means the sentence had a subordinate clause
+    // ("...include research and testimony before Congress and the U.S.
+    // Civil Rights Commission where he has been a strong proponent...")
+    // that swallowed the whole rest of the sentence instead of stopping at
+    // the noun phrase, which produces an ungrammatical run-on short rather
+    // than a description (#1533 reopen: jaynes-gj7's rebuilt short).
+    if (contributionsMatch?.[1] && wordCount(contributionsMatch[1]) <= 12) {
       const focus = contributionsMatch[1].replace(/[.!?]+$/g, '').trim();
-      const nextFocus = sentences[index + 1]?.match(
+      const nextFocusMatch = sentences[index + 1]?.match(
         /\b(?:reform|study|analysis)\s+of\s+(.+?)(?:[.!?]|$)/i,
-      )?.[1];
+      );
+      const nextFocus =
+        nextFocusMatch?.[1] && wordCount(nextFocusMatch[1]) <= 12 ? nextFocusMatch[1] : undefined;
       const candidate = nextFocus
         ? `Studies ${focus} and ${nextFocus.replace(/[.!?]+$/g, '').trim()} reform.`
         : `Studies ${focus}.`;
@@ -2256,7 +2342,7 @@ function scholarshipFocusSummary(sentences: string[], full: string): string {
   const combinedStudyOfMatch = combined.match(
     /\b(?:a\s+)?(?:study|history)\s+of\s+(.+?)(?:[.!?]|$)/i,
   );
-  if (combinedStudyOfMatch?.[1]) {
+  if (combinedStudyOfMatch?.[1] && wordCount(combinedStudyOfMatch[1]) <= 12 && !isPronounLeadFragment(combinedStudyOfMatch[1])) {
     const focus = combinedStudyOfMatch[1].replace(/[.!?]+$/g, '').trim();
     const candidate = `Studies ${focus}.`;
     if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
@@ -2395,5 +2481,15 @@ export function deriveShortDescriptionFromFullDescription(fullDescription: unkno
     const candidate = `${lead.replace(/[.!?]+$/g, '')}, using ${method}.`;
     if (shortDescriptionQuality(candidate, full).isUseful) return candidate;
   }
-  return shortDescriptionQuality(lead, full).isUseful ? lead : '';
+  if (shortDescriptionQuality(lead, full).isUseful) return lead;
+  // The chosen research-focus sentence can be a later sentence in the bio
+  // (the lead/name sentence itself carried no research-focus phrase), which
+  // leaves a bare pronoun subject with no antecedent in the derived short on
+  // its own - a fail-closed defect (isNonSelfContainedShortDescription) even
+  // though the full text names the person right there in sentence one.
+  // Substituting that name back in is the same repair a human editor would
+  // make, not a new synthesis (#1533 reopen: schmidt-camacho-ask8's "Her
+  // scholarship examines..." only needs "Her" grounded to her own name).
+  const namedLead = restoreDanglingPronounSubject(lead, sentences[0]);
+  return namedLead !== lead && shortDescriptionQuality(namedLead, full).isUseful ? namedLead : '';
 }
