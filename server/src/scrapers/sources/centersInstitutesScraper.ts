@@ -83,10 +83,22 @@ export interface CenterConfig {
   /** When true the scraper crawls `?page=0`, `?page=1`, … until empty. */
   paginated?: boolean;
   extractor: CenterExtractor;
+  /**
+   * Overrides the default `center-<centerKey>` entity key so the roster enriches
+   * an entity another source already minted, instead of creating a duplicate.
+   * Set this when the center already exists in the corpus under a different slug
+   * (e.g. a YSE center discovered by `yse-centers-index` as `yse-<slug>`); the
+   * group + member + relationship observations then all attach to that entity.
+   */
+  entityKey?: string;
   /** Set when the page is JS-rendered or behind auth — runner logs and skips. */
   jsRenderedSkip?: boolean;
   /** Reason string used in the log line when jsRenderedSkip is true. */
   skipReason?: string;
+}
+
+export function centerEntityKey(config: CenterConfig): string {
+  return config.entityKey || `center-${config.centerKey}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,15 +308,27 @@ interface PeopleCardSelectors {
   snippet?: string;
 }
 
-function extractPeopleCards(
-  html: string,
+/**
+ * Restricts card extraction to the sections whose heading passes `keepHeading`,
+ * so a mixed roster page (faculty + admin/trainee sections) yields only the
+ * faculty cards. `heading` selects each section's heading element and `root` is
+ * the ancestor container that scopes the cards belonging to that heading.
+ */
+interface CardSectionScope {
+  heading: string;
+  root: string;
+  keepHeading: (headingText: string) => boolean;
+}
+
+function collectPeopleCards(
+  $: cheerio.CheerioAPI,
+  root: cheerio.Cheerio<any>,
   ctx: ExtractorCtx,
   selectors: PeopleCardSelectors,
-): ExtractorResult {
-  const $ = cheerio.load(html);
-  const members: CenterMember[] = [];
-  const seen = new Set<string>();
-  $(selectors.card).each((_i, el) => {
+  seen: Set<string>,
+  members: CenterMember[],
+): void {
+  root.find(selectors.card).each((_i, el) => {
     const card = $(el);
     const link = card.find(selectors.headingLink).first();
     const name = link.text().replace(/\s+/g, ' ').trim();
@@ -326,8 +350,52 @@ function extractPeopleCards(
       role: inferRole(roleText),
     });
   });
+}
+
+function extractPeopleCards(
+  html: string,
+  ctx: ExtractorCtx,
+  selectors: PeopleCardSelectors,
+): ExtractorResult {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  collectPeopleCards($, $.root(), ctx, selectors, seen, members);
   return { members };
 }
+
+function extractPeopleCardsInSections(
+  html: string,
+  ctx: ExtractorCtx,
+  selectors: PeopleCardSelectors,
+  scope: CardSectionScope,
+): ExtractorResult {
+  const $ = cheerio.load(html);
+  const members: CenterMember[] = [];
+  const seen = new Set<string>();
+  $(scope.heading).each((_i, headingEl) => {
+    const headingText = $(headingEl).text().replace(/\s+/g, ' ').trim();
+    if (!headingText || !scope.keepHeading(headingText)) return;
+    const sectionRoot = $(headingEl).closest(scope.root);
+    const root = sectionRoot.length > 0 ? sectionRoot : $(headingEl).parent();
+    collectPeopleCards($, root, ctx, selectors, seen, members);
+  });
+  return { members };
+}
+
+const DIRECTORY_LISTING_CARD_SELECTORS: PeopleCardSelectors = {
+  card: '.directory-listing-card',
+  headingLink: '.directory-listing-card__heading-link',
+  subheading: '.directory-listing-card__subheading',
+  snippet: '.directory-listing-card__snippet',
+};
+
+const REFERENCE_CARD_SELECTORS: PeopleCardSelectors = {
+  card: '.reference-card',
+  headingLink: '.reference-card__heading-link',
+  subheading: '.reference-card__subheading',
+  snippet: '.reference-card__snippet',
+};
 
 /**
  * YaleSites "directory-listing-card" people block (Quantitative Biology
@@ -344,12 +412,7 @@ function extractPeopleCards(
  * feed the role heuristic.
  */
 export const directoryListingCardExtractor: CenterExtractor = (html, ctx) =>
-  extractPeopleCards(html, ctx, {
-    card: '.directory-listing-card',
-    headingLink: '.directory-listing-card__heading-link',
-    subheading: '.directory-listing-card__subheading',
-    snippet: '.directory-listing-card__snippet',
-  });
+  extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
 
 /**
  * YaleSites "reference-card" people block (Data-Intensive Social Science Center
@@ -359,11 +422,25 @@ export const directoryListingCardExtractor: CenterExtractor = (html, ctx) =>
  * only the heading link is read to avoid double-counting.
  */
 export const referenceCardPeopleExtractor: CenterExtractor = (html, ctx) =>
-  extractPeopleCards(html, ctx, {
-    card: '.reference-card',
-    headingLink: '.reference-card__heading-link',
-    subheading: '.reference-card__subheading',
-    snippet: '.reference-card__snippet',
+  extractPeopleCards(html, ctx, REFERENCE_CARD_SELECTORS);
+
+/**
+ * The Yale Center for Natural Carbon Capture people page
+ * (`naturalcarboncapture.yale.edu/people`) is a YaleSites reference-card roster,
+ * but it groups faculty sections (Directors, Scientific Leadership Team, Faculty
+ * Affiliates) alongside non-faculty sections (Managing Director, Research
+ * Scientists, Postdoctoral Associates, administrative staff). Each section is a
+ * `component-wrapper` with its own `component-wrapper__heading`, so the extractor
+ * keeps only the cards under a faculty/leadership heading and drops the
+ * staff/trainee sections a student would not reach out to for a lab.
+ */
+const FACULTY_ROSTER_SECTION_HEADING = /\b(faculty|directors|leadership)\b/i;
+
+export const naturalCarbonCaptureExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCardsInSections(html, ctx, REFERENCE_CARD_SELECTORS, {
+    heading: '.component-wrapper__heading',
+    root: '.component-wrapper',
+    keepHeading: (headingText) => FACULTY_ROSTER_SECTION_HEADING.test(headingText),
   });
 
 /**
@@ -570,7 +647,8 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     kind: 'center',
     url: 'https://naturalcarboncapture.yale.edu/people',
     paginated: false,
-    extractor: referenceCardPeopleExtractor,
+    extractor: naturalCarbonCaptureExtractor,
+    entityKey: 'yse-natural-carbon-capture',
   },
   {
     centerKey: 'jackson-centers',
@@ -631,7 +709,7 @@ export function centerToGroupObservations(
   members: CenterMember[],
   sourceUrl: string,
 ): { observations: ObservationInput[]; entityKey: string } {
-  const entityKey = `center-${config.centerKey}`;
+  const entityKey = centerEntityKey(config);
   const base = { entityType: 'researchEntity' as const, entityKey, sourceUrl };
 
   // Aggregate departments from member titles when none were declared in config.
@@ -642,9 +720,16 @@ export function centerToGroupObservations(
     { ...base, field: 'slug', value: entityKey },
     { ...base, field: 'name', value: config.centerName },
     { ...base, field: 'kind', value: config.kind },
-    { ...base, field: 'websiteUrl', value: config.url },
     { ...base, field: 'sourceUrls', value: [sourceUrl] },
   ];
+  // In enrichment mode (`entityKey` overrides to an entity another source
+  // already minted) the crawl entry point is a `/people` roster page, not a
+  // research home. Emitting it as `websiteUrl` would compete with and clear the
+  // target's canonical website, so the roster only adds members and provenance
+  // and leaves the identity website to the owning source.
+  if (!config.entityKey) {
+    obs.push({ ...base, field: 'websiteUrl', value: config.url });
+  }
   if (config.schoolName) {
     obs.push({ ...base, field: 'school', value: config.schoolName });
   }
@@ -666,7 +751,7 @@ export function memberToObservations(
   config: CenterConfig,
   sourceUrl: string,
 ): ObservationInput[] {
-  return memberObservationsForEntityKey(`center-${config.centerKey}`, member, sourceUrl);
+  return memberObservationsForEntityKey(centerEntityKey(config), member, sourceUrl);
 }
 
 /**
@@ -721,7 +806,7 @@ export function centerMemberRelationshipObservations(
   sourceUrl: string,
 ): ObservationInput[] {
   return centerMemberRelationshipObservationsForEntityKey(
-    `center-${config.centerKey}`,
+    centerEntityKey(config),
     member,
     sourceUrl,
   );

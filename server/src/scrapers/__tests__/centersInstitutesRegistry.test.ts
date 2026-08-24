@@ -7,7 +7,7 @@ import {
 import { DEFAULT_CENTER_CONFIGS } from '../sources/centersInstitutesScraper';
 
 const renderings = new Set(['static', 'js-rendered']);
-const statuses = new Set(['covered', 'partial', 'gap']);
+const statuses = new Set(['covered', 'partial', 'gap', 'evaluated-skipped']);
 const configuredKeys = new Set(DEFAULT_CENTER_CONFIGS.map((c) => c.centerKey));
 
 describe('centersInstitutesRegistry', () => {
@@ -73,16 +73,32 @@ describe('centersInstitutesRegistry', () => {
     expect(byKey.get('natural-carbon-capture')?.status).toBe('covered');
 
     const byUrl = new Map(CENTERS_INSTITUTES_REGISTRY.map((e) => [e.url, e]));
-    expect(byUrl.get('https://westcampus.yale.edu/about-us/faculty')?.status).toBe('gap');
-    expect(byUrl.get('https://ipch.yale.edu/people')?.status).toBe('gap');
-    expect(byUrl.get('https://yibs.yale.edu/people/faculty-affiliates')?.status).toBe('gap');
+    expect(byUrl.get('https://naturalcarboncapture.yale.edu/people')?.status).toBe('covered');
+    expect(byUrl.get('https://cie.research.yale.edu/people')?.status).toBe('partial');
+    expect(byUrl.get('https://yibs.yale.edu/people/faculty-affiliates')?.status).toBe('partial');
+    expect(byUrl.get('https://westcampus.yale.edu/about-us/faculty')?.status).toBe(
+      'evaluated-skipped',
+    );
+    expect(byUrl.get('https://ipch.yale.edu/people')?.status).toBe('evaluated-skipped');
+    expect(byUrl.get('https://poorvucenter.yale.edu/')?.status).toBe('evaluated-skipped');
+    expect(byUrl.get('https://fds.yale.edu/people/')?.status).toBe('covered');
   });
 
-  it('ranks gaps by student impact tier then member count', () => {
+  it('gives every gap row an explicit next-step blocker in its notes', () => {
+    for (const entry of getCentersInstitutesByStatus('gap')) {
+      expect(entry.notes, entry.url).toBeTruthy();
+      expect(entry.notes!.length, entry.url).toBeGreaterThan(0);
+    }
+  });
+
+  it('ranks live gaps (gap + partial) by impact tier then member count and excludes skipped rows', () => {
     const gaps = getCenterCoverageGaps();
     expect(gaps.length).toBeGreaterThan(0);
     for (const entry of gaps) {
-      expect(entry.status).not.toBe('covered');
+      expect(entry.status === 'gap' || entry.status === 'partial', entry.url).toBe(true);
+    }
+    for (const entry of getCentersInstitutesByStatus('evaluated-skipped')) {
+      expect(gaps).not.toContain(entry);
     }
     for (let i = 1; i < gaps.length; i += 1) {
       const prev = gaps[i - 1];

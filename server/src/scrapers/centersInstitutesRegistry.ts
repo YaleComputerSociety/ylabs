@@ -6,8 +6,12 @@
  * annotated with which `DEFAULT_CENTER_CONFIGS` entry (if any) already ingests
  * its roster. It drives the coverage program - entries with status `gap` are
  * candidates for a new per-center config, `partial` entries are only
- * fractionally covered (e.g. their faculty are captured via a shared roster but
- * the center has no standalone entity), and `covered` entries are wired.
+ * fractionally covered (e.g. their faculty are captured via a shared roster or
+ * enrichment path but the center has no standalone member roster of its own),
+ * `covered` entries are wired, and `evaluated-skipped` entries were assessed and
+ * deliberately kept out of the burn-down (teaching/admin centers, or pages that
+ * cannot yield a per-entity faculty roster). Every `gap` row carries an explicit
+ * next-step blocker in its `notes`.
  *
  * These `url` values are crawl ENTRY POINTS (a center's own people/members page,
  * or its homepage when no people page exists). A center's OWN people page is a
@@ -30,7 +34,7 @@
 
 export type CentersInstitutesRendering = 'static' | 'js-rendered';
 
-export type CentersInstitutesCoverageStatus = 'covered' | 'partial' | 'gap';
+export type CentersInstitutesCoverageStatus = 'covered' | 'partial' | 'gap' | 'evaluated-skipped';
 
 /**
  * ROI ranking for a student seeking research, highest first:
@@ -73,7 +77,7 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     coveredByCenterKey: 'qbio',
     approxMemberCount: 37,
     notes:
-      'Wired in #1297 via the shared YaleSites directory-listing-card extractor. Each card links to the member\'s own lab/profile site; members span MB&B, MCDB, EEB, Physics, Psychiatry, Medicine - a strong cross-department discovery surface.',
+      "Wired in #1297 via the shared YaleSites directory-listing-card extractor. Each card links to the member's own lab/profile site; members span MB&B, MCDB, EEB, Physics, Psychiatry, Medicine - a strong cross-department discovery surface.",
   },
   {
     url: 'https://wti.yale.edu/humans/faculty',
@@ -101,11 +105,11 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     centerName: 'Yale West Campus science institutes (shared faculty directory)',
     school: '',
     rendering: 'static',
-    status: 'gap',
+    status: 'evaluated-skipped',
     studentImpactTier: 1,
     approxMemberCount: 55,
     notes:
-      'One shared faculty directory spans the West Campus science institutes named on the Provost list - Institute of Biomolecular Design & Discovery (IBDD), Cancer Biology Institute (YCBI), Microbial Sciences Institute, Energy Sciences Institute, Nanobiology Institute, Systems Biology Institute. The static HTML does not partition faculty by institute (only directors are labeled), so it cannot yield per-institute rosters; not wired to avoid minting a single campus-wide umbrella entity that misrepresents six distinct institutes. Reference-card theme - a bespoke per-institute crawl (or an LLM affiliation split) is the burn-down path.',
+      'Evaluated in #1295 (COMPLETED). One shared faculty directory spans the West Campus science institutes named on the Provost list - Institute of Biomolecular Design & Discovery (IBDD), Cancer Biology Institute (YCBI), Microbial Sciences Institute, Energy Sciences Institute, Nanobiology Institute, Systems Biology Institute. The static HTML does not partition faculty by institute (only directors are labeled), so it cannot yield per-institute rosters; not wired to avoid minting a single campus-wide umbrella entity that misrepresents six distinct institutes. A bespoke per-institute crawl (or an LLM affiliation split) is the only path and is out of scope for the mechanism-grouped burn-down (#1376), so this row is skipped rather than left as a live gap.',
   },
 
   // ---- Tier 2: university-wide cross-cutting institutes / centers ------------------
@@ -193,9 +197,9 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     status: 'covered',
     studentImpactTier: 2,
     coveredByCenterKey: 'natural-carbon-capture',
-    approxMemberCount: 55,
+    approxMemberCount: 40,
     notes:
-      'Wired via the shared YaleSites referenceCardPeopleExtractor. Contrary to the earlier gap note, the live people page is person-only (Directors, Managing Director, Scientific Leadership Team, Faculty Affiliates, Research Scientists, Postdoctoral Associates, Steering Committee) - no non-person content cards - so no extra scoping is needed. Each card links to the member\'s own departmental/profile page (Earth & Planetary Sciences, YSE, Engineering, Chemistry, Economics, EEB); admin/managing-director/staff rows are dropped by the materializer resolve-or-skip gate.',
+      "Wired via naturalCarbonCaptureExtractor, a section-scoped variant of the YaleSites reference-card extractor (#1376, tightening the initial #1402 wiring). The people page groups faculty sections (Directors, Scientific Leadership Team, Faculty Affiliates - 40 cross-department climate/energy faculty spanning Earth & Planetary Sciences, Environment, Engineering, Chemistry, EEB, Economics) alongside non-faculty sections (Managing Director, Research Scientists, Postdoctoral Associates, administrative staff); the section-heading gate keeps only the faculty/leadership cards and drops the staff/trainee sections at extraction rather than relying solely on the materializer resolve-or-skip gate. The roster enriches the existing yse-natural-carbon-capture entity (minted earlier by yse-centers-index with 0 members) via the config entityKey override rather than minting a duplicate center-* entity. Each card links to the member's home-department profile - a strong cross-department discovery surface.",
   },
 
   // ---- Tier 3: school-anchored research centers / institutes ----------------------
@@ -214,22 +218,22 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     centerName: 'Yale Institute for Biospheric Studies (YIBS)',
     school: '',
     rendering: 'static',
-    status: 'gap',
+    status: 'partial',
     studentImpactTier: 3,
     approxMemberCount: 65,
     notes:
-      'Affiliate overlap with FAS/YSE departments; also tracked in facultyDirectoryRegistry. May surface via yale-research-official discovery.',
+      'Faculty affiliates are enriched onto their existing home-department entities via the departmentRosterScraper fieldCollectionPersonExtractor (officialProfileOnly), wired in #1396 through facultyDirectoryRegistry - the affiliate-enrichment path the #1376 scoping called for, chosen because affiliates are cross-listed with FAS/YSE and a standalone center roster would mint duplicate entities. Partial rather than covered: the ~78 affiliates enrich existing entities, so YIBS has no standalone member roster of its own here.',
   },
   {
     url: 'https://cie.research.yale.edu/people',
     centerName: 'Center for Industrial Ecology',
     school: 'Yale School of the Environment',
     rendering: 'static',
-    status: 'gap',
+    status: 'partial',
     studentImpactTier: 3,
     approxMemberCount: 7,
     notes:
-      'Drupal views-field roster (the existing viewsFieldNameExtractor may fit). Likely overlaps yse-centers-index coverage; verify net-new headcount before wiring.',
+      'Evaluated in #1376, not wired. yse-centers-index already mints the CIE entity (yse-industrial-ecology, linked from environment.yale.edu/research/centers), so a center-* config would duplicate it. The roster is a 7-person Drupal views-field list (Chertow, Graedel, Higgins, Lifset, Reck, Wheeler, Yao) that uses a linkless <strong class="field-content"> name variant carrying no profile URLs - not the a.username shape viewsFieldNameExtractor reads - and several are already reachable via other YSE/FAS rosters (Yuan Yao is a Natural Carbon Capture faculty affiliate). Net-new faculty a student could not otherwise reach: ~0-2. Low ROI plus the duplicate-entity risk means it stays partial (entity covered via yse-centers-index, roster not ingested) pending a dedupe-safe roster path.',
   },
   {
     url: 'https://geospatial.yale.edu/people',
@@ -239,7 +243,7 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     status: 'gap',
     studentImpactTier: 3,
     notes:
-      'Reference-card theme but the people page shows only a few leadership highlights, not a full affiliated-faculty roster; low net-new headcount.',
+      'Evaluated in #1376. Reference-card theme but the people page shows only a few leadership highlights, not a full affiliated-faculty roster; low net-new headcount. Next step: defer until a full-roster path is found (the leadership shown, e.g. Jennifer Marlon, already surfaces via other rosters such as Natural Carbon Capture) - not worth a config for leadership-only.',
   },
   {
     url: 'https://medicine.yale.edu/kavli/',
@@ -249,7 +253,7 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     status: 'gap',
     studentImpactTier: 3,
     notes:
-      'No dedicated public people page found (/people, /people/ 404); the homepage is the only entry point. Members overlap heavily with Neuroscience/YSM faculty.',
+      'Evaluated in #1376. No dedicated public people page found (/people, /people/ 404); the homepage is the only entry point. Next step: directory-path discovery. Members overlap heavily with Neuroscience/YSM faculty, so ROI is modest once a roster path is found.',
   },
 
   // ---- Tier 4: specialized / clinical / area-studies research centers --------------
@@ -272,7 +276,7 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     status: 'gap',
     studentImpactTier: 4,
     notes:
-      'People page path not found under /people or /about/people; the homepage is the only verified entry point. Needs directory-path discovery before wiring.',
+      'Evaluated in #1376. People page path not found under /people or /about/people; the homepage is the only verified entry point. Next step: directory-path discovery before wiring.',
   },
 
   // ---- Tier 5: humanities / arts research centers ---------------------------------
@@ -292,21 +296,21 @@ export const CENTERS_INSTITUTES_REGISTRY: CentersInstitutesEntry[] = [
     centerName: 'Institute for the Preservation of Cultural Heritage (IPCH)',
     school: '',
     rendering: 'static',
-    status: 'gap',
+    status: 'evaluated-skipped',
     studentImpactTier: 6,
     approxMemberCount: 16,
     notes:
-      'On the Provost-purview list and exposes a clean directory-listing-card roster, but its people are predominantly preservation/conservation and administrative staff (Program Managers, Postgraduate Associates, Lab Assistants), not research faculty a student would seek; low research-discovery ROI, deferred rather than dropped.',
+      'Evaluated in #1376 and skipped. On the Provost-purview list and exposes a clean directory-listing-card roster, but its people are predominantly preservation/conservation and administrative staff (Program Managers, Postgraduate Associates, Lab Assistants), not research faculty a student would seek; low research-discovery ROI, kept out of the burn-down.',
   },
   {
     url: 'https://poorvucenter.yale.edu/',
     centerName: 'Poorvu Center for Teaching and Learning',
     school: '',
     rendering: 'static',
-    status: 'gap',
+    status: 'evaluated-skipped',
     studentImpactTier: 6,
     notes:
-      'Teaching-and-learning support center; on the Provost list but not a research-faculty home. Recorded as evaluated-and-skipped.',
+      'Evaluated in #1376 and skipped. Teaching-and-learning support center; on the Provost list but not a research-faculty home.',
   },
 ];
 
@@ -317,11 +321,15 @@ export function getCentersInstitutesByStatus(
 }
 
 /**
- * Uncovered centers (status `gap` or `partial`), ranked by student research ROI:
- * impact tier first, then approximate member count.
+ * Live coverage gaps (status `gap` or `partial`), ranked by student research
+ * ROI: impact tier first, then approximate member count. `covered` and
+ * `evaluated-skipped` rows are excluded - the latter were assessed and
+ * deliberately kept out of the burn-down.
  */
 export function getCenterCoverageGaps(): CentersInstitutesEntry[] {
-  return CENTERS_INSTITUTES_REGISTRY.filter((entry) => entry.status !== 'covered').sort((a, b) => {
+  return CENTERS_INSTITUTES_REGISTRY.filter(
+    (entry) => entry.status === 'gap' || entry.status === 'partial',
+  ).sort((a, b) => {
     if (a.studentImpactTier !== b.studentImpactTier) {
       return a.studentImpactTier - b.studentImpactTier;
     }

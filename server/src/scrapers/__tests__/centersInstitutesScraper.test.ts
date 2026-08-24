@@ -26,6 +26,7 @@ import {
   ycgaExtractor,
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
+  naturalCarbonCaptureExtractor,
   fdsUsersGridExtractor,
   jacksonCentersExtractor,
   jsRenderedStub,
@@ -448,33 +449,49 @@ describe('fdsUsersGridExtractor', () => {
   });
 });
 
-describe('referenceCardPeopleExtractor (Natural Carbon Capture)', () => {
-  it('extracts the person-only YCNCC roster across leadership and affiliate sections', () => {
-    const out = referenceCardPeopleExtractor(YCNCC_FIXTURE, {
+describe('naturalCarbonCaptureExtractor', () => {
+  it('keeps only cards under a faculty/leadership section heading', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
       pageUrl: 'https://naturalcarboncapture.yale.edu/people',
     });
     const names = out.members.map((m) => m.name);
     expect(names).toEqual([
-      'Sample Director',
-      'Redacted Staff',
-      'First Affiliate',
-      'Second Affiliate',
-      'Third Affiliate',
-      'Sample Postdoc',
+      'Alpha Director',
+      'Gamma Scientist',
+      'Delta Affiliate',
+      'Epsilon Affiliate',
     ]);
-    expect(out.members.find((m) => m.name === 'Sample Director')?.role).toBe('director');
+    expect(out.members.find((m) => m.name === 'Alpha Director')?.role).toBe('director');
   });
 
-  it('cites each member own departmental/profile page, absolutizing center-hosted staff links', () => {
-    const out = referenceCardPeopleExtractor(YCNCC_FIXTURE, {
+  it('drops staff and trainee sections (managing director, research scientists, postdocs, admin)', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
       pageUrl: 'https://naturalcarboncapture.yale.edu/people',
     });
-    expect(out.members.find((m) => m.name === 'First Affiliate')?.profileUrl).toBe(
-      'https://environment.example-university.edu/directory/faculty/first-affiliate',
+    const names = out.members.map((m) => m.name);
+    expect(names).not.toContain('Beta Manager');
+    expect(names).not.toContain('Zeta Researcher');
+    expect(names).not.toContain('Eta Postdoc');
+    expect(names).not.toContain('Theta Admin');
+  });
+
+  it('keeps a faculty affiliate whose title is a research-scientist role (section, not title, gates)', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    const epsilon = out.members.find((m) => m.name === 'Epsilon Affiliate');
+    expect(epsilon).toMatchObject({ title: 'Senior Research Scientist', role: 'core-faculty' });
+  });
+
+  it('absolutizes hrefs, keeps absolute profile links, and does not double-count image links', () => {
+    const out = naturalCarbonCaptureExtractor(YCNCC_FIXTURE, {
+      pageUrl: 'https://naturalcarboncapture.yale.edu/people',
+    });
+    expect(out.members.find((m) => m.name === 'Alpha Director')?.profileUrl).toBe(
+      'https://earth.example-university.edu/profile/alpha-director',
     );
-    expect(out.members.find((m) => m.name === 'Redacted Staff')?.profileUrl).toBe(
-      'https://naturalcarboncapture.yale.edu/profile/redacted-staff',
-    );
+    const names = out.members.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
     for (const member of out.members) {
       expect(member.profileUrl).not.toBe('https://naturalcarboncapture.yale.edu/people');
     }
@@ -564,6 +581,69 @@ describe('memberToObservations', () => {
     });
     expect(obs.find((o) => o.field === 'profileUrl')!.value).toBe(
       'https://egc.yale.edu/people/jane-doe',
+    );
+  });
+});
+
+describe('entityKey override', () => {
+  const config: CenterConfig = {
+    centerKey: 'natural-carbon-capture',
+    centerName: 'Yale Center for Natural Carbon Capture',
+    schoolName: '',
+    kind: 'center',
+    url: 'https://naturalcarboncapture.yale.edu/people',
+    extractor: naturalCarbonCaptureExtractor,
+    entityKey: 'yse-natural-carbon-capture',
+  };
+
+  it('keys the group, members, and relationships to the overridden entity, not center-<key>', () => {
+    const { entityKey, observations } = centerToGroupObservations(
+      config,
+      [],
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(entityKey).toBe('yse-natural-carbon-capture');
+    expect(observations.every((o) => o.entityKey === 'yse-natural-carbon-capture')).toBe(true);
+    expect(observations.find((o) => o.field === 'slug')!.value).toBe('yse-natural-carbon-capture');
+    // Enrichment mode must not overwrite the target's canonical website with the
+    // /people crawl entry point.
+    expect(observations.find((o) => o.field === 'websiteUrl')).toBeUndefined();
+    expect(observations.find((o) => o.field === 'sourceUrls')!.value).toEqual([
+      'https://naturalcarboncapture.yale.edu/people',
+    ]);
+
+    const memberObs = memberToObservations(
+      { name: 'Alpha Director', role: 'director' },
+      config,
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(
+      memberObs.every((o) => o.entityKey === 'yse-natural-carbon-capture:alpha-director'),
+    ).toBe(true);
+    expect(memberObs.find((o) => o.field === 'researchGroupKey')!.value).toBe(
+      'yse-natural-carbon-capture',
+    );
+
+    const relObs = centerMemberRelationshipObservations(
+      { name: 'Alpha Director' },
+      config,
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(relObs.find((o) => o.field === 'sourceEntityKey')!.value).toBe(
+      'yse-natural-carbon-capture',
+    );
+  });
+
+  it('emits the config url as websiteUrl only when no override is set', () => {
+    const plain: CenterConfig = { ...config, entityKey: undefined };
+    const { entityKey, observations } = centerToGroupObservations(
+      plain,
+      [],
+      'https://naturalcarboncapture.yale.edu/people',
+    );
+    expect(entityKey).toBe('center-natural-carbon-capture');
+    expect(observations.find((o) => o.field === 'websiteUrl')!.value).toBe(
+      'https://naturalcarboncapture.yale.edu/people',
     );
   });
 });
