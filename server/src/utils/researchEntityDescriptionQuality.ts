@@ -920,6 +920,27 @@ const areaEchoFallbackContentTokens = (value: string): Set<string> =>
       .filter((word) => word.length >= 4 && !AREA_ECHO_FALLBACK_STOPWORDS.has(word)),
   );
 
+// A word that merely takes a different suffix than its chip counterpart
+// ("therapeutic" vs. a chip's "therapy", "diagnostic" vs. "diagnosis") is
+// still a chip echo, not added content - exact-token matching alone counts
+// it as "extra" and can push a hollow closer past the flag threshold on a
+// spelling technicality. A shared 6-character prefix is a coarse stand-in
+// for a shared root without pulling in a real stemming library.
+const AREA_ECHO_STEM_PREFIX_LENGTH = 6;
+
+const areaEchoFallbackStem = (word: string): string =>
+  word.length <= AREA_ECHO_STEM_PREFIX_LENGTH ? word : word.slice(0, AREA_ECHO_STEM_PREFIX_LENGTH);
+
+const countExtraAreaEchoTokens = (textTokens: Set<string>, areaTokens: Set<string>): number => {
+  const areaStems = new Set(Array.from(areaTokens, areaEchoFallbackStem));
+  let extra = 0;
+  for (const token of textTokens) {
+    if (areaTokens.has(token) || areaStems.has(areaEchoFallbackStem(token))) continue;
+    extra += 1;
+  }
+  return extra;
+};
+
 // The canonical two-sentence fallback pads a chip restatement with a closer
 // sentence naming no method, model system, or finding beyond the chips
 // ("The lab investigates the underlying mechanisms of these conditions.").
@@ -937,11 +958,7 @@ const hasVacuousAreaEchoCloserSentence = (value: string, areaTokens: Set<string>
   if (!match?.[1]) return false;
   const closerTokens = areaEchoFallbackContentTokens(match[1]);
   if (closerTokens.size === 0) return false;
-  let extra = 0;
-  for (const token of closerTokens) {
-    if (!areaTokens.has(token)) extra += 1;
-  }
-  return extra < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS;
+  return countExtraAreaEchoTokens(closerTokens, areaTokens) < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS;
 };
 
 const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown): boolean => {
@@ -952,11 +969,9 @@ const isAreaEchoFallbackFullDescription = (value: string, researchAreas: unknown
   const areaTokens = areaEchoFallbackContentTokens(areas.join(' '));
   const textTokens = areaEchoFallbackContentTokens(stripAreaEchoSubjectClause(value));
   if (textTokens.size === 0) return false;
-  let extra = 0;
-  for (const token of textTokens) {
-    if (!areaTokens.has(token)) extra += 1;
+  if (countExtraAreaEchoTokens(textTokens, areaTokens) < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS) {
+    return true;
   }
-  if (extra < AREA_ECHO_FALLBACK_MIN_EXTRA_WORDS) return true;
   return hasVacuousAreaEchoCloserSentence(value, areaTokens);
 };
 
