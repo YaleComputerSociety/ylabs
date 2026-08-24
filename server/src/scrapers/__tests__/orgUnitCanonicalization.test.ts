@@ -8,6 +8,7 @@ import {
   isDroppedAdministrativeOrgUnit,
   orgUnitMatchKey,
   resetOrgUnitCanonicalizerCache,
+  researchEntityHasSchoolButNoRealDepartment,
   resolveOrgUnitCanonical,
   schoolNameFromProfileHosts,
   setOrgUnitCanonicalizerForTesting,
@@ -342,6 +343,47 @@ describe('schoolNameFromProfileHosts', () => {
     ).toBeNull();
     expect(schoolNameFromProfileHosts([])).toBeNull();
     expect(schoolNameFromProfileHosts(['not a url'])).toBeNull();
+  });
+});
+
+describe('researchEntityHasSchoolButNoRealDepartment', () => {
+  it('flags a school-bearing entity with no departments', () => {
+    expect(
+      researchEntityHasSchoolButNoRealDepartment({ school: 'Yale School of Management', departments: [] }),
+    ).toBe(true);
+    expect(
+      researchEntityHasSchoolButNoRealDepartment({ schools: ['Yale School of Public Health'] }),
+    ).toBe(true);
+  });
+
+  it('flags the school-name fallback where every department is just a school', () => {
+    expect(
+      researchEntityHasSchoolButNoRealDepartment({
+        school: 'School of Medicine',
+        schools: ['School of Medicine'],
+        departments: ['School of Medicine'],
+      }),
+    ).toBe(true);
+  });
+
+  it('does not flag an entity with a real department below the school', () => {
+    expect(
+      researchEntityHasSchoolButNoRealDepartment({
+        school: 'Yale School of Management',
+        departments: ['Finance'],
+      }),
+    ).toBe(false);
+    expect(
+      researchEntityHasSchoolButNoRealDepartment({
+        school: 'Yale School of Medicine',
+        departments: ['School of Medicine', 'Immunobiology'],
+      }),
+    ).toBe(false);
+  });
+
+  it('does not flag an entity that has no school at all', () => {
+    expect(researchEntityHasSchoolButNoRealDepartment({ departments: [] })).toBe(false);
+    expect(researchEntityHasSchoolButNoRealDepartment({})).toBe(false);
   });
 });
 

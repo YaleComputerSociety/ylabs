@@ -42,6 +42,25 @@ describe('buildOrgUnitSeedRows', () => {
     const neuroscience = rows.find((row) => row.slug === 'neuroscience');
     expect(neuroscience?.parentSlug).toBe('yale-school-of-medicine');
   });
+
+  it('seeds School of Management research disciplines under the school (#1377)', () => {
+    const bySlug = new Map(rows.map((row) => [row.slug, row]));
+    for (const slug of ['finance', 'marketing', 'accounting', 'operations', 'organizational-behavior']) {
+      expect(bySlug.get(slug)?.kind).toBe('DEPARTMENT');
+      expect(bySlug.get(slug)?.parentSlug).toBe('yale-school-of-management');
+    }
+  });
+
+  it('reuses the shared Economics department for the SOM economics discipline', () => {
+    const economics = rows.filter((row) => row.slug === 'economics');
+    expect(economics).toHaveLength(1);
+  });
+
+  it('parents School of Public Health departments under the school (#1377)', () => {
+    const biostatistics = rows.find((row) => row.slug === 'biostatistics');
+    expect(biostatistics?.kind).toBe('DEPARTMENT');
+    expect(biostatistics?.parentSlug).toBe('yale-school-of-public-health');
+  });
 });
 
 describe('resolveOrgUnitCanonical over the full ground truth', () => {
@@ -60,6 +79,13 @@ describe('resolveOrgUnitCanonical over the full ground truth', () => {
 
   it('fails closed on an unknown unit', () => {
     expect(resolveOrgUnitCanonical(index, 'Department of Wizardry')).toBeNull();
+  });
+
+  it('resolves School of Management disciplines as navigable departments (#1377)', () => {
+    expect(resolveOrgUnitCanonical(index, 'Finance', ['DEPARTMENT'])?.slug).toBe('finance');
+    expect(resolveOrgUnitCanonical(index, 'Organizational Behavior', ['DEPARTMENT'])?.slug).toBe(
+      'organizational-behavior',
+    );
   });
 
   it('resolves HR-coded and all-caps facet variants through overlay aliases', () => {
