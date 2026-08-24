@@ -32,7 +32,7 @@ async function main(): Promise<void> {
 
   console.log('=== Example _ids from issue #1533 ===');
   for (const id of EXAMPLE_IDS) {
-    const entity = await ResearchEntity.findById(id)
+    const entity: any = await ResearchEntity.findById(id)
       .select('_id slug kind entityType studentVisibilityTier archived shortDescription fullDescription researchAreas')
       .lean();
     if (!entity) {

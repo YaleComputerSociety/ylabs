@@ -26,11 +26,7 @@ const INDIVIDUAL_OR_LAB_ENTITY_TYPES = new Set(['FACULTY_RESEARCH_AREA', 'INDIVI
  * description. Keeping this script's blast radius to the #1533 shape avoids
  * touching entities this issue was never about.
  */
-function isHumanitiesCvBioCandidate(entity: {
-  kind?: string | null;
-  entityType?: string | null;
-  fullDescription?: unknown;
-}): boolean {
+function isHumanitiesCvBioCandidate(entity: Record<string, any>): boolean {
   const full = typeof entity.fullDescription === 'string' ? entity.fullDescription : '';
   if (!full) return false;
   if (hasLeadingDegreeListSignal(full)) return true;
