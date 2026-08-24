@@ -37,6 +37,7 @@ export const SCRAPER_SWEEP_SOURCES: ScraperSweepSource[] = [
   { name: 'department-undergrad-research', phase: 'discovery' },
   { name: 'yale-college-fellowships-office', phase: 'discovery' },
   { name: 'undergrad-fellowships-recipients', phase: 'discovery' },
+  { name: 'dh-lab-projects', phase: 'discovery' },
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'official-profile-pi-backfill', phase: 'relationships' },
