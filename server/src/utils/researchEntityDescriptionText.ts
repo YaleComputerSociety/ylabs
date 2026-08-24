@@ -331,8 +331,16 @@ const FIRST_PERSON_ADVISING_INVITATION_PATTERN = new RegExp(
   'i',
 );
 
+/**
+ * The article before "Professor" is optional: a named/endowed chair reads
+ * "is William R. Kenan, Jr. Professor of Black Studies..." with no "the/a"
+ * before the donor name (#1745: Daphne Brooks), unlike the plain "is the
+ * Sterling Professor of..." shape the mandatory article previously assumed.
+ * The donor-name word atom also allows an embedded period so a middle
+ * initial or suffix ("R.", "Jr.") does not break the match.
+ */
 const PERSON_BIOGRAPHY_OPENER_PATTERN =
-  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:the|an?)\s+(?:[\p{L}][\p{L}'’-]*[\s,/-]+){0,8}Professor\b/u;
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}(?:,\s*(?:PhD|Ph\.D\.?|MD|M\.D\.?|MPH|ScD|Sc\.D\.?|DPhil|JD|MS|MA|MBA|EdD)\b\.?)?\s+is\s+(?:(?:the|an?)\s+)?(?:[\p{L}][\p{L}'’.-]*[\s,/-]+){0,8}Professor\b/u;
 
 const NAME_LEAD_PATTERN = /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){1,4}\b/u;
 const DECEASED_LEAD_DATE_RANGE_PATTERN = /\(\s*(?:1[6-9]|20)\d{2}\s*[-–—]\s*(?:1[6-9]|20)\d{2}\s*\)/;
@@ -430,13 +438,43 @@ const PRONOUN_CREDENTIAL_LEAD_PATTERN =
 const FIRST_PERSON_TITLE_LEAD_PATTERN =
   /^I\s+am\s+(?:(?:the|an?)\s+)?[\p{L}\s,/-]{0,40}\b(?:Professor|Instructor|Lecturer|Director|Fellow|Attending)\b\s+(?:in|at|of)\s+the\s+(?:Department|Division|Section|School|Center|Centre|Office|Program)\b/iu;
 
+/**
+ * A name-or-pronoun-lead "is a fellow of <Society>" clause and a continued
+ * "has (also) received ... awards/honors" clause: the CV/awards run a bio
+ * opener leads into often spans several sentences past the opener itself
+ * (#1745: Zilibotti's full continues "He has received the Best Economics
+ * PhD Advisor Award... Zilibotti is a fellow of the Econometric Society and
+ * has received several prestigious awards..." - two more credential
+ * sentences after the opener, with no research content of their own).
+ */
+const FELLOWSHIP_LEAD_PATTERN =
+  /^(?:He|She|They|[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3})\s+(?:is|was)\s+an?\s+fellow\s+of\b/iu;
+
+const CONTINUED_AWARDS_RECEIPT_PATTERN =
+  /^(?:and\s+)?has\s+(?:also\s+)?received\s+(?:several|many|numerous|additional)?\s*(?:prestigious\s+|other\s+)?(?:awards?|honors?|honours?)\b/iu;
+
+/**
+ * A "<Name/Title> is the author/winner of <work/prize>" clause: the most
+ * common bibliography-style continuation of a person-biography opener
+ * (#1745: Daphne Brooks's full continues "She is the author of Bodies in
+ * Dissent... winner of..." then "Liner Notes for the Revolution is the
+ * winner of eleven book awards and prizes..." - neither sentence names a
+ * person via the strict multi-word name-lead patterns above, so a lighter
+ * subject requirement is needed here).
+ */
+const AUTHOR_OR_WINNER_OF_LEAD_PATTERN =
+  /^[\p{L}][\p{L}\s.,:'’()-]{0,80}?\s+is\s+the\s+(?:author|winner)\s+of\b/iu;
+
 export function isCredentialOrAwardLeadBiography(value: unknown): boolean {
   const cleaned = textValue(value);
   if (!cleaned) return false;
   return (
     DEGREE_RECEIPT_LEAD_PATTERN.test(cleaned) ||
     PRONOUN_CREDENTIAL_LEAD_PATTERN.test(cleaned) ||
-    FIRST_PERSON_TITLE_LEAD_PATTERN.test(cleaned)
+    FIRST_PERSON_TITLE_LEAD_PATTERN.test(cleaned) ||
+    FELLOWSHIP_LEAD_PATTERN.test(cleaned) ||
+    CONTINUED_AWARDS_RECEIPT_PATTERN.test(cleaned) ||
+    AUTHOR_OR_WINNER_OF_LEAD_PATTERN.test(cleaned)
   );
 }
 
@@ -469,17 +507,39 @@ function firstBiographyOpenerMatch(value: string, allowLabCredentialPatterns: bo
       : null) ||
     value.match(DEGREE_RECEIPT_LEAD_PATTERN) ||
     value.match(PRONOUN_CREDENTIAL_LEAD_PATTERN) ||
-    value.match(FIRST_PERSON_TITLE_LEAD_PATTERN)
+    value.match(FIRST_PERSON_TITLE_LEAD_PATTERN) ||
+    value.match(FELLOWSHIP_LEAD_PATTERN) ||
+    value.match(CONTINUED_AWARDS_RECEIPT_PATTERN) ||
+    value.match(AUTHOR_OR_WINNER_OF_LEAD_PATTERN)
   );
 }
 
+const MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED = 8;
+
+/**
+ * A CV/credential/awards run served as a description commonly spans several
+ * leading sentences, not just the opener (#1745: Zilibotti's opener is
+ * followed by a separate awards sentence and a separate fellowship sentence
+ * before any research content; Brooks's opener is followed by an
+ * author-of/winner-of bibliography run). Each of the biography-opener
+ * patterns above is anchored to the start of the string, so re-running the
+ * match against the shrinking remainder after every strip finds the next
+ * leading CV sentence, if any, until either a non-matching sentence is
+ * reached or the text is exhausted.
+ */
 function stripPersonBiographyOpenerSentence(value: string, allowLabCredentialPatterns: boolean): string {
-  const match = firstBiographyOpenerMatch(value, allowLabCredentialPatterns);
-  if (!match || match.index === undefined) return value;
-  const openerEnd = match.index + match[0].length;
-  const sentenceTail = value.slice(openerEnd).match(/^[^.!?]*[.!?]+\s*/);
-  const consumedEnd = sentenceTail ? openerEnd + sentenceTail[0].length : value.length;
-  return value.slice(consumedEnd).trim();
+  let remaining = value;
+  let strippedAny = false;
+  for (let iteration = 0; iteration < MAX_BIOGRAPHY_OPENER_SENTENCES_STRIPPED; iteration += 1) {
+    const match = firstBiographyOpenerMatch(remaining, allowLabCredentialPatterns);
+    if (!match || match.index === undefined) break;
+    const openerEnd = match.index + match[0].length;
+    const consumedEnd = sentenceEndIndex(remaining, openerEnd);
+    remaining = remaining.slice(consumedEnd).trim();
+    strippedAny = true;
+    if (!remaining) break;
+  }
+  return strippedAny ? remaining : value;
 }
 
 /**
