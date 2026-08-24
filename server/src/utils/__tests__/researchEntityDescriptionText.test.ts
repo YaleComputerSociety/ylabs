@@ -353,6 +353,34 @@ describe('sanitizeResearchEntityPublicDescriptionFields', () => {
     );
   });
 
+  it('keeps PI profile synthesis prose whose research verbs use inflections outside the legacy keyword list', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        entityType: 'LAB',
+        kind: 'lab',
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        fullDescription:
+          'Our long-term goal is to understand how signaling at molecular and circuit levels shapes instinctive behaviors. By using transgenic mice we directly observe neuronal activity in vitro and examine how it changes in vivo.',
+      },
+      ['Xiao-Bing Gao'],
+    );
+
+    expect(sanitized.fullDescription).toContain('transgenic mice');
+  });
+
+  it('still blanks a PI profile synthesis performance bio with no research signal', () => {
+    const sanitized = sanitizeResearchEntityPublicDescriptionFields(
+      {
+        descriptionSource: 'PI_PROFILE_SYNTHESIS',
+        profileSynthesisDescription:
+          'An independent filmmaker and educator whose previous work includes several award-nominated short films, currently developing a new feature for production next summer.',
+      },
+      ['Jon Andrews'],
+    );
+
+    expect(sanitized.profileSynthesisDescription).toBe('');
+  });
+
   it('keeps a research-verb-led card whose eponymous object mismatches the lead name', () => {
     const medical = sanitizeResearchEntityPublicDescriptionFields(
       {
