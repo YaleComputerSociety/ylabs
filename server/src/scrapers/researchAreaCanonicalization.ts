@@ -489,6 +489,15 @@ export async function getResearchAreaCanonicalizer(): Promise<ResearchAreaCanoni
   return cachedCanonicalizer;
 }
 
+function departmentMatchKeys(departments: unknown): Set<string> {
+  const keys = new Set<string>();
+  for (const department of toRawList(departments)) {
+    const key = researchAreaMatchKey(department);
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
 /**
  * Canonicalizes a research-entity materialization `$set` in place: scraper-label
  * leakage is dropped, the surviving `researchAreas[]` strings are rewritten to
@@ -497,9 +506,16 @@ export async function getResearchAreaCanonicalizer(): Promise<ResearchAreaCanoni
  * canonicalization failure or an unseeded/empty approved `taxonomy_terms`
  * registry leaves the raw scraped values untouched so materialization keeps
  * working (fail closed to raw, never guess-collapse distinct topics).
+ *
+ * `departments` (the entity's own resolved `departments[]`, if known) is kept
+ * disjoint from `researchAreas[]`: an area entry that case/punctuation-normalizes
+ * to a department name is the department leaking into the topic-chip array
+ * rather than a real research topic (issue #1451), so it is dropped like any
+ * other leakage.
  */
 export async function applyResearchEntityResearchAreaCanonicalization(
   set: Record<string, unknown>,
+  departments?: unknown,
 ): Promise<{ unmatchedResearchAreas: string[]; droppedResearchAreas: string[] }> {
   const result: { unmatchedResearchAreas: string[]; droppedResearchAreas: string[] } = {
     unmatchedResearchAreas: [],
@@ -511,9 +527,16 @@ export async function applyResearchEntityResearchAreaCanonicalization(
   try {
     const canonicalizer = await getResearchAreaCanonicalizer();
     const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
-    set.researchAreas = canonical.values;
-    result.unmatchedResearchAreas = canonical.unmatched;
-    result.droppedResearchAreas = canonical.dropped;
+    const departmentKeys = departmentMatchKeys(departments);
+    const isDepartmentDuplicate = (value: string) => departmentKeys.has(researchAreaMatchKey(value));
+    set.researchAreas = canonical.values.filter((value) => !isDepartmentDuplicate(value));
+    result.unmatchedResearchAreas = canonical.unmatched.filter(
+      (value) => !isDepartmentDuplicate(value),
+    );
+    result.droppedResearchAreas = [
+      ...canonical.dropped,
+      ...canonical.values.filter(isDepartmentDuplicate),
+    ];
   } catch {
     return result;
   }
