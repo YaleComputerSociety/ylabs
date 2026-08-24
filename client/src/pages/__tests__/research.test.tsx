@@ -3112,4 +3112,59 @@ describe('Research zero-result recovery', () => {
       'researchAreas=Machine+Learning',
     );
   });
+
+  it('lets a signed-in student save the current search from the browse loop', async () => {
+    const savedPayloads: Array<Record<string, unknown>> = [];
+    mockedAxios.post.mockImplementation((url: string, body: Record<string, unknown>) => {
+      if (url === '/analytics/research' || url === '/analytics/research/batch') {
+        return Promise.resolve({ data: { ok: true, accepted: 1 }, status: 202 });
+      }
+      if (url === '/research/search') {
+        return Promise.resolve(
+          researchSearchResponse([researchEntity], { estimatedTotalHits: 5 }),
+        );
+      }
+      if (url === '/users/savedSearches') {
+        savedPayloads.push(body);
+        return Promise.resolve({ data: { savedSearches: [] } });
+      }
+      return Promise.reject(unexpectedSearchEndpoint(url));
+    });
+
+    renderResearch(departments, ['/research?q=machine+learning'], {
+      netId: 'abc123',
+      userType: 'student',
+    });
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save this search' }));
+    fireEvent.change(screen.getByLabelText('Name this search (optional)'), {
+      target: { value: 'CS labs in ML' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save search' }));
+
+    await waitFor(() => expect(savedPayloads.length).toBe(1));
+    const payload = savedPayloads[0].data as { savedSearch: Record<string, unknown> };
+    expect(payload.savedSearch.label).toBe('CS labs in ML');
+    expect(payload.savedSearch.queryText).toBe('machine learning');
+    expect(String(payload.savedSearch.urlParams)).toContain('q=machine+learning');
+    expect(await screen.findByText(/Find it under Saved Searches/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View saved searches' })).toHaveAttribute(
+      'href',
+      '/account',
+    );
+  });
+
+  it('does not offer to save the search when signed out', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity], { estimatedTotalHits: 5 })
+        : unexpectedSearchEndpoint(url),
+    );
+
+    renderResearch(departments, ['/research?q=machine+learning']);
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+
+    expect(screen.queryByRole('button', { name: 'Save this search' })).toBeNull();
+  });
 });

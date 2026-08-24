@@ -370,6 +370,29 @@ router.post(
   validateResearchEntityId('entityId'),
   userController.dismissSavedResearchFollowUp,
 );
+router.get('/savedSearches', isAuthenticated, userController.getSavedSearches);
+router.post('/savedSearches', writeLimit, isAuthenticated, userController.createSavedSearch);
+router.put(
+  '/savedSearches/:id',
+  writeLimit,
+  isAuthenticated,
+  validateObjectId('id'),
+  userController.renameSavedSearch,
+);
+router.post(
+  '/savedSearches/:id/viewed',
+  writeLimit,
+  isAuthenticated,
+  validateObjectId('id'),
+  userController.markSavedSearchViewed,
+);
+router.delete(
+  '/savedSearches/:id',
+  writeLimit,
+  isAuthenticated,
+  validateObjectId('id'),
+  userController.deleteSavedSearch,
+);
 router.get('/listings', isAuthenticated, userController.getUserListings);
 router.put(
   '/',
