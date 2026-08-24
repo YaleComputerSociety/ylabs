@@ -20,6 +20,7 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import {
   entityIdAnchoredObservationsExcludedByEntityKeyScope,
+  entityKeyAnchoredObservationsExcludedByEntityIdScope,
   materializeEntity,
 } from '../entityMaterializer';
 
@@ -224,6 +225,92 @@ describe('materializeEntity entityKey/entityId re-clobber guard', () => {
     const excluded = await entityIdAnchoredObservationsExcludedByEntityKeyScope(
       'researchEntity',
       String(entity._id),
+      [],
+    );
+    expect(excluded).toEqual([]);
+  });
+
+  it('materializes an entityKey-only description that an entityId-scoped run would otherwise strand (#1485)', async () => {
+    const entity = await seedEntity();
+    await seedObservation({
+      entityKey: SLUG,
+      field: 'fullDescription',
+      value: HIGH_CONFIDENCE_CORRECT_DESCRIPTION,
+      confidence: 0.85,
+      sourceName: 'lab-microsite-description-llm',
+      observedAt: new Date('2026-01-03T00:00:00Z'),
+    });
+    await seedObservation({
+      entityId: entity._id,
+      field: 'researchAreas',
+      value: ['structural biology'],
+      confidence: 0.7,
+      sourceName: 'entity-id-only-source',
+      observedAt: new Date('2026-01-04T00:00:00Z'),
+    });
+
+    await materializeEntity('researchEntity', { entityId: String(entity._id) }, {});
+
+    const persisted = await ResearchEntity.findById(entity._id).lean<PersistedEntity>();
+    expect(persisted?.fullDescription).toBe(HIGH_CONFIDENCE_CORRECT_DESCRIPTION);
+  });
+
+  it('pulls entityKey-only siblings missed by an entityId scope without duplicating rows already in scope', async () => {
+    const entity = await seedEntity();
+    const entityKeyOnly = await seedObservation({
+      entityKey: SLUG,
+      field: 'fullDescription',
+      value: HIGH_CONFIDENCE_CORRECT_DESCRIPTION,
+      confidence: 0.85,
+      sourceName: 'lab-microsite-description-llm',
+      observedAt: new Date('2026-01-03T00:00:00Z'),
+    });
+    const entityIdScoped = await Observation.find({
+      entityType: 'researchEntity',
+      superseded: false,
+      entityId: entity._id,
+    }).lean();
+
+    const excluded = await entityKeyAnchoredObservationsExcludedByEntityIdScope(
+      'researchEntity',
+      String(entity._id),
+      SLUG,
+      entityIdScoped,
+    );
+
+    expect(excluded).toHaveLength(1);
+    expect(String(excluded[0]._id)).toBe(String(entityKeyOnly._id));
+  });
+
+  it('never grafts an observation anchored to a different entity id under a shared key (#1131 inverse)', async () => {
+    const entity = await seedEntity();
+    const otherEntityId = new mongoose.Types.ObjectId();
+    await seedObservation({
+      entityKey: SLUG,
+      entityId: otherEntityId,
+      field: 'fullDescription',
+      value: LOW_CONFIDENCE_WRONG_DESCRIPTION,
+      confidence: 0.95,
+      sourceName: 'reassigned-homonym-source',
+      observedAt: new Date('2026-01-06T00:00:00Z'),
+    });
+
+    const excluded = await entityKeyAnchoredObservationsExcludedByEntityIdScope(
+      'researchEntity',
+      String(entity._id),
+      SLUG,
+      [],
+    );
+
+    expect(excluded).toEqual([]);
+  });
+
+  it('returns nothing when the entity has no resolvable entityKey', async () => {
+    const entity = await seedEntity();
+    const excluded = await entityKeyAnchoredObservationsExcludedByEntityIdScope(
+      'researchEntity',
+      String(entity._id),
+      undefined,
       [],
     );
     expect(excluded).toEqual([]);
