@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
+import { Observation } from '../models/observation';
 import { syncEntities } from '../services/meiliSyncService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -115,12 +116,20 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
       'The Junliang Shen Lab studies membrane-based ion separation techniques and their applications in fuel cells.',
   },
   {
+    // The document-only clear applied here previously (see git history) was
+    // not durable: this entity has an active (superseded: false)
+    // lab-microsite-description-llm observation for both fields, so the next
+    // materialize re-derived the exact same wrong-person text from it and the
+    // record round-tripped back to student_ready. Superseding the two
+    // observation ids below alongside the clear stops materialize from
+    // reintroducing it again.
     entityId: '6a058d55ba66f3c14bd857d5',
     slug: 'peters-jdp52',
     clearFullDescriptionIfEquals:
       'Dr. Peters studies disorders of the central nervous system, including Multiple Sclerosis, Neuromyelitis Optica, transverse myelitis, and autoimmune encephalitis. His research emphasizes patient-centered care and the development of individualized, comprehensive treatment plans for these conditions.',
     clearShortDescriptionIfEquals:
       'Dr. Peters studies central nervous system disorders and emphasizes patient-centered care.',
+    supersedeObservationIds: ['6a8b053c03ef747fd68753ee', '6a8b053c03ef747fd68753ef'],
   },
   {
     entityId: '6a058d48ba66f3c14bd856e8',
@@ -220,6 +229,84 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
     clearShortDescriptionIfEquals:
       'Research fields include Parasitic Diseases Research and Treatment, Malaria Research and Control, and Parasites and Host Interactions.',
   },
+  {
+    // Psychiatry PI whose sole NIH grant is psilocybin-in-OCD; entirely
+    // relabeled as a liver-disease/pancreatitis lab in both areas and
+    // description. Unbacked direct-write (no fieldProvenance/observation for
+    // any of these fields) - the entity's own sourceUrls already correctly
+    // name this PI, so this is stale pre-#585/#1256 residue, not a live
+    // ingest-gate gap.
+    entityId: '6a057e1c13fc60d57ec2add4',
+    slug: 'nih-pi-benjamin-kelmendi',
+    removeAreas: [
+      'Liver Disease and Transplantation',
+      'Liver Disease Diagnosis and Treatment',
+      'Pancreatitis Pathology and Treatment',
+      'Pathology',
+    ],
+    clearFullDescriptionIfEquals:
+      'The Benjamin Kelmendi Lab focuses on liver disease and transplantation, exploring the diagnosis of liver diseases and the pathology of pancreatitis. The lab investigates the underlying mechanisms and diagnostic approaches related to these conditions.',
+    clearShortDescriptionIfEquals:
+      'The Benjamin Kelmendi Lab studies liver disease, transplantation, and pancreatitis pathology.',
+  },
+  {
+    // Interstitial-lung-disease PI (NHLBI grants on idiopathic pulmonary
+    // fibrosis) whose description/areas blend her own correct ILD content
+    // with an unrelated meningioma/schwannoma/neurofibromatosis graft.
+    entityId: '6a057dfd13fc60d57ec2a638',
+    slug: 'nih-pi-amy-zhao',
+    removeAreas: ['Meningioma and schwannoma management', 'Neurofibromatosis and Schwannoma Cases'],
+    clearFullDescriptionIfEquals:
+      'The Amy Zhao Lab focuses on the management of meningiomas and schwannomas, as well as the study of interstitial lung diseases, including idiopathic pulmonary fibrosis. Additionally, the lab investigates neurofibromatosis and various cases of schwannomas.',
+    clearShortDescriptionIfEquals:
+      'The lab studies meningiomas, schwannomas, interstitial lung diseases, and neurofibromatosis.',
+  },
+  {
+    // Dermatology PI (NIAMS grants on discoid lupus erythematosus/T cells)
+    // whose description/areas are dominated by an unrelated multi-topic
+    // graft (clinician burnout, oral health, genital health). Kept
+    // "Cancer and Skin Lesions" and "Lichen Sclerosus et Atrophicus" as
+    // plausibly her own (autoimmune skin disease causes skin lesions).
+    entityId: '6a057e4e13fc60d57ec2b8ef',
+    slug: 'nih-pi-alicia-little',
+    removeAreas: [
+      'Healthcare professionals’ stress and burnout',
+      'Oral Health Pathology and Treatment',
+      'Genital Health and Disease',
+      'Perfectionism, Procrastination, Anxiety Studies',
+    ],
+    clearFullDescriptionIfEquals:
+      'Alicia Little Lab studies the impact of stress and burnout on healthcare professionals, as well as various health issues including oral health pathology, genital health and disease, and cancer and skin lesions. The lab focuses on understanding the relationships between these factors and their implications for health outcomes.',
+    clearShortDescriptionIfEquals:
+      "The lab investigates healthcare professionals' stress and burnout alongside various health conditions.",
+  },
+  {
+    // Sleep-medicine PI (NHLBI CPAP/OSA grants). Description was freshly and
+    // correctly re-scraped (backed by a lab-microsite-description-llm
+    // observation); only researchAreas still carries an unrelated
+    // Ukraine/global-health/diplomacy graft cluster with no such backing -
+    // description is left untouched.
+    entityId: '6a057e1b13fc60d57ec2ad8f',
+    slug: 'nih-pi-andrey-zinchuk',
+    removeAreas: [
+      'Global Health and Surgery',
+      'Ukraine: War, Education, Health',
+      'International Science and Diplomacy',
+    ],
+  },
+  {
+    // Vascular biology PI (NHLBI grants on the Alk1/Eng pathway and HHT).
+    // Description is already correct; areas carry an unrelated
+    // hypertension-pharmacology graft cluster alongside her own legitimate
+    // vascular/endothelium areas, which are left in place.
+    entityId: '6a057e4c13fc60d57ec2b86a',
+    slug: 'nih-pi-anne-eichmann',
+    removeAreas: [
+      'Ion Transport and Channel Regulation',
+      'Hormonal Regulation and Hypertension',
+      'Eicosanoids and Hypertension Pharmacology',
+    ],
+  },
 ];
 
 interface CliOptions {
@@ -282,6 +369,20 @@ async function main() {
     );
   }).filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
+  const observationIdsToSupersede = Array.from(
+    new Set(VERIFIED_GRAFTS.flatMap((g) => g.supersedeObservationIds || [])),
+  );
+  const activeObservationIds = observationIdsToSupersede.length
+    ? (
+        await Observation.find({
+          _id: { $in: observationIdsToSupersede.map((id) => new mongoose.Types.ObjectId(id)) },
+          superseded: false,
+        })
+          .select({ _id: 1 })
+          .lean()
+      ).map((o) => String(o._id))
+    : [];
+
   const changedPlans = plans.filter((plan) => plan.changed);
   const summary = {
     mode: options.apply ? 'apply' : 'dry-run',
@@ -290,6 +391,8 @@ async function main() {
     verifiedGrafts: VERIFIED_GRAFTS.length,
     entitiesMissing: missing,
     ...summarizeNamesakeGraftPlans(plans),
+    observationsToSupersede: activeObservationIds,
+    observationsSuperseded: 0,
     reindexed: 0,
   };
 
@@ -324,6 +427,14 @@ async function main() {
     const fresh = await ResearchEntity.find({ _id: { $in: changedIds } }).lean();
     await syncEntities('researchEntity', fresh);
     summary.reindexed = fresh.length;
+  }
+
+  if (options.apply && activeObservationIds.length > 0) {
+    const result = await Observation.updateMany(
+      { _id: { $in: activeObservationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+      { $set: { superseded: true } },
+    );
+    summary.observationsSuperseded = result.modifiedCount;
   }
 
   const output = { summary, entries: plans };

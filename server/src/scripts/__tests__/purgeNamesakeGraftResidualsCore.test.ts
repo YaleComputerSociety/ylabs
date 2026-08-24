@@ -126,6 +126,30 @@ describe('planNamesakeGraftCleanup', () => {
     expect(plan.missingRemoveAreas).toEqual(['Fuel Cells']);
     expect(plan.changed).toBe(false);
   });
+
+  it('passes supersedeObservationIds through to the plan for the caller to act on', () => {
+    const plan = planNamesakeGraftCleanup(
+      { fullDescription: 'The wrong-person text.' },
+      {
+        entityId: '000000000000000000000007',
+        slug: 'peters-jdp52',
+        clearFullDescriptionIfEquals: 'The wrong-person text.',
+        supersedeObservationIds: ['aaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbb'],
+      },
+    );
+    expect(plan.supersedeObservationIds).toEqual([
+      'aaaaaaaaaaaaaaaaaaaaaaaa',
+      'bbbbbbbbbbbbbbbbbbbbbbbb',
+    ]);
+  });
+
+  it('defaults supersedeObservationIds to an empty array when not directed', () => {
+    const plan = planNamesakeGraftCleanup(
+      { researchAreas: ['Algebraic Geometry'] },
+      { entityId: '000000000000000000000008', slug: 'some-entity' },
+    );
+    expect(plan.supersedeObservationIds).toEqual([]);
+  });
 });
 
 describe('summarizeNamesakeGraftPlans', () => {
