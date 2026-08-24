@@ -6,6 +6,7 @@ import {
   extractOfficialProfileIdentity,
   extractOfficialProfileResearchHomes,
   firstNonDuplicateLeadDirectWebsiteUrl,
+  identityToResearchEntityDepartmentObservations,
   identityToResearchEntityDescriptionObservations,
   identityToResearchEntityPiKeyObservations,
   identityToResearchEntityPiObservations,
@@ -2802,6 +2803,25 @@ describe('officialProfilePiBackfillScraper', () => {
     );
   });
 
+  it('emits primaryDepartment/departments from a real department-classed profile element', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
+
+    expect(obs.find((o) => o.field === 'primaryDepartment')).toEqual(
+      expect.objectContaining({ value: 'Surgery', sourceUrl: profileUrl }),
+    );
+    expect(obs.find((o) => o.field === 'departments')).toEqual(
+      expect.objectContaining({ value: ['Surgery'], sourceUrl: profileUrl }),
+    );
+  });
+
   it('emits research-entity description observations from official profile identity', () => {
     const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
       _id: 'entity-1',
@@ -2922,6 +2942,65 @@ describe('officialProfilePiBackfillScraper', () => {
         }),
       ]),
     );
+  });
+
+  it('emits a real department for a research entity left with no department by the retired #1316 fallback', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      _id: 'entity-1',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToResearchEntityDepartmentObservations(identity!, {
+      _id: 'entity-1',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'School of Medicine',
+      departments: ['School of Medicine'],
+    });
+
+    expect(obs).toEqual([
+      expect.objectContaining({
+        entityType: 'researchEntity',
+        entityId: 'entity-1',
+        entityKey: 'faculty-research-area-jules-fixture',
+        field: 'departments',
+        value: ['Surgery'],
+        sourceUrl: profileUrl,
+      }),
+    ]);
+  });
+
+  it('emits a real department for a research entity with no departments at all', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      _id: 'entity-1',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToResearchEntityDepartmentObservations(identity!, {
+      _id: 'entity-1',
+      slug: 'faculty-research-area-jules-fixture',
+      departments: [],
+    });
+
+    expect(obs.map((o) => o.field)).toEqual(['departments']);
+  });
+
+  it('never overwrites a research entity that already has a real, non-school department', () => {
+    const identity = extractOfficialProfileIdentity(profileHtml, profileUrl, {
+      _id: 'entity-1',
+      name: 'Jules Fixture Research Area',
+      slug: 'faculty-research-area-jules-fixture',
+    });
+
+    const obs = identityToResearchEntityDepartmentObservations(identity!, {
+      _id: 'entity-1',
+      slug: 'faculty-research-area-jules-fixture',
+      school: 'School of Medicine',
+      departments: ['Oncology'],
+    });
+
+    expect(obs).toEqual([]);
   });
 
   it('emits inferred PI observations when official profile identity resolves to an existing user', () => {
@@ -3318,8 +3397,8 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const result = await scraper.run(profileDescriptionContextFor(emitted));
 
-    expect(result).toMatchObject({ observationCount: 1, entitiesObserved: 1 });
-    expect(emitted.map((o) => o.field)).toEqual(['inferredPiUserId']);
+    expect(result).toMatchObject({ observationCount: 2, entitiesObserved: 1 });
+    expect(emitted.map((o) => o.field).sort()).toEqual(['departments', 'inferredPiUserId']);
     expect(emitted.find((o) => o.field === 'fullDescription')).toBeUndefined();
     expect(emitted.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
@@ -3433,8 +3512,9 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const result = await scraper.run(profileDescriptionContextFor(emitted));
 
-    expect(result).toMatchObject({ observationCount: 3, entitiesObserved: 1 });
+    expect(result).toMatchObject({ observationCount: 4, entitiesObserved: 1 });
     expect(emitted.map((o) => o.field).sort()).toEqual([
+      'departments',
       'fullDescription',
       'shortDescription',
       'sourceUrls',

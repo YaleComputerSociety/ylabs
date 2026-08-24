@@ -1383,11 +1383,19 @@ function extractEmail(
   return '';
 }
 
+// Broader selectors such as [class*="organization"]/[class*="affiliation"] also
+// match section-heading chrome ("Other Departments & Organizations") and
+// center/institute affiliations that are not academic departments, so only an
+// element explicitly classed "department" is trusted as a department signal.
+const DEPARTMENT_HEADING_CHROME_PATTERN = /^other\s+departments?\b/i;
+
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
-  $('[class*="department"], [class*="organization"], [class*="affiliation"]').each((_i, el) => {
+  $('[class*="department"]').each((_i, el) => {
     const value = textValue($(el).text());
-    if (value && value.length < 160) values.push(value);
+    if (value && value.length < 160 && !DEPARTMENT_HEADING_CHROME_PATTERN.test(value)) {
+      values.push(value);
+    }
   });
   return uniqueStrings(values).slice(0, 5);
 }
@@ -1926,6 +1934,24 @@ export function identityToUserObservations(
         confidenceOverride: 0.9,
       });
     }
+    if (identity.departments.length > 0) {
+      observations.push({
+        entityType: 'user',
+        entityKey: `netid:${netid}`,
+        field: 'primaryDepartment',
+        value: identity.departments[0],
+        sourceUrl: identity.canonicalUrl,
+        confidenceOverride: 0.85,
+      });
+      observations.push({
+        entityType: 'user',
+        entityKey: `netid:${netid}`,
+        field: 'departments',
+        value: identity.departments,
+        sourceUrl: identity.canonicalUrl,
+        confidenceOverride: 0.85,
+      });
+    }
     const researchInterests = publicProfileResearchTerms(identity.researchInterests);
     if (researchInterests.length > 0) {
       observations.push({
@@ -2111,6 +2137,53 @@ export function identityToResearchEntityDescriptionObservations(
     observations.push({ ...base, field: 'shortDescription', value: fallbackShortDescription });
   }
   return observations;
+}
+
+function entityDepartmentsAreSchoolPollution(
+  departments: string[],
+  entity: Record<string, any>,
+): boolean {
+  if (departments.length === 0) return true;
+  const schoolValues = new Set(
+    uniqueStrings([
+      entity.school,
+      ...(Array.isArray(entity.schools) ? entity.schools : []),
+    ]).map((value) => value.toLowerCase()),
+  );
+  if (schoolValues.size === 0) return false;
+  return departments.every((department) => schoolValues.has(department.toLowerCase()));
+}
+
+/**
+ * Real per-entity departments extracted from the PI's own official profile
+ * (e.g. medicine.yale.edu) instead of the school name the entity was left
+ * with when no department resolved at ingestion (#1384). Only fires when the
+ * entity's current departments are empty or are themselves just the school
+ * name, so a genuine, previously-extracted department is never overwritten.
+ */
+export function identityToResearchEntityDepartmentObservations(
+  identity: OfficialProfileIdentity,
+  entity: Record<string, any>,
+): ObservationInput[] {
+  if (identity.departments.length === 0) return [];
+  const existingDepartments = Array.isArray(entity.departments)
+    ? entity.departments.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+  if (!entityDepartmentsAreSchoolPollution(existingDepartments, entity)) return [];
+
+  const entityId = idValue(entity._id || entity.id);
+  const entityKey = textValue(entity.slug || entity._id);
+  return [
+    {
+      entityType: 'researchEntity',
+      ...(entityId ? { entityId } : {}),
+      ...(entityKey ? { entityKey } : {}),
+      field: 'departments',
+      value: identity.departments,
+      sourceUrl: identity.canonicalUrl,
+      confidenceOverride: 0.8,
+    },
+  ];
 }
 
 export function identityToResearchEntityPiObservations(
@@ -3137,6 +3210,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                 ...identityToResearchEntityDescriptionObservations(identity, entity),
               );
             }
+            observations.push(...identityToResearchEntityDepartmentObservations(identity, entity));
             const existingUser = await existingUserForIdentity(identity);
             if (existingUser) {
               observations.push(

@@ -123,10 +123,10 @@ describe('createOrgUnitCanonicalizer', () => {
     expect(result.dropped).toEqual(['Yale School of Medicine', 'YSM', 'School of Medicine']);
   });
 
-  it('keeps a solo school-name department value instead of dropping it to empty', () => {
+  it('drops a solo school-name department value instead of keeping it as a fake department', () => {
     const result = canonicalizer.canonicalizeDepartments(['Yale School of Medicine']);
-    expect(result.values).toEqual(['Yale School of Medicine']);
-    expect(result.dropped).toEqual([]);
+    expect(result.values).toEqual([]);
+    expect(result.dropped).toEqual(['Yale School of Medicine']);
   });
 
   it('strips an HR org-code prefix from an unresolved department instead of showing raw', () => {
@@ -249,7 +249,7 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(set.schools).toBeUndefined();
   });
 
-  it('defaults departments to the school name when no department resolves for a known school', async () => {
+  it('leaves departments empty when no department resolves for a known school', async () => {
     const rowsWithLawSchool = [
       ...rows,
       { slug: 'law-school', name: 'Law School', kind: 'SCHOOL' as const },
@@ -260,17 +260,17 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     const set: Record<string, unknown> = { school: 'Law School', departments: [] };
     await applyResearchEntityOrgUnitCanonicalization(set);
     expect(set.school).toBe('Law School');
-    expect(set.departments).toEqual(['Law School']);
+    expect(set.departments).toEqual([]);
   });
 
-  it('defaults departments to the host-derived school when the entity carries no department data at all', async () => {
+  it('leaves departments untouched for a host-derived school when the entity carries no department data at all', async () => {
     setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
     const set: Record<string, unknown> = { school: '' };
     await applyResearchEntityOrgUnitCanonicalization(set, { school: '', departments: [] }, [
       'https://medicine.yale.edu/profile/jane-doe/',
     ]);
     expect(set.school).toBe('Yale School of Medicine');
-    expect(set.departments).toEqual(['Yale School of Medicine']);
+    expect(set.departments).toBeUndefined();
   });
 
   it('does not touch departments when a real department already resolved', async () => {
@@ -280,18 +280,26 @@ describe('applyResearchEntityOrgUnitCanonicalization', () => {
     expect(set.departments).toEqual(['Neuroscience']);
   });
 
-  it('is idempotent when re-canonicalizing its own school-fallback department on a later pass', async () => {
+  it('is idempotent and keeps departments empty across repeated passes with a known school', async () => {
     setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
     const first: Record<string, unknown> = { school: 'YSM', departments: [] };
     await applyResearchEntityOrgUnitCanonicalization(first);
-    expect(first.departments).toEqual(['Yale School of Medicine']);
+    expect(first.departments).toEqual([]);
 
     const second: Record<string, unknown> = {
       school: first.school,
       departments: first.departments,
     };
     await applyResearchEntityOrgUnitCanonicalization(second);
-    expect(second.departments).toEqual(['Yale School of Medicine']);
+    expect(second.departments).toEqual([]);
+  });
+
+  it('drops a stale school-fallback department already stored on the entity', async () => {
+    setOrgUnitCanonicalizerForTesting(createOrgUnitCanonicalizer(index));
+    const set: Record<string, unknown> = { departments: ['Yale School of Medicine'] };
+    const result = await applyResearchEntityOrgUnitCanonicalization(set);
+    expect(set.departments).toEqual([]);
+    expect(result.droppedDepartments).toEqual(['Yale School of Medicine']);
   });
 });
 
