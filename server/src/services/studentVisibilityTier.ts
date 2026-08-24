@@ -488,6 +488,115 @@ export function enforceStudentReadyDescriptionInvariant(
   };
 }
 
+// The canonical hard-vs-soft reason taxonomy for `student_ready` (issue #1802).
+// This constant IS the definition; the human-readable mirror is
+// docs/student-ready-definition.md. Classify a reason in one place, here.
+//
+// SOFT / non-blocking enrichment signals. Reach-out to the professor is the
+// universal next step (docs/product-context.md), so the absence of any of these
+// makes a card less enriched, never wrong: they enrich ranking and badges and
+// may hide their own optional sub-payload, but they NEVER gate `student_ready`
+// and are never repair blockers - even the `missing_*` ones that would otherwise
+// be swept up by the structural `missing_`/`_only` blocker rule.
+// `missing_source_url`/`missing_official_source` are here deliberately: every
+// discovered entity carries its source in observation provenance
+// (`fieldProvenance[*].sourceUrl` / observations' `sourceUrl`), so a bare
+// `entity.sourceUrls` is a PROJECTION GAP - closed at write time by the
+// materializer - never a genuinely source-less entity.
+export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
+  'source_backed_description',
+  'concrete_next_step',
+  'missing_action_evidence',
+  'missing_facet_signal',
+  'missing_alternate_access_path',
+  'missing_application_route',
+  'missing_source_route',
+  'missing_source_url',
+  'missing_official_source',
+]);
+
+export const isStudentReadySoftSignalReason = (reason: string): boolean =>
+  STUDENT_READY_SOFT_SIGNAL_REASONS.has(reason);
+
+// HARD blockers: genuine correctness/quality failures that would MISLEAD a
+// student, so any one holds a card out of `student_ready`. Grouped by the
+// correctness category each belongs to. The structural suppression shells
+// (generic directory / biography / non-owner-grant) are removed one tier earlier
+// at `suppressed`; they appear here so the repair histogram classifies them as
+// blockers wherever they surface.
+export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
+  'missing_description',
+  'missing_card_description',
+  'thin_description',
+  'blank_public_description',
+  'missing_lead',
+  'duplicate_name_risk',
+  'duplicate_risk',
+  'exact_url_duplicate_risk',
+  'pi_identity_conflict',
+  'profile_identity_risk',
+  'generic_directory_shell',
+  'profile_biography_shell',
+  'content_page_risk',
+  'non_research_entity',
+  'non_research_program',
+  'research_infrastructure_only',
+  'non_owner_grant_shell',
+  'lab_name_org_type_mismatch',
+  'inactive_at_yale',
+  'archive_review',
+  'not_undergraduate_relevant',
+]);
+
+export const isStudentReadyHardBlockerReason = (reason: string): boolean =>
+  STUDENT_READY_HARD_BLOCKER_REASONS.has(reason);
+
+/**
+ * The correctness facts that decide `student_ready`. Each field is a HARD
+ * blocker category from the canonical definition (docs/student-ready-definition.md):
+ * every field must be `true` for a card to be `student_ready`. Enrichment
+ * signals are deliberately absent - they are soft and never appear here, so
+ * source-backing, action evidence, facet signal, and access-path/source-url
+ * projection never gate.
+ */
+export interface ResearchEntityStudentReadyCorrectness {
+  // (a) A real, coherent, non-boilerplate description that renders a complete,
+  // self-referential card (public-description invariant passes and the card is
+  // not sparse). Incoherent, boilerplate, or serve-time-blank copy fails here.
+  descriptionCoherent: boolean;
+  // (a') The card's title, type, and body describe THIS entity, not a different
+  // one (e.g. a "<Person> Lab" name typed as an org whose body is about a center).
+  entityContentMatchesCard: boolean;
+  // (b) The right person/lead is attached: a lead-requiring entity has a
+  // resolved lead, with no identity conflict or wrong-person mis-attribution.
+  rightLeadAttached: boolean;
+  // (c) Not a duplicate of an already-known entity. Suppressed shells (generic
+  // directory / biography / non-owner grant / off-scope) are removed one tier
+  // earlier, at `suppressed`.
+  notDuplicate: boolean;
+}
+
+/**
+ * THE definition of `student_ready`, in one place: an entity is `student_ready`
+ * IFF what we show is CORRECT and COHERENT - a real coherent non-boilerplate
+ * description about THIS entity, the right active lead/identity, and not a
+ * duplicate/shell. Enrichment (next step, action evidence, facet signal,
+ * source-backing, alternate access path, source-url projection) never gates -
+ * the student can always reach out to the professor. See
+ * docs/student-ready-definition.md. Change the gate here, not in scattered
+ * conditionals.
+ */
+export function researchEntityMeetsStudentReadyDefinition(
+  correctness: ResearchEntityStudentReadyCorrectness,
+): boolean {
+  return (
+    correctness.descriptionCoherent &&
+    correctness.entityContentMatchesCard &&
+    correctness.rightLeadAttached &&
+    correctness.notDuplicate
+  );
+}
+
 export function computeResearchEntityStudentVisibility({
   entity,
   leadMembers = [],
@@ -571,6 +680,24 @@ export function computeResearchEntityStudentVisibility({
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
 
+  // The single source of truth for `student_ready` correctness (issue #1802).
+  // Every hard-blocker category is one field; enrichment signals never appear.
+  // Edit the definition in `researchEntityMeetsStudentReadyDefinition`.
+  // `descriptionCoherent` (invariant.pass + complete card) already implies a
+  // useful, source-backed description, so source-backing is not a separate gate.
+  // A missing source url / alternate access path never gates: it is a soft
+  // enrichment signal (a projection gap the materializer closes), and reach-out
+  // to the professor is the universal next step.
+  const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
+    descriptionCoherent: publicDescription.invariant.pass && quality.cardState === 'complete',
+    entityContentMatchesCard: !labNameOrgTypeMismatch,
+    rightLeadAttached:
+      (!requiresLead || quality.leadState === 'lead_attached') &&
+      !quality.repairFlags.includes('pi_identity_conflict') &&
+      !profileIdentityRisk,
+    notDuplicate: !duplicateRisk,
+  };
+
   let computedTier: StudentVisibilityTier = 'operator_review';
   if (
     entity.activeAtYaleCache === false ||
@@ -583,23 +710,7 @@ export function computeResearchEntityStudentVisibility({
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
-  } else if (
-    publicDescription.invariant.pass &&
-    quality.descriptionState === 'source_backed' &&
-    quality.cardState === 'complete' &&
-    (!requiresLead || quality.leadState === 'lead_attached') &&
-    !organizationalDeadEnd &&
-    !quality.repairFlags.includes('pi_identity_conflict') &&
-    !profileIdentityRisk &&
-    !quality.repairFlags.includes('missing_source_url') &&
-    !labNameOrgTypeMismatch &&
-    !duplicateRisk
-  ) {
-    // Reaching out to the professor is always the default next step (see
-    // product-context.md), so concrete_next_step/missing_action_evidence and
-    // missing_facet_signal are soft enrichment signals only (issue #1802) - a
-    // record with a coherent, source-backed, complete card is student_ready
-    // regardless of whether either signal is present.
+  } else if (researchEntityMeetsStudentReadyDefinition(studentReadyCorrectness)) {
     computedTier = 'student_ready';
   } else if (
     quality.descriptionState === 'source_backed' &&
@@ -650,21 +761,6 @@ export function computeResearchEntityStudentVisibility({
       tier: 'operator_review',
       computedTier: result.computedTier,
       reasons: Array.from(new Set([...result.reasons, 'profile_identity_risk'])),
-    };
-  }
-  // An entity with no usable link-out target (no website, official page, or
-  // source URL) gives students no way to reach the lab: both cold-email-the-lab
-  // and visit-the-official-page depend on a URL. Such a record can never be
-  // published to students, even by an explicit operator override, so it is held
-  // for review until it acquires a reachable target (issue #348).
-  if (
-    quality.repairFlags.includes('missing_source_url') &&
-    (result.tier === 'student_ready' || result.tier === 'limited_but_safe')
-  ) {
-    return {
-      tier: 'operator_review',
-      computedTier: result.computedTier,
-      reasons: Array.from(new Set([...result.reasons, 'missing_source_url'])),
     };
   }
   return enforceStudentReadyDescriptionInvariant(result, entity);

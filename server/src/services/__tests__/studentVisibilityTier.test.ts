@@ -6,8 +6,79 @@ import {
   computeResearchEntityStudentVisibility,
   enforceStudentReadyDescriptionInvariant,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadySoftSignalReason,
   recordHasNoUsablePublicDescription,
+  researchEntityMeetsStudentReadyDefinition,
+  STUDENT_READY_SOFT_SIGNAL_REASONS,
+  type ResearchEntityStudentReadyCorrectness,
 } from '../studentVisibilityTier';
+
+describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)', () => {
+  const correct: ResearchEntityStudentReadyCorrectness = {
+    descriptionCoherent: true,
+    entityContentMatchesCard: true,
+    rightLeadAttached: true,
+    notDuplicate: true,
+  };
+
+  it('is student_ready when every correctness field holds', () => {
+    expect(researchEntityMeetsStudentReadyDefinition(correct)).toBe(true);
+  });
+
+  it.each([
+    ['incoherent/boilerplate description', 'descriptionCoherent'],
+    ['content about a different entity', 'entityContentMatchesCard'],
+    ['wrong or missing lead', 'rightLeadAttached'],
+    ['duplicate/suppressed shell', 'notDuplicate'],
+  ] as const)('is blocked when %s (%s is false)', (_label, field) => {
+    expect(researchEntityMeetsStudentReadyDefinition({ ...correct, [field]: false })).toBe(false);
+  });
+
+  it('classifies the finalized enrichment set as soft, and no hard blocker as soft', () => {
+    expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
+      [
+        'concrete_next_step',
+        'missing_action_evidence',
+        'missing_alternate_access_path',
+        'missing_application_route',
+        'missing_facet_signal',
+        'missing_official_source',
+        'missing_source_route',
+        'missing_source_url',
+        'source_backed_description',
+      ].sort(),
+    );
+    for (const soft of [
+      'source_backed_description',
+      'concrete_next_step',
+      'missing_action_evidence',
+      'missing_facet_signal',
+      'missing_alternate_access_path',
+      'missing_application_route',
+      'missing_source_route',
+      'missing_source_url',
+      'missing_official_source',
+    ]) {
+      expect(isStudentReadySoftSignalReason(soft)).toBe(true);
+    }
+    for (const hard of [
+      'missing_description',
+      'missing_card_description',
+      'thin_description',
+      'blank_public_description',
+      'missing_lead',
+      'profile_identity_risk',
+      'pi_identity_conflict',
+      'duplicate_risk',
+      'exact_url_duplicate_risk',
+      'lab_name_org_type_mismatch',
+      'inactive_at_yale',
+      'not_undergraduate_relevant',
+    ]) {
+      expect(isStudentReadySoftSignalReason(hard)).toBe(false);
+    }
+  });
+});
 
 describe('computeResearchEntityStudentVisibility', () => {
   it('blocks raw descriptions that become empty after lead-aware public sanitization', () => {
@@ -235,7 +306,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     },
   );
 
-  it('still holds a center landing page that carries no student-research engagement token', () => {
+  it('publishes a coherent, source-backed center landing page as student_ready even with no engagement token, recording the soft access-path signal (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-research-landing',
@@ -255,7 +326,7 @@ describe('computeResearchEntityStudentVisibility', () => {
       relatedEntityAccessPathCount: 0,
     });
 
-    expect(result.tier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('missing_alternate_access_path');
   });
 
@@ -450,7 +521,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
   });
 
-  it('holds a dead-end organizational home (no lead, no related entity, no engagement page) for review', () => {
+  it('publishes a coherent organizational home with no engagement path as student_ready, recording the soft access-path signal (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-dead-end',
@@ -470,13 +541,13 @@ describe('computeResearchEntityStudentVisibility', () => {
       relatedEntityAccessPathCount: 0,
     });
 
-    expect(result.tier).toBe('operator_review');
-    expect(result.computedTier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('missing_alternate_access_path');
     expect(result.reasons).not.toContain('missing_lead');
   });
 
-  it('holds a dead-end program entity (no lead, no related entity, no engagement page) for review', () => {
+  it('publishes a coherent program entity with no engagement path as student_ready, recording the soft access-path signal (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'program-dead-end',
@@ -496,12 +567,12 @@ describe('computeResearchEntityStudentVisibility', () => {
       relatedEntityAccessPathCount: 0,
     });
 
-    expect(result.tier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
     expect(result.reasons).toContain('missing_alternate_access_path');
     expect(result.reasons).not.toContain('missing_lead');
   });
 
-  it('lets an operator override still publish a dead-end organizational home the operator vouches for', () => {
+  it('records operator_override on a coherent organizational home an operator vouches for', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'center-dead-end-override',
@@ -523,7 +594,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     });
 
     expect(result.tier).toBe('student_ready');
-    expect(result.computedTier).toBe('operator_review');
+    expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('missing_alternate_access_path');
     expect(result.reasons).toContain('operator_override');
   });
@@ -554,7 +625,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.tier).toBe('student_ready');
   });
 
-  it('still holds a lead-less COURSE_SEQUENCE whose only page is an unrecognized landing page', () => {
+  it('publishes a lead-less COURSE_SEQUENCE whose only page is an unrecognized landing page as student_ready, recording the soft access-path signal (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'course-based-research-example-landing',
@@ -577,7 +648,7 @@ describe('computeResearchEntityStudentVisibility', () => {
 
     expect(result.reasons).not.toContain('missing_lead');
     expect(result.reasons).toContain('missing_alternate_access_path');
-    expect(result.tier).toBe('operator_review');
+    expect(result.tier).toBe('student_ready');
   });
 
   it('publishes a lead-less COURSE_SEQUENCE as student_ready once it has a reachable access path, even with no action evidence yet (issue #1802)', () => {
@@ -1526,7 +1597,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('operator_override');
   });
 
-  it('holds an organizational home with no link-out target for review even under a student-ready override', () => {
+  it('publishes a coherent organizational home whose sourceUrls are empty (projection gap) as student_ready, recording the soft missing_source_url signal (issue #1802)', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'institute-no-linkout',
@@ -1542,17 +1613,15 @@ describe('computeResearchEntityStudentVisibility', () => {
         fullDescription:
           'The institute advances quantum science and engineering across Yale. It connects physics, applied physics, electrical engineering, and computer science groups working on superconducting qubits, quantum error correction, and quantum materials.',
         activeAtYaleCache: true,
-        studentVisibilityOverrideTier: 'student_ready',
       },
       leadMembers: [],
       accessSignalCount: 1,
       actionablePathwayCount: 1,
     });
 
-    expect(result.tier).toBe('operator_review');
-    expect(result.computedTier).not.toBe('student_ready');
+    expect(result.tier).toBe('student_ready');
+    expect(result.computedTier).toBe('student_ready');
     expect(result.reasons).toContain('missing_source_url');
-    expect(result.reasons).toContain('operator_override');
   });
 });
 

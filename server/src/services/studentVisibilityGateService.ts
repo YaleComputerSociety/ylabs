@@ -21,6 +21,8 @@ import {
   computeProgramStudentVisibility,
   computeResearchEntityStudentVisibility,
   hasProfileAreaShellDuplicateRisk,
+  isStudentReadyHardBlockerReason,
+  isStudentReadySoftSignalReason,
   STUDENT_VISIBILITY_VERSION,
 } from './studentVisibilityTier';
 import {
@@ -201,35 +203,19 @@ const repairStageForReasons = (reasons: string[]) => {
   return 'review_exception';
 };
 
+// A repair blocker is exactly a HARD-blocker reason from the canonical
+// student_ready taxonomy (issue #1802). SOFT enrichment signals never gate and
+// are never blockers - including the `missing_*` ones that a blanket
+// `startsWith('missing_')` rule would otherwise sweep in. The single source of
+// truth is STUDENT_READY_HARD_BLOCKER_REASONS / STUDENT_READY_SOFT_SIGNAL_REASONS
+// in studentVisibilityTier.ts. The residual `_only` clause keeps
+// review-exception reasons (formalization_only, application_source_only,
+// profile_fallback_only) blocking without enumerating each here.
 export function isBlockingVisibilityReason(reason: string): boolean {
   if (evidenceReasons.has(reason)) return false;
-  return (
-    reason.startsWith('missing_') ||
-    reason.endsWith('_only') ||
-    [
-      'application_source_only',
-      'archive_review',
-      'blank_public_description',
-      'content_page_risk',
-      'duplicate_name_risk',
-      'duplicate_risk',
-      'exact_url_duplicate_risk',
-      'formalization_only',
-      'generic_directory_shell',
-      'inactive_at_yale',
-      'non_owner_grant_shell',
-      'non_research_entity',
-      'non_research_program',
-      'missing_card_description',
-      'not_undergraduate_relevant',
-      'pi_identity_conflict',
-      'profile_biography_shell',
-      'profile_fallback_only',
-      'profile_identity_risk',
-      'research_infrastructure_only',
-      'thin_description',
-    ].includes(reason)
-  );
+  if (isStudentReadySoftSignalReason(reason)) return false;
+  if (isStudentReadyHardBlockerReason(reason)) return true;
+  return reason.endsWith('_only');
 }
 
 const uniqueStrings = (values: unknown[]): string[] =>

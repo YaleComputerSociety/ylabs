@@ -353,8 +353,22 @@ describe('studentVisibilityGateService', () => {
     expect(isBlockingVisibilityReason('research_infrastructure_only')).toBe(true);
     expect(isBlockingVisibilityReason('non_research_entity')).toBe(true);
     expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
+    expect(isBlockingVisibilityReason('missing_lead')).toBe(true);
+    expect(isBlockingVisibilityReason('missing_card_description')).toBe(true);
+    expect(isBlockingVisibilityReason('lab_name_org_type_mismatch')).toBe(true);
+    expect(isBlockingVisibilityReason('inactive_at_yale')).toBe(true);
     expect(isBlockingVisibilityReason('source_backed_description')).toBe(false);
     expect(isBlockingVisibilityReason('concrete_next_step')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_action_evidence')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_facet_signal')).toBe(false);
+    // Finalized #1802 soft reclassification: reach-out is the universal next
+    // step, so these enrichment/reachability signals never block (missing_source_url
+    // is a projection gap, not a source-less entity).
+    expect(isBlockingVisibilityReason('missing_alternate_access_path')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_application_route')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_source_route')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_source_url')).toBe(false);
+    expect(isBlockingVisibilityReason('missing_official_source')).toBe(false);
   });
 
   it('treats visibility reason and computed tier drift as material changes', () => {
@@ -467,11 +481,11 @@ describe('studentVisibilityGateService', () => {
       expect.objectContaining({
         collection: 'research',
         recordId: 'entity-held',
-        blockerReasons: ['missing_description', 'missing_action_evidence'],
-        evidenceSignals: ['concrete_next_step'],
+        blockerReasons: ['missing_description'],
+        evidenceSignals: ['missing_action_evidence', 'concrete_next_step'],
         repairStage: 'source_description',
         repairStatus: 'queued',
-        remainingBlockers: ['missing_description', 'missing_action_evidence'],
+        remainingBlockers: ['missing_description'],
         status: 'open',
       }),
     );
@@ -651,7 +665,7 @@ describe('buildStudentVisibilityGateApplyOps', () => {
     expect(queueOps[0].updateOne.update.$set).toMatchObject({
       status: 'open',
       recordId: 'entity-held',
-      blockerReasons: ['missing_description', 'missing_action_evidence'],
+      blockerReasons: ['missing_description'],
     });
   });
 

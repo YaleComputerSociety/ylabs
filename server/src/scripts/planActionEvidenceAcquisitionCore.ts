@@ -13,9 +13,14 @@ export interface ActionEvidenceLabRow {
   lastObservedAt?: string | null;
 }
 
+// Since #1802 `missing_action_evidence` is a SOFT enrichment signal, not a
+// student_ready blocker, so a record carrying only it is already student_ready.
+// This lane no longer promotes - it selects those already-promotable records to
+// ENRICH with real action evidence (better ranking/badges): carries the
+// missing_action_evidence signal and has no genuine hard blocker remaining.
 export function isSoleActionEvidenceBlocker(reasons: string[]): boolean {
-  const blockers = reasons.filter(isBlockingVisibilityReason);
-  return blockers.length === 1 && blockers[0] === 'missing_action_evidence';
+  if (!reasons.includes('missing_action_evidence')) return false;
+  return reasons.filter(isBlockingVisibilityReason).length === 0;
 }
 
 function hostOf(url: string): string {
