@@ -24,6 +24,7 @@ import { isProgramLikeResearchEntity } from '../utils/researchEntityProgramLike'
 import {
   CARD_SYNTHESIS_MODEL,
   defaultCardSynthesisLLM,
+  isUngroundedSynthesizedCard,
   resolveGroundedCardDescription,
   synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
@@ -158,6 +159,42 @@ export interface MaterializedShortDescriptionInput {
   manuallyLocked?: boolean;
   isProgramLike?: boolean;
   synthesize: (fullDescription: string) => Promise<string>;
+}
+
+/**
+ * Whether a freshly resolved `shortDescription` observation is fit to write
+ * directly, rather than a truncated or boilerplate scrape artifact. The
+ * generic per-field resolver loop below otherwise writes any winning
+ * observation value verbatim with no quality check at all - quality gating
+ * only ever ran inside the dedicated re-derivation step, and only to decide
+ * whether to *replace* an already-written value, never to validate what got
+ * written in the first place. A live example: a `lab-microsite-description-llm`
+ * observation for the Impulsivity Program was itself truncated mid-sentence
+ * ("...and how these relate to"), and without this check it would have won
+ * the confidence tie and overwritten the served short outright (issue #1595).
+ * Rejecting here just skips the field for this pass - it does not clear an
+ * existing value - so the dedicated re-derivation step below still runs
+ * against whatever shortDescription is already on the entity.
+ *
+ * A candidate can also read as a perfectly fine sentence in isolation while
+ * naming a topic absent from the entity's own fullDescription - a live
+ * example is a named org's org-page microsite blurb that leads with one
+ * narrow featured study (Olin Research Center's "Examines the acute effects
+ * of...smoked marijuana...driving..." next to a fullDescription about general
+ * neuropsychiatric research). `isUngroundedSynthesizedCard` already guards
+ * this exact shape at serve time (`researchEntityDto.ts`); reusing it here
+ * stops the same ungrounded value from winning the write-time confidence tie
+ * over an already-corrected shortDescription in the first place.
+ */
+function resolvedShortDescriptionCandidateIsUsable(
+  candidate: unknown,
+  fullDescription: unknown,
+  isProgramLike: boolean,
+): boolean {
+  if (typeof candidate !== 'string' || !candidate.trim()) return false;
+  if (isUngroundedSynthesizedCard(candidate, fullDescription)) return false;
+  const shortQuality = isProgramLike ? programCardShortDescriptionQuality : shortDescriptionQuality;
+  return shortQuality(candidate, fullDescription).isUseful;
 }
 
 export async function resolveMaterializedShortDescription(
@@ -2522,6 +2559,7 @@ export async function materializeEntity(
       resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
     }
   }
+  let fullDescriptionShellGated = false;
   if (isResearchEntityObservationType(entityType)) {
     const orgKind = textValue(resolved.kind?.value ?? entityDoc?.kind).toLowerCase();
     const slugForShellCheck = entityDoc?.slug ?? identifier.entityKey;
@@ -2533,6 +2571,7 @@ export async function materializeEntity(
           resolvedFieldSourcedOnlyFromPersonProfilePages(shellGatedField, candidate, materializationObs)
         ) {
           delete resolved[shellGatedField];
+          if (shellGatedField === 'fullDescription') fullDescriptionShellGated = true;
         }
       }
     }
@@ -2566,6 +2605,20 @@ export async function materializeEntity(
     if (
       entityType === 'user' &&
       shouldPreserveExistingUserIdentityField(field, nextValue, entityDoc)
+    ) {
+      continue;
+    }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      field === 'shortDescription' &&
+      !resolvedShortDescriptionCandidateIsUsable(
+        nextValue,
+        resolved.fullDescription?.value ?? entityDoc?.fullDescription,
+        isProgramLikeResearchEntity({
+          kind: resolved.kind?.value ?? entityDoc?.kind,
+          entityType: resolved.entityType?.value ?? entityDoc?.entityType,
+        }),
+      )
     ) {
       continue;
     }
@@ -2649,7 +2702,14 @@ export async function materializeEntity(
     );
     const groundedShortDescription = await resolveMaterializedShortDescription({
       fullDescription,
-      currentShortDescription: set.shortDescription ?? entityDoc?.shortDescription,
+      // When the single-PI-shell guard just rejected fullDescription in favor
+      // of the entity's existing org-level value, shortDescription must be
+      // re-derived from that corrected body rather than kept as-is: it may
+      // still be the seed PI's own grant sentence and now contradicts the
+      // fixed full (issue #1595).
+      currentShortDescription: fullDescriptionShellGated
+        ? undefined
+        : set.shortDescription ?? entityDoc?.shortDescription,
       researchAreas: set.researchAreas ?? entityDoc?.researchAreas,
       isProgramLike: isProgramLikeResearchEntity({
         kind: set.kind ?? entityDoc?.kind,

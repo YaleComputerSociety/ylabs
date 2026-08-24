@@ -45,20 +45,6 @@ describe('planProgramCardWrongSentenceRepairRow', () => {
     );
   });
 
-  it('replaces a pure-logistics short with a research-content sentence (Impulsivity)', () => {
-    const row = planProgramCardWrongSentenceRepairRow({
-      id: '6a6470b3b65d4cb51393aa4a',
-      shortDescription:
-        'The research team is located at the Yale University campus as well as at the West Haven Veterans Administration.',
-      fullDescription:
-        'The research team is located at the Yale University campus as well as at the West Haven Veterans Administration. This research has significant potential to inform about the pathophysiology of addictive disorders and for the development of targeted therapies for specific psychiatric conditions.',
-    });
-    expect(row.changed).toBe(true);
-    expect(row.after).toBe(
-      'This research has significant potential to inform about the pathophysiology of addictive disorders and for the development of targeted therapies for specific psychiatric conditions.',
-    );
-  });
-
   it('leaves an untargeted entity untouched', () => {
     const row = planProgramCardWrongSentenceRepairRow({
       id: 'not-in-the-target-list',
@@ -71,9 +57,9 @@ describe('planProgramCardWrongSentenceRepairRow', () => {
 
   it('fails closed when the targeted entity no longer matches the audited text', () => {
     const row = planProgramCardWrongSentenceRepairRow({
-      id: '6a6470b3b65d4cb51393aa4a',
+      id: '6a8bc39a3bf820baddf79c55',
       shortDescription: 'Someone already edited this short description.',
-      fullDescription: 'The research team studies impulsivity.',
+      fullDescription: 'This program funds undergraduate STEM research projects.',
     });
     expect(row.changed).toBe(false);
     expect(row.skipReason).toBe('stale-mismatch');
@@ -96,9 +82,9 @@ describe('summarizeProgramCardWrongSentenceRepair', () => {
         fullDescription: 'Funds independent study and research by Berkeley College students.',
       }),
       planProgramCardWrongSentenceRepairRow({
-        id: '6a6470b3b65d4cb51393aa4a',
+        id: '6a8bc39a3bf820baddf79c55',
         shortDescription: 'This is not the audited text anymore.',
-        fullDescription: 'The research team studies impulsivity.',
+        fullDescription: 'This program funds undergraduate STEM research projects.',
       }),
     ];
     expect(summarizeProgramCardWrongSentenceRepair(rows)).toEqual({
