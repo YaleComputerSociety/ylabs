@@ -1052,6 +1052,15 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
 }
 
 /**
+ * A card blurb is meant to be a one- or two-sentence summary, not a full
+ * biography, so it is capped far tighter than a fullDescription (#1745: a
+ * ~1,500-character CV essay - degrees, publications, "see curriculum vitae
+ * for details" - was promoted verbatim into a card because nothing bounded
+ * shortDescription length at all).
+ */
+export const MAX_SHORT_DESCRIPTION_LENGTH = 400;
+
+/**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
  * detail field): strip page chrome and redact contact info, but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
@@ -1108,7 +1117,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
   if (containsHtmlTagMarkup(cleaned)) return '';
   if (isCitationAuthorListDumpText(cleaned)) return '';
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) return '';
-  return cleaned;
+  return clampDescriptionLength(cleaned, MAX_SHORT_DESCRIPTION_LENGTH);
 }
 
 function countMatches(text: string, pattern: RegExp): number {

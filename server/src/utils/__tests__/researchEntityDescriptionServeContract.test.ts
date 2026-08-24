@@ -229,6 +229,40 @@ const FAILURE_CLASSES: DescriptionFailureClassCase[] = [
     expectContains:
       'Our team of specialists will support and guide you on your wellness journey through compassionate, science-driven, dedicated lifelong care.',
   },
+  {
+    id: 'residual-i-verb-mid-sentence',
+    issues: '#1745',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'transformed',
+    expectContains: 'this researcher is interested in the role of a specific pathway',
+    expectNotContains: 'I am interested',
+  },
+  {
+    id: 'first-person-department-appointment-cv',
+    issues: '#1745',
+    field: 'fullDescription',
+    entity: { entityType: 'LAB', kind: 'lab' },
+    disposition: 'blank',
+    expectContains: 'I am an Instructor in the Department of Medicine, Section of Infectious Diseases.',
+  },
+  {
+    id: 'degree-receipt-cv-opener',
+    issues: '#1745',
+    field: 'fullDescription',
+    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    disposition: 'blank',
+    expectContains: 'Robin Hansen received her PhD in Linguistics from the University of Pennsylvania in 1991.',
+  },
+  {
+    id: 'pronoun-awards-cv-opener',
+    issues: '#1745',
+    field: 'fullDescription',
+    entity: { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual', displayName: 'Robin Hansen' },
+    disposition: 'blank',
+    expectContains:
+      'He has received the Best Economics PhD Advisor Award at Yale University in 2022 and 2023, and was a runner-up in 2024. Hansen is a fellow of the Econometric Society and has received several prestigious awards.',
+  },
 ];
 
 describe('research-entity description serve contract (#1269)', () => {
@@ -277,6 +311,8 @@ const SEED_TEXT: Record<string, string> = {
     'I study the role of reporting regulation and transparency in the social and public sectors.',
   'non-my-our-the-greeting':
     'Welcome to Social Robotics at Yale! We study human behavior using computational and robotic models.',
+  'residual-i-verb-mid-sentence':
+    'This primary research focus is mechanisms of disease. In particular, I am interested in the role of a specific pathway.',
 };
 
 describe('research-entity description serve contract - clean prose preserved', () => {
