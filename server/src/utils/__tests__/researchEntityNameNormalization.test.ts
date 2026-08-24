@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   collapseDuplicateResearchHomeSuffix,
   hasDuplicateResearchHomeSuffix,
+  hasResearchHomeNamePersonCredentials,
   hasTrailingResearchHomeDescription,
   normalizeResearchEntityNameDashes,
+  stripResearchHomeNamePersonCredentials,
   stripTrailingResearchHomeDescription,
 } from '../researchEntityNameNormalization';
 
@@ -132,5 +134,62 @@ describe('hasDuplicateResearchHomeSuffix', () => {
     expect(hasDuplicateResearchHomeSuffix('Lu Lu Lab')).toBe(false);
     expect(hasDuplicateResearchHomeSuffix('Example Lab')).toBe(false);
     expect(hasDuplicateResearchHomeSuffix(undefined as unknown as string)).toBe(false);
+  });
+});
+
+describe('stripResearchHomeNamePersonCredentials', () => {
+  it('strips a trailing single degree credential minted as a research-home name (#1858)', () => {
+    expect(stripResearchHomeNamePersonCredentials('Jason L. Schwartz, Ph.D.')).toBe(
+      'Jason L. Schwartz',
+    );
+  });
+
+  it('strips a comma-separated credential run appearing before a head-noun suffix (#1858)', () => {
+    expect(stripResearchHomeNamePersonCredentials('Mark A Lemmon, PhD, FRS Lab')).toBe(
+      'Mark A Lemmon Lab',
+    );
+    expect(stripResearchHomeNamePersonCredentials('Mark A Lemmon, PhD, FRS Faculty Research')).toBe(
+      'Mark A Lemmon Faculty Research',
+    );
+  });
+
+  it('handles the common medical and doctoral post-nominals', () => {
+    expect(stripResearchHomeNamePersonCredentials('Alex Rivera, M.D.')).toBe('Alex Rivera');
+    expect(stripResearchHomeNamePersonCredentials('Sam Okafor, M.D., M.P.H. Lab')).toBe(
+      'Sam Okafor Lab',
+    );
+    expect(stripResearchHomeNamePersonCredentials('Robin Chen, Sc.D.')).toBe('Robin Chen');
+  });
+
+  it('leaves branded names, person-name lists, and unrelated tokens untouched', () => {
+    expect(stripResearchHomeNamePersonCredentials('Regan Lab')).toBe('Regan Lab');
+    expect(stripResearchHomeNamePersonCredentials('MD Anderson Cancer Center')).toBe(
+      'MD Anderson Cancer Center',
+    );
+    expect(stripResearchHomeNamePersonCredentials('Warren Research Website')).toBe(
+      'Warren Research Website',
+    );
+    expect(stripResearchHomeNamePersonCredentials('Smith, Jones, and Lee Lab')).toBe(
+      'Smith, Jones, and Lee Lab',
+    );
+  });
+
+  it('does not strip credentials followed by further descriptive prose', () => {
+    expect(stripResearchHomeNamePersonCredentials('Dana Lee, M.D., Director of Foo')).toBe(
+      'Dana Lee, M.D., Director of Foo',
+    );
+  });
+
+  it('returns non-string input unchanged', () => {
+    expect(stripResearchHomeNamePersonCredentials(undefined as unknown as string)).toBe(undefined);
+  });
+});
+
+describe('hasResearchHomeNamePersonCredentials', () => {
+  it('detects credential-laden names and ignores clean or non-string inputs', () => {
+    expect(hasResearchHomeNamePersonCredentials('Jason L. Schwartz, Ph.D.')).toBe(true);
+    expect(hasResearchHomeNamePersonCredentials('Mark A Lemmon, PhD, FRS Lab')).toBe(true);
+    expect(hasResearchHomeNamePersonCredentials('Regan Lab')).toBe(false);
+    expect(hasResearchHomeNamePersonCredentials(undefined as unknown as string)).toBe(false);
   });
 });

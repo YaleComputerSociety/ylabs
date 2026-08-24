@@ -45,3 +45,25 @@ export function collapseDuplicateResearchHomeSuffix(value: string): string {
 export function hasDuplicateResearchHomeSuffix(value: string): boolean {
   return typeof value === 'string' && collapseDuplicateResearchHomeSuffix(value) !== value;
 }
+
+const PERSON_CREDENTIAL_TOKEN =
+  'ph\\.?\\s?d\\.?|m\\.?\\s?d\\.?|m\\.?\\s?p\\.?\\s?h\\.?|sc\\.?\\s?d\\.?|d\\.?\\s?phil\\.?|ed\\.?\\s?d\\.?|psy\\.?\\s?d\\.?|d\\.?\\s?v\\.?\\s?m\\.?|f\\.?r\\.?s\\.?|frcp|frcs|facp|faap';
+
+const TRAILING_PERSON_CREDENTIALS_RE = new RegExp(
+  `,\\s*(?:${PERSON_CREDENTIAL_TOKEN})(?:\\s*,\\s*(?:${PERSON_CREDENTIAL_TOKEN}))*` +
+    `(?=\\s*$|\\s+(?:${RESEARCH_HOME_SUFFIX_WORD}|faculty)\\b)`,
+  'i',
+);
+
+export function stripResearchHomeNamePersonCredentials(value: string): string {
+  if (typeof value !== 'string') return value;
+  return value
+    .replace(TRAILING_PERSON_CREDENTIALS_RE, '')
+    .replace(/\s*,\s*$/, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+export function hasResearchHomeNamePersonCredentials(value: string): boolean {
+  return typeof value === 'string' && stripResearchHomeNamePersonCredentials(value) !== value;
+}
