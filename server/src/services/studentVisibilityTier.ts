@@ -233,6 +233,21 @@ function isGrantOrOrcidSourceUrl(value: string): boolean {
   }
 }
 
+const ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME = new Set(['CENTER', 'INSTITUTE', 'PROGRAM']);
+
+/**
+ * A "<Person> Lab"-named entity whose entityType resolved to an org type
+ * (CENTER/INSTITUTE/PROGRAM) - the ingestion-time name mint and the
+ * entityType/description resolver ran independently and never reconciled, so
+ * the card's title, type badge, and body describe two different things
+ * (#1445). Held out of student_ready/limited_but_safe rather than suppressed,
+ * since the entity itself may still be legitimate once reconciled.
+ */
+function isLabNameOrgTypeMismatch(entity: Record<string, any>): boolean {
+  if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
+  return ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME.has(textValue(entity.entityType).toUpperCase());
+}
+
 function isNonOwnerGrantShell({
   entity,
   leadMembers,
@@ -432,6 +447,7 @@ export function computeResearchEntityStudentVisibility({
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
+  const labNameOrgTypeMismatch = isLabNameOrgTypeMismatch(entity);
   const profileIdentityRisk = detectProfileIdentityRisk({ entity, leadMembers });
   const researchScope = classifyResearchEntityResearchScope(entity);
   const outsideResearchScope = !researchScope.researchHomeEligible;
@@ -460,6 +476,7 @@ export function computeResearchEntityStudentVisibility({
   if (genericDirectoryShell) reasons.push('generic_directory_shell');
   if (profileBiographyShell) reasons.push('profile_biography_shell');
   if (nonOwnerGrantShell) reasons.push('non_owner_grant_shell');
+  if (labNameOrgTypeMismatch) reasons.push('lab_name_org_type_mismatch');
 
   if (hasActionEvidence) reasons.push('concrete_next_step');
   else reasons.push('missing_action_evidence');
@@ -485,6 +502,7 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('pi_identity_conflict') &&
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
+    !labNameOrgTypeMismatch &&
     hasActionEvidence &&
     !duplicateRisk
   ) {
@@ -497,6 +515,7 @@ export function computeResearchEntityStudentVisibility({
     !quality.repairFlags.includes('pi_identity_conflict') &&
     !profileIdentityRisk &&
     !quality.repairFlags.includes('missing_source_url') &&
+    !labNameOrgTypeMismatch &&
     !duplicateRisk
   ) {
     computedTier = 'limited_but_safe';
