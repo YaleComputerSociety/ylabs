@@ -37,6 +37,7 @@ import { quoteExplicitlyDeclinesUndergraduates } from '../undergraduateLogistics
 import { isPlausibleUndergradEvidenceQuote } from '../undergradEvidenceQuoteValidation';
 import { fullDescriptionQuality } from '../../utils/researchEntityDescriptionQuality';
 import { publicResearchEntityDescriptionText } from '../../utils/researchEntityDescriptionText';
+import { isRejectedDescriptionSourceUrl } from './labMicrositeDescriptionLLMExtractor';
 import {
   createScraplingRenderedFetcher,
   measureRenderedFetch,
@@ -836,7 +837,9 @@ export function extractionToObservations(
 
   const researchSummary = cleanResearchSummary(extraction.researchSummary);
   const studentReadyDescription =
-    researchSummary && sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
+    researchSummary &&
+    !isRejectedDescriptionSourceUrl(quoteSourceUrl) &&
+    sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
       ? cleanStudentFacingDescription(researchSummary)
       : '';
   if (studentReadyDescription) {

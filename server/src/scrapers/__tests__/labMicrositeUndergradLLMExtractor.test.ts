@@ -713,6 +713,35 @@ describe('extractionToObservations', () => {
     expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
   });
 
+  it('does not emit description observations sourced from a department-wide undergrad hub page', () => {
+    const ext: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'The lab conducts research in molecular biology, biochemistry, genetics, cell biology, neurobiology, physiology, and computational plant sciences.',
+      methodsQuote: 'molecular biology, biochemistry, genetics',
+      topicsQuote: 'cell biology, neurobiology, physiology',
+    };
+    const obs = extractionToObservations(
+      'dept-mcdb-mark-mooseker',
+      'https://mcdb.yale.edu/profile/mark-mooseker-phd',
+      ext,
+      fixedDate,
+      {
+        sourceTexts: [
+          'The lab conducts research in molecular biology, biochemistry, genetics, cell biology, neurobiology, physiology, and computational plant sciences.',
+        ],
+        quoteSourceUrl: 'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+      },
+    );
+
+    expect(obs.find((o) => o.field === 'fullDescription')).toBeUndefined();
+    expect(obs.find((o) => o.field === 'shortDescription')).toBeUndefined();
+  });
+
   it('emits a grounded fullDescription but drops an over-long shortDescription', () => {
     const summary =
       'The lab studies urban climate adaptation using satellite imagery and field sensors, and examines how heat exposure, flooding, and air quality affect neighborhoods across the region while developing computational models and open datasets that inform local resilience planning for vulnerable communities.';
