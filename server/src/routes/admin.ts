@@ -29,6 +29,11 @@ import {
   listAdminListingClaimRequests,
   reviewAdminListingClaimRequest,
 } from '../controllers/listingClaimRequestController';
+import {
+  getAdminEntityCorrectionReport,
+  listAdminEntityCorrectionReports,
+  reviewAdminEntityCorrectionReport,
+} from '../controllers/entityCorrectionReportController';
 import { adminUpdateProfile, cascadeDepartmentsToListings } from '../services/profileService';
 import { buildSafeSearchRegex } from '../utils/regex';
 import {
@@ -721,6 +726,15 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   reviewAdminListingClaimRequest,
+);
+
+router.get('/correction-reports', listAdminEntityCorrectionReports);
+router.get('/correction-reports/:id', validateObjectId('id'), getAdminEntityCorrectionReport);
+router.put(
+  '/correction-reports/:id',
+  writeLimit,
+  validateObjectId('id'),
+  reviewAdminEntityCorrectionReport,
 );
 
 router.get('/listings', async (req: Request, res: Response) => {

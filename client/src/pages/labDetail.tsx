@@ -65,6 +65,7 @@ import { useConfig } from '../hooks/useConfig';
 import { leadRoleFamily, leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
 import ListingClaimRequestPanel from '../components/faculty/ListingClaimRequestPanel';
+import EntityCorrectionReportPanel from '../components/research/EntityCorrectionReportPanel';
 import {
   createResearchAnalyticsInteractionId,
   trackResearchEvent,
@@ -1252,6 +1253,10 @@ const LabDetail = () => {
               <SectionHeading>Sources</SectionHeading>
               <SourcesSection sources={sources} />
             </section>
+          )}
+
+          {isAuthenticated && slug && (
+            <EntityCorrectionReportPanel slug={slug} entityName={researchEntityTitle(group)} />
           )}
         </div>
       </div>

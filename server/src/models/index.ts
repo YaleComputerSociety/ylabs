@@ -10,6 +10,7 @@ export {
 } from './adminAccessReviewProjection';
 export { Listing } from './listing';
 export { ListingClaimRequest } from './listingClaimRequest';
+export { EntityCorrectionReport } from './entityCorrectionReport';
 export { Fellowship } from './fellowship';
 export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
