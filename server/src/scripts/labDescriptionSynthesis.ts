@@ -196,14 +196,16 @@ export interface LabSynthesisOutput {
 
 export type LabDescriptionSynthesizer = (input: LabSynthesisInput) => Promise<LabSynthesisOutput>;
 
+export function synthesisSubjectName(input: { name: string; entityType?: string }): string {
+  if (!isPersonResearchEntityType(input.entityType)) return input.name;
+  return stripFacultyResearchAreaNameTemplateSuffix(input.name) || input.name;
+}
+
 export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async (input) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
   const isPerson = isPersonResearchEntityType(input.entityType);
-  const subjectName = isPerson
-    ? stripFacultyResearchAreaNameTemplateSuffix(input.name) || input.name
-    : input.name;
-  const safeName = redactDirectContactInfo(subjectName).slice(0, MAX_NAME_CHARS);
+  const safeName = redactDirectContactInfo(synthesisSubjectName(input)).slice(0, MAX_NAME_CHARS);
   const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
   const subjectLabel = isPerson ? 'Researcher' : 'Research home';
   const fullDescriptionScope = isPerson ? "this researcher's research" : 'the research';
