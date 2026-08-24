@@ -978,16 +978,26 @@ export function isLabResearchTextEntity(entity?: FacultyResearchTextEntity | nul
   return Boolean(entity && (entity.kind === 'lab' || entity.entityType === 'LAB'));
 }
 
-function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
-  return textValue(entity.displayName || entity.name)
+export function stripFacultyResearchAreaNameTemplateSuffix(name: unknown): string {
+  return textValue(name)
     .replace(/\s*[-–—]\s*Research$/i, '')
     .replace(/\s+(?:Faculty Research|Lab|Laboratory|Research)$/i, '')
     .trim();
 }
 
+function facultyResearchLabelBase(entity: FacultyResearchTextEntity): string {
+  return stripFacultyResearchAreaNameTemplateSuffix(entity.displayName || entity.name);
+}
+
 function possessiveName(name: string): string {
   return name.endsWith('s') ? `${name}'` : `${name}'s`;
 }
+
+const DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN =
+  /\b([A-Z][\p{L}.'’]*(?:\s+[A-Z][\p{L}.'’]*){0,4})\s+(?:[-–—]\s+)?Research(['’]s)\s+research\b/gu;
+
+const SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN =
+  /\bresearch profile\b(?=\s+(?:has|have|had|seeks?|aims?|focuses?|investigates?|studies|studying|develops?|uses?|explores?|examines?|works?|is|are|employs?|applies?|analyzes?|combines?|integrates?|leverages?|draws?|centers?)\b)/gi;
 
 export function sanitizeFacultyResearchEntityText(
   value: string,
@@ -998,6 +1008,8 @@ export function sanitizeFacultyResearchEntityText(
   const possessive = baseName ? possessiveName(baseName) : "This faculty member's";
 
   return value
+    .replace(DOUBLED_RESEARCH_NAME_SUFFIX_POSSESSIVE_PATTERN, '$1$2 research')
+    .replace(SELF_REFERENTIAL_RESEARCH_PROFILE_SUBJECT_PATTERN, 'research')
     .replace(
       /^The\s+(.+?)\s+(?:Lab|Laboratory)\s+conducts\s+research\s+(?:focused\s+)?on\b/i,
       `${possessive} research focuses on`,

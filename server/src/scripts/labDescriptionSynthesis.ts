@@ -5,6 +5,7 @@ import {
 } from '../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
+import { stripFacultyResearchAreaNameTemplateSuffix } from '../utils/researchEntityDescriptionText';
 
 export const SYNTHESIS_MODEL = 'gpt-4o-mini';
 export const SYNTHESIS_INPUT_USD_PER_1K = 0.00015;
@@ -30,6 +31,7 @@ const SHARED_SYNTHESIS_RULES = [
   'Use ONLY facts present in the SOURCE text. Never invent topics, methods, findings, or claims.',
   'The SOURCE describes only the single named subject. If it also contains material about a different person or organization, ignore that material entirely and describe ONLY the named subject.',
   'If the SOURCE appears to describe a different subject than the named one, return empty strings for both fields rather than describing the wrong subject.',
+  'Never refer to this description or directory listing itself (e.g. "this research profile", "this profile", "this listing").',
 ];
 
 const LAB_SYNTHESIS_SYSTEM_PROMPT = [
@@ -194,12 +196,17 @@ export interface LabSynthesisOutput {
 
 export type LabDescriptionSynthesizer = (input: LabSynthesisInput) => Promise<LabSynthesisOutput>;
 
+export function synthesisSubjectName(input: { name: string; entityType?: string }): string {
+  if (!isPersonResearchEntityType(input.entityType)) return input.name;
+  return stripFacultyResearchAreaNameTemplateSuffix(input.name) || input.name;
+}
+
 export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async (input) => {
   const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
   if (!apiKey) throw new Error('OPENAI_API_KEY not set');
-  const safeName = redactDirectContactInfo(input.name).slice(0, MAX_NAME_CHARS);
-  const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
   const isPerson = isPersonResearchEntityType(input.entityType);
+  const safeName = redactDirectContactInfo(synthesisSubjectName(input)).slice(0, MAX_NAME_CHARS);
+  const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
   const subjectLabel = isPerson ? 'Researcher' : 'Research home';
   const fullDescriptionScope = isPerson ? "this researcher's research" : 'the research';
   const response = await axios.post(

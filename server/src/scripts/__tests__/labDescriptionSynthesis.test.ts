@@ -8,6 +8,7 @@ import {
   isSynthesisCandidate,
   projectSynthesisCost,
   synthesisGroundingScore,
+  synthesisSubjectName,
   synthesisSystemPromptFor,
 } from '../labDescriptionSynthesis';
 
@@ -73,6 +74,30 @@ describe('synthesisSystemPromptFor', () => {
       expect(prompt).toContain('Do NOT include degrees, titles, appointments');
       expect(prompt).toContain('Use ONLY facts present in the SOURCE text');
     }
+  });
+});
+
+describe('synthesisSubjectName (#1781)', () => {
+  it('strips a templated "Research"/"- Research" suffix from a person subject so it is not used as the synthesized sentence subject', () => {
+    expect(
+      synthesisSubjectName({ name: 'Marcus Bosenberg Research', entityType: 'FACULTY_RESEARCH_AREA' }),
+    ).toBe('Marcus Bosenberg');
+    expect(
+      synthesisSubjectName({ name: 'Tara Boroushaki - Research', entityType: 'INDIVIDUAL_RESEARCH' }),
+    ).toBe('Tara Boroushaki');
+  });
+
+  it('leaves a lab/home subject name untouched, including one that legitimately ends in "Research"', () => {
+    expect(synthesisSubjectName({ name: 'Bosenberg Lab', entityType: 'LAB' })).toBe('Bosenberg Lab');
+    expect(
+      synthesisSubjectName({ name: 'Center for Cancer Systems Research', entityType: 'CENTER' }),
+    ).toBe('Center for Cancer Systems Research');
+  });
+
+  it('falls back to the raw name when stripping the suffix would leave nothing', () => {
+    expect(synthesisSubjectName({ name: '- Research', entityType: 'FACULTY_RESEARCH_AREA' })).toBe(
+      '- Research',
+    );
   });
 });
 
