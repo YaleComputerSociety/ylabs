@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { RESEARCH_AREA_ALIASES } from '../../scrapers/researchAreaCanonicalization';
 import {
+  buildResearchEntityMeiliSynonyms,
   DEPARTMENT_SHORTHAND_ALIASES,
   QUERY_TOPIC_ALIASES,
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
+  RESEARCH_TOPIC_ALIAS_CLUSTERS,
   STUDENT_QUERY_ALIASES,
   STUDENT_TOPIC_TEXT_ALIASES,
   STUDENT_TOPIC_TEXT_ALIAS_FREE_TEXT_GUARDED,
@@ -99,5 +102,91 @@ describe('searchTopicAliases source of truth', () => {
     expect(STUDENT_TOPIC_TEXT_ALIASES.neuro).toEqual(
       expect.arrayContaining(['neuroscience', 'neurology']),
     );
+  });
+});
+
+describe('Meili synonyms derived from the governed research-area alias map', () => {
+  it('expands governed area variants bidirectionally to the canonical area the corpus carries', () => {
+    const expansions: Array<[string, string]> = [
+      ['history of art', 'art history'],
+      ['population health', 'public health'],
+      ['politics', 'political science'],
+      ['hci', 'human-computer interaction'],
+      ['human computer interaction', 'human-computer interaction'],
+      ['llm', 'large language models'],
+      ['llms', 'large language models'],
+      ['materials sciences', 'materials science'],
+      ['environmental sciences', 'environmental science'],
+      ['cellular biology', 'cell biology'],
+      ['reproductive sciences', 'reproductive medicine'],
+    ];
+    for (const [variant, canonical] of expansions) {
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[variant]).toEqual(
+        expect.arrayContaining([canonical]),
+      );
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[canonical]).toEqual(
+        expect.arrayContaining([variant]),
+      );
+    }
+  });
+
+  it('keeps the previously hardcoded curated groups so no legacy recall regresses', () => {
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ai).toEqual(
+      expect.arrayContaining(['artificial intelligence', 'machine learning', 'deep learning']),
+    );
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ml).toEqual(
+      expect.arrayContaining(['machine learning', 'artificial intelligence']),
+    );
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.nlp).toEqual(
+      expect.arrayContaining(['natural language processing', 'computational linguistics']),
+    );
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.cv).toEqual(
+      expect.arrayContaining(['computer vision', 'computational vision']),
+    );
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.neuro).toEqual(
+      expect.arrayContaining(['neuroscience', 'neurology']),
+    );
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.psych).toEqual(
+      expect.arrayContaining(['psychology', 'psychiatry']),
+    );
+  });
+
+  it('leaves query-only vernacular out of the index synonyms', () => {
+    for (const queryOnly of ['heart', 'climate', 'aging', 'drugs', 'ir', 'mental health']) {
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[queryOnly]).toBeUndefined();
+    }
+  });
+
+  it('never emits or references a term outside the governed input vocabulary', () => {
+    const governedTerms = new Set<string>();
+    for (const cluster of RESEARCH_TOPIC_ALIAS_CLUSTERS) {
+      if (cluster.kind !== 'topical' || cluster.queryOnly) continue;
+      for (const term of [...cluster.canonical, ...cluster.aliases]) {
+        governedTerms.add(term.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim());
+      }
+    }
+    for (const [canonical, aliases] of Object.entries(RESEARCH_AREA_ALIASES)) {
+      for (const term of [canonical, ...aliases]) {
+        governedTerms.add(term.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim());
+      }
+    }
+    for (const [key, values] of Object.entries(RESEARCH_ENTITY_MEILI_SYNONYMS)) {
+      expect(governedTerms).toContain(key);
+      for (const value of values) expect(governedTerms).toContain(value);
+    }
+  });
+
+  it('never registers a term as its own synonym', () => {
+    for (const [key, values] of Object.entries(RESEARCH_ENTITY_MEILI_SYNONYMS)) {
+      expect(values).not.toContain(key);
+      expect(new Set(values).size).toBe(values.length);
+    }
+  });
+
+  it('is a pure function of the governed map plus curated clusters', () => {
+    expect(buildResearchEntityMeiliSynonyms(RESEARCH_TOPIC_ALIAS_CLUSTERS, RESEARCH_AREA_ALIASES)).toEqual(
+      RESEARCH_ENTITY_MEILI_SYNONYMS,
+    );
+    expect(buildResearchEntityMeiliSynonyms([], {})).toEqual({});
   });
 });

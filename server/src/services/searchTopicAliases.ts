@@ -1,3 +1,5 @@
+import { RESEARCH_AREA_ALIASES } from '../scrapers/researchAreaCanonicalization';
+
 export type TopicAliasClusterKind = 'topical' | 'department';
 
 export interface TopicAliasCluster {
@@ -175,17 +177,45 @@ const departmentClusters = RESEARCH_TOPIC_ALIAS_CLUSTERS.filter((c) => c.kind ==
 const clusterFamily = (cluster: TopicAliasCluster): string[] =>
   dedupeInOrder([...cluster.canonical, ...cluster.aliases]);
 
-export const RESEARCH_ENTITY_MEILI_SYNONYMS: Record<string, string[]> = (() => {
+const normalizeSynonymTerm = (value: string): string => value.normalize('NFKC').toLowerCase();
+
+/**
+ * Derives the Meili `synonyms` map from a single governed vocabulary: the
+ * curated topical alias clusters (query-only vernacular excluded, as it must not
+ * expand corpus recall) unioned with `RESEARCH_AREA_ALIASES`, the same
+ * canonical->variant map ingest uses to tag entities. Each governed group emits
+ * bidirectional, lower-cased, whitespace-normalized synonyms so a student query
+ * for a known variant ("history of art", "population health", "hci") expands to
+ * the canonical area the corpus actually carries. Groups accumulate per term, so
+ * an alias present in both sources keeps the richer union rather than dropping
+ * either. Pure (governed map in -> synonyms out) so search stays in sync with
+ * ingest and cannot invent a topic outside the governed catalog.
+ */
+export function buildResearchEntityMeiliSynonyms(
+  clusters: TopicAliasCluster[],
+  governedAreaAliases: Record<string, string[]>,
+): Record<string, string[]> {
+  const families: string[][] = [
+    ...clusters
+      .filter((cluster) => cluster.kind === 'topical' && !cluster.queryOnly)
+      .map(clusterFamily),
+    ...Object.entries(governedAreaAliases).map(([canonical, aliases]) =>
+      dedupeInOrder([canonical, ...aliases]),
+    ),
+  ];
   const synonyms: Record<string, string[]> = {};
-  for (const cluster of topicalClusters) {
-    if (cluster.queryOnly) continue;
-    const family = clusterFamily(cluster);
-    for (const key of family) {
-      synonyms[key] = family.filter((term) => term.toLowerCase() !== key.toLowerCase());
+  for (const family of families) {
+    const normalized = dedupeInOrder(family.map(normalizeSynonymTerm));
+    for (const term of normalized) {
+      const others = normalized.filter((other) => other !== term);
+      synonyms[term] = dedupeInOrder([...(synonyms[term] ?? []), ...others]);
     }
   }
   return synonyms;
-})();
+}
+
+export const RESEARCH_ENTITY_MEILI_SYNONYMS: Record<string, string[]> =
+  buildResearchEntityMeiliSynonyms(RESEARCH_TOPIC_ALIAS_CLUSTERS, RESEARCH_AREA_ALIASES);
 
 export const RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS: string[] = dedupeInOrder(
   topicalClusters.flatMap((cluster) => cluster.shortAliases ?? []),
