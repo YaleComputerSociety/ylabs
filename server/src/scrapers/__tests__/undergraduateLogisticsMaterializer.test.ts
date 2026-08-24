@@ -216,6 +216,53 @@ describe('undergraduate logistics materialization', () => {
   });
 
   it.each([
+    ['this is a fully in-person position.', ['IN_PERSON']],
+    ['This is a remote role.', ['REMOTE']],
+    ['The position is a hybrid opportunity.', ['HYBRID']],
+  ])(
+    'accepts a subject-less declarative modality statement: %s',
+    (evidenceQuote, modes) => {
+      const result = validateUndergraduateLogisticsObservation(
+        observation('undergraduateLogisticsModality', 'MODALITY', { modes }, evidenceQuote),
+      );
+
+      expect(result.accepted?.value).toEqual({ modes });
+    },
+  );
+
+  it.each([
+    ['This is a fully remote postdoctoral position.'],
+    ['This is a fully remote position for graduate students.'],
+  ])(
+    'rejects a subject-less modality statement attached to another population: %s',
+    (evidenceQuote) => {
+      const result = validateUndergraduateLogisticsObservation(
+        observation(
+          'undergraduateLogisticsModality',
+          'MODALITY',
+          { modes: ['REMOTE'] },
+          evidenceQuote,
+        ),
+      );
+
+      expect(result).toEqual({ rejectedReason: 'evidence_does_not_support_exact_claim' });
+    },
+  );
+
+  it('rejects a subject-less clause that names an unrelated topic instead of a work arrangement', () => {
+    const result = validateUndergraduateLogisticsObservation(
+      observation(
+        'undergraduateLogisticsModality',
+        'MODALITY',
+        { modes: ['IN_PERSON'] },
+        'You can join the lab for the Spring semester (January-May), Summer (June-August), or Fall (September-December).',
+      ),
+    );
+
+    expect(result).toEqual({ rejectedReason: 'evidence_does_not_support_exact_claim' });
+  });
+
+  it.each([
     [
       'undergraduateLogisticsTimeCommitment',
       'TIME_COMMITMENT',
@@ -250,6 +297,10 @@ describe('undergraduate logistics materialization', () => {
     [
       'The Yale Section of Pediatric Emergency Medicine is recruiting students to join the Undergraduate Research Associate Program.',
     ],
+    [
+      'The Clark Relationship Science Laboratory is always looking for intelligent and motivated undergraduate research assistants.',
+    ],
+    ['We are actively recruiting undergraduate and graduate researchers and postdoctoral scholars.'],
   ])('accepts explicit present-tense undergraduate recruiting language: %s', (evidenceQuote) => {
     const result = validateUndergraduateLogisticsObservation(
       observation(
