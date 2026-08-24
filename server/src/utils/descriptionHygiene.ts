@@ -419,6 +419,54 @@ export function stripCatalogChrome(text: string): string {
   return normalizeHygieneWhitespace(out);
 }
 
+const staleMonthYearDeadlinePattern =
+  /\bby\s+(January|February|March|April|May|June|July|August|September|October|November|December),?\s+(?:19|20)\d{2}\b\.?/gi;
+
+const staleSeasonCycleAwardPattern =
+  /\bthe\s+(?:Spring|Summer|Fall|Autumn|Winter)\s+(?:19|20)\d{2}\s+(?=[A-Z])/g;
+
+/**
+ * Deliberately narrower than a generic award-noun list: "Award"/"Prize"/
+ * "Scholarship" are dominated by retrospective biography prose ("recipient of
+ * the 2001 Leroy P. Steele Prize") where the year is a permanent historical
+ * fact, not a call-to-apply cycle marker, so including them would wrongly
+ * strip a real award year from a PI bio. "Fellowship"/"Program"/"Grant" are the
+ * shape this class of defect actually takes (#1557).
+ */
+const staleNamedCycleAwardPattern =
+  /\bthe\s+(?:19|20)\d{2}\s+(?=[A-Z][A-Za-z.'-]*(?:\s+(?:of|and|the)?\s*[A-Za-z.'-]+){0,10}\s+(?:Fellowship|Fellowships|Program|Programs|Grant|Grants)\b)/g;
+
+const fellowshipPortalTimelineDumpPattern =
+  /\bApply Eligibility Submission\b[\s\S]{0,400}?Program end date\b\s*/gi;
+
+/**
+ * Neutralize a fellowship/grant/program cycle's application prose that was
+ * scraped with a specific past calendar date baked into otherwise-recurring
+ * text, so the description does not keep asserting an expired cycle as live
+ * every year it goes un-rescraped (#1557). Each pattern is deliberately keyed
+ * to the syntactic shape of a *recurring opportunity* mention - a "by <Month>,
+ * <year>" deadline clause, or "the <year>"/"the <Season> <year>" immediately
+ * naming a Fellowship/Program/Grant/Award/Prize/Scholarship - so an unrelated
+ * historical year in genuine research prose ("the 2020 pandemic", "founded in
+ * 2019") is never touched. The Yale fellowship-portal timeline widget (Apply /
+ * Eligibility / Submission tabs glued to an Application Status / open /
+ * deadline / notification / program-date block with no separators) is stripped
+ * as a unit rather than date-by-date, since the whole block restates one
+ * already-elapsed cycle rather than a single stale phrase.
+ */
+export function evergreenizeStaleCycleDatePhrase(text: string): string {
+  const value = String(text || '');
+  if (!value) return value;
+  const withoutTimelineDump = value.replace(fellowshipPortalTimelineDumpPattern, ' ');
+  const withoutSeasonYear = withoutTimelineDump.replace(staleSeasonCycleAwardPattern, 'the ');
+  const withoutNamedYear = withoutSeasonYear.replace(staleNamedCycleAwardPattern, 'the ');
+  const withoutDeadlineYear = withoutNamedYear.replace(
+    staleMonthYearDeadlinePattern,
+    (_match, month: string) => `by ${month}.`,
+  );
+  return normalizeHygieneWhitespace(withoutDeadlineYear);
+}
+
 /**
  * Collapse an exact, adjacent duplicate of a prose block: a scrape defect
  * where a paragraph is concatenated with itself (directly, or separated by
@@ -910,7 +958,9 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
                     stripTrailingContactAddress(
                       stripBibliographicReferenceArtifacts(
                         stripInternalConfidenceHedge(
-                          stripCatalogChrome(redactDirectContactInfo(String(text || ''))),
+                          stripCatalogChrome(
+                            evergreenizeStaleCycleDatePhrase(redactDirectContactInfo(String(text || ''))),
+                          ),
                         ),
                       ),
                     ),
@@ -1568,7 +1618,9 @@ export function sanitizeCatalogDescription(text: string): string {
           stripPageLayoutReferentialSentences(
             stripSelfReferentialResearchCtaSentences(
               stripDeadAnchorCtaSentences(
-                stripBibliographicReferenceArtifacts(stripCatalogChrome(text)),
+                stripBibliographicReferenceArtifacts(
+                  stripCatalogChrome(evergreenizeStaleCycleDatePhrase(text)),
+                ),
               ),
             ),
           ),

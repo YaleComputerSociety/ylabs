@@ -6,6 +6,7 @@ import {
   collapseDuplicatedProseBlock,
   collapseRepeatedSentences,
   containsHtmlTagMarkup,
+  evergreenizeStaleCycleDatePhrase,
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
   isCtaNewsTickerDumpText,
@@ -2350,6 +2351,69 @@ describe('descriptionHygiene bibliographic-reference artifact strip (#415)', () 
     );
     expect(sanitizeResearchEntityShortDescription(stored)).toBe(
       'Investigates neural circuits underlying memory.',
+    );
+  });
+});
+
+describe('evergreenizeStaleCycleDatePhrase stale fellowship/grant cycle date normalization (#1557)', () => {
+  it('drops a stale year from a "by <Month>, <year>" deadline clause', () => {
+    const input = 'Awardees must present their research to the department by April, 2025.';
+    expect(evergreenizeStaleCycleDatePhrase(input)).toBe(
+      'Awardees must present their research to the department by April.',
+    );
+  });
+
+  it('drops a stale year from a "the <year> <Name> Fellowship" mention', () => {
+    const input = 'The Institute invites applications for the 2024 Alden Family Research Fellowship.';
+    expect(evergreenizeStaleCycleDatePhrase(input)).toBe(
+      'The Institute invites applications for the Alden Family Research Fellowship.',
+    );
+  });
+
+  it('drops a stale season+year from a "the <Season> <year> <Name>" mention', () => {
+    const input =
+      'The Center invites applications for the Summer 2025 Graduate Research Fellowships competition.';
+    expect(evergreenizeStaleCycleDatePhrase(input)).toBe(
+      'The Center invites applications for the Graduate Research Fellowships competition.',
+    );
+  });
+
+  it('strips a glued fellowship-portal application timeline dump as a unit', () => {
+    const input =
+      'Fellows collaborate with faculty on original research. Apply Eligibility Submission 2025-26 Application Status: CLOSED December 5, 2025Application open February 18, 2026Application deadline March 2026Notifications sent May 26, 2026Program start date July 24, 2026Program end date Fellows present their work at a closing symposium.';
+    expect(evergreenizeStaleCycleDatePhrase(input)).toBe(
+      'Fellows collaborate with faculty on original research. Fellows present their work at a closing symposium.',
+    );
+  });
+
+  it('leaves an unrelated organization founding year untouched', () => {
+    const input = 'A policy-engaged initiative founded in 2019, the center spans two departments.';
+    expect(evergreenizeStaleCycleDatePhrase(input)).toBe(input);
+  });
+
+  it('leaves a biography credential year untouched', () => {
+    const input = 'In 2020, she was named the most influential researcher in her field.';
+    expect(evergreenizeStaleCycleDatePhrase(input)).toBe(input);
+  });
+
+  it('is applied inside sanitizeResearchEntityDescription so a full description carries no stale cycle date', () => {
+    const input = 'The lab invites applications for the 2024 Alden Fellowship. It supports summer research.';
+    expect(sanitizeResearchEntityDescription(input)).toBe(
+      'The lab invites applications for the Alden Fellowship. It supports summer research.',
+    );
+  });
+
+  it('is applied inside sanitizeResearchEntityShortDescription so a short card blurb carries no stale cycle date', () => {
+    const input = 'The lab invites applications for the 2024 Alden Fellowship.';
+    expect(sanitizeResearchEntityShortDescription(input)).toBe(
+      'The lab invites applications for the Alden Fellowship.',
+    );
+  });
+
+  it('is applied inside sanitizeStoredCatalogDescription so the write-time stored copy carries no stale cycle date', () => {
+    const input = 'The lab invites applications for the 2024 Alden Fellowship. It supports summer research.';
+    expect(sanitizeStoredCatalogDescription(input)).toBe(
+      'The lab invites applications for the Alden Fellowship. It supports summer research.',
     );
   });
 });
