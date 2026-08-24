@@ -13,6 +13,13 @@ import { Link } from 'react-router-dom';
 import { Fellowship } from '../../types/types';
 import { BrowsableItem } from '../../types/browsable';
 import { createFellowship } from '../../utils/createFellowship';
+import {
+  buildProgramDeadlinesIcsCalendar,
+  downloadIcsCalendar,
+  fellowshipFutureDeadlineDate,
+  icsFilenameForProgram,
+  upcomingProgramDeadlineEvents,
+} from '../../utils/calendarExport';
 import BrowseListItem from '../shared/BrowseListItem';
 import FellowshipModal from '../fellowship/FellowshipModal';
 import LoadingSpinner from '../shared/LoadingSpinner';
@@ -43,23 +50,14 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
 });
 
-const validDeadlineDate = (value?: string | null): Date | null => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const deadlineEndOfUtcDay = (date: Date): Date =>
-  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
-
 export const watchedProgramDeadlineSummary = (
   fellowships: Fellowship[],
   now = new Date(),
 ): { nextDeadlineDate?: string; nextDeadlineLabel?: string } => {
   const upcoming = fellowships
     .map((fellowship) => {
-      const date = validDeadlineDate(fellowship.deadline);
-      if (!date || deadlineEndOfUtcDay(date).getTime() < now.getTime()) return null;
+      const date = fellowshipFutureDeadlineDate(fellowship, now);
+      if (!date) return null;
       return { fellowship, date };
     })
     .filter((item): item is { fellowship: Fellowship; date: Date } => Boolean(item))
@@ -148,6 +146,23 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     onSummaryChange?.({ count: visiblePrograms.length, ...nextDeadline });
   }, [visiblePrograms.length, nextDeadline, onSummaryChange]);
 
+  const upcomingDeadlineEventsByProgramId = useMemo(() => {
+    const events = upcomingProgramDeadlineEvents(visiblePrograms);
+    return new Map(events.map((event) => [event.programId, event]));
+  }, [visiblePrograms]);
+
+  const addProgramDeadlineToCalendar = (program: Fellowship) => {
+    const event = upcomingDeadlineEventsByProgramId.get(program.id);
+    if (!event) return;
+    downloadIcsCalendar(icsFilenameForProgram(program.title), buildProgramDeadlinesIcsCalendar([event]));
+  };
+
+  const addAllDeadlinesToCalendar = () => {
+    const events = Array.from(upcomingDeadlineEventsByProgramId.values());
+    if (events.length === 0) return;
+    downloadIcsCalendar('program-watch-deadlines.ics', buildProgramDeadlinesIcsCalendar(events));
+  };
+
   const savePlan = useCallback(
     async (programId: string, plan: { privateNotes?: string; stage?: string }) => {
       setSaveStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
@@ -201,12 +216,23 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
 
   return (
     <section>
-      <div className="mb-2">
-        <h2 className="text-2xl font-bold text-gray-800">Program watch</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Programs and fellowships you are watching, with their deadlines, accepting status, and
-          eligibility. Open one to see its details, or unwatch it.
-        </p>
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">Program watch</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Programs and fellowships you are watching, with their deadlines, accepting status, and
+            eligibility. Open one to see its details, or unwatch it.
+          </p>
+        </div>
+        {upcomingDeadlineEventsByProgramId.size > 0 && (
+          <button
+            type="button"
+            onClick={addAllDeadlinesToCalendar}
+            className="inline-flex min-h-[44px] items-center rounded-md border border-[var(--yr-line)] px-3 py-2 text-sm font-semibold text-gray-700 hover:border-[var(--yr-line-strong)] hover:text-gray-900"
+          >
+            Add all deadlines to calendar
+          </button>
+        )}
       </div>
 
       {visiblePrograms.length > 0 ? (
@@ -294,6 +320,30 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                       </svg>
                     </button>
+                    {upcomingDeadlineEventsByProgramId.has(program.id) && (
+                      <button
+                        type="button"
+                        onClick={() => addProgramDeadlineToCalendar(program)}
+                        aria-label={`Add ${program.title} deadline to calendar`}
+                        title="Add deadline to calendar"
+                        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-[var(--yr-line)] p-2 text-gray-400 transition-colors hover:border-[var(--yr-line-strong)] hover:text-gray-600"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="3" y="4" width="18" height="18" rx="2" />
+                          <path d="M16 2v4M8 2v4M3 10h18" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
                 {isEditing && (
