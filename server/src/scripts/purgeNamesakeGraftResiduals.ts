@@ -307,6 +307,70 @@ const VERIFIED_GRAFTS: NamesakeGraftDirective[] = [
       'Eicosanoids and Hypertension Pharmacology',
     ],
   },
+  {
+    // #1486: ribosome-biogenesis postdoc (Baserga lab; own NIGMS grant on
+    // mitochondrial sulfite oxidase in nucleolar ribosome biogenesis) carrying
+    // an unrelated analytical/bioanalytical-chemistry graft cluster (ferrocene
+    // biosensors, DNA/nucleic-acid chemistry). Verified against her own Yale
+    // Medicine profile, which confirms ribosome biogenesis and platinum-based
+    // anticancer metal-complex chemistry, not ferrocene biosensing. The
+    // laundered fullDescription/shortDescription are left alone here: both
+    // already have a fresh, correct, unmaterialized active Observation, so
+    // `research-entity:rematerialize --only-fields` restores them instead of
+    // blanking a value that already exists.
+    entityId: '6a057e3913fc60d57ec2b465',
+    slug: 'nih-pi-emily-sutton',
+    removeAreas: [
+      'Metal complexes synthesis and properties',
+      'DNA and Nucleic Acid Chemistry',
+      'Advanced biosensing and bioanalysis techniques',
+      'Ferrocene Chemistry and Applications',
+      'Genomics and Chromatin Dynamics',
+      'Biochemistry',
+    ],
+  },
+  {
+    // #1486: redox-toxicology PI (own NIAAA grants on O-GlcNAcylation signaling
+    // in alcoholic fatty liver disease) carrying an unrelated population-
+    // genomics/herpetology graft cluster. Verified against her own Yale School
+    // of Public Health profile, which confirms redox biology and liver/
+    // metabolic disease mechanisms, not amphibian/reptile biology or
+    // environmental DNA. Same rematerialize-not-clear treatment as above: a
+    // fresh, correct active Observation for fullDescription/shortDescription
+    // already exists and just needs materializing.
+    entityId: '6a057e5013fc60d57ec2b926',
+    slug: 'nih-pi-ying-chen',
+    removeAreas: [
+      'Genetic diversity and population structure',
+      'Genomics and Phylogenetic Studies',
+      'Environmental DNA in Biodiversity Studies',
+      'Amphibian and Reptile Biology',
+      'Identification and Quantification in Food',
+      'Genomics',
+    ],
+  },
+  {
+    // #1486: her own NSF grant (LightningBug, an insect-biodiversity-museum-
+    // digitization pipeline) and her Yale Medicine profile title ("Head of
+    // Biodiversity Informatics Research") carry an unrelated molecular/cell-
+    // biology graft (glycosylation, cell adhesion molecules, secretion). No
+    // active Observation exists to rematerialize from here, so the description
+    // is cleared rather than fabricated, per the same pattern as
+    // nsf-pi-67d8922b50621bcef4348f57 and nih-pi-jonathan-ellman above.
+    entityId: '6a057f0efab31be25f983ab1',
+    slug: 'nsf-pi-68b737b70b1fc878dace4b5d',
+    removeAreas: [
+      'Cellular transport and secretion',
+      'Glycosylation and Glycoproteins Research',
+      'Cell Adhesion Molecules Research',
+      'Biochemical and Structural Characterization',
+      'Developmental Biology and Gene Regulation',
+    ],
+    clearFullDescriptionIfEquals:
+      'The Genevieve Rios Lab focuses on cellular transport and secretion processes, glycosylation and glycoproteins, as well as the study of cell adhesion molecules. The lab investigates the mechanisms and implications of these biological processes in various cellular contexts.',
+    clearShortDescriptionIfEquals:
+      'The Genevieve Rios Lab studies cellular transport, glycosylation, and cell adhesion molecules.',
+  },
 ];
 
 interface CliOptions {
