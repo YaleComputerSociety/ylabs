@@ -153,6 +153,12 @@ const rejectedDescriptionSourcePatterns = [
   /\/about\/a-to-z-index\/(?:atoz\/)?lab-websites$/i,
   /\/membership\/directory\/?$/i,
   /\/(?:people|faculty|directory|members)\/?$/i,
+  // A department-wide "how to get involved" hub (e.g.
+  // mcdb.yale.edu/undergraduate/undergraduate-research-opportunities) describes
+  // the whole department's undergrad research process, not any one person's
+  // work, so its prose must never become an individual entity's description
+  // (#1716).
+  /\/undergrad(?:uate)?\/undergrad(?:uate)?[\w-]*\/?$/i,
   /\bjob-seekers?\b/i,
   /\bcareers?\b/i,
   /(?:^|\.)orcid\.org/i,

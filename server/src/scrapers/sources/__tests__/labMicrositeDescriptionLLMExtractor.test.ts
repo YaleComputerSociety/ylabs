@@ -23,4 +23,15 @@ describe('isRejectedDescriptionSourceUrl', () => {
     expect(isRejectedDescriptionSourceUrl('https://reporter.nih.gov/project-details/123')).toBe(true);
     expect(isRejectedDescriptionSourceUrl('not-a-url')).toBe(true);
   });
+
+  it('rejects a department-wide undergrad research opportunities hub page (#1716)', () => {
+    expect(
+      isRejectedDescriptionSourceUrl(
+        'https://mcdb.yale.edu/undergraduate/undergraduate-research-opportunities',
+      ),
+    ).toBe(true);
+    expect(
+      isRejectedDescriptionSourceUrl('https://mcdb.yale.edu/undergraduate/undergrad-degree-programs'),
+    ).toBe(true);
+  });
 });
