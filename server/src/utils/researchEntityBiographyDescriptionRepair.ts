@@ -90,6 +90,40 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
   return text.replace(TRAILING_PROFILE_CHROME_PATTERN, '').trim();
 }
 
+const DEGREE_TOKEN_PATTERN =
+  "(?:Ph\\.?\\s?D\\.?|Sc\\.?\\s?D\\.?|Ed\\.?\\s?D\\.?|Psy\\.?\\s?D\\.?|Th\\.?\\s?D\\.?|D\\.?\\s?Phil\\.?|M\\.?\\s?Phil\\.?|M\\.?\\s?D\\.?|J\\.?\\s?D\\.?|LL\\.?\\s?B\\.?|LL\\.?\\s?M\\.?|M\\.?\\s?T\\.?\\s?S\\.?|M\\.?\\s?Div\\.?|M\\.?\\s?Arch\\.?|M\\.?\\s?F\\.?\\s?A\\.?|M\\.?\\s?B\\.?\\s?A\\.?|B\\.?\\s?Litt\\.?|A\\.?\\s?B\\.?|B\\.?\\s?A\\.?|M\\.?\\s?A\\.?|M\\.?\\s?S\\.?|Hon\\.?)";
+
+const DEGREE_LIST_ENTRY_PATTERN = new RegExp(
+  `${DEGREE_TOKEN_PATTERN}\\.?,?\\s*[A-Z][\\p{L}&.'\\s-]*?(?:University|College|Institute|School|Academy)[^.,;]*?(?:,\\s*\\d{4})?\\.?`,
+  'u',
+);
+
+const LEADING_DEGREE_LIST_PATTERN = new RegExp(
+  `^\\s*(?:${DEGREE_LIST_ENTRY_PATTERN.source}\\s*(?:[;,]\\s*)?)+`,
+  'u',
+);
+
+/**
+ * A faculty-bio page's raw "B.A., Yale University, 2003 M.A., Harvard
+ * University, 2006 Ph.D., Harvard University, 2011" degree timeline glued
+ * directly onto the front of the description, with the actual research
+ * prose only starting at the name-lead sentence that follows (#1533:
+ * humanities faculty pages render this list with no separating punctuation
+ * the sentence splitter can key on, so it survives as an unreadable prefix
+ * rather than a real sentence). Only strips when a name-lead clause survives
+ * afterward - a bare degree list with nothing else is left alone so the
+ * no-usable-description fallback below can decide its fate.
+ */
+export function stripLeadingDegreeListPrefix(value: unknown): string {
+  const text = textValue(value);
+  if (!text) return '';
+  const match = text.match(LEADING_DEGREE_LIST_PATTERN);
+  if (!match) return text;
+  const remainder = text.slice(match[0].length).trim();
+  if (remainder.length < 20 || !/^[A-Z]/.test(remainder)) return text;
+  return remainder;
+}
+
 /**
  * Unambiguous education-timeline, career-timeline, and personal-life-narrative
  * markers (#1456: "was born in Boston...", "received her doctoral degree
@@ -102,6 +136,9 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
  */
 const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bwas born in\b/i,
+  // Appositive phrasing drops "was" entirely (#1533: "Seyla Benhabib, born in
+  // Istanbul, Turkey, is the Eugene Meyer Professor...").
+  /^[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3},\s*born in\b/u,
   /\bmoved,?\s+as a teenager\b/i,
   /\b(?:received|earned|obtained)\s+(?:the|his|her|their|an?)\b[^.!?]{0,80}\b(?:degrees?|Ph\.?D\.?|M\.?D\.?|MPH|MBA|MSc|M\.?S\.?|M\.?A\.?|B\.?S\.?|B\.?A\.?)\b/i,
   /\b(?:completed|did)\s+(?:his|her|their)\s+(?:graduate|undergraduate|postdoctoral|clinical|doctoral)\b/i,
@@ -121,6 +158,24 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bwas\s+Editor-in-Chief\s+of\b/i,
   /\bmoved\s+to\s+[\p{L} .-]+,?\s+(?:with\s+(?:his|her|their)\s+family\s+)?in\s+\d{4}\b/iu,
   /^(?:Next,|Subsequently,|After completing\b|In \d{4},\s+(?:he|she|they)\b)/i,
+  // Humanities/social-science CV markers - awards, honorary degrees, editorial
+  // service, teaching history, and career résumé lines - are appointment/CV
+  // facts, not a description of what the person currently researches
+  // (#1533: benhabib-sb422's full description is entirely this shape and
+  // carries no research-topic sentence at all).
+  /\bis\s+the\s+recipient\s+of\s+(?:the|an?)\b[^.!?]{0,80}\b(?:prize|award|medal|honor)\b/i,
+  /\bwas\s+(?:the\s+)?President\s+of\s+the\b/i,
+  /\bhas\s+been\s+a\s+member\s+of\s+the\b[^.!?]{0,60}\bAcademy\b/i,
+  /\bhas\s+previously\s+taught\s+at\b/i,
+  /\b(?:Guggenheim|MacArthur|Fulbright|NEH|NSF)\s+Fellowship\s+recipient\b/i,
+  /\bholds?\s+Honorary\s+Degrees?\s+from\b/i,
+  /\bis\s+the\s+author\s+of\s+(?:several|numerous|many)?\s*(?:influential\s+)?(?:books?|works?)\s+including\b/i,
+  /\bwork\s+has\s+been\s+translated\s+into\s+(?:numerous|several|many)\s+languages\b/i,
+  /\bhas\s+edited\s+and\s+coedited\s+\d+\s+volumes\b/i,
+  /\bhas\s+held\s+(?:many|several|numerous)\s+(?:prestigious\s+)?visiting\s+professorships\b/i,
+  /\bwas\s+CEO\s+of\b/i,
+  /\bwas\s+a\s+partner\s+at\b[^.!?]{0,80}\bco-founded\s+the\s+firm\b/i,
+  /\bhas\s+also\s+led\s+organizations\s+in\b/i,
 ];
 
 export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
@@ -173,7 +228,9 @@ export function repairPersonBiographyLeakedDescription({
 }: BiographyDescriptionRepairInput): BiographyDescriptionRepairResult {
   const originalFull = textValue(fullDescription);
   const originalShort = textValue(shortDescription);
-  const dechromed = stripTrailingProfileChromeFooter(stripProfileBiographyChromeOpener(originalFull));
+  const dechromed = stripLeadingDegreeListPrefix(
+    stripTrailingProfileChromeFooter(stripProfileBiographyChromeOpener(originalFull)),
+  );
   const sentences = protectedSentenceList(dechromed);
   const keptSentences = sentences.filter((sentence) => !isEducationOrCareerTimelineSentence(sentence));
   const strippedSentenceCount = sentences.length - keptSentences.length;
