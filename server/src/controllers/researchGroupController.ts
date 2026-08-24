@@ -26,6 +26,7 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { getStudentResearchInterests } from '../services/studentInterestProfileService';
+import { getDepartmentResearchPage } from '../services/departmentResearchPageService';
 
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
@@ -308,6 +309,22 @@ export const searchRelatedPrograms = async (request: Request, response: Response
   } catch (error) {
     console.error('Related programs search failed:', sanitizeLogValue(error));
     return response.status(500).json({ error: 'Search failed' });
+  }
+};
+
+export const getResearchDepartmentPage = async (request: Request, response: Response) => {
+  try {
+    const page = await getDepartmentResearchPage(request.params.slug);
+    if (!page) {
+      throw new NotFoundError(`No research department page for slug: ${request.params.slug}`);
+    }
+    return response.status(200).json(page);
+  } catch (error: any) {
+    if (error instanceof NotFoundError) {
+      return response.status(error.status).json({ error: 'Research department not found' });
+    }
+    console.error('Research department page failed:', sanitizeLogValue(error));
+    return response.status(500).json({ error: 'Failed to fetch research department' });
   }
 };
 

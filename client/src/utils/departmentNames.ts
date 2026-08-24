@@ -76,6 +76,19 @@ const buildDepartmentLabelMap = (
   return map;
 };
 
+const MAX_DEPARTMENT_SLUG_LENGTH = 120;
+
+/**
+ * Slug form of a department's normalized label, matching the server
+ * `toDepartmentSlug` so a `/research/department/<slug>` link resolves to the
+ * same canonical page the browse facet buckets under.
+ */
+export const getDepartmentSlug = (department: string): string =>
+  normalizeDepartmentLabel(department)
+    .replace(/\s+/g, '-')
+    .slice(0, MAX_DEPARTMENT_SLUG_LENGTH)
+    .replace(/^-+|-+$/g, '');
+
 export const getDepartmentCanonicalLabel = (
   department: string,
   departmentTable?: DepartmentNameRecord[],

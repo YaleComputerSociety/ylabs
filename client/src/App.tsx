@@ -11,6 +11,7 @@ import Fellowships from './pages/fellowships';
 import Research from './pages/research';
 import ResearchDetail from './pages/labDetail';
 import ResearchPerson from './pages/researchPerson';
+import ResearchDepartment from './pages/researchDepartment';
 import Login from './pages/login';
 import About from './pages/about';
 import Account from './pages/account';
@@ -83,6 +84,12 @@ const App = () => {
                     <Route
                       path="/research/person/:publicKey"
                       element={<PrivateRoute Component={ResearchPerson} unknownBlocked={true} />}
+                    />
+                    <Route
+                      path="/research/department/:slug"
+                      element={
+                        <PrivateRoute Component={ResearchDepartment} unknownBlocked={true} />
+                      }
                     />
                     <Route
                       path="/research/:slug"

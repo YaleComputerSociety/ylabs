@@ -26,7 +26,7 @@ import {
   ResearchEntitySearchResponse,
   StudentVisibilityTier,
 } from '../types/researchEntity';
-import { getUniqueDepartmentLabels } from '../utils/departmentNames';
+import { getDepartmentSlug, getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { buildResearchFieldDirectory } from '../utils/researchFieldDirectory';
 import {
   relaxResearchQuery,
@@ -2290,6 +2290,17 @@ const Research = () => {
                       </div>
                     )}
                   </div>
+                )}
+
+                {departmentSearch && getDepartmentSlug(departmentSearch.label) && (
+                  <p className="mt-2 text-sm">
+                    <Link
+                      to={`/research/department/${getDepartmentSlug(departmentSearch.label)}`}
+                      className="yr-link yr-focus-ring rounded-sm font-semibold"
+                    >
+                      View the {departmentSearch.label} department page →
+                    </Link>
+                  </p>
                 )}
 
                 {!isWideFilterLayout && (
