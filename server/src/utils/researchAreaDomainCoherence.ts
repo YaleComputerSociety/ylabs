@@ -1,4 +1,8 @@
-import { AMBIGUOUS_SINGLE_WORD_AREAS } from '../scrapers/researchAreaCanonicalization';
+import {
+  AMBIGUOUS_SINGLE_WORD_AREAS,
+  departmentMatchKeys,
+  researchAreaMatchKey,
+} from '../scrapers/researchAreaCanonicalization';
 
 /**
  * #1407's second graft mechanism: a `researchAreas[]` chip with no
@@ -167,15 +171,21 @@ export function hasResearchAreaProvenance(fieldProvenance: unknown): boolean {
 
 /**
  * Drops a `researchAreas` chip only when it has no `fieldProvenance` backing
- * and shares no significant (stopword-filtered, prefix-5 fuzzy) token with the
- * entity's own name, departments, or descriptions. Requires at least a handful
- * of the entity's own significant tokens before judging anything, so a sparse
- * entity with too little text to corroborate against is left untouched rather
- * than having every chip judged unreachable. A chip that canonicalizes to a
- * generic single-word area name (`Law`, `History`, `Medicine`, ...) is always
- * kept - those are too ambiguous to fairly judge by vocabulary overlap alone,
- * the same reason the canonicalizer excludes them from its own prose scan.
- * Returns the input array unchanged (same reference) when nothing is dropped.
+ * and either (a) duplicates one of the entity's own `departments[]` verbatim
+ * (issue #1763: a department name self-corroborates against the vocabulary
+ * check below, so it would otherwise survive as a content-free topic facet -
+ * the same leakage #1451/`isDepartmentDuplicate` reject at write time, just
+ * unreachable there because the chip predates or outlives the entity's
+ * current `departments[]`), or (b) shares no significant (stopword-filtered,
+ * prefix-5 fuzzy) token with the entity's own name, departments, or
+ * descriptions. Requires at least a handful of the entity's own significant
+ * tokens before judging (b), so a sparse entity with too little text to
+ * corroborate against is left untouched rather than having every chip judged
+ * unreachable. A chip that canonicalizes to a generic single-word area name
+ * (`Law`, `History`, `Medicine`, ...) is always kept - those are too
+ * ambiguous to fairly judge by vocabulary overlap alone, the same reason the
+ * canonicalizer excludes them from its own prose scan. Returns the input
+ * array unchanged (same reference) when nothing is dropped.
  */
 export function dropDomainIncoherentUnsourcedResearchAreas(
   areas: readonly string[],
@@ -194,11 +204,17 @@ export function dropDomainIncoherentUnsourcedResearchAreas(
   );
   if (contextTokens.size < MIN_CONTEXT_TOKENS) return areas as string[];
 
+  const departmentKeys = departmentMatchKeys(context.departments);
+
   let changed = false;
   const kept: string[] = [];
   for (const area of areas) {
     if (typeof area !== 'string') {
       kept.push(area);
+      continue;
+    }
+    if (departmentKeys.has(researchAreaMatchKey(area))) {
+      changed = true;
       continue;
     }
     if (AMBIGUOUS_SINGLE_WORD_AREA_KEYS.has(area.trim().toLowerCase())) {

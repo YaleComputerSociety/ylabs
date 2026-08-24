@@ -527,7 +527,7 @@ export function isDivisionLevelResearchAreaLabel(raw: unknown): boolean {
   return key ? DIVISION_LEVEL_RESEARCH_AREA_LABEL_KEYS.has(key) : false;
 }
 
-function departmentMatchKeys(departments: unknown): Set<string> {
+export function departmentMatchKeys(departments: unknown): Set<string> {
   const keys = new Set<string>();
   for (const department of toRawList(departments)) {
     const key = researchAreaMatchKey(department);
