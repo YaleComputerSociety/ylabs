@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   candidateToObservations,
+  DEFAULT_PAGE_URLS,
   extractIndexSeedChildDetailUrls,
+  MACMILLAN_COUNCIL_GRANT_PAGE_URLS,
+  MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
   parseDeadlineToUtcEndOfDay,
   parseFellowshipCatalogPage,
   STEM_FELLOWSHIPS_FUNDING_HUB_URL,
@@ -2167,5 +2170,147 @@ describe('YaleCollegeFellowshipsOfficeScraper STEM fellowships hub crawl (#1564)
     expect(result.notes).toContain('Skipped 1 fellowship page');
     expect(emitted.find((obs) => obs.field === 'sourceUrl')?.value).toBe(starsUrl);
     expect(emitted.every((obs) => obs.sourceUrl !== STEM_FELLOWSHIPS_FUNDING_HUB_URL)).toBe(true);
+  });
+});
+
+describe('YaleCollegeFellowshipsOfficeScraper MacMillan council grant pages (#1566)', () => {
+  const latamUrl = 'https://macmillan.yale.edu/latam/student-grants-and-prizes';
+  const southAsiaUrl = 'https://macmillan.yale.edu/southasia/undergraduate-grants';
+  const communityForcePortalUrl =
+    'https://yale.communityforce.com/Funds/FundDetails.aspx?fixture=latamsummer';
+
+  const latamHtml = `
+    <header><nav><a href="https://macmillan.yale.edu/people">People</a></nav></header>
+    <main>
+      <div class="node node--page node--full">
+        <div class="node__header"><h1 class="node__heading">Student Grants and Prizes</h1></div>
+        <div class="node__content">
+          <p>The Council on Latin American &amp; Iberian Studies awards undergraduate summer research grants supporting original independent research projects in Latin America mentored by Yale faculty. Applications are reviewed on a rolling basis.</p>
+          <p><strong>How to apply:</strong> Submit a research proposal, a budget, and a faculty mentor letter of support.</p>
+          <a href="${communityForcePortalUrl}">Apply through the Student Grants Database</a>
+          <a href="${MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT}">All undergraduate research grants</a>
+        </div>
+      </div>
+    </main>
+    <footer><a href="https://macmillan.yale.edu/privacy">Privacy</a></footer>
+  `;
+
+  const southAsiaHtml = `
+    <main>
+      <div class="node node--page node--full">
+        <div class="node__header"><h1 class="node__heading">Undergraduate Grants and Prizes</h1></div>
+        <div class="node__content">
+          <p>The South Asian Studies Council offers senior essay research grants and travel grants for undergraduates undertaking independent research on South Asia.</p>
+          <a href="https://studentgrants.yale.edu/">Student Grants &amp; Fellowships database</a>
+        </div>
+      </div>
+    </main>
+  `;
+
+  it('seeds each canonical council grant page and never the dead aggregate root', () => {
+    for (const url of MACMILLAN_COUNCIL_GRANT_PAGE_URLS) {
+      expect(DEFAULT_PAGE_URLS as readonly string[], url).toContain(url);
+    }
+    expect(DEFAULT_PAGE_URLS as readonly string[]).not.toContain(
+      MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
+    );
+  });
+
+  it('parses a council grant page into one program citing its own canonical page', () => {
+    const candidates = parseFellowshipCatalogPage(
+      latamHtml,
+      latamUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(candidates).toHaveLength(1);
+    const candidate = candidates[0];
+    expect(candidate.title).toBe('Student Grants and Prizes');
+    expect(candidate.sourceUrl).toBe(latamUrl);
+    expect(candidate.sourcePageKind).toBe('detail');
+    expect(candidate.researchFocused).toBe(true);
+    expect(candidate.applicationLink).toBe(communityForcePortalUrl);
+    expect(candidate.applicationMaterials).toContain('Research proposal');
+    expect(candidate.applicationMaterials).toContain('Faculty mentor support');
+  });
+
+  it('classifies a council grant page as a fellowship/RA program home', () => {
+    const [candidate] = parseFellowshipCatalogPage(
+      southAsiaHtml,
+      southAsiaUrl,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    const observations = candidateToObservations(candidate);
+    expect(observations.find((obs) => obs.field === 'sourceName')?.value).toBe(
+      'yale-college-fellowships-office',
+    );
+    expect(observations.find((obs) => obs.field === 'sourceUrl')?.value).toBe(southAsiaUrl);
+    expect(observations.find((obs) => obs.field === 'title')?.value).toBe(
+      'Undergraduate Grants and Prizes',
+    );
+    expect(observations.find((obs) => obs.field === 'programKind')).toBeDefined();
+  });
+
+  it('never mints the aggregate listing root as a self-citing detail candidate', () => {
+    const candidates = parseFellowshipCatalogPage(
+      latamHtml,
+      MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
+      new Date('2026-01-01T00:00:00Z'),
+    );
+    expect(
+      candidates.every(
+        (candidate) =>
+          !(
+            candidate.sourcePageKind === 'detail' &&
+            candidate.sourceUrl === MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT
+          ),
+      ),
+    ).toBe(true);
+  });
+
+  it('cites each council page as its own source and never the aggregate root, with portals as application links only', async () => {
+    const fetchPage = vi.fn(async (url: string) => {
+      if (url === latamUrl) return latamHtml;
+      if (url === southAsiaUrl) return southAsiaHtml;
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const emitted: any[] = [];
+    const scraper = new YaleCollegeFellowshipsOfficeScraper({
+      pageUrls: [latamUrl, southAsiaUrl],
+      fetchPage,
+    });
+
+    const result = await scraper.run({
+      scrapeRunId: 'run-1',
+      sourceId: 'source-1',
+      sourceName: 'yale-college-fellowships-office',
+      sourceWeight: 0.95,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (observations) => {
+        emitted.push(...(Array.isArray(observations) ? observations : [observations]));
+      },
+      log: vi.fn(),
+    });
+
+    expect(result.entitiesObserved).toBe(2);
+    const sourceUrls = emitted
+      .filter((obs) => obs.field === 'sourceUrl')
+      .map((obs) => obs.value)
+      .sort();
+    expect(sourceUrls).toEqual([latamUrl, southAsiaUrl].sort());
+    expect(emitted.every((obs) => obs.sourceUrl !== MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT)).toBe(
+      true,
+    );
+    expect(fetchPage).not.toHaveBeenCalledWith(communityForcePortalUrl, expect.anything());
+    expect(fetchPage).not.toHaveBeenCalledWith('https://studentgrants.yale.edu/', expect.anything());
+    expect(fetchPage).not.toHaveBeenCalledWith(
+      MACMILLAN_UNDERGRADUATE_RESEARCH_GRANTS_ROOT,
+      expect.anything(),
+    );
+
+    const applicationLinks = emitted
+      .filter((obs) => obs.field === 'applicationLink')
+      .map((obs) => obs.value);
+    expect(applicationLinks).toContain(communityForcePortalUrl);
+    expect(applicationLinks).toContain('https://studentgrants.yale.edu/');
   });
 });

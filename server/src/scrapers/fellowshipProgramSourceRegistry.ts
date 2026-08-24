@@ -50,6 +50,13 @@ export interface FellowshipProgramEntry {
   impactTier: FellowshipProgramImpactTier;
   /** Existing scraper source(s) that already cover this catalog. */
   coveredBy?: SourceCoverageName[];
+  /**
+   * Concrete crawl seeds when a catalog's coverage comes from directly seeding
+   * several per-child pages rather than fetching the `url` planning identifier
+   * itself (e.g. an aggregate listing root that is not a live page). When
+   * present, these - not `url` - are the pages seeded into the scraper.
+   */
+  seedUrls?: string[];
   /** Approximate discoverable program count observed on the live page (rounded). */
   approxProgramCount?: number;
   notes?: string;
@@ -118,11 +125,20 @@ export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
     url: 'https://macmillan.yale.edu/undergraduate-research-grants',
     catalogName: 'MacMillan council-level undergraduate research / senior-essay grants',
     owningOffice: 'MacMillan Center area-studies councils',
-    status: 'gap',
+    status: 'covered',
     impactTier: 3,
+    coveredBy: ['yale-college-fellowships-office'],
     approxProgramCount: 20,
+    seedUrls: [
+      'https://macmillan.yale.edu/latam/student-grants-and-prizes',
+      'https://macmillan.yale.edu/southasia/undergraduate-grants',
+      'https://macmillan.yale.edu/europe/student-grants-and-fellowships',
+      'https://macmillan.yale.edu/reees/grants-and-fellowships-undergraduate-students',
+      'https://macmillan.yale.edu/southeast-asia/grants-students',
+      'https://macmillan.yale.edu/eastasia/fellowships-grants',
+    ],
     notes:
-      'Individual MacMillan councils (e.g. European Studies, Latin American & Iberian Studies, African Studies) publish their own undergraduate research and senior-essay grant pages beyond the central fellowships-and-grants catalog. Each council grant page is a citable per-program source; the listing roots are crawl seeds only.',
+      'Individual MacMillan councils (Latin American & Iberian Studies, South Asian Studies, European Studies, Russian/East European/Eurasian Studies, Southeast Asia Studies, East Asian Studies) publish their own undergraduate research / senior-essay grant pages beyond the central fellowships-and-grants catalog. The aggregate undergraduate-research-grants slug is not a live listing page (it redirects to site search), so it is registered as a never-cite index root (isIndexSeedOnlyUrl) and coverage comes from directly seeding each council grant page in yaleCollegeFellowshipsOfficeScraper via MACMILLAN_COUNCIL_GRANT_PAGE_URLS (see seedUrls). Each council grant page is parsed by the generic public-page detail extractor and cites its own canonical page as the per-program source (#516/#549). CommunityForce and studentgrants.yale.edu links surfaced by any council page stay applicationLink evidence and are never fetch targets. The African Studies and Middle East councils are deferred: their grant landing H1s are too generic (bare "Fellowships") to mint a specific program and are correctly dropped by the generic-title guard.',
   },
   {
     url: 'https://cbey.yale.edu/funding-opportunities',

@@ -60,25 +60,35 @@ describe('fellowshipProgramSourceRegistry', () => {
     }
   });
 
-  it('backs every covered catalog with a fellowships-office seed or sitemap crawl', () => {
+  it('backs every covered catalog with a fellowships-office seed set or sitemap crawl', () => {
+    const seedList = DEFAULT_PAGE_URLS as readonly string[];
     const sitemapHosts = new Set(
       FUNDING_YALE_SITEMAP_URLS.map((url) => new URL(url).hostname.toLowerCase()),
     );
     for (const entry of getFellowshipProgramCatalogsByStatus('covered')) {
-      const seeded = (DEFAULT_PAGE_URLS as readonly string[]).includes(entry.url);
-      const sitemapCovered = sitemapHosts.has(new URL(entry.url).hostname.toLowerCase());
-      expect(seeded || sitemapCovered, entry.url).toBe(true);
       expect(entry.coveredBy, entry.url).toContain('yale-college-fellowships-office');
+      if (entry.seedUrls) {
+        expect(entry.seedUrls.length, entry.url).toBeGreaterThan(0);
+        for (const seed of entry.seedUrls) {
+          expect(seedList, seed).toContain(seed);
+        }
+      } else {
+        const seeded = seedList.includes(entry.url);
+        const sitemapCovered = sitemapHosts.has(new URL(entry.url).hostname.toLowerCase());
+        expect(seeded || sitemapCovered, entry.url).toBe(true);
+      }
     }
   });
 
   it('represents every seeded fellowships-office page with a covered catalog entry', () => {
-    const coveredUrls = getFellowshipProgramCatalogsByStatus('covered').map((entry) => entry.url);
+    const covered = getFellowshipProgramCatalogsByStatus('covered');
+    const coveredUrls = covered.map((entry) => entry.url);
+    const coveredSeedUrls = new Set(covered.flatMap((entry) => entry.seedUrls ?? []));
     for (const seed of DEFAULT_PAGE_URLS) {
       const base = withoutQuery(seed);
-      const represented = coveredUrls.some(
-        (coveredUrl) => base === coveredUrl || base.startsWith(`${coveredUrl}/`),
-      );
+      const represented =
+        coveredSeedUrls.has(base) ||
+        coveredUrls.some((coveredUrl) => base === coveredUrl || base.startsWith(`${coveredUrl}/`));
       expect(represented, seed).toBe(true);
     }
   });
@@ -94,9 +104,25 @@ describe('fellowshipProgramSourceRegistry', () => {
     }
   });
 
-  it('enumerates the known-uncovered public catalogs as gaps', () => {
+  it('marks the MacMillan council undergraduate-research-grants catalog as covered and retires its gap', () => {
+    const councilGrants = FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.find(
+      (entry) => entry.url === 'https://macmillan.yale.edu/undergraduate-research-grants',
+    );
+    expect(councilGrants?.status).toBe('covered');
+    expect(councilGrants?.coveredBy).toContain('yale-college-fellowships-office');
+    expect((councilGrants?.seedUrls ?? []).length).toBeGreaterThan(0);
+    for (const seed of councilGrants?.seedUrls ?? []) {
+      expect(DEFAULT_PAGE_URLS as readonly string[], seed).toContain(seed);
+    }
     const gapUrls = new Set(getFellowshipProgramCatalogGaps().map((entry) => entry.url));
-    expect(gapUrls.has('https://macmillan.yale.edu/undergraduate-research-grants')).toBe(true);
+    expect(gapUrls.has('https://macmillan.yale.edu/undergraduate-research-grants')).toBe(false);
+    expect(DEFAULT_PAGE_URLS as readonly string[]).not.toContain(
+      'https://macmillan.yale.edu/undergraduate-research-grants',
+    );
+  });
+
+  it('takes the fellowship/program registry to zero open coverage gaps', () => {
+    expect(getFellowshipProgramCatalogGaps()).toEqual([]);
   });
 
   it('marks the Yale College student-faculty awards index as covered by the fellowships-office crawl', () => {
@@ -137,7 +163,6 @@ describe('fellowshipProgramSourceRegistry', () => {
 
   it('ranks gaps by student impact tier then discoverable program count', () => {
     const gaps = getFellowshipProgramCatalogGaps();
-    expect(gaps.length).toBeGreaterThan(0);
     for (const entry of gaps) {
       expect(entry.status === 'gap' || entry.status === 'partial', entry.url).toBe(true);
     }
