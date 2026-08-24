@@ -356,6 +356,34 @@ function sourceUrlToleratedSchoolConfirmedForEntity(
   return false;
 }
 
+/**
+ * Whether the entity records ANY school/department string at all, mapped or
+ * not. Gates the surname-only corroboration requirement below: an entity with
+ * a recorded-but-unmapped department (Graham Lab's "Russian, East European,
+ * and Eurasian Studies") still carries a real, if undecodable, domain claim
+ * that a medicine.yale.edu surname match should be checked against. An entity
+ * with NO school/department recorded at all carries no such claim to check
+ * against, so treating it the same as a known-different school would reject
+ * every surname-only match for every entity that simply never had its
+ * department populated - far broader than the coincidental-homonym shape
+ * this is meant to catch, and exactly the case a real "<Surname> Lab" whose
+ * own recorded `website` names its own PI (issue #1537's Ashford Lab
+ * regression test) must still pass unconditionally.
+ */
+function hasAnyRecordedSchoolInfo(entity: ResearchEntityIdentity): boolean {
+  if (textValue(entity.school)) return true;
+  if (Array.isArray(entity.schools) && entity.schools.some((school) => textValue(school))) {
+    return true;
+  }
+  if (
+    Array.isArray(entity.departments) &&
+    entity.departments.some((department) => textValue(department))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function normalizeUrlForCompare(value: string): string {
   return value.trim().toLowerCase().replace(/\/+$/, '');
 }
@@ -457,12 +485,17 @@ function entityCorroboratesPersonProfile(
  * "Frances" Lowell) - that disagreement is itself evidence the entity already
  * claims a specific person. When the entity's identity is a bare single surname
  * token with no given name anywhere (a department-roster-derived "<Surname> Lab"
- * whose real given name was never recorded), that same surname-only overlap at a
- * cross-appointment-tolerant host carries no disambiguating evidence at all - it
- * is exactly the shape of a coincidental homonym (issue #1537, e.g. a Russian and
- * East European Studies "Graham Lab" keyed onto a School of Medicine
- * medicine.yale.edu/profile/thomas-graham page) - so it requires the same
- * corroboration as a no-token-match. A URL whose Yale school subdomain
+ * whose real given name was never recorded) AND the entity records SOME
+ * school/department (even one that maps to no known token), that same
+ * surname-only overlap at a cross-appointment-tolerant host carries no
+ * disambiguating evidence at all - it is exactly the shape of a coincidental
+ * homonym (issue #1537, e.g. a Russian and East European Studies "Graham Lab"
+ * keyed onto a School of Medicine medicine.yale.edu/profile/thomas-graham
+ * page) - so it requires the same corroboration as a no-token-match. An
+ * entity with no recorded school/department at all is left alone here (it
+ * carries no domain claim to check the URL against), so a legitimate
+ * "<Surname> Lab" whose own recorded website names its own PI by full name
+ * still passes unconditionally. A URL whose Yale school subdomain
  * contradicts the entity's own recorded school is always rejected first, so an
  * exact full-name homonym at a different Yale school (issue #1045) is ruled out
  * even when every name token matches. An exact full-name match (given name and
@@ -494,6 +527,7 @@ export function personProfileSourceMatchesEntity(
       !givenNameAlsoMatches &&
       identityTokens.length === 1 &&
       toleratedSchoolTokenFromUrl(value) !== null &&
+      hasAnyRecordedSchoolInfo(entity) &&
       !sourceUrlToleratedSchoolConfirmedForEntity(value, entity)
     ) {
       return entityCorroboratesPersonProfile(urlTokens, value, entity);
