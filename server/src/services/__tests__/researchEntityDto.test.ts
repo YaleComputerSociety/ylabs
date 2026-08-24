@@ -430,7 +430,7 @@ describe('researchEntityDto', () => {
     );
   });
 
-  it('strips YSM profile chrome from served descriptions and falls back the card shortDescription to fullDescription (#808, #1692)', () => {
+  it('strips YSM profile chrome from served descriptions and derives a self-contained card short from the full (#808, #1692, #1832)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-ysm-chrome',
       slug: 'ysm-takyar',
@@ -441,7 +441,7 @@ describe('researchEntityDto', () => {
     });
 
     expect(dto.shortDescription).toBe(
-      'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',
+      'Studies liver fibrosis and vascular remodeling in chronic disease.',
     );
     expect(dto.fullDescription).toBe(
       'The Takyar lab studies liver fibrosis and vascular remodeling in chronic disease.',

@@ -5,7 +5,10 @@ import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityD
 import { filterProseResearchAreaChips } from '../utils/profileResearchTerms';
 import { normalizeResearchAreaList } from '../utils/researchAreaHygiene';
 import { sanitizeResearchAreaLabel } from '../utils/researchAreaLabelHygiene';
-import { isUngroundedSynthesizedCard } from '../utils/groundedCardSynthesis';
+import {
+  isUngroundedSynthesizedCard,
+  resolveServedShortDescription,
+} from '../utils/groundedCardSynthesis';
 import { isFullDescriptionRestatementOfShortDescription } from '../utils/researchEntityDescriptionQuality';
 import {
   resolveResearchHomeCardSummary,
@@ -128,11 +131,50 @@ function publicShortDescriptionString(value: unknown): string {
   return sanitizeResearchEntityShortDescription(text);
 }
 
+/**
+ * The self-contained card short for a research entity: the sanitized stored
+ * shortDescription, or empty when it is a wrong-topic synthesized card that
+ * would only be an improvement to discard. A "Studies X" card whose distinctive
+ * topic tokens are absent from the entity's own fullDescription can be a
+ * wrong-entity graft (#1212), but discarding it is only better when the
+ * fallback (the sanitized full, itself already relabeled/hygiene-cleaned by
+ * `servedResearchEntityCopy`) is a self-contained summary. When the full opens
+ * with a bare-pronoun/CV-bio clause the fallback is strictly worse, so the
+ * self-contained short is kept rather than surrendered to it (#1832). When this
+ * returns empty, callers fall back via `servedShortDescriptionFallback`, which
+ * is itself hygiene-guarded and never a raw bio.
+ */
 function groundedShortDescriptionString(shortValue: unknown, fullValue: unknown): string {
   const shortDescription = publicShortDescriptionString(shortValue);
   if (!shortDescription) return '';
-  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) return '';
+  if (isUngroundedSynthesizedCard(shortDescription, fullValue)) {
+    return publicShortDescriptionString(fullValue) ? '' : shortDescription;
+  }
   return shortDescription;
+}
+
+/**
+ * The guarded fallback served when no self-contained stored short survives
+ * (#1832). Rather than serving the raw fullDescription verbatim - which leaked
+ * bare-pronoun and CV-bio openers onto the card - derive a fresh self-contained
+ * short from the entity's own full via the same canonical resolver the
+ * detail-page gate uses (`resolveServedShortDescription`); when nothing derives
+ * (a program whose admin copy is not a research summary), serve the full only
+ * if it clears the shortDescription hygiene guard, so acceptable admin copy
+ * survives while a bare-pronoun/CV opener fails closed to empty. This value is
+ * assigned only to the served shortDescription and is deliberately kept out of
+ * the fullDescription restatement-suppression check (#1721), which must compare
+ * the full against a stored short, never against a short derived from that same
+ * full.
+ */
+function servedShortDescriptionFallback(served: Record<string, any>, entityType: unknown): string {
+  const derived = resolveServedShortDescription({
+    shortDescription: '',
+    fullDescription: served.fullDescription,
+    researchAreas: served.researchAreas,
+    entityType,
+  });
+  return derived || publicShortDescriptionString(served.fullDescription);
 }
 
 function publicResearchAreaArray(value: unknown): string[] {
@@ -220,9 +262,11 @@ export function toPublicResearchEntitySummaryDto(
   group: Record<string, any>,
 ): PublicResearchEntitySummaryDto {
   const served = servedResearchEntityCopy(group);
+  const summaryEntityType =
+    group.entityType === undefined ? mapResearchGroupKindToEntityType(group.kind) : group.entityType;
   const blurbSource =
     groundedShortDescriptionString(served.shortDescription || '', served.fullDescription) ||
-    String(served.fullDescription || '');
+    servedShortDescriptionFallback(served, summaryEntityType);
   const blurb = blurbSource.slice(0, 280);
 
   return {
@@ -333,7 +377,7 @@ export function toPublicResearchEntityDto(
     if (options.forList && LIST_TRIMMED_DESCRIPTION_FIELDS.has(field)) continue;
     if (field === 'shortDescription') {
       if (group.shortDescription !== undefined || group.fullDescription !== undefined) {
-        dto.shortDescription = groundedShort || String(served.fullDescription || '');
+        dto.shortDescription = groundedShort || servedShortDescriptionFallback(served, entityType);
       }
       continue;
     }
