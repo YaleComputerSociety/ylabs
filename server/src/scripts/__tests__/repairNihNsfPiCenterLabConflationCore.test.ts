@@ -81,6 +81,7 @@ describe('planNihNsfPiCenterLabConflationRepair', () => {
         websiteUrl: 'https://medicine.yale.edu/internal-medicine/livercenter/',
         fullDescription: 'The Yale Liver Center is one of 17 Digestive Diseases Research Core Centers.',
         shortDescription: 'The Yale Liver Center focuses on liver structure, function, and disease.',
+        researchAreas: ['Liver Disease', 'Calcium Signaling', 'Hepatology'],
         recentGrants: [
           {
             url: 'https://reporter.nih.gov/project-details/11129975',
@@ -96,8 +97,14 @@ describe('planNihNsfPiCenterLabConflationRepair', () => {
     expect(plan?.set.entityType).toBe('LAB');
     expect(plan?.fullDescriptionAfter).toContain('Excessive alcohol intake');
     expect(plan?.set.fullDescription).toBe(plan?.fullDescriptionAfter);
+    // The card short is grounded in curated researchAreas, never the full grant
+    // abstract, so the regrounded lab clears the card bar instead of stalling at
+    // missing_card_description.
+    expect(plan?.set.shortDescription).toBe('Studies Liver Disease, Calcium Signaling, and Hepatology.');
+    expect(plan?.set.shortDescription).not.toBe(plan?.fullDescriptionAfter);
     expect(plan?.unset).toMatchObject({ website: '', websiteUrl: '', displayName: '' });
     expect(plan?.unset.fullDescription).toBeUndefined();
+    expect(plan?.unset.shortDescription).toBeUndefined();
     expect(plan?.supersedeObservationFilter).toMatchObject({
       entityId: 'entity-1',
       sourceName: 'official-profile-pi-backfill',
@@ -127,6 +134,32 @@ describe('planNihNsfPiCenterLabConflationRepair', () => {
     expect(plan?.fullDescriptionAfter).toBe('');
     expect(plan?.set.fullDescription).toBeUndefined();
     expect(plan?.unset).toMatchObject({ fullDescription: '', shortDescription: '' });
+  });
+
+  it('regrounds the full abstract but unsets the card short when no card can be grounded', () => {
+    const plan = planNihNsfPiCenterLabConflationRepair(
+      {
+        id: 'entity-7',
+        slug: 'nih-pi-no-areas',
+        name: 'No Areas Lab',
+        kind: 'lab',
+        entityType: 'CENTER',
+        websiteUrl: 'https://medicine.yale.edu/some-center/',
+        recentGrants: [
+          {
+            url: 'https://reporter.nih.gov/project-details/1',
+            abstract:
+              'PROJECT SUMMARY: Excessive alcohol intake causes hepatocellular calcium signaling defects that drive alcohol-associated hepatitis in patients.',
+          },
+        ],
+      },
+      now,
+    );
+
+    expect(plan?.set.fullDescription).toContain('Excessive alcohol intake');
+    expect(plan?.set.shortDescription).toBeUndefined();
+    expect(plan?.unset.shortDescription).toBe('');
+    expect(plan?.unset.fullDescription).toBeUndefined();
   });
 
   it('returns null for an entity that is not a conflation', () => {
