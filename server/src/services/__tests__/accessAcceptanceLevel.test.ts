@@ -54,7 +54,7 @@ describe('accessAcceptanceLevel', () => {
     ).toBe('none');
   });
 
-  it('still counts an evidence-backed REACH_OUT_PLAUSIBLE toward the likely tier', () => {
+  it('does not count a bare-key REACH_OUT_PLAUSIBLE without a source-backed excerpt (#1343)', () => {
     expect(
       canonicalAcceptanceLevelFromSignals([
         {
@@ -63,7 +63,44 @@ describe('accessAcceptanceLevel', () => {
           derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
         },
       ]),
+    ).toBe('none');
+    expect(
+      canonicalAcceptanceLevelFromSignals([
+        {
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidenceScore: 0.5,
+          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
+          excerpt: '   ',
+        },
+      ]),
+    ).toBe('none');
+  });
+
+  it('still counts an excerpt-backed REACH_OUT_PLAUSIBLE toward the likely tier (#1343)', () => {
+    expect(
+      canonicalAcceptanceLevelFromSignals([
+        {
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidenceScore: 0.5,
+          derivationKey: 'signal:REACH_OUT_PLAUSIBLE',
+          excerpt: 'Undergraduates interested in joining the lab should reach out by email.',
+        },
+      ]),
     ).toBe('likely');
+  });
+
+  it('never lets an excerpt override the identified-lead-fallback denylist (#696, #1343)', () => {
+    expect(
+      canonicalAcceptanceLevelFromSignals([
+        {
+          type: 'REACH_OUT_PLAUSIBLE',
+          confidenceScore: 0.4,
+          derivationKey: IDENTIFIED_FACULTY_LEAD_WAYS_IN_DERIVATION_KEY,
+          excerpt:
+            'Identified faculty lead with an official research page; outreach is plausible but no posting was found.',
+        },
+      ]),
+    ).toBe('none');
   });
 });
 
