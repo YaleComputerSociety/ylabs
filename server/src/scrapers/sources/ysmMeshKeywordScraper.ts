@@ -407,10 +407,9 @@ async function defaultDirectoryLoader(
   return { keywords, profileUrlByNameKey };
 }
 
-async function defaultEntityFinder(
-  options: { only?: string[]; exhaustive?: boolean } = {},
-): Promise<YsmMeshCandidateEntity[]> {
-  const only = uniqueStrings(options.only || []);
+const YSM_PROFILE_URL_MONGO_REGEX = '^https?://medicine\\.yale\\.edu/profile/';
+
+export function buildYsmMeshCandidateMatch(only: string[], exhaustive?: boolean): Record<string, unknown> {
   const onlyObjectIds = only
     .filter((value) => OBJECT_ID_RE.test(value))
     .map((value) => new mongoose.Types.ObjectId(value));
@@ -424,19 +423,31 @@ async function defaultEntityFinder(
         ],
       }
     : {};
+  const ysmProfileUrlClause = { $regex: YSM_PROFILE_URL_MONGO_REGEX, $options: 'i' };
   const ysmFilter = {
     $or: [
       { school: 'Yale School of Medicine' },
       { schools: 'Yale School of Medicine' },
       { slug: /^ysm-/i },
+      { profileUrls: ysmProfileUrlClause },
+      { sourceUrls: ysmProfileUrlClause },
+      { websiteUrl: ysmProfileUrlClause },
+      { website: ysmProfileUrlClause },
     ],
   };
   const emptyAreasFilter =
-    !only.length && !options.exhaustive
+    !only.length && !exhaustive
       ? { $or: [{ researchAreas: { $exists: false } }, { researchAreas: { $size: 0 } }] }
       : {};
+  return { $and: [{ archived: { $ne: true } }, ysmFilter, emptyAreasFilter, identityFilter] };
+}
+
+async function defaultEntityFinder(
+  options: { only?: string[]; exhaustive?: boolean } = {},
+): Promise<YsmMeshCandidateEntity[]> {
+  const only = uniqueStrings(options.only || []);
   const query = ResearchEntity.find(
-    { $and: [{ archived: { $ne: true } }, ysmFilter, emptyAreasFilter, identityFilter] },
+    buildYsmMeshCandidateMatch(only, options.exhaustive),
     {
       _id: 1,
       slug: 1,
