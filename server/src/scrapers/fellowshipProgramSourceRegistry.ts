@@ -1,0 +1,254 @@
+/**
+ * Fellowship / program / undergraduate-research-pathway source registry for
+ * scraper coverage planning.
+ *
+ * This is the fellowship/program analogue of `facultyDirectoryRegistry.ts`,
+ * `centersInstitutesRegistry.ts`, and `humanitiesCollectionsSourceRegistry.ts`:
+ * a declarative map of Yale's public undergraduate research fellowship /
+ * funding / structured-program catalogs, each annotated with which existing
+ * scraper source (if any) already ingests it. It drives the coverage program -
+ * entries with status `gap` are candidates for a new per-catalog extractor,
+ * `partial` entries are only fractionally covered (e.g. a hub whose landing page
+ * is ingested but whose child catalog is not), `covered` entries are wired, and
+ * `evaluated-skipped` entries were audited and deliberately left un-crawled
+ * (their `notes` record why), so they are neither a to-do gap nor a live source.
+ *
+ * These `url` values are crawl ENTRY POINTS (catalog landing / index / hub
+ * pages). They must never be persisted as an Observation/Source citation: every
+ * emitted fellowship cites the individual program's own page, not the catalog
+ * root, per the self-referential / index-page source guards (see #516 and #549).
+ * The registry exists for planning and reporting; it does not itself change
+ * scraper behavior (same contract as the other three registries).
+ *
+ * Gated application portals (`communityforce.com`, `studentgrants.yale.edu`) are
+ * recorded as `evaluated-skipped`: they are treated as application links and are
+ * never fetch targets, per `isProgramApplicationPortalUrl`. They are kept in the
+ * registry so they are never silently re-proposed as a coverage gap.
+ *
+ * `coveredBy` names are `Source.name` keys from `sourceCoverageRegistry`.
+ */
+import type { SourceCoverageName } from './sourceCoverageRegistry';
+
+export type FellowshipProgramCoverageStatus = 'covered' | 'partial' | 'gap' | 'evaluated-skipped';
+
+/**
+ * ROI ranking for a student seeking research funding/pathways, highest first:
+ *   1 university-wide funding/fellowship database (broadest breadth per crawl)
+ *   2 school-wide or college-wide fellowship hub / awards index
+ *   3 center / institute / department program catalog
+ *   4 single named program, award, or fellowship page
+ *   5 low-ROI / niche catalog
+ */
+export type FellowshipProgramImpactTier = 1 | 2 | 3 | 4 | 5;
+
+export interface FellowshipProgramEntry {
+  /** Catalog landing / hub entry point. Never cited as a source; see module doc. */
+  url: string;
+  catalogName: string;
+  owningOffice: string;
+  status: FellowshipProgramCoverageStatus;
+  impactTier: FellowshipProgramImpactTier;
+  /** Existing scraper source(s) that already cover this catalog. */
+  coveredBy?: SourceCoverageName[];
+  /** Approximate discoverable program count observed on the live page (rounded). */
+  approxProgramCount?: number;
+  notes?: string;
+}
+
+export const FELLOWSHIP_PROGRAM_SOURCE_REGISTRY: FellowshipProgramEntry[] = [
+  // ---- Tier 1: university-wide funding / fellowship databases ----------------------
+  {
+    url: 'https://funding.yale.edu/find-funding/yale-fellowships-offered-through',
+    catalogName: 'Yale Fellowships & Funding - fellowships offered through Yale (landing)',
+    owningOffice: 'Yale Office of Fellowship Programs (funding.yale.edu)',
+    status: 'covered',
+    impactTier: 1,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes:
+      'Seeded in yaleCollegeFellowshipsOfficeScraper DEFAULT_PAGE_URLS. Only this single "offered through Yale" landing page is currently ingested; the full funding.yale.edu find-funding database (faceted by discipline, term, citizenship, and region) is a separate coverage gap - see the funding.yale.edu/find-funding gap entry.',
+  },
+  {
+    url: 'https://funding.yale.edu/find-funding',
+    catalogName: 'Yale Fellowships & Funding - full find-funding database',
+    owningOffice: 'Yale Office of Fellowship Programs (funding.yale.edu)',
+    status: 'gap',
+    impactTier: 1,
+    approxProgramCount: 200,
+    notes:
+      'The complete find-funding database is the broadest single fellowship acquisition surface at Yale, spanning far more programs than the one "offered through Yale" landing page currently seeded. It is a faceted listing whose root is a crawl seed only; each individual program page is the citable source. Wiring it (pagination + per-facet crawl) is the highest-ROI follow-up this registry unblocks.',
+  },
+
+  // ---- Tier 2: school-wide / college-wide fellowship hubs and awards indexes -------
+  {
+    url: 'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale',
+    catalogName: 'Yale College STEM Fellowships - funding STEM opportunities at Yale (hub)',
+    owningOffice: 'Yale College Office of Science & Quantitative Reasoning',
+    status: 'covered',
+    impactTier: 2,
+    coveredBy: ['yale-college-fellowships-office'],
+    approxProgramCount: 15,
+    notes:
+      'Hub page plus two seeded detail children (yale-college-first-year-summer-research-fellowship and stars/stars-summer-research-program) are in DEFAULT_PAGE_URLS. The remaining STEM fellowship child pages under this hub are not individually seeded - see the STEM fellowships hub children gap entry.',
+  },
+  {
+    url: 'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/children',
+    catalogName: 'Yale College STEM Fellowships - hub child program pages (beyond the two seeded)',
+    owningOffice: 'Yale College Office of Science & Quantitative Reasoning',
+    status: 'gap',
+    impactTier: 2,
+    approxProgramCount: 15,
+    notes:
+      'The STEM fellowships hub links a set of individual STEM program pages; only two are currently seeded in DEFAULT_PAGE_URLS. Enumerating and crawling the remaining child pages (each a citable per-program source) captures the full STEM undergraduate funding menu. The hub root itself is a crawl seed only, never a citation.',
+  },
+  {
+    url: 'https://college.yale.edu/life-at-yale/student-faculty-awards',
+    catalogName: 'Yale College student-faculty awards index',
+    owningOffice: "Yale College Dean's Office",
+    status: 'gap',
+    impactTier: 2,
+    approxProgramCount: 40,
+    notes:
+      'Only the Mellon Mays Undergraduate Fellowship child page is currently seeded (via college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program). The full student-faculty awards index enumerates many more research-relevant awards/prizes; its index root is a crawl seed only, each award page the citable source.',
+  },
+
+  // ---- Tier 3: center / institute / department program catalogs --------------------
+  {
+    url: 'https://macmillan.yale.edu/fellowships-and-grants',
+    catalogName: 'MacMillan Center fellowships and grants',
+    owningOffice: 'MacMillan Center for International and Area Studies',
+    status: 'covered',
+    impactTier: 3,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes:
+      'Covered via the dedicated MacMillan opportunity-row extractor (candidatesFromMacmillanOpportunityPage), seeded with ?page=1..3 pagination in DEFAULT_PAGE_URLS. Council-level undergraduate research / senior-essay grant pages hosted by individual MacMillan area-studies councils are a separate gap.',
+  },
+  {
+    url: 'https://macmillan.yale.edu/undergraduate-research-grants',
+    catalogName: 'MacMillan council-level undergraduate research / senior-essay grants',
+    owningOffice: 'MacMillan Center area-studies councils',
+    status: 'gap',
+    impactTier: 3,
+    approxProgramCount: 20,
+    notes:
+      'Individual MacMillan councils (e.g. European Studies, Latin American & Iberian Studies, African Studies) publish their own undergraduate research and senior-essay grant pages beyond the central fellowships-and-grants catalog. Each council grant page is a citable per-program source; the listing roots are crawl seeds only.',
+  },
+  {
+    url: 'https://cbey.yale.edu/funding-opportunities',
+    catalogName: 'Center for Business and the Environment at Yale - funding opportunities',
+    owningOffice: 'Yale Center for Business and the Environment (CBEY)',
+    status: 'covered',
+    impactTier: 3,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes:
+      'Covered via the dedicated CBEY program-row extractor (candidatesFromCbeyFundingPage) seeded in DEFAULT_PAGE_URLS.',
+  },
+  {
+    url: 'https://wti.yale.edu/initiatives/undergraduate',
+    catalogName: 'Wu Tsai Institute undergraduate initiatives',
+    owningOffice: 'Wu Tsai Institute',
+    status: 'covered',
+    impactTier: 3,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes: 'Seeded in DEFAULT_PAGE_URLS; parsed by the generic public-page detail/catalog extractor.',
+  },
+
+  // ---- Tier 4: single named programs / awards / department pathways ----------------
+  {
+    url: 'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
+    catalogName: 'Mellon Mays Undergraduate Fellowship Program',
+    owningOffice: "Yale College Dean's Office",
+    status: 'covered',
+    impactTier: 4,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes:
+      'Seeded in DEFAULT_PAGE_URLS. yaleCollegeFellowshipsOfficeScraper carries MOVED_YALE_COLLEGE_FINANCIAL_AWARD_URLS remapping the retired yalecollege.yale.edu financial-awards path to this canonical college.yale.edu URL.',
+  },
+  {
+    url: 'https://medicine.yale.edu/whr/training/',
+    catalogName: "Women's Health Research at Yale - training and fellowships",
+    owningOffice: "Yale School of Medicine - Women's Health Research",
+    status: 'covered',
+    impactTier: 4,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes: 'Seeded in DEFAULT_PAGE_URLS; parsed by the generic public-page detail extractor.',
+  },
+  {
+    url: 'https://ycmd.yale.edu/education/summer-undergraduate-internships',
+    catalogName: 'Yale Center for Molecular Discovery - summer undergraduate internships',
+    owningOffice: 'Yale Center for Molecular Discovery',
+    status: 'covered',
+    impactTier: 4,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes: 'Seeded in DEFAULT_PAGE_URLS; parsed by the generic public-page detail extractor.',
+  },
+  {
+    url: 'https://economics.yale.edu/undergraduate/tobin-ra',
+    catalogName: 'Tobin Research Assistant Program (Economics)',
+    owningOffice: 'Yale Department of Economics / Tobin Center for Economic Policy',
+    status: 'covered',
+    impactTier: 4,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes: 'Seeded in DEFAULT_PAGE_URLS; parsed by the generic public-page detail extractor.',
+  },
+  {
+    url: 'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program',
+    catalogName: 'Computer Science Research Internship Program',
+    owningOffice: 'Yale School of Engineering & Applied Science - Computer Science',
+    status: 'covered',
+    impactTier: 4,
+    coveredBy: ['yale-college-fellowships-office'],
+    notes: 'Seeded in DEFAULT_PAGE_URLS; parsed by the generic public-page detail extractor.',
+  },
+
+  // ---- Evaluated and skipped: gated application portals (never fetch targets) ------
+  {
+    url: 'https://yale.communityforce.com/',
+    catalogName: 'CommunityForce application portal',
+    owningOffice: 'Yale (third-party CommunityForce application platform)',
+    status: 'evaluated-skipped',
+    impactTier: 5,
+    notes:
+      'Gated application portal. Treated as an application link, never a fetch target, per isProgramApplicationPortalUrl. CommunityForce URLs are carried as applicationLink evidence on the fellowships they belong to; the portal itself exposes no crawlable catalog. Recorded as evaluated-and-skipped rather than a coverage gap.',
+  },
+  {
+    url: 'https://studentgrants.yale.edu/',
+    catalogName: 'Yale Student Grants Database',
+    owningOffice: 'Yale (studentgrants.yale.edu gated database)',
+    status: 'evaluated-skipped',
+    impactTier: 5,
+    notes:
+      'Gated student grants application database. Treated as an application link, never a fetch target, per isProgramApplicationPortalUrl. Recorded as evaluated-and-skipped rather than a coverage gap.',
+  },
+];
+
+export function getFellowshipProgramCatalogsByStatus(
+  status: FellowshipProgramCoverageStatus,
+): FellowshipProgramEntry[] {
+  return FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.filter((entry) => entry.status === status);
+}
+
+/**
+ * Actionable uncovered catalogs (status `gap` or `partial`), ranked by student
+ * research ROI: impact tier first, then approximate discoverable program count.
+ * `evaluated-skipped` catalogs are intentionally excluded because they were
+ * audited and deliberately left un-crawled, so they are not a coverage to-do.
+ */
+export function getFellowshipProgramCatalogGaps(): FellowshipProgramEntry[] {
+  return FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.filter(
+    (entry) => entry.status === 'gap' || entry.status === 'partial',
+  ).sort((a, b) => {
+    if (a.impactTier !== b.impactTier) {
+      return a.impactTier - b.impactTier;
+    }
+    return (b.approxProgramCount ?? 0) - (a.approxProgramCount ?? 0);
+  });
+}
+
+/**
+ * Catalogs audited and deliberately left un-crawled (their `notes` record the
+ * rationale). Kept distinct from gaps so evaluated portals are never silently
+ * dropped nor re-proposed as coverage work.
+ */
+export function getEvaluatedSkippedFellowshipCatalogs(): FellowshipProgramEntry[] {
+  return FELLOWSHIP_PROGRAM_SOURCE_REGISTRY.filter((entry) => entry.status === 'evaluated-skipped');
+}
