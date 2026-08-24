@@ -264,17 +264,54 @@ function isGrantOrOrcidSourceUrl(value: string): boolean {
 
 const ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME = new Set(['CENTER', 'INSTITUTE', 'PROGRAM']);
 
+const LAB_NAME_EPONYM_STOPWORDS = new Set([
+  'yale',
+  'the',
+  'research',
+  'center',
+  'centre',
+  'institute',
+  'program',
+  'programme',
+  'national',
+  'joint',
+  'core',
+]);
+
+function labNameEponymToken(name: string): string {
+  const match = /(\b[A-Za-z][\w'-]{2,})\s+lab(?:oratory)?$/i.exec(name.trim());
+  if (!match) return '';
+  const token = match[1].toLowerCase();
+  return LAB_NAME_EPONYM_STOPWORDS.has(token) ? '' : token;
+}
+
+function labNameCoherentWithDescription(entity: Record<string, any>): boolean {
+  const eponym = labNameEponymToken(textValue(entity.name || entity.displayName));
+  if (!eponym) return false;
+  const description = `${textValue(entity.shortDescription)} ${textValue(
+    entity.fullDescription,
+  )}`.toLowerCase();
+  return new RegExp(`\\b${eponym.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(description);
+}
+
 /**
  * A "<Person> Lab"-named entity whose entityType resolved to an org type
  * (CENTER/INSTITUTE/PROGRAM) - the ingestion-time name mint and the
  * entityType/description resolver ran independently and never reconciled, so
  * the card's title, type badge, and body describe two different things
  * (#1445). Held out of student_ready/limited_but_safe rather than suppressed,
- * since the entity itself may still be legitimate once reconciled.
+ * since the entity itself may still be legitimate once reconciled. A
+ * legitimately named laboratory whose eponym also appears in its own
+ * description (e.g. "Yale Wright Laboratory" described as "Wright Lab develops
+ * experiments...") is self-coherent, so the name/body do not describe two
+ * different things and the guard does not fire.
  */
 function isLabNameOrgTypeMismatch(entity: Record<string, any>): boolean {
   if (!/\blab(?:oratory)?$/i.test(textValue(entity.name || entity.displayName))) return false;
-  return ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME.has(textValue(entity.entityType).toUpperCase());
+  if (!ORG_ENTITY_TYPES_INCOHERENT_WITH_LAB_NAME.has(textValue(entity.entityType).toUpperCase())) {
+    return false;
+  }
+  return !labNameCoherentWithDescription(entity);
 }
 
 function isNonOwnerGrantShell({
