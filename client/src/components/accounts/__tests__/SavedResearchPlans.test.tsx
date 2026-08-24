@@ -18,6 +18,12 @@ vi.mock('../../../utils/researchAnalytics', () => ({
 
 vi.mock('../shared/LoadingSpinner', () => ({ default: () => <div>Loading</div> }));
 
+vi.mock('../ResearchHomeComparison', () => ({
+  default: ({ entities }: { entities: Array<{ _id: string }> }) => (
+    <div data-testid="comparison">comparing {entities.length}</div>
+  ),
+}));
+
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
@@ -48,6 +54,32 @@ const withSavedPlans = () => {
           },
         },
       });
+    }
+    return Promise.resolve({ data: {} });
+  });
+};
+
+const withManySavedPlans = (count: number) => {
+  const slugs = Array.from({ length: count }, (_, index) => `lab-${index}`);
+  mockedAxios.get.mockImplementation((url: string) => {
+    if (url === '/users/savedResearchEntityIds') {
+      return Promise.resolve({ data: { savedResearchEntityIds: slugs } });
+    }
+    if (url === '/users/savedResearchEntities') {
+      return Promise.resolve({
+        data: {
+          savedResearchEntities: slugs.map((slug, index) => ({
+            _id: `id-${index}`,
+            slug,
+            name: `Lab ${index}`,
+            kind: 'lab',
+            departments: [],
+          })),
+        },
+      });
+    }
+    if (url === '/users/savedResearchEntityPlans') {
+      return Promise.resolve({ data: { savedResearchEntityPlans: {} } });
     }
     return Promise.resolve({ data: {} });
   });
@@ -162,5 +194,48 @@ describe('SavedResearchPlans', () => {
     expect(screen.getByRole('link', { name: 'Explore Research' }).getAttribute('href')).toBe(
       '/research',
     );
+  });
+
+  it('enables comparison only when two to four homes are selected', async () => {
+    withSavedPlans();
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    const compareButton = screen.getByRole('button', { name: /^Compare/ });
+    expect(compareButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Owner Lab to compare' }));
+    expect(compareButton).toBeDisabled();
+    expect(screen.getByText('Select at least 2 to compare.')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Other Lab to compare' }));
+    expect(compareButton).not.toBeDisabled();
+
+    fireEvent.click(compareButton);
+    expect(screen.getByTestId('comparison').textContent).toContain('comparing 2');
+  });
+
+  it('caps comparison selection at four saved homes', async () => {
+    withManySavedPlans(5);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Lab 0');
+    for (let index = 0; index < 4; index += 1) {
+      fireEvent.click(screen.getByRole('checkbox', { name: `Select Lab ${index} to compare` }));
+    }
+
+    expect(screen.getByText('You can compare up to 4 at once.')).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Select Lab 4 to compare' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Compare/ })).not.toBeDisabled();
   });
 });

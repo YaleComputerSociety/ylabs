@@ -102,6 +102,9 @@ export const RESEARCH_PLAN_FIELDS = [
 const JOURNEY_EVENTS_WITHOUT_ENTITY = new Set<AnalyticsEventType>([
   AnalyticsEventType.RESEARCH_SEARCH,
   AnalyticsEventType.RESEARCH_FILTER_CHANGE,
+  // A compare describes a set of 2-4 entities, so it carries an entityCountBucket
+  // instead of a single entityId.
+  AnalyticsEventType.RESEARCH_COMPARE,
 ]);
 const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 

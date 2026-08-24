@@ -222,12 +222,12 @@ An open or draft PR is evidence of work in progress, never evidence that a requi
 
 #### CP-06 - Compare Shortlisted Research Homes - FR-17
 
-- **Status:** Blocked.
+- **Status:** Complete.
 - **Depends on:** CP-05 / FR-45.
 - **Acceptance criteria:** an authenticated student can choose two to four saved entities and compare existing claim-specific fields without inventing missing facts; private notes remain private unless explicitly included; rows preserve unknown rather than unavailable; comparison links return to canonical entity profiles; no pathway identity or duplicate home columns.
-- **Validation evidence:** advising selection/preview patterns exist in PR `#163`, but there is no entity-level shortlist to compare.
-- **PRs:** none; FR-17 is actively assigned, but unmerged work is not Beta evidence.
-- **CAS boundary:** the logged-in comparison can ship after FR-45; any logged-out variant remains blocked by CP-09 / FR-14 policy.
+- **Validation evidence:** the Dashboard saved-research surface (`SavedResearchPlans.tsx`) selects two to four entity-keyed saved homes and opens `ResearchHomeComparison.tsx`, a focus-trapped dialog that hydrates each entity from the existing `/research/:slug` read API and compares only fields the entity already materializes (school, department, research areas, the documented way-in / hosts-undergrads verdict, description, official links), rendering a neutral unknown for absent facts; private notes are excluded until an explicit per-column opt-in; columns dedupe by entity id and link to canonical `/research/:slug`; the previously dead `research_compare` journey event now fires once per open with the correct `entityCountBucket`, and the server accepts it as a set-level event without a single entity.
+- **PRs:** [#1282](https://github.com/YaleComputerSociety/ylabs/issues/1282).
+- **CAS boundary:** the logged-in comparison shipped on FR-45; any logged-out variant remains blocked by CP-09 / FR-14 policy.
 
 #### CP-07 - Dashboard Entity Names And Live Counts - FR-24
 

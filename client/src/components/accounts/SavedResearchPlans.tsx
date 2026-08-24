@@ -5,12 +5,13 @@
  * /users/savedResearchEntities and /users/savedResearchEntityPlans) so a saved
  * plan can be opened, annotated, and removed rather than only counted.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from '../../utils/axios';
 import useFavorites from '../../hooks/useFavorites';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import { safeRouteSegment } from '../../utils/url';
+import ResearchHomeComparison from './ResearchHomeComparison';
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number) => void;
@@ -30,6 +31,8 @@ interface SavedResearchEntity {
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const MAX_PLAN_NOTES_LENGTH = 2000;
+const MIN_COMPARE_ENTITIES = 2;
+const MAX_COMPARE_ENTITIES = 4;
 
 const kindLabel = (kind?: string): string => {
   if (!kind) return 'Research';
@@ -58,6 +61,8 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, SaveStatus>>({});
+  const [selectedForCompare, setSelectedForCompare] = useState<string[]>([]);
+  const [isComparing, setIsComparing] = useState(false);
   const noteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
@@ -133,7 +138,33 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     void setFavorite(slug, false);
   };
 
-  const visibleEntities = entities.filter((entity) => savedSlugs.includes(entity.slug));
+  const visibleEntities = useMemo(
+    () => entities.filter((entity) => savedSlugs.includes(entity.slug)),
+    [entities, savedSlugs],
+  );
+
+  const selectableIds = useMemo(
+    () => new Set(visibleEntities.map((entity) => entity._id)),
+    [visibleEntities],
+  );
+
+  const selectedEntities = useMemo(
+    () => visibleEntities.filter((entity) => selectedForCompare.includes(entity._id)),
+    [visibleEntities, selectedForCompare],
+  );
+
+  const selectedCount = selectedEntities.length;
+  const atCompareLimit = selectedCount >= MAX_COMPARE_ENTITIES;
+  const canCompare = selectedCount >= MIN_COMPARE_ENTITIES && selectedCount <= MAX_COMPARE_ENTITIES;
+
+  const toggleCompareSelection = (entityId: string) => {
+    setSelectedForCompare((current) => {
+      if (current.includes(entityId)) return current.filter((id) => id !== entityId);
+      const visibleSelectedCount = current.filter((id) => selectableIds.has(id)).length;
+      if (visibleSelectedCount >= MAX_COMPARE_ENTITIES) return current;
+      return [...current, entityId];
+    });
+  };
 
   if (isLoading) {
     return (
@@ -153,6 +184,39 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         </p>
       </div>
 
+      {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-4 py-3">
+          <p className="text-sm text-gray-700">
+            {selectedCount === 0
+              ? 'Select 2 to 4 saved homes to compare them side by side.'
+              : `${selectedCount} selected to compare`}
+          </p>
+          <button
+            type="button"
+            onClick={() => setIsComparing(true)}
+            disabled={!canCompare}
+            className="inline-flex min-h-[44px] items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Compare{selectedCount > 0 ? ` (${selectedCount})` : ''}
+          </button>
+          {selectedCount === 1 && (
+            <span className="text-xs text-gray-500">Select at least 2 to compare.</span>
+          )}
+          {atCompareLimit && (
+            <span className="text-xs text-gray-500">You can compare up to 4 at once.</span>
+          )}
+          {selectedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedForCompare([])}
+              className="text-xs font-medium text-gray-600 underline hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+            >
+              Clear selection
+            </button>
+          )}
+        </div>
+      )}
+
       {visibleEntities.length > 0 ? (
         <ul>
           {visibleEntities.map((entity) => {
@@ -163,21 +227,35 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
               <li key={entity._id} className="mb-2">
                 <div className="rounded-md border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-blue-700">
-                        {kindLabel(entity.kind)}
-                      </p>
-                      <h3 className="truncate text-sm font-semibold text-gray-900">
-                        <Link
-                          to={`/research/${safeRouteSegment(entity.slug)}`}
-                          className="hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        >
-                          {entityDisplayName(entity)}
-                        </Link>
-                      </h3>
-                      {entitySubtitle(entity) && (
-                        <p className="truncate text-xs text-gray-500">{entitySubtitle(entity)}</p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      {visibleEntities.length >= MIN_COMPARE_ENTITIES && (
+                        <input
+                          type="checkbox"
+                          checked={selectedForCompare.includes(entity._id)}
+                          disabled={
+                            atCompareLimit && !selectedForCompare.includes(entity._id)
+                          }
+                          onChange={() => toggleCompareSelection(entity._id)}
+                          aria-label={`Select ${entityDisplayName(entity)} to compare`}
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        />
                       )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-blue-700">
+                          {kindLabel(entity.kind)}
+                        </p>
+                        <h3 className="truncate text-sm font-semibold text-gray-900">
+                          <Link
+                            to={`/research/${safeRouteSegment(entity.slug)}`}
+                            className="hover:text-blue-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          >
+                            {entityDisplayName(entity)}
+                          </Link>
+                        </h3>
+                        {entitySubtitle(entity) && (
+                          <p className="truncate text-xs text-gray-500">{entitySubtitle(entity)}</p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2">
                       <button
@@ -267,6 +345,14 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
             Explore Research
           </Link>
         </div>
+      )}
+
+      {isComparing && canCompare && (
+        <ResearchHomeComparison
+          entities={selectedEntities}
+          notesByEntityId={notes}
+          onClose={() => setIsComparing(false)}
+        />
       )}
     </section>
   );
