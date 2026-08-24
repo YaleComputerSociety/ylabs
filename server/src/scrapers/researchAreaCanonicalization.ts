@@ -489,6 +489,41 @@ export async function getResearchAreaCanonicalizer(): Promise<ResearchAreaCanoni
   return cachedCanonicalizer;
 }
 
+/**
+ * Bare Yale clinical-division / medical-department-level labels that reach
+ * `researchAreas[]` as an org-unit name rather than a specific research topic.
+ * #1451 dropped such a label only when it duplicated the entity's own
+ * `departments[]`; this list is rejected unconditionally, which also catches
+ * the case where `departments[]` is empty and has nothing to dedup against
+ * (issue #1544). Kept deliberately small and limited to labels a live corpus
+ * audit confirms are never a specific standalone topic in practice. A broader
+ * field that is also a Yale department name (Neuroscience, Economics,
+ * Psychology, Immunology, Epidemiology, ...) is left alone: it is routinely a
+ * genuine, specific-enough research area on its own, and #1451's own
+ * regression tests rely on "Neuroscience" surviving next to a dropped
+ * department duplicate.
+ */
+export const DIVISION_LEVEL_RESEARCH_AREA_LABELS: readonly string[] = [
+  'Genetics',
+  'Oncology',
+  'Hematology',
+  'Public Health',
+  'Psychiatry',
+  'Pathology',
+  'Internal Medicine',
+  'Neurology',
+  'Pediatrics',
+];
+
+const DIVISION_LEVEL_RESEARCH_AREA_LABEL_KEYS = new Set(
+  DIVISION_LEVEL_RESEARCH_AREA_LABELS.map((value) => researchAreaMatchKey(value)),
+);
+
+export function isDivisionLevelResearchAreaLabel(raw: unknown): boolean {
+  const key = researchAreaMatchKey(raw);
+  return key ? DIVISION_LEVEL_RESEARCH_AREA_LABEL_KEYS.has(key) : false;
+}
+
 function departmentMatchKeys(departments: unknown): Set<string> {
   const keys = new Set<string>();
   for (const department of toRawList(departments)) {
@@ -512,6 +547,13 @@ function departmentMatchKeys(departments: unknown): Set<string> {
  * to a department name is the department leaking into the topic-chip array
  * rather than a real research topic (issue #1451), so it is dropped like any
  * other leakage.
+ *
+ * A `researchAreas[]` entry is also rejected unconditionally when it names a
+ * bare division-level label (`isDivisionLevelResearchAreaLabel`), not only
+ * when it duplicates the entity's own `departments[]`: such a label is an
+ * org-unit name, not a specific research topic, so it is dropped even when
+ * the entity's `departments[]` happens to be empty and has nothing to dedup
+ * against (issue #1544).
  */
 export async function applyResearchEntityResearchAreaCanonicalization(
   set: Record<string, unknown>,
@@ -529,14 +571,11 @@ export async function applyResearchEntityResearchAreaCanonicalization(
     const canonical = canonicalizer.canonicalizeResearchAreas(set.researchAreas);
     const departmentKeys = departmentMatchKeys(departments);
     const isDepartmentDuplicate = (value: string) => departmentKeys.has(researchAreaMatchKey(value));
-    set.researchAreas = canonical.values.filter((value) => !isDepartmentDuplicate(value));
-    result.unmatchedResearchAreas = canonical.unmatched.filter(
-      (value) => !isDepartmentDuplicate(value),
-    );
-    result.droppedResearchAreas = [
-      ...canonical.dropped,
-      ...canonical.values.filter(isDepartmentDuplicate),
-    ];
+    const isRejected = (value: string) =>
+      isDepartmentDuplicate(value) || isDivisionLevelResearchAreaLabel(value);
+    set.researchAreas = canonical.values.filter((value) => !isRejected(value));
+    result.unmatchedResearchAreas = canonical.unmatched.filter((value) => !isRejected(value));
+    result.droppedResearchAreas = [...canonical.dropped, ...canonical.values.filter(isRejected)];
   } catch {
     return result;
   }
