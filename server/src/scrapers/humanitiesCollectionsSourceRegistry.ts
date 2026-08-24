@@ -10,11 +10,12 @@
  * reserved-but-under-produced entity types (`DIGITAL_HUMANITIES_PROJECT`,
  * `COLLECTIONS_INITIATIVE`, `ARCHIVE_OR_MUSEUM_PROJECT`) have a discoverable
  * follow-up backlog after the DHLab pilot (#1345). Every entry has since
- * landed: the DHLab (`DIGITAL_HUMANITIES_PROJECT`), both
- * `ARCHIVE_OR_MUSEUM_PROJECT` homes (Peabody #1349, Beinecke #1455), and the
- * Yale Library collections-as-data `COLLECTIONS_INITIATIVE` producer, so the
- * backlog is fully covered. The map is retained for reporting and to record any
- * future humanities/collections coverage gap.
+ * landed: the DHLab (`DIGITAL_HUMANITIES_PROJECT`), the
+ * `ARCHIVE_OR_MUSEUM_PROJECT` homes (Peabody #1349, Beinecke #1455/#1457, and the
+ * two flagship art museums YUAG and YCBA #1505), and the Yale Library
+ * collections-as-data `COLLECTIONS_INITIATIVE` producer, so the backlog is fully
+ * covered. The map is retained for reporting and to record any future
+ * humanities/collections coverage gap.
  *
  * `url` values are crawl ENTRY POINTS (listing/index/landing pages). They must
  * never be persisted as an Observation/Source citation: every emitted artifact
@@ -85,6 +86,24 @@ export const HUMANITIES_COLLECTIONS_SOURCE_REGISTRY: HumanitiesCollectionsSource
     coveredBy: ['beinecke-curatorial-units'],
     notes:
       'Rare-book/manuscript/archive research homes from the Beinecke curatorial-units catalog (#1457), reusing the Peabody path and complementing the Beinecke research-fellowships producer (#1455). beinecke-curatorial-units walks the units index as a crawl seed and cites each unit own page, emitting identity and the official-page summary. Verified live, the migrated site (library.yale.edu/beinecke) publishes no structured named-curator credit on unit pages (curator mentions are historical body prose), so the lead extractor fails closed and units earn the organizational reach-out ways-in from their official page rather than an identified named lead.',
+  },
+  {
+    url: 'https://artgallery.yale.edu/research-and-learning/curatorial-areas',
+    name: 'Yale University Art Gallery curatorial areas',
+    entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+    status: 'covered',
+    coveredBy: ['yuag-curatorial-areas'],
+    notes:
+      'Object-based art-museum research homes from the Yale University Art Gallery curatorial-areas catalog (#1505), reusing the Peabody path. yuag-curatorial-areas walks the curatorial-areas index as a crawl seed and cites each individual area own page, emitting identity and the official-page summary. YUAG fronts pages with a Cloudflare bot interstitial, so pages are fetched through the shared rendered (headless) path (#1453) and the producer fails closed when no rendered fetcher is configured. Verified live, area pages publish no structured named-curator credit, so the lead extractor fails closed and areas earn the organizational reach-out ways-in from their official page.',
+  },
+  {
+    url: 'https://britishart.yale.edu/collections-departments',
+    name: 'Yale Center for British Art curatorial departments',
+    entityType: 'ARCHIVE_OR_MUSEUM_PROJECT',
+    status: 'covered',
+    coveredBy: ['ycba-collections-research'],
+    notes:
+      'Object-based art-museum research homes and museum-run research programs from the Yale Center for British Art (#1505), reusing the Peabody path. YCBA publishes no enumerable department index, so ycba-collections-research carries a curated seed of each department own official page (Paintings and Sculpture, Prints and Drawings, Rare Books and Manuscripts, the Reference Library and Photograph Archives, the institutional Archives, Conservation, Research Initiatives, and Research Fellowships) and cites that page directly; the Collecting Areas landing and departments-and-staff roster are never cited. Emits identity and the official-page summary. Verified live, department pages publish no structured named-curator credit (staff live only on the deliberately-unused departments-and-staff roster), so the lead extractor fails closed and departments earn the organizational reach-out ways-in from their official page.',
   },
 ];
 

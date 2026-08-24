@@ -30,6 +30,8 @@ import { PeabodyCollectionsResearchScraper } from './sources/peabodyCollectionsR
 import { LibraryCollectionsAsDataScraper } from './sources/libraryCollectionsAsDataScraper';
 import { BeineckeCollectionsResearchScraper } from './sources/beineckeCollectionsResearchScraper';
 import { BeineckeCuratorialUnitsScraper } from './sources/beineckeCuratorialUnitsScraper';
+import { YaleUniversityArtGalleryScraper } from './sources/yaleUniversityArtGalleryScraper';
+import { YaleCenterBritishArtScraper } from './sources/yaleCenterBritishArtScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -65,5 +67,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new LibraryCollectionsAsDataScraper());
   o.register(new BeineckeCollectionsResearchScraper());
   o.register(new BeineckeCuratorialUnitsScraper());
+  o.register(new YaleUniversityArtGalleryScraper());
+  o.register(new YaleCenterBritishArtScraper());
   return o;
 }
