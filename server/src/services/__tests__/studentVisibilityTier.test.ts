@@ -202,6 +202,39 @@ describe('computeResearchEntityStudentVisibility', () => {
     },
   );
 
+  it.each([
+    'https://psychology.yale.edu/what-directed-research-course',
+    'https://statistics.yale.edu/undergraduates/the-major/49104920-senior-essay',
+    'https://chem.yale.edu/academics/undergraduate-chemistry-at-yale/independent-research-opportunities',
+    'https://english.yale.edu/undergraduate/senior-essay',
+  ])(
+    'promotes a for-credit course-based research pathway with a course-credit ways-in: %s',
+    (sourceUrl) => {
+      const result = computeResearchEntityStudentVisibility({
+        entity: {
+          _id: 'course-based-research-example',
+          name: 'Example Senior Essay',
+          slug: 'course-based-research-example',
+          kind: 'program',
+          entityType: 'COURSE_SEQUENCE',
+          shortDescription:
+            'A for-credit research pathway through directed research, independent study, and senior-essay courses.',
+          fullDescription:
+            'A for-credit, course-based research pathway. Students enroll in the directed-research or senior-essay course and work with a faculty advisor.',
+          websiteUrl: sourceUrl,
+          sourceUrls: [sourceUrl],
+        },
+        leadMembers: [],
+        accessSignalCount: 1,
+        relatedEntityAccessPathCount: 0,
+      });
+
+      expect(result.reasons).not.toContain('missing_alternate_access_path');
+      expect(result.reasons).not.toContain('missing_lead');
+      expect(result.tier).toBe('student_ready');
+    },
+  );
+
   it('still holds a center landing page that carries no student-research engagement token', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
@@ -494,7 +527,7 @@ describe('computeResearchEntityStudentVisibility', () => {
     expect(result.reasons).toContain('operator_override');
   });
 
-  it('treats a lead-less COURSE_SEQUENCE as lead-exempt: held via missing_alternate_access_path, never missing_lead', () => {
+  it('treats a lead-less COURSE_SEQUENCE as lead-exempt and promotes it via its directed-research course-credit ways-in, never flooring on missing_lead', () => {
     const result = computeResearchEntityStudentVisibility({
       entity: {
         _id: 'course-based-research-psychology-directed-research',
@@ -508,6 +541,32 @@ describe('computeResearchEntityStudentVisibility', () => {
           'A for-credit, course-based research pathway in Psychology. The department offers directed research and senior essay courses for credit under faculty supervision.',
         websiteUrl: 'https://psychology.yale.edu/what-directed-research-course',
         sourceUrls: ['https://psychology.yale.edu/what-directed-research-course'],
+      },
+      leadMembers: [],
+      accessSignalCount: 1,
+      actionablePathwayCount: 1,
+      relatedEntityAccessPathCount: 0,
+    });
+
+    expect(result.reasons).not.toContain('missing_lead');
+    expect(result.reasons).not.toContain('missing_alternate_access_path');
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('still holds a lead-less COURSE_SEQUENCE whose only page is an unrecognized landing page', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'course-based-research-example-landing',
+        name: 'Example Senior Essay',
+        slug: 'course-based-research-example-landing',
+        kind: 'group',
+        entityType: 'COURSE_SEQUENCE',
+        shortDescription:
+          'A for-credit research pathway through directed research, independent study, and senior-essay courses.',
+        fullDescription:
+          'A for-credit, course-based research pathway. Students enroll in the senior essay course for credit under faculty supervision.',
+        websiteUrl: 'https://example.yale.edu/about/overview',
+        sourceUrls: ['https://example.yale.edu/about/overview'],
       },
       leadMembers: [],
       accessSignalCount: 1,
