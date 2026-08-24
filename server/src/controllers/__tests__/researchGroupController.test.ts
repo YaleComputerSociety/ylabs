@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   getStudentResearchInterests: vi.fn(),
   getResearcherProfileByPublicKey: vi.fn(),
   getDepartmentResearchPage: vi.fn(),
+  getAreaResearchPage: vi.fn(),
+  getFieldResearchPage: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -27,6 +29,11 @@ vi.mock('../../services/researcherProfileService', () => ({
   getResearcherProfileByPublicKey: mocks.getResearcherProfileByPublicKey,
 }));
 
+vi.mock('../../services/areaResearchPageService', () => ({
+  getAreaResearchPage: mocks.getAreaResearchPage,
+  getFieldResearchPage: mocks.getFieldResearchPage,
+}));
+
 vi.mock('../../services/adminGrantService', () => ({
   hasAdminAuthorityForUser: mocks.hasAdminAuthorityForUser,
 }));
@@ -41,6 +48,8 @@ vi.mock('../../services/departmentResearchPageService', () => ({
 
 import {
   getResearchDepartmentPage,
+  getResearchAreaPage,
+  getResearchFieldPage,
   getResearchGroupBySlug,
   getResearcherProfile,
   recordResearchOutreach,
@@ -649,5 +658,68 @@ describe('researchGroupController', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Failed to fetch research department' });
+  });
+
+  describe('getResearchAreaPage', () => {
+    it('returns 404 when the slug does not resolve to a research area', async () => {
+      mocks.getAreaResearchPage.mockResolvedValue(null);
+      const req = { params: { slug: 'not-a-real-area' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearchAreaPage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Research area not found' });
+    });
+
+    it('serves the aggregated area page', async () => {
+      const page = { scope: { kind: 'area', slug: 'neuroscience', name: 'Neuroscience' } };
+      mocks.getAreaResearchPage.mockResolvedValue(page);
+      const req = { params: { slug: 'neuroscience' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearchAreaPage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(page);
+    });
+
+    it('does not leak internal service errors', async () => {
+      mocks.getAreaResearchPage.mockRejectedValue(
+        new Error('mongodb://user:pass@example.invalid area lookup failed'),
+      );
+      const req = { params: { slug: 'neuroscience' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearchAreaPage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('mongodb://user:pass');
+    });
+  });
+
+  describe('getResearchFieldPage', () => {
+    it('returns 404 when the slug does not resolve to a research field', async () => {
+      mocks.getFieldResearchPage.mockResolvedValue(null);
+      const req = { params: { slug: 'not-a-real-field' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearchFieldPage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ error: 'Research field not found' });
+    });
+
+    it('serves the aggregated field page', async () => {
+      const page = { scope: { kind: 'field', slug: 'mathematics', name: 'Mathematics' } };
+      mocks.getFieldResearchPage.mockResolvedValue(page);
+      const req = { params: { slug: 'mathematics' } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+      await getResearchFieldPage(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(page);
+    });
   });
 });

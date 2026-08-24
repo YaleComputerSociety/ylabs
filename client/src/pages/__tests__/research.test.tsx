@@ -3100,17 +3100,76 @@ describe('Research zero-result recovery', () => {
 
     fireEvent.click(areaButton);
 
-    expect(await screen.findByRole('heading', { name: 'ML Lab' })).toBeTruthy();
     await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/research/search',
-        expect.objectContaining({ filters: { researchAreas: ['Machine Learning'] } }),
-        expect.any(Object),
-      );
+      expect(screen.getByTestId('location').textContent).toBe('/research/area/machine-learning');
     });
-    expect(screen.getByTestId('location').textContent).toContain(
-      'researchAreas=Machine+Learning',
+  });
+
+  it('deep-links a field domain to its canonical field page', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        estimatedTotalHits: 17,
+        facetDistribution: {
+          researchAreas: { Genomics: 5, 'Machine Learning': 9, Robotics: 3 },
+        },
+      });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            researchAreas: [
+              { name: 'Genomics', field: 'Life Sciences', colorKey: 'green', isDefault: false },
+              {
+                name: 'Machine Learning',
+                field: 'Computing & AI',
+                colorKey: 'blue',
+                isDefault: false,
+              },
+            ],
+            researchFields: [
+              { name: 'Computing & AI', colorKey: 'blue' },
+              { name: 'Life Sciences', colorKey: 'green' },
+            ],
+            fieldOrder: ['Computing & AI', 'Life Sciences'],
+            getResearchAreaByName: (name: string) =>
+              ({
+                genomics: {
+                  name: 'Genomics',
+                  field: 'Life Sciences',
+                  colorKey: 'green',
+                  isDefault: false,
+                },
+                'machine learning': {
+                  name: 'Machine Learning',
+                  field: 'Computing & AI',
+                  colorKey: 'blue',
+                  isDefault: false,
+                },
+              })[name.toLowerCase()],
+            departmentCategories: ['Computing & AI', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
     );
+
+    const fieldButton = await screen.findByRole('button', {
+      name: 'View the Computing & AI field page',
+    });
+    fireEvent.click(fieldButton);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research/field/computing-and-ai');
+    });
   });
 
   it('lets a signed-in student save the current search from the browse loop', async () => {

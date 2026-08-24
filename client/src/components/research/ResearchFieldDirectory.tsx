@@ -5,6 +5,7 @@ interface ResearchFieldDirectoryProps {
   domains: ResearchFieldDirectoryDomain[];
   selectedAreas: string[];
   onSelectArea: (area: string) => void;
+  onSelectField?: (field: string) => void;
   initialAreasPerDomain?: number;
 }
 
@@ -30,6 +31,7 @@ const ResearchFieldDirectory = ({
   domains,
   selectedAreas,
   onSelectArea,
+  onSelectField,
   initialAreasPerDomain = DEFAULT_AREAS_PER_DOMAIN,
 }: ResearchFieldDirectoryProps) => {
   const [expandedFields, setExpandedFields] = useState<Set<string>>(() => new Set());
@@ -76,7 +78,18 @@ const ResearchFieldDirectory = ({
                       colorKeyToDotClass[domain.colorKey] ?? colorKeyToDotClass.gray
                     }`}
                   />
-                  <span className="min-w-0 truncate">{domain.field}</span>
+                  {onSelectField ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectField(domain.field)}
+                      aria-label={`View the ${domain.field} field page`}
+                      className="min-w-0 truncate rounded-sm text-left hover:text-blue-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      {domain.field}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 truncate">{domain.field}</span>
+                  )}
                 </h3>
                 <span className="shrink-0 text-xs text-slate-500">
                   {pluralizeAreas(domain.areas.length)}

@@ -59,6 +59,34 @@ describe('ResearchFieldDirectory', () => {
     expect(onSelectArea).toHaveBeenCalledWith('Machine Learning');
   });
 
+  it('exposes a field-page button and invokes onSelectField when provided', () => {
+    const onSelectField = vi.fn();
+    render(
+      <ResearchFieldDirectory
+        domains={domains}
+        selectedAreas={[]}
+        onSelectArea={() => {}}
+        onSelectField={onSelectField}
+      />,
+    );
+
+    const fieldButton = screen.getByRole('button', {
+      name: 'View the Computing & AI field page',
+    });
+    fireEvent.click(fieldButton);
+    expect(onSelectField).toHaveBeenCalledWith('Computing & AI');
+  });
+
+  it('renders the field as static text when onSelectField is omitted', () => {
+    render(
+      <ResearchFieldDirectory domains={domains} selectedAreas={[]} onSelectArea={() => {}} />,
+    );
+    expect(
+      screen.queryByRole('button', { name: 'View the Computing & AI field page' }),
+    ).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Computing & AI' })).toBeTruthy();
+  });
+
   it('marks a selected area as pressed', () => {
     render(
       <ResearchFieldDirectory
