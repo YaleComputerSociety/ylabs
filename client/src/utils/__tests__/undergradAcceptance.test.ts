@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeAcceptanceVerdict,
+  describeEvidenceFreshness,
   isHistoricalUndergradEvidence,
   verdictBadgeStyles,
   verdictLabel,
@@ -376,5 +377,44 @@ describe('verdictBadgeStyles + verdictLabel', () => {
     expect(verdictLabel('likely-accepting')).toBe('Some evidence');
     expect(verdictLabel('unknown')).toBe('Evidence unknown');
     expect(verdictLabel('not-accepting')).toBe('Not currently available');
+  });
+});
+
+describe('describeEvidenceFreshness', () => {
+  const now = new Date('2026-08-24T00:00:00.000Z').getTime();
+
+  it('omits the affordance when no timestamp is available', () => {
+    expect(describeEvidenceFreshness(undefined, now)).toBeUndefined();
+    expect(describeEvidenceFreshness('not-a-date', now)).toBeUndefined();
+  });
+
+  it('labels a same-day observation as confirmed today', () => {
+    expect(describeEvidenceFreshness(new Date(now).toISOString(), now)).toEqual({
+      label: 'Confirmed today',
+      isStale: false,
+    });
+  });
+
+  it('labels a multi-week-old observation in days', () => {
+    const observedAt = new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString();
+    expect(describeEvidenceFreshness(observedAt, now)).toEqual({
+      label: 'Confirmed 10 days ago',
+      isStale: false,
+    });
+  });
+
+  it('labels a multi-month-old observation in months and does not mark it stale', () => {
+    const observedAt = new Date(now - 120 * 24 * 60 * 60 * 1000).toISOString();
+    expect(describeEvidenceFreshness(observedAt, now)).toEqual({
+      label: 'Confirmed ~4 months ago',
+      isStale: false,
+    });
+  });
+
+  it('marks evidence older than a year as stale', () => {
+    const observedAt = new Date(now - 400 * 24 * 60 * 60 * 1000).toISOString();
+    const freshness = describeEvidenceFreshness(observedAt, now);
+    expect(freshness?.isStale).toBe(true);
+    expect(freshness?.label).toBe('Confirmed ~1 year ago');
   });
 });
