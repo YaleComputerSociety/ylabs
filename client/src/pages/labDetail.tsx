@@ -49,6 +49,7 @@ import { officialProfileUrlFromMemberUser } from '../utils/principalInvestigator
 import { formatTitleCaseLabel } from '../utils/displayText';
 import {
   computeAcceptanceVerdict,
+  describeEvidenceFreshness,
   EvidenceItem,
   REACH_OUT_PLAUSIBLE_LABEL,
 } from '../utils/undergradAcceptance';
@@ -445,10 +446,13 @@ const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
   const negativeTone = 'bg-red-50 text-red-700 border-red-100';
   const isNegative = item.kind === 'closed-toggle' || item.kind === 'closed-evidence';
   const cls = isNegative ? negativeTone : tone;
+  const freshness = describeEvidenceFreshness(item.observedAt);
   return (
     <span
       title={item.detail}
-      className={`inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 ${cls}`}
+      className={`inline-flex items-center gap-1 text-xs rounded-md border px-2 py-1 ${cls} ${
+        freshness?.isStale ? 'opacity-70' : ''
+      }`}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -473,6 +477,12 @@ const EvidenceChip = ({ item }: { item: EvidenceItem }) => {
         )}
       </svg>
       <span>{item.label}</span>
+      {freshness && (
+        <span className="font-normal text-current opacity-80">
+          · {freshness.label}
+          {freshness.isStale ? ' (may be out of date)' : ''}
+        </span>
+      )}
     </span>
   );
 };
