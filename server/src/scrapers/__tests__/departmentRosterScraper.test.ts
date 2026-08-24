@@ -810,6 +810,34 @@ describe('psychExtractor', () => {
     expect(out[0].topics).not.toContain('Condensed Matter PhysicsTheoristQuantum criticality');
   });
 
+  it('drops a full prose paragraph instead of comma-splitting it into fake topic fragments', () => {
+    const html = `
+      <html><body>
+        <table class="views-table">
+          <tbody>
+            <tr>
+              <td class="views-field views-field-name">
+                <a href="/people/river-longform" class="username">River Longform</a><br />
+                Professor of Physics<br />
+                <a href="mailto:river.longform@yale.edu">river.longform@yale.edu</a>
+              </td>
+              <td class="views-field views-field-field-field-of-study">
+                Condensed Matter Physics<p><em>Theorist</em><p><small><div>Stochastic processes, asymptotic analysis and other approaches and methods from modern applied mathematics and physics, along with numerical simulations to probe a broad range of problems including the microscopic theory of melting, the mechanisms underlying cosmogony, climate dynamics, information theory and turbulence.</div></small>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </body></html>
+    `;
+
+    const out = psychExtractor(html, { pageUrl: 'https://physics.yale.edu/people/faculty' });
+
+    expect(out[0].topics).toEqual(['Condensed Matter Physics', 'Theorist']);
+    expect(out[0].topics).not.toContain('the mechanisms underlying cosmogony');
+    expect(out[0].topics).not.toContain('climate dynamics');
+    expect(out[0].topics).not.toContain('information theory and turbulence.');
+  });
+
   it('supports Astronomy views grid cells with profile picture links and topic fields', () => {
     const out = psychExtractor(ASTRONOMY_GRID_HTML, {
       pageUrl: 'https://astronomy.yale.edu/people/faculty',
