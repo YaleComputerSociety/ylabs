@@ -8,13 +8,14 @@ const studentProfileSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-      unique: true,
+      required: false,
     },
     netid: {
       type: String,
       required: true,
       unique: true,
+      lowercase: true,
+      trim: true,
     },
     graduationYear: {
       type: Number,
@@ -28,6 +29,10 @@ const studentProfileSchema = new mongoose.Schema(
     researchAreaIds: {
       type: [mongoose.Schema.Types.ObjectId],
       ref: 'ResearchArea',
+      default: [],
+    },
+    researchInterests: {
+      type: [String],
       default: [],
     },
     lookingFor: {
@@ -45,6 +50,7 @@ const studentProfileSchema = new mongoose.Schema(
   },
 );
 
+studentProfileSchema.index({ userId: 1 }, { unique: true, sparse: true });
 studentProfileSchema.index({ majorDepartmentIds: 1 });
 studentProfileSchema.index({ researchAreaIds: 1 });
 studentProfileSchema.index({ lookingFor: 1 });

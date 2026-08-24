@@ -138,6 +138,7 @@ interface ResearchEntitySearchPage {
   page: number;
   pageSize: number;
   facetDistribution: Record<string, Record<string, number>>;
+  personalized: boolean;
 }
 
 interface ActiveResearchSearchRequest {
@@ -187,6 +188,8 @@ interface ResearchPageSnapshot {
   defaultSearchPage: number;
   defaultSearchTotal: number;
   defaultSearchExhausted: boolean;
+  browsePersonalized: boolean;
+  browseStandardOrder: boolean;
   searchError: string;
   hasFacetError: boolean;
   defaultSearchError: string;
@@ -199,6 +202,7 @@ interface ResearchEntitySearchOptions {
   includeSuppressed?: boolean;
   sortBy?: 'name' | 'lastObservedAt';
   sortOrder?: 'asc' | 'desc';
+  standardOrder?: boolean;
 }
 
 const defaultResearchSortOrder = (field: ResearchSortField): 'asc' | 'desc' =>
@@ -232,6 +236,7 @@ const searchResearchEntities = async (
       ...(options.sortBy
         ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' }
         : {}),
+      ...(options.standardOrder ? { standardOrder: true } : {}),
     },
     { signal },
   );
@@ -242,6 +247,7 @@ const searchResearchEntities = async (
     page: normalized.page || page,
     pageSize: normalized.pageSize || pageSize,
     facetDistribution: normalized.facetDistribution || {},
+    personalized: normalized.personalized === true,
   };
 };
 
@@ -489,6 +495,14 @@ const Research = () => {
   const [defaultSearchExhausted, setDefaultSearchExhausted] = useState(
     () => restoredSnapshotRef.current?.defaultSearchExhausted ?? false,
   );
+  const [browsePersonalized, setBrowsePersonalized] = useState(
+    () => restoredSnapshotRef.current?.browsePersonalized ?? false,
+  );
+  const [browseStandardOrder, setBrowseStandardOrder] = useState(
+    () => restoredSnapshotRef.current?.browseStandardOrder ?? false,
+  );
+  const browseStandardOrderRef = useRef(browseStandardOrder);
+  browseStandardOrderRef.current = browseStandardOrder;
   const fetchedSearchPageRef = useRef(restoredSnapshotRef.current?.searchPage ?? 1);
   const fetchedDefaultSearchPageRef = useRef(restoredSnapshotRef.current?.defaultSearchPage ?? 1);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -696,6 +710,7 @@ const Research = () => {
           qualityFilters: isAdmin && showWeakestProfilesFirst ? qualityFilters : [],
           trustTierFilters: isAdmin ? trustTierFilters : [],
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
+          standardOrder: browseStandardOrderRef.current,
           ...currentSortRequestOptions(),
         },
       );
@@ -709,6 +724,7 @@ const Research = () => {
       );
       if (page === 1) {
         setBrowseFacetDistribution(researchEntitiesPage.facetDistribution);
+        setBrowsePersonalized(researchEntitiesPage.personalized);
       }
       setDefaultSearchTotal(researchEntitiesPage.estimatedTotalHits);
       setDefaultSearchExhausted(isResearchEntitySearchExhausted(researchEntitiesPage));
@@ -1309,6 +1325,8 @@ const Research = () => {
       defaultSearchPage,
       defaultSearchTotal,
       defaultSearchExhausted,
+      browsePersonalized,
+      browseStandardOrder,
       searchError,
       hasFacetError,
       defaultSearchError,
@@ -1342,6 +1360,8 @@ const Research = () => {
     defaultSearchPage,
     defaultSearchTotal,
     defaultSearchExhausted,
+    browsePersonalized,
+    browseStandardOrder,
     searchError,
     hasFacetError,
     defaultSearchError,
@@ -1571,6 +1591,17 @@ const Research = () => {
   };
   const toggleResearchSortDirection = () =>
     applyResearchSort(sortBy, sortOrder === 'asc' ? 'desc' : 'asc');
+  const setBrowseStandardOrderPreference = (standardOrder: boolean) => {
+    if (standardOrder === browseStandardOrderRef.current) return;
+    browseStandardOrderRef.current = standardOrder;
+    setBrowseStandardOrder(standardOrder);
+    if (hasSubmittedSearch) return;
+    setDefaultResearchEntities([]);
+    setDefaultSearchPage(1);
+    setDefaultSearchTotal(0);
+    setDefaultSearchExhausted(false);
+    void runDefaultResearchHomeSearchRef.current(1);
+  };
   const exploreHome = useCallback(
     (label: string) => {
       scrollResearchViewportToTop();
@@ -1860,6 +1891,35 @@ const Research = () => {
                     )}
                   </div>
                 </div>
+                {browsePersonalized && (
+                  <div
+                    className="mb-4 flex flex-col gap-2 rounded-md border border-[var(--yr-line)] bg-[var(--yr-blue-soft)] p-3 sm:flex-row sm:items-center sm:justify-between"
+                    role="status"
+                  >
+                    <p className="text-sm font-medium text-slate-800">
+                      Recommended for your interests
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setBrowseStandardOrderPreference(true)}
+                      className="min-h-9 shrink-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      Show the standard order
+                    </button>
+                  </div>
+                )}
+                {browseStandardOrder && !browsePersonalized && (
+                  <div className="mb-4 flex flex-col gap-2 rounded-md border border-dashed border-[var(--yr-line)] p-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                    <p>Showing the standard order for everyone.</p>
+                    <button
+                      type="button"
+                      onClick={() => setBrowseStandardOrderPreference(false)}
+                      className="min-h-9 shrink-0 rounded-md border border-[var(--yr-line-strong)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--yr-blue)] hover:bg-[var(--yr-panel-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                    >
+                      Personalize for my interests
+                    </button>
+                  </div>
+                )}
                 {!isWideFilterLayout && (
                   <div className="sticky top-0 z-30 bg-[var(--yr-paper)] pb-2">
                     <ResearchFilterDisclosure

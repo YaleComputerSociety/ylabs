@@ -190,4 +190,5 @@ export interface ResearchGroupSearchResponse {
   page: number;
   pageSize: number;
   facetDistribution?: Record<string, Record<string, number>>;
+  personalized?: boolean;
 }

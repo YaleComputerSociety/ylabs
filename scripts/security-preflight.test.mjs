@@ -3499,7 +3499,7 @@ test('research, program, and fellowship nonpublic payloads require active admin 
   assert.match(researchGroupController, /includeNonPublic: hasAdminAuthority/);
   assert.match(
     researchGroupController,
-    /lowQualityFirst: hasAdminAuthority && body\.browseQuality === 'low-first'/,
+    /const lowQualityFirst = hasAdminAuthority && body\.browseQuality === 'low-first'/,
   );
   assert.match(
     programController,

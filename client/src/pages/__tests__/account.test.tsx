@@ -45,6 +45,10 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
   return { default: MockProgramWatch };
 });
 
+vi.mock('../../components/accounts/ResearchInterestsEditor', () => ({
+  default: () => <section>Research interests editor</section>,
+}));
+
 const renderAccount = (userType: string) =>
   render(
     <MemoryRouter>
@@ -123,6 +127,7 @@ describe('Account page', () => {
 
     const dashboardTab = screen.getByRole('tab', { name: 'Dashboard (2)' });
     const programTab = screen.getByRole('tab', { name: 'Program Watch (1)' });
+    const interestsTab = screen.getByRole('tab', { name: 'Interests' });
     dashboardTab.focus();
 
     fireEvent.keyDown(dashboardTab, { key: 'ArrowRight' });
@@ -130,20 +135,24 @@ describe('Account page', () => {
     expect(document.activeElement).toBe(programTab);
 
     fireEvent.keyDown(programTab, { key: 'ArrowRight' });
+    expect(interestsTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(interestsTab);
+
+    fireEvent.keyDown(interestsTab, { key: 'ArrowRight' });
     expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(dashboardTab);
 
     fireEvent.keyDown(dashboardTab, { key: 'End' });
-    expect(programTab.getAttribute('aria-selected')).toBe('true');
-    expect(document.activeElement).toBe(programTab);
+    expect(interestsTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(interestsTab);
 
-    fireEvent.keyDown(programTab, { key: 'Home' });
+    fireEvent.keyDown(interestsTab, { key: 'Home' });
     expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(dashboardTab);
 
     fireEvent.keyDown(dashboardTab, { key: 'ArrowLeft' });
-    expect(programTab.getAttribute('aria-selected')).toBe('true');
-    expect(document.activeElement).toBe(programTab);
+    expect(interestsTab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(interestsTab);
   });
 
   it('uses the watched program deadline as the next planning cue', () => {

@@ -307,6 +307,14 @@ router.delete(
   userController.deleteWatchedProgramPlan,
 );
 
+router.get('/researchInterests', isAuthenticated, userController.getResearchInterests);
+router.put(
+  '/researchInterests',
+  writeLimit,
+  isAuthenticated,
+  userController.updateResearchInterests,
+);
+
 router.get('/savedResearchEntityIds', isAuthenticated, userController.getSavedResearchEntityIds);
 router.get('/savedResearchEntities', isAuthenticated, userController.getSavedResearchEntities);
 router.put(

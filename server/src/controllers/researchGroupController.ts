@@ -23,6 +23,7 @@ import {
 } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
+import { getStudentResearchInterests } from '../services/studentInterestProfileService';
 
 const MAX_PAGE_SIZE = 100;
 const MAX_PAGE = 1000;
@@ -159,6 +160,20 @@ const parsePositiveIntegerParam = (value: unknown, fallback: number): number => 
   return Number.isSafeInteger(parsed) ? parsed : fallback;
 };
 
+const resolveViewerResearchInterests = async (
+  currentUser: { netId?: string; netid?: string } | undefined,
+): Promise<{ interests: string[] } | undefined> => {
+  const netid = currentUser?.netId || currentUser?.netid;
+  if (!netid) return undefined;
+  try {
+    const { researchInterests } = await getStudentResearchInterests(netid);
+    return researchInterests.length > 0 ? { interests: researchInterests } : undefined;
+  } catch (error) {
+    console.error('Research interest personalization lookup failed:', sanitizeLogValue(error));
+    return undefined;
+  }
+};
+
 export const searchResearchGroups = async (request: Request, response: Response) => {
   try {
     const body = (request.body || {}) as {
@@ -172,6 +187,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
       includeSuppressed?: boolean;
       browseQuality?: unknown;
       qualityFilters?: unknown;
+      standardOrder?: unknown;
     };
 
     if (isOversizedSearchRequest(body as Record<string, unknown>)) {
@@ -209,10 +225,18 @@ export const searchResearchGroups = async (request: Request, response: Response)
       sort.sortOrder = body.sortOrder === 'asc' ? 'asc' : 'desc';
     }
 
+    const lowQualityFirst = hasAdminAuthority && body.browseQuality === 'low-first';
+    const isDefaultRecommendedBrowse =
+      q.trim().length === 0 && !sort.sortBy && !lowQualityFirst && body.standardOrder !== true;
+    const personalization = isDefaultRecommendedBrowse
+      ? await resolveViewerResearchInterests(currentUser)
+      : undefined;
+
     const result = await searchResearchGroupsViaMeili(q, filters, page, pageSize, sort, {
       includeNonPublic: hasAdminAuthority,
-      lowQualityFirst: hasAdminAuthority && body.browseQuality === 'low-first',
+      lowQualityFirst,
       qualityFilters: hasAdminAuthority ? parseQualityFilters(body.qualityFilters) : [],
+      ...(personalization ? { personalization } : {}),
     });
     return response.json(result);
   } catch (error) {

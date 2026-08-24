@@ -104,6 +104,10 @@ import {
   type PublicUndergraduateLogistics,
 } from './undergraduateLogisticsService';
 import { QUERY_TOPIC_ALIASES, STUDENT_QUERY_ALIASES } from './searchTopicAliases';
+import {
+  personalizeBrowseHits,
+  PERSONALIZED_BROWSE_POOL_SIZE,
+} from './researchInterestPersonalization';
 
 const optionalPlanningContexts = async (entityIds: any[]) => {
   try {
@@ -346,6 +350,7 @@ export interface ResearchGroupSearchOptions {
   includeNonPublic?: boolean;
   lowQualityFirst?: boolean;
   qualityFilters?: ResearchGroupQualityFilter[];
+  personalization?: { interests: string[] };
 }
 
 export interface ResearchGroupSearchResult {
@@ -355,6 +360,7 @@ export interface ResearchGroupSearchResult {
   pageSize: number;
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
+  personalized?: boolean;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -581,13 +587,17 @@ const sanitizeResearchGroupSearchFilters = (
 
 const sanitizeResearchGroupSearchOptions = (
   options: ResearchGroupSearchOptions = {},
-): ResearchGroupSearchOptions => ({
-  includeNonPublic: options.includeNonPublic === true,
-  lowQualityFirst: options.lowQualityFirst === true,
-  qualityFilters: boundedResearchFilterValues(
-    options.qualityFilters as string[] | undefined,
-  ).filter(isResearchGroupQualityFilter),
-});
+): ResearchGroupSearchOptions => {
+  const interests = boundedResearchFilterValues(options.personalization?.interests);
+  return {
+    includeNonPublic: options.includeNonPublic === true,
+    lowQualityFirst: options.lowQualityFirst === true,
+    qualityFilters: boundedResearchFilterValues(
+      options.qualityFilters as string[] | undefined,
+    ).filter(isResearchGroupQualityFilter),
+    ...(interests.length > 0 ? { personalization: { interests } } : {}),
+  };
+};
 
 const mongoVisibilityFilter = (
   filters: ResearchGroupFilterInput,
@@ -1063,6 +1073,16 @@ export async function searchResearchGroupsViaMeili(
     sortConfig.push('browseRankScore:desc');
   }
 
+  // Query-time personalization of the default "Recommended" browse order: only
+  // for a blank browse in relevance order with declared interests. It never runs
+  // for text queries, explicit sorts, or the operator low-quality view, and it
+  // never touches the persisted global browseRankScore. See issue #1468.
+  const personalizeBrowse =
+    isBrowseAllQuery &&
+    !safeOptions.lowQualityFirst &&
+    !sort.sortBy &&
+    (safeOptions.personalization?.interests.length ?? 0) > 0;
+
   const searchParams: Record<string, any> = {
     filter: filterString,
     limit: safePageSize,
@@ -1077,6 +1097,20 @@ export async function searchResearchGroupsViaMeili(
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
+  }
+
+  // Personalization must reorder a stable candidate pool before slicing the
+  // requested page, so fetch the top-of-corpus pool (by global browse rank) and
+  // paginate locally, mirroring the thresholded-hybrid path below.
+  if (personalizeBrowse) {
+    const personalizedPoolSize = Math.min(
+      RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
+      Math.max(PERSONALIZED_BROWSE_POOL_SIZE, offset + safePageSize),
+    );
+    searchParams.page = 1;
+    searchParams.hitsPerPage = personalizedPoolSize;
+    delete searchParams.limit;
+    delete searchParams.offset;
   }
 
   const index = await getMeiliIndex('researchentities');
@@ -1355,17 +1389,24 @@ export async function searchResearchGroupsViaMeili(
 
   const { hits: keywordFilteredHits, dropped: droppedCoincidentalHits } =
     dropCoincidentalTypoOnlyHits(hits || []);
-  const reorderedPool = promoteExactAliasFieldMatches(
-    floorWeakSemanticOnlyHits(keywordFilteredHits),
-    normalizedQuery.aliasTerms,
-  );
+  const reorderedPool = personalizeBrowse
+    ? personalizeBrowseHits(
+        keywordFilteredHits,
+        safeOptions.personalization?.interests ?? [],
+        PERSONALIZED_BROWSE_POOL_SIZE,
+      )
+    : promoteExactAliasFieldMatches(
+        floorWeakSemanticOnlyHits(keywordFilteredHits),
+        normalizedQuery.aliasTerms,
+      );
   // The reorder helpers run across the whole fixed candidate pool so the ordering
-  // is stable, then the requested page window is sliced locally. Non-thresholded
-  // queries already come back pre-paginated from Meilisearch, so they are used
-  // as-is. See #1064.
-  const orderedHits = paginateHybridPoolLocally
-    ? reorderedPool.slice(offset, offset + safePageSize)
-    : reorderedPool;
+  // is stable, then the requested page window is sliced locally. Non-thresholded,
+  // non-personalized queries already come back pre-paginated from Meilisearch, so
+  // they are used as-is. See #1064, #1468.
+  const orderedHits =
+    paginateHybridPoolLocally || personalizeBrowse
+      ? reorderedPool.slice(offset, offset + safePageSize)
+      : reorderedPool;
   const hitIds = orderedHits
     .map((hit: any) => hit.id || hit._id)
     .map(normalizeResearchGroupObjectId)
@@ -1431,6 +1472,7 @@ export async function searchResearchGroupsViaMeili(
       pageSize: safePageSize,
       facetDistribution,
       degraded: degraded || planningContextResult.degraded,
+      personalized: personalizeBrowse,
     },
     { includeOperatorFields: safeOptions.includeNonPublic },
   );

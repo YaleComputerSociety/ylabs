@@ -910,6 +910,111 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
+  it('re-ranks the default browse toward a viewer\'s declared interests at query time (#1468)', async () => {
+    const historyId = '67d8928150621bcef4340001';
+    const mlId = '67d8928150621bcef4340002';
+    const browsePool = [
+      {
+        id: historyId,
+        slug: 'history-lab',
+        name: 'History Lab',
+        kind: 'lab',
+        researchAreas: ['History'],
+        sourceUrls: [],
+      },
+      {
+        id: mlId,
+        slug: 'ml-lab',
+        name: 'Machine Learning Lab',
+        kind: 'lab',
+        researchAreas: ['Machine Learning'],
+        sourceUrls: [],
+      },
+    ];
+    mocks.search.mockResolvedValueOnce({ hits: browsePool, totalHits: 2 });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: historyId,
+          slug: 'history-lab',
+          name: 'History Lab',
+          kind: 'lab',
+          researchAreas: ['History'],
+          browseRankScore: 90,
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: mlId,
+          slug: 'ml-lab',
+          name: 'Machine Learning Lab',
+          kind: 'lab',
+          researchAreas: ['Machine Learning'],
+          browseRankScore: 80,
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24, {}, {
+      personalization: { interests: ['Machine Learning'] },
+    });
+
+    expect(mocks.search.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ sort: ['browseRankScore:desc', 'lastObservedAt:desc'] }),
+    );
+    expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('offset');
+    expect(result.personalized).toBe(true);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'ml-lab',
+      'history-lab',
+    ]);
+  });
+
+  it('leaves the default browse order untouched when the viewer has no interests (#1468)', async () => {
+    const historyId = '67d8928150621bcef4340011';
+    const mlId = '67d8928150621bcef4340012';
+    mocks.search.mockResolvedValueOnce({
+      hits: [
+        { id: historyId, slug: 'history-lab', name: 'History Lab', kind: 'lab', sourceUrls: [] },
+        { id: mlId, slug: 'ml-lab', name: 'ML Lab', kind: 'lab', sourceUrls: [] },
+      ],
+      estimatedTotalHits: 2,
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: historyId,
+          slug: 'history-lab',
+          name: 'History Lab',
+          kind: 'lab',
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+        {
+          _id: mlId,
+          slug: 'ml-lab',
+          name: 'ML Lab',
+          kind: 'lab',
+          sourceUrls: [],
+          ...validPublicDescriptions,
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili('', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ limit: 24, offset: 0 }),
+    );
+    expect(result.personalized).toBe(false);
+    expect(result.researchEntities.map((entity: any) => entity.slug)).toEqual([
+      'history-lab',
+      'ml-lab',
+    ]);
+  });
+
   it('expands AI and restricts short alias searches to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
