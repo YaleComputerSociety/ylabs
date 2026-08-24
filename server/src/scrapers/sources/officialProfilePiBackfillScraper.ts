@@ -2126,7 +2126,7 @@ function shortOfficialProfileBio(value: string): string {
 
   const listParts = text
     .split(',')
-    .map((part) => textValue(part).replace(/[.;:]+$/g, ''))
+    .map((part) => textValue(part).replace(/[.;:]+$/g, '').replace(/^(?:and|or)\s+/i, ''))
     .filter((part) => part.length >= 8);
   if (!/[.!?]/.test(text) && listParts.length >= 3) {
     const lead = listParts.slice(0, 3);

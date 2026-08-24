@@ -355,8 +355,7 @@ const redactionTokenTest = /\[(?:email|phone) redacted\]/i;
 const redactionTokenGlobal = /\[(?:email|phone) redacted\]/gi;
 const splitIntoSentences = (value: string): string[] =>
   value.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [value];
-const endsWithTerminalPunctuation = (value: string): boolean =>
-  /[.!?]["')\]]?$/.test(value.trim());
+const endsWithTerminalPunctuation = (value: string): boolean => /[.!?]["')\]]?$/.test(value.trim());
 const wordCount = (value: string): number => (value.match(/[A-Za-z]{2,}/g) || []).length;
 
 /**
@@ -713,17 +712,34 @@ export function collapseDoubledSynthesisVerb(text: string): string {
   return collapsed;
 }
 
+const doubledCoordinatingConjunctionPattern = /\b(and|or)\s+\1\b/gi;
+
+/**
+ * Collapse a doubled coordinating conjunction ("Algorithms, Data, and and
+ * Market Design.") that a topic-list join emitted when one of the joined
+ * items already carried a leading "and"/"or" token from an upstream comma
+ * split, so the join's own "and" doubled it (#1681).
+ */
+export function collapseDoubledConjunction(text: string): string {
+  return normalizeHygieneWhitespace(text).replace(doubledCoordinatingConjunctionPattern, '$1');
+}
+
 const synthesisVerbLeadPattern =
   /^(?:Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds|Seeks to|Works on|Focuses on|Focused on|Creative work spans|Unites)\b/i;
 
 const citationMarkerPattern =
-  /\bedited by\b|\bUniversity Press\b|\bpp\.\s*\d|\bISBN\b|\((?:19|20)\d{2}\)[.,;:\s]*$/i;
+  /\bedited by\b|\bUniversity Press\b|\bpp\.\s*\d|\bISBN\b|\bet\s+al\.,?\s*(?:19|20)\d{2}\b|\((?:19|20)\d{2}\)[.,;:\s]*$/i;
 
 const studiesSubjectVerbMismatchPattern =
   /^(?:Studies|Investigates|Examines|Explores)\s+(?!(?:how|what|why|when|where|which|who|whom|whose|that|the\s+way)\b)[a-z][a-z\s-]{2,50}?\s+(?:have|has|had|were|was)\s+been\b/i;
 
 const careerFactLeakPattern =
   /\bin\s+(?:19|20)\d{2}\b[^.!?]*\b(?:was\s+awarded|awarded|tenure|joined|appointed|promoted)\b|\bwas\s+awarded\b|\bawarded\s+tenure\b/i;
+
+const studiesBioNameEchoVerbPattern =
+  /^(?:Studies|Investigates|Examines|Explores)\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}\s+(?:holds?|works?\s+(?:in|on|with)|specializes?\s+in|received|earned|serves?\s+as|teaches?|is\s+an?)\b/u;
+
+const studiesCourseCodeTopicPattern = /\b[A-Z]{2,5}\s?\d{3}[A-Z]?\b/;
 
 /**
  * A "Studies <text>." synthesis template glued onto an honor/award citation
@@ -755,7 +771,9 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
     citationMarkerPattern.test(normalized) ||
     studiesSubjectVerbMismatchPattern.test(normalized) ||
     careerFactLeakPattern.test(normalized) ||
-    awardCitationLeakPattern.test(normalized)
+    awardCitationLeakPattern.test(normalized) ||
+    studiesBioNameEchoVerbPattern.test(normalized) ||
+    studiesCourseCodeTopicPattern.test(normalized)
   );
 }
 
@@ -897,8 +915,7 @@ const leadingDanglingPronounSubjectPattern =
 const leadingTransitionalPronounSubjectPattern =
   /^(?:In addition|Additionally|Also|Moreover|Furthermore),?\s+(?:he|she|they)\b/i;
 
-const midDemonstrativePhrasePattern =
-  /\b(?:these|those)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)/gi;
+const midDemonstrativePhrasePattern = /\b(?:these|those)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*)?)/gi;
 
 const synthesisBlurbLeadPattern =
   /^(?:Studies|Investigates|Examines|Explores|Develops|Supports|Advances|Fosters|Uses|Employs|Researches|Analyzes|Models|Measures|Conducts|Creates|Enhances|Improves|Innovates|Builds)\s+(?!(?:in|of|on|for|to|with|from|at|by|about|have|has|had|are|were|is|was|and|or)\b)[a-z]/i;
@@ -993,20 +1010,24 @@ export function isNonSelfContainedShortDescription(text: string): boolean {
  */
 export function sanitizeResearchEntityShortDescription(text: string): string {
   const cleaned = stripUrlTopicsFromCardSummary(
-    stripTrailingResearchHomeAffiliationClause(
-      collapseDoubledSynthesisVerb(
-        stripTrailingSourceLayoutLabelSection(
-          stripGluedProfileSectionLabel(
-            stripGluedResearchRoleTrackToken(
-              stripDirectoryResearcherNavChrome(
-                stripGluedProfileRoleLabel(
-                  stripLeadingArtCommentaryPrefix(
-                    stripLeadingPageChrome(
-                      stripTrailingContactAddress(
-                        stripBibliographicReferenceArtifacts(
-                          stripInternalConfidenceHedge(
-                            stripCatalogChrome(
-                              evergreenizeStaleCycleDatePhrase(redactDirectContactInfo(String(text || ''))),
+    collapseDoubledConjunction(
+      stripTrailingResearchHomeAffiliationClause(
+        collapseDoubledSynthesisVerb(
+          stripTrailingSourceLayoutLabelSection(
+            stripGluedProfileSectionLabel(
+              stripGluedResearchRoleTrackToken(
+                stripDirectoryResearcherNavChrome(
+                  stripGluedProfileRoleLabel(
+                    stripLeadingArtCommentaryPrefix(
+                      stripLeadingPageChrome(
+                        stripTrailingContactAddress(
+                          stripBibliographicReferenceArtifacts(
+                            stripInternalConfidenceHedge(
+                              stripCatalogChrome(
+                                evergreenizeStaleCycleDatePhrase(
+                                  redactDirectContactInfo(String(text || '')),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1472,9 +1493,7 @@ export function isStaffContactBlockText(text: string): boolean {
   const hasMailingAddress =
     poBoxAddressPattern.test(normalized) || cityStateZipPattern.test(normalized);
   if (!hasMailingAddress) return false;
-  return (
-    staffContactCredentialPattern.test(normalized) || namedStaffTitlePattern.test(normalized)
-  );
+  return staffContactCredentialPattern.test(normalized) || namedStaffTitlePattern.test(normalized);
 }
 
 const publicationsListMarkerPattern = /\bselected\s+publications?\s*:/i;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampDescriptionLength,
+  collapseDoubledConjunction,
   collapseDoubledSynthesisVerb,
   collapseDuplicatedProseBlock,
   collapseRepeatedSentences,
@@ -1973,6 +1974,64 @@ describe('isStudiesTemplateGlueMalformed citation/career-fact guard (#978)', () 
         'Studies reward and award-based decision-making in behavioral economics.',
       ),
     ).toBe(false);
+  });
+});
+
+describe('isStudiesTemplateGlueMalformed non-topic enumeration guard (#1681)', () => {
+  it('flags a name-echo bio sentence glued after the Studies template', () => {
+    const text =
+      'Studies Kathryn Slanski holds a joint appointment in Near Eastern Languages and Civilizations and in Humanities.';
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+  });
+
+  it('flags a name-echo "works in" bio sentence', () => {
+    expect(
+      isStudiesTemplateGlueMalformed(
+        'Studies Robin Dembroff works in the philosophy of gender and social ontology.',
+      ),
+    ).toBe(true);
+  });
+
+  it('flags a publications-citation list enumerated as topics', () => {
+    const text =
+      'Studies Prabhakar et al. 2008, Dutrow et al. 2019, and Cotney et al. 2012.';
+    expect(isStudiesTemplateGlueMalformed(text)).toBe(true);
+    expect(sanitizeResearchEntityShortDescription(text)).toBe('');
+  });
+
+  it('flags a course code ingested as a topic', () => {
+    expect(
+      isStudiesTemplateGlueMalformed(
+        'Studies Feminist Thought WGSS 352 Feminist Perspectives on Literature.',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a genuine research summary that happens to name a co-author acronym', () => {
+    expect(
+      isStudiesTemplateGlueMalformed('Studies GPS-based tracking of migratory patterns.'),
+    ).toBe(false);
+  });
+});
+
+describe('collapseDoubledConjunction (#1681)', () => {
+  it('collapses a doubled coordinating conjunction from a topic-list join', () => {
+    expect(collapseDoubledConjunction('Studies Algorithms, Data, and and Market Design.')).toBe(
+      'Studies Algorithms, Data, and Market Design.',
+    );
+  });
+
+  it('repairs the doubled conjunction at read time via sanitizeResearchEntityShortDescription', () => {
+    expect(sanitizeResearchEntityShortDescription('Studies Algorithms, Data, and and Market Design.')).toBe(
+      'Studies Algorithms, Data, and Market Design.',
+    );
+  });
+
+  it('leaves a single conjunction untouched', () => {
+    expect(collapseDoubledConjunction('Studies Algorithms and Market Design.')).toBe(
+      'Studies Algorithms and Market Design.',
+    );
   });
 });
 
