@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveMaterializedShortDescription } from '../entityMaterializer';
 import { synthesizeGroundedCardDescription } from '../../utils/groundedCardSynthesis';
 import {
+  buildResearchAreasCardSummary,
   deriveShortDescriptionFromFullDescription,
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
@@ -141,5 +142,38 @@ describe('resolveMaterializedShortDescription', () => {
 
     expect(result).toBeTruthy();
     expect(shortDescriptionQuality(result, REDUCIBLE_FULL).isUseful).toBe(true);
+  });
+
+  it('supersedes a bare researchAreas card-summary once the full description grounds a better one (#1398)', async () => {
+    const researchAreas = ['Synaptic Plasticity', 'Neural Circuits'];
+    const bareFallback = buildResearchAreasCardSummary(researchAreas);
+    expect(shortDescriptionQuality(bareFallback, REDUCIBLE_FULL).isUseful).toBe(true);
+
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: REDUCIBLE_FULL,
+      currentShortDescription: bareFallback,
+      researchAreas,
+      synthesize: unavailableLLM,
+    });
+
+    expect(result).toBeTruthy();
+    expect(result).not.toBe(bareFallback);
+    expect(shortDescriptionQuality(result, REDUCIBLE_FULL).isUseful).toBe(true);
+  });
+
+  it('leaves a bare researchAreas card-summary untouched when no better card can be grounded (#1398)', async () => {
+    const researchAreas = ['Synaptic Plasticity', 'Neural Circuits'];
+    const bareFallback = buildResearchAreasCardSummary(researchAreas);
+
+    const calls: string[] = [];
+    const result = await resolveMaterializedShortDescription({
+      fullDescription: '',
+      currentShortDescription: bareFallback,
+      researchAreas,
+      synthesize: groundedSynthesizeFrom(GROUNDED_CARD, calls),
+    });
+
+    expect(result).toBeNull();
+    expect(calls).toHaveLength(0);
   });
 });

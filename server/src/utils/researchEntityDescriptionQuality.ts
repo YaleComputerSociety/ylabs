@@ -1,4 +1,5 @@
 import {
+  collapseDoubledSynthesisVerb,
   hasContactBlockResidue,
   isCitationAuthorListDumpText,
   isResearchAreaTemplateLeakText,
@@ -682,6 +683,13 @@ const oxfordJoin = (items: string[]): string => {
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 };
 
+const ROLE_TRACK_CARD_LEAKAGE_TOPICS = new Set([
+  'theorist',
+  'experimentalist',
+  'observational',
+  'observer',
+]);
+
 /**
  * Builds a card summary from an entity's own structured `researchAreas[]` when
  * no usable summary can be grounded in its prose (issue #952: a vacuous
@@ -701,13 +709,14 @@ export function buildResearchAreasCardSummary(researchAreas: unknown): string {
     if (wordCount(topic) > 6) continue;
     if (/https?:\/\/|\bwww\./i.test(topic)) continue;
     const key = topic.toLowerCase();
+    if (ROLE_TRACK_CARD_LEAKAGE_TOPICS.has(key)) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     topics.push(topic);
     if (topics.length >= MAX_RESEARCH_AREA_CARD_TOPICS) break;
   }
   if (topics.length === 0) return '';
-  const candidate = `Studies ${oxfordJoin(topics)}.`;
+  const candidate = collapseDoubledSynthesisVerb(`Studies ${oxfordJoin(topics)}.`);
   if (candidate.length > 200 || isVacuousGenericFocusSummary(candidate)) return '';
   return candidate;
 }

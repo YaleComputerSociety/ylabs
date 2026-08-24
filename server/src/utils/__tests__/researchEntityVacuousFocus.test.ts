@@ -99,4 +99,23 @@ describe('buildResearchAreasCardSummary', () => {
       'Studies Genetics.',
     );
   });
+
+  it('drops a leaked role-track token so it never rides along as a topic (#1398)', () => {
+    expect(
+      buildResearchAreasCardSummary([
+        'Condensed Matter Physics',
+        'Theorist',
+        'Stochastic Processes',
+      ]),
+    ).toBe('Studies Condensed Matter Physics and Stochastic Processes.');
+    expect(buildResearchAreasCardSummary(['Astrophysics', 'Experimentalist'])).toBe(
+      'Studies Astrophysics.',
+    );
+  });
+
+  it('collapses a doubled leading verb when a topic already starts with one (#1398)', () => {
+    expect(
+      buildResearchAreasCardSummary(['Studies on Chitinases and Chitosanases', 'Lung Cancer']),
+    ).toBe('Studies on Chitinases and Chitosanases and Lung Cancer.');
+  });
 });
