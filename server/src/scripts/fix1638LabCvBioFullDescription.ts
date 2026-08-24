@@ -6,6 +6,7 @@ import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   hasLeadingDegreeListSignal,
+  hasMultipleCareerTimelineSentences,
   hasProfileFieldLabelChromeSignal,
   repairPersonBiographyLeakedDescription,
 } from '../utils/researchEntityBiographyDescriptionRepair';
@@ -50,7 +51,14 @@ interface RepairedRecord {
  * avoid), and its shortDescription-replacement fallback then discards a
  * perfectly good, unrelated short in that case. Restricting to entities that
  * ALSO show a lead-level signal keeps the LAB backfill's blast radius scoped
- * to the issue.
+ * to the issue. A first-person CV dump rarely has that lead-level signal
+ * (#1638: Allore Lab never names itself or opens on an appointment clause),
+ * so hasMultipleCareerTimelineSentences is included as an alternate signal -
+ * two or more career-timeline sentence matches anywhere in the text, which
+ * is unlikely from a single incidental match in an otherwise-fine
+ * description (verified against Hoh Lab and Pollard Lab, two first-person
+ * LAB descriptions that describe genuine ongoing research and must not be
+ * touched by this signal).
  */
 function fullDescriptionHasLeadBiographySignal(full: unknown): boolean {
   return (
@@ -58,7 +66,8 @@ function fullDescriptionHasLeadBiographySignal(full: unknown): boolean {
     isDeceasedOrEmeritusLeadBiography(full) ||
     isCredentialOrTitleLeadBiography(full) ||
     hasLeadingDegreeListSignal(full) ||
-    hasProfileFieldLabelChromeSignal(full)
+    hasProfileFieldLabelChromeSignal(full) ||
+    hasMultipleCareerTimelineSentences(full)
   );
 }
 

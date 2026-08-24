@@ -280,10 +280,46 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   // this one sentence, and the stored shortDescription is a dangling
   // "-Ph.D. Students, ..." fragment cut from its middle).
   /\bvisiting\s+fellows\s+for\s+research\s+opportunities\s+and\s+career\s+advancement\b/i,
+  // First-person equivalents of the third-person career/credential facts
+  // above - a LAB fullDescription narrated in first person still leaks pure
+  // CV/administrative-role facts rather than research content (#1638: Allore
+  // Lab's entire description is "I founded the field of...", "I previously
+  // chaired...", "I have a wealth of experience...", with almost no sentence
+  // describing what is currently studied).
+  /\bI\s+founded\s+the\s+field\s+of\b/i,
+  /\bI\s+(?:previously\s+)?(?:chaired|co-chaired)\b/i,
+  /\b(?:resulted\s+in\s+me\s+being|I\s+was)\s+(?:an?\s+)?invited\s+speaker\b/i,
+  /\bI\s+have\s+a\s+wealth\s+of\s+experience\b/i,
+  /\bI\s+am\s+a\s+recognized\s+authority\s+on\b/i,
+  /\b(?:with\s+)?over\s+\d[\d,]*\s+peer-reviewed\s+(?:articles|publications)\b/i,
+  /\bcontinuous\s+(?:NIH|NSF)\s+funding\s+since\s+\d{4}\b/i,
 ];
 
 export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
   return EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS.some((pattern) => pattern.test(sentence));
+}
+
+const MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD = 2;
+
+/**
+ * A first-person CV/bio dump rarely has a name-lead or appointment-opener
+ * sentence to key a candidacy pre-filter on (#1638: Allore Lab's
+ * fullDescription opens "The focus of my research collaborations and
+ * methodological development work as the Leader of..." - no name, no "is
+ * the Professor of" clause). Two or more sentences matching the
+ * education/career-timeline patterns anywhere in the text is instead the
+ * signal: a single incidental match deep in an otherwise-fine research
+ * description is common enough to be unsafe as a threshold of one (the same
+ * over-broad risk hasLeadingDegreeListSignal's >=2 threshold guards against),
+ * but a real CV dump narrated in first person carries several.
+ */
+export function hasMultipleCareerTimelineSentences(value: unknown): boolean {
+  const text = textValue(value);
+  if (!text) return false;
+  const strippedCount = protectedSentenceList(text).filter((sentence) =>
+    isEducationOrCareerTimelineSentence(sentence),
+  ).length;
+  return strippedCount >= MULTIPLE_CAREER_TIMELINE_SENTENCE_THRESHOLD;
 }
 
 /**

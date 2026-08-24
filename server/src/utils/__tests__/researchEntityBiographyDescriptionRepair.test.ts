@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasMultipleCareerTimelineSentences,
   hasProfileFieldLabelChromeSignal,
   isEducationOrCareerTimelineSentence,
   isProfileBiographyChromeOpener,
@@ -189,6 +190,77 @@ describe('isEducationOrCareerTimelineSentence: recruiting-note sentence (#1533)'
         '-Ph.D. Students, other graduate students, and visiting fellows for research opportunities and career advancement.',
       ),
     ).toBe(true);
+  });
+});
+
+describe('isEducationOrCareerTimelineSentence: first-person CV/credential facts (#1638)', () => {
+  it('flags first-person career/administrative-role facts', () => {
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'Previously as Director of Biostatistics at the Yale Program on Aging for 12 years, I founded the field of Gerontological Biostatistics.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'I previously chaired the Alzheimer’s Disease Research Center’s Data Cores Steering Committee.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'I have a wealth of experience conducting epidemiologic studies and am a recognized authority on longitudinal statistical methods.',
+      ),
+    ).toBe(true);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'With over 300 peer-reviewed articles and continuous NIH funding since 2000, my research has focused on issues related to older adults.',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not flag first-person sentences describing ongoing research content', () => {
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'My laboratory has completed several epidemiological studies in well-defined populations of individuals with and without AMD.',
+      ),
+    ).toBe(false);
+    expect(
+      isEducationOrCareerTimelineSentence(
+        'We combined microscopy, biochemistry, biophysics, molecular genetics and mathematical modeling to formulate a detailed molecular explanation.',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('hasMultipleCareerTimelineSentences (#1638)', () => {
+  it('flags a first-person CV/bio dump with several career-timeline sentences', () => {
+    const allore =
+      "Previously as Director of Biostatistics at the Yale Program on Aging for 12 years, I founded the field of Gerontological Biostatistics. I previously chaired the Alzheimer's Disease Research Center's Data Cores Steering Committee. I have a wealth of experience conducting epidemiologic studies and am a recognized authority on longitudinal statistical methods.";
+    expect(hasMultipleCareerTimelineSentences(allore)).toBe(true);
+  });
+
+  it('does not flag a legitimate first-person research description (Hoh Lab)', () => {
+    const hoh =
+      'My research goals are to understand the principle of interactions among genes, environmental exposures as well as stochastic random effects in relationship to the disease expression and pathogenesis. In collaboration with epidemiologists, statisticians, computer scientists, molecular biologists and physicians, our strategy is to develop an organized and systematic approach to tackle the problem through the analysis of several chronic diseases. At the moment we are investigating age-related macular degeneration. My laboratory has completed several epidemiological studies in well-defined populations of individuals with and without AMD.';
+    expect(hasMultipleCareerTimelineSentences(hoh)).toBe(false);
+  });
+
+  it('does not flag a legitimate first-person research-history description (Pollard Lab)', () => {
+    const pollard =
+      'Starting in the 1960s, I have investigated along with members of my laboratory the molecular basis of cellular movements and cytokinesis using a combination of biochemistry, biophysics, microscopy and computational modeling. My laboratory discovered and characterized many proteins that produce forces for cells to move including the first unconventional myosin. We combined microscopy, biochemistry, biophysics, molecular genetics and mathematical modeling to provide the quantitative evidence required to formulate a detailed molecular explanation.';
+    expect(hasMultipleCareerTimelineSentences(pollard)).toBe(false);
+  });
+
+  it('does not flag a single incidental career-fact sentence', () => {
+    expect(
+      hasMultipleCareerTimelineSentences(
+        'Studies chromatin dynamics in stem cells. In 1988 she joined the Mechanical Engineering faculty at Georgia Tech before returning to this line of research.',
+      ),
+    ).toBe(false);
+  });
+
+  it('returns false for blank input', () => {
+    expect(hasMultipleCareerTimelineSentences('')).toBe(false);
+    expect(hasMultipleCareerTimelineSentences(undefined)).toBe(false);
   });
 });
 
