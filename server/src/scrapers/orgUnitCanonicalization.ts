@@ -334,6 +334,35 @@ export function schoolNameFromProfileHosts(urls: string[]): string | null {
 }
 
 /**
+ * A research entity carries a school but no department that is meaningfully
+ * below the school level: either `departments` is empty, or every department
+ * value is just one of the entity's own school names (the #1316/#1335 graceful-
+ * degradation fallback, which keeps the entity reachable but leaves it
+ * un-narrowable below the school). Flagging this shape lets an audit track the
+ * professional-school department coverage debt rather than have it silently
+ * reappear (issue #1377, fix direction #3 from #1316).
+ */
+export function researchEntityHasSchoolButNoRealDepartment(entity: {
+  school?: unknown;
+  schools?: unknown;
+  departments?: unknown;
+}): boolean {
+  const schoolValues = [
+    ...(typeof entity.school === 'string' ? [entity.school] : []),
+    ...asStringList(entity.schools),
+  ];
+  const schoolKeys = new Set(schoolValues.map((value) => orgUnitMatchKey(value)).filter(Boolean));
+  if (schoolKeys.size === 0) return false;
+
+  const departments = asStringList(entity.departments)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (departments.length === 0) return true;
+
+  return departments.every((department) => schoolKeys.has(orgUnitMatchKey(department)));
+}
+
+/**
  * Canonicalizes a research-entity materialization `$set` in place: the scalar
  * `school` and the `departments[]` strings are rewritten to their canonical
  * OrgUnit names when they resolve, and left as raw values otherwise. It also

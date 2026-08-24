@@ -23,6 +23,8 @@ interface CuratedSchool {
 }
 
 const YALE_SCHOOL_OF_MEDICINE_SLUG = 'yale-school-of-medicine';
+const YALE_SCHOOL_OF_MANAGEMENT_SLUG = 'yale-school-of-management';
+const YALE_SCHOOL_OF_PUBLIC_HEALTH_SLUG = 'yale-school-of-public-health';
 
 const curatedSchools: CuratedSchool[] = [
   { slug: 'yale-college', name: 'Yale College', kind: 'SCHOOL' },
@@ -185,9 +187,58 @@ function uniqueByKey(values: Iterable<string>): string[] {
   return out;
 }
 
+interface SchoolDepartmentSeed {
+  name: string;
+  parentSlug: string;
+  aliases?: string[];
+}
+
+/**
+ * Sub-units of professional/graduate schools that do not exist as academic
+ * subjects in the shared department ground truth but are the real, navigable
+ * departments a student narrows by below the school level. Seeded only into the
+ * OrgUnit facet layer (not `curatedDepartments`) so growing facet coverage never
+ * perturbs the academic-subject taxonomy other surfaces read. Each row is a
+ * DEPARTMENT parented to its school so `schoolForDepartment` derives the school
+ * and the value is filterable under it (issue #1377). The School of Management
+ * partitions its ladder faculty across six research disciplines; the SOM
+ * economics discipline reuses the shared Economics department rather than
+ * minting a school-scoped duplicate.
+ */
+const curatedSchoolDepartments: SchoolDepartmentSeed[] = [
+  { name: 'Accounting', parentSlug: YALE_SCHOOL_OF_MANAGEMENT_SLUG, aliases: ['ACCT'] },
+  { name: 'Finance', parentSlug: YALE_SCHOOL_OF_MANAGEMENT_SLUG, aliases: ['FIN'] },
+  { name: 'Marketing', parentSlug: YALE_SCHOOL_OF_MANAGEMENT_SLUG, aliases: ['MKTG'] },
+  {
+    name: 'Operations',
+    parentSlug: YALE_SCHOOL_OF_MANAGEMENT_SLUG,
+    aliases: ['Operations Management'],
+  },
+  {
+    name: 'Organizational Behavior',
+    parentSlug: YALE_SCHOOL_OF_MANAGEMENT_SLUG,
+    aliases: ['Organisational Behavior', 'OB'],
+  },
+];
+
+/**
+ * Parent school for a shared-ground-truth department whose curated row carries
+ * no `ysmDepartmentName` yet genuinely belongs to a professional school. Keyed
+ * by canonical department name so parenting a School of Public Health department
+ * derives `schools[]` under Public Health without editing the academic-subject
+ * taxonomy (issue #1377).
+ */
+const departmentSchoolParentOverride: Record<string, string> = {
+  Biostatistics: YALE_SCHOOL_OF_PUBLIC_HEALTH_SLUG,
+  'Chronic Disease Epidemiology': YALE_SCHOOL_OF_PUBLIC_HEALTH_SLUG,
+  'Environmental Health Sciences': YALE_SCHOOL_OF_PUBLIC_HEALTH_SLUG,
+  'Epidemiology of Microbial Diseases': YALE_SCHOOL_OF_PUBLIC_HEALTH_SLUG,
+  'Health Policy & Management': YALE_SCHOOL_OF_PUBLIC_HEALTH_SLUG,
+};
+
 function departmentParentSlug(dept: CuratedDepartment): string | undefined {
   if (dept.ysmDepartmentName) return YALE_SCHOOL_OF_MEDICINE_SLUG;
-  return undefined;
+  return departmentSchoolParentOverride[dept.name];
 }
 
 /**
@@ -235,7 +286,30 @@ export function buildOrgUnitSeedRows(): OrgUnitSeedRow[] {
     });
   }
 
-  const allRows = [...schoolRows, ...departmentRows];
+  const seededKeys = new Set<string>(schoolKeys);
+  for (const row of departmentRows) seededKeys.add(orgUnitMatchKey(row.name));
+
+  const schoolDepartmentRows: OrgUnitSeedRow[] = [];
+  for (const dept of curatedSchoolDepartments) {
+    const nameKey = orgUnitMatchKey(dept.name);
+    if (seededKeys.has(nameKey)) continue;
+    const aliases = uniqueByKey(dept.aliases || []).filter((alias) => {
+      const key = orgUnitMatchKey(alias);
+      return key !== nameKey && !schoolKeys.has(key);
+    });
+    schoolDepartmentRows.push({
+      slug: slugify(dept.name),
+      name: decodeHtml(dept.name),
+      kind: 'DEPARTMENT',
+      aliases,
+      parentSlug: dept.parentSlug,
+      status: 'ACTIVE',
+      archived: false,
+    });
+    seededKeys.add(nameKey);
+  }
+
+  const allRows = [...schoolRows, ...departmentRows, ...schoolDepartmentRows];
   mergeOverlayAliases(allRows, schoolKeys);
   return allRows;
 }

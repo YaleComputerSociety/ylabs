@@ -1171,6 +1171,27 @@ describe('nodeTeaserFacultyExtractor', () => {
       },
     ]);
   });
+
+  it('crawls each School of Management discipline as its own department (#1377)', () => {
+    const somConfigs = DEFAULT_DEPT_CONFIGS.filter(
+      (config) => config.schoolName === 'Yale School of Management',
+    );
+    expect(somConfigs.map((config) => config.deptName).sort()).toEqual([
+      'Accounting',
+      'Economics',
+      'Finance',
+      'Marketing',
+      'Operations',
+      'Organizational Behavior',
+    ]);
+    for (const config of somConfigs) {
+      expect(config.extractor).toBe(nodeTeaserFacultyExtractor);
+      expect(config.url).toMatch(
+        /^https:\/\/som\.yale\.edu\/faculty-research\/faculty-directory\/[a-z-]+$/,
+      );
+    }
+    expect(DEFAULT_DEPT_CONFIGS.some((config) => config.deptName === 'Management')).toBe(false);
+  });
 });
 
 describe('jacksonProfileComponentExtractor', () => {
