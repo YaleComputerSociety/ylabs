@@ -93,8 +93,22 @@ export function stripTrailingProfileChromeFooter(value: unknown): string {
 const DEGREE_TOKEN_PATTERN =
   "(?:Ph\\.?\\s?D\\.?|Sc\\.?\\s?D\\.?|Ed\\.?\\s?D\\.?|Psy\\.?\\s?D\\.?|Th\\.?\\s?D\\.?|D\\.?\\s?Phil\\.?|M\\.?\\s?Phil\\.?|M\\.?\\s?D\\.?|J\\.?\\s?D\\.?|LL\\.?\\s?B\\.?|LL\\.?\\s?M\\.?|M\\.?\\s?T\\.?\\s?S\\.?|M\\.?\\s?Div\\.?|M\\.?\\s?Arch\\.?|M\\.?\\s?F\\.?\\s?A\\.?|M\\.?\\s?B\\.?\\s?A\\.?|B\\.?\\s?Litt\\.?|A\\.?\\s?B\\.?|B\\.?\\s?A\\.?|M\\.?\\s?A\\.?|M\\.?\\s?S\\.?|Hon\\.?)";
 
+// The institution clause after a degree token is usually "<Name> University"
+// but sometimes the qualifying name comes after the keyword ("Graduate
+// School of Fine Arts, University of Pennsylvania") - the optional second
+// keyword clause lets one entry swallow both halves instead of stopping mid
+// institution name and leaving an ungrammatical fragment behind (#1533:
+// rizvi-kr74's "Graduate School of Fine Arts, University of Pennsylvania").
+const INSTITUTION_KEYWORD_CLAUSE =
+  "[\\p{L}&.'\\s-]*?(?:University|College|Institute|School|Academy)(?:\\s*,\\s*[\\p{L}&.'\\s-]*?(?:University|College|Institute|School|Academy))?[^.,;]*?(?:,\\s*\\d{4})?";
+
+// Some faculty bios omit the institution keyword entirely ("Ph.D., Harvard,
+// 1966") - a bare capitalized name is only accepted as an institution when a
+// year anchors it, so this branch can't swallow an unrelated proper noun.
+const BARE_NAMED_INSTITUTION_WITH_YEAR_CLAUSE = "[A-Z][\\p{L}.'\\s-]{2,40}?,\\s*\\d{4}";
+
 const DEGREE_LIST_ENTRY_PATTERN = new RegExp(
-  `${DEGREE_TOKEN_PATTERN}\\.?,?\\s*[A-Z][\\p{L}&.'\\s-]*?(?:University|College|Institute|School|Academy)[^.,;]*?(?:,\\s*\\d{4})?\\.?`,
+  `${DEGREE_TOKEN_PATTERN}\\.?,?\\s*(?:${INSTITUTION_KEYWORD_CLAUSE}|${BARE_NAMED_INSTITUTION_WITH_YEAR_CLAUSE})\\.?`,
   'u',
 );
 
@@ -176,6 +190,11 @@ const EDUCATION_OR_CAREER_TIMELINE_SENTENCE_PATTERNS: RegExp[] = [
   /\bwas\s+CEO\s+of\b/i,
   /\bwas\s+a\s+partner\s+at\b[^.!?]{0,80}\bco-founded\s+the\s+firm\b/i,
   /\bhas\s+also\s+led\s+organizations\s+in\b/i,
+  /\bhas\s+authored\s+(?:several|numerous|many)\b[^.!?]{0,40}\bincluding\b/i,
+  /\bhas\s+received\s+an?\b[^.!?]{0,60}\bfellowship\b/i,
+  /\bis\s+(?:currently\s+)?involved\s+with\s+(?:several|numerous|many)\s+editorial\s+and\s+advisory\s+boards\b/i,
+  /\bwas\s+(?:also\s+)?the\s+general\s+editor\s+of\b/i,
+  /\bhas\s+served\s+as\s+the\s+founder\s+and\s+general\s+editor\s+of\b/i,
 ];
 
 export function isEducationOrCareerTimelineSentence(sentence: string): boolean {
