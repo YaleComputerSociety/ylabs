@@ -310,6 +310,55 @@ describe('fullDescriptionQuality', () => {
     expect(quality.isUseful).toBe(false);
   });
 
+  it('rejects a two-word PI name subject that would otherwise pad the non-chip word count (#1625 residual)', () => {
+    const fullDescription =
+      'The Harlan Voss Lab focuses on advanced imaging techniques and their applications, alongside metabolomics and mass spectrometry studies. The lab investigates the interplay between diet and metabolism, with a particular emphasis on amino acids.';
+    const researchAreas = [
+      'Advanced imaging techniques and applications',
+      'Metabolomics and mass spectrometry studies',
+      'Diet and metabolism studies',
+      'Amino acids',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('rejects a vacuous closer sentence even when the opening sentence dilutes the whole-text overlap (#1625 residual)', () => {
+    const fullDescription =
+      'The Nadia Ellery Lab focuses on the diagnosis and treatment of platelet disorders, hemoglobinopathies, and erythrocyte pathophysiology. The lab investigates various therapeutic approaches and diagnostic techniques to improve patient outcomes in these hematological conditions.';
+    const researchAreas = [
+      'Platelet disorders and treatments',
+      'Hemoglobinopathies and related disorders',
+      'Erythrocyte function and pathophysiology',
+      'Antiplatelet therapy and cardiovascular diseases',
+    ];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(false);
+  });
+
+  it('matches a chip word against its closer-sentence morphological variant via stem comparison (#1625 residual)', () => {
+    const fullDescription =
+      'The lab focuses on cardiac ischemia and reperfusion and platelet disorders. The lab investigates therapeutic strategies for these cardiovascular conditions.';
+    const researchAreas = ['Cardiac ischemia and reperfusion', 'Platelet disorders', 'Antiplatelet therapy'];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).toContain('area-echo-fallback');
+  });
+
+  it('keeps a two-sentence fullDescription whose closer names a specific method beyond the researchAreas chips (#1625 residual)', () => {
+    const fullDescription =
+      'The Priya Nakamura Lab focuses on neural computation in the visual thalamus and retinal signaling. The lab uses two-photon calcium imaging to record visually evoked responses in retinal ganglion cells of awake, behaving mice.';
+    const researchAreas = ['Neural computation', 'Visual thalamus', 'Retinal signaling'];
+
+    const quality = fullDescriptionQuality(fullDescription, researchAreas);
+    expect(quality.flags).not.toContain('area-echo-fallback');
+    expect(quality.isUseful).toBe(true);
+  });
+
   it('derives card copy from later research activity when profile biographies start with appointments', () => {
     const fullDescription =
       'Dr Roberts has worked at the University of Vermont, Virginia Commonwealth University, and Yale University. He is board certified in internal medicine, pediatrics, medical oncology, and hospice and palliative care. Current activities are clinical research and consulting for non-governmental organizations and the pharmaceutical and pharmacy industries.';
