@@ -552,6 +552,7 @@ export interface NormalizedResearchSearchQuery {
   query: string;
   tokens: string[];
   isTopicAliasQuery: boolean;
+  isAliasExpanded: boolean;
   aliasTerms: string[] | null;
 }
 
@@ -561,6 +562,9 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   const meaningfulTokens = tokens.filter((token) => !STUDENT_QUERY_STOP_WORDS.has(token));
   const queryTokens = meaningfulTokens.length > 0 ? meaningfulTokens : tokens;
   const aliasExpansion = resolveTopicAliasExpansion(queryTokens);
+  const hasPerTokenAliasExpansion = queryTokens.some(
+    (token) => STUDENT_QUERY_ALIASES[token] !== undefined,
+  );
   const expandedTerms = aliasExpansion
     ? aliasExpansion
     : queryTokens.flatMap((token) => STUDENT_QUERY_ALIASES[token] || [token]);
@@ -571,6 +575,7 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
     query: normalizedTerms.join(' ').slice(0, MAX_SEARCH_QUERY_LENGTH),
     tokens: queryTokens,
     isTopicAliasQuery: aliasExpansion !== null,
+    isAliasExpanded: aliasExpansion !== null || hasPerTokenAliasExpansion,
     aliasTerms: aliasExpansion ? normalizedTerms : null,
   };
 };
@@ -1111,6 +1116,20 @@ export async function searchResearchGroupsViaMeili(
     }
   }
 
+  // A literal multi-word query (not an alias-expanded OR query) is a
+  // conjunction: every token must match. Meilisearch defaults to the `last`
+  // matching strategy, which progressively drops trailing terms when too few
+  // documents match all of them, so "black hole" admits documents matching only
+  // the high-frequency token "black". Require all terms for these queries so a
+  // single common token cannot surface off-topic entities or inflate the count.
+  // Alias-expanded queries are left permissive because their terms are OR
+  // synonyms, not a phrase the searcher typed. See #1255.
+  const requireAllQueryTerms =
+    !isBrowseAllQuery && !normalizedQuery.isAliasExpanded && normalizedQuery.tokens.length >= 2;
+  if (requireAllQueryTerms) {
+    searchParams.matchingStrategy = 'all';
+  }
+
   // Meilisearch's offset/limit `estimatedTotalHits` for a thresholded hybrid
   // query is a windowed estimate over the whole k-NN candidate pool, so it
   // reports (near) the full corpus size for broad topical queries even though
@@ -1238,6 +1257,9 @@ export async function searchResearchGroupsViaMeili(
         filter: filterString,
         hybrid: finalSearchParams.hybrid,
         rankingScoreThreshold: finalSearchParams.rankingScoreThreshold,
+        ...(finalSearchParams.matchingStrategy
+          ? { matchingStrategy: finalSearchParams.matchingStrategy }
+          : {}),
         page: 1,
         hitsPerPage: RESEARCH_ENTITY_SEARCH_MAX_TOTAL_HITS,
         attributesToRetrieve: ['id'],
@@ -1283,6 +1305,9 @@ export async function searchResearchGroupsViaMeili(
     const params: Record<string, any> = { filter: overrideFilterString, facets: facetFields };
     if (finalSearchParams.attributesToSearchOn) {
       params.attributesToSearchOn = finalSearchParams.attributesToSearchOn;
+    }
+    if (finalSearchParams.matchingStrategy) {
+      params.matchingStrategy = finalSearchParams.matchingStrategy;
     }
     if (finalSearchParams.rankingScoreThreshold !== undefined) {
       params.hybrid = finalSearchParams.hybrid;
