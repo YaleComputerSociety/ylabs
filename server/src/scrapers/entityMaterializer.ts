@@ -15,6 +15,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { Fellowship } from '../models/fellowship';
 import {
   buildResearchAreasCardSummary,
+  fullDescriptionQuality,
   programCardShortDescriptionQuality,
   shortDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
@@ -31,7 +32,12 @@ import {
   normalizeResearchEntityNameDashes,
   stripTrailingResearchHomeDescription,
 } from '../utils/researchEntityNameNormalization';
-import { resolveAllFields, ResolverObservation, ResolvedField } from './confidenceResolver';
+import {
+  resolveAllFields,
+  resolveFieldRanked,
+  ResolverObservation,
+  ResolvedField,
+} from './confidenceResolver';
 import { syncEntity, isSyncableEntityType, deleteFromIndex } from '../services/meiliSyncService';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import { materializeAccessForResearchGroup } from './accessMaterializer';
@@ -2578,6 +2584,39 @@ export async function materializeEntity(
     fieldsWritten++;
   }
   if (isResearchEntityObservationType(entityType)) {
+    if (!manuallyLockedFields.includes('fullDescription') && resolved.fullDescription) {
+      const winnerFull = textValue(set.fullDescription);
+      const winnerFullUseful = !!winnerFull && fullDescriptionQuality(winnerFull).isUseful;
+      if (!winnerFullUseful) {
+        const rankedFull = resolveFieldRanked('fullDescription', resolverObs, {
+          manuallyLockedFields,
+          manualValues,
+        });
+        for (const candidate of rankedFull) {
+          const materialized = materializedFieldValue(
+            entityType,
+            'fullDescription',
+            candidate.value,
+            entityDoc?.fullDescription,
+            sourceEntityIdentity,
+          );
+          const materializedText = textValue(materialized);
+          if (!materializedText || !fullDescriptionQuality(materializedText).isUseful) continue;
+          if (materialized !== set.fullDescription) {
+            set.fullDescription = materialized;
+            confidenceByField.fullDescription = candidate.confidence;
+            const provenance = fieldProvenanceForResolvedObservation(
+              'fullDescription',
+              candidate,
+              materializationObs,
+            );
+            if (provenance) set['fieldProvenance.fullDescription'] = provenance;
+            fieldsWritten++;
+          }
+          break;
+        }
+      }
+    }
     const fullDescription =
       textValue(set.fullDescription) ||
       sanitizeResearchEntityDescription(textValue(entityDoc?.fullDescription));

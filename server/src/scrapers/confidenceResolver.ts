@@ -240,32 +240,25 @@ function preferGenuineEntityNameGroups<T extends { value: unknown; sources: Set<
   return genuine.length > 0 ? genuine : groups;
 }
 
-export function resolveField(
+interface RankedGroup {
+  value: unknown;
+  weight: number;
+  sources: Set<string>;
+}
+
+function rankFieldGroups(
   field: string,
   observations: ResolverObservation[],
-  opts: ResolverOptions = {},
-): ResolvedField | null {
+  opts: ResolverOptions,
+): RankedGroup[] {
   const halfLifeDays = opts.recencyHalfLifeDays ?? DEFAULTS.recencyHalfLifeDays;
   const agreementBonus = opts.agreementBonusPerExtraSource ?? DEFAULTS.agreementBonusPerExtraSource;
-  const conflictThreshold = opts.conflictThreshold ?? DEFAULTS.conflictThreshold;
   const now = opts.now ?? new Date();
 
-  if (opts.manuallyLockedFields?.includes(field)) {
-    return {
-      value: opts.manualValues?.[field],
-      confidence: 1.0,
-      contributingSources: ['manual'],
-      hasConflict: false,
-    };
-  }
-
   const fieldObs = observations.filter((o) => o.field === field);
-  if (fieldObs.length === 0) return null;
+  if (fieldObs.length === 0) return [];
 
-  const groups = new Map<
-    string,
-    { value: unknown; weight: number; sources: Set<string> }
-  >();
+  const groups = new Map<string, RankedGroup>();
   for (const obs of fieldObs) {
     const key = serializeValue(obs.value);
     const decay = recencyDecay(
@@ -294,7 +287,27 @@ export function resolveField(
     field,
     preferExtractedProseGroups(field, Array.from(groups.values())),
   );
-  const ranked = rankable.sort((a, b) => b.weight - a.weight);
+  return rankable.sort((a, b) => b.weight - a.weight);
+}
+
+export function resolveField(
+  field: string,
+  observations: ResolverObservation[],
+  opts: ResolverOptions = {},
+): ResolvedField | null {
+  const conflictThreshold = opts.conflictThreshold ?? DEFAULTS.conflictThreshold;
+
+  if (opts.manuallyLockedFields?.includes(field)) {
+    return {
+      value: opts.manualValues?.[field],
+      confidence: 1.0,
+      contributingSources: ['manual'],
+      hasConflict: false,
+    };
+  }
+
+  const ranked = rankFieldGroups(field, observations, opts);
+  if (ranked.length === 0) return null;
   const winner = ranked[0];
   const runnerUp = ranked[1];
 
@@ -318,6 +331,41 @@ export function resolveField(
     hasConflict,
     conflictingValues,
   };
+}
+
+/**
+ * Rank every candidate value for a field in weight-descending order, returning
+ * one ResolvedField per distinct value (highest-weighted first). Consumers that
+ * need to fall through past a top-ranked value rejected by a downstream content
+ * gate (e.g. a fullDescription that sanitizes to empty) use this to pick the
+ * next acceptable candidate rather than being stuck with the single winner.
+ * A manually locked field returns only its locked value.
+ */
+export function resolveFieldRanked(
+  field: string,
+  observations: ResolverObservation[],
+  opts: ResolverOptions = {},
+): ResolvedField[] {
+  if (opts.manuallyLockedFields?.includes(field)) {
+    return [
+      {
+        value: opts.manualValues?.[field],
+        confidence: 1.0,
+        contributingSources: ['manual'],
+        hasConflict: false,
+      },
+    ];
+  }
+
+  const ranked = rankFieldGroups(field, observations, opts);
+  if (ranked.length === 0) return [];
+  const totalWeight = ranked.reduce((acc, g) => acc + g.weight, 0);
+  return ranked.map((g) => ({
+    value: g.value,
+    confidence: totalWeight > 0 ? Math.min(1, g.weight / totalWeight) : 0,
+    contributingSources: Array.from(g.sources),
+    hasConflict: false,
+  }));
 }
 
 export function resolveAllFields(
